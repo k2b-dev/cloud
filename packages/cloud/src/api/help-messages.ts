@@ -8,6 +8,11 @@ export const helpApiMessages = i18n.define({
       stale: ({ appId }: { appId: string }) => `Help for ${appId} is being refreshed`,
       notFound: "Help document not found",
     },
+    de: {
+      unavailable: ({ appId }) => `Die Hilfe für ${appId} ist derzeit nicht verfügbar`,
+      stale: ({ appId }) => `Die Hilfe für ${appId} wird gerade aktualisiert`,
+      notFound: "Hilfedokument nicht gefunden",
+    },
   },
 });
 

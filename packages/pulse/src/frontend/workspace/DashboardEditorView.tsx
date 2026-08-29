@@ -10,6 +10,7 @@ import type {
   PulseSource,
 } from "../../contracts";
 import { pulseDashboardDslHighlight } from "../query-authoring";
+import { usePulseMessages } from "../use-messages";
 import { dashboardToDsl, openQueryReferenceWindow, quoteDashboardDslString, quoteQueryPart } from "./helpers";
 import { DashboardContent, type DashboardRenderContext } from "./DashboardView";
 import {
@@ -69,6 +70,7 @@ const ReferenceList = (props: {
   items: ReferenceItem[];
   empty: string;
   onAppendSnippet: (snippet: string) => void;
+  appendLabel: string;
 }) => (
   <section class="paper p-3">
     <div class="mb-2 flex items-center gap-2 text-xs font-semibold text-primary">
@@ -93,7 +95,7 @@ const ReferenceList = (props: {
                   type="button"
                   class="flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-900"
                   onClick={() => props.onAppendSnippet(snippet())}
-                  title="Append DSL snippet"
+                  title={props.appendLabel}
                 >
                   <span class="truncate font-medium text-secondary">{item.label}</span>
                   <Show when={item.meta}>{(meta) => <span class="shrink-0 text-[11px] text-dimmed">{meta()}</span>}</Show>
@@ -108,6 +110,7 @@ const ReferenceList = (props: {
 );
 
 export default function DashboardEditorView(props: DashboardEditorViewProps) {
+  const t = usePulseMessages();
   const [panesLayout, setPanesLayout] = createSignal(
     initialPulsePanesLayout(props.initialPanesLayout, createDashboardEditorPanesLayout(), DASHBOARD_EDITOR_ITEM_IDS),
   );
@@ -130,7 +133,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
       const metric = metrics[0];
       return {
         label: source.name,
-        meta: metrics.length ? `${source.kind} · ${metrics.length} metrics` : source.kind,
+        meta: metrics.length ? `${source.kind} · ${t().metricCount({ count: metrics.length })}` : source.kind,
         snippet: metric
           ? `section ${quoteDashboardDslString(source.name)} {\n  line ${quoteDashboardDslString(metric.metric)} {\n    query metric ${quoteQueryPart(metric.metric)} ${metric.type === "counter" ? "rate" : "avg"} every 5m since 24h source ${source.id}\n  }\n}`
           : undefined,
@@ -149,7 +152,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
         : ` entity ${quoteQueryPart(resource.id)}${resource.type ? ` entity_type ${quoteQueryPart(resource.type)}` : ""}`;
       return {
         label: resource.label,
-        meta: `${resource.type ?? "resource"} · ${resource.metricCount} metrics`,
+        meta: `${resource.type ?? t().resource} · ${t().metricCount({ count: resource.metricCount })}`,
         snippet: metric
           ? `line ${quoteDashboardDslString(metric.metric)} {\n  query metric ${quoteQueryPart(metric.metric)} ${metric.type === "counter" ? "rate" : "avg"} every 5m since 24h${source}${scope}\n}`
           : undefined,
@@ -195,7 +198,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
     for (const item of props.inventory().events) addDimensions(item.dimensions);
     for (const item of props.inventory().states) addDimensions(item.dimensions);
     return [...labels.entries()]
-      .map(([label, values]) => ({ label, meta: `${values.size} values` }))
+      .map(([label, values]) => ({ label, meta: t().valueCount({ count: values.size }) }))
       .sort((left, right) => left.label.localeCompare(right.label));
   });
 
@@ -223,7 +226,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
   );
 
   const renderReferenceList = (input: { title: string; icon: string; items: ReferenceItem[]; empty: string }) => (
-    <ReferenceList {...input} onAppendSnippet={appendDashboardDslSnippet} />
+    <ReferenceList {...input} appendLabel={t().appendDslSnippet} onAppendSnippet={appendDashboardDslSnippet} />
   );
 
   const renderEditorPane = () => (
@@ -236,7 +239,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
         fill
         lines={18}
         spellcheck={false}
-        aria-label="Pulse dashboard DSL"
+        aria-label={t().dashboardDsl}
         aria-invalid={props.dashboardDslDiagnostics()?.ok === false}
         placeholder={
           'dashboard "Solar overview" {\n  section "Today" {\n    gauge "Charge" {\n      query metric solar.battery.charge_percent latest since 10m\n    }\n  }\n}'
@@ -248,42 +251,42 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
   const renderInventoryPane = () => (
     <div class="grid h-full content-start gap-2 overflow-auto p-1 md:grid-cols-2 2xl:grid-cols-3">
       {renderReferenceList({
-        title: "Sources",
+        title: t().sources,
         icon: "ti ti-database-share",
         items: dashboardReferenceSources(),
-        empty: "No sources yet.",
+        empty: t().noSources,
       })}
       {renderReferenceList({
-        title: "Resources",
+        title: t().resources,
         icon: "ti ti-cube",
         items: dashboardReferenceResources(),
-        empty: "No resources yet.",
+        empty: t().noItemsYet({ items: t().resources.toLowerCase() }),
       })}
       {renderReferenceList({
-        title: "Metrics",
+        title: t().metrics,
         icon: "ti ti-chart-dots",
         items: dashboardReferenceMetrics(),
-        empty: "No metrics yet.",
+        empty: t().noItemsYet({ items: t().metrics.toLowerCase() }),
       })}
-      {renderReferenceList({ title: "Events", icon: "ti ti-bolt", items: dashboardReferenceEvents(), empty: "No events yet." })}
+      {renderReferenceList({ title: t().events, icon: "ti ti-bolt", items: dashboardReferenceEvents(), empty: t().noItemsYet({ items: t().events.toLowerCase() }) })}
       {renderReferenceList({
-        title: "States",
+        title: t().states,
         icon: "ti ti-toggle-right",
         items: dashboardReferenceStates(),
-        empty: "No states yet.",
+        empty: t().noItemsYet({ items: t().states.toLowerCase() }),
       })}
-      {renderReferenceList({ title: "Labels", icon: "ti ti-tags", items: dashboardReferenceLabels(), empty: "No labels yet." })}
+      {renderReferenceList({ title: t().labels, icon: "ti ti-tags", items: dashboardReferenceLabels(), empty: t().noItemsYet({ items: t().labels.toLowerCase() }) })}
       {renderReferenceList({
-        title: "Entities",
+        title: t().entities,
         icon: "ti ti-cube",
         items: dashboardReferenceEntities(),
-        empty: "No entities yet.",
+        empty: t().noItemsYet({ items: t().entities.toLowerCase() }),
       })}
       {renderReferenceList({
-        title: "Saved queries",
+        title: t().savedQueries,
         icon: "ti ti-device-floppy",
         items: dashboardReferenceSavedQueries(),
-        empty: "No saved queries yet.",
+        empty: t().noItemsYet({ items: t().savedQueries.toLowerCase() }),
       })}
     </div>
   );
@@ -294,7 +297,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
         when={props.dashboardDslDiagnostics()}
         fallback={
           <p class="flex items-center gap-1.5 text-xs text-dimmed">
-            <i class="ti ti-clock" /> Waiting for a DSL preview.
+            <i class="ti ti-clock" /> {t().waitingForDslPreview}
           </p>
         }
       >
@@ -303,7 +306,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
             when={result().diagnostics.length}
             fallback={
               <p class="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300">
-                <i class="ti ti-check" /> Dashboard DSL is valid.
+                <i class="ti ti-check" /> {t().dashboardDslValid}
               </p>
             }
           >
@@ -329,8 +332,8 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
     <section class="flex min-h-[42rem] flex-1 flex-col gap-3 overflow-hidden pb-2">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
-          <h1 class="truncate text-base font-semibold text-primary">{props.selectedDashboard()?.name ?? "Dashboard"} DSL</h1>
-          <p class="mt-0.5 text-xs text-dimmed">Author sections, cards, markdown, and query-backed widgets.</p>
+          <h1 class="truncate text-base font-semibold text-primary">{props.selectedDashboard()?.name ?? t().dashboard} DSL</h1>
+          <p class="mt-0.5 text-xs text-dimmed">{t().dashboardEditorDescription}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <span
@@ -347,7 +350,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
                 props.dashboardDslDiagnostics()?.ok ? "ti-check" : props.dashboardDslDiagnostics() ? "ti-alert-circle" : "ti-clock"
               }`}
             />
-            <span>{props.dashboardDslDiagnostics()?.ok ? "Valid" : props.dashboardDslDiagnostics() ? "Invalid" : "Waiting"}</span>
+            <span>{props.dashboardDslDiagnostics()?.ok ? t().valid : props.dashboardDslDiagnostics() ? t().invalid : t().waiting}</span>
           </span>
           <Button
             type="button"
@@ -356,7 +359,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
             disabled={!props.selectedDashboard() || props.dashboardDslSaving() || !props.dashboardDslDiagnostics()?.ok}
             onClick={() => void props.onSave()}
           >
-            <i class={`ti ${props.dashboardDslSaving() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} /> Save
+            <i class={`ti ${props.dashboardDslSaving() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} /> {t().save}
           </Button>
           <Button
             type="button"
@@ -368,7 +371,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
               if (dashboard) void props.onOpenSettings(dashboard);
             }}
           >
-            <i class="ti ti-settings" /> Settings
+            <i class="ti ti-settings" /> {t().settings}
           </Button>
           <Button
             type="button"
@@ -376,7 +379,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
             size="sm"
             onClick={() => openQueryReferenceWindow(props.selectedBaseId(), { dashboardDsl: true })}
           >
-            <i class="ti ti-external-link" /> Query reference
+            <i class="ti ti-external-link" /> {t().pulseQueryReference}
           </Button>
         </div>
       </div>
@@ -386,11 +389,11 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
           layout={panesLayout()}
           onLayoutChange={updatePanesLayout}
           class="h-full"
-          ariaLabel="Dashboard editor panes"
+          ariaLabel={t().dashboardEditorPanes}
           items={[
             {
               id: "preview",
-              title: "Preview",
+              title: t().preview,
               icon: "ti ti-eye",
               render: () => (
                 <div class="h-full overflow-auto bg-zinc-50 p-3 dark:bg-zinc-950">
@@ -399,8 +402,8 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
               ),
             },
             { id: "editor", title: "DSL", icon: "ti ti-code", render: renderEditorPane },
-            { id: "inventory", title: "Inventory", icon: "ti ti-database-search", render: renderInventoryPane },
-            { id: "diagnostics", title: "Diagnostics", icon: "ti ti-alert-circle", render: renderDiagnosticsPane },
+            { id: "inventory", title: t().inventory, icon: "ti ti-database-search", render: renderInventoryPane },
+            { id: "diagnostics", title: t().diagnostics, icon: "ti ti-alert-circle", render: renderDiagnosticsPane },
           ]}
         />
       </div>

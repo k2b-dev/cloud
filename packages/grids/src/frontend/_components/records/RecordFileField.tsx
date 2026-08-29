@@ -12,10 +12,12 @@ import {
   panelDialogWorkspaceOptions,
   prompts,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicField as Field, PublicGridFile as GridFile } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 import { uploadRecordFile } from "./record-transfer-client";
 
 type RecordFileLocation = {
@@ -52,11 +54,13 @@ export async function refreshFilesAfterCommittedChange(
 }
 
 function RecordFilePreviewDialog(props: { location: RecordFileLocation; file: GridFile; close: () => void }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const downloadHref = () => recordFileContentHref(props.location, props.file);
   const previewHref = () => recordFileContentHref(props.location, props.file, true);
   const load = async (): Promise<FileViewContent> => {
     const response = await fetch(previewHref());
-    if (!response.ok) throw new Error(await errorMessage(response, "Failed to load file preview"));
+    if (!response.ok) throw new Error(await errorMessage(response, t().loadPreviewFailed));
     return {
       encoding: "utf8",
       content: await response.text(),
@@ -75,16 +79,16 @@ function RecordFilePreviewDialog(props: { location: RecordFileLocation; file: Gr
           mimeType: props.file.mimeType,
         })}`}
         actions={
-          <Tooltip.Anchor content="Download file">
+          <Tooltip.Anchor content={t().downloadFile}>
             <IconButtonLink
               variant="ghost"
               size="sm"
               href={downloadHref()}
               download={props.file.filename}
-              label={`Download ${props.file.filename}`}
+              label={t().downloadNamed({ name: props.file.filename })}
             >
               <i class="ti ti-download" aria-hidden="true" />
-              <span class="sr-only">Download {props.file.filename}</span>
+              <span class="sr-only">{t().downloadNamed({ name: props.file.filename })}</span>
             </IconButtonLink>
           </Tooltip.Anchor>
         }
@@ -122,6 +126,8 @@ export default function RecordFileField(props: {
   endpoint?: string;
   onChanged?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const [uploading, setUploading] = createSignal(false);
   const [files, setFiles] = createSignal<GridFile[]>(props.initialFiles);
 
@@ -129,12 +135,12 @@ export default function RecordFileField(props: {
 
   const refetch = async () => {
     const res = await fetch(location().endpoint);
-    if (!res.ok) throw new Error(await errorMessage(res, "Failed to load files"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().loadFilesFailed));
     setFiles(((await res.json()) as { items: GridFile[] }).items);
   };
   const refreshAfterCommittedChange = () =>
     refreshFilesAfterCommittedChange(props.onChanged, refetch, () => {
-      prompts.error("The file was changed, but the current file list could not be refreshed.");
+      prompts.error(t().filesRefreshFailed);
     });
 
   const accept = () => {
@@ -169,10 +175,10 @@ export default function RecordFileField(props: {
             fieldId: props.field.id,
             file,
           });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to upload file"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().uploadFailed));
       await refreshAfterCommittedChange();
     } catch (e) {
-      prompts.error(e instanceof Error ? e.message : "Failed to upload file");
+      prompts.error(e instanceof Error ? e.message : t().uploadFailed);
     } finally {
       setUploading(false);
     }
@@ -184,10 +190,10 @@ export default function RecordFileField(props: {
       const form = new FormData();
       form.set("file", file);
       const res = await fetch(recordFileHref(location(), current), { method: "PUT", body: form });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to replace file"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().replaceFailed));
       await refreshAfterCommittedChange();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Failed to replace file");
+      prompts.error(error instanceof Error ? error.message : t().replaceFailed);
     } finally {
       setUploading(false);
     }
@@ -201,7 +207,7 @@ export default function RecordFileField(props: {
       if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
         return;
       }
-      prompts.error(error instanceof Error ? error.message : "Could not open the file picker");
+      prompts.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };
 
@@ -213,20 +219,20 @@ export default function RecordFileField(props: {
       if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
         return;
       }
-      prompts.error(error instanceof Error ? error.message : "Could not open the file picker");
+      prompts.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };
 
   const remove = async (file: GridFile) => {
-    const confirmed = await prompts.confirm(recordFileRemovalPrompt(file.filename), {
-      title: "Remove attachment?",
+    const confirmed = await prompts.confirm(t().removeFileConfirm({ name: file.filename }), {
+      title: t().removeAttachment,
       variant: "danger",
-      confirmText: "Remove",
+      confirmText: t().remove,
     });
     if (!confirmed) return;
     const res = await fetch(recordFileHref(location(), file), { method: "DELETE" });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, "Failed to remove attachment"));
+      prompts.error(await errorMessage(res, t().removeAttachmentFailed));
       return;
     }
     await refreshAfterCommittedChange();
@@ -245,7 +251,7 @@ export default function RecordFileField(props: {
                 <button
                   type="button"
                   class="grids-record-file-thumbnail relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs transition-[background-color,box-shadow] hover:bg-[var(--k2b-hover)] hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
-                  aria-label={`Preview ${file.filename}`}
+                  aria-label={t().previewNamed({ name: file.filename })}
                   onClick={() => void openRecordFilePreview(location(), file)}
                 >
                   <img src={recordFileContentHref(location(), file, true)} alt="" class="h-full w-full object-cover" loading="lazy" />
@@ -276,13 +282,13 @@ export default function RecordFileField(props: {
                 </Tooltip.Anchor>
                 <span class="shrink-0 text-xs text-dimmed">{text.pprintBytes(file.sizeBytes)}</span>
                 <Show when={props.canWrite}>
-                  <Tooltip.Anchor content="Replace file">
+                  <Tooltip.Anchor content={t().replaceFile}>
                     <IconButton
                       variant="ghost"
                       size="sm"
                       type="button"
                       class="text-dimmed hover:text-primary"
-                      label={`Replace ${file.filename}`}
+                      label={t().replaceNamed({ name: file.filename })}
                       disabled={uploading()}
                       onClick={() => void chooseReplacement(file)}
                     >
@@ -291,13 +297,13 @@ export default function RecordFileField(props: {
                   </Tooltip.Anchor>
                 </Show>
                 <Show when={previewable(file)}>
-                  <Tooltip.Anchor content="Preview file">
+                  <Tooltip.Anchor content={t().previewFile}>
                     <IconButton
                       variant="ghost"
                       size="sm"
                       type="button"
                       class="text-dimmed hover:text-primary"
-                      label={`Preview ${file.filename}`}
+                      label={t().previewNamed({ name: file.filename })}
                       onClick={() => void openRecordFilePreview(location(), file)}
                     >
                       <i class="ti ti-eye" aria-hidden="true" />
@@ -305,13 +311,13 @@ export default function RecordFileField(props: {
                   </Tooltip.Anchor>
                 </Show>
                 <Show when={props.canWrite}>
-                  <Tooltip.Anchor content="Remove from record">
+                  <Tooltip.Anchor content={t().removeFromRecord}>
                     <IconButton
                       variant="ghost"
                       size="sm"
                       type="button"
                       class="text-dimmed hover:text-red-500"
-                      label={`Remove ${file.filename} from record`}
+                      label={t().removeNamed({ name: file.filename })}
                       disabled={uploading()}
                       onClick={() => void remove(file)}
                     >
@@ -335,7 +341,7 @@ export default function RecordFileField(props: {
           onClick={() => void chooseFile()}
         >
           <i aria-hidden="true" class={`ti ${uploading() ? "ti-loader-2 animate-spin" : "ti-upload"} text-sm`} />
-          Upload
+          {t().upload}
         </Button>
       </Show>
     </div>

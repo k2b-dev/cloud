@@ -1,8 +1,9 @@
-import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@valentinkolb/cloud/access/ui";
 import { type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
 import { compactDateWithDelta, type PulseDateContext } from "./helpers";
+import { usePulseMessages } from "../use-messages";
 
 type Props = {
   source: PulseSource;
@@ -47,6 +48,8 @@ const httpIngestExample = (source: PulseSource, origin: string) =>
     : "";
 
 export default function SourceDetailView(props: Props) {
+  const t = usePulseMessages();
+  const locale = useLocale();
   const renderCodeSection = (params: { title: string; code: string }) => (
     <DetailPanel.Section
       title={params.title}
@@ -54,8 +57,8 @@ export default function SourceDetailView(props: Props) {
       tone="neutral"
       actions={
         <div class="flex shrink-0 items-center gap-1">
-          <Button type="button" variant="secondary" size="sm" onClick={() => props.copySetupText(params.code, "Command copied")}>
-            <i class="ti ti-copy" /> Copy
+          <Button type="button" variant="secondary" size="sm" onClick={() => props.copySetupText(params.code, t().commandCopied)}>
+            <i class="ti ti-copy" /> {t().copy}
           </Button>
         </div>
       }
@@ -69,14 +72,14 @@ export default function SourceDetailView(props: Props) {
   const httpExample = () => httpIngestExample(props.source, props.origin);
   const statusItems = () => [
     {
-      term: "Last seen",
-      description: props.source.lastSeenAt ? compactDateWithDelta(props.source.lastSeenAt, props.dateContext) : "Waiting",
+      term: t().lastSeen,
+      description: props.source.lastSeenAt ? compactDateWithDelta(props.source.lastSeenAt, props.dateContext) : t().waiting,
     },
-    ...(props.source.kind === "metrics" ? [{ term: "Interval", description: `${props.source.scrapeIntervalSeconds ?? 60}s` }] : []),
+    ...(props.source.kind === "metrics" ? [{ term: t().interval, description: `${props.source.scrapeIntervalSeconds ?? 60}s` }] : []),
     ...(props.source.lastError
       ? [
           {
-            term: "Error",
+            term: t().error,
             description: <span class="break-all text-red-600 dark:text-red-300">{props.source.lastError}</span>,
           },
         ]
@@ -88,32 +91,32 @@ export default function SourceDetailView(props: Props) {
       <DetailPanel.Header
         title={props.source.name}
         icon="ti ti-database-share"
-        meta="Source"
+        meta={t().source}
         subtitle={
           <>
             {props.source.kind}
-            {props.source.enabled ? " · enabled" : " · paused"}
-            {props.source.bearerTokenConfigured ? " · bearer auth" : ""}
+            {props.source.enabled ? ` · ${t().enabled}` : ` · ${t().paused}`}
+            {props.source.bearerTokenConfigured ? ` · ${t().bearerAuth}` : ""}
           </>
         }
         actions={
-          <Tooltip.Anchor content="Close details">
-            <IconButton label="Close source details" variant="ghost" size="sm" onClick={props.close}>
+          <Tooltip.Anchor content={t().closeDetails}>
+            <IconButton label={t().closeSourceDetails} variant="ghost" size="sm" onClick={props.close}>
               <i class="ti ti-x" />
             </IconButton>
           </Tooltip.Anchor>
         }
         primaryActions={
-          <div class="flex flex-wrap items-center gap-2" role="group" aria-label={`${props.source.name} actions`}>
+          <div class="flex flex-wrap items-center gap-2" role="group" aria-label={t().actionsFor({ name: props.source.name })}>
             <Button type="button" variant="secondary" size="sm" onClick={() => void props.editSource(props.source)}>
-              <i class="ti ti-pencil" /> Edit
+              <i class="ti ti-pencil" /> {t().edit}
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => void props.toggleSource(props.source)}>
               <i class={`ti ${props.source.enabled ? "ti-player-pause" : "ti-player-play"}`} />
-              {props.source.enabled ? "Pause" : "Resume"}
+              {props.source.enabled ? t().pause : t().resume}
             </Button>
             <Button type="button" variant="secondary" size="sm" onClick={() => props.openSourceResources(props.source)}>
-              <i class="ti ti-cube" /> Resources
+              <i class="ti ti-cube" /> {t().resources}
             </Button>
             <Show when={props.source.kind === "metrics"}>
               <Button
@@ -123,7 +126,7 @@ export default function SourceDetailView(props: Props) {
                 disabled={props.loading || !props.source.enabled}
                 onClick={() => void props.scrape(props.source)}
               >
-                <i class="ti ti-refresh" /> Scrape
+                <i class="ti ti-refresh" /> {t().scrape}
               </Button>
             </Show>
           </div>
@@ -131,26 +134,26 @@ export default function SourceDetailView(props: Props) {
       />
 
       <DetailPanel.Body>
-        <DetailPanel.Summary title="Status">
+        <DetailPanel.Summary title={t().status}>
           <DescriptionList items={statusItems()} layout="rows" size="sm" />
         </DetailPanel.Summary>
 
-        <DetailPanel.Group label="Source data">
-          <DetailPanel.Section title="Published" icon="ti ti-chart-dots" tone="accent">
+        <DetailPanel.Group label={t().sourceData}>
+          <DetailPanel.Section title={t().published} icon="ti ti-chart-dots" tone="accent">
             <div class="flex flex-col gap-2">
               <DetailPanel.Action
                 type="button"
-                title="Resources"
-                description={`${props.published.resources.toLocaleString()} published`}
+                title={t().resources}
+                description={t().publishedCount({ count: props.published.resources.toLocaleString(locale()) })}
                 leading={<i class="ti ti-cube" aria-hidden="true" />}
                 trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                 onClick={() => props.openSourceResources(props.source)}
               />
               <DescriptionList
                 items={[
-                  { term: "Metrics", description: `${props.published.metricVariants.toLocaleString()} variants` },
-                  { term: "States", description: props.published.states.toLocaleString() },
-                  { term: "Events", description: `${props.published.events.toLocaleString()} recent` },
+                  { term: t().metrics, description: t().variants({ count: props.published.metricVariants.toLocaleString(locale()) }) },
+                  { term: t().states, description: props.published.states.toLocaleString(locale()) },
+                  { term: t().events, description: t().recentCount({ count: props.published.events.toLocaleString(locale()) }) },
                 ]}
                 layout="rows"
                 size="sm"
@@ -158,25 +161,25 @@ export default function SourceDetailView(props: Props) {
             </div>
           </DetailPanel.Section>
 
-          <DetailPanel.Section title="Target" icon="ti ti-target" tone="neutral">
+          <DetailPanel.Section title={t().target} icon="ti ti-target" tone="neutral">
             <Show
               when={props.source.kind === "metrics"}
-              fallback={<p class="text-xs text-secondary">{props.source.kind} ingest endpoint</p>}
+              fallback={<p class="text-xs text-secondary">{t().ingestEndpoint({ kind: props.source.kind })}</p>}
             >
-              <p class="break-all text-xs text-secondary">{props.source.endpointUrl ?? "No endpoint"}</p>
+              <p class="break-all text-xs text-secondary">{props.source.endpointUrl ?? t().noEndpoint}</p>
             </Show>
           </DetailPanel.Section>
         </DetailPanel.Group>
 
         <Show when={props.source.kind === "metrics"}>
-          <DetailPanel.Section title="Scrape history" icon="ti ti-refresh" tone="success">
+          <DetailPanel.Section title={t().scrapeHistory} icon="ti ti-refresh" tone="success">
             <DataTable
               rows={props.scrapes}
               columns={props.scrapeColumns}
               getRowId={(scrape) => scrape.id}
               density="compact"
               class="max-h-72 overflow-auto"
-              empty="No scrapes recorded yet."
+              empty={t().noScrapes}
               renderCell={({ row: scrape, col }) => props.renderScrapeCell(scrape, col)}
             />
           </DetailPanel.Section>
@@ -185,33 +188,33 @@ export default function SourceDetailView(props: Props) {
         <Show when={props.source.kind === "http_ingest"}>
           <div class="flex flex-col gap-2">
             <ResourceApiKeys
-              title="API keys"
-              description="Create a labeled key for each importer, server, or job that pushes data into this source."
+              title={t().apiKeys}
+              description={t().apiKeysDescription}
               initialKeys={props.apiKeys}
               permissionOptions={[
                 {
                   value: "write",
-                  label: "Ingest",
-                  description: "Push metrics, events, and states into this source.",
+                  label: t().ingest,
+                  description: t().ingestDescription,
                   icon: "ti ti-database-import",
                 },
               ]}
               createKey={props.createApiKey}
               revokeKey={props.revokeApiKey}
             />
-            <p class="text-xs text-dimmed">Use a source API key as Bearer token.</p>
+            <p class="text-xs text-dimmed">{t().bearerTokenHint}</p>
           </div>
         </Show>
 
-        <Show when={httpExample()}>{(command) => renderCodeSection({ title: "HTTP ingest example", code: command() })}</Show>
+        <Show when={httpExample()}>{(command) => renderCodeSection({ title: t().httpIngestExample, code: command() })}</Show>
 
         <DetailPanel.Section
-          title="Danger zone"
+          title={t().dangerZone}
           icon="ti ti-trash"
           tone="danger"
           actions={
             <Button type="button" variant="danger" size="sm" disabled={props.loading} onClick={() => void props.removeSource(props.source)}>
-              <i class="ti ti-trash" /> Remove
+              <i class="ti ti-trash" /> {t().remove}
             </Button>
           }
         />

@@ -112,6 +112,13 @@ describe("query workspace model", () => {
       explode: true,
       limit: 1,
     });
+    expect(previewSummary(null, false, "de")).toMatchObject({ kind: "idle", label: "Kein Ergebnis" });
+    expect(previewSummary(null, true, "de-CH")).toMatchObject({ kind: "checking", label: "Wird geprüft" });
+    expect(previewSummary({ ok: false, diagnostics: [{ message: "bad" }] }, false, "de-CH")).toMatchObject({
+      kind: "issues",
+      label: "Probleme",
+    });
+    expect(previewSummary(ready, false, "de")).toMatchObject({ kind: "ready", label: "Bereit" });
   });
 
   test("counts only visible source catalog entries", () => {

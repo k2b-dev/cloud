@@ -37,6 +37,7 @@ import {
   matchesAssistantInvalidation,
   useAssistantLive,
 } from "./assistant-live";
+import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -50,10 +51,10 @@ export const assistantChatContextHasContent = (snapshot: AssistantChatContextSna
 export const assistantChatContextHasPanel = (snapshot: AssistantChatContextSnapshot, hasProject = false): boolean =>
   hasProject || assistantChatContextHasContent(snapshot);
 
-const taskStatus = (task: AssistantChatTask) => {
-  if (task.state === "active") return { label: task.schedule.kind === "once" ? "Pending" : "Active", tone: "ok" as const };
-  if (task.state === "paused") return { label: "Paused", tone: "neutral" as const };
-  return { label: "Needs attention", tone: "warning" as const };
+const taskStatus = (task: AssistantChatTask, text: (value: string) => string) => {
+  if (task.state === "active") return { label: text(task.schedule.kind === "once" ? "Pending" : "Active"), tone: "ok" as const };
+  if (task.state === "paused") return { label: text("Paused"), tone: "neutral" as const };
+  return { label: text("Needs attention"), tone: "warning" as const };
 };
 
 const openSourceSearch = async (title: string, sources: readonly AiConversationSource[]) => {
@@ -64,7 +65,7 @@ const openSourceSearch = async (title: string, sources: readonly AiConversationS
         .filter((source) => !normalized || `${source.title} ${source.preview ?? ""}`.toLocaleLowerCase().includes(normalized))
         .map((source) => ({ value: source, label: source.title, desc: source.preview ?? undefined, icon: source.icon }));
     },
-    { title, icon: "ti ti-search", placeholder: `Search ${title.toLocaleLowerCase()}…`, minQueryLength: 0, size: "small" },
+    { title, icon: "ti ti-search", placeholder: assistantBrowserCopy().searchNamed({ name: title }), minQueryLength: 0, size: "small" },
   );
   if (selected?.value?.href) await confirmOpenAssistantLink(selected.value.title, selected.value.href);
 };
@@ -136,6 +137,7 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
 type AssistantChatContextState = ReturnType<typeof createAssistantChatContextState>;
 
 function AssistantChatContextView(props: { state: AssistantChatContextState }) {
+  const text = useAssistantText();
   const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
     null,
   );
@@ -145,12 +147,12 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
       fallback={
         <Placeholder
           state={props.state.error() ? "error" : "loading"}
-          title={props.state.error() ? "Could not load context" : "Loading context"}
+          title={text(props.state.error() ? "Could not load context" : "Loading context")}
           description={props.state.error()?.message}
           action={
             props.state.error() ? (
               <Button size="sm" variant="secondary" onClick={() => void props.state.refresh()}>
-                Retry
+                {text("Retry")}
               </Button>
             ) : undefined
           }
@@ -195,14 +197,14 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
               : 0;
             setLightbox({ images: loaded, index });
           } catch (error) {
-            void prompts.error(error instanceof Error ? error.message : "Images could not be loaded.", { title: "Could not open images" });
+            void prompts.error(error instanceof Error ? error.message : text("Images could not be loaded."), { title: text("Could not open images") });
           }
         };
         const references = () => [
           ...value().chat.references.map((source) => ({
             kind: "source" as const,
             title: assistantReferenceTitle(source),
-            description: source.ref ? assistantResourceTypeLabel(source.ref) : "Cloud resource",
+            description: source.ref ? assistantResourceTypeLabel(source.ref) : text("Cloud resource"),
             searchText: source.preview ?? "",
             icon: source.icon,
             source,
@@ -211,7 +213,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
             kind: "project" as const,
             title: reference.label || `${reference.ref.type} · ${reference.ref.id}`,
             description: assistantResourceTypeLabel(reference.ref),
-            searchText: "Project",
+            searchText: text("Project"),
             icon: "ti ti-link",
             reference,
           })),
@@ -234,7 +236,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                   icon: reference.icon,
                 }));
             },
-            { title: "References", icon: "ti ti-link", placeholder: "Search references…", minQueryLength: 0, size: "small" },
+            { title: text("References"), icon: "ti ti-link", placeholder: text("Search references…"), minQueryLength: 0, size: "small" },
           );
           if (!selected?.value) return;
           if (selected.value.kind === "source" && selected.value.source.href) {
@@ -250,11 +252,11 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                 <AssistantContextSection title={project().name} identity>
                   <AssistantContextRow
                     icon="ti ti-eye"
-                    title="View project"
+                    title={text("View project")}
                     onClick={() =>
                       void openAssistantMarkdown(
-                        "Project instructions",
-                        project().instructions || "No Project instructions yet.",
+                        text("Project instructions"),
+                        project().instructions || text("No Project instructions yet."),
                         "ti ti-adjustments-horizontal",
                       )
                     }
@@ -267,7 +269,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
               {(project) => (
                 <Show when={project().knowledge[0]}>
                   {(item) => (
-                    <AssistantContextSection title="Project knowledge">
+                    <AssistantContextSection title={text("Project knowledge")}>
                       <AssistantContextRows>
                         <AssistantContextRow
                           icon="ti ti-bulb"
@@ -285,7 +287,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
             </Show>
 
             <Show when={value().chat.sources.length > 0}>
-              <AssistantContextSection title="Sources">
+              <AssistantContextSection title={text("Sources")}>
                 <AssistantContextRows>
                   <For each={value().chat.sources.slice(0, CONTEXT_PREVIEW_LIMIT)}>
                     {(source) => (
@@ -298,14 +300,14 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                     )}
                   </For>
                   <Show when={value().chat.sources.length > CONTEXT_PREVIEW_LIMIT}>
-                    <AssistantContextViewAll onClick={() => void openSourceSearch("Sources", value().chat.sources)} />
+                    <AssistantContextViewAll onClick={() => void openSourceSearch(text("Sources"), value().chat.sources)} />
                   </Show>
                 </AssistantContextRows>
               </AssistantContextSection>
             </Show>
 
             <Show when={references().length > 0}>
-              <AssistantContextSection title={assistantContextCountTitle(references().length, "Reference", "References")}>
+              <AssistantContextSection title={assistantContextCountTitle(references().length, text("Reference"), text("References"))}>
                 <AssistantContextRows>
                   <For each={references().slice(0, CONTEXT_PREVIEW_LIMIT)}>
                     {(reference) => (
@@ -335,7 +337,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
             </Show>
 
             <Show when={images().length > 0}>
-              <AssistantContextSection title={assistantContextCountTitle(images().length, "Image", "Images")}>
+              <AssistantContextSection title={assistantContextCountTitle(images().length, text("Image"), text("Images"))}>
                 <AssistantContextRows>
                   <For each={images().slice(0, CONTEXT_PREVIEW_LIMIT)}>
                     {(file) => (
@@ -356,7 +358,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
             </Show>
 
             <Show when={regularFiles().length > 0}>
-              <AssistantContextSection title={assistantContextCountTitle(regularFiles().length, "File", "Files")}>
+              <AssistantContextSection title={assistantContextCountTitle(regularFiles().length, text("File"), text("Files"))}>
                 <AssistantContextRows>
                   <For each={regularFiles().slice(0, CONTEXT_PREVIEW_LIMIT)}>
                     {(file) => (
@@ -378,9 +380,9 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
 
             <Show when={value().chat.tasks[0]}>
               {(task) => {
-                const status = () => taskStatus(task());
+                const status = () => taskStatus(task(), text);
                 return (
-                  <AssistantContextSection title="Scheduled">
+                  <AssistantContextSection title={text("Scheduled")}>
                     <AssistantContextRows>
                       <div class="flex items-start justify-between gap-2">
                         <span class="min-w-0">
@@ -393,7 +395,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                         <AssistantContextViewAll
                           onClick={() =>
                             void prompts.dialog<void>(() => <AssistantTasksView chatId={value().chat.chatId} />, {
-                              title: "Scheduled tasks",
+                              title: text("Scheduled tasks"),
                               icon: "ti ti-calendar-time",
                               size: "large",
                             })
@@ -464,5 +466,5 @@ export const openAssistantChatContextDialog = (chatId: string, project: AiProjec
         <AssistantChatContextContent chatId={chatId} project={project} />
       </AssistantLiveProvider>
     ),
-    { title: "Chat context", icon: "ti ti-adjustments-horizontal", size: "medium" },
+    { title: assistantBrowserText("Chat context"), icon: "ti ti-adjustments-horizontal", size: "medium" },
   );

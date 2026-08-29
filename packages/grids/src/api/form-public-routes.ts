@@ -1,11 +1,13 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, jsonResponse } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { FormSubmitSchema, PublicFormSchema, type SubmitFormDeps, submitFormResponse, toPublicForm } from "./form-api-shared";
+import { apiMessages } from "./messages";
+import { v } from "./validator";
 
 type PublicFormRoutesDeps = SubmitFormDeps & {
   getByPublicToken?: typeof gridsService.form.getByPublicToken;
@@ -26,7 +28,7 @@ export const createPublicFormRoutes = (deps: PublicFormRoutesDeps = {}) =>
       }),
       async (context) => {
         const form = await (deps.getByPublicToken ?? gridsService.form.getByPublicToken)(context.req.param("token")!);
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         return context.json(await (deps.projectForm ?? toPublicForm)(form));
       },
     )
@@ -45,7 +47,7 @@ export const createPublicFormRoutes = (deps: PublicFormRoutesDeps = {}) =>
       v("json", FormSubmitSchema),
       async (context) => {
         const form = await (deps.getByPublicToken ?? gridsService.form.getByPublicToken)(context.req.param("token")!);
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         return submitFormResponse(context, form, context.req.valid("json"), null, deps);
       },
     );

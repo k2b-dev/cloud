@@ -1,6 +1,6 @@
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -9,11 +9,13 @@ import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { getProviderBadge } from "../lib/account-badges";
 import { buildGroupDetailUrl, buildGroupsPageBaseUrl, buildGroupsUrl, parseGroupsListState } from "../lib/url-state";
+import { accountsMessages } from "../messages";
 import GroupsScopeFilter from "./GroupsScopeFilter.island";
 import NewGroup from "./NewGroup.island";
 
 /** Groups page - nav sidebar + full-page list. */
 export default ssr<AuthContext>(async (c) => {
+  const { t } = accountsMessages.resolve([getLocale(c)]);
   const sessionUser = expectUserBackedActor(c);
   const isAdmin = isAdminUser(sessionUser);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
@@ -50,21 +52,19 @@ export default ssr<AuthContext>(async (c) => {
   );
   type GroupRow = (typeof groupsPage.items)[number];
   const columns: DataTableColumn<GroupRow>[] = [
-    { id: "group", header: "Group", value: (group) => group.name },
-    { id: "description", header: "Description", value: (group) => group.description, cellClass: "max-w-[22rem]" },
-    { id: "managedBy", header: "Managed by", value: (group) => getProviderBadge(group.provider).label },
-    { id: "flags", header: "Flags", value: (group) => group.gidnumber },
+    { id: "group", header: t.group, value: (group) => group.name },
+    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[22rem]" },
+    { id: "managedBy", header: t.managedBy, value: (group) => (group.provider === "ipa" ? "FreeIPA" : t.local) },
+    { id: "flags", header: t.flags, value: (group) => group.gidnumber },
   ];
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Groups" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.groups }]}>
       <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-groups">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-groups-title">
-            <h1 class="text-base font-semibold text-primary">Groups</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {groupsPage.total} {listState.search ? "results" : "groups"}
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.groups}</h1>
+            <p class="mt-1 text-xs text-dimmed">{listState.search ? t.resultCount({ count: groupsPage.total }) : t.groupCount({ count: groupsPage.total })}</p>
           </div>
 
           <div style="view-transition-name: accounts-groups-search">
@@ -86,10 +86,10 @@ export default ssr<AuthContext>(async (c) => {
               description={
                 <>
                   {listState.scope === "managed" && !listState.search
-                    ? "You do not manage any groups yet."
+                    ? t.groupsEmptyManaged
                     : listState.search
-                      ? "No groups found."
-                      : "No groups available in this view."}
+                      ? t.groupsEmptySearch
+                      : t.groupsEmptyView}
                 </>
               }
             />
@@ -115,8 +115,8 @@ export default ssr<AuthContext>(async (c) => {
                   }
                   if (col.id === "description") {
                     return (
-                      <a href={href} class="block truncate text-dimmed" title={group.description || "No description"} tabindex={-1}>
-                        {group.description || <span class="italic">No description</span>}
+                      <a href={href} class="block truncate text-dimmed" title={group.description || t.noDescription} tabindex={-1}>
+                        {group.description || <span class="italic">{t.noDescription}</span>}
                       </a>
                     );
                   }
@@ -125,7 +125,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="block" tabindex={-1}>
                         <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                          {providerBadge.label}
+                          {group.provider === "ipa" ? "FreeIPA" : t.local}
                         </span>
                       </a>
                     );
@@ -135,7 +135,9 @@ export default ssr<AuthContext>(async (c) => {
                       <a href={href} class="block" tabindex={-1}>
                         <div class="flex flex-wrap gap-1">
                           {isManaged ? (
-                            <span class="tag bg-[color-mix(in_srgb,var(--app-accent)_10%,var(--ui-surface))] app-accent-text">Managed</span>
+                            <span class="tag bg-[color-mix(in_srgb,var(--app-accent)_10%,var(--ui-surface))] app-accent-text">
+                              {t.managed}
+                            </span>
                           ) : null}
                           {group.gidnumber ? (
                             <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">

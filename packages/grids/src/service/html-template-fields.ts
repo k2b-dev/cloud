@@ -9,6 +9,7 @@ import {
   htmlTemplateConfigSchema,
 } from "../field-types/html-template";
 import { datePatternContext, renderLiquidText, utf8ByteLength } from "./document-liquid";
+import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 import { projectPublicIds } from "./public-resources";
 import { get as getTable } from "./tables";
 import { buildTemplateAppData, buildTemplateBusinessData } from "./template-context";
@@ -58,20 +59,22 @@ export const renderHtmlTemplateValue = async (
   config: HtmlTemplateConfig,
   context: Record<string, unknown>,
   budget?: HtmlTemplateRenderBudget,
+  locale?: string,
 ): Promise<Result<string>> => {
+  const t = documentServiceText(locale);
   if (!config.template) return ok("");
   try {
-    const rendered = await renderLiquidText(config.template, context, HTML_TEMPLATE_RENDER_MAX_BYTES);
+    const rendered = await renderLiquidText(config.template, context, HTML_TEMPLATE_RENDER_MAX_BYTES, locale);
     if (!rendered.ok) return rendered;
     const elementCount = rendered.data.match(/<[a-z][^>]*>/gi)?.length ?? 0;
-    if (elementCount > MAX_HTML_ELEMENTS) return fail(err.badInput(`rendered HTML may contain at most ${MAX_HTML_ELEMENTS} elements`));
+    if (elementCount > MAX_HTML_ELEMENTS) return fail(err.badInput(t.htmlElementLimit({ limit: MAX_HTML_ELEMENTS })));
     const inlineWorkBytes = utf8ByteLength(rendered.data) + Math.max(elementCount, 1) * utf8ByteLength(config.css);
     if (inlineWorkBytes > MAX_INLINE_WORK_BYTES) {
-      return fail(err.badInput("HTML and CSS are too complex to inline safely"));
+      return fail(err.badInput(t.htmlTooComplex));
     }
     if (budget && inlineWorkBytes > budget.remainingInlineWorkBytes) {
       budget.exhausted = true;
-      return fail(err.badInput("HTML template batch render budget exceeded"));
+      return fail(err.badInput(t.htmlBatchBudgetExceeded));
     }
     if (budget) budget.remainingInlineWorkBytes -= inlineWorkBytes;
     const html = config.css.trim()
@@ -84,15 +87,15 @@ export const renderHtmlTemplateValue = async (
         })
       : rendered.data;
     const outputBytes = utf8ByteLength(html);
-    if (outputBytes > HTML_TEMPLATE_RENDER_MAX_BYTES) return fail(err.badInput("rendered HTML is too large"));
+    if (outputBytes > HTML_TEMPLATE_RENDER_MAX_BYTES) return fail(err.badInput(t.renderedHtmlTooLarge));
     if (budget && outputBytes > budget.remainingOutputBytes) {
       budget.exhausted = true;
-      return fail(err.badInput("HTML template batch output budget exceeded"));
+      return fail(err.badInput(t.htmlBatchOutputExceeded));
     }
     if (budget) budget.remainingOutputBytes -= outputBytes;
     return ok(html);
   } catch (error) {
-    return fail(err.badInput(error instanceof Error ? error.message : "HTML template render failed"));
+    return fail(err.badInput(!isGermanDocumentLocale(locale) && error instanceof Error ? error.message : t.htmlRenderFailed));
   }
 };
 
@@ -202,7 +205,7 @@ export const enrichRecordsWithHtmlTemplates = async (
       }
       budget.remainingCells -= 1;
       try {
-        const rendered = await renderHtmlTemplateValue(validConfigs.get(field.id)!, context, budget);
+        const rendered = await renderHtmlTemplateValue(validConfigs.get(field.id)!, context, budget, options.dateConfig?.locale);
         if (!rendered.ok) throw new Error(rendered.error.message);
         record.data[field.id] = rendered.data;
       } catch (error) {

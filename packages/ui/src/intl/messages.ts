@@ -53,6 +53,7 @@ const uiMessages = i18n.define({
       noResults: "No results",
       nothingHere: "Nothing here yet.",
       nothingToShow: "Nothing to show.",
+      no: "No",
       options: "Options",
       pagination: "Pagination",
       pageOf: ({ page, total }: { page: number; total: number }) => `Page ${page} of ${total}`,
@@ -304,6 +305,7 @@ const uiMessages = i18n.define({
       textEditor: "Text editor",
       audioUnsupported: "Your browser does not support audio playback.",
       videoUnsupported: "Your browser does not support video playback.",
+      yes: "Yes",
     },
     de: {
       actions: "Aktionen",
@@ -354,6 +356,7 @@ const uiMessages = i18n.define({
       noResults: "Keine Ergebnisse",
       nothingHere: "Noch nichts vorhanden.",
       nothingToShow: "Nichts anzuzeigen.",
+      no: "Nein",
       options: "Optionen",
       pagination: "Seitennavigation",
       pageOf: ({ page, total }) => `Seite ${page} von ${total}`,
@@ -605,6 +608,7 @@ const uiMessages = i18n.define({
       textEditor: "Texteditor",
       audioUnsupported: "Dein Browser unterstützt keine Audiowiedergabe.",
       videoUnsupported: "Dein Browser unterstützt keine Videowiedergabe.",
+      yes: "Ja",
     },
   },
 });

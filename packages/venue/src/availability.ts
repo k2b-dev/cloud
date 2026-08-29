@@ -1,5 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import type { DateOverride, OpeningRule, PublicOpening, ShiftAssignment, ShiftTemplate, Venue } from "./contracts";
+import { venueMessages } from "./messages";
 
 type PublicAvailabilityInput = {
   venue: Pick<Venue, "openMode" | "timezone">;
@@ -13,6 +14,7 @@ type PublicAvailabilityInput = {
   >;
   now: Date;
   days?: number;
+  locale?: string;
 };
 
 export type PublicAvailability = {
@@ -34,8 +36,8 @@ const dateKeyAfterDays = (date: string, days: number, timezone: string): string 
 
 const weekdayFor = (dateKey: string): number => new Date(`${dateKey}T12:00:00Z`).getUTCDay();
 
-const formatDateTime = (iso: string, timezone: string): string =>
-  new Intl.DateTimeFormat("en", {
+const formatDateTime = (iso: string, timezone: string, locale: string): string =>
+  new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     weekday: "short",
     day: "2-digit",
@@ -45,8 +47,8 @@ const formatDateTime = (iso: string, timezone: string): string =>
     hourCycle: "h23",
   }).format(new Date(iso));
 
-const formatTimeRange = (opening: PublicOpening, timezone: string): string => {
-  const formatter = new Intl.DateTimeFormat("en", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const formatTimeRange = (opening: PublicOpening, timezone: string, locale: string): string => {
+  const formatter = new Intl.DateTimeFormat(locale, { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   return `${formatter.format(new Date(opening.startsAt))}-${formatter.format(new Date(opening.endsAt))}`;
 };
 
@@ -64,6 +66,7 @@ const deduplicateOpenings = (openings: PublicOpening[]): PublicOpening[] => {
 const isActiveAt = (opening: PublicOpening, now: Date): boolean => new Date(opening.startsAt) <= now && now < new Date(opening.endsAt);
 
 export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicAvailability => {
+  const { locale, t } = venueMessages.resolve(input.locale ? [input.locale] : []);
   const days = Math.max(1, input.days ?? 14);
   const timezone = input.venue.timezone;
   const today = dateKeyAt(input.now, timezone);
@@ -90,7 +93,7 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
       for (const window of windows) {
         regularOpenings.push({
           kind: "regular",
-          title: "Regular hours",
+          title: t.regularHours,
           startsAt: instantFor(date, window.startTime, timezone).toISOString(),
           endsAt: instantFor(date, window.endTime, timezone).toISOString(),
         });
@@ -133,7 +136,7 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
       if (overridesByDate.get(assignmentDate)?.kind === "closed") continue;
       dynamicOpenings.push({
         kind: "free",
-        title: "Additional opening",
+        title: t.additionalOpening,
         startsAt: assignment.startsAt,
         endsAt: assignment.endsAt,
       });
@@ -154,9 +157,11 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
     open,
     spontaneousOpen: open && !activeRegular && Boolean(activeDynamic),
     todayLabel:
-      todayWindows.length > 0 ? todayWindows.map((opening) => formatTimeRange(opening, timezone)).join(", ") : "No regular hours today",
-    nextOpeningLabel: nextOpening ? formatDateTime(nextOpening.startsAt, timezone) : null,
-    activeWindowLabel: open && activeOpening ? formatTimeRange(activeOpening, timezone) : null,
+      todayWindows.length > 0
+        ? todayWindows.map((opening) => formatTimeRange(opening, timezone, locale)).join(", ")
+        : t.noRegularHoursToday,
+    nextOpeningLabel: nextOpening ? formatDateTime(nextOpening.startsAt, timezone, locale) : null,
+    activeWindowLabel: open && activeOpening ? formatTimeRange(activeOpening, timezone, locale) : null,
     upcomingOpenings: upcomingDynamicOpenings.filter((opening) => new Date(opening.startsAt) > input.now).slice(0, 8),
   };
 };

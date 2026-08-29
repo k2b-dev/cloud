@@ -1,6 +1,7 @@
 import { fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 
 /**
  * Live-parent invariant helpers. The grids service contract is:
@@ -23,7 +24,7 @@ import type { SqlClient } from "./audit";
  * Verify the table and base are alive. Inside a transaction, the row locks
  * keep both parents alive until the caller's write commits.
  */
-export const requireTableAlive = async (tableId: string, client: SqlClient = sql): Promise<Result<void>> => {
+export const requireTableAlive = async (tableId: string, client: SqlClient = sql, locale?: string): Promise<Result<void>> => {
   const [row] = await client<{ id: string }[]>`
     SELECT t.id::text AS id
     FROM grids.tables t
@@ -35,14 +36,14 @@ export const requireTableAlive = async (tableId: string, client: SqlClient = sql
     ? ok()
     : fail({
         code: "CONFLICT",
-        message: "Parent table or base is trashed; restore the parent first",
+        message: getGridsCrudMessages(locale).parentTrashed,
         status: 409,
       });
 };
 
 /** Record mutations are only valid for stored tables. Federated tables are
  * read models; their publication grants never authorize writes to sources. */
-export const requireStoredTableWritable = async (tableId: string, client: SqlClient = sql): Promise<Result<void>> => {
+export const requireStoredTableWritable = async (tableId: string, client: SqlClient = sql, locale?: string): Promise<Result<void>> => {
   const [row] = await client<{ kind: string }[]>`
     SELECT t.kind
     FROM grids.tables t
@@ -53,7 +54,7 @@ export const requireStoredTableWritable = async (tableId: string, client: SqlCli
   if (!row) {
     return fail({
       code: "CONFLICT",
-      message: "Parent table or base is trashed; restore the parent first",
+      message: getGridsCrudMessages(locale).parentTrashed,
       status: 409,
     });
   }
@@ -61,7 +62,7 @@ export const requireStoredTableWritable = async (tableId: string, client: SqlCli
     ? ok()
     : fail({
         code: "BAD_INPUT",
-        message: "Combined tables are read-only. Update the source record instead.",
+        message: getGridsCrudMessages(locale).combinedReadOnly,
         status: 400,
       });
 };

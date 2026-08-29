@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { IpaProfileFieldsSchema, UpdateAvatarResponseSchema, UpdateAvatarSchema, UserSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, logger } from "@valentinkolb/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -239,6 +239,7 @@ const app = new Hono<AuthContext>()
             data,
             processedBy: adminUser.id,
             notificationSender,
+            locale: getLocale(c),
           });
           if (!result.ok) return result;
           if (data.provider === "local" && data.profile === "user" && data.admin) {
@@ -603,6 +604,7 @@ const app = new Hono<AuthContext>()
           subject,
           rawHtml,
           sentBy: actor.id,
+          locale: getLocale(c),
         });
         if (result.status === "error" || result.status === "suppressed") {
           return fail(err.badInput("The notification could not be delivered"));
@@ -633,6 +635,7 @@ const app = new Hono<AuthContext>()
           actor: toAccountsActor(expectUserBackedActor(c)),
           id,
           notificationSender,
+          locale: getLocale(c),
         });
         if (!result.ok) return result;
         return ok({ message: "Login link sent." });

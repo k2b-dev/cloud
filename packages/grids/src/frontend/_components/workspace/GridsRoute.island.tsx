@@ -1,14 +1,15 @@
-import { AppWorkspace, Placeholder } from "@k2b/ui";
+import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
-import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
 import DocumentsWorkspace from "../documents/DocumentsWorkspace";
+import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
 import QueryResultView from "../query/QueryResultView";
 import QueryWorkspace from "../query/QueryWorkspace";
 import RecordsView from "../records-view/RecordsView";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
+import { workspaceMessages } from "./messages";
 import { workspaceMainClass } from "./workspace-layout";
 import type {
   PublicOkWorkspaceState,
@@ -20,20 +21,8 @@ type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["rout
 type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind: "query" }>;
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
-const formOnlyEmptyText = (count: number) =>
-  count === 1
-    ? "You have access to 1 form. Choose it in the sidebar to fill it out."
-    : `You have access to ${count} forms. Choose one in the sidebar to fill it out.`;
-
-const limitedAccessEmptyText = (formCount: number, documentCount: number) => {
-  const parts = [
-    formCount > 0 ? `${formCount} form${formCount === 1 ? "" : "s"}` : "",
-    documentCount > 0 ? `${documentCount} document template${documentCount === 1 ? "" : "s"}` : "",
-  ].filter(Boolean);
-  return `You have access to ${parts.join(" and ")}. Choose one in the sidebar.`;
-};
-
 export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloudUrl: string }) {
+  const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = createSignal(route.kind === "workflows" ? route.selectedRunId : null);
@@ -220,16 +209,15 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
                   <Show
                     when={state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0}
                     fallback={
-                      state.canCreateTables
-                        ? state.adminModeRequested
-                          ? 'No tables yet. Choose "New table" in the sidebar.'
-                          : "No tables yet. Turn on Edit mode to create one."
-                        : "No tables. You don't have write access to create one."
+                      state.canCreateTables ? (state.adminModeRequested ? t.noTablesCreate : t.noTablesEditMode) : t.noTablesWriteAccess
                     }
                   >
                     {state.catalog.sidebarDocumentTemplates.length > 0
-                      ? limitedAccessEmptyText(state.catalog.sidebarForms.length, state.catalog.sidebarDocumentTemplates.length)
-                      : formOnlyEmptyText(state.catalog.sidebarForms.length)}
+                      ? t.limitedAccess({
+                          forms: state.catalog.sidebarForms.length,
+                          documents: state.catalog.sidebarDocumentTemplates.length,
+                        })
+                      : t.formOnlyAccess({ count: state.catalog.sidebarForms.length })}
                   </Show>
                 </>
               }

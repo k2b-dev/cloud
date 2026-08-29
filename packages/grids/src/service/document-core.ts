@@ -5,6 +5,7 @@ import type { Document, DocumentArtifact, DocumentTemplate } from "../contracts"
 import { type DocumentReadAuthorizer, loadReadableWorkflowRunDocumentScopes, workflowRunDocumentAccessWhere } from "./document-browse";
 import { type DocumentArtifactContent, type DocumentIssuanceActor, documentIssuanceService } from "./document-issuance";
 import { type DocumentDbRow, hydrateDocuments, loadDocumentArtifacts } from "./document-mappers";
+import { documentServiceText } from "./document-messages";
 import { buildLiveRenderData } from "./document-rendering";
 import { createRecordSnapshotDraft, type SnapshotRecordAccessResolver } from "./document-snapshots";
 import type { AuthorizedRecordAccess } from "./record-access";
@@ -32,15 +33,16 @@ export const createDocumentForRecord = async (params: {
   workflowStepKey?: string | null;
   renderPdf?: DocumentPdfRenderer;
 }): Promise<Result<Document>> => {
-  if (!params.template.enabled) return fail(err.badInput("Document template is disabled"));
-  if (params.template.tableId !== params.table.id) return fail(err.badInput("Document template does not belong to the table"));
+  const t = documentServiceText(params.dateConfig?.locale);
+  if (!params.template.enabled) return fail(err.badInput(t.templateDisabled));
+  if (params.template.tableId !== params.table.id) return fail(err.badInput(t.templateWrongTable));
 
   const record = await getRecord(params.table.id, params.recordId, {
     dateConfig: params.dateConfig,
     recordAccess: params.recordAccess,
     viewer: params.viewer,
   });
-  if (!record) return fail(err.notFound("record"));
+  if (!record) return fail(err.notFound(t.recordNotFound));
 
   const rendered = await buildLiveRenderData({
     template: params.template,
@@ -91,13 +93,14 @@ export const getDocumentByShortId = async (shortId: string): Promise<Document | 
 export const getDocumentArtifacts = async (documentId: string): Promise<DocumentArtifact[]> =>
   (await loadDocumentArtifacts([documentId])).get(documentId) ?? [];
 
-export const getDocumentArtifact = (documentId: string, key: string): Promise<Result<DocumentArtifactContent>> =>
-  documentIssuanceService.getDocumentArtifact(documentId, key);
+export const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
+  documentIssuanceService.getDocumentArtifact(documentId, key, locale);
 
-export const getDocumentPdf = async (document: Document): Promise<Result<RenderHtmlToPdfResult>> => {
+export const getDocumentPdf = async (document: Document, locale?: string): Promise<Result<RenderHtmlToPdfResult>> => {
+  const t = documentServiceText(locale);
   const pdf = document.artifacts.find((artifact) => artifact.key === "pdf");
-  if (!pdf || pdf.mimeType !== "application/pdf") return fail(err.internal("Document has no canonical PDF artifact."));
-  const stored = await getDocumentArtifact(document.id, "pdf");
+  if (!pdf || pdf.mimeType !== "application/pdf") return fail(err.internal(t.noCanonicalPdf));
+  const stored = await getDocumentArtifact(document.id, "pdf", locale);
   if (!stored.ok) return stored;
   if (
     stored.data.fileId !== pdf.fileId ||
@@ -106,22 +109,24 @@ export const getDocumentPdf = async (document: Document): Promise<Result<RenderH
     stored.data.sizeBytes !== pdf.sizeBytes ||
     stored.data.sha256 !== pdf.sha256
   )
-    return fail(err.internal("Stored Document artifact metadata failed its integrity check."));
+    return fail(err.internal(t.artifactMetadataIntegrityFailed));
   return ok({ pdf: stored.data.bytes, contentType: "application/pdf" });
 };
 
 export const renderWorkflowDocumentsPdf = async (
   workflowRunId: string,
   canRead: DocumentReadAuthorizer,
+  locale?: string,
 ): Promise<Result<RenderHtmlToPdfResult & { filename: string; documentCount: number }>> => {
+  const t = documentServiceText(locale);
   const accessWhere = workflowRunDocumentAccessWhere(await loadReadableWorkflowRunDocumentScopes(workflowRunId, canRead));
   const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
     SELECT count(*)::int AS count FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid AND (${accessWhere})
   `;
-  if (count === 0) return fail(err.badInput("Workflow run did not generate any documents."));
+  if (count === 0) return fail(err.badInput(t.noWorkflowDocuments));
   if (count > WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS) {
-    return fail(err.badInput(`Combined PDF download supports at most ${WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS} documents per workflow run.`));
+    return fail(err.badInput(t.workflowDocumentLimit({ limit: WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS })));
   }
   const rows = await sql<DocumentDbRow[]>`
     SELECT * FROM grids.documents
@@ -131,7 +136,7 @@ export const renderWorkflowDocumentsPdf = async (
   const documents = await hydrateDocuments(rows);
   const files: Array<{ pdf: Uint8Array; filename: string }> = [];
   for (const document of documents) {
-    const pdf = await getDocumentPdf(document);
+    const pdf = await getDocumentPdf(document, locale);
     if (!pdf.ok) return pdf;
     files.push({ pdf: pdf.data.pdf, filename: document.filename });
   }

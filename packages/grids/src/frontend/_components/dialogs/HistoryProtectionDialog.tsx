@@ -1,5 +1,16 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, InlineGuidance, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, prompts, Select } from "@k2b/ui";
+import {
+  Button,
+  dialogCore,
+  InlineGuidance,
+  NoticeCard,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  prompts,
+  Select,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicDurableHistoryStatus } from "../../../api/durable-history";
@@ -7,19 +18,23 @@ import type { PublicRecordFinalizationStatus } from "../../../api/record-finaliz
 import type { PrincipalReference } from "../../../field-types/principal";
 import PrincipalInput from "../forms/PrincipalInput";
 import { errorMessage } from "../utils/api-helpers";
+import { gridsDialogMessages } from "./messages";
 
 export const openHistoryProtectionDialog = (args: { tableId: string; tableName: string }) =>
-  dialogCore.open<void>(
-    (close) => (
+  dialogCore.open<void>((close) => {
+    const locale = useLocale();
+    const t = () => gridsDialogMessages.resolve([locale()]).t;
+    return (
       <PanelDialog>
-        <PanelDialog.Header title="History and protection" subtitle={args.tableName} icon="ti ti-history" close={close} />
+        <PanelDialog.Header title={t().historyProtection} subtitle={args.tableName} icon="ti ti-history" close={close} />
         <HistoryProtectionBody tableId={args.tableId} />
       </PanelDialog>
-    ),
-    panelDialogOptions,
-  );
+    );
+  }, panelDialogOptions);
 
 function HistoryProtectionBody(props: { tableId: string }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const statusQuery = query.create({
     source: () => props.tableId,
     load: async (tableId, { abortSignal }) => {
@@ -27,8 +42,8 @@ function HistoryProtectionBody(props: { tableId: string }) {
         apiClient.tables[":tableId"]["durable-history"].$get({ param: { tableId } }, { init: { signal: abortSignal } }),
         apiClient.tables[":tableId"].finalization.$get({ param: { tableId } }, { init: { signal: abortSignal } }),
       ]);
-      if (!historyResponse.ok) throw new Error(await errorMessage(historyResponse, "Could not load durable history status"));
-      if (!finalizationResponse.ok) throw new Error(await errorMessage(finalizationResponse, "Could not load finalization status"));
+      if (!historyResponse.ok) throw new Error(await errorMessage(historyResponse, t().historyLoadFailed));
+      if (!finalizationResponse.ok) throw new Error(await errorMessage(finalizationResponse, t().finalizationLoadFailed));
       return {
         history: await historyResponse.json(),
         finalization: await finalizationResponse.json(),
@@ -75,20 +90,20 @@ function HistoryProtectionBody(props: { tableId: string }) {
         operation === "enable"
           ? await apiClient.tables[":tableId"]["durable-history"].enable.$post({ param: { tableId: props.tableId } })
           : await apiClient.tables[":tableId"]["durable-history"].continue.$post({ param: { tableId: props.tableId } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not activate durable history"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().historyEnableFailed));
       let status = await response.json();
       while (status.enabled && status.status === "activating") {
         const captured = status.baseline.captured;
         response = await apiClient.tables[":tableId"]["durable-history"].continue.$post({ param: { tableId: props.tableId } });
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not continue the history baseline"));
+        if (!response.ok) throw new Error(await errorMessage(response, t().historyContinueFailed));
         status = await response.json();
         if (status.enabled && status.status === "activating" && status.baseline.captured <= captured) {
-          throw new Error("The baseline is waiting for records that are currently changing. Try Continue baseline again.");
+          throw new Error(t().baselineWaiting);
         }
       }
       return status;
     },
-    onSuccess: () => refreshAfterChange("Durable history changed, but the current status could not be refreshed."),
+    onSuccess: () => refreshAfterChange(t().historyRefreshFailed),
     onError: (error) => {
       void statusQuery.refresh();
       prompts.error(error.message);
@@ -96,10 +111,7 @@ function HistoryProtectionBody(props: { tableId: string }) {
   });
 
   const enableHistory = async () => {
-    const confirmed = await prompts.confirm(
-      "History starts with the records as they are now. Earlier changes are not added later. Future versions and their files are kept permanently, storage use increases, and this cannot be disabled.",
-      { title: "Enable durable history?", confirmText: "Enable durable history" },
-    );
+    const confirmed = await prompts.confirm(t().historyEnableConfirm, { title: t().historyEnableQuestion, confirmText: t().enableHistory });
     if (confirmed) historyMut.mutate("enable");
   };
 
@@ -112,28 +124,29 @@ function HistoryProtectionBody(props: { tableId: string }) {
               json: policyMode() === "fourEyes" ? { mode: "fourEyes", approverGroupId: approverGroup()!.id } : { mode: "direct" },
             })
           : await apiClient.tables[":tableId"].finalization.disable.$post({ param: { tableId: props.tableId } });
-      if (!response.ok) throw new Error(await errorMessage(response, `Could not ${operation} finalization`));
+      if (!response.ok)
+        throw new Error(
+          await errorMessage(
+            response,
+            t().finalizationActionFailed({ action: operation === "enable" ? t().enableAction : t().disableAction }),
+          ),
+        );
       return response.json();
     },
-    onSuccess: () => refreshAfterChange("Finalization changed, but the current status could not be refreshed."),
+    onSuccess: () => refreshAfterChange(t().finalizationRefreshFailed),
     onError: (error) => prompts.error(error.message),
   });
 
   const changeFinalization = async (operation: "enable" | "disable") => {
     if (operation === "enable" && policyMode() === "fourEyes" && !approverGroup()) {
-      prompts.error("Choose an approver group before enabling Four-eyes Finalization.");
+      prompts.error(t().chooseApproverFirst);
       return;
     }
-    const confirmed = await prompts.confirm(
-      operation === "enable"
-        ? "Records stay drafts until someone finalizes them. A finalized record, its files and relations can never be changed or removed."
-        : "Draft records remain editable. You can enable Finalization again later.",
-      {
-        title: operation === "enable" ? "Enable record finalization?" : "Disable record finalization?",
-        confirmText: operation === "enable" ? "Enable finalization" : "Disable finalization",
-        ...(operation === "disable" ? { variant: "danger" as const } : {}),
-      },
-    );
+    const confirmed = await prompts.confirm(operation === "enable" ? t().enableFinalizationConfirm : t().disableFinalizationConfirm, {
+      title: operation === "enable" ? t().enableFinalizationQuestion : t().disableFinalizationQuestion,
+      confirmText: operation === "enable" ? t().enableFinalization : t().disableFinalization,
+      ...(operation === "disable" ? { variant: "danger" as const } : {}),
+    });
     if (confirmed) finalizationMut.mutate(operation);
   };
 
@@ -143,10 +156,10 @@ function HistoryProtectionBody(props: { tableId: string }) {
         param: { tableId: props.tableId },
         json: policy,
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not update the Finalization policy"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().policyUpdateFailed));
       return response.json();
     },
-    onSuccess: () => refreshAfterChange("The Finalization policy was saved, but the current status could not be refreshed."),
+    onSuccess: () => refreshAfterChange(t().policyRefreshFailed),
     onError: (error) => {
       void statusQuery.refresh();
       prompts.error(error.message);
@@ -164,71 +177,56 @@ function HistoryProtectionBody(props: { tableId: string }) {
   const savePolicy = async () => {
     const group = approverGroup();
     if (policyMode() === "fourEyes" && (!group || group.type !== "group")) {
-      prompts.error("Choose the group whose members may approve Finalization requests.");
+      prompts.error(t().chooseApproverGroup);
       return;
     }
     const current = enabledFinalizationStatus();
     const weakening = current?.mode === "fourEyes" && policyMode() === "direct";
-    const confirmed = await prompts.confirm(
-      policyMode() === "fourEyes"
-        ? "People with Write access will only be able to request Finalization. A different current member of the selected group must approve before the Record is locked. Open requests become invalid when this policy changes."
-        : "People with Write access will be able to finalize Records themselves. Open Four-eyes requests become invalid.",
-      {
-        title: policyMode() === "fourEyes" ? "Require Four-eyes Finalization?" : "Allow Direct Finalization?",
-        confirmText: "Change Finalization mode",
-        ...(weakening ? { variant: "danger" as const } : {}),
-      },
-    );
+    const confirmed = await prompts.confirm(policyMode() === "fourEyes" ? t().fourEyesConfirm : t().directConfirm, {
+      title: policyMode() === "fourEyes" ? t().requireFourEyesQuestion : t().allowDirectQuestion,
+      confirmText: t().changeFinalizationMode,
+      ...(weakening ? { variant: "danger" as const } : {}),
+    });
     if (!confirmed) return;
     policyMut.mutate(policyMode() === "fourEyes" ? { mode: "fourEyes", approverGroupId: group!.id } : { mode: "direct" });
   };
 
   return (
     <PanelDialog.Body>
-      <NoticeCard
-        tone="info"
-        title="Keep a history, then lock finished records"
-        detail="Durable history lets you look back at earlier versions of records and their files. Finalization lets you lock a finished record so its values, files, and relations can no longer be changed or removed. Durable history must be enabled first and cannot be turned off later."
-      />
-      <Show when={!statusQuery.loading()} fallback={<Placeholder state="loading" align="left" title="Loading history and protection…" />}>
+      <NoticeCard tone="info" title={t().historyIntro} detail={t().historyIntroDetail} />
+      <Show when={!statusQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingHistory} />}>
         <Show
           when={!statusQuery.error()}
           fallback={
             <Placeholder
               state="error"
               align="left"
-              title="History and protection are unavailable"
+              title={t().historyUnavailable}
               description={statusQuery.error()?.message}
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => void statusQuery.refresh()}>
-                  Retry
+                  {t().retry}
                 </Button>
               }
             />
           }
         >
           <Show when={statusQuery.data()}>
-            <PanelDialog.Section
-              title="Durable history"
-              subtitle="Review earlier versions of records and their files."
-              icon="ti ti-history"
-            >
+            <PanelDialog.Section title={t().durableHistory} subtitle={t().durableHistoryDetail} icon="ti ti-history">
               <Show
                 when={enabledHistoryStatus()}
                 fallback={
                   <div class="flex flex-col items-start gap-3">
-                    <InlineGuidance>
-                      History begins with the records as they are now. Changes made before you enable it are not added later.
-                    </InlineGuidance>
+                    <InlineGuidance>{t().historyStartsNow}</InlineGuidance>
                     <Button
                       variant="primary"
                       size="sm"
                       type="button"
                       onClick={() => void enableHistory()}
                       loading={historyMut.loading()}
-                      loadingLabel="Enabling durable history"
+                      loadingLabel={t().enablingHistory}
                     >
-                      <i class="ti ti-history" aria-hidden="true" /> Enable durable history
+                      <i class="ti ti-history" aria-hidden="true" /> {t().enableHistory}
                     </Button>
                   </div>
                 }
@@ -238,11 +236,11 @@ function HistoryProtectionBody(props: { tableId: string }) {
                     <NoticeCard
                       class="w-full"
                       tone={status().status === "active" ? "success" : "warning"}
-                      title={status().status === "active" ? "Durable history is on" : "Preparing durable history"}
+                      title={status().status === "active" ? t().historyOn : t().preparingHistory}
                       detail={
                         status().status === "active"
-                          ? `Active since ${new Date(status().activatedAt).toLocaleString()}. It cannot be turned off.`
-                          : `${status().baseline.captured} of ${status().baseline.total} existing records are ready.`
+                          ? t().historyActiveSince({ date: new Date(status().activatedAt).toLocaleString(locale()) })
+                          : t().historyProgress({ captured: status().baseline.captured, total: status().baseline.total })
                       }
                     />
                     <Show when={status().status === "activating"}>
@@ -252,9 +250,9 @@ function HistoryProtectionBody(props: { tableId: string }) {
                         type="button"
                         onClick={() => historyMut.mutate("continue")}
                         loading={historyMut.loading()}
-                        loadingLabel="Saving existing records"
+                        loadingLabel={t().savingExisting}
                       >
-                        Continue setup
+                        {t().continueSetup}
                       </Button>
                     </Show>
                   </div>
@@ -262,7 +260,7 @@ function HistoryProtectionBody(props: { tableId: string }) {
               </Show>
             </PanelDialog.Section>
 
-            <PanelDialog.Section title="Record finalization" subtitle="Lock finished records against future changes." icon="ti ti-lock">
+            <PanelDialog.Section title={t().recordFinalization} subtitle={t().recordFinalizationDetail} icon="ti ti-lock">
               <Show when={finalizationStatus()}>
                 {(status) => (
                   <Show
@@ -270,25 +268,23 @@ function HistoryProtectionBody(props: { tableId: string }) {
                     fallback={
                       <div class="flex flex-col items-start gap-3">
                         <InlineGuidance tone={status().durableHistory === "active" ? "neutral" : "warning"}>
-                          {status().durableHistory === "active"
-                            ? "Finalization is off. Records remain editable until you explicitly finalize them."
-                            : "Turn on Durable History before enabling finalization."}
+                          {status().durableHistory === "active" ? t().finalizationOff : t().enableHistoryFirst}
                         </InlineGuidance>
                         <div class="flex w-full flex-col gap-3">
                           <Select
-                            label="Finalization mode"
-                            description="Choose whether a writer may finalize directly or needs approval from another person."
+                            label={t().finalizationMode}
+                            description={t().finalizationModeDetail}
                             options={[
                               {
                                 id: "direct",
-                                label: "Direct",
-                                description: "People with Write access can finalize Records themselves.",
+                                label: t().direct,
+                                description: t().directDetail,
                                 icon: "ti ti-lock",
                               },
                               {
                                 id: "fourEyes",
-                                label: "Four-eyes",
-                                description: "One person requests Finalization; a different approver reviews it.",
+                                label: t().fourEyes,
+                                description: t().fourEyesDetail,
                                 icon: "ti ti-users-group",
                               },
                             ]}
@@ -300,8 +296,8 @@ function HistoryProtectionBody(props: { tableId: string }) {
                           />
                           <Show when={policyMode() === "fourEyes"}>
                             <PrincipalInput
-                              label="Approver group"
-                              description="A different current member of this group must also have Write access to approve. Selecting a group does not grant access."
+                              label={t().approverGroup}
+                              description={t().approverGroupDetail}
                               value={approverGroup() ? [approverGroup()!] : null}
                               multi={false}
                               types={["group"]}
@@ -317,9 +313,9 @@ function HistoryProtectionBody(props: { tableId: string }) {
                           disabled={status().durableHistory !== "active" || (policyMode() === "fourEyes" && !approverGroup())}
                           onClick={() => void changeFinalization("enable")}
                           loading={finalizationMut.loading()}
-                          loadingLabel="Enabling finalization"
+                          loadingLabel={t().enablingFinalization}
                         >
-                          <i class="ti ti-lock" /> Enable finalization
+                          <i class="ti ti-lock" /> {t().enableFinalization}
                         </Button>
                       </div>
                     }
@@ -329,31 +325,31 @@ function HistoryProtectionBody(props: { tableId: string }) {
                         <NoticeCard
                           class="w-full"
                           tone="success"
-                          title="Finalization is on"
+                          title={t().finalizationOn}
                           detail={
                             enabled().finalizedCount === 0
                               ? enabled().mode === "fourEyes"
-                                ? `People request Finalization; a different member of ${enabled().approverGroupName ?? "the approver group"} approves it.`
-                                : "People with Write access can finalize Records directly."
-                              : `${enabled().finalizedCount} record(s) are finalized and can no longer be changed.`
+                                ? t().fourEyesStatus({ group: enabled().approverGroupName ?? t().defaultApproverGroup })
+                                : t().directDetail
+                              : t().finalizedCount({ count: enabled().finalizedCount })
                           }
                         />
                         <div class="flex w-full flex-col gap-3">
                           <div class="flex flex-col gap-3">
                             <Select
-                              label="Finalization mode"
-                              description="Choose whether a writer may finalize directly or needs approval from another person."
+                              label={t().finalizationMode}
+                              description={t().finalizationModeDetail}
                               options={[
                                 {
                                   id: "direct",
-                                  label: "Direct",
-                                  description: "People with Write access can finalize Records themselves.",
+                                  label: t().direct,
+                                  description: t().directDetail,
                                   icon: "ti ti-lock",
                                 },
                                 {
                                   id: "fourEyes",
-                                  label: "Four-eyes",
-                                  description: "One person requests Finalization; a different approver reviews it.",
+                                  label: t().fourEyes,
+                                  description: t().fourEyesDetail,
                                   icon: "ti ti-users-group",
                                 },
                               ]}
@@ -365,8 +361,8 @@ function HistoryProtectionBody(props: { tableId: string }) {
                             />
                             <Show when={policyMode() === "fourEyes"}>
                               <PrincipalInput
-                                label="Approver group"
-                                description="A different current member of this group must also have Write access to approve. Selecting a group does not grant access."
+                                label={t().approverGroup}
+                                description={t().approverGroupDetail}
                                 value={approverGroup() ? [approverGroup()!] : null}
                                 multi={false}
                                 types={["group"]}
@@ -384,9 +380,9 @@ function HistoryProtectionBody(props: { tableId: string }) {
                               type="button"
                               onClick={() => void changeFinalization("disable")}
                               loading={finalizationMut.loading()}
-                              loadingLabel="Disabling finalization"
+                              loadingLabel={t().disablingFinalization}
                             >
-                              Disable finalization
+                              {t().disableFinalization}
                             </Button>
                           </Show>
                           <Show when={policyChanged()}>
@@ -397,10 +393,10 @@ function HistoryProtectionBody(props: { tableId: string }) {
                               type="button"
                               onClick={() => void savePolicy()}
                               loading={policyMut.loading()}
-                              loadingLabel="Saving Finalization mode"
+                              loadingLabel={t().savingFinalizationMode}
                               disabled={policyMode() === "fourEyes" && !approverGroup()}
                             >
-                              <i class="ti ti-device-floppy" aria-hidden="true" /> Save Finalization mode
+                              <i class="ti ti-device-floppy" aria-hidden="true" /> {t().saveFinalizationMode}
                             </Button>
                           </Show>
                         </div>

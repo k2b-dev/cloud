@@ -249,6 +249,7 @@ export type LoadWorkspaceParams = {
   activeCustomAppSlug?: string | null;
   initialDocumentViewMode?: GridsDocumentViewMode;
   dateConfig?: DateContext;
+  locale?: string;
 };
 
 export type WorkspaceChrome = {

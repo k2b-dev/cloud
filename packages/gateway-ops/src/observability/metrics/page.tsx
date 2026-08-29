@@ -1,13 +1,13 @@
 import { StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatDate, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import { gatewayOpsMessages } from "../../messages";
 import MetricsCatalogue, { type MetricsCatalogueRow } from "./_components/MetricsCatalogue.island";
 import MetricsTokens from "./_components/MetricsTokens.island";
 import { getMetricsSnapshot, listMetricsTokens, METRICS_ENDPOINT, type MetricsSnapshot } from "./service";
 
-const numberFormat = new Intl.NumberFormat("de-DE");
 const parseMetricMetadata = (text: string): Map<string, { description: string; type: string; series: number }> => {
   const metrics = new Map<string, { description: string; type: string; series: number }>();
   for (const line of text.split("\n")) {
@@ -58,6 +58,9 @@ const buildMetricRows = (snapshot: MetricsSnapshot): MetricsCatalogueRow[] => {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const [snapshot, tokens] = await Promise.all([getMetricsSnapshot(), listMetricsTokens()]);
   const okCollectors = snapshot.collectors.filter((collector) => collector.status === "ok").length;
   const unhealthyCollectors = snapshot.collectors.filter((collector) => collector.status !== "ok");
@@ -67,24 +70,24 @@ export default ssr<AuthContext>(async (c) => {
   );
 
   return () => (
-    <AdminLayout c={c} title="Metrics">
+    <AdminLayout c={c} title={t.metrics}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-metrics-title">
-          <h1 class="text-base font-semibold text-primary">Metrics</h1>
-          <p class="mt-1 text-xs text-dimmed">Prometheus-compatible Cloud metrics for Pulse or external scrapers.</p>
+          <h1 class="text-base font-semibold text-primary">{t.metrics}</h1>
+          <p class="mt-1 text-xs text-dimmed">{t.metricsDescription}</p>
         </div>
 
         <StatGrid columns={4}>
           <StatCell
-            label="Scrape endpoint"
+            label={t.scrapeEndpoint}
             value={METRICS_ENDPOINT}
-            sub={`${formatNumber(snapshot.series)} series · bearer token required`}
+            sub={t.seriesTokenRequired({ count: formatNumber(snapshot.series, { locale }) })}
             accent={{ tone: "blue", icon: "ti ti-plug" }}
           />
           <StatCell
-            label="Collectors"
+            label={t.collectors}
             value={`${okCollectors}/${snapshot.collectors.length}`}
-            sub={unhealthyCollectors.length > 0 ? unhealthyCollectors.map((collector) => collector.name).join(", ") : "healthy"}
+            sub={unhealthyCollectors.length > 0 ? unhealthyCollectors.map((collector) => collector.name).join(", ") : t.healthy}
             valueClass={unhealthyCollectors.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
             title={
               unhealthyCollectors.map((collector) => `${collector.name}: ${collector.error ?? collector.status}`).join("\n") || undefined
@@ -93,11 +96,11 @@ export default ssr<AuthContext>(async (c) => {
               unhealthyCollectors.length === 0 ? { tone: "emerald", icon: "ti ti-check" } : { tone: "amber", icon: "ti ti-alert-triangle" }
             }
           />
-          <StatCell label="Series" value={formatNumber(snapshot.series)} sub="last payload" />
-          <StatCell label="Tokens" value={formatNumber(tokens.length)} sub="active" accent={{ tone: "zinc", icon: "ti ti-key" }} />
+          <StatCell label={t.series} value={formatNumber(snapshot.series, { locale })} sub={t.lastPayload} />
+          <StatCell label={t.tokens} value={formatNumber(tokens.length, { locale })} sub={t.active} accent={{ tone: "zinc", icon: "ti ti-key" }} />
         </StatGrid>
 
-        <p class="text-[10px] text-dimmed">Last generated {formatDate(snapshot.generatedAt)}. Collection is cached for short scrapes.</p>
+        <p class="text-[10px] text-dimmed">{t.metricsGenerated({ date: formatDate(snapshot.generatedAt, dateConfig) })}</p>
 
         <MetricsTokens tokens={tokens} />
 

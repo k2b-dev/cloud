@@ -40,6 +40,7 @@ import { logAudit } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortIdForDb } from "./short-id";
 import { workflowConflict } from "./workflow-errors";
+import { workflowServiceText } from "./workflow-service-messages";
 
 /** The kernel partitions by app and scope; for Grids a scope is a base. */
 export const GRIDS_APP_ID = "grids";
@@ -686,6 +687,8 @@ export type StartWorkflowRunInput = {
  * activation.
  */
 export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Result<WorkflowInvocationReceipt>> => {
+  const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
+  const t = workflowServiceText(locale);
   const scopeId = input.workflow.baseId;
   const snapshot = gridsAuthorizationSnapshot(input.principal, input.authorization, input.launcherId ?? null);
   const occurredAt = new Date(input.occurredAt);
@@ -713,7 +716,7 @@ export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Re
      * wearing the same key — which would otherwise be silently ignored.
      */
     if (profile.requestFingerprint !== input.requestFingerprint) {
-      return fail(workflowConflict("This idempotency key was already used for a different request."));
+      return fail(workflowConflict(t.idempotencyConflict));
     }
     return created;
   });
@@ -738,6 +741,7 @@ const startFromEvent = async (
   occurredAt: Date,
   tx: SqlClient,
 ): Promise<Result<{ runId: string; created: boolean }>> => {
+  const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
   const emission = await emitWorkflowEvent(
     {
       appId: GRIDS_APP_ID,
@@ -758,7 +762,7 @@ const startFromEvent = async (
   if (!runId) {
     // No activation matched. A workflow is always listening for a direct
     // invocation, so this means it was disabled between the check and here.
-    return fail(err.badInput("workflow is not accepting runs"));
+    return fail(err.badInput(workflowServiceText(locale).workflowNotAcceptingRuns));
   }
   return ok({ runId, created: !emission.duplicate });
 };
@@ -770,13 +774,14 @@ const startDryRun = async (
   occurredAt: Date,
   tx: SqlClient,
 ): Promise<Result<{ runId: string; created: boolean }>> => {
+  const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
   const [version] = await tx<Array<{ id: string }>>`
     SELECT id::text AS id FROM workflows.version
     WHERE workflow_id = ${input.workflow.id}::uuid
     ORDER BY revision DESC
     LIMIT 1
   `;
-  if (!version) return fail(err.notFound("workflow version"));
+  if (!version) return fail({ ...err.notFound("workflow version"), message: workflowServiceText(locale).workflowVersionNotFound });
   const existing = await tx<Array<{ id: string }>>`
     SELECT id::text AS id FROM workflows.run
     WHERE workflow_id = ${input.workflow.id}::uuid AND mode = 'dryRun' AND idempotency_key = ${input.idempotencyKey}

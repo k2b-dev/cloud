@@ -1,0 +1,18 @@
+import { i18n } from "@k2b/stdlib";
+
+export const faqMessages = i18n.define({ baseLocale: "en", messages: {
+  en: {
+    start: "Start", anonymous: "Public", anonymousFull: "Public (not signed in)", anonymousDescription: "Visible to everyone, including visitors who are not signed in.", guests: "Guests", guestsDescription: "Visible to local guest accounts.", users: "Users", fullUsers: "Full users", usersDescription: "Visible to local user and IPA user accounts.",
+    entryCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 entry", other: `${count} entries` }), visibleAt: "visible at", noEntries: "No FAQ entries are available.", noAdminEntries: "No FAQ entries yet. Create the first entry with New entry.",
+    newEntry: "New entry", creating: "Creating entry", createTitle: "New FAQ entry", create: "Create", question: "Question", questionPlaceholder: "What is …?", answer: "Answer (Markdown)", answerPlaceholder: "Markdown supports links, code blocks, lists, and more.", chooseAudience: "Select at least one audience.", createFailed: "The FAQ entry could not be created.", created: "FAQ entry created",
+    editTitle: "Edit FAQ entry", edit: "Edit FAQ entry", save: "Save", updateFailed: "The FAQ entry could not be updated.", updated: "FAQ entry updated", editLabel: ({ question }: { question: string }) => `Edit ${question}`, editingLabel: ({ question }: { question: string }) => `Editing ${question}`,
+    deleteQuestion: ({ question }: { question: string }) => `Delete the FAQ entry “${question}”? This cannot be undone.`, deleteTitle: "Delete FAQ entry?", delete: "Delete", cancel: "Cancel", deleteFailed: "The FAQ entry could not be deleted.", deleted: "FAQ entry deleted", deleteLabel: ({ question }: { question: string }) => `Delete ${question}`, deletingLabel: ({ question }: { question: string }) => `Deleting ${question}`,
+  },
+  de: {
+    start: "Start", anonymous: "Öffentlich", anonymousFull: "Öffentlich (ohne Anmeldung)", anonymousDescription: "Für alle sichtbar, auch ohne Anmeldung.", guests: "Gäste", guestsDescription: "Für lokale Gastkonten sichtbar.", users: "Benutzer", fullUsers: "Vollwertige Benutzer", usersDescription: "Für lokale Benutzer- und IPA-Benutzerkonten sichtbar.",
+    entryCount: ({ count }) => i18n.plural(count, "de", { one: "1 Eintrag", other: `${count} Einträge` }), visibleAt: "sichtbar unter", noEntries: "Keine FAQ-Einträge verfügbar.", noAdminEntries: "Noch keine FAQ-Einträge. Erstelle über „Neuer Eintrag“ den ersten Eintrag.",
+    newEntry: "Neuer Eintrag", creating: "Eintrag wird erstellt", createTitle: "Neuer FAQ-Eintrag", create: "Erstellen", question: "Frage", questionPlaceholder: "Was ist …?", answer: "Antwort (Markdown)", answerPlaceholder: "Markdown unterstützt Links, Codeblöcke, Listen und mehr.", chooseAudience: "Wähle mindestens eine Zielgruppe aus.", createFailed: "Der FAQ-Eintrag konnte nicht erstellt werden.", created: "FAQ-Eintrag erstellt",
+    editTitle: "FAQ-Eintrag bearbeiten", edit: "FAQ-Eintrag bearbeiten", save: "Speichern", updateFailed: "Der FAQ-Eintrag konnte nicht aktualisiert werden.", updated: "FAQ-Eintrag aktualisiert", editLabel: ({ question }) => `${question} bearbeiten`, editingLabel: ({ question }) => `${question} wird bearbeitet`,
+    deleteQuestion: ({ question }) => `FAQ-Eintrag „${question}“ löschen? Diese Aktion kann nicht rückgängig gemacht werden.`, deleteTitle: "FAQ-Eintrag löschen?", delete: "Löschen", cancel: "Abbrechen", deleteFailed: "Der FAQ-Eintrag konnte nicht gelöscht werden.", deleted: "FAQ-Eintrag gelöscht", deleteLabel: ({ question }) => `${question} löschen`, deletingLabel: ({ question }) => `${question} wird gelöscht`,
+  },
+} });

@@ -1,7 +1,8 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, NoticeCard, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { venueMessages } from "../../messages";
 
 const readError = async (res: Response, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -9,6 +10,8 @@ const readError = async (res: Response, fallback: string): Promise<string> => {
 };
 
 function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted: () => void }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const [rating, setRating] = createSignal(4);
   const [hoverRating, setHoverRating] = createSignal<number | null>(null);
   const [comment, setComment] = createSignal("");
@@ -19,12 +22,12 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
         param: { id: props.venueId },
         json: { rating: rating(), comment: comment().trim() || null },
       });
-      if (!res.ok) throw new Error(await readError(res, "Failed to submit feedback."));
+      if (!res.ok) throw new Error(await readError(res, t().submitFeedbackFailed));
     },
     onSuccess: () => {
       setRating(4);
       setComment("");
-      toast.success("Thank you for your feedback");
+      toast.success(t().feedbackThanksToast);
       props.onSubmitted();
     },
     onError: (err) => prompts.error(err.message),
@@ -33,9 +36,9 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
   return (
     <div class="grid gap-4">
       <NoticeCard tone="neutral" icon={false}>
-        Your feedback is completely anonymous. We only store the rating, optional comment, and submission time.
+        {t().anonymousFeedbackPrivacy}
       </NoticeCard>
-      <div class="grid grid-cols-5 gap-2" role="group" aria-label="Rating" onMouseLeave={() => setHoverRating(null)}>
+      <div class="grid grid-cols-5 gap-2" role="group" aria-label={t().rating} onMouseLeave={() => setHoverRating(null)}>
         <For each={[1, 2, 3, 4, 5]}>
           {(value) => {
             const active = () => value <= (hoverRating() ?? rating());
@@ -49,7 +52,7 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
                   "border-amber-200 bg-amber-50 text-amber-600": active() && !focused(),
                   "border-zinc-200 bg-zinc-50 text-zinc-300 hover:border-amber-200 hover:bg-amber-50 hover:text-amber-500": !active(),
                 }}
-                aria-label={`${value} star${value === 1 ? "" : "s"}`}
+                aria-label={t().starRating({ count: value })}
                 onMouseEnter={() => setHoverRating(value)}
                 onFocus={() => setHoverRating(value)}
                 onBlur={() => setHoverRating(null)}
@@ -62,9 +65,9 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
         </For>
       </div>
       <TextInput
-        label="Comment"
+        label={t().comment}
         icon="ti ti-message"
-        placeholder="Optional comment"
+        placeholder={t().optionalComment}
         value={comment}
         onValueChange={setComment}
         multiline
@@ -78,17 +81,19 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
         disabled={submit.loading()}
         onClick={() => submit.mutate()}
       >
-        {submit.loading() ? "Submitting..." : "Submit feedback"}
+        {submit.loading() ? t().submitting : t().submitFeedback}
       </Button>
     </div>
   );
 }
 
 export default function PublicFeedbackForm(props: { venueId: string; accentColor: string; variant?: "button" | "page" }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const [submitted, setSubmitted] = createSignal(false);
   const openFeedback = () => {
     void prompts.dialog<void>((close) => <FeedbackForm venueId={props.venueId} accentColor={props.accentColor} onSubmitted={close} />, {
-      title: "Share feedback",
+      title: t().shareFeedback,
       icon: "ti ti-star",
       size: "small",
     });
@@ -107,8 +112,8 @@ export default function PublicFeedbackForm(props: { venueId: string; accentColor
               <i class="ti ti-check" />
             </span>
             <div>
-              <h2 class="text-xl font-semibold text-zinc-950">Thank you</h2>
-              <p class="mt-1 text-sm text-zinc-600">Your anonymous feedback was submitted.</p>
+              <h2 class="text-xl font-semibold text-zinc-950">{t().thankYou}</h2>
+              <p class="mt-1 text-sm text-zinc-600">{t().feedbackSubmitted}</p>
             </div>
           </div>
         }
@@ -133,8 +138,8 @@ export default function PublicFeedbackForm(props: { venueId: string; accentColor
           <i class="ti ti-star" />
         </span>
         <span>
-          <span class="block text-base font-semibold text-zinc-950">Feedback</span>
-          <span class="block text-xs text-zinc-500">Anonymous rating</span>
+          <span class="block text-base font-semibold text-zinc-950">{t().feedback}</span>
+          <span class="block text-xs text-zinc-500">{t().anonymousRating}</span>
         </span>
       </span>
       <i class="ti ti-message-star text-xl text-zinc-500" aria-hidden="true" />

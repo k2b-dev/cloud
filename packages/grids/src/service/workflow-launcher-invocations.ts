@@ -1,6 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+import { normalizeLocale, normalizeTimeZone } from "@valentinkolb/cloud/shared";
 import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { sql } from "bun";
 import { z } from "zod";
@@ -30,6 +30,7 @@ import { getWorkflow } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
 import { getLauncher } from "./workflow-launchers";
 import { invokeGridsWorkflow } from "./workflow-runtime";
+import { workflowServiceText } from "./workflow-service-messages";
 
 export const MAX_BULK_LAUNCHER_RECORDS = 10_000;
 
@@ -106,6 +107,7 @@ const invocationFields = {
   authorization: launcherAuthorizationSchema.optional(),
   inputs: jsonInputsSchema.default({}),
   occurredAt: z.string().datetime({ offset: true }).optional(),
+  locale: z.string().trim().min(1).max(100).optional(),
 };
 
 export const ScannerLauncherInvocationSchema = z
@@ -171,33 +173,7 @@ type LauncherAuthorizationInput = {
   principal: GridsWorkflowPrincipal;
   tableId: string | null;
   authorization?: z.infer<typeof launcherAuthorizationSchema>;
-};
-
-export type WorkflowLauncherInvocationDeps = {
-  getLauncher: typeof getLauncher;
-  getWorkflow: typeof getWorkflow;
-  authorize: (input: LauncherAuthorizationInput) => Promise<Result<AuthorizedRecordAccess | null>>;
-  resolveScanCode: (baseId: string, tableId: string, scannedText: string, recordAccess: AuthorizedRecordAccess) => Promise<Result<string>>;
-  resolveUniqueField: (
-    baseId: string,
-    tableId: string,
-    fieldRef: string,
-    scannedText: string,
-    recordAccess: AuthorizedRecordAccess,
-  ) => Promise<Result<string>>;
-  resolveExplicitRecordIds: (
-    baseId: string,
-    tableId: string,
-    recordIds: string[],
-    recordAccess: AuthorizedRecordAccess,
-  ) => Promise<Result<string[]>>;
-  resolveQueryRecordIds: (
-    tableId: string,
-    query: RecordQuery,
-    principal: GridsWorkflowPrincipal,
-    recordAccess: AuthorizedRecordAccess,
-  ) => Promise<Result<string[]>>;
-  invokeWorkflow: typeof invokeGridsWorkflow;
+  locale?: string;
 };
 
 const formatZodError = (error: z.ZodError): string => {
@@ -205,6 +181,42 @@ const formatZodError = (error: z.ZodError): string => {
   if (!issue) return "invalid input";
   const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
   return `${path}${issue.message}`;
+};
+
+export type WorkflowLauncherInvocationDeps = {
+  getLauncher: typeof getLauncher;
+  getWorkflow: typeof getWorkflow;
+  authorize: (input: LauncherAuthorizationInput) => Promise<Result<AuthorizedRecordAccess | null>>;
+  resolveScanCode: (
+    baseId: string,
+    tableId: string,
+    scannedText: string,
+    recordAccess: AuthorizedRecordAccess,
+    locale?: string,
+  ) => Promise<Result<string>>;
+  resolveUniqueField: (
+    baseId: string,
+    tableId: string,
+    fieldRef: string,
+    scannedText: string,
+    recordAccess: AuthorizedRecordAccess,
+    locale?: string,
+  ) => Promise<Result<string>>;
+  resolveExplicitRecordIds: (
+    baseId: string,
+    tableId: string,
+    recordIds: string[],
+    recordAccess: AuthorizedRecordAccess,
+    locale?: string,
+  ) => Promise<Result<string[]>>;
+  resolveQueryRecordIds: (
+    tableId: string,
+    query: RecordQuery,
+    principal: GridsWorkflowPrincipal,
+    recordAccess: AuthorizedRecordAccess,
+    locale?: string,
+  ) => Promise<Result<string[]>>;
+  invokeWorkflow: typeof invokeGridsWorkflow;
 };
 
 const normalizeScannedText = (value: string): string => {
@@ -219,33 +231,47 @@ const normalizeScannedText = (value: string): string => {
   return trimmed;
 };
 
-const authorize: WorkflowLauncherInvocationDeps["authorize"] = async ({ launcherId, workflow, principal, tableId, authorization }) => {
+const invocationLocale = (input: unknown): string | undefined => {
+  if (!input || typeof input !== "object") return undefined;
+  const locale = (input as { locale?: unknown }).locale;
+  return typeof locale === "string" ? locale : undefined;
+};
+
+const authorize: WorkflowLauncherInvocationDeps["authorize"] = async ({
+  launcherId,
+  workflow,
+  principal,
+  tableId,
+  authorization,
+  locale,
+}) => {
+  const t = workflowServiceText(locale);
   const principalState = await revalidateWorkflowPrincipal(principal, workflow.baseId);
   if (!principalState.ok || !workflowPermissionAllows(principalState.permissionCap, "write")) {
-    return fail(err.forbidden("Workflow actor cannot run this workflow."));
+    return fail(err.forbidden(t.actorCannotRun));
   }
   if (!authorization || authorization.kind === "workflow") {
     if (!(await authorizeWorkflowBase(principal, workflow.baseId, "write"))) {
-      return fail(err.forbidden("Workflow actor cannot run this workflow."));
+      return fail(err.forbidden(t.actorCannotRun));
     }
   }
   if (authorization && authorization.kind !== "workflow") {
     const claim = { baseId: workflow.baseId, workflowId: workflow.id, principal, authorization, launcherId };
     if (tableId) {
       const recordAccess = await resolveWorkflowExecutionRecordAccess(claim, tableId, "read");
-      return recordAccess ? ok(recordAccess) : fail(err.forbidden("Workflow actor cannot run this workflow."));
+      return recordAccess ? ok(recordAccess) : fail(err.forbidden(t.actorCannotRun));
     }
-    return (await canExecuteWorkflow(claim)) ? ok(null) : fail(err.forbidden("Workflow actor cannot run this workflow."));
+    return (await canExecuteWorkflow(claim)) ? ok(null) : fail(err.forbidden(t.actorCannotRun));
   }
   if (tableId) {
     const recordAccess = await resolveWorkflowBaseRecordAccess(principal, { baseId: workflow.baseId, tableId }, "read");
-    if (!recordAccess) return fail(err.forbidden("Workflow actor cannot read the launcher input table."));
+    if (!recordAccess) return fail(err.forbidden(t.actorCannotReadInput));
     return ok(recordAccess);
   }
   return ok(null);
 };
 
-const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async (baseId, tableId, scannedText, recordAccess) => {
+const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async (baseId, tableId, scannedText, recordAccess, locale) => {
   const [row] = await sql<Array<{ id: string }>>`
     SELECT r.id::text AS id
     FROM grids.record_scan_codes scan
@@ -259,7 +285,7 @@ const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async
       AND r.table_id = ${tableId}::uuid
       AND ${recordAccessPredicate(recordAccess, "r")}
   `;
-  return row ? ok(row.id) : fail(err.notFound("scan code"));
+  return row ? ok(row.id) : fail({ ...err.notFound("scan code"), message: workflowServiceText(locale).scanCodeNotFound });
 };
 
 const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] = async (
@@ -268,9 +294,11 @@ const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] =
   fieldRef,
   scannedText,
   recordAccess,
+  locale,
 ) => {
+  const t = workflowServiceText(locale);
   const field = resolveWorkflowFieldRef(await loadWorkflowCatalog(baseId), tableId, fieldRef);
-  if (!field) return fail(err.badInput(`unknown or ambiguous scanner field "${fieldRef}"`));
+  if (!field) return fail(err.badInput(t.scannerFieldUnknown({ field: fieldRef })));
   const [storedField] = await sql<Array<{ unique_constraint: boolean }>>`
     SELECT f.unique_constraint
     FROM grids.fields f
@@ -281,8 +309,8 @@ const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] =
       AND f.id = ${field.id}::uuid
       AND f.deleted_at IS NULL
   `;
-  if (!storedField) return fail(err.badInput(`unknown scanner field "${fieldRef}"`));
-  if (!storedField.unique_constraint) return fail(err.badInput(`scanner field "${fieldRef}" must enforce unique values`));
+  if (!storedField) return fail(err.badInput(t.scannerStoredFieldUnknown({ field: fieldRef })));
+  if (!storedField.unique_constraint) return fail(err.badInput(t.scannerFieldUnique({ field: fieldRef })));
   const rows = await sql<Array<{ id: string }>>`
     SELECT r.id::text AS id
     FROM grids.records r
@@ -296,8 +324,8 @@ const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] =
     ORDER BY r.id
     LIMIT 2
   `;
-  if (rows.length === 0) return fail(err.notFound("scanned record"));
-  if (rows.length > 1) return fail(err.badInput(`scanner field "${fieldRef}" matched more than one record`));
+  if (rows.length === 0) return fail({ ...err.notFound("scanned record"), message: t.scannedRecordNotFound });
+  if (rows.length > 1) return fail(err.badInput(t.scannerFieldMultiple({ field: fieldRef })));
   return ok(rows[0]!.id);
 };
 
@@ -306,6 +334,7 @@ const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitR
   tableId,
   recordIds,
   recordAccess,
+  locale,
 ) => {
   const rows = await sql<Array<{ id: string }>>`
     SELECT r.id::text AS id
@@ -319,21 +348,30 @@ const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitR
       AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   const found = new Set(rows.map((row) => row.id));
-  return found.size === recordIds.length ? ok(recordIds) : fail(err.notFound("Record"));
+  return found.size === recordIds.length
+    ? ok(recordIds)
+    : fail({ ...err.notFound("Record"), message: workflowServiceText(locale).recordsNotFound });
 };
 
-const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordIds"] = async (tableId, query, principal, recordAccess) => {
+const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordIds"] = async (
+  tableId,
+  query,
+  principal,
+  recordAccess,
+  locale,
+) => {
+  const t = workflowServiceText(locale);
   if ((query.groupBy?.length ?? 0) > 0 || (query.aggregations?.length ?? 0) > 0 || (query.groupSort?.length ?? 0) > 0) {
-    return fail(err.badInput("bulk selection queries must be row-shaped"));
+    return fail(err.badInput(t.bulkRowsOnly));
   }
-  if (query.includeDeleted || query.deletedOnly) return fail(err.badInput("bulk selection queries cannot include deleted records"));
+  if (query.includeDeleted || query.deletedOnly) return fail(err.badInput(t.bulkNoDeleted));
 
   const requestedCount = query.limit ?? MAX_BULK_LAUNCHER_RECORDS + 1;
   const ids: string[] = [];
   let cursor: string | null = null;
   const dateConfig = {
     timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
-    locale: "en",
+    locale: normalizeLocale(locale),
     firstDayOfWeek: 1 as const,
   };
   while (ids.length < requestedCount) {
@@ -354,9 +392,9 @@ const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordI
     if (!page.data.nextCursor || page.data.items.length === 0) break;
     cursor = page.data.nextCursor;
   }
-  if (ids.length === 0) return fail(err.badInput("bulk selection query returned no records"));
+  if (ids.length === 0) return fail(err.badInput(t.bulkEmpty));
   if (ids.length > MAX_BULK_LAUNCHER_RECORDS) {
-    return fail(err.badInput(`bulk selection supports at most ${MAX_BULK_LAUNCHER_RECORDS} records`));
+    return fail(err.badInput(t.bulkLimit({ count: MAX_BULK_LAUNCHER_RECORDS })));
   }
   return ok(ids);
 };
@@ -382,46 +420,48 @@ const loadLauncherContext = async (
   expectedKind: LauncherKind,
   expectedRevision: number | undefined,
   deps: WorkflowLauncherInvocationDeps,
+  locale?: string,
 ): Promise<Result<LauncherContext>> => {
+  const t = workflowServiceText(locale);
   const launcher = await deps.getLauncher(launcherId);
-  if (!launcher) return fail(err.notFound("workflow launcher"));
+  if (!launcher) return fail({ ...err.notFound("workflow launcher"), message: t.launcherNotFound });
   const config = StrictLauncherConfigSchema.safeParse(launcher.config);
-  if (!config.success) return fail(err.badInput(`invalid workflow launcher config: ${formatZodError(config.error)}`));
-  if (config.data.kind !== expectedKind) return fail(err.badInput(`workflow launcher is not a ${expectedKind} launcher`));
+  if (!config.success) return fail(err.badInput(t.invalidLauncherConfig({ detail: formatZodError(config.error) })));
+  if (config.data.kind !== expectedKind) return fail(err.badInput(t.wrongLauncherKind({ kind: expectedKind })));
   if (!launcher.enabled || launcher.diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
-    return fail(err.badInput("workflow launcher is disabled or invalid"));
+    return fail(err.badInput(t.launcherDisabled));
   }
   const workflow = await deps.getWorkflow(launcher.workflowId);
-  if (!workflow || workflow.baseId !== launcher.baseId) return fail(err.notFound("workflow"));
-  if (launcher.validatedRevision !== workflow.revision) return fail(workflowConflict("Workflow launcher must be revalidated."));
+  if (!workflow || workflow.baseId !== launcher.baseId) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
+  if (launcher.validatedRevision !== workflow.revision) return fail(workflowConflict(t.launcherRevalidate));
   if (expectedRevision !== undefined && workflow.revision !== expectedRevision) {
-    return fail(workflowConflict("Workflow changed since the launcher operation started."));
+    return fail(workflowConflict(t.launcherOperationChanged));
   }
 
   let tableId: string | null = null;
   if (config.data.kind === "scanner") {
     const scanEntries = Object.entries(scannerLauncherInputSources(config.data)).filter(([, source]) => source.kind === "scan");
     const [scanEntry] = scanEntries;
-    if (!scanEntry || scanEntries.length !== 1) return fail(err.badInput("scanner launcher must define exactly one scan input"));
+    if (!scanEntry || scanEntries.length !== 1) return fail(err.badInput(t.scannerInputCount));
     const [inputName, source] = scanEntry;
     const input = workflow.plan.inputs.find((candidate) => candidate.name === inputName);
     const expectedType = source.kind === "scan" && source.value === "record" ? "record" : "text";
-    if (!input || input.type !== expectedType) return fail(err.badInput("scanner launcher input contract is invalid"));
+    if (!input || input.type !== expectedType) return fail(err.badInput(t.scannerInputContract));
     if (source.kind === "scan" && source.value === "record") {
       tableId = boundTableId(workflow, inputName);
-      if (!tableId) return fail(err.badInput("scanner launcher input has no bound table"));
+      if (!tableId) return fail(err.badInput(t.scannerInputTable));
     }
   } else if (config.data.kind === "bulk" || config.data.kind === "record") {
     const bulkInputName = config.data.input;
     const input = workflow.plan.inputs.find((candidate) => candidate.name === bulkInputName);
     const expectedType = config.data.kind === "bulk" ? "recordList" : "record";
-    if (!input || input.type !== expectedType) return fail(err.badInput(`${config.data.kind} launcher input contract is invalid`));
+    if (!input || input.type !== expectedType) return fail(err.badInput(t.launcherInputContract({ kind: config.data.kind })));
     tableId = boundTableId(workflow, bulkInputName);
-    if (!tableId) return fail(err.badInput(`${config.data.kind} launcher input has no bound table`));
+    if (!tableId) return fail(err.badInput(t.launcherInputTable({ kind: config.data.kind })));
   } else {
     const inputNames = new Set(workflow.plan.inputs.map((input) => input.name));
     const unknownBinding = Object.keys(config.data.inputBindings ?? {}).find((name) => !inputNames.has(name));
-    if (unknownBinding) return fail(err.badInput(`Grids App launcher binds unknown workflow input "${unknownBinding}"`));
+    if (unknownBinding) return fail(err.badInput(t.unknownBoundInput({ input: unknownBinding })));
   }
   return ok({ launcher, workflow, config: config.data, tableId });
 };
@@ -430,14 +470,16 @@ const admitLauncherVisibility = async (
   launcherId: string,
   principal: GridsWorkflowPrincipal,
   deps: WorkflowLauncherInvocationDeps,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const t = workflowServiceText(locale);
   const launcher = await deps.getLauncher(launcherId);
-  if (!launcher) return fail(err.notFound("Workflow launcher"));
+  if (!launcher) return fail({ ...err.notFound("Workflow launcher"), message: t.launcherNotFound });
   const workflow = await deps.getWorkflow(launcher.workflowId);
-  if (!workflow || workflow.baseId !== launcher.baseId) return fail(err.notFound("Workflow launcher"));
-  const authorized = await deps.authorize({ launcherId: launcher.id, workflow, principal, tableId: null });
+  if (!workflow || workflow.baseId !== launcher.baseId) return fail({ ...err.notFound("Workflow launcher"), message: t.launcherNotFound });
+  const authorized = await deps.authorize({ launcherId: launcher.id, workflow, principal, tableId: null, locale });
   if (!authorized.ok) {
-    return authorized.error.status === 403 ? fail(err.notFound("Workflow launcher")) : authorized;
+    return authorized.error.status === 403 ? fail({ ...err.notFound("Workflow launcher"), message: t.launcherNotFound }) : authorized;
   }
   return ok();
 };
@@ -447,11 +489,10 @@ const idempotencyKey = (launcherId: string, operationId: string): string => `lau
 const mergeInputs = (
   fixed: Record<string, WorkflowJsonValue>,
   supplied: Record<string, WorkflowJsonValue>,
+  locale?: string,
 ): Result<Record<string, WorkflowJsonValue>> => {
   const conflict = Object.keys(fixed).find((name) => Object.hasOwn(supplied, name));
-  return conflict
-    ? fail(err.badInput(`launcher-controlled workflow input "${conflict}" cannot be overridden`))
-    : ok({ ...supplied, ...fixed });
+  return conflict ? fail(err.badInput(workflowServiceText(locale).controlledInput({ input: conflict }))) : ok({ ...supplied, ...fixed });
 };
 
 const invoke = (
@@ -463,6 +504,7 @@ const invoke = (
     principal: GridsWorkflowPrincipal;
     inputs: Record<string, WorkflowJsonValue>;
     occurredAt?: string;
+    locale?: string;
     authorization?: z.infer<typeof launcherAuthorizationSchema>;
     trustedRecordIds?: ReadonlyMap<string, ReadonlySet<string>>;
   },
@@ -480,7 +522,10 @@ const invoke = (
     authorization: input.authorization,
     occurredAt: input.occurredAt,
     trustedRecordIds: input.trustedRecordIds,
-    context: { launcher: { id: ctx.launcher.id, kind: ctx.config.kind, operationId: input.operationId } },
+    context: {
+      locale: normalizeLocale(input.locale),
+      launcher: { id: ctx.launcher.id, kind: ctx.config.kind, operationId: input.operationId },
+    },
   });
 
 export const invokeScannerLauncher = async (
@@ -488,21 +533,27 @@ export const invokeScannerLauncher = async (
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> => {
   const input = ScannerLauncherInvocationSchema.safeParse(rawInput);
-  if (!input.success) return fail(err.badInput(`invalid scanner launcher invocation: ${formatZodError(input.error)}`));
-  const loaded = await loadLauncherContext(input.data.launcherId, "scanner", input.data.expectedRevision, deps);
+  if (!input.success)
+    return fail(
+      err.badInput(
+        workflowServiceText(invocationLocale(rawInput)).invalidLauncherInvocation({ kind: "scanner", detail: formatZodError(input.error) }),
+      ),
+    );
+  const t = workflowServiceText(input.data.locale);
+  const loaded = await loadLauncherContext(input.data.launcherId, "scanner", input.data.expectedRevision, deps, input.data.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
-  if (ctx.config.kind !== "scanner") return fail(err.internal("scanner launcher context is invalid"));
+  if (ctx.config.kind !== "scanner") return fail(err.internal(t.launcherContextInvalid));
   const sources = scannerLauncherInputSources(ctx.config);
   const scanEntry = Object.entries(sources).find(([, source]) => source.kind === "scan");
-  if (!scanEntry) return fail(err.internal("scanner launcher context has no scan input"));
+  if (!scanEntry) return fail(err.internal(t.launcherContextInvalid));
   const [scanInputName, scanSource] = scanEntry;
   const suppliedInputName = Object.keys(input.data.inputs).find((name) => {
     const source = sources[name];
     return !source || (source.kind !== "session" && source.kind !== "afterScan");
   });
   if (suppliedInputName) {
-    return fail(err.badInput(`workflow input "${suppliedInputName}" is not supplied by the scanner user`));
+    return fail(err.badInput(t.scannerUserInput({ input: suppliedInputName })));
   }
   const authorized = await deps.authorize({
     launcherId: ctx.launcher.id,
@@ -510,6 +561,7 @@ export const invokeScannerLauncher = async (
     principal: input.data.principal,
     tableId: ctx.tableId,
     authorization: input.data.authorization,
+    locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
   const scannedText = normalizeScannedText(input.data.scannedText);
@@ -519,21 +571,28 @@ export const invokeScannerLauncher = async (
       .map(([name, source]) => [name, source.kind === "fixed" ? source.value : null]),
   );
   let trustedRecordIds: ReadonlyMap<string, ReadonlySet<string>> | undefined;
-  if (scanSource.kind !== "scan") return fail(err.internal("scanner launcher scan input is invalid"));
+  if (scanSource.kind !== "scan") return fail(err.internal(t.launcherContextInvalid));
   if (scanSource.value === "text") {
     controlledInputs[scanInputName] = scannedText;
   } else {
-    if (!ctx.tableId) return fail(err.internal("scanner record input has no table"));
-    if (!authorized.data) return fail(err.internal("scanner record input has no record access policy"));
+    if (!ctx.tableId) return fail(err.internal(t.launcherContextInvalid));
+    if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
     const recordId =
       scanSource.resolve.by === "field"
-        ? await deps.resolveUniqueField(ctx.workflow.baseId, ctx.tableId, scanSource.resolve.field!, scannedText, authorized.data)
-        : await deps.resolveScanCode(ctx.workflow.baseId, ctx.tableId, scannedText, authorized.data);
+        ? await deps.resolveUniqueField(
+            ctx.workflow.baseId,
+            ctx.tableId,
+            scanSource.resolve.field!,
+            scannedText,
+            authorized.data,
+            input.data.locale,
+          )
+        : await deps.resolveScanCode(ctx.workflow.baseId, ctx.tableId, scannedText, authorized.data, input.data.locale);
     if (!recordId.ok) return recordId;
     controlledInputs[scanInputName] = recordId.data;
     trustedRecordIds = new Map([[ctx.tableId, new Set([recordId.data])]]);
   }
-  const inputs = mergeInputs(controlledInputs, input.data.inputs);
+  const inputs = mergeInputs(controlledInputs, input.data.inputs, input.data.locale);
   return inputs.ok ? invoke(ctx, { ...input.data, inputs: inputs.data, trustedRecordIds }, deps) : inputs;
 };
 
@@ -542,30 +601,36 @@ export const invokeBulkLauncher = async (
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> => {
   const input = BulkLauncherInvocationSchema.safeParse(rawInput);
-  if (!input.success) return fail(err.badInput(`invalid bulk launcher invocation: ${formatZodError(input.error)}`));
-  const loaded = await loadLauncherContext(input.data.launcherId, "bulk", input.data.expectedRevision, deps);
+  if (!input.success)
+    return fail(
+      err.badInput(
+        workflowServiceText(invocationLocale(rawInput)).invalidLauncherInvocation({ kind: "bulk", detail: formatZodError(input.error) }),
+      ),
+    );
+  const t = workflowServiceText(input.data.locale);
+  const loaded = await loadLauncherContext(input.data.launcherId, "bulk", input.data.expectedRevision, deps, input.data.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
-  if (ctx.config.kind !== "bulk" || !ctx.tableId) return fail(err.internal("bulk launcher context is invalid"));
+  if (ctx.config.kind !== "bulk" || !ctx.tableId) return fail(err.internal(t.launcherContextInvalid));
   if ("profile" in ctx.config && ctx.config.profile === "closeSelection") {
     if (!("recordIds" in input.data)) {
-      return fail(err.badInput("This workflow run option requires an explicit Record selection."));
+      return fail(err.badInput(t.explicitSelectionRequired));
     }
     const mode = input.data.inputs[CLOSE_SELECTION_MODE_INPUT];
     if (mode !== "direct" && mode !== "fourEyes") {
-      return fail(err.badInput("Close selection requires the previewed Finalization mode."));
+      return fail(err.badInput(t.closeSelectionModeChanged));
     }
     const policyRevision = input.data.inputs[CLOSE_SELECTION_POLICY_REVISION_INPUT];
     if (typeof policyRevision !== "number" || !Number.isSafeInteger(policyRevision) || policyRevision < 1) {
-      return fail(err.badInput("Close selection requires the previewed Finalization policy revision."));
+      return fail(err.badInput(t.closeSelectionPolicyChanged));
     }
   }
   if (input.data.authorization?.kind === "custom-app-bulk-action") {
-    if (!("recordIds" in input.data)) return fail(err.badInput("Grids App bulk launchers require explicit record IDs"));
+    if (!("recordIds" in input.data)) return fail(err.badInput(t.appExplicitIds));
     const claimed = [...input.data.authorization.recordIds].sort();
     const supplied = [...input.data.recordIds].sort();
     if (claimed.length !== supplied.length || claimed.some((recordId, index) => supplied[index] !== recordId)) {
-      return fail(err.badInput("Grids App bulk selection does not match its authorization"));
+      return fail(err.badInput(t.appAuthorizationMismatch));
     }
   }
   const authorized = await deps.authorize({
@@ -574,15 +639,16 @@ export const invokeBulkLauncher = async (
     principal: input.data.principal,
     tableId: ctx.tableId,
     authorization: input.data.authorization,
+    locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
-  if (!authorized.data) return fail(err.internal("bulk launcher input has no record access policy"));
+  if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
   const recordIds =
     "recordIds" in input.data
-      ? await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, input.data.recordIds, authorized.data)
-      : await deps.resolveQueryRecordIds(ctx.tableId, input.data.query, input.data.principal, authorized.data);
+      ? await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, input.data.recordIds, authorized.data, input.data.locale)
+      : await deps.resolveQueryRecordIds(ctx.tableId, input.data.query, input.data.principal, authorized.data, input.data.locale);
   if (!recordIds.ok) return recordIds;
-  const inputs = mergeInputs({ [ctx.config.input]: recordIds.data }, input.data.inputs);
+  const inputs = mergeInputs({ [ctx.config.input]: recordIds.data }, input.data.inputs, input.data.locale);
   return inputs.ok
     ? invoke(ctx, { ...input.data, inputs: inputs.data, trustedRecordIds: new Map([[ctx.tableId, new Set(recordIds.data)]]) }, deps)
     : inputs;
@@ -593,10 +659,11 @@ export const admitBulkLauncher = async (
     launcherId: string;
     expectedRevision?: number;
     principal: GridsWorkflowPrincipal;
+    locale?: string;
   },
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<void>> => {
-  const loaded = await loadLauncherContext(input.launcherId, "bulk", input.expectedRevision, deps);
+  const loaded = await loadLauncherContext(input.launcherId, "bulk", input.expectedRevision, deps, input.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
   const authorized = await deps.authorize({
@@ -604,6 +671,7 @@ export const admitBulkLauncher = async (
     workflow: ctx.workflow,
     principal: input.principal,
     tableId: ctx.tableId,
+    locale: input.locale,
   });
   return authorized.ok ? ok() : authorized;
 };
@@ -613,24 +681,37 @@ export const invokeRecordLauncher = async (
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> => {
   const input = RecordLauncherInvocationSchema.safeParse(rawInput);
-  if (!input.success) return fail(err.badInput(`invalid record launcher invocation: ${formatZodError(input.error)}`));
-  const visible = await admitLauncherVisibility(input.data.launcherId, input.data.principal, deps);
+  if (!input.success)
+    return fail(
+      err.badInput(
+        workflowServiceText(invocationLocale(rawInput)).invalidLauncherInvocation({ kind: "record", detail: formatZodError(input.error) }),
+      ),
+    );
+  const t = workflowServiceText(input.data.locale);
+  const visible = await admitLauncherVisibility(input.data.launcherId, input.data.principal, deps, input.data.locale);
   if (!visible.ok) return visible;
-  const loaded = await loadLauncherContext(input.data.launcherId, "record", input.data.expectedRevision, deps);
+  const loaded = await loadLauncherContext(input.data.launcherId, "record", input.data.expectedRevision, deps, input.data.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
-  if (ctx.config.kind !== "record" || !ctx.tableId) return fail(err.internal("record launcher context is invalid"));
-  if (Object.keys(input.data.inputs).length > 0) return fail(err.badInput("record actions do not accept additional workflow inputs"));
+  if (ctx.config.kind !== "record" || !ctx.tableId) return fail(err.internal(t.launcherContextInvalid));
+  if (Object.keys(input.data.inputs).length > 0) return fail(err.badInput(t.recordExtraInputs));
   const authorized = await deps.authorize({
     launcherId: ctx.launcher.id,
     workflow: ctx.workflow,
     principal: input.data.principal,
     tableId: ctx.tableId,
     authorization: input.data.authorization,
+    locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
-  if (!authorized.data) return fail(err.internal("record launcher input has no record access policy"));
-  const recordIds = await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, [input.data.recordId], authorized.data);
+  if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
+  const recordIds = await deps.resolveExplicitRecordIds(
+    ctx.workflow.baseId,
+    ctx.tableId,
+    [input.data.recordId],
+    authorized.data,
+    input.data.locale,
+  );
   if (!recordIds.ok) return recordIds;
   return invoke(
     ctx,
@@ -644,12 +725,12 @@ export const invokeRecordLauncher = async (
 };
 
 export const admitRecordLauncher = async (
-  input: { launcherId: string; expectedRevision?: number; principal: GridsWorkflowPrincipal },
+  input: { launcherId: string; expectedRevision?: number; principal: GridsWorkflowPrincipal; locale?: string },
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<void>> => {
-  const visible = await admitLauncherVisibility(input.launcherId, input.principal, deps);
+  const visible = await admitLauncherVisibility(input.launcherId, input.principal, deps, input.locale);
   if (!visible.ok) return visible;
-  const loaded = await loadLauncherContext(input.launcherId, "record", input.expectedRevision, deps);
+  const loaded = await loadLauncherContext(input.launcherId, "record", input.expectedRevision, deps, input.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
   const authorized = await deps.authorize({
@@ -657,6 +738,7 @@ export const admitRecordLauncher = async (
     workflow: ctx.workflow,
     principal: input.principal,
     tableId: ctx.tableId,
+    locale: input.locale,
   });
   return authorized.ok ? ok() : authorized;
 };
@@ -666,22 +748,32 @@ export const invokeCustomAppLauncher = async (
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> => {
   const input = CustomAppLauncherInvocationSchema.safeParse(rawInput);
-  if (!input.success) return fail(err.badInput(`invalid Grids App launcher invocation: ${formatZodError(input.error)}`));
-  const loaded = await loadLauncherContext(input.data.launcherId, "customApp", input.data.expectedRevision, deps);
+  if (!input.success)
+    return fail(
+      err.badInput(
+        workflowServiceText(invocationLocale(rawInput)).invalidLauncherInvocation({
+          kind: "Grids App",
+          detail: formatZodError(input.error),
+        }),
+      ),
+    );
+  const t = workflowServiceText(input.data.locale);
+  const loaded = await loadLauncherContext(input.data.launcherId, "customApp", input.data.expectedRevision, deps, input.data.locale);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
-  if (ctx.config.kind !== "customApp") return fail(err.internal("Grids App launcher context is invalid"));
+  if (ctx.config.kind !== "customApp") return fail(err.internal(t.launcherContextInvalid));
   const authorized = await deps.authorize({
     launcherId: ctx.launcher.id,
     workflow: ctx.workflow,
     principal: input.data.principal,
     tableId: null,
     authorization: input.data.authorization,
+    locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
   const suppliedInputs = input.data.inputs;
   if (ctx.config.inputMode === "fixed" && Object.keys(suppliedInputs).length > 0) {
-    return fail(err.badInput("fixed Grids App launchers do not accept runtime inputs"));
+    return fail(err.badInput(t.fixedInputs));
   }
   const inputs = ctx.config.inputMode === "fixed" ? (ctx.config.inputBindings ?? {}) : suppliedInputs;
   return invoke(ctx, { ...input.data, inputs }, deps);

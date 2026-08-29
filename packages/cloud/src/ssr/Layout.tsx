@@ -23,6 +23,7 @@ import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import NavMenu from "./NavMenu.island";
 import ProfilePreferences from "./ProfilePreferences.island";
+import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import TimezoneCookie from "./TimezoneCookie.island";
@@ -61,7 +62,8 @@ function active(pathname: string, match: string): string {
 }
 const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</g, "\\u003c");
 
-function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined): { primary: AppLink[]; more: AppLink[] } {
+function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined, locale: string): { primary: AppLink[]; more: AppLink[] } {
+  const t = platformMessages.resolve([locale]).t;
   const links = visibleNavigationApps(apps, user).map((app) => ({
     section: app.nav.section,
     link: {
@@ -80,10 +82,10 @@ function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined): { 
     more.push({
       id: "admin",
       iconClass: "ti ti-settings",
-      label: "Admin",
+      label: t.admin,
       href: "/admin",
       match: "/admin",
-      description: "Platform administration.",
+      description: t.platformAdministration,
       accent: undefined,
     });
   }
@@ -91,44 +93,47 @@ function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined): { 
 } // ==========================
 // Warning Components
 const WARN_DAYS = 14;
-function ProfileWarnings({ user }: { user: User }) {
+function ProfileWarnings({ user, locale }: { user: User; locale: string }) {
+  const t = platformMessages.resolve([locale]).t;
   if (user.profile === "guest") return null;
   const missing: string[] = [];
-  if (!user.displayName) missing.push("display name");
-  if (!user.givenname) missing.push("first name");
-  if (!user.sn) missing.push("last name");
+  if (!user.displayName) missing.push(t.displayName);
+  if (!user.givenname) missing.push(t.firstName);
+  if (!user.sn) missing.push(t.lastName);
   if (missing.length === 0) return null;
   return (
     <a href="/me" class="block shrink-0 no-underline">
       <NoticeCard tone="warning" icon={false} bodyClass="flex items-center gap-2">
-        <i class="ti ti-user-exclamation" /> <span>Your profile is incomplete: {missing.join(",")} not set.</span>
+        <i class="ti ti-user-exclamation" /> <span>{t.profileIncomplete({ fields: missing.join(", ") })}</span>
       </NoticeCard>
     </a>
   );
 }
-function ExpiryWarnings({ user, dateConfig }: { user: User; dateConfig: DateContext }) {
+function ExpiryWarnings({ user, dateConfig, locale }: { user: User; dateConfig: DateContext; locale: string }) {
+  const t = platformMessages.resolve([locale]).t;
   const now = Date.now();
   const warnThreshold = now + WARN_DAYS * 24 * 60 * 60 * 1000;
   const warnings: { icon: string; message: string; expired: boolean }[] = [];
   if (user.accountExpires) {
     const expires = new Date(user.accountExpires).getTime();
-    const accountLabel = user.provider === "ipa" ? "account" : user.profile === "guest" ? "guest account" : "account";
-    if (expires < now) warnings.push({ icon: "ti-calendar-event", message: "Your account has expired.", expired: true });
+    if (expires < now) warnings.push({ icon: "ti-calendar-event", message: t.accountExpired, expired: true });
     else if (expires < warnThreshold)
       warnings.push({
         icon: "ti-calendar-event",
-        message: `Your ${accountLabel} expires on ${dates.formatDate(user.accountExpires, dateConfig)}.`,
+        message:
+          user.profile === "guest"
+            ? t.guestAccountExpires({ date: dates.formatDate(user.accountExpires, dateConfig) })
+            : t.accountExpires({ date: dates.formatDate(user.accountExpires, dateConfig) }),
         expired: false,
       });
   }
   if (user.ipa?.passwordExpires) {
     const expires = new Date(user.ipa.passwordExpires).getTime();
-    if (expires < now)
-      warnings.push({ icon: "ti-key", message: "Your password has expired. Please log out and in again to change it.", expired: true });
+    if (expires < now) warnings.push({ icon: "ti-key", message: t.passwordExpired, expired: true });
     else if (expires < warnThreshold)
       warnings.push({
         icon: "ti-key",
-        message: `Your password expires on ${dates.formatDate(user.ipa.passwordExpires, dateConfig)}.`,
+        message: t.passwordExpires({ date: dates.formatDate(user.ipa.passwordExpires, dateConfig) }),
         expired: false,
       });
   }
@@ -162,6 +167,7 @@ export default function Layout(props: LayoutProps) {
   // the same canonical getLocale(c), so pages cannot diverge the three seams.
   const dateConfig = getDateConfig(c);
   const lang = getLocale(c);
+  const t = platformMessages.resolve([lang]).t;
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
@@ -170,7 +176,7 @@ export default function Layout(props: LayoutProps) {
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,
   );
-  const { primary: primaryApps, more: moreApps } = buildNavLinks(runtime.apps, user);
+  const { primary: primaryApps, more: moreApps } = buildNavLinks(runtime.apps, user, lang);
   const allApps = [...primaryApps, ...moreApps];
   const launchpadApps: AppLaunchpadApp[] = allApps.map((app) => ({
     id: app.id,
@@ -211,7 +217,7 @@ export default function Layout(props: LayoutProps) {
   // Aggregate legalLinks from every running app (last-wins on duplicate href).
   const legalLinks = (() => {
     const seen = new Map<string, { label: string; href: string; icon?: string }>();
-    if (user) seen.set("/me", { label: "Profile", href: "/me", icon: "ti ti-user-circle" });
+    if (user) seen.set("/me", { label: t.profile, href: "/me", icon: "ti ti-user-circle" });
     for (const app of runtime.apps) {
       for (const link of app.legalLinks ?? []) seen.set(link.href, { ...link });
     }
@@ -272,11 +278,11 @@ export default function Layout(props: LayoutProps) {
         {showRail && (
           <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
             <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
-              <a href="/" aria-label="Home">
+              <a href="/" aria-label={t.home}>
                 <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
               </a>
             </div>
-            <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label="Apps">
+            <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t.apps}>
               {primaryApps.map((app) => (
                 <a
                   href={app.href}
@@ -289,7 +295,7 @@ export default function Layout(props: LayoutProps) {
                   <i class={`${app.iconClass} text-base`} />
                 </a>
               ))}
-              <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="rail" label="Open apps" />
+              <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="rail" label={t.openApps} />
               <div class="mt-auto flex flex-col items-center gap-1">
                 <GlobalSearchTrigger variant="rail" searchHelpApps={searchHelpApps} />
                 <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={searchHelpApps} accent={currentApp?.appearance?.accent} />
@@ -305,17 +311,17 @@ export default function Layout(props: LayoutProps) {
           >
             <div class="flex min-w-0 items-center gap-2">
               {!showRail && (
-                <a href="/" class="flex shrink-0 items-center" aria-label="Home">
+                <a href="/" class="flex shrink-0 items-center" aria-label={t.home}>
                   <img src="/branding/logo" alt="Logo" class="h-6 w-6" />
                 </a>
               )}
               {showRail && (
                 <a
                   href="/"
-                  aria-label="Home"
+                  aria-label={t.home}
                   class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary md:hidden dark:hover:bg-zinc-800"
                 >
-                  <img src="/branding/logo" alt="Home" class="h-4 w-4" />
+                  <img src="/branding/logo" alt={t.home} class="h-4 w-4" />
                 </a>
               )}
               <div class="hidden min-w-0 items-center md:flex">
@@ -339,7 +345,7 @@ export default function Layout(props: LayoutProps) {
                 <>
                   <div class="md:hidden">
                     <div class="flex items-center gap-1">
-                      <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label="Open apps" />
+                      <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label={t.openApps} />
                     </div>
                   </div>
                   <ProfilePreferences avatarSrc={profileAvatarSrc} initialTheme={theme} name={profileName} placement="header" />
@@ -357,8 +363,8 @@ export default function Layout(props: LayoutProps) {
               cookieState={announcements.cookieState}
             />
           )}
-          {user && <ProfileWarnings user={user} />}
-          {user && <ExpiryWarnings user={user} dateConfig={dateConfig} />}
+          {user && <ProfileWarnings user={user} locale={lang} />}
+          {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
           <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
             <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
           </main>

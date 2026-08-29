@@ -27,6 +27,8 @@ describe("Notebooks internationalization", () => {
     expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.deleteNote).toBe("Notiz löschen");
     expect(notebooksAdminMessages.resolve(["de-CH"]).t.settings).toBe("Einstellungen");
     expect(notebookCapabilityMessages.resolve(["de-CH"]).t.note).toBe("Notiz");
+    expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.sortNotes).toBe("Notizen sortieren");
+    expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.updatedSort).toBe("Zuletzt geändert");
     expect(notebooksPageMessages.resolve(["fr"]).t.newNotebook).toBe("New notebook");
   });
 

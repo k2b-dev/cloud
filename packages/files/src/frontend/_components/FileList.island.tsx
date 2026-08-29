@@ -1,7 +1,7 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { dates, fileIcons, text } from "@k2b/stdlib";
 import { dnd, mutation as mutations } from "@k2b/stdlib/solid";
-import { Lightbox, type LightboxImage, Placeholder, prompts, toast } from "@k2b/ui";
+import { Lightbox, type LightboxImage, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { apiClient } from "@/api/client";
@@ -29,6 +29,7 @@ import {
 } from "./context";
 import { createFileActionMutations, openFileItem } from "./FileActions";
 import { DEFAULT_FILE_SETTINGS, type FileListColumn, type FileSettings, getGridSizePixels } from "./FileSettings.island";
+import { filesMessages } from "../messages";
 
 type FileListProps = {
   items: FileInfo[];
@@ -71,11 +72,6 @@ type ActiveContextMenu = {
   itemPath: string;
 };
 
-const getMimeLabel = (item: FileInfo) => {
-  if (item.type === "directory") return "Folder";
-  return item.mimeType || "Unknown";
-};
-
 const getParentPathFromItemPath = (itemPath: string) => itemPath.substring(0, itemPath.lastIndexOf("/")) || "/";
 
 const isPointerOnInteractiveTarget = (target: EventTarget | null) =>
@@ -92,6 +88,8 @@ const createRowTemplate = (columns: FileListColumn[]) => {
 };
 
 export default function FileList(props: FileListProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const fileActions = createFileActionMutations();
   const settings = props.settings ?? DEFAULT_FILE_SETTINGS;
   const viewMode = props.forceListView ? "list" : settings.viewMode;
@@ -191,17 +189,16 @@ export default function FileList(props: FileListProps) {
         },
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({ message: "Move failed" }));
-        throw new Error("message" in data ? data.message : "Move failed");
+        throw new Error(t().transferFailed);
       }
       const data = (await res.json()) as { transferred: number; errors: { path: string; error: string }[] };
       return { ...data, targetPath };
     },
     onSuccess: (result, ctx) => {
       if (result.errors.length > 0) {
-        prompts.error(`Moved ${result.transferred} item(s), but ${result.errors.length} failed.`);
+        prompts.error(t().moveFailedSummary({ moved: result.transferred, failed: result.errors.length }));
       } else if (result.transferred > 0) {
-        toast.success(`Moved ${result.transferred} item${result.transferred === 1 ? "" : "s"}`);
+        toast.success(t().movedItems({ count: result.transferred }));
       }
       setHighlightedFiles((ctx?.sourcePaths ?? []).map((path) => path.split("/").pop() ?? path));
       clearSelection();
@@ -337,11 +334,11 @@ export default function FileList(props: FileListProps) {
   const headerLabel = (column: FileListColumn) => {
     switch (column) {
       case "size":
-        return "Size";
+        return t().size;
       case "mime":
-        return "Type";
+        return t().type;
       case "modified":
-        return "Updated";
+        return t().updated;
     }
   };
 
@@ -354,7 +351,7 @@ export default function FileList(props: FileListProps) {
             <div class="paper overflow-x-auto">
               <div class="grid" style={{ "grid-template-columns": rowTemplate() }}>
                 <div class="data-table-header data-table-divider col-span-full grid grid-cols-subgrid items-center gap-4 border-b px-3 py-2 text-xs font-medium text-dimmed">
-                  <div>Name</div>
+                  <div>{t().name}</div>
                   <For each={listColumns()}>
                     {(column) => (
                       <div classList={{ "text-left": column === "mime", "text-right": column !== "mime" }}>{headerLabel(column)}</div>
@@ -424,7 +421,7 @@ export default function FileList(props: FileListProps) {
                   <Placeholder
                     icon="ti ti-folder-off"
                     class="col-span-full"
-                    description={<>{props.isFiltered ? "No files match the search" : "This folder is empty"}</>}
+                    description={<>{props.isFiltered ? t().noSearchResults : t().emptyFolder}</>}
                   />
                 </Show>
               </div>
@@ -496,7 +493,7 @@ export default function FileList(props: FileListProps) {
               <Placeholder
                 icon="ti ti-folder-off"
                 class="col-span-full"
-                description={<>{props.isFiltered ? "No files match the search" : "This folder is empty"}</>}
+                description={<>{props.isFiltered ? t().noSearchResults : t().emptyFolder}</>}
               />
             </Show>
           </div>
@@ -526,7 +523,7 @@ export default function FileList(props: FileListProps) {
               <div
                 data-files-context-menu
                 role="menu"
-                aria-label="File actions"
+                aria-label={t().fileActions}
                 class="context-menu-surface fixed z-50 w-52 max-w-[min(22rem,calc(100vw-1rem))] overflow-y-auto p-1 text-zinc-900 backdrop-blur-sm dark:text-zinc-100"
                 style={{
                   left: `${Math.min(menu().x, window.innerWidth - 220)}px`,
@@ -695,8 +692,34 @@ function FileRow(props: {
   dnd: ReturnType<typeof dnd.create<DragMeta, DropMeta, null>>;
   dragDisabled?: boolean;
 }) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const dragId = `file:${props.itemPath}`;
   const previewSize = () => (props.compact ? 30 : 48);
+  const mimeLabel = () => (props.item.type === "directory" ? t().folder : props.item.mimeType || t().unknown);
+  const categoryLabel = () => {
+    if (props.item.type === "directory") return t().folder;
+    switch (fileIcons.getFileCategory(props.item)) {
+      case "image":
+        return t().image;
+      case "pdf":
+        return t().pdf;
+      case "video":
+        return t().video;
+      case "audio":
+        return t().audio;
+      case "text":
+        return t().textFile;
+      case "code":
+        return t().sourceCode;
+      case "document":
+        return t().document;
+      case "archive":
+        return t().archive;
+      default:
+        return t().file;
+    }
+  };
 
   return (
     <div
@@ -770,7 +793,7 @@ function FileRow(props: {
             {props.item.name}
           </p>
           <Show when={!props.compact}>
-            <p class="truncate text-xs text-dimmed">{props.item.type === "directory" ? "Folder" : fileIcons.getFileCategory(props.item)}</p>
+            <p class="truncate text-xs text-dimmed">{categoryLabel()}</p>
           </Show>
         </div>
       </div>
@@ -787,7 +810,7 @@ function FileRow(props: {
             }}
           >
             {column === "size" && (props.item.type === "directory" ? "—" : text.pprintBytes(props.item.size))}
-            {column === "mime" && getMimeLabel(props.item)}
+            {column === "mime" && mimeLabel()}
             {column === "modified" && dates.formatDateTime(props.item.mtime)}
           </div>
         )}

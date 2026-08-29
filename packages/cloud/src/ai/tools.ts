@@ -56,6 +56,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           projectFiles?: AiProjectFileToolSource;
           skillFiles?: AiSkillFileToolSource;
           selectedModel?: AiResolvedModel;
+          locale?: string;
+          timeZone?: string;
         },
       ) => Promise<z.infer<TOutput>>,
     ): AiToolRuntime<TInput, TOutput> {
@@ -99,6 +101,8 @@ export type AiToolPreparationContext = {
   projectFiles?: AiProjectFileToolSource;
   skillFiles?: AiSkillFileToolSource;
   selectedModel?: AiResolvedModel;
+  locale?: string;
+  timeZone?: string;
 };
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
@@ -135,6 +139,8 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           projectFiles: input.projectFiles,
           skillFiles: input.skillFiles,
           selectedModel: input.selectedModel,
+          locale: input.locale,
+          timeZone: input.timeZone,
         });
       });
     }

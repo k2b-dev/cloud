@@ -11,6 +11,7 @@ import {
   panelDialogOptions,
   prompts,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -19,6 +20,7 @@ import type { DslQueryPreviewDiagnostic } from "../../../contracts";
 import { createDraft } from "../editor-draft";
 import { GqlSourceEditor } from "../query/GqlSourceEditor";
 import { errorMessage } from "../utils/api-helpers";
+import { gridsDialogMessages } from "./messages";
 import { RecordDisplayConfigEditor } from "./RecordDisplayConfigEditor";
 
 type Props = {
@@ -39,19 +41,23 @@ export const openViewSettingsDialog = (props: Props) =>
   dialogCore.open<void>((close) => <ViewSettingsDialog props={props} close={close} />, panelDialogOptions);
 
 function ViewSettingsDialog(props: { props: Props; close: () => void }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
   const closeIfClean = async () => {
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
   return (
     <PanelDialog>
-      <PanelDialog.Header title={`View settings — ${props.props.initialView.name}`} icon="ti ti-table-spark" close={closeIfClean} />
+      <PanelDialog.Header title={t().viewSettings({ name: props.props.initialView.name })} icon="ti ti-table-spark" close={closeIfClean} />
       <ViewSettingsBody {...props.props} onDirtyChange={setDirty} />
     </PanelDialog>
   );
 }
 
 function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [generalDirty, setGeneralDirty] = createSignal(false);
   const [queryDirty, setQueryDirty] = createSignal(false);
   createEffect(() => props.onDirtyChange?.(generalDirty() || queryDirty()));
@@ -74,11 +80,7 @@ function ViewSettingsBody(props: Props & { onDirtyChange?: (dirty: boolean) => v
         onDirtyChange={setQueryDirty}
       />
 
-      <PanelDialog.Section
-        title="Danger zone"
-        subtitle="Delete this view. Records remain; only this saved view is removed."
-        icon="ti ti-trash"
-      >
+      <PanelDialog.Section title={t().dangerZone} subtitle={t().deleteViewDescription} icon="ti ti-trash">
         <DeleteButton viewId={props.initialView.id} baseId={props.baseId} tableId={props.tableId} name={props.initialView.name} />
       </PanelDialog.Section>
     </PanelDialog.Body>
@@ -97,6 +99,8 @@ function GeneralSection(props: {
   onSaved?: (view: PublicView) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const draft = createDraft({
     name: props.initial.name,
     icon: props.initial.icon ?? "",
@@ -118,7 +122,7 @@ function GeneralSection(props: {
         param: { viewId: props.viewId },
         json: { name: name().trim(), icon: icon() || null, ui: { ...props.initial.ui, displayConfig: displayConfig() }, shared: shared() },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().failedToSave));
       return res.json();
     },
     onSuccess: (saved) => {
@@ -135,18 +139,18 @@ function GeneralSection(props: {
   });
 
   return (
-    <PanelDialog.Section title="General" subtitle="Choose the view’s name, display, and who can use it." icon="ti ti-id">
-      <TextInput label="Name" value={name} onValueChange={(v) => patch({ name: v })} icon="ti ti-typography" required />
+    <PanelDialog.Section title={t().general} subtitle={t().viewGeneralDescription} icon="ti ti-id">
+      <TextInput label={t().name} value={name} onValueChange={(v) => patch({ name: v })} icon="ti ti-typography" required />
       <IconInput
-        label="Icon"
+        label={t().icon}
         value={() => icon() ?? null}
         onValueChange={(v) => patch({ icon: v ?? undefined })}
-        placeholder="Search icons..."
+        placeholder={t().searchIcons}
       />
       <RecordDisplayConfigEditor value={displayConfig} onChange={(value) => patch({ displayConfig: value })} fields={() => props.fields} />
       <CheckboxCard
-        label="Shared view"
-        description={`Visible on ${props.tableName} by default. View permissions below can grant direct access or narrow access.`}
+        label={t().sharedView}
+        description={t().sharedViewDescription({ table: props.tableName })}
         icon="ti ti-users"
         variant="input"
         value={shared}
@@ -160,15 +164,15 @@ function GeneralSection(props: {
           class="self-start"
           onClick={() => {
             if (!name().trim()) {
-              prompts.error("Name is required");
+              prompts.error(t().nameRequired);
               return;
             }
             mut.mutate(undefined);
           }}
           loading={mut.loading()}
-          loadingLabel="Saving view"
+          loadingLabel={t().savingView}
         >
-          Save
+          {t().save}
         </Button>
       </Show>
     </PanelDialog.Section>
@@ -182,6 +186,8 @@ function QuerySourceSection(props: {
   onSaved?: (view: PublicView) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   type ValidationState = "idle" | "checking" | "valid" | "invalid" | "error";
   const draft = createDraft({
     source: props.initial.source,
@@ -204,7 +210,7 @@ function QuerySourceSection(props: {
     validationAbort = undefined;
     if (!value) {
       setValidationState("invalid");
-      setDiagnostics([{ message: "GQL source is required" }]);
+      setDiagnostics([{ message: t().gqlRequired }]);
       setValidationError(null);
       return;
     }
@@ -223,7 +229,7 @@ function QuerySourceSection(props: {
           { init: { signal: abort.signal } },
         );
         if (token !== validationToken || abort.signal.aborted) return;
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not validate GQL source"));
+        if (!response.ok) throw new Error(await errorMessage(response, t().validateGqlFailed));
         const result = await response.json();
         if (result.ok) {
           setDiagnostics([]);
@@ -237,7 +243,7 @@ function QuerySourceSection(props: {
       } catch (error) {
         if (token !== validationToken || abort.signal.aborted) return;
         setDiagnostics([]);
-        setValidationError(error instanceof Error ? error.message : "Could not validate GQL source");
+        setValidationError(error instanceof Error ? error.message : t().validateGqlFailed);
         setValidationState("error");
       }
     }, 300);
@@ -248,19 +254,20 @@ function QuerySourceSection(props: {
   const mut = mutations.create<PublicView, void>({
     mutation: async () => {
       const trimmed = source().trim();
-      if (!trimmed) throw new Error("GQL source is required");
+      if (!trimmed) throw new Error(t().gqlRequired);
       const compiledResponse = await apiClient.gql["by-base"][":baseId"]["compile-view"].$post({
         param: { baseId: props.baseId },
         json: { query: trimmed, currentTableId: props.initial.tableId, currentSource: { kind: "table", tableId: props.initial.tableId } },
       });
-      if (!compiledResponse.ok) throw new Error(await errorMessage(compiledResponse, "Could not validate GQL source"));
+      if (!compiledResponse.ok) throw new Error(await errorMessage(compiledResponse, t().validateGqlFailed));
       const compiled = await compiledResponse.json();
-      if (!compiled.ok) throw new Error(compiled.diagnostics.map(formatDiagnostic).join("; ") || "Invalid GQL source");
+      if (!compiled.ok)
+        throw new Error(compiled.diagnostics.map((diagnostic) => formatDiagnostic(diagnostic, locale())).join("; ") || t().invalidGql);
       const res = await apiClient.views[":viewId"].$patch({
         param: { viewId: props.viewId },
         json: { source: compiled.source },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save GQL source"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveGqlFailed));
       return res.json();
     },
     onSuccess: (saved) => {
@@ -272,14 +279,10 @@ function QuerySourceSection(props: {
   });
 
   return (
-    <PanelDialog.Section title="Query" subtitle="Choose which records appear and how they are ordered." icon="ti ti-code">
-      <NoticeCard
-        tone="info"
-        title="Control what this view shows"
-        detail="Use the query to filter, sort, and limit records. Saving it changes this view only; it does not change the records themselves."
-      />
+    <PanelDialog.Section title={t().query} subtitle={t().queryDescription} icon="ti ti-code">
+      <NoticeCard tone="info" title={t().controlView} detail={t().controlViewDetail} />
       <label class="text-sm font-medium text-primary" for={`view-source-${props.viewId}`}>
-        GQL source
+        {t().gqlSource}
       </label>
       <GqlSourceEditor
         baseId={props.baseId}
@@ -290,7 +293,7 @@ function QuerySourceSection(props: {
         onValueChange={patch}
         lines={8}
         spellcheck={false}
-        aria-label="GQL source"
+        aria-label={t().gqlSource}
         aria-invalid={validationState() === "invalid" || validationState() === "error"}
         error={validationState() === "invalid" || validationState() === "error"}
         variant="paper"
@@ -298,18 +301,18 @@ function QuerySourceSection(props: {
       <div class="min-h-5 text-xs" aria-live="polite">
         <Show when={validationState() === "checking"}>
           <span class="text-dimmed">
-            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> Checking GQL source
+            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {t().checkingGql}
           </span>
         </Show>
         <Show when={validationState() === "valid"}>
           <span class="text-success">
-            <i class="ti ti-check" aria-hidden="true" /> GQL source is valid
+            <i class="ti ti-check" aria-hidden="true" /> {t().validGql}
           </span>
         </Show>
         <Show when={validationError()}>{(message) => <span class="text-danger">{message()}</span>}</Show>
         <Show when={diagnostics().length > 0}>
           <ul class="grid gap-1 text-danger">
-            <For each={diagnostics().slice(0, 4)}>{(diagnostic) => <li>{formatDiagnostic(diagnostic)}</li>}</For>
+            <For each={diagnostics().slice(0, 4)}>{(diagnostic) => <li>{formatDiagnostic(diagnostic, locale())}</li>}</For>
           </ul>
         </Show>
       </div>
@@ -322,39 +325,43 @@ function QuerySourceSection(props: {
           onClick={() => mut.mutate(undefined)}
           disabled={validationState() !== "valid"}
           loading={mut.loading()}
-          loadingLabel="Saving query"
+          loadingLabel={t().savingQuery}
         >
-          Save query
+          {t().saveQuery}
         </Button>
       </Show>
     </PanelDialog.Section>
   );
 }
 
-const formatDiagnostic = (diagnostic: DslQueryPreviewDiagnostic): string =>
-  diagnostic.line && diagnostic.column ? `Line ${diagnostic.line}, col ${diagnostic.column}: ${diagnostic.message}` : diagnostic.message;
+const formatDiagnostic = (diagnostic: DslQueryPreviewDiagnostic, locale: string): string =>
+  diagnostic.line && diagnostic.column
+    ? gridsDialogMessages.resolve([locale]).t.lineColumn({ line: diagnostic.line, column: diagnostic.column, message: diagnostic.message })
+    : diagnostic.message;
 
 // =============================================================================
 // Delete
 // =============================================================================
 
 function DeleteButton(props: { viewId: string; baseId: string; tableId: string; name: string }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const mut = mutations.create<void, void>({
     mutation: async () => {
       const res = await apiClient.views[":viewId"].$delete({
         param: { viewId: props.viewId },
       });
-      if (res.status >= 400) throw new Error(await errorMessage(res, "Failed to delete view"));
+      if (res.status >= 400) throw new Error(await errorMessage(res, t().deleteViewFailed));
     },
     onSuccess: () => navigateTo(`/app/grids/${props.baseId}/table/${props.tableId}`),
     onError: (e) => prompts.error(e.message),
   });
 
   const handleDelete = async () => {
-    const ok = await prompts.confirm(`Delete view "${props.name}"? Records remain — only the saved configuration goes away.`, {
-      title: "Delete view?",
+    const ok = await prompts.confirm(t().deleteViewConfirm({ name: props.name }), {
+      title: t().deleteViewQuestion,
       variant: "danger",
-      confirmText: "Delete",
+      confirmText: t().delete,
     });
     if (!ok) return;
     mut.mutate(undefined);
@@ -362,7 +369,7 @@ function DeleteButton(props: { viewId: string; baseId: string; tableId: string; 
 
   return (
     <Button variant="danger" size="sm" type="button" class="self-start" onClick={handleDelete} disabled={mut.loading()}>
-      <i class="ti ti-trash" /> Delete view
+      <i class="ti ti-trash" /> {t().deleteView}
     </Button>
   );
 }

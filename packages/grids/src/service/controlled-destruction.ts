@@ -9,6 +9,7 @@ import {
   type StartControlledDestructionInput,
 } from "../controlled-destruction-contracts";
 import { logAudit } from "./audit";
+import { serviceMessagesFor } from "./messages";
 import { admitDestruction } from "./preservation-holds";
 import { insertWithShortIdForDb } from "./short-id";
 
@@ -379,14 +380,16 @@ export const start = async (
   input: StartControlledDestructionInput,
   actor: Actor,
   enqueue: (runId: string) => Promise<void> = queueRun,
+  locale?: string,
 ): Promise<Result<ControlledDestructionRun>> => {
+  const t = serviceMessagesFor(locale);
   const [base] = await sql<Array<{ name: string }>>`SELECT name FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL`;
-  if (!base) return fail(err.notFound("Base"));
-  if (input.confirmation !== base.name) return fail(err.badInput("Confirmation must exactly match the Base name."));
+  if (!base) return fail(err.notFound(t.base));
+  if (input.confirmation !== base.name) return fail(err.badInput(t.confirmationMismatch));
   const current = await preview(baseId);
   const byId = new Map(current.items.map((item) => [item.fileId, item]));
   const selected = input.fileIds.map((fileId) => byId.get(fileId));
-  if (selected.some((item) => !item)) return fail(err.conflict("The destruction preview changed. Refresh it before trying again."));
+  if (selected.some((item) => !item)) return fail(err.conflict(t.destructionPreviewChanged));
   const row = await sql.begin((tx) =>
     insertWithShortIdForDb(tx, "idx_grids_controlled_destruction_runs_short_id", async (attempt, shortId) => {
       const [created] = await attempt<Array<{ id: string; short_id: string }>>`
@@ -431,7 +434,7 @@ export const start = async (
   return ok(run);
 };
 
-export const cancel = async (baseId: string, runPublicId: string): Promise<Result<ControlledDestructionRun>> => {
+export const cancel = async (baseId: string, runPublicId: string, locale?: string): Promise<Result<ControlledDestructionRun>> => {
   const [updated] = await sql<Array<{ id: string }>>`
     UPDATE grids.controlled_destruction_runs
     SET status = CASE WHEN status = 'queued' THEN 'canceled' ELSE 'cancel_requested' END,
@@ -439,7 +442,7 @@ export const cancel = async (baseId: string, runPublicId: string): Promise<Resul
     WHERE base_id = ${baseId}::uuid AND short_id = ${runPublicId} AND status IN ('queued', 'running')
     RETURNING id::text
   `;
-  if (!updated) return fail(err.conflict("Only queued or running destruction can be canceled."));
+  if (!updated) return fail(err.conflict(serviceMessagesFor(locale).destructionCancelState));
   await sql`
     UPDATE grids.controlled_destruction_items
     SET status = 'skipped', message = 'Canceled before destruction.', processed_at = now()

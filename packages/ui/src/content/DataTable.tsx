@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
+import { useLocale } from "../intl/locale";
 import { PanelHeader } from "../layout/PanelHeader";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
@@ -125,10 +126,10 @@ type DataTablePanelContextValue = {
 
 const DataTablePanelContext = createContext<DataTablePanelContextValue>();
 
-const defaultRender = (value: unknown): JSX.Element => {
+const defaultRender = (value: unknown, locale: string, messages: ReturnType<ReturnType<typeof useUiMessages>>): JSX.Element => {
   if (value === null || value === undefined || value === "") return "—";
-  if (value instanceof Date) return value.toLocaleString();
-  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value instanceof Date) return value.toLocaleString(locale);
+  if (typeof value === "boolean") return value ? messages.yes : messages.no;
   if (typeof value === "number" || typeof value === "bigint") return String(value);
   if (typeof value === "string") return value;
   return JSON.stringify(value);
@@ -176,6 +177,7 @@ const scrollbarMetrics = (viewportSize: number, contentSize: number, scrollOffse
 
 function DataTableRoot<T>(props: DataTableProps<T>) {
   const messages = useUiMessages();
+  const locale = useLocale();
   const [hoveredColumn, setHoveredColumn] = createSignal<number | null>(null);
   const [scrollbars, setScrollbars] = createSignal<Record<DataTableScrollbarAxis, DataTableScrollbarMetrics>>({
     x: { overflow: false, offset: 0, size: 0 },
@@ -364,7 +366,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     );
   };
 
-  const renderCellDefault = (row: T, col: DataTableColumn<T>) => defaultRender(valueOf(row, col));
+  const renderValueDefault = (value: unknown) => defaultRender(value, locale(), messages());
+  const renderCellDefault = (row: T, col: DataTableColumn<T>) => renderValueDefault(valueOf(row, col));
 
   const onRowKeyDown = (event: KeyboardEvent, row: T) => {
     if (!isInteractive()) return;
@@ -520,7 +523,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                                         value: value(),
                                         render: (v) => renderCellDefault(row, { ...col, value: () => v }),
                                       })
-                                    : defaultRender(value())}
+                                    : renderValueDefault(value())}
                                 </div>
                               </td>
                             );
@@ -552,8 +555,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                             onMouseEnter={() => setHoveredColumnIfEnabled(index())}
                           >
                             {footer().renderCell
-                              ? footer().renderCell!({ col, value: value(), render: defaultRender })
-                              : defaultRender(value())}
+                              ? footer().renderCell!({ col, value: value(), render: renderValueDefault })
+                              : renderValueDefault(value())}
                           </td>
                         );
                       }}

@@ -2,7 +2,7 @@ import type { Result } from "@k2b/stdlib";
 import { type Lock, mutex, type QueueReceived } from "@k2b/sync";
 import { logger } from "@valentinkolb/cloud/services";
 import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
-import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
+import { normalizeLocale, normalizeTimeZone } from "@valentinkolb/cloud/shared";
 import type { WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { workflowPathKey } from "@valentinkolb/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@valentinkolb/cloud/workflows/runtime";
@@ -309,6 +309,7 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
           trigger.with,
           event.occurredAt,
         );
+        const locale = normalizeLocale(await settingsGet<string>("app.locale"));
         const result = await invoke({
           workflowId: workflow.id,
           mode: "execute",
@@ -319,6 +320,7 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
           principal,
           occurredAt: event.occurredAt,
           context: {
+            locale,
             recordEvent: event,
             workflowRecordSnapshots: { [`${event.tableId}:${event.recordId}`]: snapshot.data },
           },

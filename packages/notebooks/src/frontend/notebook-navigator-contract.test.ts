@@ -52,4 +52,14 @@ describe("Notebooks navigator hydration contract", () => {
     expect(source).toContain('visibility="hover"');
     expect(source).not.toContain("group-hover/node");
   });
+
+  test("places the persisted tree sort in the section header with a mobile equivalent", async () => {
+    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookSidebar.island.tsx")).text();
+
+    expect(source).toContain("actions={");
+    expect(source).toContain("iconOnly");
+    expect(source).toContain('icon="ti ti-arrows-sort"');
+    expect(source.match(/aria-label=\{t\(\)\.sortNotes\}/g)).toHaveLength(2);
+    expect(source).toContain("writeSettings(notebook().id, { treeSort: value })");
+  });
 });

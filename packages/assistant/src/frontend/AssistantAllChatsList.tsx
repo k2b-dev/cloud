@@ -8,6 +8,7 @@ import { assistantApi } from "../api/client";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { assistantConversationHref, type ConversationOpenResult, shouldCommitConversationNavigation } from "./assistant-navigation";
 import { ConversationStatusMeta } from "./conversation-status";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Props = {
   conversations: AiConversation[];
@@ -18,6 +19,7 @@ type Props = {
 };
 
 function ConversationSummary(props: { conversation: AiConversation; projectName?: string }) {
+  const copy = useAssistantCopy();
   return (
     <>
       <span class="min-w-0 flex-1">
@@ -28,7 +30,7 @@ function ConversationSummary(props: { conversation: AiConversation; projectName?
           </Show>
         </span>
         <span class="block truncate text-xs text-dimmed">
-          {props.conversation.description || `Updated ${formatUpdatedAt(props.conversation.updatedAt)}`}
+          {props.conversation.description || copy().updatedAt({ value: formatUpdatedAt(props.conversation.updatedAt) })}
         </span>
       </span>
     </>
@@ -36,6 +38,8 @@ function ConversationSummary(props: { conversation: AiConversation; projectName?
 }
 
 export default function AssistantAllChatsList(props: Props) {
+  const text = useAssistantText();
+  const copy = useAssistantCopy();
   const [conversations, setConversations] = createSignal(props.conversations);
   createEffect(() => setConversations(props.conversations));
   const [restoringId, setRestoringId] = createSignal<string | null>(null);
@@ -105,15 +109,15 @@ export default function AssistantAllChatsList(props: Props) {
             </Show>
             <ConversationStatusMeta conversation={conversation} labels />
             <span class="hidden shrink-0 text-xs text-dimmed sm:block">{formatUpdatedAt(conversation.updatedAt)}</span>
-            <Tooltip.Anchor content={props.archived ? "Restore chat" : "Edit chat"}>
+            <Tooltip.Anchor content={text(props.archived ? "Restore chat" : "Edit chat")}>
               <IconButton
                 size="sm"
                 variant="ghost"
                 class="shrink-0 opacity-60 group-focus-within:opacity-100"
-                label={props.archived ? `Restore ${conversation.title}` : `Edit ${conversation.title}`}
+                label={props.archived ? copy().restoreNamed({ name: conversation.title }) : copy().editNamed({ name: conversation.title })}
                 disabled={restore.loading()}
                 loading={props.archived && restoringId() === conversation.id}
-                loadingLabel={`Restoring ${conversation.title}`}
+                loadingLabel={copy().restoringNamed({ name: conversation.title })}
                 onClick={() => (props.archived ? void restore.mutate(conversation) : void openEditor(conversation))}
               >
                 <i class={`ti ${props.archived ? "ti-restore" : "ti-settings"}`} aria-hidden="true" />
@@ -123,7 +127,7 @@ export default function AssistantAllChatsList(props: Props) {
         )}
       </For>
       <Show when={conversations().length === 0}>
-        <Placeholder align="left" description="No chats left on this page." />
+        <Placeholder align="left" description={text("No chats left on this page.")} />
       </Show>
     </div>
   );

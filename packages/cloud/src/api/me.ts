@@ -35,7 +35,7 @@ import {
   UserSchema,
   WebAuthnPasskeySchema,
 } from "../contracts";
-import { type AuthContext, auth, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
+import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
@@ -220,7 +220,7 @@ const app = new Hono<AuthContext>()
     }),
     async (c) =>
       respond(c, async () => {
-        const data = await notifications.user.preferences.list(c.get("user").id);
+        const data = await notifications.user.preferences.list(c.get("user").id, getLocale(c));
         return ok(data);
       }),
   )
@@ -248,6 +248,7 @@ const app = new Hono<AuthContext>()
           userId: c.get("user").id,
           definitionId: c.req.valid("param").definitionId,
           channels: c.req.valid("json").channels,
+          locale: getLocale(c),
         }),
       ),
   )
@@ -272,6 +273,7 @@ const app = new Hono<AuthContext>()
         notifications.user.preferences.reset({
           userId: c.get("user").id,
           definitionId: c.req.valid("param").definitionId,
+          locale: getLocale(c),
         }),
       ),
   )
@@ -292,7 +294,7 @@ const app = new Hono<AuthContext>()
     async (c) =>
       respond(c, async () => {
         const query = c.req.valid("query");
-        const data = await notifications.user.history.list({ userId: c.get("user").id, ...query });
+        const data = await notifications.user.history.list({ userId: c.get("user").id, locale: getLocale(c), ...query });
         return ok(data);
       }),
   )

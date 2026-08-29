@@ -1,6 +1,7 @@
-import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
+import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { AuditRequirement, AuditUpdateRequirement, RecordMutationAudit } from "../../../contracts";
+import { recordMessages } from "./messages";
 
 type OpenRecordAuditDialogArgs = {
   operation: "update" | "delete" | "restore";
@@ -8,33 +9,34 @@ type OpenRecordAuditDialogArgs = {
   recordTitle: string;
 };
 
-const operationCopy = {
-  update: {
-    title: "Explain record changes",
-    subtitle: "This table requires context for the fields you changed.",
-    action: "Save changes",
-    icon: "ti ti-pencil",
-    actionVariant: "primary" as const,
-  },
-  delete: {
-    title: "Move record to trash",
-    subtitle: "The record remains available in trash and can be restored.",
-    action: "Move to trash",
-    icon: "ti ti-trash",
-    actionVariant: "danger" as const,
-  },
-  restore: {
-    title: "Restore record",
-    subtitle: "The original deletion reason remains unchanged. These answers describe this restore.",
-    action: "Restore",
-    icon: "ti ti-arrow-back-up",
-    actionVariant: "primary" as const,
-  },
-} as const;
-
 export const openRecordAuditDialog = (args: OpenRecordAuditDialogArgs): Promise<RecordMutationAudit | null> =>
   dialogCore
     .open<RecordMutationAudit | null>((close) => {
+      const locale = useLocale();
+      const t = () => recordMessages.resolve([locale()]).t;
+      const operationCopy = {
+        update: {
+          title: t().explainChanges,
+          subtitle: t().explainChangesSubtitle,
+          action: t().saveChanges,
+          icon: "ti ti-pencil",
+          actionVariant: "primary" as const,
+        },
+        delete: {
+          title: t().moveToTrash,
+          subtitle: t().moveToTrashSubtitle,
+          action: t().moveToTrash,
+          icon: "ti ti-trash",
+          actionVariant: "danger" as const,
+        },
+        restore: {
+          title: t().restoreRecord,
+          subtitle: t().restoreSubtitle,
+          action: t().restore,
+          icon: "ti ti-arrow-back-up",
+          actionVariant: "primary" as const,
+        },
+      };
       const copy = operationCopy[args.operation];
       const [answers, setAnswers] = createSignal<Record<string, string>>({});
       const [errors, setErrors] = createSignal<Record<string, string>>({});
@@ -50,7 +52,7 @@ export const openRecordAuditDialog = (args: OpenRecordAuditDialogArgs): Promise<
       const submit = () => {
         const nextErrors: Record<string, string> = {};
         for (const question of args.requirement.questions) {
-          if (question.required && !answers()[question.id]?.trim()) nextErrors[question.id] = "Required";
+          if (question.required && !answers()[question.id]?.trim()) nextErrors[question.id] = t().required;
         }
         setErrors(nextErrors);
         if (Object.keys(nextErrors).length > 0) return;
@@ -61,12 +63,8 @@ export const openRecordAuditDialog = (args: OpenRecordAuditDialogArgs): Promise<
         <PanelDialog>
           <PanelDialog.Header title={copy.title} subtitle={args.recordTitle} icon={copy.icon} close={() => close(null)} />
           <PanelDialog.Body>
-            <NoticeCard tone="info" title="Why this is required" detail={copy.subtitle} />
-            <PanelDialog.Section
-              title="Audit details"
-              subtitle="These answers become part of the permanent record history."
-              icon="ti ti-shield-check"
-            >
+            <NoticeCard tone="info" title={t().whyRequired} detail={copy.subtitle} />
+            <PanelDialog.Section title={t().auditDetails} subtitle={t().auditPermanent} icon="ti ti-shield-check">
               <For each={args.requirement.questions}>
                 {(question) => (
                   <Show
@@ -91,7 +89,7 @@ export const openRecordAuditDialog = (args: OpenRecordAuditDialogArgs): Promise<
                       onValueChange={(value) => setAnswer(question.id, value ?? "")}
                       error={() => errors()[question.id]}
                       options={question.type === "select" ? question.options.map((option) => ({ id: option.id, label: option.label })) : []}
-                      placeholder="Choose an option"
+                      placeholder={t().chooseOption}
                       clearable={!question.required}
                       required={question.required}
                     />
@@ -104,7 +102,7 @@ export const openRecordAuditDialog = (args: OpenRecordAuditDialogArgs): Promise<
             <span />
             <div class="flex items-center gap-2">
               <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button variant={copy.actionVariant} size="sm" onClick={submit}>
                 <i class={copy.icon} /> {copy.action}

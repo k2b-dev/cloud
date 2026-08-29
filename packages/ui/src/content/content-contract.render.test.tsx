@@ -18,6 +18,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Calendar } = await import("./Calendar");
 const { default: CodeDisplay } = await import("./CodeDisplay");
 const { default: DataTable } = await import("./DataTable");
+const { LocaleProvider } = await import("../intl/locale");
 const { DocCode, DocConceptGrid, DocRows } = await import("./Docs");
 const { default: FileTree } = await import("./FileTree");
 const { default: LogEntriesTable } = await import("./LogEntriesTable");
@@ -264,6 +265,29 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('data-selected="true"');
     expect(html).toContain('data-has-footer="true"');
     expect(html).toContain("Total");
+  });
+
+  test("renders default boolean and date cells with the inherited locale", () => {
+    const date = new Date("2026-01-02T03:04:05Z");
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return DataTable({
+            rows: [{ enabled: true, archived: false, date }],
+            columns: [
+              { id: "enabled", header: "Enabled", value: "enabled" },
+              { id: "archived", header: "Archived", value: "archived" },
+              { id: "date", header: "Date", value: "date" },
+            ],
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain(">Ja<");
+    expect(html).toContain(">Nein<");
+    expect(html).toContain(date.toLocaleString("de-CH"));
   });
 
   test("keeps table hover subtle without weakening the selected row", () => {

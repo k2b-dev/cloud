@@ -1,6 +1,7 @@
 import { Button, prompts, SegmentedControl, toast } from "@k2b/ui";
 import { clipboard } from "@k2b/stdlib/browser";
 import { createSignal } from "solid-js";
+import { usePulseMessages } from "../use-messages";
 
 export type PublicDashboardDisplayTheme = "light" | "dark";
 export type PublicDashboardDisplayHeight = "scroll" | "full";
@@ -15,6 +16,7 @@ type OpenPublicDashboardDisplayDialogOptions = {
 };
 
 export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashboardDisplayDialogOptions) => {
+  const t = usePulseMessages();
   try {
     await prompts.dialog<void>(
       (close) => {
@@ -28,9 +30,9 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
           setBusy("copy");
           try {
             await clipboard.copy(await resolveLink());
-            toast.success("Public display link copied");
+            toast.success(t().publicDisplayLinkCopied);
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Could not copy public display link");
+            toast.error(error instanceof Error ? error.message : t().publicDisplayLinkCopyFailed);
           } finally {
             setBusy(null);
           }
@@ -42,7 +44,7 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
             window.open(await resolveLink(), "_blank", "noopener,noreferrer");
             close();
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Could not open public display");
+            toast.error(error instanceof Error ? error.message : t().publicDisplayOpenFailed);
           } finally {
             setBusy(null);
           }
@@ -51,52 +53,52 @@ export const openPublicDashboardDisplayDialog = async (options: OpenPublicDashbo
         return (
           <div class="flex w-full min-w-0 max-w-xl flex-col gap-4 overflow-hidden">
             <p class="max-w-full text-sm leading-relaxed text-dimmed">
-              Choose a display URL for monitors, shared links, or embedded screens.
+              {t().publicDisplayDescription}
             </p>
 
             <div class="flex min-w-0 flex-col gap-2">
-              <p class="text-sm font-medium text-primary">Theme</p>
+              <p class="text-sm font-medium text-primary">{t().theme}</p>
               <SegmentedControl<PublicDashboardDisplayTheme>
                 value={theme}
                 onValueChange={setTheme}
                 options={[
-                  { value: "light", label: "Light", icon: "ti ti-sun" },
-                  { value: "dark", label: "Dark", icon: "ti ti-moon" },
+                  { value: "light", label: t().light, icon: "ti ti-sun" },
+                  { value: "dark", label: t().dark, icon: "ti ti-moon" },
                 ]}
               />
             </div>
 
             <div class="flex min-w-0 flex-col gap-2">
-              <p class="text-sm font-medium text-primary">Page height</p>
+              <p class="text-sm font-medium text-primary">{t().pageHeight}</p>
               <SegmentedControl<PublicDashboardDisplayHeight>
                 value={height}
                 onValueChange={setHeight}
                 options={[
-                  { value: "scroll", label: "Scrollable", icon: "ti ti-arrows-vertical" },
-                  { value: "full", label: "Full height", icon: "ti ti-device-tv" },
+                  { value: "scroll", label: t().scrollable, icon: "ti ti-arrows-vertical" },
+                  { value: "full", label: t().fullHeight, icon: "ti ti-device-tv" },
                 ]}
               />
               <p class="text-xs leading-relaxed text-dimmed">
-                Full height disables page scrolling for display monitors. Use it only when the dashboard fits the screen.
+                {t().fullHeightDescription}
               </p>
             </div>
 
             <div class="flex flex-wrap justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} onClick={copyLink}>
                 <i class={`ti ${busy() === "copy" ? "ti-loader-2 animate-spin" : "ti-copy"}`} />
-                Copy link
+                {t().copyLink}
               </Button>
               <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} onClick={openLink}>
                 <i class={`ti ${busy() === "open" ? "ti-loader-2 animate-spin" : "ti-external-link"}`} />
-                Open display
+                {t().openDisplay}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Public display", icon: "ti ti-device-tv" },
+      { title: t().publicDisplay, icon: "ti ti-device-tv" },
     );
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "Could not open public display options");
+    toast.error(error instanceof Error ? error.message : t().publicDisplayOptionsFailed);
   }
 };

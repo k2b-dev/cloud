@@ -107,12 +107,13 @@ export const listByRecord = async (
   recordId: string,
   limit = 50,
   fieldIds?: readonly string[],
+  locale?: string,
 ): Promise<RecordHistoryEntry[]> => {
   const table = await getTable(tableId);
   if (!table) return [];
   const entries =
     table.kind === "federated"
-      ? combinedAudit.listByRecord(tableId, recordId, limit, fieldIds)
+      ? combinedAudit.listByRecord(tableId, recordId, limit, fieldIds, locale)
       : storedAudit.listByRecord(tableId, recordId, limit, NON_RECORD_HISTORY_ACTIONS);
   return (await entries).flatMap((entry) => {
     const projected = projectRecordHistoryEntry(entry);

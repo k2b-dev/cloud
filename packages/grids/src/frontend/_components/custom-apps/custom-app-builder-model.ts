@@ -175,8 +175,27 @@ export const moveCustomAppPage = (definition: CustomAppDefinition, pageId: strin
   return { ...definition, pages };
 };
 
-export const customAppPageParameterUsage = (definition: CustomAppDefinition, pageId: string, parameterId: string): string[] => {
-  const usage = new Set<string>();
+export type CustomAppPageParameterUsage =
+  | "page record"
+  | "page availability"
+  | "block availability"
+  | "GQL source"
+  | "row navigation"
+  | "Form binding"
+  | "Form success navigation"
+  | "row action availability"
+  | "Row action input"
+  | "action availability"
+  | "Navigate action target"
+  | "Navigate action source"
+  | "Workflow action input";
+
+export const customAppPageParameterUsage = (
+  definition: CustomAppDefinition,
+  pageId: string,
+  parameterId: string,
+): CustomAppPageParameterUsage[] => {
+  const usage = new Set<CustomAppPageParameterUsage>();
   const contextReference = `@params.${parameterId}`;
   for (const page of definition.pages) {
     if (page.id === pageId && page.record?.id.path === parameterId) usage.add("page record");

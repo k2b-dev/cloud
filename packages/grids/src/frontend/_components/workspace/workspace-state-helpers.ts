@@ -1,4 +1,5 @@
 import type { Base } from "../../../service";
+import { resolveWorkspaceMessages } from "./messages";
 import type { AuthUser, GridsWorkspaceRoute, OkWorkspaceState, WorkspaceChrome, WorkspaceCommon } from "./workspace-state-model";
 
 const urlWithParam = (href: string, key: string, value: string) => {
@@ -18,7 +19,8 @@ export const buildViewer = (user: AuthUser) => ({
   userGroups: user.memberofGroupIds,
 });
 
-export const buildChrome = (href: string, base: Base): WorkspaceChrome => {
+export const buildChrome = (href: string, base: Base, locale?: string): WorkspaceChrome => {
+  const t = resolveWorkspaceMessages(locale);
   const url = new URL(href, "http://grids.local");
   const adminModeRequested = url.searchParams.get("edit") === "true";
   const trashMode = url.searchParams.get("trash") === "1";
@@ -33,7 +35,7 @@ export const buildChrome = (href: string, base: Base): WorkspaceChrome => {
     rememberPath,
     editModeToggleHref: adminModeRequested ? editModeOffHref : editModeOnHref,
     titleBase: [
-      { title: "Start", href: "/" },
+      { title: t.start, href: "/" },
       { title: "Grids", href: "/app/grids" },
       { title: base.name, href: `/app/grids/${base.shortId}` },
     ],

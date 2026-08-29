@@ -1,17 +1,19 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { hostMessages } from "./messages";
 
 const HostSettings = () => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const saveMutation = mutations.create<void, string>({
     mutation: async (cron) => {
       const response = await apiClient.settings["sync-cron"].$put({ json: { cron } });
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message ?? "Failed to save sync schedule.");
+        throw new Error(t().failedSaveSchedule);
       }
     },
-    onSuccess: () => toast.success("Host sync schedule updated"),
+    onSuccess: () => toast.success(t().scheduleUpdated),
     onError: (error) => prompts.error(error.message),
   });
 
@@ -24,18 +26,18 @@ const HostSettings = () => {
       current = data.cron;
       timezone = data.timezone;
     } else {
-      prompts.error("Failed to load current sync schedule, using default.");
+      prompts.error(t().scheduleLoadFailed);
     }
 
     const result = await prompts.form({
-      title: "Host Sync Settings",
+      title: t().syncSettings,
       icon: "ti ti-settings",
-      confirmText: "Save",
+      confirmText: t().save,
       fields: {
         sync_cron: {
           type: "text" as const,
-          label: "Sync schedule (cron)",
-          description: `Five-field cron interpreted in ${timezone}. This only controls how often the local mirror refreshes from FreeIPA.`,
+          label: t().syncSchedule,
+          description: t().syncScheduleDescription({ timezone }),
           default: current,
           required: true,
           placeholder: "*/5 * * * *",
@@ -48,9 +50,9 @@ const HostSettings = () => {
   };
 
   return (
-    <Button size="sm" variant="secondary" onClick={handleSettings} loading={saveMutation.loading()} loadingLabel="Saving settings">
+    <Button size="sm" variant="secondary" onClick={handleSettings} loading={saveMutation.loading()} loadingLabel={t().savingSettings}>
       <i class="ti ti-settings" aria-hidden="true" />
-      Settings
+      {t().settings}
     </Button>
   );
 };

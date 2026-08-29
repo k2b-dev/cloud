@@ -29,10 +29,13 @@ export type {
   NotificationDefinition,
   NotificationDefinitionInput,
   NotificationDefinitionMap,
+  NotificationDefinitionPresentationCatalog,
+  NotificationDefinitionPresentationTranslation,
   NotificationDeliveryPolicy,
   NotificationPresentation,
   NotificationRecipient,
   NotificationRecipientKind,
+  NotificationRenderContext,
   NotificationSendInput,
 } from "./contracts/notification-types";
 export { notification } from "./contracts/notification-types";

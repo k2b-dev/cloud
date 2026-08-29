@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, LinkCard, LogEntriesTable, ProgressBar, StatCell } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -9,20 +9,21 @@ import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../config";
 import AccountsWorkspace from "./AccountsWorkspace";
 import AdminOperations from "./dashboard/AdminOperations.island";
-import { getAccountTypeLabel, getManagementBadge, getManagementLabel, getPrimaryAccountBadge } from "./lib/account-badges";
+import { getManagementBadge, getPrimaryAccountBadge } from "./lib/account-badges";
 import { buildGroupsUrl } from "./lib/url-state";
-
-const BASE_QUICK_LINKS = [
-  { href: "/admin/observability/logs?source=auth:ipa:sync", label: "Sync logs" },
-  { href: "/admin/observability/logs?source=auth:ipa:backfill", label: "IPA backfill" },
-  { href: "/admin/observability/logs?source=auth:local-user:backfill", label: "Local user backfill" },
-  { href: "/admin/observability/logs?source=auth:guest:backfill", label: "Guest backfill" },
-  { href: "/admin/observability/logs?source=auth:reminder:daily", label: "Reminder runs" },
-  { href: "/app/accounts/deleted-accounts", label: "Deleted accounts" },
-  { href: "/app/accounts/reminders", label: "Reminder history" },
-] as const;
+import { accountsMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const quickLinkItems = [
+    { href: "/admin/observability/logs?source=auth:ipa:sync", label: t.syncLogs },
+    { href: "/admin/observability/logs?source=auth:ipa:backfill", label: t.ipaBackfill },
+    { href: "/admin/observability/logs?source=auth:local-user:backfill", label: t.localUserBackfill },
+    { href: "/admin/observability/logs?source=auth:guest:backfill", label: t.guestBackfill },
+    { href: "/admin/observability/logs?source=auth:reminder:daily", label: t.reminderRuns },
+    { href: "/app/accounts/deleted-accounts", label: t.deletedAccounts },
+    { href: "/app/accounts/reminders", label: t.reminderHistory },
+  ];
   const user = expectUserBackedActor(c);
   const isAdmin = isAdminUser(user);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
@@ -36,22 +37,22 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const primaryBadge = getPrimaryAccountBadge(user);
   const managementBadge = getManagementBadge(user);
-  const accountExpires = user.accountExpires ? dates.formatDate(user.accountExpires) : null;
-  const loginMethod = user.provider === "ipa" ? "FreeIPA password" : "Magic link";
+  const accountExpires = user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : null;
+  const loginMethod = user.provider === "ipa" ? t.freeIpaPassword : t.magicLink;
   const isExpiredAccount = user.accountExpires ? new Date(user.accountExpires) < new Date() : false;
   const totalAccounts = summary ? summary.ipaAccountsTotal + summary.localAccountsTotal : 0;
   const expiringTotal = summary ? summary.ipaExpiring30d + summary.localUserExpiring30d + summary.localGuestExpiring30d : 0;
-  const quickLinks = freeIpaEnabled ? BASE_QUICK_LINKS : BASE_QUICK_LINKS.filter((link) => !link.href.includes("auth:ipa:"));
+  const quickLinks = freeIpaEnabled ? quickLinkItems : quickLinkItems.filter((link) => !link.href.includes("auth:ipa:"));
   const healthRows: Array<[string, number, number]> = freeIpaEnabled
     ? [
-        ["IPA sync", summary?.recentSyncRuns ?? 0, summary?.recentSyncRunsWithFailures ?? 0],
-        ["IPA demotion", summary?.recentDemotionRuns ?? 0, summary?.recentDemotionRunsWithFailures ?? 0],
-        ["Reminders", summary?.recentReminderRuns ?? 0, summary?.recentReminderRunsWithFailures ?? 0],
+        [t.ipaSync, summary?.recentSyncRuns ?? 0, summary?.recentSyncRunsWithFailures ?? 0],
+        [t.ipaDemotion, summary?.recentDemotionRuns ?? 0, summary?.recentDemotionRunsWithFailures ?? 0],
+        [t.reminders, summary?.recentReminderRuns ?? 0, summary?.recentReminderRunsWithFailures ?? 0],
       ]
-    : [["Reminders", summary?.recentReminderRuns ?? 0, summary?.recentReminderRunsWithFailures ?? 0]];
+    : [[t.reminders, summary?.recentReminderRuns ?? 0, summary?.recentReminderRunsWithFailures ?? 0]];
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Accounts" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts }]}>
       <AccountsWorkspace
         active="dashboard"
         isAdmin={isAdmin}
@@ -72,30 +73,30 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h1 class="text-sm font-semibold text-primary">{user.displayName || user.uid}</h1>
-                  <span class={`tag ${primaryBadge.className}`}>{primaryBadge.label}</span>
-                  <span class={`tag ${managementBadge.className}`}>{managementBadge.label}</span>
-                  {isExpiredAccount && <span class="tag bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">Expired</span>}
+                  <span class={`tag ${primaryBadge.className}`}>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span>
+                  <span class={`tag ${managementBadge.className}`}>{user.provider === "ipa" ? "FreeIPA" : t.local}</span>
+                  {isExpiredAccount && <span class="tag bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">{t.expired}</span>}
                 </div>
                 <span class="text-xs text-dimmed">{user.uid}</span>
               </div>
               <ButtonLink href="/me" size="sm" variant="subtle" class="shrink-0">
                 <i class="ti ti-user" />
-                <span class="hidden sm:inline">Profile</span>
+                <span class="hidden sm:inline">{t.profilePage}</span>
               </ButtonLink>
             </div>
             <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2">
               {(
                 [
-                  ["Access", getAccountTypeLabel(user)],
-                  ["Managed by", getManagementLabel(user)],
-                  ["Login", loginMethod],
-                  ["Expires", accountExpires ?? "Never"],
+                  [t.access, user.profile === "user" ? t.fullAccount : t.guestAccount],
+                  [t.managedBy, user.provider === "ipa" ? "FreeIPA" : t.local],
+                  [t.login, loginMethod],
+                  [t.expires, accountExpires ?? t.never],
                 ] as const
               ).map(([label, value]) => (
                 <div class="flex items-baseline gap-2">
                   <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{label}</span>
                   <span
-                    class={`text-xs font-medium ${label === "Expires" && isExpiredAccount ? "text-red-600 dark:text-red-400" : "text-primary"}`}
+                    class={`text-xs font-medium ${label === t.expires && isExpiredAccount ? "text-red-600 dark:text-red-400" : "text-primary"}`}
                   >
                     {value}
                   </span>
@@ -108,22 +109,22 @@ export default ssr<AuthContext>(async (c) => {
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <LinkCard
               href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "managed" }, { defaultScope: defaultGroupScope })}
-              title="Managed by me"
-              description={`${managedGroups.total} group${managedGroups.total === 1 ? "" : "s"}`}
+              title={t.managedByMe}
+              description={t.groupCount({ count: managedGroups.total })}
               icon="ti ti-shield"
               color="violet"
             />
             <LinkCard
               href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "member" }, { defaultScope: defaultGroupScope })}
-              title="My groups"
-              description={`${memberGroups.total} group${memberGroups.total === 1 ? "" : "s"}`}
+              title={t.myGroups}
+              description={t.groupCount({ count: memberGroups.total })}
               icon="ti ti-users-group"
               color="blue"
             />
             <LinkCard
               href={buildGroupsUrl({ search: "", page: 1, provider: "", scope: "all" }, { defaultScope: defaultGroupScope })}
-              title="All groups"
-              description={`${allGroups.total} group${allGroups.total === 1 ? "" : "s"}`}
+              title={t.allGroups}
+              description={t.groupCount({ count: allGroups.total })}
               icon="ti ti-layout-grid"
               color="zinc"
             />
@@ -133,21 +134,19 @@ export default ssr<AuthContext>(async (c) => {
           {isAdmin && summary ? (
             <>
               <div class="pt-2">
-                <h2 class="text-sm font-semibold text-primary">Administration</h2>
-                <p class="mt-1 text-xs text-dimmed">Account health, lifecycle operations, and recent access changes.</p>
+                <h2 class="text-sm font-semibold text-primary">{t.administration}</h2>
+                <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
               </div>
 
               <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="min-w-0">
-                    <p class="text-xs font-medium text-primary">Administrative account actions are recorded in the audit log.</p>
-                    <p class="mt-0.5 text-[11px] text-dimmed">
-                      Review user, group, and account request changes from one searchable history.
-                    </p>
+                    <p class="text-xs font-medium text-primary">{t.auditNotice}</p>
+                    <p class="mt-0.5 text-[11px] text-dimmed">{t.auditNoticeDescription}</p>
                   </div>
                   <ButtonLink href="/app/accounts/audit" size="sm" variant="subtle" class="shrink-0">
                     <i class="ti ti-clipboard-list" />
-                    Audit Log
+                    {t.auditLog}
                   </ButtonLink>
                 </div>
               </div>
@@ -157,7 +156,7 @@ export default ssr<AuthContext>(async (c) => {
                 {/* Run Health — hero side */}
                 <div class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-5 py-5">
                   <div class="flex items-center justify-between gap-3">
-                    <span class="text-[10px] uppercase tracking-wider text-dimmed">Run health</span>
+                    <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.runHealth}</span>
                     <span
                       class={`tag ${
                         summary.lastSync
@@ -166,7 +165,9 @@ export default ssr<AuthContext>(async (c) => {
                       }`}
                     >
                       <i class={`ti ${summary.lastSync ? "ti-check" : "ti-alert-circle"}`} />
-                      {summary.lastSync ? `Synced ${dates.formatDateTimeRelative(summary.lastSync.createdAt)}` : "No sync yet"}
+                      {summary.lastSync
+                        ? t.synced({ value: dates.formatDateTimeRelative(summary.lastSync.createdAt, { locale }) })
+                        : t.noSyncYet}
                     </span>
                   </div>
                   <div class="flex flex-col gap-2 flex-1 justify-center">
@@ -181,7 +182,7 @@ export default ssr<AuthContext>(async (c) => {
                             size="xs"
                             tone={hasFails ? "danger" : "info"}
                             class="flex-1 min-w-0"
-                            label={`${label} run health`}
+                            label={t.runHealthLabel({ label })}
                           />
                           <span
                             class={`text-[11px] tabular-nums shrink-0 ${hasFails ? "text-red-600 dark:text-red-400 font-medium" : "text-dimmed"}`}
@@ -192,37 +193,37 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     })}
                   </div>
-                  <span class="text-[10px] text-dimmed">Based on last {summary.runHealthWindow} runs</span>
+                  <span class="text-[10px] text-dimmed">{t.basedOnRuns({ count: summary.runHealthWindow })}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                   <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
                     <StatCell
-                      label="Accounts"
+                      label={t.accounts}
                       value={totalAccounts}
-                      sub={`${summary.ipaAccountsTotal} IPA · ${summary.localAccountsTotal} local`}
+                      sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
                       accent={{ tone: "blue", icon: "ti ti-users" }}
                     />
                   </div>
                   <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
                     <StatCell
-                      label="Groups"
+                      label={t.groups}
                       value={summary.groupsTotal}
-                      sub={`${summary.ipaGroupsTotal} IPA · ${summary.localGroupsTotal} local`}
+                      sub={t.sourceCounts({ freeIpa: summary.ipaGroupsTotal, local: summary.localGroupsTotal })}
                     />
                   </div>
                   <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
                     <StatCell
-                      label="Requests"
+                      label={t.requests}
                       value={summary.openRequests}
                       href={summary.openRequests > 0 ? "/app/accounts/requests" : undefined}
                       valueClass={summary.openRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-                      sub={summary.openRequests > 0 ? "pending review" : "none pending"}
+                      sub={summary.openRequests > 0 ? t.pendingReview : t.nonePending}
                       accent={
                         summary.openRequests > 0
                           ? {
                               tone: "amber",
                               icon: "ti ti-clock",
-                              text: "open",
+                              text: t.open,
                             }
                           : undefined
                       }
@@ -230,9 +231,9 @@ export default ssr<AuthContext>(async (c) => {
                   </div>
                   <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
                     <StatCell
-                      label="Expiring 30d"
+                      label={t.expiring30d}
                       value={expiringTotal}
-                      sub={expiringTotal > 0 ? "accounts" : "none soon"}
+                      sub={expiringTotal > 0 ? t.accountCount({ count: expiringTotal }) : t.noneSoon}
                       valueClass={expiringTotal > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
                       accent={expiringTotal > 0 ? { tone: "amber", icon: "ti ti-calendar-due" } : undefined}
                     />
@@ -243,9 +244,9 @@ export default ssr<AuthContext>(async (c) => {
               {/* Operations */}
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">Operations</span>
+                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t.operations}</span>
                   <a href="/admin/settings" class="text-[11px] text-dimmed transition-colors hover:text-primary">
-                    Settings
+                    {t.settings}
                   </a>
                 </div>
                 <AdminOperations freeIpaEnabled={freeIpaEnabled} />
@@ -254,7 +255,7 @@ export default ssr<AuthContext>(async (c) => {
               {/* Activity */}
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">Recent activity</span>
+                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t.recentActivity}</span>
                   <div class="flex items-center gap-1 flex-wrap">
                     {quickLinks.map((link) => (
                       <a href={link.href} class="tag bg-zinc-100 dark:bg-zinc-800 text-dimmed transition-colors hover:text-primary">
@@ -263,7 +264,7 @@ export default ssr<AuthContext>(async (c) => {
                     ))}
                   </div>
                 </div>
-                <LogEntriesTable entries={activity} emptyMessage="No lifecycle activity logged yet." />
+                <LogEntriesTable entries={activity} emptyMessage={t.noLifecycleActivity} />
               </div>
             </>
           ) : null}

@@ -17,9 +17,11 @@ import {
   sameSettingValue,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
+import { filesMessages } from "../messages";
 
 type Initial = {
   "files.filegate_url": string;
@@ -35,6 +37,8 @@ type Initial = {
 type Props = { initial: Initial };
 
 export default function FilesSettingsForm(props: Props) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const [draft, setDraft] = createSignal<Initial>({ ...props.initial });
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
 
@@ -63,14 +67,14 @@ export default function FilesSettingsForm(props: Props) {
       for (const k of changedKeys()) updates[k as string] = draft()[k];
       const response = await apiClient.admin.settings.$put({ json: updates });
       if (!response.ok) {
-        const { message, fields } = await readSettingsError(response, `Save failed (HTTP ${response.status})`);
+        const { fields } = await readSettingsError(response, t().settingsSaveFailed);
         setFieldErrors(fields);
-        throw new Error(message);
+        throw new Error(t().settingsSaveFailed);
       }
     },
     onSuccess: () => {
       window.onbeforeunload = null;
-      toast.success("Files settings saved");
+      toast.success(t().settingsSaved);
       refreshCurrentPath();
     },
     onError: (e) => prompts.error(e.message),
@@ -86,8 +90,8 @@ export default function FilesSettingsForm(props: Props) {
   return (
     <SettingsPage
       style="view-transition-name: admin-files-settings"
-      title="Files"
-      subtitle="Storage defaults and file system integration."
+      title={t().files}
+      subtitle={t().settingsSubtitle}
       icon="ti ti-folder"
       scrollPreserveKey="files-admin"
       footer={
@@ -99,28 +103,25 @@ export default function FilesSettingsForm(props: Props) {
         />
       }
     >
-      <SettingsSection title="Filegate" subtitle="Storage backend and provider-bound credential." icon="ti ti-server">
-        <p class="text-xs text-dimmed">
-          The file manager uses <strong>Filegate</strong> as its storage backend. The token is stored as an encrypted setting and is never
-          rendered back into the page.
-        </p>
+      <SettingsSection title="Filegate" subtitle={t().filegateSubtitle} icon="ti ti-server">
+        <p class="text-xs text-dimmed">{t().filegateBody}</p>
         <SettingsField
-          label="Filegate URL"
-          description="URL of the Filegate storage backend"
+          label={t().filegateUrl}
+          description={t().filegateUrlDescription}
           error={() => fieldErrors()["files.filegate_url"]}
           changed={() => isChanged("files.filegate_url")}
         >
           <TextInput
             value={() => draft()["files.filegate_url"]}
             onValueChange={(v) => update("files.filegate_url", v)}
-            placeholder="e.g. http://filegate:4000"
+            placeholder={t().filegateUrlExample}
             type="url"
           />
         </SettingsField>
 
         <SettingsField
-          label="Filegate Token"
-          description="Authentication token for Filegate. The current value is hidden — leave empty to keep it unchanged."
+          label={t().filegateToken}
+          description={t().filegateTokenDescription}
           error={() => fieldErrors()["files.filegate_token"]}
           changed={() => isChanged("files.filegate_token")}
         >
@@ -128,46 +129,44 @@ export default function FilesSettingsForm(props: Props) {
             value={() => draft()["files.filegate_token"]}
             onValueChange={(v) => update("files.filegate_token", v)}
             password
-            placeholder="Leave empty to keep current value"
+            placeholder={t().keepCurrent}
           />
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection title="Base Paths" subtitle="Filesystem roots for user homes and shared group folders." icon="ti ti-folders">
+      <SettingsSection title={t().basePaths} subtitle={t().basePathsSubtitle} icon="ti ti-folders">
         <SettingsField
-          label="Base Homes"
-          description="Filesystem base path for user home directories"
+          label={t().baseHomes}
+          description={t().baseHomesDescription}
           error={() => fieldErrors()["files.base_homes"]}
           changed={() => isChanged("files.base_homes")}
         >
           <TextInput
             value={() => draft()["files.base_homes"]}
             onValueChange={(v) => update("files.base_homes", v)}
-            placeholder="e.g. /data/homes"
+            placeholder={t().homePathExample}
           />
         </SettingsField>
 
         <SettingsField
-          label="Base Groups"
-          description="Filesystem base path for group shared directories"
+          label={t().baseGroups}
+          description={t().baseGroupsDescription}
           error={() => fieldErrors()["files.base_groups"]}
           changed={() => isChanged("files.base_groups")}
         >
           <TextInput
             value={() => draft()["files.base_groups"]}
             onValueChange={(v) => update("files.base_groups", v)}
-            placeholder="e.g. /data/groups"
+            placeholder={t().groupPathExample}
           />
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection title="Unix Permissions" subtitle="Default octal modes for created directories and files." icon="ti ti-lock">
-        <p class="text-xs text-dimmed">
-          Use Unix octal notation such as <code>700</code> or <code>2770</code>.
-        </p>
+      <SettingsSection title={t().unixPermissions} subtitle={t().unixPermissionsSubtitle} icon="ti ti-lock">
+        <p class="text-xs text-dimmed">{t().unixBody}</p>
         <SettingsField
-          label="Home Dir Mode"
-          description="Octal Unix permissions for user home directories (e.g. 700)"
+          label={t().homeDirMode}
+          description={t().homeDirModeDescription}
           error={() => fieldErrors()["files.home_dir_mode"]}
           changed={() => isChanged("files.home_dir_mode")}
         >
@@ -179,8 +178,8 @@ export default function FilesSettingsForm(props: Props) {
         </SettingsField>
 
         <SettingsField
-          label="Home File Mode"
-          description="Octal Unix permissions for files in home directories (e.g. 600)"
+          label={t().homeFileMode}
+          description={t().homeFileModeDescription}
           error={() => fieldErrors()["files.home_file_mode"]}
           changed={() => isChanged("files.home_file_mode")}
         >
@@ -192,8 +191,8 @@ export default function FilesSettingsForm(props: Props) {
         </SettingsField>
 
         <SettingsField
-          label="Group Dir Mode"
-          description="Octal Unix permissions for group directories (2770 enables SGID)"
+          label={t().groupDirMode}
+          description={t().groupDirModeDescription}
           error={() => fieldErrors()["files.group_dir_mode"]}
           changed={() => isChanged("files.group_dir_mode")}
         >
@@ -205,8 +204,8 @@ export default function FilesSettingsForm(props: Props) {
         </SettingsField>
 
         <SettingsField
-          label="Group File Mode"
-          description="Octal Unix permissions for files in group directories (e.g. 660)"
+          label={t().groupFileMode}
+          description={t().groupFileModeDescription}
           error={() => fieldErrors()["files.group_file_mode"]}
           changed={() => isChanged("files.group_file_mode")}
         >

@@ -11,6 +11,7 @@ import { documentProfiles, profileKey, profileRegistry } from "../document-profi
 import { logAudit } from "./audit";
 import { DOCUMENT_NUMBER_ROOTS, DOCUMENT_SOURCE_ROOTS, utf8ByteLength, validateDocumentLiquidTemplate } from "./document-liquid";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
+import { documentServiceText } from "./document-messages";
 import { provisionDocumentNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
 import { insertWithShortId } from "./short-id";
 import { get as getTable } from "./tables";
@@ -78,46 +79,47 @@ export const getTemplateByShortId = async (shortId: string): Promise<DocumentTem
   return row ? mapDocumentTemplate(row) : null;
 };
 
-export const validateTemplateWrite = (input: { source?: string; renderer?: DocumentTemplate["renderer"] }): Result<void> => {
+export const validateTemplateWrite = (
+  input: { source?: string; renderer?: DocumentTemplate["renderer"] },
+  locale?: string,
+): Result<void> => {
+  const t = documentServiceText(locale);
   if (input.source !== undefined) {
-    if (!input.source.trim()) return fail(err.badInput("GQL source is required"));
-    if (utf8ByteLength(input.source) > SOURCE_MAX_BYTES) return fail(err.badInput("GQL source is too large"));
+    if (!input.source.trim()) return fail(err.badInput(t.sourceRequired));
+    if (utf8ByteLength(input.source) > SOURCE_MAX_BYTES) return fail(err.badInput(t.sourceTooLarge));
   }
   const parsedRenderer = input.renderer === undefined ? null : DocumentTemplateRendererSchema.safeParse(input.renderer);
-  if (parsedRenderer && !parsedRenderer.success)
-    return fail(err.badInput(parsedRenderer.error.issues[0]?.message ?? "Invalid Document renderer"));
+  if (parsedRenderer && !parsedRenderer.success) return fail(err.badInput(t.invalidRenderer));
   const renderer = parsedRenderer?.data;
   if (renderer?.kind === "profile") {
     if (!profiles.has(profileKey(renderer.id, renderer.version))) {
-      return fail(err.badInput(`Unknown Document profile ${renderer.id}@${renderer.version}`));
+      return fail(err.badInput(t.unknownProfile({ profile: `${renderer.id}@${renderer.version}` })));
     }
-    const valid = validateDocumentLiquidTemplate(renderer.inputTemplate, "Document profile input");
+    const valid = validateDocumentLiquidTemplate(renderer.inputTemplate, t.profileInputLabel, undefined, locale);
     if (!valid.ok) return valid;
   }
   if (renderer?.kind === "html") {
-    const body = validateDocumentLiquidTemplate(renderer.body, "HTML template");
+    const body = validateDocumentLiquidTemplate(renderer.body, t.htmlTemplateLabel, undefined, locale);
     if (!body.ok) return body;
     for (const [label, value] of [
-      ["header HTML", renderer.header],
-      ["footer HTML", renderer.footer],
-      ["page CSS", renderer.css],
+      [t.headerHtmlLabel, renderer.header],
+      [t.footerHtmlLabel, renderer.footer],
+      [t.pageCssLabel, renderer.css],
     ] as const) {
       if (!value) continue;
-      if (utf8ByteLength(value) > TEMPLATE_PART_MAX_BYTES) return fail(err.badInput(`${label} is too large`));
-      const valid = validateDocumentLiquidTemplate(value, label);
+      if (utf8ByteLength(value) > TEMPLATE_PART_MAX_BYTES) return fail(err.badInput(t.partTooLarge({ part: label })));
+      const valid = validateDocumentLiquidTemplate(value, label, undefined, locale);
       if (!valid.ok) return valid;
     }
-    if (utf8ByteLength(renderer.numberTemplate) > FILENAME_TEMPLATE_MAX_BYTES)
-      return fail(err.badInput("document number pattern is too large"));
-    const number = validateDocumentLiquidTemplate(renderer.numberTemplate, "document number pattern", DOCUMENT_NUMBER_ROOTS);
+    if (utf8ByteLength(renderer.numberTemplate) > FILENAME_TEMPLATE_MAX_BYTES) return fail(err.badInput(t.numberPatternTooLarge));
+    const number = validateDocumentLiquidTemplate(renderer.numberTemplate, t.documentNumberPatternLabel, DOCUMENT_NUMBER_ROOTS, locale);
     if (!number.ok) return number;
-    if (utf8ByteLength(renderer.filenameTemplate) > FILENAME_TEMPLATE_MAX_BYTES)
-      return fail(err.badInput("filename template is too large"));
-    const filename = validateDocumentLiquidTemplate(renderer.filenameTemplate, "filename template");
+    if (utf8ByteLength(renderer.filenameTemplate) > FILENAME_TEMPLATE_MAX_BYTES) return fail(err.badInput(t.filenameTemplateTooLarge));
+    const filename = validateDocumentLiquidTemplate(renderer.filenameTemplate, t.filenameTemplateLabel, undefined, locale);
     if (!filename.ok) return filename;
   }
   if (input.source !== undefined) {
-    const valid = validateDocumentLiquidTemplate(input.source, "GQL source", DOCUMENT_SOURCE_ROOTS);
+    const valid = validateDocumentLiquidTemplate(input.source, t.gqlSourceLabel, DOCUMENT_SOURCE_ROOTS, locale);
     if (!valid.ok) return valid;
   }
   return ok();
@@ -127,14 +129,16 @@ export const createTemplate = async (
   tableId: string,
   input: CreateDocumentTemplateInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<DocumentTemplate>> => {
+  const t = documentServiceText(locale);
   const table = await getTable(tableId);
-  if (!table) return fail(err.notFound("Table"));
-  const valid = validateTemplateWrite(input);
+  if (!table) return fail(err.notFound(t.tableNotFound));
+  const valid = validateTemplateWrite(input, locale);
   if (!valid.ok) return valid;
 
   const name = input.name.trim();
-  if (!name) return fail(err.badInput("name required"));
+  if (!name) return fail(err.badInput(t.nameRequired));
   const source = input.source.trim();
   const renderer = DocumentTemplateRendererSchema.parse(input.renderer);
   const html = renderer.kind === "html" ? renderer : null;
@@ -196,11 +200,13 @@ export const updateTemplate = async (
   templateId: string,
   input: UpdateDocumentTemplateInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<DocumentTemplate>> => {
+  const t = documentServiceText(locale);
   const existing = await getTemplate(templateId);
-  if (!existing) return fail(err.notFound("Document template"));
+  if (!existing) return fail(err.notFound(t.documentTemplateNotFound));
   const candidate = { ...existing, ...input };
-  const valid = validateTemplateWrite(candidate);
+  const valid = validateTemplateWrite(candidate, locale);
   if (!valid.ok) return valid;
   const renderer = input.renderer === undefined ? undefined : DocumentTemplateRendererSchema.parse(input.renderer);
   const html = renderer?.kind === "html" ? renderer : null;
@@ -245,13 +251,19 @@ export const updateTemplate = async (
     }
     return rows;
   });
-  return row ? ok(mapDocumentTemplate(row)) : fail(err.notFound("Document template"));
+  return row ? ok(mapDocumentTemplate(row)) : fail(err.notFound(t.documentTemplateNotFound));
 };
 
-export const reorderTemplates = async (tableId: string, templateIds: string[], actorId: string | null): Promise<Result<void>> => {
+export const reorderTemplates = async (
+  tableId: string,
+  templateIds: string[],
+  actorId: string | null,
+  locale?: string,
+): Promise<Result<void>> => {
+  const t = documentServiceText(locale);
   const table = await getTable(tableId);
-  if (!table) return fail(err.notFound("Table"));
-  if (new Set(templateIds).size !== templateIds.length) return fail(err.badInput("template ids must be unique"));
+  if (!table) return fail(err.notFound(t.tableNotFound));
+  if (new Set(templateIds).size !== templateIds.length) return fail(err.badInput(t.templateIdsUnique));
 
   return sql.begin(async (tx) => {
     const existing = await tx<{ id: string }[]>`
@@ -262,7 +274,7 @@ export const reorderTemplates = async (tableId: string, templateIds: string[], a
     `;
     const requested = new Set(templateIds);
     if (existing.length !== templateIds.length || existing.some((template) => !requested.has(template.id))) {
-      return fail(err.conflict("document templates changed; reload and retry the reorder"));
+      return fail(err.conflict(t.templatesChanged));
     }
 
     const positions = `{${templateIds.map((_, index) => index).join(",")}}`;
@@ -286,7 +298,8 @@ export const reorderTemplates = async (tableId: string, templateIds: string[], a
   });
 };
 
-export const removeTemplate = async (templateId: string, actorId: string | null): Promise<Result<void>> => {
+export const removeTemplate = async (templateId: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const t = documentServiceText(locale);
   const [row] = await sql.begin(async (tx) => {
     const rows = await tx<DocumentDbRow[]>`
       UPDATE grids.document_templates
@@ -297,12 +310,13 @@ export const removeTemplate = async (templateId: string, actorId: string | null)
     if (rows[0]) await setNumberSeriesArchived(tx, { kind: "document_template", id: templateId }, true);
     return rows;
   });
-  return row ? ok() : fail(err.notFound("Document template"));
+  return row ? ok() : fail(err.notFound(t.documentTemplateNotFound));
 };
 
-export const restoreTemplate = async (templateId: string, actorId: string | null): Promise<Result<DocumentTemplate>> => {
+export const restoreTemplate = async (templateId: string, actorId: string | null, locale?: string): Promise<Result<DocumentTemplate>> => {
+  const t = documentServiceText(locale);
   const existing = await getStoredTemplate(templateId);
-  if (!existing) return fail(err.notFound("Document template"));
+  if (!existing) return fail(err.notFound(t.documentTemplateNotFound));
   if (existing.deletedAt === null) return ok(existing);
   const [row] = await sql.begin(async (tx) => {
     const rows = await tx<DocumentDbRow[]>`
@@ -316,5 +330,5 @@ export const restoreTemplate = async (templateId: string, actorId: string | null
     }
     return rows;
   });
-  return row ? ok(mapDocumentTemplate(row)) : fail(err.notFound("Document template"));
+  return row ? ok(mapDocumentTemplate(row)) : fail(err.notFound(t.documentTemplateNotFound));
 };

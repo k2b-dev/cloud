@@ -6,10 +6,12 @@ import type { PublicField as Field, PublicTable as Table, PublicView as View } f
 import type { AggregationSpec, ColumnSpec, FieldColumnSpec, GroupBySpec, RecordQuery } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { openViewColumnSettingsDialog } from "../dialogs/ViewColumnSettingsDialog";
+import { fieldTypeLabel } from "../fields/field-type-meta";
 import { groupedAggregationColumnId, groupedGroupColumnId } from "../table/GroupedTable";
 import { errorMessage } from "../utils/api-helpers";
 import { openAddViewColumnsDialog } from "./AddViewColumnsDialog";
 import { openComputedColumnDialog } from "./ComputedColumnDialog";
+import { recordsViewMessages } from "./messages";
 
 export const isComputedColumn = (column: ColumnSpec): column is Extract<ColumnSpec, { kind: "computed" }> =>
   "kind" in column && column.kind === "computed";
@@ -62,6 +64,7 @@ type RecordsViewColumnControllerOptions = {
   isGrouped: Accessor<boolean>;
   isSavedView: Accessor<boolean>;
   syncUrl: (options: { replace: boolean }) => void;
+  locale?: Accessor<string>;
 };
 
 export const createRecordsViewColumnController = ({
@@ -78,7 +81,28 @@ export const createRecordsViewColumnController = ({
   isGrouped,
   isSavedView,
   syncUrl,
+  locale,
 }: RecordsViewColumnControllerOptions) => {
+  const t = () => recordsViewMessages.resolve([locale?.() ?? "en"]).t;
+  const granularityLabel = (granularity: string): string => {
+    const labels: Record<string, string> = { day: t().day, week: t().week, month: t().month, year: t().year };
+    return labels[granularity] ?? granularity;
+  };
+  const aggregationLabel = (aggregation: string): string => {
+    const labels: Record<string, string> = {
+      count: t().count,
+      countEmpty: t().countEmpty,
+      countUnique: t().countUnique,
+      sum: t().sum,
+      avg: t().average,
+      min: t().minimum,
+      max: t().maximum,
+      median: t().median,
+      earliest: t().earliest,
+      latest: t().latest,
+    };
+    return labels[aggregation] ?? aggregation;
+  };
   const defaultViewColumns = (): ColumnSpec[] => resolveDefaultViewColumns(tableColumns(), fields());
 
   const effectiveViewColumns = () => (!isGrouped() ? (viewColumns() ?? defaultViewColumns()) : undefined);
@@ -86,9 +110,9 @@ export const createRecordsViewColumnController = ({
   const patchRecordQueryMut = mutations.create<{ view: View; query: RecordQuery }, Partial<RecordQuery>>({
     mutation: async (patch) => {
       const view = props.activeView;
-      if (!view) throw new Error("No active view");
+      if (!view) throw new Error(t().noActiveView);
       const cur = await apiClient.views[":viewId"].$get({ param: { viewId: view.id } });
-      if (!cur.ok) throw new Error(await errorMessage(cur, "Failed to load view"));
+      if (!cur.ok) throw new Error(await errorMessage(cur, t().loadViewFailed));
       const current = await cur.json();
       const nextQuery = { ...view.query, ...patch };
       const converted = simpleQueryToGqlSource({ tableId: view.tableId, query: nextQuery });
@@ -105,7 +129,7 @@ export const createRecordsViewColumnController = ({
           },
         },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save view columns"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveViewColumnsFailed));
       return { view: await res.json(), query: nextQuery };
     },
     onSuccess: (result) => {
@@ -128,7 +152,7 @@ export const createRecordsViewColumnController = ({
         param: { tableId: props.tableId },
         json: { columns: columns.map((column) => cleanViewColumn(column)).filter(isFieldColumn) },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save table columns"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveTableColumnsFailed));
       return res.json();
     },
     onSuccess: (table) => setTableColumns(table.columns),
@@ -200,7 +224,7 @@ export const createRecordsViewColumnController = ({
       currentLabel: current.label,
       currentFormat: current.format,
       formatField: field,
-      hideLabel: "Hide column",
+      hideLabel: t().hideColumn,
     });
     if (!result) return;
     if (result.action === "hide") {
@@ -263,7 +287,7 @@ export const createRecordsViewColumnController = ({
     const current = groupBy()[index];
     if (!current) return;
     const field = fields().find((f) => f.id === current.fieldId);
-    const fallback = field ? field.name : "Group";
+    const fallback = field ? field.name : t().group;
     const columnId = groupedGroupColumnId(current, index);
     const result = await openViewColumnSettingsDialog({
       title: fallback,
@@ -271,7 +295,7 @@ export const createRecordsViewColumnController = ({
       currentLabel: current.label,
       currentFormat: current.format,
       formatField: field ?? null,
-      hideLabel: "Hide column",
+      hideLabel: t().hideColumn,
     });
     if (!result) return;
     if (result.action === "hide") {
@@ -287,7 +311,7 @@ export const createRecordsViewColumnController = ({
     const current = displayAggregations()[index];
     if (!current) return;
     const field = current.fieldId === "*" ? null : fields().find((f) => f.id === current.fieldId);
-    const fallback = current.fieldId === "*" ? "# records" : `${current.agg} ${field?.name ?? "value"}`;
+    const fallback = current.fieldId === "*" ? `# ${t().recordsLabel}` : `${aggregationLabel(current.agg)} ${field?.name ?? t().value}`;
     const columnId = groupedAggregationColumnId(current, index);
     const result = await openViewColumnSettingsDialog({
       title: fallback,
@@ -295,7 +319,7 @@ export const createRecordsViewColumnController = ({
       currentLabel: current.label,
       currentFormat: current.format,
       formatField: field ?? { type: "number", config: {} },
-      hideLabel: "Hide column",
+      hideLabel: t().hideColumn,
     });
     if (!result) return;
     if (result.action === "hide") {
@@ -316,7 +340,7 @@ export const createRecordsViewColumnController = ({
       .map((field) => ({
         id: field.id,
         label: field.name,
-        description: field.type,
+        description: fieldTypeLabel(field.type, locale?.() ?? "en"),
         icon: field.icon ?? "ti ti-columns",
       }));
   };
@@ -327,16 +351,16 @@ export const createRecordsViewColumnController = ({
       const spec = groupBy()[groupIndex];
       if (!spec) return null;
       const field = fields().find((f) => f.id === spec.fieldId);
-      const fallback = field ? (spec.granularity ? `${field.name} (${spec.granularity})` : field.name) : "Group";
-      return { label: spec.label?.trim() || fallback, description: "group", icon: "ti ti-hierarchy" };
+      const fallback = field ? (spec.granularity ? `${field.name} (${granularityLabel(spec.granularity)})` : field.name) : t().group;
+      return { label: spec.label?.trim() || fallback, description: t().groupDescription, icon: "ti ti-hierarchy" };
     }
     const aggregationIndex = displayAggregations().findIndex((spec, index) => groupedAggregationColumnId(spec, index) === columnId);
     if (aggregationIndex >= 0) {
       const spec = displayAggregations()[aggregationIndex];
       if (!spec) return null;
       const field = spec.fieldId === "*" ? null : fields().find((f) => f.id === spec.fieldId);
-      const fallback = spec.fieldId === "*" ? "# records" : `${spec.agg} ${field?.name ?? "value"}`;
-      return { label: spec.label?.trim() || fallback, description: "aggregate", icon: "ti ti-math-function" };
+      const fallback = spec.fieldId === "*" ? `# ${t().recordsLabel}` : `${aggregationLabel(spec.agg)} ${field?.name ?? t().value}`;
+      return { label: spec.label?.trim() || fallback, description: t().aggregateDescription, icon: "ti ti-math-function" };
     }
     return null;
   };
@@ -361,7 +385,7 @@ export const createRecordsViewColumnController = ({
     if (!isSavedView()) return;
     const columns = isGrouped() ? groupedHiddenColumns() : flatHiddenColumns();
     if (columns.length === 0) {
-      await prompts.alert("All columns are already visible.", { title: "No hidden columns", icon: "ti ti-check" });
+      await prompts.alert(t().allColumnsVisible, { title: t().noHiddenColumns, icon: "ti ti-check" });
       return;
     }
     const selected = await openAddViewColumnsDialog(columns);

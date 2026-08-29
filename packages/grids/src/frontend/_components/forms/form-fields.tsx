@@ -1,11 +1,24 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, Checkbox, CheckboxCard, DatePicker, DateTimePicker, IconButton, NumberInput, Select, TextInput, Tooltip } from "@k2b/ui";
+import {
+  Button,
+  Checkbox,
+  CheckboxCard,
+  DatePicker,
+  DateTimePicker,
+  IconButton,
+  NumberInput,
+  Select,
+  TextInput,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, Index, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField } from "../../../api/public-dto";
 import type { Field, FormFieldEntry } from "../../../service";
 import RelationPicker from "../records/RelationPicker";
 import type { InlineCreateDraft, InlineCreateState } from "./form-submit-payload";
+import { gridsFormMessages } from "./messages";
 import PrincipalInput from "./PrincipalInput";
 
 export { buildFormSubmitPayload, type InlineCreateState } from "./form-submit-payload";
@@ -91,6 +104,8 @@ export function FieldInput(props: {
   onInlineCreatesChange?: (fieldId: string, drafts: InlineCreateDraft[]) => void;
   inlineTargetFields?: Record<string, FrontendField[]>;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const label = props.entry.label || props.field.name;
   const required = props.entry.required ?? props.field.required;
   const helpText = props.entry.helpText;
@@ -196,7 +211,7 @@ export function FieldInput(props: {
           label={label}
           description={helpText}
           required={required}
-          placeholder="HH:MM:SS or seconds"
+          placeholder={t().durationPlaceholder}
           value={stringValue}
           onValueChange={(v) => props.onChange(v)}
           error={error}
@@ -330,7 +345,7 @@ export function FieldInput(props: {
         return (
           <div class="flex flex-col gap-0.5">
             <p class="block text-sm font-medium">{label}</p>
-            <p class="text-xs text-amber-600 dark:text-amber-400">Relation has no target table configured — skipping.</p>
+            <p class="text-xs text-amber-600 dark:text-amber-400">{t().relationMissingTarget}</p>
           </div>
         );
       }
@@ -382,7 +397,7 @@ export function FieldInput(props: {
               <Show when={props.entry.inlineCreate?.enabled}>
                 <Button variant="secondary" size="sm" type="button" class="shrink-0" onClick={createInlineDraft}>
                   <i class="ti ti-plus" />
-                  Create new
+                  {t().createNew}
                 </Button>
               </Show>
             </div>
@@ -452,6 +467,8 @@ function InlineRelationCreate(props: {
   targetFields?: FrontendField[];
   dateConfig?: DateContext;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const allowedIds = createMemo(() => new Set((props.entry.inlineCreate?.fields ?? []).map((entry) => entry.fieldId)));
   const [loadedFields, setLoadedFields] = createSignal<FrontendField[]>(props.targetFields ?? []);
 
@@ -495,37 +512,37 @@ function InlineRelationCreate(props: {
       <div class="paper mt-2 flex flex-col gap-2 p-3">
         <div class="flex items-start justify-between gap-2">
           <div>
-            <p class="text-xs font-semibold text-primary">New related record</p>
-            <p class="text-[11px] text-dimmed">Saved together with this form.</p>
+            <p class="text-xs font-semibold text-primary">{t().newRelatedRecord}</p>
+            <p class="text-[11px] text-dimmed">{t().linkedRecordSavedTogether}</p>
           </div>
           <div class="flex items-center gap-1">
             <Show when={props.multi}>
               <Button variant="secondary" size="sm" type="button" onClick={props.onCreateDraft}>
                 <i class="ti ti-plus" />
-                Another
+                {t().another}
               </Button>
             </Show>
             <Show when={!props.multi}>
               <Button variant="secondary" size="sm" type="button" onClick={props.onUseExisting}>
-                Use existing
+                {t().useExisting}
               </Button>
             </Show>
           </div>
         </div>
-        <Show when={inlineFields().length > 0} fallback={<p class="text-[11px] text-dimmed">No inline fields configured.</p>}>
+        <Show when={inlineFields().length > 0} fallback={<p class="text-[11px] text-dimmed">{t().noInlineFields}</p>}>
           <Index each={props.drafts()}>
             {(draft, index) => (
               <div class="flex flex-col gap-2">
                 <Show when={props.multi}>
                   <div class="flex justify-end">
-                    <Tooltip.Anchor content="Remove draft">
+                    <Tooltip.Anchor content={t().removeDraft}>
                       <IconButton
                         variant="ghost"
                         size="sm"
                         type="button"
                         class="h-7 w-7"
                         onClick={() => removeDraft(index)}
-                        label="Remove draft"
+                        label={t().removeDraft}
                       >
                         <i class="ti ti-x" />
                       </IconButton>

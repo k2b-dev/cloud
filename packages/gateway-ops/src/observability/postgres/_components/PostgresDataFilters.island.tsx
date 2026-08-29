@@ -1,5 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   search: string;
@@ -7,18 +8,6 @@ type Props = {
   sort: string;
   schemas: string[];
 };
-
-const SORT_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "size-desc", label: "Size", icon: "ti ti-database" },
-      { value: "rows-desc", label: "Rows", icon: "ti ti-list-numbers" },
-      { value: "dead-desc", label: "Dead rows", icon: "ti ti-recycle" },
-      { value: "schema-asc", label: "Schema", icon: "ti ti-folders" },
-      { value: "name-asc", label: "Name", icon: "ti ti-sort-ascending-letters" },
-    ],
-  },
-];
 
 const buildUrl = (input: { search: string; schema: string; sort: string }) => {
   const params = new URLSearchParams();
@@ -30,10 +19,18 @@ const buildUrl = (input: { search: string; schema: string; sort: string }) => {
 };
 
 export default function PostgresDataFilters(props: Props) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const sortOptions: FilterChipSection[] = [{ options: [
+    { value: "size-desc", label: t.size, icon: "ti ti-database" },
+    { value: "rows-desc", label: t.rows, icon: "ti ti-list-numbers" },
+    { value: "dead-desc", label: t.deadRows, icon: "ti ti-recycle" },
+    { value: "schema-asc", label: t.schema, icon: "ti ti-folders" },
+    { value: "name-asc", label: t.name, icon: "ti ti-sort-ascending-letters" },
+  ] }];
   const schemaOptions = (): FilterChipSection[] => [
     {
       options: [
-        { value: "all", label: "All schemas", icon: "ti ti-database" },
+        { value: "all", label: t.allSchemas, icon: "ti ti-database" },
         ...props.schemas.map((schema) => ({ value: schema, label: schema, icon: "ti ti-folder" })),
       ],
     },
@@ -52,7 +49,7 @@ export default function PostgresDataFilters(props: Props) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label="Schema"
+        label={t.schema}
         icon="ti ti-database"
         options={schemaOptions()}
         value={[props.schema || "all"]}
@@ -61,9 +58,9 @@ export default function PostgresDataFilters(props: Props) {
         defaultValue={["all"]}
       />
       <FilterChip
-        label="Sort"
+        label={t.sort}
         icon="ti ti-sort-descending"
-        options={SORT_OPTIONS}
+        options={sortOptions}
         value={[props.sort || "size-desc"]}
         onValueChange={(value) => navigate({ sort: value[0] ?? "size-desc" })}
         isActive={props.sort !== "size-desc"}

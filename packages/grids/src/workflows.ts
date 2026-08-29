@@ -24,9 +24,9 @@ import { workflowAction } from "@valentinkolb/cloud/workflows";
 import { sql } from "bun";
 import type { RecordMutationAudit, Table } from "./contracts";
 import { logAudit, type SqlClient } from "./service/audit";
+import type { DocumentIssuanceActor } from "./service/document-issuance";
 import { summarizeDocument } from "./service/document-mappers";
 import { createDocumentForRecord, createDocumentLink, getDocument, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
-import type { DocumentIssuanceActor } from "./service/document-issuance";
 import { get as getEmailTemplate } from "./service/email-templates";
 import { listByTable as listFields } from "./service/field-read";
 import { assertMutationAllowed } from "./service/mutation-policy";
@@ -61,6 +61,7 @@ import {
 } from "./service/workflow-atomic-records";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
+import { workflowInvocationLocale, workflowRuntimeText } from "./workflow-runtime-messages";
 import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "./workflows/contracts";
 
 // ─── Shared config fragments ─────────────────────────────────────────────────
@@ -98,9 +99,15 @@ const isRuntimeRecord = (value: WorkflowJsonValue | undefined): value is Runtime
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const dateContext = async (): Promise<DateContext> => ({
+const invocationLocale = (ctx: WorkflowActionContext): string => {
+  return workflowInvocationLocale(ctx.invocation.context);
+};
+
+const runtimeText = (ctx: WorkflowActionContext) => workflowRuntimeText(invocationLocale(ctx));
+
+const dateContext = async (ctx: WorkflowActionContext): Promise<DateContext> => ({
   timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
-  locale: "en",
+  locale: invocationLocale(ctx),
   firstDayOfWeek: 1,
 });
 
@@ -153,15 +160,15 @@ const planned = async (run: () => Promise<WorkflowPlannedEffect>): Promise<Workf
 
 // ─── Resolving what a step names ─────────────────────────────────────────────
 
-const currentTable = async (scope: GridsWorkflowActionScope, tableId: string): Promise<Table> => {
+const currentTable = async (ctx: WorkflowActionContext, scope: GridsWorkflowActionScope, tableId: string): Promise<Table> => {
   const table = await getTable(tableId);
-  if (!table || table.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Workflow table is no longer available");
+  if (!table || table.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).tableUnavailable);
   return table;
 };
 
 const recordReference = async (ctx: WorkflowActionContext, reference: string, key: string): Promise<RuntimeRecord> => {
   const value = await ctx.resolveReference(reference, key);
-  if (!isRuntimeRecord(value)) throw actionError("WORKFLOW_VALUE_INVALID", `${key} must resolve to a record`);
+  if (!isRuntimeRecord(value)) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).recordReferenceRequired({ path: key }));
   return value;
 };
 
@@ -171,16 +178,21 @@ const recordReference = async (ctx: WorkflowActionContext, reference: string, ke
  * A planned record has no row yet — a dry run of "create then update" is a
  * legitimate plan — so it validates access and stops there.
  */
-const readableRecord = async (scope: GridsWorkflowActionScope, reference: RuntimeRecord, required: "read" | "write"): Promise<void> => {
-  await currentTable(scope, reference.tableId);
+const readableRecord = async (
+  ctx: WorkflowActionContext,
+  scope: GridsWorkflowActionScope,
+  reference: RuntimeRecord,
+  required: "read" | "write",
+): Promise<void> => {
+  await currentTable(ctx, scope, reference.tableId);
   const recordAccess = await requireRecordAccess(scope, reference.tableId, required);
   if (reference.planned) return;
   const record = await getRecord(reference.tableId, reference.recordId, {
     includeRelations: true,
-    dateConfig: await dateContext(),
+    dateConfig: await dateContext(ctx),
     recordAccess,
   });
-  if (!record) throw actionError("NOT_FOUND", "Workflow record is no longer available");
+  if (!record) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
 };
 
 /**
@@ -199,7 +211,7 @@ const fieldPayloadAt = (
   for (const [field, value] of Object.entries(values)) {
     const fieldId = ctx.binding(...path, field);
     if (typeof fieldId !== "string" || !fieldId) {
-      throw actionError("WORKFLOW_BINDING_MISSING", `${[...path, field].join(".")} has no stable binding`);
+      throw actionError("WORKFLOW_BINDING_MISSING", runtimeText(ctx).stableBindingMissing({ path: [...path, field].join(".") }));
     }
     payload[fieldId] = value;
   }
@@ -215,7 +227,7 @@ const atomicFieldPayloadAt = (
   for (const [field, value] of Object.entries(values)) {
     const fieldId = ctx.binding(...path, field, "$target");
     if (typeof fieldId !== "string" || !fieldId) {
-      throw actionError("WORKFLOW_BINDING_MISSING", `${[...path, field].join(".")} has no stable target binding`);
+      throw actionError("WORKFLOW_BINDING_MISSING", runtimeText(ctx).stableTargetBindingMissing({ path: [...path, field].join(".") }));
     }
     payload[fieldId] = value;
   }
@@ -229,6 +241,7 @@ const fieldPayload = (
 ): Record<string, unknown> => fieldPayloadAt(ctx, [key], values);
 
 const correctionDraftValues = async (
+  ctx: WorkflowActionContext,
   client: SqlClient,
   tableId: string,
   typeFieldId: string,
@@ -246,7 +259,7 @@ const correctionDraftValues = async (
     (option) => option && typeof option === "object" && !Array.isArray(option) && (option as { id?: unknown }).id === typeValue,
   );
   if (typeField?.type !== "select" || typeConfig?.multiple === true || !typeValueExists) {
-    throw actionError("WORKFLOW_BINDING_INVALID", "Correction type must use a current single-select option on the original Table");
+    throw actionError("WORKFLOW_BINDING_INVALID", runtimeText(ctx).correctionTypeInvalid);
   }
   const relationConfig = originalField?.config as { targetTableId?: unknown; cardinality?: unknown } | undefined;
   if (
@@ -254,19 +267,19 @@ const correctionDraftValues = async (
     relationConfig?.targetTableId !== tableId ||
     (relationConfig.cardinality ?? "multiple") !== "single"
   ) {
-    throw actionError("WORKFLOW_BINDING_INVALID", "Original Record must use a current single self-relation on the original Table");
+    throw actionError("WORKFLOW_BINDING_INVALID", runtimeText(ctx).originalRelationInvalid);
   }
   if (copyFieldIds.length > MAX_CORRECTION_PREFILL_FIELDS || new Set(copyFieldIds).size !== copyFieldIds.length) {
-    throw actionError("WORKFLOW_BINDING_INVALID", `Correction prefill must name at most ${MAX_CORRECTION_PREFILL_FIELDS} unique fields`);
+    throw actionError("WORKFLOW_BINDING_INVALID", runtimeText(ctx).correctionPrefillLimit({ count: MAX_CORRECTION_PREFILL_FIELDS }));
   }
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
   for (const fieldId of copyFieldIds) {
     const field = fieldsById.get(fieldId);
     if (!field || !isCorrectionPrefillFieldType(field.type) || field.uniqueConstraint) {
-      throw actionError("WORKFLOW_BINDING_INVALID", "Correction prefill fields must be current stored value fields on the original Table");
+      throw actionError("WORKFLOW_BINDING_INVALID", runtimeText(ctx).correctionPrefillFieldsInvalid);
     }
     if (fieldId === typeFieldId || fieldId === originalFieldId) {
-      throw actionError("WORKFLOW_BINDING_INVALID", "Correction prefill cannot replace the correction type or Original Record relation");
+      throw actionError("WORKFLOW_BINDING_INVALID", runtimeText(ctx).correctionPrefillReservedFields);
     }
   }
   const [original] = await client<Array<{ data: Record<string, unknown> }>>`
@@ -275,7 +288,7 @@ const correctionDraftValues = async (
     WHERE id = ${originalRecordId}::uuid AND table_id = ${tableId}::uuid
       AND deleted_at IS NULL AND finalized_at IS NOT NULL
   `;
-  if (!original) throw actionError("CONFLICT", "The original Record is no longer finalized and available");
+  if (!original) throw actionError("CONFLICT", runtimeText(ctx).originalUnavailable);
   const values = Object.fromEntries(
     copyFieldIds.map((fieldId) => {
       const field = fieldsById.get(fieldId)!;
@@ -290,16 +303,21 @@ const correctionCopyFieldIds = (ctx: WorkflowActionContext, copyFields: string[]
   (copyFields ?? []).map((_, index) => {
     const id = ctx.binding("copyFields", index);
     if (typeof id !== "string" || !id) {
-      throw actionError("WORKFLOW_BINDING_MISSING", `copyFields.${index} has no stable binding`);
+      throw actionError("WORKFLOW_BINDING_MISSING", runtimeText(ctx).stableBindingMissing({ path: `copyFields.${index}` }));
     }
     return id;
   });
 
-const auditAnswerPayload = (answers: Record<string, WorkflowJsonValue> | undefined): RecordMutationAudit | undefined => {
+const auditAnswerPayload = (
+  ctx: WorkflowActionContext,
+  answers: Record<string, WorkflowJsonValue> | undefined,
+): RecordMutationAudit | undefined => {
   if (answers === undefined) return undefined;
   const resolved: Record<string, string> = {};
   for (const [questionId, value] of Object.entries(answers)) {
-    if (typeof value !== "string") throw actionError("WORKFLOW_VALUE_INVALID", `audit.${questionId} must resolve to text`);
+    if (typeof value !== "string") {
+      throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).auditTextRequired({ path: `audit.${questionId}` }));
+    }
     resolved[questionId] = value;
   }
   return { answers: resolved };
@@ -307,14 +325,16 @@ const auditAnswerPayload = (answers: Record<string, WorkflowJsonValue> | undefin
 
 const boundId = (ctx: WorkflowActionContext, key: string): string => {
   const id = ctx.binding(key);
-  if (typeof id !== "string" || !id) throw actionError("WORKFLOW_BINDING_MISSING", `${key} has no stable binding`);
+  if (typeof id !== "string" || !id) {
+    throw actionError("WORKFLOW_BINDING_MISSING", runtimeText(ctx).stableBindingMissing({ path: key }));
+  }
   return id;
 };
 
 const boundIdAt = (ctx: WorkflowActionContext, path: Array<string | number>): string => {
   const id = ctx.binding(...path);
   if (typeof id !== "string" || !id) {
-    throw actionError("WORKFLOW_BINDING_MISSING", `${path.join(".")} has no stable binding`);
+    throw actionError("WORKFLOW_BINDING_MISSING", runtimeText(ctx).stableBindingMissing({ path: path.join(".") }));
   }
   return id;
 };
@@ -346,13 +366,13 @@ const mayExecute = async (ctx: WorkflowActionContext): Promise<boolean> => {
  * void the class's whole promise.
  */
 const transaction = (ctx: WorkflowActionContext): SqlClient => {
-  if (!ctx.tx) throw actionError("WORKFLOW_EFFECT_INVALID", "Transactional workflow action ran without its transaction");
+  if (!ctx.tx) throw actionError("WORKFLOW_EFFECT_INVALID", runtimeText(ctx).transactionMissing);
   return ctx.tx;
 };
 
 const documentTemplate = async (ctx: WorkflowActionContext) => {
   const template = await getTemplate(boundId(ctx, "template"));
-  if (!template || !template.enabled) throw actionError("NOT_FOUND", "Document template is no longer available");
+  if (!template || !template.enabled) throw actionError("NOT_FOUND", runtimeText(ctx).documentTemplateUnavailable);
   return template;
 };
 
@@ -364,8 +384,8 @@ const documentRecord = async (
   required: "read" | "write",
 ): Promise<RuntimeRecord> => {
   const record = await recordReference(ctx, reference, "record");
-  if (record.tableId !== tableId) throw actionError("WORKFLOW_VALUE_INVALID", "Document record does not belong to the template table");
-  await readableRecord(scope, record, required);
+  if (record.tableId !== tableId) throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).documentRecordWrongTable);
+  await readableRecord(ctx, scope, record, required);
   return record;
 };
 
@@ -377,19 +397,22 @@ const linkExpiry = (value: string | undefined): "1d" | "7d" | "30d" | "90d" =>
 
 type LinkableDocument = { id: string; baseId: string; tableId: string; templateId: string | null; recordId: string };
 
-const documentReferenceId = (value: WorkflowJsonValue | undefined): { id: string; document: Record<string, WorkflowJsonValue> } => {
+const documentReferenceId = (
+  ctx: WorkflowActionContext,
+  value: WorkflowJsonValue | undefined,
+): { id: string; document: Record<string, WorkflowJsonValue> } => {
   const document = value && typeof value === "object" && !Array.isArray(value) ? value : null;
   if (!document || typeof document.id !== "string") {
-    throw actionError("WORKFLOW_VALUE_INVALID", "createDocumentLink.document must resolve to a document");
+    throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).documentReferenceRequired);
   }
   return { id: document.id, document };
 };
 
 /** The document a link is created for. It has to exist: the link points at it. */
 const documentToLink = async (ctx: WorkflowActionContext, scope: GridsWorkflowActionScope, reference: string) => {
-  const { id } = documentReferenceId(await ctx.resolveReference(reference, "document"));
+  const { id } = documentReferenceId(ctx, await ctx.resolveReference(reference, "document"));
   const document = await getDocument(id);
-  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
+  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
   return document;
 };
 
@@ -403,8 +426,12 @@ const plannedDocumentToLink = async (
   scope: GridsWorkflowActionScope,
   reference: string,
 ): Promise<LinkableDocument> => {
-  const { id, document: referenceDocument } = documentReferenceId(await ctx.resolveReference(reference, "document"));
-  if (referenceDocument.planned === true && typeof referenceDocument.tableId === "string" && typeof referenceDocument.recordId === "string") {
+  const { id, document: referenceDocument } = documentReferenceId(ctx, await ctx.resolveReference(reference, "document"));
+  if (
+    referenceDocument.planned === true &&
+    typeof referenceDocument.tableId === "string" &&
+    typeof referenceDocument.recordId === "string"
+  ) {
     return {
       id,
       baseId: scope.baseId,
@@ -414,7 +441,7 @@ const plannedDocumentToLink = async (
     };
   }
   const document = await getDocument(id);
-  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
+  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", runtimeText(ctx).generatedDocumentUnavailable);
   return document;
 };
 
@@ -425,36 +452,41 @@ const emailInput = async (
 ) => {
   const template = await getEmailTemplate(boundId(ctx, "template"));
   if (!template || template.baseId !== scope.baseId || !template.enabled) {
-    throw actionError("NOT_FOUND", "Email template is no longer available");
+    throw actionError("NOT_FOUND", runtimeText(ctx).emailTemplateUnavailable);
   }
   const recipients: WorkflowEmailRecipient[] = [];
   for (const item of config.to) {
     const kind = "email" in item ? "email" : "user";
     const raw = kind === "email" ? (item as { email?: WorkflowJsonValue }).email : (item as { user?: WorkflowJsonValue }).user;
-    if (typeof raw !== "string" || !raw.trim()) throw actionError("WORKFLOW_VALUE_INVALID", `sendEmail.${kind} must resolve to text`);
+    if (typeof raw !== "string" || !raw.trim()) {
+      throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).emailTextRequired({ path: `sendEmail.${kind}` }));
+    }
     const value = raw.trim();
     if (kind === "email" && !EMAIL_RE.test(value)) {
-      throw actionError("WORKFLOW_VALUE_INVALID", "sendEmail.email must resolve to an email address");
+      throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).emailAddressRequired);
     }
     if (kind === "user" && !UUID_RE.test(value)) {
-      throw actionError("WORKFLOW_VALUE_INVALID", "sendEmail.user must resolve to a Cloud user id");
+      throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).cloudUserIdRequired);
     }
     recipients.push({ kind, value });
   }
   return { template, recipients };
 };
 
-const httpInput = (config: {
-  url: string;
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  headers?: Record<string, string>;
-  json?: WorkflowJsonValue;
-  timeoutMs?: number;
-}) => {
+const httpInput = (
+  ctx: WorkflowActionContext,
+  config: {
+    url: string;
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+    headers?: Record<string, string>;
+    json?: WorkflowJsonValue;
+    timeoutMs?: number;
+  },
+) => {
   try {
     new URL(config.url);
   } catch {
-    throw actionError("WORKFLOW_ACTION_INVALID", "httpRequest.url must be an absolute URL");
+    throw actionError("WORKFLOW_ACTION_INVALID", runtimeText(ctx).absoluteUrlRequired);
   }
   return {
     url: config.url,
@@ -499,11 +531,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
-        await currentTable(scope, record.tableId);
+        await currentTable(ctx, scope, record.tableId);
         const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
-        requireOk(await assertMutationAllowed(tx, record.tableId, "workflow"));
+        requireOk(await assertMutationAllowed(tx, record.tableId, "workflow", invocationLocale(ctx)));
         const status = requireOk(await getRecordFinalizationStatus(record.tableId, tx));
-        if (!status.enabled) throw actionError("BAD_INPUT", "Finalization is not enabled for this Table");
+        if (!status.enabled) throw actionError("BAD_INPUT", runtimeText(ctx).finalizationDisabled);
         const expectedPolicyRevision = config.expectedPolicyRevision
           ? await ctx.resolveReference(config.expectedPolicyRevision, "expectedPolicyRevision")
           : undefined;
@@ -511,15 +543,15 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           expectedPolicyRevision !== undefined &&
           (typeof expectedPolicyRevision !== "number" || !Number.isSafeInteger(expectedPolicyRevision) || expectedPolicyRevision < 1)
         ) {
-          throw actionError("WORKFLOW_VALUE_INVALID", "expectedPolicyRevision must resolve to a positive integer");
+          throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).positivePolicyRevisionRequired);
         }
         if (config.expectedMode) {
           const expectedMode = await ctx.resolveReference(config.expectedMode, "expectedMode");
           if (expectedMode !== "direct" && expectedMode !== "fourEyes") {
-            throw actionError("WORKFLOW_VALUE_INVALID", "expectedMode must resolve to direct or fourEyes");
+            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).finalizationModeRequired);
           }
           if (status.mode !== expectedMode) {
-            throw actionError("CONFLICT", "The Table Finalization mode changed after Close selection was previewed");
+            throw actionError("CONFLICT", runtimeText(ctx).finalizationModeChanged);
           }
         }
 
@@ -552,7 +584,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               actorId: actorId(scope),
               origin: "workflow",
               recordAccess,
-              dateConfig: await dateContext(),
+              dateConfig: await dateContext(ctx),
               expectedPolicyRevision,
             }),
           );
@@ -571,7 +603,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return {
           state: "succeeded",
           output: { kind: "record", tableId: record.tableId, recordId: record.recordId } as WorkflowJsonValue,
-          message: status.mode === "fourEyes" ? "Finalization requested" : "Record finalized",
+          message: status.mode === "fourEyes" ? runtimeText(ctx).finalizationRequested : runtimeText(ctx).recordFinalized,
         };
       }),
 
@@ -580,8 +612,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const record = await recordReference(ctx, config.record, "record");
-        await readableRecord(scope, record, "write");
-        requireOk(await assertMutationAllowed(sql, record.tableId, "workflow"));
+        await readableRecord(ctx, scope, record, "write");
+        requireOk(await assertMutationAllowed(sql, record.tableId, "workflow", invocationLocale(ctx)));
         const readiness = requireOk(
           await inspectRecordFinalization({
             tableId: record.tableId,
@@ -590,31 +622,34 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             recordAccess: await requireRecordAccess(scope, record.tableId, "write"),
           }),
         );
-        if (!readiness.enabled) throw actionError("BAD_INPUT", "Finalization is not enabled for this Table");
+        if (!readiness.enabled) throw actionError("BAD_INPUT", runtimeText(ctx).finalizationDisabled);
         if (config.expectedPolicyRevision) {
           const expectedPolicyRevision = await ctx.resolveReference(config.expectedPolicyRevision, "expectedPolicyRevision");
           if (typeof expectedPolicyRevision !== "number" || !Number.isSafeInteger(expectedPolicyRevision) || expectedPolicyRevision < 1) {
-            throw actionError("WORKFLOW_VALUE_INVALID", "expectedPolicyRevision must resolve to a positive integer");
+            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).positivePolicyRevisionRequired);
           }
           if (readiness.policyRevision !== expectedPolicyRevision) {
-            throw actionError("CONFLICT", "The Table Finalization policy changed after Close selection was previewed");
+            throw actionError("CONFLICT", runtimeText(ctx).finalizationPolicyChanged);
           }
         }
         if (config.expectedMode) {
           const expectedMode = await ctx.resolveReference(config.expectedMode, "expectedMode");
           if (expectedMode !== "direct" && expectedMode !== "fourEyes") {
-            throw actionError("WORKFLOW_VALUE_INVALID", "expectedMode must resolve to direct or fourEyes");
+            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).finalizationModeRequired);
           }
           if (readiness.mode !== expectedMode) {
-            throw actionError("CONFLICT", "The Table Finalization mode changed after Close selection was previewed");
+            throw actionError("CONFLICT", runtimeText(ctx).finalizationModeChanged);
           }
         }
-        if (readiness.finalized) throw actionError("CONFLICT", "Record is already finalized");
+        if (readiness.finalized) throw actionError("CONFLICT", runtimeText(ctx).recordAlreadyFinalized);
         if (readiness.missing.length > 0) {
-          throw actionError("BAD_INPUT", `Record is not ready to finalize: ${readiness.missing.map((item) => item.fieldName).join(", ")}`);
+          throw actionError(
+            "BAD_INPUT",
+            runtimeText(ctx).recordNotReady({ fields: readiness.missing.map((item) => item.fieldName).join(", ") }),
+          );
         }
         return {
-          summary: readiness.mode === "fourEyes" ? "Request Four-eyes Finalization" : "Finalize one record permanently",
+          summary: readiness.mode === "fourEyes" ? runtimeText(ctx).requestFourEyesFinalization : runtimeText(ctx).finalizeRecord,
           output: record as unknown as WorkflowJsonValue,
         };
       }),
@@ -658,8 +693,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const original = await recordReference(ctx, config.original, "original");
-        if (original.planned) throw actionError("WORKFLOW_VALUE_INVALID", "original must reference an existing finalized Record");
-        await currentTable(scope, original.tableId);
+        if (original.planned) {
+          throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingFinalizedRecordRequired({ path: "original" }));
+        }
+        await currentTable(ctx, scope, original.tableId);
         const recordAccess = await requireRecordAccess(scope, original.tableId, "write", tx);
         const readiness = requireOk(
           await inspectRecordFinalization({
@@ -670,8 +707,9 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             client: tx,
           }),
         );
-        if (!readiness.finalized) throw actionError("CONFLICT", "Only a finalized Record can be corrected");
+        if (!readiness.finalized) throw actionError("CONFLICT", runtimeText(ctx).finalizedRecordRequired);
         const values = await correctionDraftValues(
+          ctx,
           tx,
           original.tableId,
           boundId(ctx, "typeField"),
@@ -682,7 +720,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         );
         const created = requireOk(
           await createRecordInTransaction(tx, original.tableId, values, actorId(scope), "workflow", {
-            dateConfig: await dateContext(),
+            dateConfig: await dateContext(ctx),
             recordAccess,
             viewer: viewerForScope(scope),
           }),
@@ -701,7 +739,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return {
           state: "succeeded",
           output: { kind: "record", tableId: created.record.tableId, recordId: created.record.id } as WorkflowJsonValue,
-          message: "Linked follow-up Draft created",
+          message: runtimeText(ctx).followUpDraftCreated,
         };
       }),
 
@@ -710,8 +748,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const original = await recordReference(ctx, config.original, "original");
-        await readableRecord(scope, original, "write");
-        requireOk(await assertMutationAllowed(sql, original.tableId, "workflow"));
+        await readableRecord(ctx, scope, original, "write");
+        requireOk(await assertMutationAllowed(sql, original.tableId, "workflow", invocationLocale(ctx)));
         const recordAccess = await requireRecordAccess(scope, original.tableId, "write");
         const readiness = requireOk(
           await inspectRecordFinalization({
@@ -721,8 +759,9 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             recordAccess,
           }),
         );
-        if (!readiness.finalized) throw actionError("CONFLICT", "Only a finalized Record can be corrected");
+        if (!readiness.finalized) throw actionError("CONFLICT", runtimeText(ctx).finalizedRecordRequired);
         await correctionDraftValues(
+          ctx,
           sql,
           original.tableId,
           boundId(ctx, "typeField"),
@@ -732,7 +771,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           correctionCopyFieldIds(ctx, config.copyFields),
         );
         return {
-          summary: "Create one linked follow-up Draft from the finalized original Record",
+          summary: runtimeText(ctx).createFollowUpDraft,
           output: { kind: "record", tableId: original.tableId, recordId: `dry-run:${ctx.stepKey}`, planned: true },
         };
       }),
@@ -755,7 +794,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
-        await currentTable(scope, record.tableId);
+        await currentTable(ctx, scope, record.tableId);
         const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
         const finalized = requireOk(
           await finalizeRecordInTransaction(tx, {
@@ -764,7 +803,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             actorId: actorId(scope),
             origin: "workflow",
             recordAccess,
-            dateConfig: await dateContext(),
+            dateConfig: await dateContext(ctx),
           }),
         );
         await logAudit(
@@ -789,8 +828,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const record = await recordReference(ctx, config.record, "record");
-        await readableRecord(scope, record, "write");
-        return { summary: "Finalize one record permanently", output: record as unknown as WorkflowJsonValue };
+        await readableRecord(ctx, scope, record, "write");
+        return { summary: runtimeText(ctx).finalizeRecord, output: record as unknown as WorkflowJsonValue };
       }),
   }),
 
@@ -821,13 +860,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
-        await currentTable(scope, record.tableId);
+        await currentTable(ctx, scope, record.tableId);
         const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
         const values = fieldPayload(ctx, "set", config.set);
-        const audit = auditAnswerPayload(config.audit);
+        const audit = auditAnswerPayload(ctx, config.audit);
         const updated = requireOk(
           await updateRecordInTransaction(tx, record.tableId, record.recordId, values, actorId(scope), "workflow", undefined, {
-            dateConfig: await dateContext(),
+            dateConfig: await dateContext(ctx),
             recordAccess,
             viewer: viewerForScope(scope),
             ...(audit ? { audit } : {}),
@@ -857,11 +896,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const record = await recordReference(ctx, config.record, "record");
-        await readableRecord(scope, record, "write");
+        await readableRecord(ctx, scope, record, "write");
         const values = fieldPayload(ctx, "set", config.set);
-        auditAnswerPayload(config.audit);
+        auditAnswerPayload(ctx, config.audit);
         return {
-          summary: `Update ${Object.keys(values).length} field(s) on one record`,
+          summary: runtimeText(ctx).updateFields({ count: Object.keys(values).length }),
           output: record as unknown as WorkflowJsonValue,
         };
       }),
@@ -891,12 +930,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const tableId = boundId(ctx, "table");
-        await currentTable(scope, tableId);
+        await currentTable(ctx, scope, tableId);
         const recordAccess = await requireRecordAccess(scope, tableId, "write", tx);
         const values = fieldPayload(ctx, "values", config.values);
         const created = requireOk(
           await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
-            dateConfig: await dateContext(),
+            dateConfig: await dateContext(ctx),
             recordAccess,
             viewer: viewerForScope(scope),
           }),
@@ -923,11 +962,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const tableId = boundId(ctx, "table");
-        await currentTable(scope, tableId);
+        await currentTable(ctx, scope, tableId);
         await requireRecordAccess(scope, tableId, "write");
         const values = fieldPayload(ctx, "values", config.values);
         return {
-          summary: `Create one record with ${Object.keys(values).length} field(s)`,
+          summary: runtimeText(ctx).createRecordWithFields({ count: Object.keys(values).length }),
           // Marked planned: a later step that cannot tell this from a real
           // record would act on a row that does not exist.
           output: { kind: "record", tableId, recordId: `dry-run:${ctx.stepKey}`, planned: true },
@@ -1048,12 +1087,14 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tx = transaction(ctx);
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
-        const dates = await dateContext();
+        const dates = await dateContext(ctx);
 
         const locks: AtomicRecordRef[] = [];
         for (let index = 0; index < config.locks.length; index += 1) {
           const record = await recordReference(ctx, config.locks[index]!, `locks.${index}`);
-          if (record.planned) throw actionError("WORKFLOW_VALUE_INVALID", `locks.${index} must reference an existing record`);
+          if (record.planned) {
+            throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingRecordRequired({ path: `locks.${index}` }));
+          }
           locks.push({ tableId: record.tableId, recordId: record.recordId, required: "read" });
         }
         for (let index = 0; index < config.changes.length; index += 1) {
@@ -1061,7 +1102,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           if (!("updateRecord" in change)) continue;
           const record = await recordReference(ctx, change.updateRecord.record, `changes.${index}.updateRecord.record`);
           if (record.planned)
-            throw actionError("WORKFLOW_VALUE_INVALID", `changes.${index}.updateRecord.record must reference an existing record`);
+            throw actionError(
+              "WORKFLOW_VALUE_INVALID",
+              runtimeText(ctx).existingRecordRequired({ path: `changes.${index}.updateRecord.record` }),
+            );
           locks.push({ tableId: record.tableId, recordId: record.recordId, required: "write" });
         }
 
@@ -1089,7 +1133,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           }));
           const matches = await atomicQueryMatches({ client: tx, tableId, predicates, access, timeZone: dates.timeZone ?? "UTC" });
           const passed = check.assert === "empty" ? !matches : matches;
-          if (!passed) throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || "Atomic record check failed");
+          if (!passed) throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || runtimeText(ctx).atomicCheckFailed);
         }
 
         const created: RuntimeRecord[] = [];
@@ -1125,7 +1169,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
           const access = await accessFor(record.tableId, "write");
           const values = atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set);
-          const audit = auditAnswerPayload(change.updateRecord.audit);
+          const audit = auditAnswerPayload(ctx, change.updateRecord.audit);
           const result = requireOk(
             await updateRecordInTransaction(
               tx,
@@ -1166,17 +1210,17 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       planned(async () => {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
-        const dates = await dateContext();
+        const dates = await dateContext(ctx);
         const issues: string[] = [];
 
         for (let index = 0; index < config.locks.length; index += 1) {
           const record = await recordReference(ctx, config.locks[index]!, `locks.${index}`);
-          await readableRecord(scope, record, "read");
+          await readableRecord(ctx, scope, record, "read");
         }
         for (let checkIndex = 0; checkIndex < config.checks.length; checkIndex += 1) {
           const check = config.checks[checkIndex]!;
           const tableId = boundIdAt(ctx, ["checks", checkIndex, "table"]);
-          await currentTable(scope, tableId);
+          await currentTable(ctx, scope, tableId);
           const access = await requireRecordAccess(scope, tableId, "read");
           const predicates: AtomicQueryPredicate[] = check.where.map((predicate, predicateIndex) => ({
             fieldId: boundIdAt(ctx, ["checks", checkIndex, "where", predicateIndex, "field"]),
@@ -1186,25 +1230,25 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           }));
           const matches = await atomicQueryMatches({ tableId, predicates, access, timeZone: dates.timeZone ?? "UTC" });
           if ((check.assert === "empty" && matches) || (check.assert === "notEmpty" && !matches)) {
-            issues.push(check.message?.trim() || `Check ${checkIndex + 1} does not currently pass.`);
+            issues.push(check.message?.trim() || runtimeText(ctx).checkDoesNotPass({ index: checkIndex + 1 }));
           }
         }
         for (let changeIndex = 0; changeIndex < config.changes.length; changeIndex += 1) {
           const change = config.changes[changeIndex]!;
           if ("createRecord" in change) {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
-            await currentTable(scope, tableId);
+            await currentTable(ctx, scope, tableId);
             await requireRecordAccess(scope, tableId, "write");
             atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values);
           } else {
             const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
-            await readableRecord(scope, record, "write");
+            await readableRecord(ctx, scope, record, "write");
             atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set);
-            auditAnswerPayload(change.updateRecord.audit);
+            auditAnswerPayload(ctx, change.updateRecord.audit);
           }
         }
         return {
-          summary: `Run ${config.checks.length} check(s), then commit ${config.changes.length} record change(s) atomically. Record state can change before execution; checks run again while locks are held.`,
+          summary: runtimeText(ctx).atomicPlan({ checks: config.checks.length, changes: config.changes.length }),
           issues,
         };
       }),
@@ -1232,7 +1276,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await ctx.heartbeat();
         const scope = await workflowRunScope(ctx);
         const template = await documentTemplate(ctx);
-        const table = await currentTable(scope, template.tableId);
+        const table = await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, table.id, config.record, "read");
         await requirePermission(scope, "write");
         const recordAccess = await requireRecordAccess(scope, table.id, "read");
@@ -1250,7 +1294,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               userGroups: scope.principal.groupIds,
               serviceAccountId: scope.principal.serviceAccountId,
             },
-            dateConfig: await dateContext(),
+            dateConfig: await dateContext(ctx),
             filename: typeof config.filename === "string" ? config.filename : null,
             tags: documentTags(config.tags),
             workflowRunId: scope.runId,
@@ -1292,11 +1336,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const template = await documentTemplate(ctx);
-        await currentTable(scope, template.tableId);
+        await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, template.tableId, config.record, "read");
         await requirePermission(scope, "write");
         return {
-          summary: `Generate "${template.name}" for one record`,
+          summary: runtimeText(ctx).generateDocument({ name: template.name }),
           consumes: { documents: 1 },
           output: {
             kind: "document",
@@ -1331,7 +1375,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
         const document = await documentToLink(ctx, scope, config.document);
-        await currentTable(scope, document.tableId);
+        await currentTable(ctx, scope, document.tableId);
         await requirePermission(scope, "write", tx);
         const expiresIn = linkExpiry(config.expiresIn);
         const baseUrl = await publicDocumentLinkBaseUrl();
@@ -1381,11 +1425,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
         const document = await plannedDocumentToLink(ctx, scope, config.document);
-        await currentTable(scope, document.tableId);
+        await currentTable(ctx, scope, document.tableId);
         await requirePermission(scope, "write");
         const expiresIn = linkExpiry(config.expiresIn);
         return {
-          summary: `Create a ${expiresIn} download link for one document`,
+          summary: runtimeText(ctx).createDocumentLink({ expiresIn }),
           output: {
             kind: "documentLink",
             id: `dry-run:${ctx.stepKey}`,
@@ -1435,6 +1479,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           scope,
           template,
           recipients,
+          locale: invocationLocale(ctx),
           data: config.data ?? {},
           occurredAt: ctx.invocation.occurredAt,
           effectKey: ctx.effectKey,
@@ -1451,7 +1496,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope);
         const { template, recipients } = await emailInput(ctx, scope, config);
         return {
-          summary: `Send "${template.name}" to ${recipients.length} recipient(s)`,
+          summary: runtimeText(ctx).sendEmail({ name: template.name, count: recipients.length }),
           consumes: { emails: recipients.length },
         };
       }),
@@ -1484,12 +1529,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       attempt(async () => {
         await ctx.heartbeat();
         const scope = await workflowRunScope(ctx);
-        const request = httpInput(config);
-        const response = await requestWorkflowHttp({ ...request, idempotencyKey: ctx.effectKey });
+        const request = httpInput(ctx, config);
+        const response = await requestWorkflowHttp({ ...request, idempotencyKey: ctx.effectKey, locale: invocationLocale(ctx) });
         // The request left the process and no complete answer came back. It may
         // have been acted on; repeating it is how a webhook fires twice.
         if (!response.ok && response.error.code === "WORKFLOW_HTTP_OUTCOME_UNKNOWN") {
-          return { state: "ambiguous", message: response.error.message, code: response.error.code };
+          return { state: "ambiguous", message: runtimeText(ctx).httpOutcomeUnknown, code: response.error.code };
         }
         const result = requireOk(response);
         await logAudit({
@@ -1503,15 +1548,15 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             },
           },
         });
-        if (!result.ok) throw actionError("WORKFLOW_HTTP_FAILED", `httpRequest returned HTTP ${result.status}`);
+        if (!result.ok) throw actionError("WORKFLOW_HTTP_FAILED", runtimeText(ctx).httpFailed({ status: result.status }));
         return { state: "succeeded", output: { status: result.status, ok: result.ok, body: result.body } };
       }),
 
     plan: (ctx, config) =>
       planned(async () => {
         await requireExecution(await workflowRunScope(ctx));
-        const request = httpInput(config);
-        requireOk(await preflightWorkflowHttp(request));
+        const request = httpInput(ctx, config);
+        requireOk(await preflightWorkflowHttp({ ...request, locale: invocationLocale(ctx) }));
         return {
           summary: `${request.method} ${new URL(request.url).host}`,
           consumes: { httpRequests: 1 },
@@ -1523,10 +1568,10 @@ export const GRIDS_WORKFLOW_ACTIONS = {
      * exactly the failure this class exists to prevent. So an interrupted
      * request is handed to a human rather than repeated.
      */
-    reconcile: async () => ({
+    reconcile: async (ctx) => ({
       state: "unknown",
       code: "WORKFLOW_HTTP_OUTCOME_UNKNOWN",
-      message: "A previous HTTP attempt may have reached the remote service; it is not repeated automatically.",
+      message: runtimeText(ctx).httpOutcomeUnknown,
     }),
   }),
 };

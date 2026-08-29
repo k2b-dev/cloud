@@ -37,6 +37,17 @@ describe("formatCell", () => {
   test("applies decimal format overrides only to numeric/formula values", () => {
     expect(formatCell("1234.5", "number", {}, { kind: "decimal", precision: 2, thousandsSeparator: true })).toBe("1,234.50");
     expect(formatCell("1234.5", "text", {}, { kind: "decimal", precision: 2, thousandsSeparator: true })).toBe("1234.5");
+    expect(formatCell("1234.5", "number", {}, { kind: "decimal", precision: 2, thousandsSeparator: true }, undefined, "de")).toBe(
+      "1.234,50",
+    );
+    expect(formatCell("1234.5", "number", {}, { kind: "decimal", precision: 2, thousandsSeparator: true }, undefined, "de-CH")).toBe(
+      "1'234.50",
+    );
+  });
+
+  test("localizes boolean labels", () => {
+    expect(formatCell(true, "boolean", {}, undefined, undefined, "en")).toBe("Yes");
+    expect(formatCell(false, "boolean", {}, undefined, undefined, "de-CH")).toBe("Nein");
   });
 
   test("renders duration seconds as HH:MM:SS", () => {

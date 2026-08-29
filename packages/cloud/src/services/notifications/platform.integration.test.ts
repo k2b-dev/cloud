@@ -96,6 +96,10 @@ suite("typed notification delivery integration", () => {
           recipient: "user",
           label: "Muted",
           description: "A user-disabled test notification.",
+          presentation: {
+            baseLocale: "en",
+            translations: { de: { label: "Stummgeschaltet", description: "Eine vom Benutzer deaktivierte Testbenachrichtigung." } },
+          },
           delivery: { recommended: ["test"] },
           data: z.object({ resourceId: z.string() }),
           render: ({ resourceId }) => ({ title: "Muted", body: `Resource ${resourceId}` }),
@@ -246,17 +250,24 @@ suite("typed notification delivery integration", () => {
       expect(muted.status).toBe("suppressed");
       expect(muted.deliveries).toEqual([expect.objectContaining({ channel: "none", status: "suppressed", errorCode: "disabled_by_user" })]);
 
-      const preferences = await userNotifications.preferences.list(userId);
+      const preferences = await userNotifications.preferences.list(userId, "de-CH");
       expect(preferences.availableChannels).toContain("test");
       expect(preferences.definitions.find((definition) => definition.id === app.notifications.muted.id)).toEqual(
-        expect.objectContaining({ customized: true, selectedChannels: [], effectiveChannels: [] }),
+        expect.objectContaining({
+          label: "Stummgeschaltet",
+          description: "Eine vom Benutzer deaktivierte Testbenachrichtigung.",
+          customized: true,
+          selectedChannels: [],
+          effectiveChannels: [],
+        }),
       );
 
-      const history = await userNotifications.history.list({ userId, page: 1, perPage: 20 });
+      const history = await userNotifications.history.list({ userId, page: 1, perPage: 20, locale: "de-CH" });
       const disabled = history.items.find((item) => item.eventId === muted.id);
       expect(disabled).toEqual(
         expect.objectContaining({
           channel: "none",
+          label: "Stummgeschaltet",
           status: "suppressed",
           errorCode: "disabled_by_user",
           errorMessage: "Delivery is disabled in your notification preferences.",
@@ -264,9 +275,12 @@ suite("typed notification delivery integration", () => {
       );
       expect(disabled && "body" in disabled).toBe(false);
 
-      const reset = await userNotifications.preferences.reset({ userId, definitionId: app.notifications.muted.id });
+      const reset = await userNotifications.preferences.reset({ userId, definitionId: app.notifications.muted.id, locale: "de-CH" });
       expect(reset).toEqual(
-        expect.objectContaining({ ok: true, data: expect.objectContaining({ customized: false, selectedChannels: ["test"] }) }),
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ label: "Stummgeschaltet", customized: false, selectedChannels: ["test"] }),
+        }),
       );
 
       const warnings: unknown[][] = [];

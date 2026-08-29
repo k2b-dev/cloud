@@ -14,6 +14,7 @@ import {
   StatusBadge,
   StructuredDataPreview,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { reviewCapabilityAction } from "@valentinkolb/cloud/capabilities";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
@@ -38,6 +39,7 @@ import {
   type SchemaEditorState,
 } from "../schema-editor";
 import CapabilityResultView from "./CapabilityResultView";
+import { capabilityUiMessages } from "./messages";
 
 type Props = {
   selection: SelectedCapability;
@@ -56,6 +58,8 @@ function FieldEditor(props: {
   error: () => string | undefined;
   onValueChange: (key: string, value: EditorValue) => void;
 }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   const value = () => props.state().values[props.field.key];
   const common = {
     label: props.field.label,
@@ -100,7 +104,7 @@ function FieldEditor(props: {
               value={() => (typeof value() === "string" ? (value() as string) : null)}
               error={props.error}
               options={field.options.map((option) => ({ value: option.value, label: option.label }))}
-              placeholder="Select a value"
+              placeholder={t().selectValue}
               onValueChange={(next) => props.onValueChange(field.key, next)}
             />
           );
@@ -114,7 +118,7 @@ function FieldEditor(props: {
               multiline
               lines={4}
               monospace
-              placeholder="One value per line"
+              placeholder={t().onePerLine}
               onValueChange={(next) => props.onValueChange(props.field.key, next)}
             />
           );
@@ -143,6 +147,8 @@ function RequestEditor(props: {
   formError: () => string | undefined;
   onStateChange: (state: SchemaEditorState) => void;
 }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   const updateValue = (key: string, value: EditorValue) =>
     props.onStateChange({ ...props.state(), values: { ...props.state().values, [key]: value } });
 
@@ -151,7 +157,7 @@ function RequestEditor(props: {
       when={props.model.mode === "form" ? props.model : undefined}
       fallback={
         <TextInput
-          label="Request JSON"
+          label={t().requestJson}
           description={props.model.mode === "json" ? props.model.reason : undefined}
           value={() => props.state().source}
           onValueChange={(source) => props.onStateChange({ ...props.state(), source })}
@@ -165,7 +171,7 @@ function RequestEditor(props: {
     >
       {(model) => (
         <div class="flex flex-col gap-4">
-          <Show when={model().fields.length > 0} fallback={<p class="text-sm text-dimmed">This capability does not require input.</p>}>
+          <Show when={model().fields.length > 0} fallback={<p class="text-sm text-dimmed">{t().noInput}</p>}>
             <For each={model().fields}>
               {(field) => (
                 <FieldEditor field={field} state={props.state} error={() => props.errors()[field.key]} onValueChange={updateValue} />
@@ -183,18 +189,20 @@ function ResponsePanel(props: {
   visible: () => boolean;
   selection: SelectedCapability;
 }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   const outcome = () => props.run.data();
   return (
     <DetailPanel.Section
-      title="Response"
-      description="Validated result, metadata, and semantic links."
+      title={t().response}
+      description={t().responseDescription}
       meta={
         <Show when={outcome()}>
           {(value) => <StatusBadge tone={value().ok ? "ok" : "error"} label={`${value().status} · ${Math.round(value().durationMs)} ms`} />}
         </Show>
       }
     >
-      <Show when={!props.run.loading()} fallback={<Placeholder state="loading" variant="panel" title="Running capability" />}>
+      <Show when={!props.run.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().running} />}>
         <Show
           when={props.visible() ? props.run.error() : null}
           fallback={
@@ -204,8 +212,8 @@ function ResponsePanel(props: {
                 <Placeholder
                   variant="panel"
                   icon="ti ti-player-play"
-                  title="Ready to run"
-                  description="Complete the request and run the selected capability."
+                  title={t().ready}
+                  description={t().readyDescription}
                 />
               }
             >
@@ -217,11 +225,11 @@ function ResponsePanel(props: {
             <Placeholder
               state="error"
               variant="panel"
-              title="Could not reach the capability"
+              title={t().unreachable}
               description={error().message}
               action={
                 <Button size="sm" variant="secondary" onClick={() => void props.run.retry()}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                 </Button>
               }
             />
@@ -233,6 +241,8 @@ function ResponsePanel(props: {
 }
 
 function OutcomeContent(props: { outcome: CapabilityInvocationOutcome; selection: SelectedCapability }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   if (!props.outcome.ok) {
     return (
       <div class="flex flex-col gap-4">
@@ -242,8 +252,8 @@ function OutcomeContent(props: { outcome: CapabilityInvocationOutcome; selection
             const data = details();
             return (
               <StructuredDataPreview
-                title="Details"
-                data={isStructuredDataValue(data) ? data : { error: "Capability error details are not valid JSON." }}
+                title={t().details}
+                data={isStructuredDataValue(data) ? data : { error: t().invalidErrorDetails }}
               />
             );
           }}
@@ -265,7 +275,9 @@ function OutcomeContent(props: { outcome: CapabilityInvocationOutcome; selection
 }
 
 function CapabilityRunner(props: Props) {
-  const model = createSchemaEditorModel(props.selection.operation.inputSchema);
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
+  const model = createSchemaEditorModel(props.selection.operation.inputSchema, locale());
   const [editor, setEditor] = createSignal(createSchemaEditorState(model, props.selection.operation.inputSchema));
   const [submitted, setSubmitted] = createSignal(false);
   const [resultVisible, setResultVisible] = createSignal(false);
@@ -273,7 +285,7 @@ function CapabilityRunner(props: Props) {
   const [reviewing, setReviewing] = createSignal(false);
   const [reviewError, setReviewError] = createSignal<{ code: string; message: string }>();
   let reviewController: AbortController | undefined;
-  const input = createMemo<InputBuildResult>(() => buildCapabilityInput(model, editor()));
+  const input = createMemo<InputBuildResult>(() => buildCapabilityInput(model, editor(), locale()));
   const action = () => (props.selection.kind === "action" ? props.selection.operation : undefined);
   const idempotencyKey = () => (action()?.idempotency === "required" ? attemptKey() : undefined);
 
@@ -294,15 +306,17 @@ function CapabilityRunner(props: Props) {
           body: JSON.stringify({ input: request.input }),
           signal: context.abortSignal,
         });
-        return preserveAmbiguousActionOutcome(await readCapabilityOutcome(response, performance.now() - startedAt), {
+        return preserveAmbiguousActionOutcome(await readCapabilityOutcome(response, performance.now() - startedAt, locale()), {
           kind: props.selection.kind,
           idempotencyKey: request.idempotencyKey,
+          locale: locale(),
         });
       } catch (cause) {
         const ambiguous = ambiguousActionNetworkOutcome({
           kind: props.selection.kind,
           idempotencyKey: request.idempotencyKey,
           durationMs: performance.now() - startedAt,
+          locale: locale(),
         });
         if (ambiguous) return ambiguous;
         throw cause;
@@ -331,17 +345,18 @@ function CapabilityRunner(props: Props) {
           review: (request) => reviewCapabilityAction(request),
           confirmReview: (review, operation) =>
             prompts.confirm(<ActionReviewContent review={review} />, {
-              title: `Review “${operation.title}”`,
-              confirmText: "Run action",
+              title: t().reviewTitle({ title: operation.title }),
+              confirmText: t().runAction,
               variant: operation.destructive ? "danger" : "primary",
               size: "large",
             }),
           confirmDestructive: (operation) =>
-            prompts.confirm(`Run “${operation.title}”? This action is marked as destructive.`, {
-              title: "Confirm destructive action",
+            prompts.confirm(t().destructiveQuestion({ title: operation.title }), {
+              title: t().confirmDestructive,
               variant: "danger",
             }),
         },
+        locale(),
       );
       if (reviewController !== controller) return;
       reviewController = undefined;
@@ -404,16 +419,16 @@ function CapabilityRunner(props: Props) {
         subtitle={props.selection.operation.description}
         meta={
           <div class="flex min-w-0 flex-wrap items-center gap-2">
-            <StatusBadge tone="neutral" label={props.selection.kind === "query" ? "Query" : "Action"} />
+            <StatusBadge tone="neutral" label={props.selection.kind === "query" ? t().query : t().action} />
             <code class="truncate text-xs text-dimmed">{`${props.selection.app.id}.${props.selection.operation.localId}`}</code>
           </div>
         }
         actions={
           <div class="flex items-center gap-1">
             <Button size="sm" variant="secondary" onClick={reset}>
-              <i class="ti ti-refresh" aria-hidden="true" /> Reset
+              <i class="ti ti-refresh" aria-hidden="true" /> {t().reset}
             </Button>
-            <IconButtonLink href={props.closeHref} size="sm" label="Close capability details">
+            <IconButtonLink href={props.closeHref} size="sm" label={t().closeDetails}>
               <i class="ti ti-x" aria-hidden="true" />
             </IconButtonLink>
           </div>
@@ -425,33 +440,33 @@ function CapabilityRunner(props: Props) {
       >
         <Show when={action()}>
           {(selectedAction) => (
-            <DetailPanel.Summary title="Action policy">
+            <DetailPanel.Summary title={t().actionPolicy}>
               <div class="flex flex-wrap gap-2">
                 <StatusBadge
                   tone={selectedAction().destructive ? "warning" : "neutral"}
-                  label={selectedAction().destructive ? "Destructive" : "Non-destructive"}
+                  label={selectedAction().destructive ? t().destructive : t().nonDestructive}
                 />
                 <StatusBadge
                   tone={selectedAction().openWorld ? "warning" : "neutral"}
-                  label={selectedAction().openWorld ? "Open world" : "Cloud only"}
+                  label={selectedAction().openWorld ? t().openWorld : t().cloudOnly}
                 />
-                <StatusBadge tone="neutral" label={`Idempotency: ${selectedAction().idempotency}`} />
+                <StatusBadge tone="neutral" label={`${t().idempotency}: ${selectedAction().idempotency}`} />
               </div>
             </DetailPanel.Summary>
           )}
         </Show>
 
-        <DetailPanel.Group label="Capability run">
+        <DetailPanel.Group label={t().runGroup}>
           <DetailPanel.Section
-            title="Request"
-            description="Input is validated before it is sent."
+            title={t().request}
+            description={t().requestDescription}
             actions={
               <Button
                 loading={reviewing() || run.loading()}
-                loadingLabel={reviewing() ? "Reviewing" : "Running"}
+                loadingLabel={reviewing() ? t().reviewing : t().running}
                 onClick={() => void execute()}
               >
-                <i class="ti ti-player-play" aria-hidden="true" /> Run
+                <i class="ti ti-player-play" aria-hidden="true" /> {t().run}
               </Button>
             }
           >
@@ -459,31 +474,31 @@ function CapabilityRunner(props: Props) {
             <Show when={reviewError()}>
               {(error) => (
                 <div class="mt-4">
-                  <Placeholder state="error" align="left" title={`Review failed: ${error().code}`} description={error().message} />
+                  <Placeholder state="error" align="left" title={t().reviewFailed({ code: error().code })} description={error().message} />
                 </div>
               )}
             </Show>
             <div class="mt-4 flex flex-col gap-3">
-              <Disclosure summary="Request as cURL" icon="ti ti-terminal-2" disabled={!curl()}>
+              <Disclosure summary={t().requestCurl} icon="ti ti-terminal-2" disabled={!curl()}>
                 <Show when={curl()}>{(value) => <CodeDisplay code={value()} language="script" lineNumbers={false} />}</Show>
               </Disclosure>
-              <Disclosure summary="Schemas" icon="ti ti-braces">
+              <Disclosure summary={t().schemas} icon="ti ti-braces">
                 <div class="grid gap-3">
                   <StructuredDataPreview
-                    title="Input schema"
+                    title={t().inputSchema}
                     data={
                       isStructuredDataValue(props.selection.operation.inputSchema)
                         ? props.selection.operation.inputSchema
-                        : { error: "Input schema is not valid JSON." }
+                        : { error: t().invalidInputSchema }
                     }
                     maxRows={10}
                   />
                   <StructuredDataPreview
-                    title="Data schema"
+                    title={t().dataSchema}
                     data={
                       isStructuredDataValue(props.selection.operation.dataSchema)
                         ? props.selection.operation.dataSchema
-                        : { error: "Data schema is not valid JSON." }
+                        : { error: t().invalidDataSchema }
                     }
                     maxRows={10}
                   />

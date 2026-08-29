@@ -1,4 +1,4 @@
-import { IconButton } from "@k2b/ui";
+import { IconButton, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createLiveWebSocket } from "../browser/live-websocket";
 import { notificationTargetMatchesLocation } from "../browser/notification-target";
@@ -12,6 +12,7 @@ import {
   NotificationStreamCursorSchema,
   parseNotificationLiveServerMessage,
 } from "../contracts/notification-live";
+import { platformMessages } from "./platform-messages";
 
 const cursorStorageKey = (userId: string): string => `cloud.notifications.live-cursor:${userId}`;
 
@@ -33,6 +34,8 @@ const storeCursor = (userId: string, cursor: string) => {
 };
 
 export default function BrowserNotifications(props: { userId: string }) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const [notification, setNotification] = createSignal<NotificationLiveEvent | null>(null);
   const seen = new Set<string>();
 
@@ -104,25 +107,25 @@ export default function BrowserNotifications(props: { userId: string }) {
         <aside
           class="paper fixed bottom-3 left-3 right-3 z-40 flex items-start gap-3 p-3 shadow-lg sm:left-auto sm:w-96"
           aria-live="polite"
-          aria-label="New notification"
+          aria-label={t().newNotification}
         >
           <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
             <i class="ti ti-bell" />
           </span>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-primary">{item.title}</p>
-            <p class="mt-0.5 text-xs text-dimmed">A related item is ready.</p>
+            <p class="mt-0.5 text-xs text-dimmed">{t().relatedItemReady}</p>
             {item.targetHref && (
               <a
                 href={item.targetHref}
                 class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
               >
-                Open
+                {t().open}
                 <i class="ti ti-arrow-right" />
               </a>
             )}
           </div>
-          <IconButton size="xs" class="shrink-0" label="Dismiss notification" onClick={() => setNotification(null)}>
+          <IconButton size="xs" class="shrink-0" label={t().dismissNotification} onClick={() => setNotification(null)}>
             <i class="ti ti-x" />
           </IconButton>
         </aside>

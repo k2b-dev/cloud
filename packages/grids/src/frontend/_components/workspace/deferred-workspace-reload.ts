@@ -1,4 +1,5 @@
 import { dialogCore, toast } from "@k2b/ui";
+import { workspaceMessages } from "./messages";
 
 const DEFAULT_RELOAD_DELAY_MS = 200;
 
@@ -13,12 +14,14 @@ type DeferredReloadEnvironment = {
 
 const browserEnvironment: DeferredReloadEnvironment = {
   isDialogOpen: dialogCore.isOpen,
-  notifyPending: () =>
-    toast("The page will refresh after the open dialog closes.", {
-      title: "Workspace updated",
+  notifyPending: () => {
+    const { t } = workspaceMessages.resolve([document.documentElement.lang]);
+    return toast(t.pageRefreshAfterDialog, {
+      title: t.workspaceUpdated,
       duration: 0,
       iconClass: "ti ti-refresh",
-    }),
+    });
+  },
   requestFrame: (callback) => requestAnimationFrame(callback),
   cancelFrame: (id) => cancelAnimationFrame(id),
   addCloseListener: (listener) => document.addEventListener("close", listener, true),

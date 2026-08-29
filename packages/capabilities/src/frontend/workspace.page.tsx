@@ -1,5 +1,5 @@
 import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { For, Show } from "solid-js";
@@ -15,12 +15,13 @@ import {
 } from "../workspace-data";
 import CapabilitiesWorkspace from "./CapabilitiesWorkspace.island";
 import CapabilitySearchButton, { type CapabilitySearchEntry } from "./CapabilitySearchButton.island";
+import { capabilityUiMessages } from "./messages";
 
-const columns: DataTableColumn<CapabilityOperationRow>[] = [
-  { id: "kind", header: "Type", value: "kind", sortable: true, class: "w-28" },
-  { id: "title", header: "Capability", value: "title", sortable: true },
+const columns = (t: ReturnType<typeof capabilityUiMessages.resolve>["t"]): DataTableColumn<CapabilityOperationRow>[] => [
+  { id: "kind", header: t.type, value: "kind", sortable: true, class: "w-28" },
+  { id: "title", header: t.capability, value: "title", sortable: true },
   { id: "id", header: "ID", value: "id", sortable: true, class: "w-72" },
-  { id: "policy", header: "Policy", value: "policy", sortable: true, class: "w-40" },
+  { id: "policy", header: t.policy, value: "policy", sortable: true, class: "w-40" },
   { id: "open", header: "", class: "w-14" },
 ];
 
@@ -67,6 +68,7 @@ function CapabilitiesSidebar(props: {
   apps: readonly CapabilityAppSummary[];
   selectedAppId: string;
   searchEntries: CapabilitySearchEntry[];
+  labels: ReturnType<typeof capabilityUiMessages.resolve>["t"];
 }) {
   const renderApp = (app: CapabilityAppSummary) => (
     <AppWorkspace.SidebarItem
@@ -82,7 +84,7 @@ function CapabilitiesSidebar(props: {
 
   return (
     <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label="Capabilities" />
+      <AppWorkspace.SidebarMobileTrigger label={props.labels.capabilities} />
 
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileItems scrollPreserveKey="capabilities-apps-mobile">
@@ -96,7 +98,7 @@ function CapabilitiesSidebar(props: {
           <AppWorkspace.SidebarSection>
             <CapabilitySearchButton entries={props.searchEntries} variant="sidebar" registerShortcut />
           </AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title="Apps">
+          <AppWorkspace.SidebarSection title={props.labels.apps}>
             <For each={props.apps}>{renderApp}</For>
           </AppWorkspace.SidebarSection>
         </AppWorkspace.SidebarBody>
@@ -110,6 +112,7 @@ function CapabilityTable(props: {
   operations: readonly CapabilityOperationRow[];
   state: CapabilityTableState;
   selection?: SelectedCapability;
+  labels: ReturnType<typeof capabilityUiMessages.resolve>["t"];
 }) {
   const result = paginateCapabilityOperations(props.operations, props.state);
   const route = {
@@ -126,21 +129,21 @@ function CapabilityTable(props: {
         title={props.app.name}
         subtitle={
           props.state.search
-            ? `${result.total} of ${props.operations.length} capabilities`
-            : `${props.operations.length} ${props.operations.length === 1 ? "capability" : "capabilities"}`
+            ? props.labels.filteredCount({ shown: result.total, total: props.operations.length })
+            : props.labels.capabilityCount({ count: props.operations.length })
         }
       />
       <DataTable.Controls>
         <SearchBar
           action={capabilityHref({ ...route, ...closePreservingState })}
           value={props.state.search}
-          placeholder={`Search ${props.app.name} capabilities...`}
-          ariaLabel={`Search ${props.app.name} capabilities`}
+          placeholder={props.labels.searchApp({ app: props.app.name })}
+          ariaLabel={props.labels.searchApp({ app: props.app.name })}
         />
       </DataTable.Controls>
       <DataTable
         rows={result.rows}
-        columns={columns}
+        columns={columns(props.labels)}
         getRowId={(row) => `${row.kind}:${row.localId}`}
         selectedRowId={selectedRowId}
         sort={{ key: props.state.sort, direction: props.state.direction }}
@@ -156,11 +159,11 @@ function CapabilityTable(props: {
         class="min-h-0 flex-1"
         density="compact"
         hoverRows
-        empty={props.state.search ? "No capabilities match this search." : "This app publishes no capabilities."}
+        empty={props.state.search ? props.labels.noMatch : props.labels.noPublished}
         renderCell={({ row, col }) => {
           const href = capabilityRowHref(props.app.id, row, effectiveState);
           if (col.id === "kind") {
-            return <StatusBadge tone="neutral" label={row.kind === "query" ? "Query" : "Action"} />;
+            return <StatusBadge tone="neutral" label={row.kind === "query" ? props.labels.query : props.labels.action} />;
           }
           if (col.id === "title") {
             return (
@@ -172,11 +175,16 @@ function CapabilityTable(props: {
           }
           if (col.id === "id") return <code class="text-xs text-dimmed">{row.id}</code>;
           if (col.id === "policy") {
-            return <StatusBadge tone={row.policy === "Destructive" ? "warning" : "neutral"} label={row.policy} />;
+            return (
+              <StatusBadge
+                tone={row.policy === "Destructive" ? "warning" : "neutral"}
+                label={row.policy === "Destructive" ? props.labels.destructive : row.policy === "Write" ? props.labels.write : props.labels.readOnly}
+              />
+            );
           }
           if (col.id === "open") {
             return (
-              <IconButtonLink href={href} size="sm" label={`Open ${row.title}`}>
+              <IconButtonLink href={href} size="sm" label={props.labels.openCapability({ title: row.title })}>
                 <i class="ti ti-chevron-right" aria-hidden="true" />
               </IconButtonLink>
             );
@@ -201,6 +209,7 @@ function CapabilityTable(props: {
 }
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = capabilityUiMessages.resolve([getLocale(c)]);
   const appId = c.req.param("appId");
   if (!appId) return c.notFound();
 
@@ -229,7 +238,7 @@ export default ssr<AuthContext>(async (c) => {
       fullWidth
       fullPage
       title={[
-        { title: "Capabilities", href: capabilityHref({}) },
+        { title: t.capabilities, href: capabilityHref({}) },
         ...(selection
           ? [
               { title: loaded.app.name, href: capabilityHref({ appId: loaded.app.id, ...stateParams(tableState) }) },
@@ -240,7 +249,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden" style={{ background: "transparent" }}>
         <AppWorkspace>
-          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} searchEntries={searchEntries} />
+          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} searchEntries={searchEntries} labels={t} />
 
           <AppWorkspace.Content>
             <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
@@ -250,13 +259,13 @@ export default ssr<AuthContext>(async (c) => {
                   <Placeholder
                     state="error"
                     variant="panel"
-                    title="Capability manifest unavailable"
-                    description="The app changed or disconnected while the catalog was loading. Refresh to try again."
+                    title={t.manifestUnavailable}
+                    description={t.manifestUnavailableDescription}
                     icon="ti ti-plug-connected-x"
                   />
                 }
               >
-                {(ready) => <CapabilityTable app={ready().app} operations={operations} state={tableState} selection={selection} />}
+                {(ready) => <CapabilityTable app={ready().app} operations={operations} state={tableState} selection={selection} labels={t} />}
               </Show>
             </AppWorkspace.Main>
 

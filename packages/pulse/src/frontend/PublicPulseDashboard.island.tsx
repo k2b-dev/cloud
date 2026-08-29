@@ -11,6 +11,7 @@ import {
   resolvePublicDashboardRefreshSeconds,
 } from "./public-dashboard-runtime";
 import { defaultPulseDateContext } from "./workspace/helpers";
+import { usePulseMessages } from "./use-messages";
 
 type Props = {
   token: string;
@@ -20,12 +21,13 @@ type Props = {
 };
 
 export default function PublicPulseDashboard(props: Props) {
+  const t = usePulseMessages();
   const source = props.token;
   const snapshotQuery = query.create({
     source: () => source,
     initial: { source, data: props.initialSnapshot },
     load: (token, { abortSignal }) =>
-      jsonFetch<PulseDashboardSnapshot>(`/api/pulse/public-dashboard/${token}`, { signal: abortSignal }, "Could not refresh dashboard"),
+      jsonFetch<PulseDashboardSnapshot>(`/api/pulse/public-dashboard/${token}`, { signal: abortSignal }, t().refreshDashboardFailed),
   });
   const snapshot = () => snapshotQuery.data()!;
   const dateContext = () => ({ ...defaultPulseDateContext, ...(props.initialDateConfig ?? {}) });
@@ -37,12 +39,12 @@ export default function PublicPulseDashboard(props: Props) {
       fallback={
         <span class="inline-flex h-8 w-8 items-center justify-center text-zinc-500 dark:text-zinc-400">
           <i class="ti ti-player-pause text-sm" />
-          <span class="sr-only">Manual refresh</span>
+          <span class="sr-only">{t().manualRefresh}</span>
         </span>
       }
     >
       {(seconds) => (
-        <span class="inline-flex h-8 w-8 items-center justify-center app-accent-text" title={`Refreshes every ${seconds()}s`}>
+        <span class="inline-flex h-8 w-8 items-center justify-center app-accent-text" title={t().refreshEveryShort({ seconds: seconds() })}>
           <svg class="-rotate-90" width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
             <circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" stroke-opacity="0.18" stroke-width="3" />
             <circle
@@ -57,7 +59,7 @@ export default function PublicPulseDashboard(props: Props) {
               style={{ animation: `pulse-public-refresh-progress ${seconds()}s linear infinite` }}
             />
           </svg>
-          <span class="sr-only">Refreshes every {seconds()} seconds</span>
+          <span class="sr-only">{t().refreshEvery({ seconds: seconds() })}</span>
         </span>
       )}
     </Show>
@@ -110,9 +112,9 @@ export default function PublicPulseDashboard(props: Props) {
       <Show when={snapshotQuery.error()}>
         {(error) => (
           <div class="fixed inset-x-4 bottom-4 z-10 mx-auto max-w-lg">
-            <NoticeCard tone="warning" title="Dashboard could not be refreshed" detail={error().message}>
+            <NoticeCard tone="warning" title={t().dashboardRefreshFailed} detail={error().message}>
               <Button variant="secondary" size="sm" onClick={() => void snapshotQuery.refresh()}>
-                Retry
+                {t().retry}
               </Button>
             </NoticeCard>
           </div>
@@ -139,7 +141,7 @@ export default function PublicPulseDashboard(props: Props) {
 
           <Show
             when={snapshot().dashboard.config.layout?.sections.length}
-            fallback={<Placeholder surface="paper" variant="panel" title="This dashboard has no widgets." />}
+            fallback={<Placeholder surface="paper" variant="panel" title={t().dashboardNoWidgets} />}
           >
             <section class={`space-y-6 ${props.displayHeight === "full" ? "min-h-0 flex-1 overflow-hidden" : ""}`}>
               <PublicDashboardSections snapshot={snapshot()} dateContext={dateContext()} />

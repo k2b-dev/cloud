@@ -9,7 +9,6 @@ import {
   FileView,
   type FileViewContent,
   FilterChip,
-  formatFileViewSize,
   getFileViewPreviewKind,
   IconButtonLink,
   PanelDialog,
@@ -18,10 +17,12 @@ import {
   StatusBadge,
   TextInput,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { RetentionFile, RetentionFileStatus, RetentionFilesResponse } from "../../../retention-policy-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
 const PAGE_SIZE = 25;
 
@@ -31,6 +32,14 @@ const contentHref = (baseId: string, file: RetentionFile, inline = false): strin
 };
 
 function RetentionFilePreviewDialog(props: { baseId: string; file: RetentionFile; close: () => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const bytes = (value: number) => {
+    const format = (amount: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(amount);
+    if (value < 1024) return `${format(value)} B`;
+    if (value < 1024 * 1024) return `${format(value / 1024)} KB`;
+    return `${format(value / (1024 * 1024))} MB`;
+  };
   const previewKind = () =>
     getFileViewPreviewKind({
       path: props.file.filename,
@@ -43,7 +52,7 @@ function RetentionFilePreviewDialog(props: { baseId: string; file: RetentionFile
     enabled: () => !nativePreview(),
     load: async (_, { abortSignal }): Promise<FileViewContent> => {
       const response = await fetch(contentHref(props.baseId, props.file, true), { signal: abortSignal });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load File preview"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().loadFilePreviewFailed));
       return {
         encoding: "utf8",
         content: await response.text(),
@@ -60,16 +69,16 @@ function RetentionFilePreviewDialog(props: { baseId: string; file: RetentionFile
     <PanelDialog>
       <PanelDialog.Header
         title={props.file.filename}
-        subtitle={`${props.file.mimeType} · ${formatFileViewSize(props.file.sizeBytes)}`}
+        subtitle={`${props.file.mimeType} · ${bytes(props.file.sizeBytes)}`}
         icon={`ti ${fileIcons.getFileIcon({ name: props.file.filename, type: "file", mimeType: props.file.mimeType })}`}
         actions={
-          <Tooltip.Anchor content="Download File">
+          <Tooltip.Anchor content={messages().downloadFile}>
             <IconButtonLink
               variant="ghost"
               size="sm"
               href={downloadHref()}
               download={props.file.filename}
-              label={`Download ${props.file.filename}`}
+              label={messages().downloadNamedFile({ name: props.file.filename })}
             >
               <i class="ti ti-download" aria-hidden="true" />
             </IconButtonLink>
@@ -78,17 +87,17 @@ function RetentionFilePreviewDialog(props: { baseId: string; file: RetentionFile
         close={props.close}
       />
       <PanelDialog.Body>
-        <Show when={nativePreview() || !preview.loading()} fallback={<Placeholder state="loading" title="Loading File preview" />}>
+        <Show when={nativePreview() || !preview.loading()} fallback={<Placeholder state="loading" title={messages().loadingFilePreview} />}>
           <Show
             when={!preview.error() && ready()}
             fallback={
               <Placeholder
                 state="error"
-                title="File preview is unavailable"
-                description={preview.error() instanceof Error ? preview.error()!.message : "Could not load File preview"}
+                title={messages().filePreviewUnavailable}
+                description={preview.error() instanceof Error ? preview.error()!.message : messages().loadFilePreviewFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void preview.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -126,15 +135,25 @@ const openPreview = (baseId: string, file: RetentionFile) =>
     panelDialogWorkspaceOptions,
   );
 
-const columns: DataTableColumn<RetentionFile>[] = [
-  { id: "file", header: "File", value: (row) => row.filename },
-  { id: "size", header: "Size", value: (row) => row.sizeBytes, align: "right" },
-  { id: "status", header: "Floor", value: (row) => row.status },
-  { id: "notBefore", header: "Floor reached", value: (row) => row.notBefore },
-  { id: "actions", header: "", align: "right" },
-];
-
 function RetentionFilesDialog(props: { baseId: string; minimumDays: number; close: () => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const bytes = (value: number) => {
+    const format = (amount: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(amount);
+    if (value < 1024) return `${format(value)} B`;
+    if (value < 1024 * 1024) return `${format(value / 1024)} KB`;
+    return `${format(value / (1024 * 1024))} MB`;
+  };
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const columns = (): DataTableColumn<RetentionFile>[] => [
+    { id: "file", header: messages().file, value: (row) => row.filename },
+    { id: "size", header: messages().size, value: (row) => row.sizeBytes, align: "right" },
+    { id: "status", header: messages().floor, value: (row) => row.status },
+    { id: "notBefore", header: messages().floorReached, value: (row) => row.notBefore },
+    { id: "actions", header: "", align: "right" },
+  ];
   const [searchInput, setSearchInput] = createSignal("");
   const [search, setSearch] = createSignal("");
   const [status, setStatus] = createSignal<RetentionFileStatus>("all");
@@ -159,24 +178,24 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
     source: requestUrl,
     load: async (url, { abortSignal }): Promise<RetentionFilesResponse> => {
       const response = await fetch(url, { signal: abortSignal });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load retained Files"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().loadRetainedFilesFailed));
       return response.json();
     },
   });
   const result = () => files.data();
   const rangeLabel = createMemo(() => {
     const value = result();
-    if (!value || value.pagination.total === 0) return "No Files";
+    if (!value || value.pagination.total === 0) return messages().noFiles;
     const start = (value.pagination.page - 1) * value.pagination.per_page + 1;
     const end = start + value.items.length - 1;
-    return `${start}–${end} of ${value.pagination.total} Files`;
+    return messages().filesRange({ start: number(start), end: number(end), total: number(value.pagination.total) });
   });
 
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Unreferenced Files"
-        subtitle={`Preview for a ${props.minimumDays}-day retention floor`}
+        title={messages().unreferencedFiles}
+        subtitle={messages().retentionPreviewDays({ days: number(props.minimumDays) })}
         icon="ti ti-file-search"
         close={props.close}
       />
@@ -184,15 +203,15 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
         <DataTable.Panel class="flex min-h-0 flex-1 flex-col overflow-hidden">
           <DataTable.Header title={rangeLabel()} size="sm">
             <Button size="sm" variant="secondary" disabled={files.loading() || files.refreshing()} onClick={() => void files.refresh()}>
-              <i class={files.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> Refresh
+              <i class={files.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> {messages().refresh}
             </Button>
           </DataTable.Header>
           <DataTable.Controls>
             <div class="w-full">
               <TextInput
                 type="search"
-                aria-label="Search retained Files"
-                placeholder="Search filename or File ID"
+                aria-label={messages().searchRetainedFiles}
+                placeholder={messages().searchFilenameOrFileId}
                 icon="ti ti-search"
                 activeIcon="ti ti-search"
                 clearable
@@ -209,14 +228,14 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <FilterChip
-                label="Floor status"
+                label={messages().floorStatus}
                 icon="ti ti-filter"
                 options={[
                   {
                     options: [
-                      { value: "all", label: "All Files" },
-                      { value: "retained", label: "Retained until later" },
-                      { value: "reached", label: "Floor reached" },
+                      { value: "all", label: messages().allFiles },
+                      { value: "retained", label: messages().retainedUntilLater },
+                      { value: "reached", label: messages().floorReached },
                     ],
                   },
                 ]}
@@ -235,11 +254,11 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
             fallback={
               <Placeholder
                 state="error"
-                title="Retained Files are unavailable"
-                description={files.error() instanceof Error ? files.error()!.message : "Could not load retained Files"}
+                title={messages().retainedFilesUnavailable}
+                description={files.error() instanceof Error ? files.error()!.message : messages().loadRetainedFilesFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void files.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -247,9 +266,9 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
           >
             <DataTable
               rows={result()?.items ?? []}
-              columns={columns}
+              columns={columns()}
               getRowId={(row) => row.fileId}
-              ariaLabel="Unreferenced retained Files"
+              ariaLabel={messages().retainedFilesAria}
               density="compact"
               surface="plain"
               hoverRows
@@ -257,11 +276,11 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
               class="min-h-0 flex-1 overflow-auto"
               empty={
                 files.loading() ? (
-                  <span>Loading retained Files…</span>
+                  <span>{messages().loadingRetainedFiles}</span>
                 ) : search() || status() !== "all" ? (
-                  <span>No Files match these filters.</span>
+                  <span>{messages().noFilesMatch}</span>
                 ) : (
-                  <span>No unreferenced Files are currently tracked for this Base.</span>
+                  <span>{messages().noUnreferencedFiles}</span>
                 )
               }
               renderCell={({ row, col, render, value }) => {
@@ -275,11 +294,11 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                     </div>
                   );
                 }
-                if (col.id === "size") return formatFileViewSize(row.sizeBytes);
+                if (col.id === "size") return bytes(row.sizeBytes);
                 if (col.id === "status") {
-                  return <StatusBadge tone="neutral" label={row.status === "retained" ? "Retained" : "Floor reached"} />;
+                  return <StatusBadge tone="neutral" label={row.status === "retained" ? messages().retained : messages().floorReached} />;
                 }
-                if (col.id === "notBefore") return new Date(row.notBefore).toLocaleString();
+                if (col.id === "notBefore") return dateTime(row.notBefore);
                 if (col.id === "actions") {
                   return (
                     <div class="flex justify-end gap-1">
@@ -290,19 +309,19 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                           size: row.sizeBytes,
                         })}
                       >
-                        <Tooltip.Anchor content="View File">
+                        <Tooltip.Anchor content={messages().viewFile}>
                           <Button size="sm" variant="ghost" onClick={() => void openPreview(props.baseId, row)}>
-                            <i class="ti ti-eye" aria-hidden="true" /> View
+                            <i class="ti ti-eye" aria-hidden="true" /> {messages().view}
                           </Button>
                         </Tooltip.Anchor>
                       </Show>
-                      <Tooltip.Anchor content="Download File">
+                      <Tooltip.Anchor content={messages().downloadFile}>
                         <IconButtonLink
                           size="sm"
                           variant="ghost"
                           href={contentHref(props.baseId, row)}
                           download={row.filename}
-                          label={`Download ${row.filename}`}
+                          label={messages().downloadNamedFile({ name: row.filename })}
                         >
                           <i class="ti ti-download" aria-hidden="true" />
                         </IconButtonLink>
@@ -317,7 +336,7 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
           <Show when={(result()?.pagination.total_pages ?? 0) > 1}>
             <DataTable.Footer class="flex items-center justify-between gap-3">
               <span class="text-xs text-dimmed">
-                Page {page()} of {result()?.pagination.total_pages}
+                {messages().pageOf({ page: number(page()), total: number(result()?.pagination.total_pages ?? 1) })}
               </span>
               <div class="flex gap-2">
                 <Button
@@ -326,7 +345,7 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                   disabled={files.loading() || page() <= 1}
                   onClick={() => setPage((value) => value - 1)}
                 >
-                  Previous
+                  {messages().previous}
                 </Button>
                 <Button
                   size="sm"
@@ -334,7 +353,7 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                   disabled={files.loading() || !result()?.pagination.has_next}
                   onClick={() => setPage((value) => value + 1)}
                 >
-                  Next
+                  {messages().next}
                 </Button>
               </div>
             </DataTable.Footer>

@@ -1,14 +1,16 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
 import { pulseService } from "../../../service";
 import { projectPublicRelations, projectSources, resolvePublicId } from "../../../service/public-resources";
 import PulseQueryReferenceWindow from "../../PulseQueryReferenceWindow.island";
 import { readReferenceTab } from "../../query-reference-tabs";
+import { pulseMessages } from "../../../messages";
 
 export default ssr<AuthContext>(async (c) => {
-  c.get("page").title = "Pulse query reference";
+  const { t } = pulseMessages.resolve([getLocale(c)]);
+  c.get("page").title = t.pulseQueryReference;
   const user = expectUserBackedActor(c);
   const publicBaseId = c.req.param("baseId") ?? "";
   const baseId = await resolvePublicId("bases", publicBaseId);
@@ -19,7 +21,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!baseResult?.ok) {
     return () => (
       <main class="min-h-screen bg-zinc-50 p-6 dark:bg-zinc-950">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">Pulse base not found</div>
+        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">{t.pulseBaseNotFound}</div>
       </main>
     );
   }

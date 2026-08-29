@@ -14,6 +14,7 @@ import {
   Select,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { formatDateTime as fmtDateTime } from "@valentinkolb/cloud/shared";
 import { createSignal, For, onCleanup, Show } from "solid-js";
@@ -27,6 +28,7 @@ import {
   responseErrorMessage,
   type SettingEntry,
 } from "./health-webhook-queries";
+import { gatewayOpsMessages, type GatewayOpsMessages } from "../messages";
 
 const defaultWebhook = (): HealthWebhookInput => ({
   name: "",
@@ -50,11 +52,11 @@ const toInput = (webhook?: HealthWebhook): HealthWebhookInput => ({
 const toggle = <T extends string>(items: T[], item: T, checked: boolean) =>
   checked ? Array.from(new Set([...items, item])) : items.filter((value) => value !== item);
 
-const appStatusDescription = (app: HealthApp) => {
-  if (!app.online) return `offline · ${app.id}`;
+const appStatusDescription = (app: HealthApp, t: GatewayOpsMessages) => {
+  if (!app.online) return t.appOfflineDescription({ id: app.id });
   if (app.signals.length > 0) return `${app.signals.join(" · ")} · ${app.id}`;
-  if (app.status === "warn") return `live, stale · ${app.id}`;
-  return `live · ${app.id}`;
+  if (app.status === "warn") return t.appStaleDescription({ id: app.id });
+  return t.appLiveDescription({ id: app.id });
 };
 
 const fmtMinutes = (value: number) => `${Math.round(value / 60_000)} min`;
@@ -66,42 +68,43 @@ const statusClasses: Record<NonNullable<HealthWebhook["lastStatus"]> | "new", st
   new: "bg-zinc-500/10 text-dimmed",
 };
 
-const methodOptions = [
+const methodOptions = (t: GatewayOpsMessages) => [
   {
     id: "GET",
     label: "GET ping",
-    description: "Healthchecks.io style request without a JSON body.",
+    description: t.getPingDescription,
     icon: "ti ti-arrow-up-right",
   },
   {
     id: "POST",
     label: "POST JSON",
-    description: "Send the current health report as JSON payload.",
+    description: t.postJsonDescription,
     icon: "ti ti-json",
   },
 ];
 
-const statusOptions = [
-  { id: "ok", label: "OK", description: "Send even for healthy checks when the trigger matches.", icon: "ti ti-check" },
-  { id: "warn", label: "Warning", description: "Send for warning or error states.", icon: "ti ti-alert-triangle" },
-  { id: "error", label: "Error", description: "Send only when the scoped health status is error.", icon: "ti ti-alert-circle" },
+const statusOptions = (t: GatewayOpsMessages) => [
+  { id: "ok", label: t.ok, description: t.statusOkDescription, icon: "ti ti-check" },
+  { id: "warn", label: t.warning, description: t.statusWarningDescription, icon: "ti ti-alert-triangle" },
+  { id: "error", label: t.error, description: t.statusErrorDescription, icon: "ti ti-alert-circle" },
 ];
 
-const scopeOptions = [
-  { id: "all", label: "All apps", description: "Evaluate every app known to the gateway.", icon: "ti ti-apps" },
-  { id: "include", label: "Selected only", description: "Evaluate only the apps selected below.", icon: "ti ti-filter-check" },
-  { id: "exclude", label: "Exclude selected", description: "Evaluate all apps except the selected ones.", icon: "ti ti-filter-x" },
+const scopeOptions = (t: GatewayOpsMessages) => [
+  { id: "all", label: t.allApps, description: t.allAppsDescription, icon: "ti ti-apps" },
+  { id: "include", label: t.selectedOnly, description: t.selectedOnlyDescription, icon: "ti ti-filter-check" },
+  { id: "exclude", label: t.excludeSelected, description: t.excludeSelectedDescription, icon: "ti ti-filter-x" },
 ];
 
-const sendOptions = [
-  { id: "ok", label: "OK", description: "Send when the scoped health state changes to OK.", icon: "ti ti-check" },
-  { id: "warn", label: "Warning", description: "Send when scoped health becomes warning.", icon: "ti ti-alert-triangle" },
-  { id: "error", label: "Error", description: "Send when the scoped health state changes to error.", icon: "ti ti-alert-circle" },
-  { id: "recovery", label: "Recovery", description: "Send when a warning/error returns to OK.", icon: "ti ti-heartbeat" },
-  { id: "every_check", label: "Every check", description: "Send on every scheduled evaluation.", icon: "ti ti-clock" },
+const sendOptions = (t: GatewayOpsMessages) => [
+  { id: "ok", label: t.ok, description: t.triggerOkDescription, icon: "ti ti-check" },
+  { id: "warn", label: t.warning, description: t.triggerWarningDescription, icon: "ti ti-alert-triangle" },
+  { id: "error", label: t.error, description: t.triggerErrorDescription, icon: "ti ti-alert-circle" },
+  { id: "recovery", label: t.recovery, description: t.recoveryDescription, icon: "ti ti-heartbeat" },
+  { id: "every_check", label: t.everyCheck, description: t.everyCheckDescription, icon: "ti ti-clock" },
 ] as const;
 
 export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[]; close: () => void; onSaved: () => Promise<void> }) => {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const webhook = props.webhook;
   const initial = toInput(webhook);
   const [data, setData] = createSignal<HealthWebhookInput>(initial);
@@ -115,8 +118,8 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
       const response = webhook
         ? await apiClient.health.webhooks[":id"].$put({ param: { id: webhook.id }, json: input }, { init: { signal: abortSignal } })
         : await apiClient.health.webhooks.$post({ json: input }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to save webhook"));
-      return readHealthWebhookResponse(response);
+      if (!response.ok) throw new Error(await responseErrorMessage(response, t.saveWebhookFailed));
+      return readHealthWebhookResponse(response, t.unexpectedWebhookResponse);
     },
   });
   const busy = () => save.loading() || reconciling();
@@ -137,7 +140,7 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
     if (disposed) return;
     setReconciling(false);
     props.close();
-    toast.success("Webhook saved");
+    toast.success(t.webhookSaved);
   };
   const submit = async () => {
     if (busy() || persisted()) return;
@@ -171,41 +174,41 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
     >
       <PanelDialog>
         <PanelDialog.Header
-          title={webhook ? "Edit Webhook" : "Add Webhook"}
-          subtitle="Deliver gateway health alerts to an HTTP endpoint."
+          title={webhook ? t.editWebhook : t.addWebhook}
+          subtitle={t.webhookEditorDescription}
           icon="ti ti-heartbeat"
           close={requestClose}
         />
         <PanelDialog.Body>
           <CheckboxCard
-            label="Enabled"
-            description="Disabled webhooks stay configured but are skipped by scheduled checks."
+            label={t.enabled}
+            description={t.enabledDescription}
             icon="ti ti-power"
             value={() => data().enabled}
             onValueChange={(enabled) => setData({ ...data(), enabled })}
           />
           <TextInput
-            label="Name"
-            description="Human-readable label shown on this alerts page."
+            label={t.name}
+            description={t.webhookNameDescription}
             icon="ti ti-tag"
             value={() => data().name}
             onValueChange={(name) => setData({ ...data(), name })}
             required
           />
 
-          <PanelDialog.Section title="Delivery" subtitle="Where and how this webhook is called." icon="ti ti-send">
+          <PanelDialog.Section title={t.delivery} subtitle={t.deliveryDescription} icon="ti ti-send">
             <div class="grid gap-3 md:grid-cols-2">
               <Select
-                label="Method"
-                description="Choose GET ping or POST JSON delivery."
+                label={t.method}
+                description={t.methodDescription}
                 icon="ti ti-send"
                 value={() => data().method}
                 onValueChange={(method) => setData({ ...data(), method: method as "GET" | "POST" })}
-                options={methodOptions}
+                options={methodOptions(t)}
               />
               <TextInput
                 label="URL"
-                description="Use an HTTP or HTTPS webhook endpoint."
+                description={t.urlDescription}
                 type="url"
                 icon="ti ti-link"
                 value={() => data().url}
@@ -215,16 +218,16 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
             </div>
             <div class="grid gap-3 md:grid-cols-2">
               <Select
-                label="Minimum status"
-                description="Lowest scoped health state to deliver."
+                label={t.minimumStatus}
+                description={t.minimumStatusDescription}
                 icon="ti ti-activity"
                 value={() => data().minStatus}
                 onValueChange={(minStatus) => setData({ ...data(), minStatus: minStatus as "ok" | "warn" | "error" })}
-                options={statusOptions}
+                options={statusOptions(t)}
               />
               <NumberInput
-                label="Repeat interval"
-                description="Repeat unresolved warnings or errors."
+                label={t.repeatInterval}
+                description={t.repeatIntervalDescription}
                 icon="ti ti-repeat"
                 min={1}
                 suffix="min"
@@ -234,9 +237,9 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
             </div>
           </PanelDialog.Section>
 
-          <PanelDialog.Section title="Send when" subtitle="Choose trigger states and limit evaluation scope." icon="ti ti-bell-ringing">
+          <PanelDialog.Section title={t.sendWhen} subtitle={t.sendWhenDescription} icon="ti ti-bell-ringing">
             <div class="grid gap-2 md:grid-cols-2">
-              <For each={sendOptions}>
+              <For each={sendOptions(t)}>
                 {(item) => (
                   <CheckboxCard
                     label={item.label}
@@ -249,12 +252,12 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
               </For>
             </div>
             <Select
-              label="Scope"
-              description="Choose which registered apps this webhook evaluates."
+              label={t.scope}
+              description={t.scopeDescription}
               icon="ti ti-filter"
               value={() => data().scopeKind}
               onValueChange={(scopeKind) => setData({ ...data(), scopeKind: scopeKind as "all" | "include" | "exclude" })}
-              options={scopeOptions}
+              options={scopeOptions(t)}
             />
             <Show when={data().scopeKind !== "all"}>
               <div class="grid max-h-48 gap-2 overflow-y-auto md:grid-cols-2">
@@ -262,7 +265,7 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
                   {(app) => (
                     <CheckboxCard
                       label={app.name}
-                      description={appStatusDescription(app)}
+                      description={appStatusDescription(app, t)}
                       icon={app.icon}
                       value={() => data().scopeAppIds.includes(app.id)}
                       onValueChange={(checked) => setData({ ...data(), scopeAppIds: toggle(data().scopeAppIds, app.id, checked) })}
@@ -274,9 +277,9 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
           </PanelDialog.Section>
           <Show when={reconcileError()}>
             {(error) => (
-              <NoticeCard tone="danger" title="Webhook saved, but the list could not be refreshed" detail={error().message}>
+              <NoticeCard tone="danger" title={t.webhookSavedRefreshFailed} detail={error().message}>
                 <Button type="button" size="sm" onClick={() => void reconcile()} disabled={reconciling()}>
-                  Retry refresh
+                  {t.retryRefresh}
                 </Button>
               </NoticeCard>
             )}
@@ -284,11 +287,11 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={busy()}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button type="submit" size="sm" disabled={busy() || persisted()}>
             <i class={`ti ${busy() ? "ti-loader-2 animate-spin" : "ti-check"} text-sm`} />
-            Save
+            {t.save}
           </Button>
         </PanelDialog.Footer>
       </PanelDialog>
@@ -303,6 +306,7 @@ const openWebhookEditor = (webhook: HealthWebhook | undefined, apps: HealthApp[]
   });
 
 const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () => void; onSaved: () => Promise<void> }) => {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const initial = String(props.schedule?.value ?? props.schedule?.default ?? "*/5 * * * *");
   const [scheduleValue, setScheduleValue] = createSignal(initial);
   const [persisted, setPersisted] = createSignal(false);
@@ -319,7 +323,7 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to save schedule"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, t.saveScheduleFailed));
     },
   });
   const busy = () => save.loading() || reconciling();
@@ -340,7 +344,7 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
     if (disposed) return;
     setReconciling(false);
     props.close();
-    toast.success("Schedule saved");
+    toast.success(t.scheduleSaved);
   };
   const submit = async () => {
     if (busy() || persisted()) return;
@@ -368,8 +372,8 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
       }}
     >
       <TextInput
-        label="Schedule"
-        description="Cron expression evaluated in app.timezone."
+        label={t.schedule}
+        description={t.cronDescription}
         icon="ti ti-calendar-time"
         value={scheduleValue}
         onValueChange={setScheduleValue}
@@ -377,20 +381,20 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
       />
       <Show when={reconcileError()}>
         {(error) => (
-          <NoticeCard tone="danger" title="Schedule saved, but the settings could not be refreshed" detail={error().message}>
+          <NoticeCard tone="danger" title={t.scheduleSavedRefreshFailed} detail={error().message}>
             <Button type="button" size="sm" onClick={() => void reconcile()} disabled={reconciling()}>
-              Retry refresh
+              {t.retryRefresh}
             </Button>
           </NoticeCard>
         )}
       </Show>
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={busy()}>
-          Cancel
+          {t.cancel}
         </Button>
         <Button type="submit" size="sm" disabled={busy() || persisted()}>
           <i class={`ti ${busy() ? "ti-loader-2 animate-spin" : "ti-check"} text-sm`} />
-          Save
+          {t.save}
         </Button>
       </div>
     </form>
@@ -399,14 +403,20 @@ const ScheduleEditor = (props: { schedule: SettingEntry | undefined; close: () =
 
 const openScheduleEditor = (schedule: SettingEntry | undefined, onSaved: () => Promise<void>) =>
   prompts.dialog<void>((close) => <ScheduleEditor schedule={schedule} close={() => close()} onSaved={onSaved} />, {
-    title: "Check Schedule",
+    title: gatewayOpsMessages.resolve([document.documentElement.lang]).t.checkSchedule,
     icon: "ti ti-calendar-time",
     size: "small",
     cancelBehavior: "ignore",
   });
 
 export default function HealthWebhooksPanel() {
-  const { health, settings, webhooks } = createHealthWebhookQueries();
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  const { health, settings, webhooks } = createHealthWebhookQueries({
+    loadWebhooks: t.loadWebhooksFailed,
+    loadSettings: t.loadScheduleFailed,
+    loadHealth: t.loadAppHealthFailed,
+  });
   const [confirming, setConfirming] = createSignal(false);
   let disposed = false;
   const schedule = () => settings.data()?.find((entry) => entry.key === "gateway.health_check_schedule");
@@ -423,14 +433,14 @@ export default function HealthWebhooksPanel() {
   const remove = mutation.create<void, { id: string; name: string }>({
     mutation: async (target, { abortSignal }) => {
       const response = await apiClient.health.webhooks[":id"].$delete({ param: { id: target.id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to delete webhook"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, t.deleteWebhookFailed));
     },
   });
 
   const test = mutation.create<void, { id: string }>({
     mutation: async (target, { abortSignal }) => {
       const response = await apiClient.health.webhooks[":id"].test.$post({ param: { id: target.id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to test webhook"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, t.testWebhookFailed));
     },
   });
 
@@ -440,7 +450,7 @@ export default function HealthWebhooksPanel() {
     setConfirming(true);
     let confirmed = false;
     try {
-      confirmed = (await prompts.confirm(`Delete "${target.name}"?`, { title: "Delete webhook", variant: "danger" })) === true;
+      confirmed = (await prompts.confirm(t.deleteWebhookConfirm({ name: target.name }), { title: t.deleteWebhookTitle, variant: "danger" })) === true;
     } finally {
       if (!disposed) setConfirming(false);
     }
@@ -453,9 +463,9 @@ export default function HealthWebhooksPanel() {
     }
     try {
       await webhooks.invalidate();
-      if (!disposed) toast.success("Webhook deleted");
+      if (!disposed) toast.success(t.webhookDeleted);
     } catch {
-      if (!disposed) toast.error("Webhook deleted, but the list could not be refreshed.");
+      if (!disposed) toast.error(t.webhookDeletedRefreshFailed);
     }
   };
   const testWebhook = async (webhook: HealthWebhook) => {
@@ -463,7 +473,7 @@ export default function HealthWebhooksPanel() {
     await test.mutate({ id: webhook.id });
     if (disposed) return;
     if (test.error()) void prompts.error(test.error()!.message);
-    else toast.success("Webhook test submitted");
+    else toast.success(t.webhookTestSubmitted);
   };
   const openEditor = (webhook?: HealthWebhook) => {
     if (editorBlocked()) return;
@@ -476,15 +486,15 @@ export default function HealthWebhooksPanel() {
   });
 
   const columns: DataTableColumn<HealthWebhook>[] = [
-    { id: "name", header: "Webhook", value: (webhook) => webhook.name },
-    { id: "status", header: "Status", value: (webhook) => webhook.lastStatus, headerClass: "text-center", cellClass: "text-center" },
-    { id: "method", header: "Method", value: (webhook) => webhook.method },
-    { id: "minimum", header: "Minimum", value: (webhook) => webhook.minStatus },
-    { id: "repeat", header: "Repeat", value: (webhook) => webhook.repeatIntervalMs, headerClass: "text-right", cellClass: "text-right" },
-    { id: "lastSent", header: "Last sent", value: (webhook) => webhook.lastSentAt, headerClass: "text-right", cellClass: "text-right" },
+    { id: "name", header: t.webhook, value: (webhook) => webhook.name },
+    { id: "status", header: t.status, value: (webhook) => webhook.lastStatus, headerClass: "text-center", cellClass: "text-center" },
+    { id: "method", header: t.method, value: (webhook) => webhook.method },
+    { id: "minimum", header: t.minimum, value: (webhook) => webhook.minStatus },
+    { id: "repeat", header: t.repeat, value: (webhook) => webhook.repeatIntervalMs, headerClass: "text-right", cellClass: "text-right" },
+    { id: "lastSent", header: t.lastSent, value: (webhook) => webhook.lastSentAt, headerClass: "text-right", cellClass: "text-right" },
     {
       id: "actions",
-      header: <span class="sr-only">Actions</span>,
+      header: <span class="sr-only">{t.actions}</span>,
       headerClass: "text-right",
       cellClass: "text-right whitespace-nowrap max-w-none",
     },
@@ -494,10 +504,9 @@ export default function HealthWebhooksPanel() {
     <section class="flex flex-col gap-2">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="min-w-0" style="view-transition-name: admin-webhooks-title">
-          <h1 class="text-base font-semibold text-primary">Health Webhooks</h1>
+          <h1 class="text-base font-semibold text-primary">{t.healthWebhooks}</h1>
           <p class="mt-1 text-xs text-dimmed">
-            Current alert delivery is based on gateway health checks. The schedule is{" "}
-            <code>{String(schedule()?.value ?? schedule()?.default ?? "*/5 * * * *")}</code>.
+            {t.healthWebhooksDescription({ schedule: String(schedule()?.value ?? schedule()?.default ?? "*/5 * * * *") })}
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
@@ -509,38 +518,38 @@ export default function HealthWebhooksPanel() {
             disabled={scheduleBlocked()}
           >
             <i class="ti ti-calendar-time" aria-hidden="true" />
-            Schedule
+            {t.schedule}
           </Button>
           <Button type="button" variant="secondary" size="sm" onClick={() => void openEditor()} disabled={editorBlocked()}>
             <i class="ti ti-plus" aria-hidden="true" />
-            Add
+            {t.add}
           </Button>
         </div>
       </div>
 
       <Show when={settings.error()}>
         {(error) => (
-          <NoticeCard tone="danger" title="Could not load the health-check schedule" detail={error().message}>
+          <NoticeCard tone="danger" title={t.loadScheduleFailed} detail={error().message}>
             <Button type="button" size="sm" onClick={() => void settings.refresh()} disabled={settings.refreshing()}>
-              Retry
+              {t.retry}
             </Button>
           </NoticeCard>
         )}
       </Show>
       <Show when={health.error()}>
         {(error) => (
-          <NoticeCard tone="danger" title="Could not load registered app health" detail={error().message}>
+          <NoticeCard tone="danger" title={t.loadAppHealthFailed} detail={error().message}>
             <Button type="button" size="sm" onClick={() => void health.refresh()} disabled={health.refreshing()}>
-              Retry
+              {t.retry}
             </Button>
           </NoticeCard>
         )}
       </Show>
       <Show when={webhooks.error()}>
         {(error) => (
-          <NoticeCard tone="danger" title="Could not load health webhooks" detail={error().message}>
+          <NoticeCard tone="danger" title={t.loadWebhooksFailed} detail={error().message}>
             <Button type="button" size="sm" onClick={() => void webhooks.refresh()} disabled={webhooks.refreshing()}>
-              Retry
+              {t.retry}
             </Button>
           </NoticeCard>
         )}
@@ -548,7 +557,7 @@ export default function HealthWebhooksPanel() {
 
       <Show
         when={webhooks.data()}
-        fallback={webhooks.error() ? null : <Placeholder state="loading" surface="paper" title="Loading webhooks..." />}
+        fallback={webhooks.error() ? null : <Placeholder state="loading" surface="paper" title={t.loadingWebhooks} />}
       >
         {(rows) => (
           <DataTable
@@ -559,16 +568,16 @@ export default function HealthWebhooksPanel() {
             highlightColumns={false}
             class="paper overflow-x-auto"
             tableClass="w-full text-sm"
-            empty="No health webhooks configured."
+            empty={t.noWebhooks}
             renderCell={({ row: webhook, col }) => {
               if (col.id === "name") {
                 return (
                   <div class="min-w-0">
                     <div class="flex items-center gap-2">
                       <span class={`status-dot ${webhook.enabled ? "bg-emerald-500" : "bg-zinc-400"}`} />
-                      <span class="truncate text-xs font-medium text-primary">{webhook.name || "Untitled webhook"}</span>
+                      <span class="truncate text-xs font-medium text-primary">{webhook.name || t.untitledWebhook}</span>
                       <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-dimmed dark:bg-zinc-800">
-                        {webhook.enabled ? "enabled" : "disabled"}
+                        {webhook.enabled ? t.enabled : t.disabled}
                       </span>
                     </div>
                     <p class="mt-0.5 truncate text-[10px] text-dimmed">{webhook.url}</p>
@@ -580,12 +589,13 @@ export default function HealthWebhooksPanel() {
               }
               if (col.id === "status") {
                 const status = webhook.lastStatus ?? "new";
-                return <span class={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClasses[status]}`}>{status}</span>;
+                const label = status === "ok" ? t.ok : status === "warn" ? t.warning : status === "error" ? t.error : t.newStatus;
+                return <span class={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClasses[status]}`}>{label}</span>;
               }
               if (col.id === "method") return <span class="text-xs font-medium text-secondary">{webhook.method}</span>;
               if (col.id === "minimum") return <span class="text-xs capitalize text-dimmed">{webhook.minStatus}</span>;
               if (col.id === "repeat") return <span class="text-xs tabular-nums text-dimmed">{fmtMinutes(webhook.repeatIntervalMs)}</span>;
-              if (col.id === "lastSent") return <span class="text-xs tabular-nums text-dimmed">{fmtDateTime(webhook.lastSentAt)}</span>;
+              if (col.id === "lastSent") return <span class="text-xs tabular-nums text-dimmed">{fmtDateTime(webhook.lastSentAt, { locale: locale() })}</span>;
               if (col.id === "actions") {
                 return (
                   <div class="flex justify-end gap-1">
@@ -596,10 +606,10 @@ export default function HealthWebhooksPanel() {
                       onClick={() => void testWebhook(webhook)}
                       disabled={test.loading() || webhooksBlocked()}
                     >
-                      Test
+                      {t.test}
                     </Button>
                     <Button type="button" variant="ghost" size="sm" onClick={() => void openEditor(webhook)} disabled={editorBlocked()}>
-                      Edit
+                      {t.edit}
                     </Button>
                     <Button
                       type="button"
@@ -608,7 +618,7 @@ export default function HealthWebhooksPanel() {
                       onClick={() => void removeWebhook(webhook)}
                       disabled={remove.loading() || confirming() || webhooksBlocked()}
                     >
-                      Delete
+                      {t.delete}
                     </Button>
                   </div>
                 );

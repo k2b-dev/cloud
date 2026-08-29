@@ -1,8 +1,9 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, onMount } from "solid-js";
 import { apiClient } from "../api-client";
+import { gatewayOpsMessages } from "../../../messages";
 
 type SendResult = {
   sent: number;
@@ -11,6 +12,7 @@ type SendResult = {
 };
 
 const SendAllPending = () => {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const [pendingCount, setPendingCount] = createSignal<number | null>(0);
 
   // Fetch pending count on mount
@@ -31,7 +33,7 @@ const SendAllPending = () => {
       const res = await apiClient["pending-system"]["send-all"].$post();
       const data = await res.json();
       if (!res.ok) {
-        throw new Error("message" in data ? data.message : "Failed to send notifications.");
+        throw new Error("message" in data ? data.message : t.sendNotificationsFailed);
       }
       return data as SendResult;
     },
@@ -39,10 +41,10 @@ const SendAllPending = () => {
       setPendingCount(0);
 
       if (result.failed === 0) {
-        toast.success(`Sent ${result.sent} notification${result.sent !== 1 ? "s" : ""}`);
+        toast.success(t.sentNotifications({ count: result.sent }));
       } else {
         const errorList = result.errors.map((e) => `${e.recipient}: ${e.error}`).join("\n");
-        await prompts.alert(`Sent: ${result.sent}, Failed: ${result.failed}\n\nErrors:\n${errorList}`);
+        await prompts.alert(t.sendResults({ sent: result.sent, failed: result.failed, errors: errorList }));
       }
       refreshCurrentPath();
     },
@@ -56,14 +58,12 @@ const SendAllPending = () => {
     if (count === null || count === 0) return;
 
     const confirmed = await prompts.confirm(
-      `This will send ${count} pending system notification${
-        count !== 1 ? "s" : ""
-      } (welcome emails, etc.).\n\nThis action cannot be undone.`,
+      t.sendPendingConfirm({ count }),
       {
-        title: "Send All Pending System Notifications?",
+        title: t.sendAllPendingTitle,
         icon: "ti ti-send",
-        confirmText: `Send ${count} Notification${count !== 1 ? "s" : ""}`,
-        cancelText: "Cancel",
+        confirmText: t.sendNotificationCount({ count }),
+        cancelText: t.cancel,
       },
     );
 
@@ -75,7 +75,7 @@ const SendAllPending = () => {
   return (
     <Button type="button" size="sm" onClick={handleClick} disabled={sendAllMutation.loading() || pendingCount() === 0}>
       {sendAllMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
-      <span>Send {pendingCount()} Pending</span>
+      <span>{t.sendPendingCount({ count: pendingCount() })}</span>
     </Button>
   );
 };

@@ -9,6 +9,7 @@ import {
   prompts,
   StructuredDataPreview,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -23,6 +24,7 @@ import type {
   PublicRecordSnapshotSummary,
 } from "../documents/public-document-types";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 import { formatRecordRelativeTime } from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
 import {
@@ -43,6 +45,8 @@ export default function RecordDocumentsSection(props: {
   initialDocuments: { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   initialSnapshots: PublicRecordSnapshotSummary[];
 }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const [documents, setDocuments] = createSignal<PublicDocument[]>(props.initialDocuments.items);
   const [documentCursor, setDocumentCursor] = createSignal(props.initialDocuments.cursor);
   const [hasMoreDocuments, setHasMoreDocuments] = createSignal(props.initialDocuments.hasMore);
@@ -62,7 +66,7 @@ export default function RecordDocumentsSection(props: {
       param: { tableId: props.tableId, recordId: props.recordId },
       query: { limit: "100", ...(cursor ? { cursor } : {}) },
     });
-    if (!res.ok) throw new Error(await errorMessage(res, "Failed to load generated documents"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().generatedDocumentsLoadFailed));
     return (await res.json()) as { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   };
 
@@ -70,7 +74,7 @@ export default function RecordDocumentsSection(props: {
     const res = await apiClient.documents.snapshots["by-record"][":tableId"][":recordId"].$get({
       param: { tableId: props.tableId, recordId: props.recordId },
     });
-    if (!res.ok) throw new Error(await errorMessage(res, "Failed to load snapshots"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().snapshotsLoadFailed));
     return ((await res.json()) as { items: PublicRecordSnapshotSummary[] }).items;
   };
 
@@ -117,12 +121,12 @@ export default function RecordDocumentsSection(props: {
       const createRes = await apiClient.documents.snapshots["by-record"][":tableId"][":recordId"].$post({
         param: { tableId: props.tableId, recordId: props.recordId },
       });
-      if (!createRes.ok) throw new Error(await errorMessage(createRes, "Failed to create snapshot"));
+      if (!createRes.ok) throw new Error(await errorMessage(createRes, t().snapshotCreateFailed));
       return loadSnapshots();
     },
     onSuccess: (items) => {
       setSnapshots(items);
-      toast.success("Snapshot created.");
+      toast.success(t().snapshotCreatedToast);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -131,7 +135,7 @@ export default function RecordDocumentsSection(props: {
     onBefore: (snapshot) => setActiveSnapshotId(snapshot.id),
     mutation: async (summary) => {
       const res = await apiClient.documents.snapshots[":snapshotId"].$get({ param: { snapshotId: summary.id } });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to load snapshot"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().snapshotLoadFailed));
       const snapshot = (await res.json()) as PublicRecordSnapshot;
       const root = snapshot.root as SnapshotRecordNode;
       const fields = snapshotFields(root, snapshot.tableId);
@@ -152,7 +156,7 @@ export default function RecordDocumentsSection(props: {
               headerMeta={
                 <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-dimmed">
                   <span class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400">
-                    <i class="ti ti-camera" /> snapshot
+                    <i class="ti ti-camera" /> {t().snapshotLabel}
                   </span>
                   <span>·</span>
                   <span class="truncate">{snapshotTableName(snapshot)}</span>
@@ -163,8 +167,8 @@ export default function RecordDocumentsSection(props: {
                 </div>
               }
             >
-              <DetailPanel.Group label="Snapshot metadata">
-                <DetailPanel.Section title="Metadata" icon="ti ti-info-circle">
+              <DetailPanel.Group label={t().snapshotMetadata}>
+                <DetailPanel.Section title={t().metadata} icon="ti ti-info-circle">
                   <StructuredDataPreview
                     data={{
                       id: snapshot.id,
@@ -177,17 +181,17 @@ export default function RecordDocumentsSection(props: {
                   />
                 </DetailPanel.Section>
               </DetailPanel.Group>
-              <DetailPanel.Group label="Raw snapshot data">
-                <DetailPanel.Section title="Raw snapshot data" icon="ti ti-code" collapsible>
+              <DetailPanel.Group label={t().rawSnapshotData}>
+                <DetailPanel.Section title={t().rawSnapshotData} icon="ti ti-code" collapsible>
                   <div class="flex flex-col gap-3">
                     <StructuredDataPreview
-                      title="Root record"
-                      data={isStructuredDataValue(snapshot.root) ? snapshot.root : { error: "Snapshot root is not valid JSON." }}
+                      title={t().rootRecord}
+                      data={isStructuredDataValue(snapshot.root) ? snapshot.root : { error: t().invalidSnapshotRoot }}
                       defaultMode="raw"
                     />
                     <StructuredDataPreview
-                      title="Record graph"
-                      data={isStructuredDataValue(snapshot.graph) ? snapshot.graph : { error: "Snapshot graph is not valid JSON." }}
+                      title={t().recordGraph}
+                      data={isStructuredDataValue(snapshot.graph) ? snapshot.graph : { error: t().invalidSnapshotGraph }}
                       defaultMode="raw"
                     />
                   </div>
@@ -196,7 +200,7 @@ export default function RecordDocumentsSection(props: {
             </RecordReadView>
           </div>
         ),
-        { title: "Record snapshot", icon: "ti ti-camera", size: "large" },
+        { title: t().recordSnapshot, icon: "ti ti-camera", size: "large" },
       );
     },
     onError: (error) => prompts.error(error.message),
@@ -234,9 +238,9 @@ export default function RecordDocumentsSection(props: {
   return (
     <>
       <Show when={props.live || manualSnapshots().length > 0}>
-        <DetailPanel.Group label="Record snapshots">
+        <DetailPanel.Group label={t().recordSnapshots}>
           <DetailPanel.Section
-            title="Snapshots"
+            title={t().snapshots}
             icon="ti ti-camera"
             meta={manualSnapshots().length}
             actions={
@@ -250,13 +254,13 @@ export default function RecordDocumentsSection(props: {
                   aria-busy={createSnapshotMut.loading()}
                 >
                   {createSnapshotMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-camera" />}
-                  Create snapshot
+                  {t().createSnapshot}
                 </Button>
               </Show>
             }
           >
             <Show when={manualSnapshots().length === 0}>
-              <Placeholder align="left" description="No snapshots yet." />
+              <Placeholder align="left" description={t().noSnapshots} />
             </Show>
             <For each={manualSnapshots()}>
               {(snapshot) => (
@@ -268,7 +272,7 @@ export default function RecordDocumentsSection(props: {
                     <i aria-hidden="true" class={activeSnapshotId() === snapshot.id ? "ti ti-loader-2 animate-spin" : "ti ti-camera"} />
                   }
                   trailing={<i aria-hidden="true" class="ti ti-chevron-right" />}
-                  aria-label={`Inspect snapshot ${snapshot.id}`}
+                  aria-label={t().inspectSnapshot({ id: snapshot.id })}
                   onClick={() => inspectSnapshotMut.mutate(snapshot)}
                   disabled={inspectSnapshotMut.loading()}
                   aria-busy={activeSnapshotId() === snapshot.id}
@@ -280,9 +284,9 @@ export default function RecordDocumentsSection(props: {
       </Show>
 
       <Show when={generatedDocuments().length > 0 || (props.live && availableTemplates().length > 0)}>
-        <DetailPanel.Group label="Generated documents">
+        <DetailPanel.Group label={t().generatedDocuments}>
           <DetailPanel.Section
-            title="Documents"
+            title={t().documents}
             icon="ti ti-file-type-pdf"
             meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : generatedDocuments().length}
             actions={
@@ -290,7 +294,7 @@ export default function RecordDocumentsSection(props: {
                 <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>
                   <Dropdown.Trigger variant="secondary" size="sm" type="button" disabled={refreshDocumentsMut.loading()}>
                     <i class="ti ti-file-plus" />
-                    Generate
+                    {t().generate}
                     <i class="ti ti-chevron-down text-xs" />
                   </Dropdown.Trigger>
                 </Dropdown.Root>
@@ -298,7 +302,7 @@ export default function RecordDocumentsSection(props: {
             }
           >
             <Show when={generatedDocuments().length === 0}>
-              <Placeholder align="left" description="No generated documents yet." />
+              <Placeholder align="left" description={t().noGeneratedDocuments} />
             </Show>
             <For each={generatedDocuments()}>
               {(document) => (
@@ -321,7 +325,7 @@ export default function RecordDocumentsSection(props: {
                     />
                   }
                   trailing={<i aria-hidden="true" class="ti ti-chevron-right" />}
-                  aria-label={`Open ${document.filename}`}
+                  aria-label={t().openNamed({ name: document.filename })}
                   onClick={() => inspectDocument(document)}
                 />
               )}
@@ -333,10 +337,10 @@ export default function RecordDocumentsSection(props: {
                 type="button"
                 class="mt-2"
                 loading={loadMoreDocumentsMut.loading()}
-                loadingLabel="Loading documents"
+                loadingLabel={t().loadingDocuments}
                 onClick={() => loadMoreDocumentsMut.mutate(undefined)}
               >
-                Load more
+                {t().loadMore}
               </Button>
             </Show>
           </DetailPanel.Section>

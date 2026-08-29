@@ -1,18 +1,21 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, prompts, Tag, TextInput } from "@k2b/ui";
+import { Button, CopyButton, prompts, Tag, TextInput, useLocale } from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { CreateProxyAuthClient, ProxyAuthAllowedGroup, ProxyAuthClient } from "@/contracts";
+import { proxyAuthMessages } from "../messages";
 
 const CreateProxyClient = () => {
+  const locale = useLocale();
+  const t = () => proxyAuthMessages.resolve([locale()]).t;
   const mutation = mutations.create<ProxyAuthClient, CreateProxyAuthClient>({
     mutation: async (data) => {
       const res = await apiClient.index.$post({ json: data });
       const result = await res.json();
       if (!res.ok) {
-        throw new Error((result as { message?: string }).message ?? "Failed to create client.");
+        throw new Error(t().failedCreate);
       }
       return result as ProxyAuthClient;
     },
@@ -22,15 +25,15 @@ const CreateProxyClient = () => {
       await prompts.alert(
         <div class="space-y-4">
           <div>
-            <div class="text-xs text-dimmed mb-1">Verify URL</div>
+            <div class="text-xs text-dimmed mb-1">{t().verifyUrl}</div>
             <div class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded px-3 py-2">
               <code class="text-sm flex-1 break-all">{verifyUrl}</code>
               <CopyButton text={verifyUrl} />
             </div>
           </div>
-          <div class="text-xs text-dimmed">You can copy this URL later from the client actions menu.</div>
+          <div class="text-xs text-dimmed">{t().copyLater}</div>
         </div>,
-        { title: "Client Created", icon: "ti ti-check" },
+        { title: t().clientCreated, icon: "ti ti-check" },
       );
       refreshCurrentPath();
     },
@@ -52,11 +55,11 @@ const CreateProxyClient = () => {
 
         const handleSubmit = () => {
           if (!name().trim()) {
-            prompts.error("Name is required.");
+            prompts.error(t().nameRequired);
             return;
           }
           if (groups().length === 0) {
-            prompts.error("At least one group is required.");
+            prompts.error(t().groupRequired);
             return;
           }
           close({
@@ -68,18 +71,18 @@ const CreateProxyClient = () => {
 
         return (
           <div class="flex flex-col gap-4">
-            <TextInput label="Name" placeholder="Client name" icon="ti ti-tag" value={name} onValueChange={setName} required />
+            <TextInput label={t().name} placeholder={t().clientName} icon="ti ti-tag" value={name} onValueChange={setName} required />
 
             <TextInput
-              label="Description"
-              placeholder="Optional description"
+              label={t().description}
+              placeholder={t().optionalDescription}
               icon="ti ti-file-description"
               value={description}
               onValueChange={setDescription}
             />
 
             <div class="flex flex-col gap-1">
-              <p class="text-xs text-secondary">Allowed Groups *</p>
+              <p class="text-xs text-secondary">{t().allowedGroups} *</p>
               <Show when={groups().length > 0}>
                 <div class="flex flex-wrap gap-1 mb-1">
                   <For each={groups()}>
@@ -88,7 +91,7 @@ const CreateProxyClient = () => {
                         icon="ti ti-users-group"
                         size="sm"
                         onRemove={() => setGroups(groups().filter((candidate) => candidate.id !== group.id))}
-                        removeLabel={`Remove ${group.name}`}
+                        removeLabel={t().removeGroup({ name: group.name })}
                       >
                         {group.name}
                       </Tag>
@@ -100,23 +103,23 @@ const CreateProxyClient = () => {
                 includeGroups
                 excludeGroupIds={groups().map((group) => group.id)}
                 onSelect={handleGroupSelect}
-                placeholder="Search groups..."
+                placeholder={t().searchGroups}
               />
             </div>
 
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" onClick={() => close(null)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" onClick={handleSubmit}>
                 <i class="ti ti-plus" />
-                Create
+                {t().create}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "New Proxy Auth Client", icon: "ti ti-plus" },
+      { title: t().newProxyClient, icon: "ti ti-plus" },
     );
 
     if (result) {
@@ -127,7 +130,7 @@ const CreateProxyClient = () => {
   return (
     <Button size="sm" onClick={handleCreate}>
       <i class="ti ti-plus" />
-      New Client
+      {t().newClient}
     </Button>
   );
 };

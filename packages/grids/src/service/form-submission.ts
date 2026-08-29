@@ -2,6 +2,7 @@ import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k
 import { sql } from "bun";
 import { evaluateFormValidations, formValidationFieldsCompatible } from "../form-validations";
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
+import { formMessagesFor } from "./form-messages";
 import type { Form } from "./forms";
 import type { AuthorizedRecordAccess } from "./record-access";
 import { notifyRecordEventOutbox } from "./record-event-outbox";
@@ -21,15 +22,16 @@ export type FormSubmission = {
 export const MAX_INLINE_CREATES_PER_FIELD = 20;
 export const MAX_INLINE_CREATES_PER_SUBMISSION = 50;
 
-const validateInlineCreateBounds = (inlineCreates: FormSubmission["inlineCreates"]): Result<void> => {
+const validateInlineCreateBounds = (inlineCreates: FormSubmission["inlineCreates"], locale?: string): Result<void> => {
+  const t = formMessagesFor(locale);
   let total = 0;
   for (const drafts of Object.values(inlineCreates)) {
     if (drafts.length > MAX_INLINE_CREATES_PER_FIELD) {
-      return fail(err.badInput(`A relation may create at most ${MAX_INLINE_CREATES_PER_FIELD} records per submission`));
+      return fail(err.badInput(t.inlineFieldLimit({ count: MAX_INLINE_CREATES_PER_FIELD })));
     }
     total += drafts.length;
     if (total > MAX_INLINE_CREATES_PER_SUBMISSION) {
-      return fail(err.badInput(`A form may create at most ${MAX_INLINE_CREATES_PER_SUBMISSION} related records per submission`));
+      return fail(err.badInput(t.inlineSubmissionLimit({ count: MAX_INLINE_CREATES_PER_SUBMISSION })));
     }
   }
   return ok(undefined);
@@ -45,7 +47,8 @@ export const submitForm = async (params: {
   recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<{ recordId: string }>> => {
-  const inlineCreateBounds = validateInlineCreateBounds(params.submission.inlineCreates);
+  const t = formMessagesFor(params.dateConfig.locale);
+  const inlineCreateBounds = validateInlineCreateBounds(params.submission.inlineCreates, params.dateConfig.locale);
   if (!inlineCreateBounds.ok) return inlineCreateBounds;
   const formFields = params.form.config.fields ?? [];
   const fields = await listFields(params.form.tableId);
@@ -54,7 +57,7 @@ export const submitForm = async (params: {
   const fieldName = (fieldId: string) => {
     const entry = entriesById.get(fieldId);
     if (entry?.kind === "user_input" && entry.label?.trim()) return entry.label.trim();
-    return fieldsById.get(fieldId)?.name ?? "Unknown field";
+    return fieldsById.get(fieldId)?.name ?? t.unknownField;
   };
 
   const userInputIds = new Set<string>();
@@ -65,20 +68,20 @@ export const submitForm = async (params: {
   }
   for (const key of Object.keys(params.submission.data)) {
     if (Object.prototype.hasOwnProperty.call(params.fixedValues ?? {}, key)) {
-      return fail(err.badInput(`Field "${fieldName(key)}" is fixed by this form context and cannot be submitted`));
+      return fail(err.badInput(t.fieldFixed({ field: fieldName(key) })));
     }
-    if (formValueIds.has(key)) return fail(err.badInput(`Field "${fieldName(key)}" is server-managed and cannot be set via the form`));
-    if (!userInputIds.has(key)) return fail(err.badInput(`Field "${fieldName(key)}" is not part of this form`));
+    if (formValueIds.has(key)) return fail(err.badInput(t.fieldServerManaged({ field: fieldName(key) })));
+    if (!userInputIds.has(key)) return fail(err.badInput(t.fieldNotInForm({ field: fieldName(key) })));
   }
 
   for (const key of Object.keys(params.submission.inlineCreates)) {
     if (Object.prototype.hasOwnProperty.call(params.fixedValues ?? {}, key)) {
-      return fail(err.badInput(`Field "${fieldName(key)}" is fixed by this form context and cannot create related records`));
+      return fail(err.badInput(t.fixedFieldCannotCreate({ field: fieldName(key) })));
     }
   }
 
   for (const key of Object.keys(params.fixedValues ?? {})) {
-    if (!userInputIds.has(key)) return fail(err.badInput(`Field "${fieldName(key)}" cannot be fixed by this form context`));
+    if (!userInputIds.has(key)) return fail(err.badInput(t.fieldCannotBeFixed({ field: fieldName(key) })));
   }
 
   const payload: Record<string, unknown> = { ...params.submission.data, ...params.fixedValues };
@@ -91,7 +94,7 @@ export const submitForm = async (params: {
         : entry.defaultValue;
     }
     if (entry.required && (payload[entry.fieldId] === undefined || payload[entry.fieldId] === null || payload[entry.fieldId] === "")) {
-      return fail(err.badInput(`Field "${fieldName(entry.fieldId)}" is required`));
+      return fail(err.badInput(t.fieldRequired({ field: fieldName(entry.fieldId) })));
     }
   }
   for (const entry of formFields) {
@@ -106,7 +109,7 @@ export const submitForm = async (params: {
     const left = fieldsById.get(rule.leftFieldId);
     const right = fieldsById.get(rule.rightFieldId);
     if (!left || !right || !userInputIds.has(left.id) || !userInputIds.has(right.id) || !formValidationFieldsCompatible(left, right)) {
-      return fail(err.conflict("This Form's cross-field validation changed after it was saved"));
+      return fail({ ...err.conflict("Form validation"), message: t.validationChanged });
     }
   }
 
@@ -117,7 +120,7 @@ export const submitForm = async (params: {
     const tempIds = new Set<string>();
     for (const draft of drafts) {
       if (tempIds.has(draft.tempId)) {
-        return fail(err.badInput(`Field "${fieldName(relationFieldId)}" contains a duplicate inline draft id`));
+        return fail(err.badInput(t.duplicateInlineDraft({ field: fieldName(relationFieldId) })));
       }
       tempIds.add(draft.tempId);
     }
@@ -131,10 +134,10 @@ export const submitForm = async (params: {
         const entry = entriesById.get(relationFieldId);
         const relationField = fieldsById.get(relationFieldId);
         if (entry?.kind !== "user_input" || !entry.inlineCreate?.enabled || !relationField || relationField.type !== "relation") {
-          throw err.badInput(`Field "${fieldName(relationFieldId)}" does not allow creating related records`);
+          throw err.badInput(t.inlineCreateNotAllowed({ field: fieldName(relationFieldId) }));
         }
         const targetTableId = (relationField.config as { targetTableId?: unknown }).targetTableId;
-        if (typeof targetTableId !== "string") throw err.badInput(`Field "${fieldName(relationFieldId)}" has no target table`);
+        if (typeof targetTableId !== "string") throw err.badInput(t.relationTargetMissing({ field: fieldName(relationFieldId) }));
         const cardinality = (relationField.config as { cardinality?: "single" | "multiple" }).cardinality ?? "multiple";
         const inlineEntries = entry.inlineCreate.fields ?? [];
         const allowedFieldIds = new Set(inlineEntries.map((inlineEntry) => inlineEntry.fieldId));
@@ -142,10 +145,10 @@ export const submitForm = async (params: {
         const targetFieldsById = new Map(targetFields.map((field) => [field.id, field]));
 
         for (const draft of drafts) {
-          if (!draft.tempId.startsWith("tmp_")) throw err.badInput(`Field "${fieldName(relationFieldId)}" has an invalid inline draft id`);
+          if (!draft.tempId.startsWith("tmp_")) throw err.badInput(t.invalidInlineDraftId({ field: fieldName(relationFieldId) }));
           for (const key of Object.keys(draft.data)) {
             if (!allowedFieldIds.has(key)) {
-              throw err.badInput(`Field "${fieldName(relationFieldId)}" contains a field that cannot be created inline`);
+              throw err.badInput(t.inlineFieldNotAllowed({ field: fieldName(relationFieldId) }));
             }
           }
         }
@@ -158,7 +161,7 @@ export const submitForm = async (params: {
         const draftIds = drafts.map((draft) => draft.tempId);
         const existingIds = currentIds.filter((id) => !draftIds.includes(id));
         if (cardinality === "single" && (drafts.length > 1 || (drafts.length > 0 && existingIds.length > 0))) {
-          throw err.badInput(`Field "${fieldName(relationFieldId)}" can link either one existing record or one new record`);
+          throw err.badInput(t.singleRelationConflict({ field: fieldName(relationFieldId) }));
         }
 
         const replacements = new Map<string, string>();
@@ -166,7 +169,7 @@ export const submitForm = async (params: {
           const draftPayload: Record<string, unknown> = { ...draft.data };
           for (const inlineEntry of inlineEntries) {
             const targetField = targetFieldsById.get(inlineEntry.fieldId);
-            if (!targetField) throw err.badInput(`Field "${fieldName(relationFieldId)}" inline configuration is stale`);
+            if (!targetField) throw err.badInput(t.inlineConfigChanged({ field: fieldName(relationFieldId) }));
             if (
               draftPayload[inlineEntry.fieldId] === undefined &&
               inlineEntry.defaultValue !== undefined &&
@@ -183,11 +186,12 @@ export const submitForm = async (params: {
                 draftPayload[inlineEntry.fieldId] === null ||
                 draftPayload[inlineEntry.fieldId] === "")
             ) {
-              throw err.badInput(`Field "${inlineEntry.label?.trim() || targetField.name}" is required`);
+              throw err.badInput(t.fieldRequired({ field: inlineEntry.label?.trim() || targetField.name }));
             }
           }
           const created = await createInTransaction(tx, targetTableId, draftPayload, params.actorId, "form", {
             dateConfig: params.dateConfig,
+            locale: params.dateConfig.locale,
             viewer: params.viewer,
           });
           if (!created.ok) throw created.error;
@@ -206,6 +210,7 @@ export const submitForm = async (params: {
 
       const created = await createInTransaction(tx, params.form.tableId, payload, params.actorId, "form", {
         dateConfig: params.dateConfig,
+        locale: params.dateConfig.locale,
         recordAccess: params.recordAccess,
         viewer: params.viewer,
       });

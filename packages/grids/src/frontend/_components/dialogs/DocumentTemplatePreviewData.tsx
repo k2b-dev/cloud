@@ -1,5 +1,6 @@
-import { NoticeCard, CopyButton, Placeholder, type TemplateVariable } from "@k2b/ui";
+import { CopyButton, NoticeCard, Placeholder, type TemplateVariable, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
+import { documentMessages } from "../documents/messages";
 
 type DocumentDataTreeRow = {
   id: string;
@@ -23,13 +24,17 @@ const valueKind = (value: unknown): TemplateVariable["kind"] => {
   return "string";
 };
 
-const inlineValue = (value: unknown): string => {
+const inlineValue = (value: unknown, locale: string): string => {
   if (value === null) return "null";
   if (value === undefined) return "undefined";
   if (typeof value === "string") return value || '\"\"';
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
-  if (value && typeof value === "object") return `${Object.keys(value as Record<string, unknown>).length} keys`;
+  const t = documentMessages.resolve([locale]).t;
+  if (Array.isArray(value)) return t.arrayItems({ count: value.length, formatted: new Intl.NumberFormat(locale).format(value.length) });
+  if (value && typeof value === "object") {
+    const count = Object.keys(value as Record<string, unknown>).length;
+    return t.objectKeys({ count, formatted: new Intl.NumberFormat(locale).format(count) });
+  }
   return String(value);
 };
 
@@ -79,17 +84,16 @@ export function DocumentDataTree(props: {
   loading: () => boolean;
   error: () => string | null;
 }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
   const rows = createMemo(() => dataTreeRows(props.data()));
   return (
     <section class="min-h-0 flex-1 overflow-auto">
-      <Show when={!props.loading()} fallback={<Placeholder state="loading" align="left" title="Loading preview data..." />}>
+      <Show when={!props.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingPreviewData} />}>
         <Show
           when={props.error()}
           fallback={
-            <Show
-              when={rows().length > 0}
-              fallback={<Placeholder align="left" description="Choose a preview record to inspect available template data." />}
-            >
+            <Show when={rows().length > 0} fallback={<Placeholder align="left" description={t().choosePreviewData} />}>
               <div class="flex flex-col gap-1 p-1 text-xs">
                 <For each={rows()}>
                   {(row) => (
@@ -99,13 +103,13 @@ export function DocumentDataTree(props: {
                           <span class={row.depth === 0 ? "font-semibold text-primary" : "text-secondary"}>{row.label}</span>
                           <code class="truncate text-[11px] text-dimmed">{row.path}</code>
                         </div>
-                        <div class="truncate text-[11px] text-dimmed">{inlineValue(row.value)}</div>
+                        <div class="truncate text-[11px] text-dimmed">{inlineValue(row.value, locale())}</div>
                       </div>
                       <div class="flex items-center gap-1">
                         <Show when={row.loopText}>
-                          {(snippet) => <CopyButton text={snippet()} label="Loop" variant="ghost" size="sm" />}
+                          {(snippet) => <CopyButton text={snippet()} label={t().loop} variant="ghost" size="sm" />}
                         </Show>
-                        <CopyButton text={row.copyText} label="Copy" variant="ghost" size="sm" />
+                        <CopyButton text={row.copyText} label={t().copy} variant="ghost" size="sm" />
                       </div>
                     </div>
                   )}
@@ -126,22 +130,21 @@ export function DocumentDataTree(props: {
 }
 
 export function RenderedDocumentSource(props: { source: () => string | null; loading: () => boolean; error: () => string | null }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
   const sourceText = () => props.source() ?? "";
   return (
     <section class="relative min-h-0 flex-1 overflow-hidden">
-      <Show when={!props.loading()} fallback={<Placeholder state="loading" align="left" title="Rendering source..." />}>
+      <Show when={!props.loading()} fallback={<Placeholder state="loading" align="left" title={t().renderingSource} />}>
         <Show
           when={props.error()}
           fallback={
-            <Show
-              when={sourceText()}
-              fallback={<Placeholder align="left" description="Choose a preview record to inspect rendered GQL." />}
-            >
+            <Show when={sourceText()} fallback={<Placeholder align="left" description={t().chooseRenderedGql} />}>
               <pre class="h-full overflow-auto whitespace-pre-wrap p-3 pr-20 font-mono text-xs leading-relaxed text-secondary">
                 {sourceText()}
               </pre>
               <div class="absolute right-2 top-2">
-                <CopyButton text={sourceText()} label="Copy" variant="secondary" size="sm" />
+                <CopyButton text={sourceText()} label={t().copy} variant="secondary" size="sm" />
               </div>
             </Show>
           }

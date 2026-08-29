@@ -15,7 +15,13 @@ export const app = defineApp({
   id: "api-docs",
   name: "API Docs",
   icon: "ti ti-books",
-  description: "Aggregated OpenAPI documentation for every cloud app.",
+  description: "Aggregated OpenAPI documentation for every Cloud app.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { name: "API-Dokumentation", description: "Gesammelte OpenAPI-Dokumentation aller Cloud-Apps." },
+    },
+  },
   appearance: { accent: "#0f766e", background: { from: "#14b8a6", to: "#22d3ee", angle: 135 } },
   basePath: "/app/api-docs",
   baseUrl: "http://app-api-docs:3000",

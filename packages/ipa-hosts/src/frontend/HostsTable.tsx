@@ -1,7 +1,8 @@
-import { DataTable, type DataTableColumn, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Placeholder, useLocale } from "@k2b/ui";
 import type { IpaHost } from "@/contracts";
 import CopyButton from "./CopyButton.island";
 import EditHost from "./EditHost.island";
+import { hostMessages } from "./messages";
 
 type Props = {
   hosts: IpaHost[];
@@ -10,19 +11,21 @@ type Props = {
 };
 
 const HostsTable = (props: Props) => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const columns: DataTableColumn<IpaHost>[] = [
     { id: "fqdn", header: "FQDN", value: (host) => host.fqdn },
-    { id: "description", header: "Description", value: (host) => host.description, cellClass: "max-w-[220px]" },
+    { id: "description", header: t().description, value: (host) => host.description, cellClass: "max-w-[220px]" },
     {
       id: "location",
-      header: "Location",
+      header: t().location,
       value: (host) => [host.locality, host.location].filter(Boolean).join(" · "),
       cellClass: "whitespace-nowrap",
     },
     { id: "mac", header: "MAC", value: (host) => host.macAddress },
     {
       id: "actions",
-      header: <span class="sr-only">Actions</span>,
+      header: <span class="sr-only">{t().actions}</span>,
       headerClass: "w-px text-right",
       cellClass: "text-right whitespace-nowrap max-w-none",
     },
@@ -79,7 +82,7 @@ const HostsTable = (props: Props) => {
       }}
     />
   ) : (
-    <Placeholder description={<>{props.emptyMessage ?? "No hosts found."}</>} />
+    <Placeholder description={<>{props.emptyMessage ?? t().noHosts}</>} />
   );
 };
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ColumnSpec, FieldColumnSpec } from "../../../contracts";
 import type { Field } from "../../../service";
+import { recordsViewMessages } from "./messages";
 import { isComputedColumn, isFieldColumn, mergeGroupedColumnOrder, moveColumn, resolveDefaultViewColumns } from "./records-view-columns";
 
 const field = (id: string, position: number, options: { deleted?: boolean; hidden?: boolean } = {}): Field =>
@@ -48,5 +49,13 @@ describe("records view columns", () => {
     expect(isFieldColumn(computed)).toBe(false);
     expect(isComputedColumn(persisted)).toBe(false);
     expect(isFieldColumn(persisted)).toBe(true);
+  });
+
+  test("resolves column controller feedback for German regional locales", () => {
+    const german = recordsViewMessages.resolve(["de"]).t;
+    const swissGerman = recordsViewMessages.resolve(["de-CH"]).t;
+    expect(german.noActiveView).toBe("Keine aktive Ansicht");
+    expect(swissGerman.allColumnsVisible).toBe("Alle Spalten sind bereits sichtbar.");
+    expect(swissGerman.noHiddenColumns).toBe("Keine ausgeblendeten Spalten");
   });
 });

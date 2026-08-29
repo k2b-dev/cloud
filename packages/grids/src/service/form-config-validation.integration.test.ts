@@ -73,7 +73,7 @@ describe("form config validation", () => {
         validations: [rule],
       });
       expect(hidden.ok).toBe(false);
-      if (!hidden.ok) expect(hidden.error.message).toContain("visible user input fields");
+      if (!hidden.ok) expect(hidden.error.message).toContain("visible user-input fields");
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
     }
@@ -125,7 +125,7 @@ describe("form config validation", () => {
       });
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe('form references field "Name" more than once');
+      if (!result.ok) expect(result.error.message).toBe("The Form references field “Name” more than once.");
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
     }

@@ -1,5 +1,5 @@
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { resolvePublishedCustomAppRuntime } from "../../api/custom-app-published-runtime";
 import { projectDocuments } from "../../api/documents-api-shared";
@@ -45,8 +45,8 @@ import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "
 import type { PublicRenderableForm } from "../../service/forms";
 import { ALL_RECORD_ACCESS } from "../../service/record-access";
 import { scannerLauncherPromptInputSources } from "../../workflows/contracts";
-import FormSubmit from "../_components/forms/PublicFormSubmit.island";
 import type { PublicDocument } from "../_components/documents/public-document-types";
+import FormSubmit from "../_components/forms/PublicFormSubmit.island";
 import RecordComments from "../_components/records/RecordComments.island";
 import type { WorkflowScannerState } from "../_components/workflows/WorkflowScannerSurface";
 import Actions, { type CustomAppRenderedAction } from "./Actions.island";
@@ -55,6 +55,7 @@ import { CustomAppPageLayout } from "./PageLayout";
 import RecordDetails from "./RecordDetails.island";
 import RecordsTable, { type CustomAppRecordsSuccess, type CustomAppRenderedRowAction } from "./RecordsTable.island";
 import { RenderedHtml } from "./RenderedHtml";
+import { customAppRuntimeMessages, useCustomAppRuntimeMessages } from "./runtime-messages";
 import Scanner from "./Scanner.island";
 import SidebarActions, { type CustomAppRenderedSidebarAction } from "./SidebarActions.island";
 import { formatCustomAppValue } from "./value-format";
@@ -148,20 +149,21 @@ const Records = (props: {
   endpoint: string;
   rowActions: CustomAppRenderedRowAction[];
 }) => {
+  const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
     return (
       <Placeholder
         variant="compact"
         align="left"
-        title={`${props.block.title ?? "Records"} unavailable`}
+        title={messages().recordsBlockUnavailable({ title: props.block.title ?? messages().records })}
         description={props.data.message}
       />
     );
   }
   return (
     <RecordsTable
-      title={props.block.title ?? "Records"}
-      emptyText={props.block.emptyText ?? "No records found."}
+      title={props.block.title ?? messages().records}
+      emptyText={props.block.emptyText ?? messages().noRecords}
       baseId={props.baseId}
       dateConfig={props.dateConfig}
       appId={props.shortId}
@@ -180,10 +182,11 @@ const Records = (props: {
 };
 
 const Metrics = (props: { data: MetricsBlockData; dateConfig: ReturnType<typeof getDateConfig> }) => {
+  const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
-    return <Placeholder variant="compact" align="left" title="Metrics unavailable" description={props.data.message} />;
+    return <Placeholder variant="compact" align="left" title={messages().metricsUnavailable} description={props.data.message} />;
   }
-  if (props.data.cells.length === 0) return <Placeholder variant="compact" align="left" description="No metrics found." />;
+  if (props.data.cells.length === 0) return <Placeholder variant="compact" align="left" description={messages().noMetrics} />;
   return (
     <StatGrid columns={props.data.cells.length === 1 ? 1 : props.data.cells.length === 2 ? 2 : 3}>
       {props.data.cells.map((cell) => {
@@ -195,8 +198,9 @@ const Metrics = (props: { data: MetricsBlockData; dateConfig: ReturnType<typeof 
 };
 
 const AppChart = (props: { block: ChartBlock; data: ChartBlockData; dateConfig: ReturnType<typeof getDateConfig> }) => {
+  const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
-    return <Placeholder variant="compact" align="left" title="Chart unavailable" description={props.data.message} />;
+    return <Placeholder variant="compact" align="left" title={messages().chartUnavailable} description={props.data.message} />;
   }
   return (
     <div class="flex h-72 min-h-0 flex-col">
@@ -219,13 +223,14 @@ const Record = (props: {
   documents: CustomAppDocument[];
   dateConfig: ReturnType<typeof getDateConfig>;
 }) => {
+  const messages = useCustomAppRuntimeMessages();
   if (!props.pageRecord) {
     return (
       <Placeholder
         variant="compact"
         align="left"
-        title={props.block.title ?? "Record"}
-        description={props.block.emptyText ?? "Record not found."}
+        title={props.block.title ?? messages().record}
+        description={props.block.emptyText ?? messages().recordNotFound}
       />
     );
   }
@@ -248,8 +253,9 @@ const Record = (props: {
 };
 
 const Form = (props: { block: FormBlock; data: FormBlockData; dateConfig: ReturnType<typeof getDateConfig> }) => {
+  const messages = useCustomAppRuntimeMessages();
   if (!props.data.ok) {
-    return <Placeholder variant="compact" align="left" title="Form unavailable" description={props.data.message} />;
+    return <Placeholder variant="compact" align="left" title={messages().formUnavailable} description={props.data.message} />;
   }
   return (
     <FormSubmit
@@ -287,6 +293,7 @@ const CustomAppPage = (props: {
   sidebarActions: CustomAppRenderedSidebarAction[];
   signedIn: boolean;
 }) => {
+  const messages = useCustomAppRuntimeMessages();
   return (
     <CustomAppPageLayout
       definition={props.definition}
@@ -300,7 +307,7 @@ const CustomAppPage = (props: {
         ) : block.type === "records" || block.type === "referenced_records" ? (
           <Records
             block={block}
-            data={props.results.get(block.id) ?? { ok: false, message: "Records are unavailable." }}
+            data={props.results.get(block.id) ?? { ok: false, message: messages().recordsAreUnavailable }}
             baseId={props.definition.baseId}
             dateConfig={props.dateConfig}
             shortId={props.shortId}
@@ -308,11 +315,14 @@ const CustomAppPage = (props: {
             rowActions={props.rowActions.get(block.id) ?? []}
           />
         ) : block.type === "metrics" ? (
-          <Metrics data={props.metrics.get(block.id) ?? { ok: false, message: "Metrics are unavailable." }} dateConfig={props.dateConfig} />
+          <Metrics
+            data={props.metrics.get(block.id) ?? { ok: false, message: messages().metricsAreUnavailable }}
+            dateConfig={props.dateConfig}
+          />
         ) : block.type === "chart" ? (
           <AppChart
             block={block}
-            data={props.charts.get(block.id) ?? { ok: false, message: "Chart data is unavailable." }}
+            data={props.charts.get(block.id) ?? { ok: false, message: messages().chartDataUnavailable }}
             dateConfig={props.dateConfig}
           />
         ) : block.type === "record" ? (
@@ -327,7 +337,7 @@ const CustomAppPage = (props: {
         ) : block.type === "html" ? (
           <RenderedHtml
             html={props.renderedHtml.get(block.id)?.html}
-            title={block.title ?? props.renderedHtml.get(block.id)?.fieldName ?? "Rendered HTML"}
+            title={block.title ?? props.renderedHtml.get(block.id)?.fieldName ?? messages().renderedHtml}
             height={block.height}
           />
         ) : block.type === "comments" ? (
@@ -337,7 +347,7 @@ const CustomAppPage = (props: {
         ) : block.type === "form" ? (
           <Form
             block={block}
-            data={props.forms.get(block.id) ?? { ok: false, message: "This form is unavailable." }}
+            data={props.forms.get(block.id) ?? { ok: false, message: messages().thisFormUnavailable }}
             dateConfig={props.dateConfig}
           />
         ) : props.scanners.has(block.id) ? (
@@ -346,8 +356,8 @@ const CustomAppPage = (props: {
           <Placeholder
             variant="compact"
             align="left"
-            title={props.signedIn ? "Scanner unavailable" : "Sign in to scan"}
-            description={props.signedIn ? "This scanner changed after the app was published. Ask an app admin to republish it." : undefined}
+            title={props.signedIn ? messages().scannerUnavailable : messages().signInToScan}
+            description={props.signedIn ? messages().scannerChanged : undefined}
           />
         )
       }
@@ -356,6 +366,7 @@ const CustomAppPage = (props: {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = customAppRuntimeMessages.resolve([getLocale(c)]);
   const requestAccess = gridsAccessContext(c);
   const runtime = await resolvePublishedCustomAppRuntime({
     access: requestAccess,
@@ -627,9 +638,9 @@ export default ssr<AuthContext>(async (c) => {
           viewerUserId: viewer.userId,
           viewerServiceAccountId: viewer.serviceAccountId ?? null,
         });
-        if (!published) return [block.id, { ok: false, message: "This data source is not part of the published app." }];
+        if (!published) return [block.id, { ok: false, message: t.dataSourceNotPublished }];
         if (!published.response.ok) {
-          return [block.id, { ok: false, message: published.response.diagnostics[0]?.message ?? "This data source is unavailable." }];
+          return [block.id, { ok: false, message: published.response.diagnostics[0]?.message ?? t.dataSourceUnavailable }];
         }
         return [
           block.id,
@@ -644,7 +655,7 @@ export default ssr<AuthContext>(async (c) => {
           },
         ];
       } catch {
-        return [block.id, { ok: false, message: "This data source is temporarily unavailable." }];
+        return [block.id, { ok: false, message: t.dataSourceTemporarilyUnavailable }];
       }
     }),
   );
@@ -665,12 +676,12 @@ export default ssr<AuthContext>(async (c) => {
           candidate.source.kind === source.kind &&
           (candidate.source.kind !== "view" || (source.kind === "view" && candidate.source.viewId === source.viewId)),
       );
-      if (!capability) return [block.id, { ok: false, message: "This data source is not part of the published app." }];
+      if (!capability) return [block.id, { ok: false, message: t.dataSourceNotPublished }];
       const maxRows = block.type === "metrics" ? 1 : block.limit;
       try {
         const view = source.kind === "view" ? await gridsService.view.get(source.viewId) : null;
         if (source.kind === "view" && (!view || capability.source.kind !== "view")) {
-          return [block.id, { ok: false, message: "This saved view changed after the app was published. Republish the app." }];
+          return [block.id, { ok: false, message: t.savedViewChanged }];
         }
         const response = await executePublishedCustomAppQuery({
           baseId: app.baseId,
@@ -686,17 +697,17 @@ export default ssr<AuthContext>(async (c) => {
           labelRelationValues: true,
         });
         if (!response.ok) {
-          return [block.id, { ok: false, message: response.diagnostics[0]?.message ?? "This data source is unavailable." }];
+          return [block.id, { ok: false, message: t.dataSourceUnavailable }];
         }
         const outputTableIds = [...new Set(response.columns.flatMap((column) => (column.tableId ? [column.tableId] : [])))];
         const fieldGroups = await gridsService.field.listByTables(outputTableIds);
         const sourceFields = outputTableIds.flatMap((tableId) => fieldGroups.get(tableId) ?? []);
         if (block.type === "metrics") return [block.id, { ok: true, cells: metricCellsFromPreview(response, sourceFields) }];
         const chart = chartDataFromPreview(response, sourceFields);
-        if (chart.kind === "error") return [block.id, { ok: false, message: chart.reason }];
+        if (chart.kind === "error") return [block.id, { ok: false, message: t.chartDataUnavailable }];
         return [block.id, { ok: true, chart }];
       } catch {
-        return [block.id, { ok: false, message: "This data source is temporarily unavailable." }];
+        return [block.id, { ok: false, message: t.dataSourceTemporarilyUnavailable }];
       }
     }),
   );
@@ -725,11 +736,11 @@ export default ssr<AuthContext>(async (c) => {
     formBlocks.map(async (block): Promise<[string, FormBlockData]> => {
       const resolvedForm = await resolvePublishedCustomAppForm({ surface: block, page, capabilities });
       if (!resolvedForm) {
-        return [block.id, { ok: false, message: "This form is unavailable." }];
+        return [block.id, { ok: false, message: t.thisFormUnavailable }];
       }
       const prepared = preparePublishedForm(resolvedForm, Object.keys(block.fixedValues));
       if (!prepared) {
-        return [block.id, { ok: false, message: "This form changed after the app was published." }];
+        return [block.id, { ok: false, message: t.formChanged }];
       }
       return [
         block.id,

@@ -63,12 +63,14 @@ const dateKeyParts = (key: unknown): { year: number; month: number; day: number 
   return year && month && day ? { year, month, day } : null;
 };
 
-const formatCalendarDateKey = (key: unknown, options: Intl.DateTimeFormatOptions): string => {
+const formatCalendarDateKey = (key: unknown, options: Intl.DateTimeFormatOptions, locale?: string): string => {
   const parts = dateKeyParts(key);
   if (!parts) return String(key);
   const d = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  return d.toLocaleDateString(undefined, { ...options, timeZone: "UTC" });
+  return d.toLocaleDateString(locale, { ...options, timeZone: "UTC" });
 };
+
+type ChartCategoryFormat = { locale?: string; unknownRecordLabel?: string };
 
 /** Render the first groupBy key of a bucket as a category label
  *  (donut / bar / line x-axis tick). Resolution order:
@@ -82,7 +84,12 @@ const formatCalendarDateKey = (key: unknown, options: Intl.DateTimeFormatOptions
  *       readable form. The `dates.formatDate` family is locale-aware.
  *    3. Numeric keys stringify natively; everything else falls back
  *       to `String(...)`. Nullish → em-dash. */
-export const formatCategoryKey = (key: unknown, spec: GroupBySpec | undefined, relationLabels?: Record<string, string>): string => {
+export const formatCategoryKey = (
+  key: unknown,
+  spec: GroupBySpec | undefined,
+  relationLabels?: Record<string, string>,
+  format: ChartCategoryFormat = {},
+): string => {
   if (key === null || key === undefined) return "—";
 
   // Relation-typed groupBy: bucket key is a UUID. Look up the
@@ -100,15 +107,15 @@ export const formatCategoryKey = (key: unknown, spec: GroupBySpec | undefined, r
       return /^\d{4}$/.test(year) ? year : String(key);
     }
     if (granularity === "month" || granularity === "quarter") {
-      return formatCalendarDateKey(key, { year: "numeric", month: "short" });
+      return formatCalendarDateKey(key, { year: "numeric", month: "short" }, format.locale);
     }
-    return formatCalendarDateKey(key, { year: "numeric", month: "short", day: "numeric" });
+    return formatCalendarDateKey(key, { year: "numeric", month: "short", day: "numeric" }, format.locale);
   }
 
   // Plain UUID fallback when the lookup failed (e.g. relationLabels
   // not threaded through). Do not leak UUID prefixes into chart labels.
   if (typeof key === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(key)) {
-    return "Unknown record";
+    return format.unknownRecordLabel ?? "Unknown record";
   }
   return String(key);
 };
@@ -125,6 +132,7 @@ export const bucketsToSlices = (
   primaryAgg: AggregationSpec,
   groupBy: GroupBySpec | undefined,
   relationLabels?: Record<string, string>,
+  format?: ChartCategoryFormat,
 ): SliceItem[] => {
   const key = aggKey(primaryAgg);
   const items: SliceItem[] = [];
@@ -132,7 +140,7 @@ export const bucketsToSlices = (
     const v = toNumber(b.values[key]);
     if (v === null) continue;
     items.push({
-      label: formatCategoryKey(b.keys[0], groupBy, relationLabels),
+      label: formatCategoryKey(b.keys[0], groupBy, relationLabels, format),
       value: v,
     });
   }
@@ -147,7 +155,8 @@ export const bucketsToBars = (
   primaryAgg: AggregationSpec,
   groupBy: GroupBySpec | undefined,
   relationLabels?: Record<string, string>,
-): BarItem[] => bucketsToSlices(buckets, primaryAgg, groupBy, relationLabels) as BarItem[];
+  format?: ChartCategoryFormat,
+): BarItem[] => bucketsToSlices(buckets, primaryAgg, groupBy, relationLabels, format) as BarItem[];
 
 /**
  * Line — one `Series` per aggregation. x is the bucket index (0..N)
@@ -184,12 +193,13 @@ export const chartXAxisFormat = (
   buckets: ChartBucket[],
   groupBy: GroupBySpec | undefined,
   relationLabels?: Record<string, string>,
+  format?: ChartCategoryFormat,
 ): ((v: number) => string) => {
   return (v: number) => {
     const idx = Math.round(v);
     const bucket = buckets[idx];
     if (!bucket) return "";
-    return formatCategoryKey(bucket.keys[0], groupBy, relationLabels);
+    return formatCategoryKey(bucket.keys[0], groupBy, relationLabels, format);
   };
 };
 
@@ -227,6 +237,7 @@ type ChartRenderInput = {
    *  the transformers and tick formatter use it to avoid printing
    *  raw UUIDs on chart axes / slice labels. */
   relationLabels?: Record<string, string>;
+  categoryFormat?: ChartCategoryFormat;
 };
 
 export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData => {
@@ -244,18 +255,18 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
     case "donut":
       return {
         kind: "donut",
-        data: bucketsToSlices(input.buckets, primary, groupBy, relLabels),
+        data: bucketsToSlices(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
       };
     case "bar":
       return {
         kind: "bar",
-        data: bucketsToBars(input.buckets, primary, groupBy, relLabels),
+        data: bucketsToBars(input.buckets, primary, groupBy, relLabels, input.categoryFormat),
       };
     case "line":
       return {
         kind: "line",
         series: bucketsToLineSeries(input.buckets, aggs, input.fieldsById),
-        xAxisFormat: chartXAxisFormat(input.buckets, groupBy, relLabels),
+        xAxisFormat: chartXAxisFormat(input.buckets, groupBy, relLabels, input.categoryFormat),
       };
   }
 };

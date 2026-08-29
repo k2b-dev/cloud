@@ -2,7 +2,8 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { Button, FilterChip, type FilterChipSection, prompts } from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
 import type { AuditActionGroup, AuditOutcome } from "@valentinkolb/cloud/services";
-import { ACTION_OPTIONS } from "./audit-labels";
+import { useAccountsMessages } from "../messages";
+import { actionOptions } from "./audit-labels";
 
 type AuditFiltersProps = {
   search: string;
@@ -15,41 +16,6 @@ type AuditFiltersProps = {
   provider: "" | "local" | "ipa";
   days: number;
 };
-
-const OUTCOME_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "allowed", label: "Allowed", icon: "ti ti-check" },
-      { value: "denied", label: "Denied", icon: "ti ti-ban" },
-      { value: "failed", label: "Failed", icon: "ti ti-alert-circle" },
-    ],
-  },
-];
-
-const RANGE_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "7", label: "Last 7 days", icon: "ti ti-calendar-week" },
-      { value: "30", label: "Last 30 days", icon: "ti ti-calendar-month" },
-      { value: "90", label: "Last 90 days", icon: "ti ti-calendar-stats" },
-    ],
-  },
-];
-
-const PROVIDER_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "local", label: "Local", icon: "ti ti-home-spark" },
-      { value: "ipa", label: "FreeIPA", icon: "ti ti-building-fortress" },
-    ],
-  },
-];
-
-const ACTION_GROUP_OPTIONS: FilterChipSection[] = [
-  {
-    options: [{ value: "service_accounts", label: "Service accounts", icon: "ti ti-user-key" }],
-  },
-];
 
 const buildAuditUrl = (params: AuditFiltersProps & { page?: number }) => {
   const query = new URLSearchParams();
@@ -68,6 +34,36 @@ const buildAuditUrl = (params: AuditFiltersProps & { page?: number }) => {
 };
 
 export default function AuditFilters(props: AuditFiltersProps) {
+  const messages = useAccountsMessages();
+  const outcomeOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "allowed", label: messages().allowed, icon: "ti ti-check" },
+        { value: "denied", label: messages().denied, icon: "ti ti-ban" },
+        { value: "failed", label: messages().failed, icon: "ti ti-alert-circle" },
+      ],
+    },
+  ];
+  const rangeOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "7", label: messages().last7Days, icon: "ti ti-calendar-week" },
+        { value: "30", label: messages().last30Days, icon: "ti ti-calendar-month" },
+        { value: "90", label: messages().last90Days, icon: "ti ti-calendar-stats" },
+      ],
+    },
+  ];
+  const providerOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "local", label: messages().local, icon: "ti ti-home-spark" },
+        { value: "ipa", label: "FreeIPA", icon: "ti ti-building-fortress" },
+      ],
+    },
+  ];
+  const actionGroupOptions = (): FilterChipSection[] => [
+    { options: [{ value: "service_accounts", label: messages().serviceAccounts, icon: "ti ti-user-key" }] },
+  ];
   const navigate = (patch: Partial<AuditFiltersProps>) => {
     navigateTo(
       buildAuditUrl({
@@ -84,7 +80,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         <EntitySearch
           includeUsers
           includeGroups={kind === "target"}
-          placeholder={kind === "actor" ? "Search acting user..." : "Search target user or group..."}
+          placeholder={kind === "actor" ? messages().searchActor : messages().searchTarget}
           onSelect={(principal: EntitySearchPrincipal) => {
             close();
             if (principal.type === "user") {
@@ -96,7 +92,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         />
       ),
       {
-        title: kind === "actor" ? "Filter by actor" : "Filter by target",
+        title: kind === "actor" ? messages().filterByActor : messages().filterByTarget,
         icon: kind === "actor" ? "ti ti-user-search" : "ti ti-target",
       },
     );
@@ -107,7 +103,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
       (close) => (
         <EntitySearch
           includeServiceAccounts
-          placeholder="Search service accounts..."
+          placeholder={messages().searchServiceAccounts}
           onSelect={(principal: EntitySearchPrincipal) => {
             if (principal.type !== "service_account") return;
             close();
@@ -116,7 +112,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         />
       ),
       {
-        title: "Filter by service account",
+        title: messages().filterByServiceAccount,
         icon: "ti ti-user-key",
       },
     );
@@ -125,45 +121,45 @@ export default function AuditFilters(props: AuditFiltersProps) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label="Outcome"
+        label={messages().outcome}
         icon="ti ti-filter"
-        options={OUTCOME_OPTIONS}
+        options={outcomeOptions()}
         value={props.outcome ? [props.outcome] : []}
         onValueChange={(value) => navigate({ outcome: (value[0] as AuditFiltersProps["outcome"] | undefined) ?? "" })}
         isActive={props.outcome.length > 0}
         defaultValue={[]}
       />
       <FilterChip
-        label="Time range"
+        label={messages().timeRange}
         icon="ti ti-calendar"
-        options={RANGE_OPTIONS}
+        options={rangeOptions()}
         value={[String(props.days)]}
         onValueChange={(value) => navigate({ days: Number(value[0] ?? 30) })}
         isActive={props.days !== 30}
         defaultValue={["30"]}
       />
       <FilterChip
-        label="Provider"
+        label={messages().provider}
         icon="ti ti-building"
-        options={PROVIDER_OPTIONS}
+        options={providerOptions()}
         value={props.provider ? [props.provider] : []}
         onValueChange={(value) => navigate({ provider: (value[0] as AuditFiltersProps["provider"] | undefined) ?? "" })}
         isActive={props.provider.length > 0}
         defaultValue={[]}
       />
       <FilterChip
-        label="Action"
+        label={messages().action}
         icon="ti ti-bolt"
-        options={ACTION_OPTIONS}
+        options={actionOptions(messages())}
         value={props.action ? [props.action] : []}
         onValueChange={(value) => navigate({ action: value[0] ?? "" })}
         isActive={props.action.length > 0}
         defaultValue={[]}
       />
       <FilterChip
-        label="Area"
+        label={messages().area}
         icon="ti ti-category"
-        options={ACTION_GROUP_OPTIONS}
+        options={actionGroupOptions()}
         value={props.actionGroup ? [props.actionGroup] : []}
         onValueChange={(value) => navigate({ actionGroup: (value[0] as AuditFiltersProps["actionGroup"] | undefined) ?? "" })}
         isActive={props.actionGroup.length > 0}
@@ -176,7 +172,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         onClick={() => selectEntity("actor")}
       >
         <i class="ti ti-user-search" />
-        <span>Actor</span>
+        <span>{messages().actor}</span>
       </Button>
       <Button
         size="sm"
@@ -185,7 +181,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         onClick={() => selectEntity("target")}
       >
         <i class="ti ti-target" />
-        <span>Target</span>
+        <span>{messages().target}</span>
       </Button>
       <Button
         size="sm"
@@ -194,7 +190,7 @@ export default function AuditFilters(props: AuditFiltersProps) {
         onClick={selectServiceAccount}
       >
         <i class="ti ti-user-key" />
-        <span>Service account</span>
+        <span>{messages().serviceAccount}</span>
       </Button>
     </div>
   );

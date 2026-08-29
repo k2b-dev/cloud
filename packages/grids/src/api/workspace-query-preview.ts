@@ -2,6 +2,7 @@ import type { AuthContext } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import type { GridsWorkspaceState } from "../frontend/_components/workspace/workspace-state";
 import { type DslCurrentSource, executeGqlSource, executeSavedViewSource } from "./gql-runtime";
+import { apiMessages } from "./messages";
 
 type OkWorkspaceState = Extract<GridsWorkspaceState, { kind: "ok" }>;
 type QueryRoute = Extract<OkWorkspaceState["route"], { kind: "query" }>;
@@ -31,7 +32,7 @@ export const withInitialGqlResults = async <T extends GridsWorkspaceState>(c: Co
           ...state.route,
           initialResult: {
             ok: false,
-            diagnostics: [{ message: "Could not execute saved view." }],
+            diagnostics: [{ message: apiMessages(authContext).savedViewExecutionFailed }],
           },
         },
       } as T;
@@ -60,7 +61,7 @@ export const withInitialGqlResults = async <T extends GridsWorkspaceState>(c: Co
         ...state.route,
         initialPreview: {
           ok: false,
-          diagnostics: [{ message: "Could not execute query." }],
+          diagnostics: [{ message: apiMessages(authContext).queryExecutionFailed }],
         },
       },
     } as T;

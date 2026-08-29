@@ -42,4 +42,8 @@ describe("defaultTableAggregations", () => {
       { fieldId: "date", agg: "latest" },
     ]);
   });
+
+  test("accepts the viewer-localized record label", () => {
+    expect(defaultTableAggregations([], "Datensätze")).toEqual([{ fieldId: "*", agg: "count", label: "Datensätze" }]);
+  });
 });

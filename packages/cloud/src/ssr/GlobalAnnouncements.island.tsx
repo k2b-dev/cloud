@@ -1,4 +1,4 @@
-import { Button, dialogCore, MarkdownView, PanelDialog, panelDialogOptions } from "@k2b/ui";
+import { Button, dialogCore, MarkdownView, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import {
   ANNOUNCEMENTS_COOKIE,
@@ -8,6 +8,7 @@ import {
   mergeAnnouncementCookieState,
   serializeAnnouncementCookieState,
 } from "../contracts/announcements";
+import { platformMessages } from "./platform-messages";
 
 type Props = {
   banners: AnnouncementDisplayEntry[];
@@ -37,6 +38,8 @@ const toneIcon = (tone: AnnouncementDisplayEntry["tone"]) => {
 };
 
 export default function GlobalAnnouncements(props: Props) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const [cookieState, setCookieState] = createSignal(props.cookieState);
   const [banners, setBanners] = createSignal(props.banners);
 
@@ -63,8 +66,8 @@ export default function GlobalAnnouncements(props: Props) {
         (close) => (
           <PanelDialog>
             <PanelDialog.Header
-              title="Announcements"
-              subtitle="Latest platform updates"
+              title={t().announcements}
+              subtitle={t().latestPlatformUpdates}
               icon="ti ti-speakerphone text-blue-500"
               close={() => close()}
             />
@@ -76,7 +79,7 @@ export default function GlobalAnnouncements(props: Props) {
                       <div class="min-w-0">
                         <h2 class="text-base font-semibold text-primary">{entry.title}</h2>
                         <p class="mt-0.5 text-xs text-dimmed">
-                          {new Date(entry.publishedAt).toLocaleDateString(undefined, {
+                          {new Date(entry.publishedAt).toLocaleDateString(locale(), {
                             year: "numeric",
                             month: "short",
                             day: "numeric",
@@ -95,7 +98,7 @@ export default function GlobalAnnouncements(props: Props) {
             <PanelDialog.Footer>
               <span />
               <Button size="sm" onClick={() => close()}>
-                Got it
+                {t().gotIt}
               </Button>
             </PanelDialog.Footer>
           </PanelDialog>
@@ -125,7 +128,7 @@ export default function GlobalAnnouncements(props: Props) {
               <button
                 type="button"
                 class="ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-                aria-label="Dismiss banner"
+                aria-label={t().dismissBanner}
                 onClick={() => dismissBanner(banner.version)}
               >
                 <i class="ti ti-x" />

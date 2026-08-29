@@ -13,6 +13,7 @@ import {
   auth,
   err,
   fail,
+  getLocale,
   jsonResponse,
   ok,
   type Result,
@@ -47,6 +48,7 @@ import {
   VenueTemplateSummarySchema,
 } from "../contracts";
 import { venueService } from "../service";
+import { venueMessages } from "../messages";
 
 const VenueIdParamSchema = z.object({ id: VenueResourceIdSchema });
 const AccessParamSchema = z.object({ id: VenueResourceIdSchema, accessId: z.string().uuid() });
@@ -165,6 +167,7 @@ root
   .use(rateLimit());
 
 const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("authenticated"), async (c) => {
+  const { locale, t } = venueMessages.resolve([getLocale(c)]);
   const userResult = requireUserBackedActor(c);
   if (!userResult.ok) return c.body(null, 403);
   const user = userResult.data;
@@ -174,7 +177,7 @@ const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("aut
 
   const dashboard = await venueService.dashboard(venue, user);
   const [publicVenue] = await venueService.publicResources.projectVenues([venue]);
-  const status = await venueService.publicStatus(publicVenue!.id);
+  const status = await venueService.publicStatus(publicVenue!.id, new Date(), getLocale(c));
   const nextShift = dashboard.myUpcomingShifts[0];
   const missing = dashboard.slots.reduce((sum, slot) => sum + slot.missingPeople, 0);
 
@@ -182,20 +185,20 @@ const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("aut
     title: venue.name,
     icon: venue.icon || "ti ti-building-carousel",
     href: `/app/venue/${publicVenue!.id}`,
-    meta: status?.statusLabel ?? "Venue",
+    meta: status?.statusLabel ?? t.widgetVenue,
     blocks: [
       {
         kind: "status",
         tone: status?.open ? "ok" : "info",
-        title: status?.statusLabel ?? "Status unavailable",
-        message: status?.todayLabel ?? "No public status",
+        title: status?.statusLabel ?? t.widgetStatusUnavailable,
+        message: status?.todayLabel ?? t.widgetNoStatus,
         icon: status?.open ? "ti ti-door-gate-open" : "ti ti-door",
       },
       {
         kind: "stat",
-        label: "Open registrations",
+        label: t.widgetOpenRegistrations,
         value: missing,
-        sub: missing === 1 ? "registration still needed" : "registrations still needed",
+        sub: t.widgetRegistrationNeeded({ count: missing }),
         accent: missing > 0 ? { tone: "amber", icon: "ti ti-user-plus" } : { tone: "emerald", icon: "ti ti-check" },
       },
       nextShift
@@ -204,13 +207,13 @@ const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("aut
             items: [
               {
                 icon: "ti ti-calendar-event",
-                label: "Your next shift",
-                sub: new Date(nextShift.startsAt).toLocaleString(),
+                label: t.widgetNextShift,
+                sub: new Date(nextShift.startsAt).toLocaleString(locale),
                 href: `/app/venue/${publicVenue!.id}`,
               },
             ],
           }
-        : { kind: "placeholder", title: "No upcoming shifts", icon: "ti ti-calendar-off" },
+        : { kind: "placeholder", title: t.widgetNoUpcoming, icon: "ti ti-calendar-off" },
     ],
   };
   return respond(c, ok(response));
@@ -245,7 +248,7 @@ const venueTemplateRoutes = new Hono<AuthContext>()
       summary: "List built-in venue templates",
       responses: { 200: jsonResponse(z.array(VenueTemplateSummarySchema), "Templates") },
     }),
-    (c) => respond(c, ok(venueService.venueTemplates.list())),
+    (c) => respond(c, ok(venueService.venueTemplates.list(getLocale(c)))),
   )
   .post(
     "/:templateId",
@@ -263,7 +266,12 @@ const venueTemplateRoutes = new Hono<AuthContext>()
     async (c) => {
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
-      const created = await venueService.venueTemplates.instantiate(c.req.valid("param").templateId, c.req.valid("json"), user.data);
+      const created = await venueService.venueTemplates.instantiate(
+        c.req.valid("param").templateId,
+        c.req.valid("json"),
+        user.data,
+        getLocale(c),
+      );
       return respond(
         c,
         await projectResult(created, async (venue) => (await venueService.publicResources.projectVenues([venue]))[0]!),
@@ -286,7 +294,7 @@ const publicRoutes = new Hono<AuthContext>()
     v("param", PublicVenueParamSchema),
     async (c) => {
       c.header("Cache-Control", "no-store");
-      const status = await venueService.publicStatus(c.req.valid("param").id);
+      const status = await venueService.publicStatus(c.req.valid("param").id, new Date(), getLocale(c));
       return status
         ? respond(c, ok(await venueService.publicResources.projectPublicStatus(status)))
         : respond(c, fail(err.notFound("Venue")));

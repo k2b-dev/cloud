@@ -12,28 +12,20 @@ import {
   useAssistantLive,
 } from "./assistant-live";
 import type { ConversationOpenResult } from "./assistant-navigation";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type ChatView = "all" | "running" | "needs_attention" | "failed" | "unread" | "archived";
 
-const CHAT_VIEWS: ReadonlyArray<{ value: ChatView; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "running", label: "Running" },
-  { value: "needs_attention", label: "Needs attention" },
-  { value: "failed", label: "Failed" },
-  { value: "unread", label: "New responses" },
-  { value: "archived", label: "Archived" },
-];
-
 const PER_PAGE = 20;
 
-const emptyViewText = (view: ChatView, search: string): string => {
-  if (search) return "No chats match your search.";
-  if (view === "archived") return "No archived chats.";
-  if (view === "running") return "No chats are running.";
-  if (view === "needs_attention") return "No chats need attention.";
-  if (view === "failed") return "No failed chats.";
-  if (view === "unread") return "No new responses.";
-  return "No chats yet.";
+const emptyViewText = (view: ChatView, search: string, text: (value: string) => string): string => {
+  if (search) return text("No chats match your search.");
+  if (view === "archived") return text("No archived chats.");
+  if (view === "running") return text("No chats are running.");
+  if (view === "needs_attention") return text("No chats need attention.");
+  if (view === "failed") return text("No failed chats.");
+  if (view === "unread") return text("No new responses.");
+  return text("No chats yet.");
 };
 
 function AssistantAllChatsDialog(props: {
@@ -41,6 +33,16 @@ function AssistantAllChatsDialog(props: {
   openConversation: (conversation: AiConversation) => Promise<ConversationOpenResult>;
   projects: () => readonly AiProject[];
 }) {
+  const text = useAssistantText();
+  const copy = useAssistantCopy();
+  const chatViews: ReadonlyArray<{ value: ChatView; label: string }> = [
+    { value: "all", label: text("All") },
+    { value: "running", label: text("Running") },
+    { value: "needs_attention", label: text("Needs attention") },
+    { value: "failed", label: text("Failed") },
+    { value: "unread", label: text("New responses") },
+    { value: "archived", label: text("Archived") },
+  ];
   const [query, setQuery] = createSignal("");
   const [view, setView] = createSignal<ChatView>("all");
   const [page, setPage] = createSignal(1);
@@ -101,10 +103,8 @@ function AssistantAllChatsDialog(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="All chats"
-        subtitle={
-          result.data() ? `${result.data()!.total} ${result.data()!.total === 1 ? "chat" : "chats"}` : "Search and manage your history"
-        }
+        title={text("All chats")}
+        subtitle={result.data() ? copy().chatsCount({ count: result.data()!.total }) : text("Search and manage your history")}
         icon="ti ti-messages"
         close={props.close}
       />
@@ -114,8 +114,8 @@ function AssistantAllChatsDialog(props: {
             type="search"
             icon="ti ti-search"
             activeIcon="ti ti-search"
-            aria-label="Search chats"
-            placeholder="Search chats..."
+            aria-label={text("Search chats")}
+            placeholder={text("Search chats…")}
             value={query}
             onValueChange={(value) => {
               setPage(1);
@@ -128,10 +128,10 @@ function AssistantAllChatsDialog(props: {
             }}
           />
           <SegmentedControl
-            options={CHAT_VIEWS}
+            options={chatViews}
             value={view}
             onValueChange={selectView}
-            ariaLabel="Chat filters"
+            ariaLabel={text("Chat filters")}
             size="sm"
             class="max-w-full overflow-x-auto"
           />
@@ -155,7 +155,7 @@ function AssistantAllChatsDialog(props: {
                   <Placeholder
                     state={result.loading() && !result.data() ? "loading" : "empty"}
                     variant="panel"
-                    title={result.loading() && !result.data() ? "Loading chats…" : emptyViewText(view(), query().trim())}
+                    title={result.loading() && !result.data() ? text("Loading chats…") : emptyViewText(view(), query().trim(), text)}
                   />
                 }
               >
@@ -163,11 +163,11 @@ function AssistantAllChatsDialog(props: {
                   <Placeholder
                     state="error"
                     variant="panel"
-                    title="Could not load chats"
+                    title={text("Could not load chats")}
                     description={error().message}
                     action={
                       <Button size="sm" variant="secondary" onClick={() => void result.refresh()}>
-                        Retry
+                        {text("Retry")}
                       </Button>
                     }
                   />
@@ -187,9 +187,9 @@ function AssistantAllChatsDialog(props: {
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span class="text-xs text-dimmed">
-          Page {page()} of {totalPages()}
+          {text("Page")} {page()} {text("of")} {totalPages()}
         </span>
-        <nav class="flex items-center gap-1" aria-label="Chat history pages">
+        <nav class="flex items-center gap-1" aria-label={text("Chat history pages")}>
           <Button
             variant="ghost"
             size="sm"
@@ -197,7 +197,7 @@ function AssistantAllChatsDialog(props: {
             onClick={() => setPage((value) => Math.max(1, value - 1))}
           >
             <i class="ti ti-chevron-left" aria-hidden="true" />
-            Previous
+            {text("Previous")}
           </Button>
           <Button
             variant="ghost"
@@ -205,7 +205,7 @@ function AssistantAllChatsDialog(props: {
             disabled={!result.data()?.hasNext || result.loading() || result.refreshing()}
             onClick={() => setPage((value) => value + 1)}
           >
-            Next
+            {text("Next")}
             <i class="ti ti-chevron-right" aria-hidden="true" />
           </Button>
         </nav>

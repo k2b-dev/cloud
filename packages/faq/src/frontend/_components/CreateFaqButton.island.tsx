@@ -1,26 +1,28 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { CreateFaq, FaqAudience } from "@/contracts";
-
-const AUDIENCE_OPTIONS: ReadonlyArray<{ id: FaqAudience; label: string; description: string }> = [
-  { id: "anonymous", label: "Anonymous (logged-out)", description: "Visible to anyone, including logged-out visitors." },
-  { id: "guest", label: "Guests", description: "Visible to local-guest accounts." },
-  { id: "user", label: "Full users", description: "Visible to local-user / IPA-user accounts." },
-];
+import { faqMessages } from "../messages";
 
 export default function CreateFaqButton() {
+  const locale = useLocale();
+  const t = () => faqMessages.resolve([locale()]).t;
+  const audiences = () => [
+    { id: "anonymous" as const, label: t().anonymousFull, description: t().anonymousDescription },
+    { id: "guest" as const, label: t().guests, description: t().guestsDescription },
+    { id: "user" as const, label: t().fullUsers, description: t().usersDescription },
+  ];
   const mutation = mutations.create<unknown, CreateFaq>({
     mutation: async (data) => {
       const res = await apiClient.index.$post({ json: data });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(body?.message ?? "Failed to create FAQ entry");
+        throw new Error(body?.message ?? t().createFailed);
       }
     },
     onSuccess: () => {
-      toast.success("FAQ entry created");
+      toast.success(t().created);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -28,39 +30,39 @@ export default function CreateFaqButton() {
 
   const handleClick = async () => {
     const result = await prompts.form({
-      title: "New FAQ Entry",
+      title: t().createTitle,
       icon: "ti ti-plus",
-      confirmText: "Create",
+      confirmText: t().create,
       fields: {
         question: {
           type: "text" as const,
-          label: "Question",
-          placeholder: "What is …?",
+          label: t().question,
+          placeholder: t().questionPlaceholder,
           required: true,
         },
         answer: {
           type: "text" as const,
-          label: "Answer (Markdown)",
-          placeholder: "Markdown supported. Links, code blocks, lists, etc.",
+          label: t().answer,
+          placeholder: t().answerPlaceholder,
           multiline: true,
           required: true,
         },
         audienceAnonymous: {
           type: "boolean" as const,
-          label: AUDIENCE_OPTIONS[0]!.label,
-          description: AUDIENCE_OPTIONS[0]!.description,
+          label: audiences()[0]!.label,
+          description: audiences()[0]!.description,
           default: false,
         },
         audienceGuest: {
           type: "boolean" as const,
-          label: AUDIENCE_OPTIONS[1]!.label,
-          description: AUDIENCE_OPTIONS[1]!.description,
+          label: audiences()[1]!.label,
+          description: audiences()[1]!.description,
           default: true,
         },
         audienceUser: {
           type: "boolean" as const,
-          label: AUDIENCE_OPTIONS[2]!.label,
-          description: AUDIENCE_OPTIONS[2]!.description,
+          label: audiences()[2]!.label,
+          description: audiences()[2]!.description,
           default: true,
         },
       },
@@ -74,7 +76,7 @@ export default function CreateFaqButton() {
     if (result.audienceUser) audience.push("user");
 
     if (audience.length === 0) {
-      prompts.error("Pick at least one audience.");
+      prompts.error(t().chooseAudience);
       return;
     }
 
@@ -86,9 +88,9 @@ export default function CreateFaqButton() {
   };
 
   return (
-    <Button size="sm" onClick={handleClick} loading={mutation.loading()} loadingLabel="Creating entry">
+    <Button size="sm" onClick={handleClick} loading={mutation.loading()} loadingLabel={t().creating}>
       <i class="ti ti-plus" aria-hidden="true" />
-      New Entry
+      {t().newEntry}
     </Button>
   );
 }

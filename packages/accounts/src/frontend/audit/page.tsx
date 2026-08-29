@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   type AuditActionGroup,
   type AuditEvent,
@@ -14,6 +14,7 @@ import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import AuditFilters from "./AuditFilters.island";
 import { actionLabel } from "./audit-labels";
 
@@ -87,6 +88,7 @@ const providerClass = (provider: string | null): string =>
     : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300";
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const state: AuditState = {
     search: (c.req.query("search") ?? "").trim(),
@@ -129,31 +131,32 @@ export default ssr<AuthContext>(async (c) => {
       state.target)
     : "";
   const columns: DataTableColumn<AuditEvent>[] = [
-    { id: "time", header: "Time", value: (event) => event.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "actor", header: "Actor", value: (event) => event.actor.uid ?? event.actor.userId },
-    { id: "action", header: "Action", value: (event) => actionLabel(event.action) },
-    { id: "target", header: "Target", value: (event) => event.target.label ?? event.target.id },
-    { id: "outcome", header: "Outcome", value: (event) => event.outcome },
-    { id: "reason", header: "Reason", value: (event) => event.reason, cellClass: "max-w-[24rem]" },
+    { id: "time", header: t.time, value: (event) => event.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "actor", header: t.actor, value: (event) => event.actor.uid ?? event.actor.userId },
+    { id: "action", header: t.action, value: (event) => actionLabel(event.action, t) },
+    { id: "target", header: t.target, value: (event) => event.target.label ?? event.target.id },
+    { id: "outcome", header: t.outcome, value: (event) => event.outcome },
+    { id: "reason", header: t.reason, value: (event) => event.reason, cellClass: "max-w-[24rem]" },
   ];
+  const outcomeLabel = (outcome: AuditOutcome) => ({ allowed: t.allowed, denied: t.denied, failed: t.failed })[outcome];
+  const targetTypeLabel = (type: string | null) =>
+    type === "user" ? t.userTarget : type === "group" ? t.groupTarget : (type ?? t.targetType);
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Audit" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.audit }]}>
       <AccountsWorkspace active="audit" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-audit">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-audit-title">
-            <h1 class="text-base font-semibold text-primary">Audit Log</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {eventsPage.total} {eventsPage.total === 1 ? "event" : "events"} · last {state.days} days
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.auditLogTitle}</h1>
+            <p class="mt-1 text-xs text-dimmed">{t.auditEventCount({ count: eventsPage.total, days: state.days })}</p>
           </div>
 
           <div style="view-transition-name: accounts-audit-search">
             <SearchBar
               action={buildAuditUrl({ ...state, search: "", page: 1 })}
               value={state.search}
-              placeholder="Search audit events..."
-              ariaLabel="Search audit events"
+              placeholder={t.searchAudit}
+              ariaLabel={t.searchAudit}
             />
           </div>
 
@@ -173,15 +176,15 @@ export default ssr<AuthContext>(async (c) => {
 
           {state.actor || state.target || state.serviceAccountId ? (
             <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-audit-scope-filters">
-              <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">Scoped to</span>
+              <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t.scopedTo}</span>
               {state.actor ? (
                 <a
                   href={buildAuditUrl({ ...state, actor: "", page: 1 })}
                   class="tag max-w-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                  title={`Actor: ${state.actor}`}
+                  title={t.actorFilter({ value: state.actor })}
                 >
                   <AccountAvatar name={actorFilterLabel} userId={state.actor} size="xs" class="h-4 w-4 text-[8px]" />
-                  <span class="truncate">Actor: {actorFilterLabel}</span>
+                  <span class="truncate">{t.actorFilter({ value: actorFilterLabel })}</span>
                   <i class="ti ti-x" />
                 </a>
               ) : null}
@@ -189,10 +192,10 @@ export default ssr<AuthContext>(async (c) => {
                 <a
                   href={buildAuditUrl({ ...state, target: "", page: 1 })}
                   class="tag max-w-full bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"
-                  title={`Target: ${state.target}`}
+                  title={t.targetFilter({ value: state.target })}
                 >
                   <AccountAvatar name={targetFilterLabel} userId={state.target} size="xs" class="h-4 w-4 text-[8px]" />
-                  <span class="truncate">Target: {targetFilterLabel}</span>
+                  <span class="truncate">{t.targetFilter({ value: targetFilterLabel })}</span>
                   <i class="ti ti-x" />
                 </a>
               ) : null}
@@ -200,12 +203,12 @@ export default ssr<AuthContext>(async (c) => {
                 <a
                   href={buildAuditUrl({ ...state, serviceAccountId: "", page: 1 })}
                   class="tag max-w-full bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300"
-                  title={`Service account: ${state.serviceAccountId}`}
+                  title={t.serviceAccountFilter({ value: state.serviceAccountId })}
                 >
                   <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-100 text-[9px] font-semibold text-red-700 dark:bg-red-800 dark:text-red-200">
                     <i class="ti ti-user-key text-[10px]" />
                   </span>
-                  <span class="truncate">Service account: {state.serviceAccountId}</span>
+                  <span class="truncate">{t.serviceAccountFilter({ value: state.serviceAccountId })}</span>
                   <i class="ti ti-x" />
                 </a>
               ) : null}
@@ -213,7 +216,7 @@ export default ssr<AuthContext>(async (c) => {
           ) : null}
 
           {eventsPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>No audit events found.</>} />
+            <Placeholder surface="paper" description={<>{t.noAuditEvents}</>} />
           ) : (
             <div class="paper overflow-hidden" style="view-transition-name: accounts-audit-table">
               <DataTable
@@ -225,9 +228,9 @@ export default ssr<AuthContext>(async (c) => {
                 class="overflow-x-auto"
                 scrollPreserveKey="accounts-audit-table"
                 renderCell={({ row: event, col }) => {
-                  if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(event.createdAt)}</span>;
+                  if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(event.createdAt, { locale })}</span>;
                   if (col.id === "actor") {
-                    const actorLabel = event.actor.uid ?? event.actor.userId ?? "System";
+                    const actorLabel = event.actor.uid ?? event.actor.userId ?? t.system;
                     return (
                       <div class="flex min-w-0 items-center gap-2">
                         <AccountAvatar name={actorLabel} userId={event.actor.userId} size="xs" />
@@ -254,7 +257,7 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "action")
                     return (
                       <div class="flex min-w-0 flex-col gap-1">
-                        <span class="truncate font-medium text-primary">{actionLabel(event.action)}</span>
+                        <span class="truncate font-medium text-primary">{actionLabel(event.action, t)}</span>
                         <span class="truncate text-[11px] text-dimmed">{event.action}</span>
                       </div>
                     );
@@ -283,14 +286,16 @@ export default ssr<AuthContext>(async (c) => {
                           ) : (
                             <span class="block truncate font-medium text-primary">{targetLabel}</span>
                           )}
-                          <span class="block truncate text-[11px] text-dimmed">{event.target.type ?? "target"}</span>
+                          <span class="block truncate text-[11px] text-dimmed">{targetTypeLabel(event.target.type)}</span>
                         </div>
                       </div>
                     );
                   }
                   if (col.id === "outcome")
                     return (
-                      <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(event.outcome)}`}>{event.outcome}</span>
+                      <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(event.outcome)}`}>
+                        {outcomeLabel(event.outcome)}
+                      </span>
                     );
                   if (col.id === "reason")
                     return (

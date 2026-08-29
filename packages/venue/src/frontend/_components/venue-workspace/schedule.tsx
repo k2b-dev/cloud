@@ -1,4 +1,4 @@
-import { Button, CheckboxCard, DatePicker, IconButton, PanelDialog, prompts, Select, TextInput, Tooltip } from "@k2b/ui";
+import { Button, CheckboxCard, DatePicker, IconButton, PanelDialog, prompts, Select, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, Show } from "solid-js";
 import type {
@@ -10,20 +10,20 @@ import type {
   ShiftTemplateInput,
   UpcomingSlot,
 } from "../../../contracts";
-import { weekdayOptions } from "./constants";
+import { venueMessages, type VenueMessages } from "../../../messages";
 import { timeZoneDateConfig, todayDateKey } from "./utils";
 
 export function ProgressBar(props: { slot: UpcomingSlot; compact?: boolean }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const total = () => props.slot.maxPeople ?? Math.max(props.slot.minPeople, props.slot.assignedCount, 1);
   const pct = () => Math.min(100, Math.round((props.slot.assignedCount / total()) * 100));
   return (
     <div>
       <Show when={!props.compact}>
         <div class="mb-1 flex items-center justify-between text-[11px] text-dimmed">
-          <span>
-            {props.slot.assignedCount}/{props.slot.maxPeople ?? props.slot.minPeople} staffed
-          </span>
-          <span>{props.slot.missingPeople > 0 ? `${props.slot.missingPeople} missing` : "covered"}</span>
+          <span>{t().staffed({ assigned: props.slot.assignedCount, total: props.slot.maxPeople ?? props.slot.minPeople })}</span>
+          <span>{props.slot.missingPeople > 0 ? t().missing({ count: props.slot.missingPeople }) : t().covered}</span>
         </div>
       </Show>
       <div class={`${props.compact ? "h-1" : "h-1.5"} overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800`}>
@@ -68,6 +68,8 @@ export function DialogFrame(props: {
   onCancel: () => void;
   children: JSX.Element;
 }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   return (
     <PanelDialog>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -77,7 +79,7 @@ export function DialogFrame(props: {
           <div />
           <div class="flex justify-end gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={props.onCancel}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button type="button" size="sm" onClick={props.onSubmit}>
               {props.submitLabel}
@@ -90,6 +92,13 @@ export function DialogFrame(props: {
 }
 
 export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | null) => void; initial?: OpeningRule }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
+  const weekdayOptions = () =>
+    Array.from({ length: 7 }, (_, weekday) => ({
+      id: String(weekday),
+      label: new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + weekday))),
+    }));
   const [weekday, setWeekday] = createSignal(String(props.initial?.weekday ?? 1));
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "09:00");
   const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "17:00");
@@ -97,7 +106,7 @@ export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | nul
 
   const submit = () => {
     if (!startTime().trim() || !endTime().trim()) {
-      prompts.error("Start and end time are required.");
+      prompts.error(t().timesRequired);
       return;
     }
     props.close({
@@ -110,47 +119,62 @@ export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | nul
 
   return (
     <DialogFrame
-      title={props.initial ? "Edit opening hours" : "Add opening hours"}
+      title={props.initial ? t().editOpening : t().addOpening}
       icon="ti ti-clock"
-      submitLabel={props.initial ? "Save" : "Add"}
+      submitLabel={props.initial ? t().save : t().add}
       onCancel={() => props.close(null)}
       onSubmit={submit}
     >
       <div class="grid gap-3">
-        <Select label="Weekday" value={weekday} onValueChange={setWeekday} options={weekdayOptions} />
+        <Select label={t().weekday} value={weekday} onValueChange={setWeekday} options={weekdayOptions()} />
         <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput label="Start" value={startTime} onValueChange={setStartTime} placeholder="09:00" inputMode="numeric" required />
-          <TextInput label="End" value={endTime} onValueChange={setEndTime} placeholder="17:00" inputMode="numeric" required />
+          <TextInput
+            label={t().startTime}
+            value={startTime}
+            onValueChange={setStartTime}
+            placeholder="09:00"
+            inputMode="numeric"
+            required
+          />
+          <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="17:00" inputMode="numeric" required />
         </div>
-        <TextInput label="Note" value={note} onValueChange={setNote} placeholder="Optional" />
+        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().optional} />
       </div>
     </DialogFrame>
   );
 }
 
 export function ClosedDayDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const [date, setDate] = createSignal<string | null>(props.initial?.date ?? todayDateKey());
-  const [note, setNote] = createSignal(props.initial?.note ?? "Holiday");
+  const [note, setNote] = createSignal(props.initial?.note ?? t().publicHoliday);
 
   const submit = () => {
     if (!date()) {
-      prompts.error("Pick a date.");
+      prompts.error(t().pickDate);
       return;
     }
-    props.close({ date: date()!, kind: "closed", note: note().trim() || "Holiday" });
+    props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
   };
 
   return (
     <DialogFrame
-      title={props.initial ? "Edit closed day" : "Add closed day"}
+      title={props.initial ? t().editClosedDay : t().addClosedDay}
       icon="ti ti-calendar-x"
-      submitLabel={props.initial ? "Save" : "Add"}
+      submitLabel={props.initial ? t().save : t().add}
       onCancel={() => props.close(null)}
       onSubmit={submit}
     >
       <div class="grid gap-3">
-        <DatePicker label="Date" value={date} onValueChange={setDate} dateConfig={timeZoneDateConfig(props.timeZone)} required />
-        <TextInput label="Note" value={note} onValueChange={setNote} placeholder="Public holiday" />
+        <DatePicker
+          label={t().date}
+          value={date}
+          onValueChange={setDate}
+          dateConfig={timeZoneDateConfig(props.timeZone, locale())}
+          required
+        />
+        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().publicHoliday} />
       </div>
     </DialogFrame>
   );
@@ -176,6 +200,7 @@ const parseRequiredPeople = (value: string): number => Number(value.trim() || "1
 
 const buildShiftTemplateInput = (
   draft: ShiftTemplateDraft,
+  t: VenueMessages,
 ): { input: ShiftTemplateInput; error: null } | { input: null; error: string } => {
   const title = draft.title.trim();
   const startTime = draft.startTime.trim();
@@ -184,12 +209,12 @@ const buildShiftTemplateInput = (
   const max = parseOptionalPeople(draft.maxPeople);
 
   if (!title || !startTime || !endTime || Number.isNaN(min) || (max !== null && Number.isNaN(max))) {
-    return { input: null, error: "Title, times, and staffing numbers are required." };
+    return { input: null, error: t.shiftValidationRequired };
   }
-  if (min < 0 || (max !== null && max < 0)) return { input: null, error: "Staffing numbers cannot be negative." };
-  if (max !== null && max < min) return { input: null, error: "Max people must be greater than or equal to target people." };
+  if (min < 0 || (max !== null && max < 0)) return { input: null, error: t.shiftValidationNegative };
+  if (max !== null && max < min) return { input: null, error: t.shiftValidationMaximum };
   if (draft.requireTargetForOpening && min < 1) {
-    return { input: null, error: "Target people must be at least one when it controls public opening." };
+    return { input: null, error: t.shiftValidationTarget };
   }
 
   return {
@@ -208,6 +233,13 @@ const buildShiftTemplateInput = (
 };
 
 export function ShiftTemplateDialog(props: { close: (value: ShiftTemplateInput | null) => void; initial?: ShiftTemplate }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
+  const weekdayOptions = () =>
+    Array.from({ length: 7 }, (_, weekday) => ({
+      id: String(weekday),
+      label: new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + weekday))),
+    }));
   const [title, setTitle] = createSignal(props.initial?.title ?? "");
   const [weekday, setWeekday] = createSignal(String(props.initial?.weekday ?? 1));
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "09:00");
@@ -217,16 +249,19 @@ export function ShiftTemplateDialog(props: { close: (value: ShiftTemplateInput |
   const [requireTargetForOpening, setRequireTargetForOpening] = createSignal(props.initial?.requireTargetForOpening ?? false);
 
   const submit = () => {
-    const result = buildShiftTemplateInput({
-      title: title(),
-      weekday: weekday(),
-      startTime: startTime(),
-      endTime: endTime(),
-      minPeople: minPeople(),
-      maxPeople: maxPeople(),
-      requireTargetForOpening: requireTargetForOpening(),
-      active: props.initial?.active ?? true,
-    });
+    const result = buildShiftTemplateInput(
+      {
+        title: title(),
+        weekday: weekday(),
+        startTime: startTime(),
+        endTime: endTime(),
+        minPeople: minPeople(),
+        maxPeople: maxPeople(),
+        requireTargetForOpening: requireTargetForOpening(),
+        active: props.initial?.active ?? true,
+      },
+      t(),
+    );
     if (result.error) {
       prompts.error(result.error);
       return;
@@ -236,26 +271,33 @@ export function ShiftTemplateDialog(props: { close: (value: ShiftTemplateInput |
 
   return (
     <DialogFrame
-      title={props.initial ? "Edit shift" : "Add shift"}
+      title={props.initial ? t().editShift : t().addShift}
       icon="ti ti-calendar-plus"
-      submitLabel={props.initial ? "Save" : "Add"}
+      submitLabel={props.initial ? t().save : t().add}
       onCancel={() => props.close(null)}
       onSubmit={submit}
     >
       <div class="grid gap-3">
-        <TextInput label="Title" value={title} onValueChange={setTitle} placeholder="Morning shift" required />
-        <Select label="Weekday" value={weekday} onValueChange={setWeekday} options={weekdayOptions} />
+        <TextInput label={t().title} value={title} onValueChange={setTitle} placeholder={t().morningShift} required />
+        <Select label={t().weekday} value={weekday} onValueChange={setWeekday} options={weekdayOptions()} />
         <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput label="Start" value={startTime} onValueChange={setStartTime} placeholder="09:00" inputMode="numeric" required />
-          <TextInput label="End" value={endTime} onValueChange={setEndTime} placeholder="13:00" inputMode="numeric" required />
+          <TextInput
+            label={t().startTime}
+            value={startTime}
+            onValueChange={setStartTime}
+            placeholder="09:00"
+            inputMode="numeric"
+            required
+          />
+          <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="13:00" inputMode="numeric" required />
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput label="Target people" value={minPeople} onValueChange={setMinPeople} inputMode="numeric" required />
-          <TextInput label="Max people" value={maxPeople} onValueChange={setMaxPeople} inputMode="numeric" placeholder="Optional" />
+          <TextInput label={t().targetPeople} value={minPeople} onValueChange={setMinPeople} inputMode="numeric" required />
+          <TextInput label={t().maxPeople} value={maxPeople} onValueChange={setMaxPeople} inputMode="numeric" placeholder={t().optional} />
         </div>
         <CheckboxCard
-          label="Require target staffing to open"
-          description="The public page counts this shift as open only after the target number of people has signed up."
+          label={t().requireTarget}
+          description={t().requireTargetDescription}
           icon="ti ti-users-check"
           value={requireTargetForOpening}
           onValueChange={setRequireTargetForOpening}

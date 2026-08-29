@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, type RequestActor } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, type RequestActor } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { z } from "zod";
 import {
@@ -14,6 +14,7 @@ import { projectPublicIds, resolvePublicIds } from "../service/public-resources"
 import { ALL_RECORD_ACCESS } from "../service/record-access";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT, PublicDocumentSchema } from "./document-public-contracts";
 import { pdfResponse } from "./download-response";
+import { apiMessages } from "./messages";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
 import { currentActorViewer, gateAt } from "./permissions";
 
@@ -781,16 +782,16 @@ export const liveRenderData = async (
   },
 ) => {
   const table = await gridsService.table.get(params.tableId);
-  if (!table) return { ok: false as const, status: 404, phase: "data" as const, message: "Table not found" };
+  if (!table) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).tableNotFound };
   const recordAccess = await gateAt(c, { baseId: table.baseId }, "read");
-  if (!recordAccess.ok) return { ok: false as const, status: 404, phase: "data" as const, message: "Record not found" };
+  if (!recordAccess.ok) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).recordNotFound };
   const dateConfig = params.dateConfig ?? (await getDateConfig(c));
   const record = await gridsService.record.get(params.tableId, params.recordId, {
     dateConfig,
     viewer: currentActorViewer(c),
     recordAccess: ALL_RECORD_ACCESS,
   });
-  if (!record) return { ok: false as const, status: 404, phase: "data" as const, message: "Record not found" };
+  if (!record) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).recordNotFound };
 
   const rendered = await gridsService.document.buildLiveRenderData({
     template: params.template,
@@ -859,11 +860,11 @@ export const renderDraftDataResponse = async (
   const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
   if (!data.ok) return data.response;
   if (params.template.renderer.kind === "profile") {
-    const input = await gridsService.document.renderProfileInput(params.template, data.data);
+    const input = await gridsService.document.renderProfileInput(params.template, data.data, getLocale(c));
     if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
     return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
   }
-  const html = await gridsService.document.renderHtml(params.template, data.data);
+  const html = await gridsService.document.renderHtml(params.template, data.data, getLocale(c));
   if (!html.ok) return c.json({ message: html.error.message, phase: "html" }, html.error.status);
   return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
 };
@@ -884,7 +885,7 @@ export const renderDraftPdfResponse = async (
   if (!data.ok) return data.response;
 
   if (params.template.renderer.kind === "profile") {
-    const input = await gridsService.document.renderProfileInput(params.template, data.data);
+    const input = await gridsService.document.renderProfileInput(params.template, data.data, getLocale(c));
     if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
     const preview = await gridsService.document.preview({
       profileId: params.template.renderer.id,
@@ -894,10 +895,10 @@ export const renderDraftPdfResponse = async (
     });
     if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
     const pdf = preview.data.find((artifact) => artifact.key === "pdf");
-    if (!pdf) return c.json({ message: "Document profile produced no PDF.", phase: "profile" }, 500);
+    if (!pdf) return c.json({ message: apiMessages(c).documentProducedNoPdf, phase: "profile" }, 500);
     return pdfResponse(pdf.bytes, pdf.filename, {}, "inline");
   }
-  const pdf = await gridsService.document.renderPdfPreview(params.template, data.data, "preview.html");
+  const pdf = await gridsService.document.renderPdfPreview(params.template, data.data, "preview.html", undefined, getLocale(c));
   if (!pdf.ok) {
     return c.json(
       { message: pdf.error.message, phase: pdf.error.phase, code: pdf.error.code },

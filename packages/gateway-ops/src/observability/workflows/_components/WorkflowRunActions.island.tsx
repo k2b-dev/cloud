@@ -1,8 +1,9 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import type { WorkflowJsonValue, WorkflowRunState } from "@valentinkolb/cloud/workflows";
 import { apiClient } from "../api-client";
+import { gatewayOpsMessages } from "../../../messages";
 
 type AttentionStep = {
   stepKey: string;
@@ -21,25 +22,27 @@ const responseError = async (response: Response, fallback: string): Promise<Erro
 };
 
 export default function WorkflowRunActions(props: Props) {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   const cancel = mutation.create<{ canceled: true }, void>({
     mutation: async () => {
       const confirmed = await prompts.confirm(
-        "Completed external effects cannot be undone. Running work stops cooperatively at its next heartbeat.",
+        t.cancelRunWarning,
         {
-          title: "Cancel workflow run?",
+          title: t.cancelRunQuestion,
           icon: "ti ti-player-stop",
-          confirmText: "Cancel run",
+          confirmText: t.cancelRun,
           variant: "danger",
         },
       );
       if (!confirmed) throw new DOMException("Canceled", "AbortError");
 
       const response = await apiClient.runs[":id"].cancel.$post({ param: { id: props.runId } });
-      if (!response.ok) throw await responseError(response, "Could not cancel workflow run.");
+      if (!response.ok) throw await responseError(response, t.cancelRunFailed);
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Workflow run canceled");
+      toast.success(t.runCanceled);
       refreshCurrentPath();
     },
     onError: (error) => {
@@ -50,16 +53,16 @@ export default function WorkflowRunActions(props: Props) {
   const resolveSucceeded = mutation.create<{ resolved: true }, void>({
     mutation: async () => {
       const step = props.attentionStep;
-      if (!step) throw new Error("This run has no effect awaiting resolution.");
+      if (!step) throw new Error(t.noEffectAwaitingResolution);
       const values = await prompts.form({
-        title: "Confirm effect succeeded",
+        title: t.confirmEffectSucceeded,
         icon: "ti ti-check",
-        confirmText: "Confirm and resume",
+        confirmText: t.confirmAndResume,
         variant: "success",
         fields: {
           output: {
             type: "text" as const,
-            label: "Confirmed output (JSON, optional)",
+            label: t.confirmedOutput,
             multiline: true,
             lines: 4,
             placeholder: '{"providerId":"..."}',
@@ -74,7 +77,7 @@ export default function WorkflowRunActions(props: Props) {
         try {
           output = JSON.parse(raw) as WorkflowJsonValue;
         } catch {
-          throw new Error("Confirmed output must be valid JSON.");
+          throw new Error(t.invalidConfirmedOutput);
         }
       }
 
@@ -82,11 +85,11 @@ export default function WorkflowRunActions(props: Props) {
         param: { id: props.runId, step: step.stepKey },
         json: output === undefined ? { state: "succeeded" } : { state: "succeeded", output },
       });
-      if (!response.ok) throw await responseError(response, "Could not resolve workflow effect.");
+      if (!response.ok) throw await responseError(response, t.resolveEffectFailed);
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Effect confirmed; workflow resumed");
+      toast.success(t.effectConfirmed);
       refreshCurrentPath();
     },
     onError: (error) => {
@@ -97,24 +100,24 @@ export default function WorkflowRunActions(props: Props) {
   const resolveFailed = mutation.create<{ resolved: true }, void>({
     mutation: async () => {
       const step = props.attentionStep;
-      if (!step) throw new Error("This run has no effect awaiting resolution.");
+      if (!step) throw new Error(t.noEffectAwaitingResolution);
       const values = await prompts.form({
-        title: "Confirm effect failed",
+        title: t.confirmEffectFailed,
         icon: "ti ti-x",
-        confirmText: "Confirm failure",
+        confirmText: t.confirmFailure,
         variant: "danger",
         fields: {
           message: {
             type: "text" as const,
-            label: "Failure explanation",
+            label: t.failureExplanation,
             required: true,
             multiline: true,
             lines: 3,
-            placeholder: "What provider evidence confirms the failure?",
+            placeholder: t.failureEvidencePlaceholder,
           },
           code: {
             type: "text" as const,
-            label: "Failure code (optional)",
+            label: t.failureCodeOptional,
             placeholder: "PROVIDER_REJECTED",
           },
         },
@@ -130,11 +133,11 @@ export default function WorkflowRunActions(props: Props) {
           ...(code ? { code } : {}),
         },
       });
-      if (!response.ok) throw await responseError(response, "Could not resolve workflow effect.");
+      if (!response.ok) throw await responseError(response, t.resolveEffectFailed);
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Effect confirmed failed");
+      toast.success(t.effectConfirmedFailed);
       refreshCurrentPath();
     },
     onError: (error) => {
@@ -154,10 +157,10 @@ export default function WorkflowRunActions(props: Props) {
             size="sm"
             disabled={resolveSucceeded.loading() || resolveFailed.loading()}
             onClick={() => resolveSucceeded.mutate()}
-            title="Confirm from provider evidence. The effect is not repeated."
+            title={t.confirmSuccessEvidence}
           >
             <i class="ti ti-check" />
-            Mark succeeded
+            {t.markSucceeded}
           </Button>
           <Button
             type="button"
@@ -165,17 +168,17 @@ export default function WorkflowRunActions(props: Props) {
             size="sm"
             disabled={resolveSucceeded.loading() || resolveFailed.loading()}
             onClick={() => resolveFailed.mutate()}
-            title="Confirm from provider evidence that the effect did not happen."
+            title={t.confirmFailureEvidence}
           >
             <i class="ti ti-x" />
-            Mark failed
+            {t.markFailed}
           </Button>
         </>
       ) : null}
       {cancelable() ? (
         <Button type="button" variant="danger" size="sm" disabled={cancel.loading()} onClick={() => cancel.mutate()}>
           <i class={cancel.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} />
-          Cancel run
+          {t.cancelRun}
         </Button>
       ) : null}
     </div>

@@ -1,5 +1,6 @@
 import { Button, FilterChip, TextInput } from "@k2b/ui";
 import { For, Show, type Accessor } from "solid-js";
+import { usePulseMessages } from "../use-messages";
 import { METRIC_TYPE_FILTER_OPTIONS } from "./helpers";
 
 export type SignalCatalogKind = "events" | "states" | "metrics";
@@ -44,6 +45,22 @@ export function SignalCatalogToolbar(props: {
   onSearch: (value: string) => void;
   onMetricTypeFilter: (value: string[]) => void;
 }) {
+  const t = usePulseMessages();
+  const metricTypeOptions = () =>
+    METRIC_TYPE_FILTER_OPTIONS.map((section) => ({
+      ...section,
+      options: section.options.map((option) => ({
+        ...option,
+        label:
+          option.value === "gauge"
+            ? t().gauge
+            : option.value === "counter"
+              ? t().counter
+              : option.value === "histogram"
+                ? t().histogram
+                : t().summary,
+      })),
+    }));
   return (
     <div class="flex min-w-0 flex-1 shrink-0 flex-wrap items-center gap-2">
       <div class="min-w-64 flex-1">
@@ -52,17 +69,19 @@ export function SignalCatalogToolbar(props: {
           icon="ti ti-search"
           value={props.search}
           onValueChange={props.onSearch}
-          placeholder={props.kind === "events" ? "Search events..." : props.kind === "states" ? "Search states..." : "Search metrics..."}
+          placeholder={
+            props.kind === "events" ? t().searchEventsPlaceholder : props.kind === "states" ? t().searchStatesPlaceholder : t().searchMetricsPlaceholder
+          }
           clearable
         />
       </div>
       <Show when={props.kind === "metrics"}>
         <FilterChip
-          label="Type"
+          label={t().type}
           icon="ti ti-filter"
           value={props.metricTypeFilter() ? [props.metricTypeFilter()] : []}
           onValueChange={props.onMetricTypeFilter}
-          options={METRIC_TYPE_FILTER_OPTIONS}
+          options={metricTypeOptions()}
         />
       </Show>
     </div>

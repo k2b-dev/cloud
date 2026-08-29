@@ -5,6 +5,8 @@ import "./ssr-test-plugin";
 
 const { default: ContactDetailPanel } = await import("./ContactDetailPanel.island.tsx");
 const { default: ContactOrgTreeView } = await import("./ContactOrgTreeView.tsx");
+const { default: ContactNotesSection } = await import("./ContactNotesSection.tsx");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const now = "2026-08-09T10:00:00.000Z";
 
@@ -113,6 +115,27 @@ const note: ContactNote = {
   canEdit: true,
   canDelete: true,
 };
+
+test("localizes the complete comments surface through the inherited locale", () => {
+  const html = renderToString(() => (
+    <LocaleProvider locale="de-CH">
+      <ContactNotesSection
+        bookId={contact.bookId}
+        contactId={contact.id}
+        currentUserId="user-1"
+        initialNotesPage={{ items: [{ ...note, updatedAt: "2026-08-09T10:05:00.000Z" }], page: 1, perPage: 30, total: 1, hasNext: false }}
+        canWrite
+      />
+    </LocaleProvider>
+  ));
+
+  expect(html).toContain("Kommentare");
+  expect(html).toContain("Kommentar hinzufügen");
+  expect(html).toContain('aria-label="Kommentar bearbeiten"');
+  expect(html).toContain('aria-label="Kommentar löschen"');
+  expect(html).toContain("bearbeitet");
+  expect(html).not.toContain("Add comment");
+});
 
 const legacyDetailClasses = [
   'class="detail-header',

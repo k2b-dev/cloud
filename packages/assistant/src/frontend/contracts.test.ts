@@ -26,8 +26,8 @@ describe("Assistant frontend contracts", () => {
     expect(allChats).toContain("panelDialogFixedOptions");
     expect(allChatsList).toContain("<Link");
     expect(allChatsList).toContain("assistantConversationHref");
-    expect(conversationEditor).toContain('title="Chat Settings"');
-    expect(conversationEditor).not.toContain('title="General"');
+    expect(conversationEditor).toContain('title={text("Chat Settings")}');
+    expect(conversationEditor).not.toContain('title={text("General")}');
     for (const source of [conversationEditor, preferences, artifacts]) {
       expect(source).not.toContain("h-[86vh]");
       expect(source).toContain("dialog-fixed-frame");
@@ -46,16 +46,16 @@ describe("Assistant frontend contracts", () => {
     ]);
 
     expect(sidebar).toContain("AppWorkspace.NavTree");
-    expect(sidebar).toContain('title="Projects"');
-    expect(sidebar).toContain('label="Create Project"');
+    expect(sidebar).toContain('title={t().projects}');
+    expect(sidebar).toContain('label={t().createProject}');
     expect(sidebar).not.toContain("onOpenProjects");
-    expect(sidebar).toContain("No recent chats");
+    expect(sidebar).toContain("t().noRecentChats");
     expect(projectsDialog).toContain("prompts.form");
     expect(projectsDialog).not.toContain("divide-y");
     expect(projectsDialog).not.toContain("rounded-lg border");
     expect(projectsDialog).not.toContain("listProjects");
     expect(project).toContain("openSpotlightSearch");
-    expect(project).toContain("Search chats in ${props.project.name}");
+    expect(project).toContain("copy().searchChatsIn({ project: props.project.name })");
     expect(project).not.toContain("TextInput");
     expect(project).toContain("IntersectionObserver");
     expect(project).toContain("<AssistantContextSection");
@@ -120,7 +120,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain('input.intent === "queue"');
     expect(workspace).toContain("<AssistantQueuedMessages");
     expect(workspace).toContain('chat.runStatus() !== "idle"');
-    expect(workspace).toContain('message: "Reconnecting…"');
+    expect(workspace).toContain("message: t().reconnecting");
     expect(workspace).toContain('"animation-direction": "reverse"');
     expect(workspace).not.toContain("bg-red-50");
     expect(workspace).not.toContain("bg-amber-50");
@@ -142,7 +142,7 @@ describe("Assistant frontend contracts", () => {
       read("../api/client.ts"),
     ]);
 
-    expect(preferences).toContain('title="Personalization"');
+    expect(preferences).toContain('title={text("Personalization")}');
     expect(preferences).toContain("Facts, preferences, and workflow defaults Assistant may carry into future conversations.");
     expect(preferences).toContain("Search personalization");
     expect(preferences).toContain("Add personalization");
@@ -150,16 +150,16 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).not.toContain("suffix={");
     expect(preferences).toContain("Use personalization in Assistant chats");
     expect(preferences).toContain("Learn personalization from private chats");
-    expect(preferences).toContain('title="Saved personalization"');
+    expect(preferences).toContain('title={text("Saved personalization")}');
     expect(preferences).toContain("hasSavedPersonalization");
     expect(preferences).toContain('state="empty"');
-    expect(preferences).toContain('title="No personalization yet"');
+    expect(preferences).toContain('title={text("No personalization yet")}');
     expect(preferences).toContain("SettingsPanelFooter");
     expect(preferences).toContain("confirmDiscardIfDirty");
     expect(preferences).toContain("SettingsCollection.Item.Actions");
-    expect(preferences).toContain('class="font-medium text-blue-600 dark:text-blue-400">Pinned</span>');
+    expect(preferences).toContain('class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>');
     expect(preferences).toContain('memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin"');
-    expect(preferences).toContain('label="Go to source"');
+    expect(preferences).toContain('label={text("Go to source")}');
     expect(preferences).toContain('icon="ti ti-arrow-up-right"');
     expect(preferences).not.toContain("<Link href={assistantConversationHref");
     expect(preferences).toContain("openAssistantMemoryLearningActivity");
@@ -173,16 +173,16 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("System prompt");
     expect(preferences).not.toContain("Custom instructions");
     expect(preferences).not.toContain("PanelDialog");
-    expect(preferences).toContain('{ title: "Add personalization", icon: "ti ti-user-cog", size: "large" }');
-    expect(preferences).toMatch(/title: "Edit personalization",\s+size: "large",\s+confirmText: "Save"/);
+    expect(preferences).toContain('{ title: assistantBrowserText("Add personalization"), icon: "ti ti-user-cog", size: "large" }');
+    expect(preferences).toMatch(/title: text\("Edit personalization"\),\s+size: "large",\s+confirmText: text\("Save"\)/);
     expect(preferences).toMatch(/default: memory\.content,\s+multiline: true,\s+lines: 8/);
     expect(preferences).toContain('<Button variant="ghost" loading={busyId() === "new"}');
     expect(preferences).toContain("lines={8}");
     expect(preferences).toContain('class="grid gap-1"');
     expect(preferences).toContain('if (kind === "workflow") return "ti ti-route"');
     expect(preferences).toContain("<Dropdown.Root");
-    expect(preferences).toContain('label: memory.priority === "pinned" ? "Unpin" : "Pin"');
-    expect(preferences).toContain('{ label: "Delete", icon: "ti ti-trash", variant: "danger"');
+    expect(preferences).toContain('label: text(memory.priority === "pinned" ? "Unpin" : "Pin")');
+    expect(preferences).toContain('{ label: text("Delete"), icon: "ti ti-trash", variant: "danger"');
     expect(preferences).toContain("Pin");
     expect(preferences).not.toContain("Forget personalization");
     expect(client).toContain("createMemory");
@@ -208,15 +208,15 @@ describe("Assistant frontend contracts", () => {
     expect(skills).not.toContain('label="Enabled for me"');
     expect(skills).not.toContain("<Switch");
     expect(skills).not.toContain("{skill.permission}</span>");
-    expect(skills).toContain('<StatusBadge tone="neutral" icon={null} label="Disabled" />');
-    expect(skills).toContain('label: skill.enabled ? "Disable" : "Enable"');
+    expect(skills).toContain('<StatusBadge tone="neutral" icon={null} label={text("Disabled")} />');
+    expect(skills).toContain('label: text(skill.enabled ? "Disable" : "Enable")');
     expect(skills).toContain("setSkillEnabled");
     expect(skills).toContain("<MarkdownEditor");
     expect(skills).toContain("AssistantSkillReferenceEditor");
     expect(skills).toContain("AssistantSkillReferencesEditor");
     expect(skills).toContain("Description controls when this Skill loads");
     expect(skills).toContain('tone="neutral"');
-    expect(skills).toContain('title="This Skill is read only"');
+    expect(skills).toContain('title={text("This Skill is read only")}');
     expect(skills).toContain("Start with an action and say when to use it");
     expect(skills).toContain("Create weekly status reports from recent work");
     expect(skills).toContain('class="flex flex-col gap-4"');
@@ -224,7 +224,7 @@ describe("Assistant frontend contracts", () => {
     expect(skills).toContain("                fill\n");
     expect(skills).not.toContain('<PanelDialog surface="floating">');
     expect(preferences).toContain("rounded-[var(--ui-radius-frame)]");
-    expect(skills).toContain('title="No extra info yet"');
+    expect(skills).toContain('title={text("No extra info yet")}');
     expect(skills).toContain('variant="panel"');
     expect(skills).toContain('variant="input"');
     expect(skills).toContain("Extra info");

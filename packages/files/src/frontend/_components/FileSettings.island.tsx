@@ -1,7 +1,8 @@
-import { IconButton, MultiSelectInput, SegmentedControl, Switch, Tooltip } from "@k2b/ui";
+import { IconButton, MultiSelectInput, SegmentedControl, Switch, Tooltip, useLocale } from "@k2b/ui";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { cookies } from "@k2b/stdlib/browser";
 import { createSignal, Show } from "solid-js";
+import { filesMessages } from "../messages";
 
 /** Cookie name for file settings */
 const COOKIE_NAME = "settings-app-files";
@@ -61,18 +62,19 @@ const GRID_SIZE_OPTIONS: { value: GridSize; label: string }[] = [
   { value: "xl", label: "XL" },
 ];
 
-const LIST_COLUMN_OPTIONS: { value: FileListColumn; label: string; icon: string }[] = [
-  { value: "size", label: "File size", icon: "ti ti-ruler-measure" },
-  { value: "mime", label: "MIME type", icon: "ti ti-file-type" },
-  { value: "modified", label: "Updated", icon: "ti ti-clock" },
-];
-
 /**
  * File manager settings panel (desktop only).
  * Persists settings in a JSON cookie for server-side access.
  */
 export default function FileSettings({ initialSettings }: FileSettingsProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const [settings, setSettings] = createSignal<FileSettings>(initialSettings);
+  const listColumnOptions = () => [
+    { value: "size" as const, label: t().fileSize, icon: "ti ti-ruler-measure" },
+    { value: "mime" as const, label: t().mimeType, icon: "ti ti-file-type" },
+    { value: "modified" as const, label: t().updated, icon: "ti ti-clock" },
+  ];
 
   const updateSetting = <K extends keyof FileSettings>(key: K, value: FileSettings[K]) => {
     const newSettings = { ...settings(), [key]: value };
@@ -92,11 +94,11 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
     <div id="files-sidebar-settings" class="flex flex-col gap-3 px-1 pt-1">
       {/* Header with minimize toggle */}
       <div class="flex items-center justify-between">
-        <p class="sidebar-section-title pt-0">Panel</p>
-        <Tooltip.Anchor content={settings().hideSettings ? "Expand settings" : "Minimize settings"}>
+        <p class="sidebar-section-title pt-0">{t().panel}</p>
+        <Tooltip.Anchor content={settings().hideSettings ? t().expandSettings : t().minimizeSettings}>
           <IconButton
             onClick={toggleMinimize}
-            label={settings().hideSettings ? "Expand settings" : "Minimize settings"}
+            label={settings().hideSettings ? t().expandSettings : t().minimizeSettings}
             size="xs"
             variant="ghost"
           >
@@ -110,10 +112,10 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
           {/* View mode toggle */}
           <SegmentedControl
             options={[
-              { value: "list" as ViewMode, label: "List", icon: "ti ti-list" },
+              { value: "list" as ViewMode, label: t().list, icon: "ti ti-list" },
               {
                 value: "grid" as ViewMode,
-                label: "Grid",
+                label: t().grid,
                 icon: "ti ti-grid-dots",
               },
             ]}
@@ -124,7 +126,7 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
           {/* Grid size options (only shown in grid mode) */}
           <Show when={settings().viewMode === "grid"}>
             <div class="flex flex-col gap-1">
-              <div class="text-xs text-secondary">Icon size</div>
+              <div class="text-xs text-secondary">{t().iconSize}</div>
               <SegmentedControl
                 options={GRID_SIZE_OPTIONS}
                 value={() => settings().gridSize}
@@ -136,11 +138,11 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
           <Show when={settings().viewMode === "list"}>
             <div class="flex flex-col gap-3">
               <div class="flex flex-col gap-1">
-                <div class="text-xs text-secondary">Density</div>
+                <div class="text-xs text-secondary">{t().density}</div>
                 <SegmentedControl
                   options={[
-                    { value: "compact" as ListDensity, label: "Compact" },
-                    { value: "comfortable" as ListDensity, label: "Cozy" },
+                    { value: "compact" as ListDensity, label: t().compact },
+                    { value: "comfortable" as ListDensity, label: t().cozy },
                   ]}
                   value={() => settings().listDensity}
                   onValueChange={(v) => updateSetting("listDensity", v)}
@@ -149,11 +151,11 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
 
               <div class="flex flex-col gap-1.5">
                 <MultiSelectInput
-                  label="List columns"
+                  label={t().listColumns}
                   value={() => settings().listColumns}
-                  options={LIST_COLUMN_OPTIONS.map((option) => ({ id: option.value, label: option.label, icon: option.icon }))}
+                  options={listColumnOptions().map((option) => ({ id: option.value, label: option.label, icon: option.icon }))}
                   searchable={false}
-                  placeholder="No extra columns"
+                  placeholder={t().noExtraColumns}
                   onValueChange={(columns) => updateSetting("listColumns", columns as FileListColumn[])}
                 />
               </div>
@@ -161,17 +163,17 @@ export default function FileSettings({ initialSettings }: FileSettingsProps) {
           </Show>
 
           {/* Show hidden files toggle */}
-          <Switch label="Show hidden files" value={() => settings().showHidden} onValueChange={(v) => updateSetting("showHidden", v)} />
+          <Switch label={t().showHidden} value={() => settings().showHidden} onValueChange={(v) => updateSetting("showHidden", v)} />
 
           {/* Compute sizes toggle */}
           <div class="flex flex-col gap-1">
             <Switch
-              label="Precise file sizes"
+              label={t().preciseSizes}
               value={() => settings().computeSizes}
               onValueChange={(v) => updateSetting("computeSizes", v)}
             />
             <Show when={settings().computeSizes}>
-              <p class="text-[10px] text-orange-500 pl-11">May slow down page</p>
+              <p class="text-[10px] text-orange-500 pl-11">{t().maySlow}</p>
             </Show>
           </div>
         </div>

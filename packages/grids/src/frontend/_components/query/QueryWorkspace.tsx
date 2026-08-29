@@ -1,5 +1,5 @@
 import { mutation as mutations, timed } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, Panes, type PanesLayout, prompts, TextInput, Tooltip } from "@k2b/ui";
+import { Button, NoticeCard, Panes, type PanesLayout, prompts, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
@@ -8,6 +8,7 @@ import type { DslQueryPreviewDiagnostic } from "../../../contracts";
 import { formatIdentifierRef } from "../../../ref-syntax";
 import { errorMessage } from "../utils/api-helpers";
 import { GqlSourceEditor } from "./GqlSourceEditor";
+import { queryMessages } from "./messages";
 import QueryResultTable from "./QueryResultTable";
 import {
   currentSourceForApi,
@@ -42,7 +43,7 @@ type QuerySourceRow = {
   search: string;
 };
 const MAX_SYNCED_QUERY_HREF_LENGTH = 16_384;
-const QUERY_EDITOR_SELECTOR = 'textarea[aria-label="GQL query"]';
+const QUERY_EDITOR_SELECTOR = "textarea[data-grids-query-editor]";
 
 type QueryEditorSelection = Pick<HTMLTextAreaElement, "selectionEnd" | "selectionStart">;
 
@@ -101,8 +102,6 @@ const safeQueryHref = (queryPath: string, query: string, cursor?: string | null)
   return href.length <= MAX_SYNCED_QUERY_HREF_LENGTH ? href : queryPath;
 };
 
-const plural = (count: number, singular: string, pluralLabel = `${singular}s`) => `${count} ${count === 1 ? singular : pluralLabel}`;
-
 const compactCount = (count: number, suffix: string) => `${count}${suffix}`;
 
 const replaceOrPrependSourceClause = (source: string, fromLine: string) => {
@@ -127,6 +126,7 @@ function QueryPreview(props: {
   onPrevious: () => void;
   onNext: (cursor: string) => void;
 }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const success = createMemo(() => (props.preview?.ok ? props.preview : null));
   const diagnostics = createMemo(() => (props.preview && !props.preview.ok ? props.preview.diagnostics : []));
   return (
@@ -139,7 +139,7 @@ function QueryPreview(props: {
               <span class="state-placeholder-icon state-placeholder-icon-panel">
                 <i class={props.loading ? "ti ti-loader-2 animate-spin text-lg" : "ti ti-table-spark text-lg"} />
               </span>
-              <p class="font-medium text-primary">{props.loading ? "Running query" : "No result yet"}</p>
+              <p class="font-medium text-primary">{props.loading ? t.runningQuery : t.noResultYet}</p>
             </div>
           </div>
         }
@@ -150,10 +150,10 @@ function QueryPreview(props: {
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div class="flex shrink-0 items-center justify-between gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs">
                 <span class="inline-flex items-center gap-1.5 font-medium text-red-700 dark:text-red-300">
-                  <i class="ti ti-alert-triangle" /> Diagnostics
+                  <i class="ti ti-alert-triangle" /> {t.diagnostics}
                 </span>
                 <div class="flex items-center gap-2">
-                  <span class="text-dimmed">{plural(diagnostics().length, "issue")}</span>
+                  <span class="text-dimmed">{t.issueCount({ count: diagnostics().length })}</span>
                   <Show when={props.canGoBack}>
                     <Button variant="ghost" size="sm" type="button" disabled={props.loading} onClick={props.onPrevious}>
                       <i class="ti ti-chevrons-left" aria-hidden="true" /> {props.backLabel}
@@ -166,11 +166,11 @@ function QueryPreview(props: {
                   {(diagnostic) => (
                     <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800 dark:border-red-900 dark:bg-red-950/45 dark:text-red-300">
                       <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide">
-                        <Show when={diagnostic.line} fallback={<span>Query</span>}>
+                        <Show when={diagnostic.line} fallback={<span>{t.query}</span>}>
                           {(line) => (
                             <span class="rounded bg-white/70 px-1.5 py-0.5 dark:bg-black/20">
-                              Line {line()}
-                              <Show when={diagnostic.column}>{(column) => ` · Col ${column()}`}</Show>
+                              {t.line({ line: line() })}
+                              <Show when={diagnostic.column}>{(column) => ` · ${t.column({ column: column() })}`}</Show>
                             </span>
                           )}
                         </Show>
@@ -203,6 +203,7 @@ function QueryPreview(props: {
 }
 
 export default function QueryWorkspace(props: Props) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const [query, setQuery] = createSignal(props.initialQuery);
   const [preview, setPreview] = createSignal<PublicDslQueryPreviewResponse | null>(props.initialPreview ?? null);
   const [loading, setLoading] = createSignal(false);
@@ -284,7 +285,7 @@ export default function QueryWorkspace(props: Props) {
         },
         { init: { signal: abort.signal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not execute query."));
+      if (!response.ok) throw new Error(await errorMessage(response, t.executeFailed));
       const data = await response.json();
       if (token === previewToken) {
         setPreview(data);
@@ -295,7 +296,7 @@ export default function QueryWorkspace(props: Props) {
       if (token === previewToken) {
         setPreview({
           ok: false,
-          diagnostics: [{ message: error instanceof Error ? error.message : "Could not preview query." }],
+          diagnostics: [{ message: t.previewFailed }],
         });
       }
       return false;
@@ -367,31 +368,31 @@ export default function QueryWorkspace(props: Props) {
         param: { baseId: props.baseId },
         json: { query: query(), ...(apiSource() ? { currentSource: apiSource() } : {}) },
       });
-      if (!compiledResponse.ok) throw new Error(await errorMessage(compiledResponse, "Could not compile query."));
+      if (!compiledResponse.ok) throw new Error(await errorMessage(compiledResponse, t.compileFailed));
       const compiled = await compiledResponse.json();
       if (!compiled.ok) {
         const message = compiled.diagnostics.map((diagnostic: DslQueryPreviewDiagnostic) => diagnostic.message).join("\n");
-        prompts.error(message || "This query could not be saved as a view.");
+        prompts.error(message || t.saveViewFailed);
         return;
       }
 
       const result = await prompts.form({
-        title: "Save view",
+        title: t.saveView,
         icon: "ti ti-bookmark-plus",
         fields: {
           name: {
             type: "text",
-            label: "Name",
+            label: t.name,
             required: true,
-            placeholder: "e.g. Open orders",
+            placeholder: t.openOrdersExample,
           },
           shared: {
             type: "boolean",
-            label: "Share with everyone who can read this table",
+            label: t.shareView,
             default: false,
           },
         },
-        confirmText: "Save",
+        confirmText: t.save,
       });
       if (!result) return;
 
@@ -403,7 +404,7 @@ export default function QueryWorkspace(props: Props) {
           shared: Boolean(result.shared),
         },
       });
-      if (!createResponse.ok) throw new Error(await errorMessage(createResponse, "Could not save view."));
+      if (!createResponse.ok) throw new Error(await errorMessage(createResponse, t.saveViewFailed));
       const view = await createResponse.json();
       const table = props.tables.find((item) => item.id === view.tableId);
       if (typeof window !== "undefined" && table) {
@@ -418,7 +419,7 @@ export default function QueryWorkspace(props: Props) {
     saveViewMut.mutate(undefined);
   };
 
-  const saveButtonLabel = () => "Save";
+  const saveButtonLabel = () => t.save;
   const saveButtonIcon = () => (saveViewMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-bookmark-plus");
   const handleSave = () => handleSaveAsView();
   const handleNextPage = async (cursor: string) => {
@@ -452,13 +453,13 @@ export default function QueryWorkspace(props: Props) {
     const firstField = props.fieldsByTable[table.id]?.[0];
     return [
       {
-        label: "Rows",
+        label: t.rows,
         code: `from table ${formatIdentifierRef(table.name)}\nselect ${formatIdentifierRef(firstField?.name ?? "field")}\nlimit 20`,
       },
       ...(amount && date
         ? [
             {
-              label: "Grouped",
+              label: t.grouped,
               code: `from table ${formatIdentifierRef(table.name)}\ngroup by ${formatIdentifierRef(date.name)} by month\naggregate sum(${formatIdentifierRef(amount.name)}) as total\nsort total desc`,
             },
           ]
@@ -475,7 +476,7 @@ export default function QueryWorkspace(props: Props) {
         items={[
           {
             id: "results",
-            title: "Results",
+            title: t.results,
             icon: "ti ti-table-spark",
             render: () => (
               <QueryPreview
@@ -493,7 +494,7 @@ export default function QueryWorkspace(props: Props) {
           },
           {
             id: "query",
-            title: "Query",
+            title: t.query,
             icon: "ti ti-code",
             render: () => (
               <section class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -507,12 +508,13 @@ export default function QueryWorkspace(props: Props) {
                     variant="paper"
                     fill
                     placeholder={"from table Orders\nwhere Status = 'Open'\nsort CreatedAt desc\nlimit 50\noffset 0"}
-                    aria-label="GQL query"
+                    aria-label={t.gqlQueryLabel}
+                    data-grids-query-editor
                   />
                 </div>
                 <Show when={queryHref(props.queryPath, query()).length > MAX_SYNCED_QUERY_HREF_LENGTH}>
                   <NoticeCard tone="warning" icon={false} class="mx-3 mt-3">
-                    This query is too long for the URL. Results still work, but reload will start with an empty query.
+                    {t.queryTooLong}
                   </NoticeCard>
                 </Show>
 
@@ -527,7 +529,7 @@ export default function QueryWorkspace(props: Props) {
                     </For>
                   </div>
                   <Button variant="secondary" size="sm" type="button" onClick={openQueryReferenceWindow}>
-                    <i class="ti ti-external-link" /> Reference
+                    <i class="ti ti-external-link" /> {t.referenceLabel}
                   </Button>
                   <Button
                     variant="primary"
@@ -544,7 +546,7 @@ export default function QueryWorkspace(props: Props) {
           },
           {
             id: "sources",
-            title: "Sources",
+            title: t.sources,
             icon: "ti ti-database",
             render: () => (
               <section class="flex h-full min-h-0 flex-col gap-1 overflow-hidden">
@@ -552,8 +554,8 @@ export default function QueryWorkspace(props: Props) {
                   type="search"
                   icon="ti ti-search"
                   activeIcon="ti ti-search"
-                  placeholder="Search sources and fields..."
-                  aria-label="Search query sources"
+                  placeholder={t.searchSources}
+                  aria-label={t.searchSourcesLabel}
                   value={sourceSearch}
                   onValueChange={setSourceSearch}
                   clearable
@@ -568,7 +570,7 @@ export default function QueryWorkspace(props: Props) {
                           <span class="state-placeholder-icon state-placeholder-icon-panel">
                             <i class="ti ti-database-off text-lg" />
                           </span>
-                          <span>{sourceSearch().trim() ? "No matching sources." : "No readable sources."}</span>
+                          <span>{sourceSearch().trim() ? t.noMatchingSources : t.noReadableSources}</span>
                         </div>
                       </div>
                     }
@@ -582,7 +584,7 @@ export default function QueryWorkspace(props: Props) {
                           return (
                             <article class="paper px-2 py-1.5">
                               <div class="flex items-start justify-between gap-2">
-                                <Tooltip.Anchor content={`Insert ${source.fromLine}`} class="min-w-0 flex-1">
+                                <Tooltip.Anchor content={t.insertSource({ source: source.fromLine })} class="min-w-0 flex-1">
                                   <button
                                     type="button"
                                     class="group flex min-w-0 flex-1 items-center gap-2 text-left"
@@ -599,12 +601,14 @@ export default function QueryWorkspace(props: Props) {
                                         <span class="text-[10px] text-dimmed">{source.metaLabel}</span>
                                       </span>
                                       <Show when={source.parent}>
-                                        <span class="block truncate text-[10px] text-dimmed">of {source.parent}</span>
+                                        <span class="block truncate text-[10px] text-dimmed">
+                                          {t.sourceParent({ parent: source.parent! })}
+                                        </span>
                                       </Show>
                                     </span>
                                   </button>
                                 </Tooltip.Anchor>
-                                <Tooltip.Anchor content={`Insert ${source.fromLine}`}>
+                                <Tooltip.Anchor content={t.insertSource({ source: source.fromLine })}>
                                   <Button
                                     variant="ghost"
                                     size="sm"

@@ -5,6 +5,7 @@ import {
   capabilityResultSchema,
 } from "@valentinkolb/cloud/contracts";
 import { z } from "zod";
+import { capabilityRuntimeMessages } from "./messages";
 
 const ResultSchema = capabilityResultSchema(z.unknown());
 
@@ -26,6 +27,7 @@ export const ambiguousActionNetworkOutcome = (input: {
   kind: "query" | "action";
   idempotencyKey?: string;
   durationMs: number;
+  locale?: string;
 }): CapabilityInvocationOutcome | undefined =>
   input.kind === "action" && !input.idempotencyKey
     ? {
@@ -34,7 +36,7 @@ export const ambiguousActionNetworkOutcome = (input: {
         durationMs: input.durationMs,
         error: {
           code: CAPABILITY_FRAMEWORK_ERROR_CODES.actionOutcomeUnknown,
-          message: "The Action response was lost and its outcome is unknown; do not retry automatically.",
+          message: capabilityRuntimeMessages.resolve([input.locale ?? "en"]).t.outcomeUnknown,
           details: { retrySafe: false },
         },
       }
@@ -42,7 +44,7 @@ export const ambiguousActionNetworkOutcome = (input: {
 
 export const preserveAmbiguousActionOutcome = (
   outcome: CapabilityInvocationOutcome,
-  input: { kind: "query" | "action"; idempotencyKey?: string },
+  input: { kind: "query" | "action"; idempotencyKey?: string; locale?: string },
 ): CapabilityInvocationOutcome =>
   !outcome.ok && ["INVALID_APP_RESPONSE", "RESPONSE_TOO_LARGE"].includes(outcome.error.code)
     ? (ambiguousActionNetworkOutcome({ ...input, durationMs: outcome.durationMs }) ?? outcome)
@@ -79,14 +81,15 @@ const readBoundedText = async (response: Response): Promise<string | null> => {
   }
 };
 
-export async function readCapabilityOutcome(response: Response, durationMs: number): Promise<CapabilityInvocationOutcome> {
+export async function readCapabilityOutcome(response: Response, durationMs: number, locale = "en"): Promise<CapabilityInvocationOutcome> {
+  const t = capabilityRuntimeMessages.resolve([locale]).t;
   const text = await readBoundedText(response);
   if (text === null) {
     return {
       ok: false,
       status: response.status,
       durationMs,
-      error: { code: "RESPONSE_TOO_LARGE", message: "The capability response exceeded the shared size limit." },
+      error: { code: "RESPONSE_TOO_LARGE", message: t.responseTooLarge },
     };
   }
   let body: unknown;
@@ -103,7 +106,7 @@ export async function readCapabilityOutcome(response: Response, durationMs: numb
       ok: false,
       status: response.status,
       durationMs,
-      error: { code: "INVALID_APP_RESPONSE", message: "The app returned an invalid capability result." },
+      error: { code: "INVALID_APP_RESPONSE", message: t.invalidResult },
     };
   }
 
@@ -115,7 +118,7 @@ export async function readCapabilityOutcome(response: Response, durationMs: numb
     durationMs,
     error: {
       code: "INVALID_APP_RESPONSE",
-      message: safeTextMessage(text) ?? `The capability request failed with HTTP ${response.status}.`,
+      message: safeTextMessage(text) ?? t.requestFailed({ status: response.status }),
     },
   };
 }

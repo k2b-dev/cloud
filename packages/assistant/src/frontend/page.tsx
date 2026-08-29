@@ -9,7 +9,7 @@ import {
 } from "@valentinkolb/cloud/ai";
 import { latestAiInvalidationCursor } from "@valentinkolb/cloud/ai/live";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -18,8 +18,10 @@ import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import AssistantWorkspace from "./AssistantWorkspace.island";
+import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = assistantMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const requestedConversationId = url.searchParams.get("conversation") ?? undefined;
@@ -79,7 +81,7 @@ export default ssr<AuthContext>(async (c) => {
     : [null, [], null];
 
   return () => (
-    <Layout c={c} fullPage title={[{ title: "Start", href: "/" }, { title: "Assistant" }]}>
+    <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
       <AssistantWorkspace
         cloudUrl={publicCloudOrigin(appUrl)}
         status={status}

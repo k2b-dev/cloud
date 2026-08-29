@@ -1,9 +1,10 @@
-import { Button, Checkbox, dialogCore, MultiSelectInput, PanelDialog, panelDialogOptions, Select, TextInput } from "@k2b/ui";
+import { Button, Checkbox, dialogCore, MultiSelectInput, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { ExportBody, RecordQuery } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 import { requestRecordExport } from "./record-transfer-client";
 
 type RowState = {
@@ -58,6 +59,8 @@ const downloadBlob = (blob: Blob, filename: string) => {
 };
 
 const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const [format, setFormat] = createSignal<"csv" | "json">("csv");
   const [delimiter, setDelimiter] = createSignal<"," | ";" | "\t" | "|">(",");
   const [markdown, setMarkdown] = createSignal<"raw" | "html">("raw");
@@ -87,7 +90,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
   const runExport = async () => {
     const selected = rows().filter((row) => row.enabled);
     if (selected.length === 0) {
-      setError("Choose at least one field.");
+      setError(t().chooseField);
       return;
     }
 
@@ -100,7 +103,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
         const field = fieldsById.get(row.fieldId);
         return {
           fieldId: row.fieldId,
-          label: row.label.trim() || field?.name || "Field",
+          label: row.label.trim() || field?.name || t().fields,
           relation:
             field?.type === "relation"
               ? {
@@ -116,12 +119,12 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
     setError(null);
     try {
       const res = await requestRecordExport(props.tableId, body);
-      if (!res.ok) throw new Error(await errorMessage(res, "Export failed"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().exportFailed));
       const blob = await res.blob();
       downloadBlob(blob, filenameFromDisposition(res.headers.get("Content-Disposition"), `grids-export.${format()}`));
       props.close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed");
+      setError(e instanceof Error ? e.message : t().exportFailed);
     } finally {
       setBusy(false);
     }
@@ -129,11 +132,11 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Export records" icon="ti ti-download" close={props.close} />
+      <PanelDialog.Header title={t().exportRecords} icon="ti ti-download" close={props.close} />
       <PanelDialog.Body>
         <div class="grid gap-3 sm:grid-cols-3">
           <Select
-            label="Format"
+            label={t().format}
             value={format}
             onValueChange={(value) => setFormat(value as "csv" | "json")}
             options={[
@@ -143,29 +146,29 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
           />
           <Show when={format() === "csv"}>
             <Select
-              label="Delimiter"
+              label={t().delimiter}
               value={delimiter}
               onValueChange={(value) => setDelimiter(value as "," | ";" | "\t" | "|")}
               options={[
-                { id: ",", label: "Comma" },
-                { id: ";", label: "Semicolon" },
-                { id: "\t", label: "Tab" },
-                { id: "|", label: "Pipe" },
+                { id: ",", label: t().comma },
+                { id: ";", label: t().semicolon },
+                { id: "\t", label: t().tab },
+                { id: "|", label: t().pipe },
               ]}
             />
           </Show>
           <Select
-            label="Markdown"
+            label={t().markdown}
             value={markdown}
             onValueChange={(value) => setMarkdown(value as "raw" | "html")}
             options={[
-              { id: "raw", label: "Keep markdown" },
-              { id: "html", label: "Convert to HTML" },
+              { id: "raw", label: t().keepMarkdown },
+              { id: "html", label: t().convertHtml },
             ]}
           />
         </div>
 
-        <PanelDialog.Section title="Fields" subtitle="Pick exported columns and relation output." icon="ti ti-columns">
+        <PanelDialog.Section title={t().exportFields} subtitle={t().exportFieldsSubtitle} icon="ti ti-columns">
           <div class="flex max-h-[46vh] flex-col gap-2 overflow-y-auto">
             <For each={rows()}>
               {(row, index) => {
@@ -183,7 +186,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
                         onValueChange={(enabled) => updateRow(index(), { enabled })}
                       />
                       <TextInput
-                        label="Column label"
+                        label={t().columnLabel}
                         value={() => row.label}
                         onValueChange={(label) => updateRow(index(), { label })}
                         disabled={!row.enabled}
@@ -192,19 +195,19 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
                     <Show when={field.type === "relation" && row.enabled}>
                       <div class="mt-2 grid gap-2 sm:grid-cols-[12rem_1fr]">
                         <Select
-                          label="Relation output"
+                          label={t().relationOutput}
                           value={() => row.relationMode}
                           onValueChange={(relationMode) => updateRow(index(), { relationMode: relationMode as RowState["relationMode"] })}
                           options={[
-                            { id: "ids", label: "IDs" },
-                            { id: "labels", label: "Labels" },
-                            { id: "fields", label: "Selected fields" },
+                            { id: "ids", label: t().ids },
+                            { id: "labels", label: t().labels },
+                            { id: "fields", label: t().selectedFields },
                           ]}
                         />
                         <Show when={row.relationMode === "fields"}>
                           <MultiSelectInput
-                            label="Target fields"
-                            placeholder="Choose fields"
+                            label={t().targetFields}
+                            placeholder={t().chooseFields}
                             icon="ti ti-columns"
                             value={() => row.targetFieldIds}
                             onValueChange={(targetFieldIds) => updateRow(index(), { targetFieldIds })}
@@ -233,11 +236,11 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
         <span />
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={props.close} disabled={busy()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" onClick={() => void runExport()} disabled={busy()}>
             <i class={`ti ${busy() ? "ti-loader-2 animate-spin" : "ti-download"} text-sm`} />
-            Export
+            {t().export}
           </Button>
         </div>
       </PanelDialog.Footer>

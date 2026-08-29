@@ -1,9 +1,10 @@
 import { mutation as mutations, timed as timing } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo } from "@/contracts";
 import { parseSelectionKey, type SelectionKey } from "./context";
+import { filesMessages } from "../messages";
 
 type MoveTargetSearchProps = {
   sourceBaseType: FileBaseInfo["type"];
@@ -19,11 +20,6 @@ type DirectoryResult = { path: string; name: string };
 type DirectorySearchResponse = { directories: DirectoryResult[]; total: number };
 type TransferResponse = { moved: boolean; transferred: number; errors: { path: string; error: string }[] };
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-const getErrorMessage = (value: unknown, fallback: string): string => {
-  if (!isObject(value)) return fallback;
-  const message = value["message"];
-  return typeof message === "string" ? message : fallback;
-};
 const isDirectorySearchResponse = (value: unknown): value is DirectorySearchResponse => {
   if (!isObject(value)) return false;
   return Array.isArray(value["directories"]);
@@ -38,9 +34,9 @@ const formatDisplayPath = (path: string, baseName: string): string => {
   if (segments.length <= 3) return path;
   return `/${segments[0]}/.../${segments[segments.length - 2]}/${segments[segments.length - 1]}`;
 };
-const transferSuccessMessage = (action: "Copy" | "Move", count: number) =>
-  `${action === "Copy" ? "Copied" : "Moved"} ${count} item${count === 1 ? "" : "s"}`;
 export default function MoveTargetSearch(props: MoveTargetSearchProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const [selectedBase, setSelectedBase] = createSignal<FileBaseInfo>(
     props.bases.find((b) => b.type === props.sourceBaseType && b.id === props.sourceBaseId) ?? props.bases[0]!,
   );
@@ -52,7 +48,8 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
     const base = selectedBase();
     return base.type === props.sourceBaseType && base.id === props.sourceBaseId;
   });
-  const actionLabel = createMemo(() => (props.isMultiBaseCopy ? "Copy" : isSameBase() ? "Move" : "Copy"));
+  const action = createMemo<"copy" | "move">(() => (props.isMultiBaseCopy || !isSameBase() ? "copy" : "move"));
+  const actionHereLabel = () => (action() === "copy" ? t().copyHere : t().moveHere);
   const searchMutation = mutations.create<DirectoryResult[], { query: string; base: FileBaseInfo }>({
     mutation: async ({ query, base }, ctx) => {
       const res = await apiClient[":baseType"][":baseId"].directories.$get(
@@ -117,12 +114,12 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
               allErrors.push(...data.errors);
             } else {
               for (const path of source.paths) {
-                allErrors.push({ path, error: "Transfer failed" });
+                allErrors.push({ path, error: t().transferFailed });
               }
             }
           } else {
             for (const path of source.paths) {
-              allErrors.push({ path, error: "Transfer failed" });
+              allErrors.push({ path, error: t().transferFailed });
             }
           }
         }
@@ -133,22 +130,21 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
         json: { paths: props.sourcePaths, targetBaseType: base.type, targetBaseId: base.id, targetPath },
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(getErrorMessage(data, "Transfer failed"));
+        throw new Error(t().transferFailed);
       }
       const data = await res.json();
-      if (!isTransferResponse(data)) throw new Error("Transfer failed");
+      if (!isTransferResponse(data)) throw new Error(t().transferFailed);
       return { ...data, targetPath };
     },
     onSuccess: async (data) => {
       const base = selectedBase();
       if (data.errors.length > 0) {
         await prompts.alert(
-          `Transferred ${data.transferred} item(s), but ${data.errors.length} failed:\n\n${data.errors.map((e) => `${e.path}: ${e.error}`).join("\n")}`,
-          { title: "Partial Success", icon: "ti ti-alert-triangle" },
+          `${t().partialTransfer({ transferred: data.transferred, failed: data.errors.length })}\n\n${data.errors.map((e) => `${e.path}: ${t().transferFailed}`).join("\n")}`,
+          { title: t().partialSuccess, icon: "ti ti-alert-triangle" },
         );
       } else if (data.transferred > 0) {
-        toast.success(transferSuccessMessage(actionLabel() as "Copy" | "Move", data.transferred));
+        toast.success(action() === "copy" ? t().copiedItems({ count: data.transferred }) : t().movedItems({ count: data.transferred }));
       }
       props.close();
       const movedFiles =
@@ -180,7 +176,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
             <span class="app-accent-text flex size-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)]">
               <i class="ti ti-copy" />
             </span>
-            <span>Files from multiple locations will be copied into the selected destination.</span>
+            <span>{t().crossCopy}</span>
           </div>
         }
       >
@@ -190,8 +186,8 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
               <i class="ti ti-arrow-move-right" />
             </div>
             <div>
-              <div class="font-medium text-primary">Move within the same location</div>
-              <div class="text-xs text-dimmed">Items stay in the same base and are moved into the chosen folder.</div>
+              <div class="font-medium text-primary">{t().sameLocation}</div>
+              <div class="text-xs text-dimmed">{t().sameLocationDescription}</div>
             </div>
           </div>
           <div class="flex items-start gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3">
@@ -199,14 +195,14 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
               <i class="ti ti-copy" />
             </div>
             <div>
-              <div class="font-medium text-primary">Copy to a different location</div>
-              <div class="text-xs text-dimmed">Selecting another base copies the items instead of removing them here.</div>
+              <div class="font-medium text-primary">{t().differentLocation}</div>
+              <div class="text-xs text-dimmed">{t().differentLocationDescription}</div>
             </div>
           </div>
         </div>
       </Show>
       <div class="flex flex-col gap-2">
-        <div class="section-label mb-0">Destination</div>
+        <div class="section-label mb-0">{t().destination}</div>
         <div class="flex flex-wrap gap-2">
           <For each={props.bases}>
             {(base) => {
@@ -216,7 +212,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
                 <Button type="button" onClick={() => handleBaseChange(base)} variant={isSelected() ? "subtle" : "secondary"} size="sm">
                   <i class={`ti ${base.type === "home" ? "ti-home" : "ti-users-group"}`} /> {base.name}
                   <Show when={isCurrent}>
-                    <span class="opacity-60">(current)</span>
+                    <span class="opacity-60">({t().current})</span>
                   </Show>
                 </Button>
               );
@@ -227,15 +223,15 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
       <TextInput
         value={searchQuery}
         onValueChange={handleSearchInput}
-        placeholder="Search folders..."
+        placeholder={t().searchFolders}
         icon="ti ti-search"
         activeIcon="ti ti-pencil"
         autofocus
       />
       <div class="paper overflow-hidden">
         <div class="data-table-header data-table-divider flex items-center justify-between border-b px-4 py-3 text-xs text-dimmed">
-          <span>Folders</span>
-          <span>{directories().length} results</span>
+          <span>{t().folders}</span>
+          <span>{t().resultsCount({ count: directories().length })}</span>
         </div>
         <div class="max-h-[22rem] overflow-y-auto">
           <Show when={searchMutation.loading()}>
@@ -244,7 +240,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
             </div>
           </Show>
           <Show when={!searchMutation.loading() && directories().length === 0}>
-            <Placeholder align="left" icon="ti ti-folder-off" class="px-4" description={<>No folders found</>} />
+            <Placeholder align="left" icon="ti ti-folder-off" class="px-4" description={<>{t().noFolders}</>} />
           </Show>
           <Show when={!searchMutation.loading() && directories().length > 0}>
             <div class="flex flex-col gap-0.5 p-1">
@@ -269,7 +265,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
                         when={transferringPath() === dir.path}
                         fallback={
                           <>
-                            {actionLabel()} here <i class="ti ti-arrow-right" />
+                            {actionHereLabel()} <i class="ti ti-arrow-right" />
                           </>
                         }
                       >

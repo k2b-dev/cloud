@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, prompts, Tooltip } from "@k2b/ui";
+import { Button, ButtonLink, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, on, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form, PublicGridRecord, PublicView } from "../../../api/public-dto";
@@ -15,6 +15,7 @@ import FilterPanel, { blankLeaf, type FilterLeaf, isFilterLeafComplete } from ".
 import { filterableFields } from "./filter-ops";
 import { GridCreateActions } from "./GridCreateActions";
 import { type GroupByRow, isGroupByRowComplete } from "./GroupByPanel";
+import { toolbarMessages } from "./messages";
 import SortPanel, { blankSortRow, isSortRowComplete, type SortRow } from "./SortPanel";
 
 type Props = {
@@ -75,6 +76,8 @@ type Props = {
  * row — no separate "Add filter" click needed.
  */
 export default function GridToolbar(props: Props) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const [filterRows, setFilterRows] = createSignal<FilterLeaf[]>(props.initialFilter);
   const [sortRows, setSortRows] = createSignal<SortRow[]>(props.initialSort);
   const [groupByRows, setGroupByRows] = createSignal<GroupByRow[]>(props.initialGroupBy);
@@ -152,7 +155,7 @@ export default function GridToolbar(props: Props) {
   const onFilterClick = () => {
     const blank = blankLeaf(props.fields);
     if (!blank) {
-      prompts.error("This table has no filterable fields.");
+      prompts.error(t().noFilterableFields);
       return;
     }
     skipNextFilterDraftCommit = true;
@@ -191,7 +194,7 @@ export default function GridToolbar(props: Props) {
         param: { tableId: props.tableId },
         json: { name: input.name, source: source.source, ui: { columns: query.columns }, shared: input.shared },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save view"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveViewFailed));
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
@@ -200,26 +203,26 @@ export default function GridToolbar(props: Props) {
 
   const handleSaveView = async () => {
     const result = await prompts.form({
-      title: "Save view",
+      title: t().saveView,
       icon: "ti ti-bookmark-plus",
       fields: {
         name: {
           type: "text",
-          label: "Name",
+          label: t().name,
           required: true,
-          placeholder: "e.g. Open tasks",
+          placeholder: t().openTasksExample,
         },
         shared: {
           type: "boolean",
-          label: props.canWrite ? "Share with everyone who can read this table" : "Share (requires table-write)",
+          label: props.canWrite ? t().shareView : t().shareRequiresWrite,
           default: false,
         },
       },
-      confirmText: "Save",
+      confirmText: t().save,
     });
     if (!result) return;
     if (result.shared && !props.canWrite) {
-      prompts.error("You don't have permission to share views on this table.");
+      prompts.error(t().shareViewDenied);
       return;
     }
     saveViewMut.mutate({
@@ -234,14 +237,14 @@ export default function GridToolbar(props: Props) {
   // on which URL params are set.
   const clearLabel = () => {
     const parts: string[] = [];
-    if (hasFilter()) parts.push("filter");
-    if (hasSort()) parts.push("sort");
-    if (hasGroupBy()) parts.push("group");
-    if (hasAgg()) parts.push("aggregations");
-    if (hasCustomColumns()) parts.push("columns");
-    if (parts.length === 0) return "Clear";
-    if (parts.length === 1) return `Clear ${parts[0]}`;
-    return `Clear ${parts.slice(0, -1).join(", ")} & ${parts[parts.length - 1]}`;
+    if (hasFilter()) parts.push(t().filterItem);
+    if (hasSort()) parts.push(t().sortItem);
+    if (hasGroupBy()) parts.push(t().groupItem);
+    if (hasAgg()) parts.push(t().aggregationsItem);
+    if (hasCustomColumns()) parts.push(t().columnsItem);
+    if (parts.length === 0) return t().clear;
+    if (parts.length === 1) return t().clearItems({ items: parts[0]! });
+    return t().clearMany({ items: parts.slice(0, -1).join(", "), last: parts[parts.length - 1]! });
   };
   const clearAll = () => {
     // Each setter triggers the auto-emit createEffect above, which calls
@@ -283,14 +286,14 @@ export default function GridToolbar(props: Props) {
               fallback={
                 <ButtonLink href={queryTarget() as string} variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()}>
                   <i class="ti ti-code" />
-                  Query
+                  {t().query}
                 </ButtonLink>
               }
             >
               {(openQuery) => (
                 <Button variant="secondary" size="sm" aria-pressed={hasGroupBy() || hasAgg()} onClick={openQuery()}>
                   <i class="ti ti-code" />
-                  Query
+                  {t().query}
                 </Button>
               )}
             </Show>
@@ -298,11 +301,11 @@ export default function GridToolbar(props: Props) {
         </Show>
 
         {/* Filter — clicking adds a blank row; the panel below renders iff rows > 0. */}
-        <Tooltip.Anchor content={hasFilterableFields() ? "" : "This table has no filterable fields."} disabled={hasFilterableFields()}>
+        <Tooltip.Anchor content={hasFilterableFields() ? "" : t().noFilterableFields} disabled={hasFilterableFields()}>
           <span class="inline-flex">
             <Button variant="secondary" size="sm" aria-pressed={hasFilter()} onClick={onFilterClick} disabled={!hasFilterableFields()}>
               <i class="ti ti-filter" />
-              Filter
+              {t().filter}
             </Button>
           </span>
         </Tooltip.Anchor>
@@ -310,13 +313,13 @@ export default function GridToolbar(props: Props) {
         {/* Sort */}
         <Button variant="secondary" size="sm" aria-pressed={hasSort()} onClick={onSortClick}>
           <i class="ti ti-arrows-sort" />
-          Sort
+          {t().sort}
         </Button>
 
         <Show when={props.onAddComputedColumn}>
           <Button variant="secondary" size="sm" aria-pressed={hasCustomColumns()} onClick={props.onAddComputedColumn}>
             <i class="ti ti-calculator" />
-            Computed
+            {t().computed}
           </Button>
         </Show>
 
@@ -339,7 +342,7 @@ export default function GridToolbar(props: Props) {
         <Show when={hasSaveableQuery()}>
           <Button variant="secondary" size="sm" type="button" class="ml-auto" onClick={handleSaveView} disabled={saveViewMut.loading()}>
             <i class={`ti ${saveViewMut.loading() ? "ti-loader-2 animate-spin" : "ti-bookmark-plus"}`} />
-            {saveViewMut.loading() ? "Saving…" : "Save as view"}
+            {saveViewMut.loading() ? t().saving : t().saveAsView}
           </Button>
         </Show>
       </div>

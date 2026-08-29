@@ -1,9 +1,10 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, type PermissionLevel, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, jsonResponse, type PermissionLevel, respond } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
 import { compileGqlViewWrite } from "./gql-runtime";
+import { apiMessages } from "./messages";
 import { currentActorUser, currentActorUserId, currentActorViewer, gateAt } from "./permissions";
 import {
   fromPublicCreateView,
@@ -16,6 +17,7 @@ import {
   toPublicViews,
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const gqlDiagnosticMessage = (diagnostics: Array<{ message: string }>): string =>
   diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
@@ -53,7 +55,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const list = await gridsService.view.listForTable({
@@ -82,7 +84,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const body = c.req.valid("json");
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
@@ -95,7 +97,7 @@ const app = new Hono<AuthContext>()
       });
       if (!compiled.ok) return c.json({ message: gqlDiagnosticMessage(compiled.diagnostics) }, 400);
       const user = currentActorUser(c);
-      if (!body.shared && !user) return c.json({ message: "Sign in to create a personal view." }, 403);
+      if (!body.shared && !user) return c.json({ message: apiMessages(c).signInToCreatePersonalView }, 403);
       const result = await gridsService.view.create(
         {
           tableId,
@@ -126,13 +128,13 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const viewId = internalIdParam(c, "viewId")!;
       const view = await gridsService.view.get(viewId);
-      if (!view) return c.json({ message: "View not found" }, 404);
+      if (!view) return c.json({ message: apiMessages(c).viewNotFound }, 404);
       const table = await gridsService.table.get(view.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
 
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) {
-        return c.json({ message: "View not found" }, 404);
+        return c.json({ message: apiMessages(c).viewNotFound }, 404);
       }
       return c.json(await toPublicView(view));
     },
@@ -156,13 +158,13 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const viewId = internalIdParam(c, "viewId")!;
       const view = await gridsService.view.get(viewId);
-      if (!view) return c.json({ message: "View not found" }, 404);
+      if (!view) return c.json({ message: apiMessages(c).viewNotFound }, 404);
       const table = await gridsService.table.get(view.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const body = c.req.valid("json");
-      if (body.shared === false && !currentActorUser(c)) return c.json({ message: "Sign in to make this view personal." }, 403);
+      if (body.shared === false && !currentActorUser(c)) return c.json({ message: apiMessages(c).signInToMakeViewPersonal }, 403);
       if (!(await canAdministerViewForRequest(c, view, table.baseId))) {
-        return c.json({ message: "Only view admins can update this view" }, 403);
+        return c.json({ message: apiMessages(c).viewUpdateNeedsAdmin }, 403);
       }
       if (changesViewSharing(body.shared, view.ownerUserId)) {
         const shareGate = await gateAt(c, { baseId: table.baseId }, "admin");
@@ -209,11 +211,11 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const viewId = internalIdParam(c, "viewId")!;
       const view = await gridsService.view.get(viewId);
-      if (!view) return c.json({ message: "View not found" }, 404);
+      if (!view) return c.json({ message: apiMessages(c).viewNotFound }, 404);
       const table = await gridsService.table.get(view.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       if (!(await canAdministerViewForRequest(c, view, table.baseId))) {
-        return c.json({ message: "Only view admins can delete this view" }, 403);
+        return c.json({ message: apiMessages(c).viewDeleteNeedsAdmin }, 403);
       }
       const result = await gridsService.view.remove(viewId, currentActorUserId(c));
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
@@ -237,11 +239,11 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const viewId = internalIdParam(c, "viewId")!;
       const view = await gridsService.view.get(viewId, { includeDeleted: true });
-      if (!view) return c.json({ message: "View not found" }, 404);
+      if (!view) return c.json({ message: apiMessages(c).viewNotFound }, 404);
       const table = await gridsService.table.get(view.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       if (!(await canAdministerViewForRequest(c, view, table.baseId))) {
-        return c.json({ message: "Only view admins can restore this view" }, 403);
+        return c.json({ message: apiMessages(c).viewRestoreNeedsAdmin }, 403);
       }
       const result = await gridsService.view.restore(viewId, currentActorUserId(c));
       return result.ok ? c.json(await toPublicView(result.data)) : c.json({ message: result.error.message }, result.error.status);

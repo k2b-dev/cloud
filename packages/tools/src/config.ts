@@ -9,7 +9,7 @@ export const app = defineApp({
   presentation: {
     baseLocale: "en",
     translations: {
-      de: { description: "Praktische Werkzeuge für alltägliche Aufgaben." },
+      de: { name: "Werkzeuge", description: "Praktische Werkzeuge für alltägliche Aufgaben." },
     },
   },
   basePath: "/tools",

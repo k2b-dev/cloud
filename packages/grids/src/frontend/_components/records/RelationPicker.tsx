@@ -1,4 +1,5 @@
-import { MultiSelectInput, type MultiSelectOption } from "@k2b/ui";
+import { MultiSelectInput, type MultiSelectOption, useLocale } from "@k2b/ui";
+import { recordMessages } from "./messages";
 import RecordPicker from "./RecordPicker";
 import { fetchRecordLookup, type RecordLookupItem } from "./record-lookup";
 
@@ -42,11 +43,13 @@ type Props = {
 };
 
 export default function RelationPicker(props: Props) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const excludedIds = () => [...new Set([...props.value(), ...(props.excludeIds?.() ?? [])])];
   const labelFor = (id: string): string => {
     const fromProp = props.labels()[id];
     if (fromProp) return fromProp;
-    return "Unavailable record";
+    return t().unavailableRecord;
   };
 
   const toOption = (item: LookupItem): MultiSelectOption => ({ id: item.id, label: item.label, icon: "ti ti-link" });
@@ -60,7 +63,7 @@ export default function RelationPicker(props: Props) {
     return (
       <RecordPicker
         tableId={props.targetTableId}
-        placeholder="Pick a linked record..."
+        placeholder={t().pickLinkedRecord}
         clearable
         disabled={() => props.saving?.() ?? false}
         value={() => props.value()[0] ?? ""}
@@ -77,8 +80,8 @@ export default function RelationPicker(props: Props) {
   // ── Multi-cardinality path ──────────────────────────────────────────
   return (
     <MultiSelectInput
-      aria-label="Linked records"
-      placeholder="Add linked records..."
+      aria-label={t().linkedRecords}
+      placeholder={t().addLinkedRecords}
       icon="ti ti-link"
       activeIcon="ti ti-link"
       clearable
@@ -87,7 +90,13 @@ export default function RelationPicker(props: Props) {
       onValueChange={props.onChange}
       selectedOptions={() => props.value().map((id) => ({ id, label: labelFor(id), icon: "ti ti-link" }))}
       fetchData={async (q, signal) => {
-        const items = await fetchRecordLookup({ tableId: props.targetTableId, query: q, excludeIds: excludedIds(), signal });
+        const items = await fetchRecordLookup({
+          tableId: props.targetTableId,
+          query: q,
+          excludeIds: excludedIds(),
+          signal,
+          locale: locale(),
+        });
         return items.map(toOption);
       }}
     />

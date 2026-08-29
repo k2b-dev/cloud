@@ -11,7 +11,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: AiUsageAdminPanel } = await import("./AiUsageAdminPanel.tsx");
+const [{ LocaleProvider }, { default: AiUsageAdminPanel }] = await Promise.all([import("@k2b/ui"), import("./AiUsageAdminPanel.tsx")]);
 
 describe("AiUsageAdminPanel", () => {
   test("renders bounded AI-specific accounting, quality, and background surfaces", () => {
@@ -85,7 +85,7 @@ describe("AiUsageAdminPanel", () => {
       }),
     );
 
-    expect(html).toContain("AI Usage");
+    expect(html).toContain("AI usage");
     expect(html).toContain('aria-label="AI usage range"');
     expect(html).toContain("Models");
     expect(html).toContain("Capabilities");
@@ -93,5 +93,46 @@ describe("AiUsageAdminPanel", () => {
     expect(html).toContain("Launched by applications");
     expect(html).toContain("Message ranking");
     expect(html).toContain("Wrong date");
+  });
+
+  test("renders German copy through the inherited request locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(AiUsageAdminPanel, {
+            report: {
+              overview: {
+                range: "30d",
+                since: "2026-07-24T00:00:00.000Z",
+                turns: 0,
+                responses: 0,
+                activeUsers: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                creditsUsed: 0,
+                creditsCoverage: 0,
+                failedTurns: 0,
+                positiveFeedback: 0,
+                negativeFeedback: 0,
+                launchedChats: 0,
+                modelSwitches: 0,
+              },
+              timeline: [],
+              models: [],
+              users: [],
+              capabilities: [],
+              backgroundTasks: [],
+              launches: [],
+              feedback: [],
+            },
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain("KI-Nutzung");
+    expect(html).toContain('aria-label="Zeitraum der KI-Nutzung"');
+    expect(html).toContain("Keine KI-Durchläufe in diesem Zeitraum.");
   });
 });

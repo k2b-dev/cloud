@@ -9,6 +9,7 @@ import {
   validateAiSkillReferences,
 } from "@valentinkolb/cloud/ai/browser";
 import type { AiSkill } from "@valentinkolb/cloud/ai";
+import { assistantBrowserCopy, assistantBrowserText } from "./ui-copy";
 
 export type AiSkillImport = AiSkillDocument & { references: AiSkillReferenceInput[] };
 
@@ -19,14 +20,14 @@ const decodeMarkdown = (bytes: Uint8Array, path: string): string => {
   try {
     return decoder.decode(bytes);
   } catch {
-    throw new Error(`${path} is not valid UTF-8 Markdown.`);
+    throw new Error(assistantBrowserCopy().invalidMarkdown({ path }));
   }
 };
 
 const safeArchivePath = (value: string): string => {
   const path = value.replace(/\\/g, "/").replace(/^\.\//, "");
   if (!path || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === "..")) {
-    throw new Error(`Skill archive contains an unsafe path: ${value}`);
+    throw new Error(assistantBrowserCopy().unsafeArchivePath({ path: value }));
   }
   return path;
 };
@@ -40,18 +41,18 @@ export const parseAiSkillArchive = async (bytes: Uint8Array): Promise<AiSkillImp
     .map((entry) => ({ path: safeArchivePath(entry.filename), data: entry.data }))
     .filter((entry) => !ignoredArchivePath(entry.path));
   const skillFiles = entries.filter((entry) => entry.path === "SKILL.md" || entry.path.endsWith("/SKILL.md"));
-  if (skillFiles.length !== 1) throw new Error("Skill ZIP must contain exactly one SKILL.md.");
+  if (skillFiles.length !== 1) throw new Error(assistantBrowserText("Skill ZIP must contain exactly one SKILL.md."));
   const skillFile = skillFiles[0]!;
   const root = skillFile.path.slice(0, -"SKILL.md".length);
   const references = entries.flatMap((entry) => {
     if (entry === skillFile) return [];
-    if (!entry.path.startsWith(root)) throw new Error(`Skill ZIP contains a file outside its skill folder: ${entry.path}`);
+    if (!entry.path.startsWith(root)) throw new Error(assistantBrowserCopy().outsideSkillFolder({ path: entry.path }));
     const path = entry.path.slice(root.length);
     if (path.startsWith("scripts/") || path.startsWith("assets/")) {
-      throw new Error("This Cloud version supports SKILL.md and Markdown references, but not scripts or assets.");
+      throw new Error(assistantBrowserText("This Cloud version supports SKILL.md and Markdown references, but not scripts or assets."));
     }
     if (!path.startsWith("references/") || !path.endsWith(".md")) {
-      throw new Error(`Unsupported skill file: ${entry.path}`);
+      throw new Error(assistantBrowserCopy().unsupportedSkillFile({ path: entry.path }));
     }
     return [{ path, content: decodeMarkdown(entry.data, entry.path) }];
   });
@@ -60,13 +61,13 @@ export const parseAiSkillArchive = async (bytes: Uint8Array): Promise<AiSkillImp
 };
 
 export const readAiSkillImport = async (file: File): Promise<AiSkillImport> => {
-  if (file.size > AI_SKILL_REFERENCES_MAX_CHARS + 2_000_000) throw new Error("Skill import is too large.");
+  if (file.size > AI_SKILL_REFERENCES_MAX_CHARS + 2_000_000) throw new Error(assistantBrowserText("Skill import is too large."));
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (file.name.toLowerCase() === "skill.md") {
     return { ...parseAiSkillMarkdown(decodeMarkdown(bytes, file.name)), references: [] };
   }
   if (file.name.toLowerCase().endsWith(".zip")) return parseAiSkillArchive(bytes);
-  throw new Error("Choose a SKILL.md or a skill ZIP.");
+  throw new Error(assistantBrowserText("Choose a SKILL.md or a skill ZIP."));
 };
 
 const skillDocument = (skill: Pick<AiSkill, "name" | "description" | "instructions" | "extraFrontmatter">): AiSkillDocument => ({

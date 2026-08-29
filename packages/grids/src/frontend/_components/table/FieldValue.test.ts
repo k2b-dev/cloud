@@ -154,6 +154,10 @@ describe("FieldValue helpers", () => {
       kind: "principal",
       text: "Private user",
     });
+    expect(resolveFieldDisplay({ field: participants, value: [{ type: "user", id: "hidden" }], locale: "de-CH" })).toEqual({
+      kind: "principal",
+      text: "Privater Benutzer",
+    });
     expect(resolveFieldDisplay({ field: participants, value: ["Ada", "Design team"] })).toEqual({
       kind: "principal",
       text: "Ada, Design team",

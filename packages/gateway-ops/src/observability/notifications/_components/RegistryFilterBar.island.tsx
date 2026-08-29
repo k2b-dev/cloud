@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import {
   buildRegistryNotificationsUrl,
@@ -7,6 +7,7 @@ import {
   type NotificationAppFilterOption,
   type RegistryStatusFilter,
 } from "./filter-state";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   search: string;
@@ -15,17 +16,13 @@ type Props = {
   appOptions: NotificationAppFilterOption[];
 };
 
-const STATUS_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All", icon: "ti ti-list" },
-      { value: "active", label: "Active", icon: "ti ti-check", color: "#059669" },
-      { value: "inactive", label: "Inactive", icon: "ti ti-archive", color: "#71717a" },
-    ],
-  },
-];
-
 export default function RegistryFilterBar(props: Props) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const statusOptions: FilterChipSection[] = [{ options: [
+    { value: "all", label: t.all, icon: "ti ti-list" },
+    { value: "active", label: t.active, icon: "ti ti-check", color: "#059669" },
+    { value: "inactive", label: t.inactive, icon: "ti ti-archive", color: "#71717a" },
+  ] }];
   const navigate = (patch: Partial<Pick<Props, "status" | "appIds">>) =>
     navigateTo(
       buildRegistryNotificationsUrl({
@@ -48,14 +45,14 @@ export default function RegistryFilterBar(props: Props) {
       <SearchBar
         action={searchAction}
         value={props.search}
-        placeholder="Search registered notifications..."
-        ariaLabel="Search notification registry"
+        placeholder={t.searchRegisteredNotifications}
+        ariaLabel={t.searchRegistryLabel}
       />
       <div class="flex flex-wrap items-center gap-2">
         <FilterChip
-          label="Status"
+          label={t.status}
           icon="ti ti-filter"
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           value={[props.status]}
           onValueChange={(value) => navigate({ status: (value[0] ?? "all") as RegistryStatusFilter })}
           isActive={props.status !== "all"}
@@ -63,7 +60,7 @@ export default function RegistryFilterBar(props: Props) {
         />
         {props.appOptions.length > 0 && (
           <FilterChip
-            label="App"
+            label={t.app}
             icon="ti ti-apps"
             options={appSections()}
             value={props.appIds}
@@ -76,9 +73,9 @@ export default function RegistryFilterBar(props: Props) {
           <a
             href={`${NOTIFICATION_ADMIN_BASE_URL}?view=registry`}
             class="hidden text-[10px] tabular-nums text-red-500 sm:inline"
-            aria-label="Clear all filters"
+            aria-label={t.clearAllFilters}
           >
-            <i class="ti ti-x" /> Clear
+            <i class="ti ti-x" /> {t.clear}
           </a>
         )}
       </div>

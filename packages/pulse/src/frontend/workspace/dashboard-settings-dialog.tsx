@@ -14,6 +14,7 @@ import { type Accessor, createSignal, Show } from "solid-js";
 import type { PulseDashboard } from "../../contracts";
 import { DASHBOARD_REFRESH_OPTIONS, refreshOptionFromConfig } from "./helpers";
 import type { RefreshIntervalOption } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type DashboardSettingsDialogOptions = {
   currentDashboard: Accessor<PulseDashboard>;
@@ -34,6 +35,7 @@ export type DashboardWriteResult = "failed" | "persisted" | "reconciled";
 export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialogOptions) =>
   prompts.dialog<void>(
     (close) => {
+      const t = usePulseMessages();
       const [name, setName] = createSignal(options.dashboard.name);
       const [refreshInterval, setRefreshInterval] = createSignal<RefreshIntervalOption>(refreshOptionFromConfig(options.dashboard.config));
       const [saved, setSaved] = createSignal({ name: options.dashboard.name, refreshInterval: refreshInterval() });
@@ -53,40 +55,50 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
       return (
         <div class="flex h-[72vh] min-h-0 flex-col overflow-hidden">
           <SettingsModal
-            title="Dashboard settings"
+            title={t().dashboardSettings}
             subtitle={options.dashboard.name}
             icon="ti ti-layout-dashboard"
             onClose={() => void requestClose()}
-            closeLabel="Close"
+            closeLabel={t().close}
           >
-            <SettingsModal.Group title="Dashboard">
+            <SettingsModal.Group title={t().dashboard}>
               <SettingsModal.Tab
                 id="general"
-                title="General"
+                title={t().general}
                 icon="ti ti-settings"
-                description="Name and refresh behavior for this dashboard."
+                description={t().dashboardGeneralDescription}
               >
-                <SettingsGroup title="Display" description="Choose how this dashboard appears and refreshes.">
+                <SettingsGroup title={t().display} description={t().dashboardDisplayDescription}>
                   <SettingsField
-                    label="Name"
-                    description="Use a short name that describes the view or audience."
-                    error={() => (!name().trim() ? "Name is required" : undefined)}
+                    label={t().name}
+                    description={t().dashboardNameDescription}
+                    error={() => (!name().trim() ? t().nameRequired : undefined)}
                     changed={() => name() !== saved().name}
                   >
-                    <TextInput aria-label="Name" icon="ti ti-tag" value={name} onValueChange={setName} required />
+                    <TextInput aria-label={t().name} icon="ti ti-tag" value={name} onValueChange={setName} required />
                   </SettingsField>
                   <SettingsField
-                    label="Auto refresh"
-                    description="Choose how often Pulse refreshes this dashboard. Use never for static views."
+                    label={t().autoRefresh}
+                    description={t().autoRefreshDescription}
                     error={() => undefined}
                     changed={() => refreshInterval() !== saved().refreshInterval}
                   >
                     <Select
-                      aria-label="Auto refresh"
+                      aria-label={t().autoRefresh}
                       icon="ti ti-refresh"
                       value={refreshInterval}
                       onValueChange={(value) => setRefreshInterval(value as RefreshIntervalOption)}
-                      options={DASHBOARD_REFRESH_OPTIONS}
+                      options={DASHBOARD_REFRESH_OPTIONS.map((option) => ({
+                        ...option,
+                        label:
+                          option.id === "1"
+                            ? t().everyOneSecond
+                            : option.id === "60"
+                              ? t().everyMinute
+                              : option.id === "never"
+                                ? t().never
+                                : t().everySeconds({ seconds: Number(option.id) }),
+                      }))}
                     />
                   </SettingsField>
                 </SettingsGroup>
@@ -96,18 +108,18 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Sharing">
+            <SettingsModal.Group title={t().sharing}>
               <SettingsModal.Tab
                 id="public-link"
-                title="Public link"
+                title={t().publicLink}
                 icon="ti ti-link"
-                description="Anyone with the public link can view this dashboard's included data."
+                description={t().publicLinkDescription}
               >
-                <SettingsGroup title="Public access" description="Changes apply immediately.">
+                <SettingsGroup title={t().publicAccess} description={t().changesImmediate}>
                   <NoticeCard tone={options.currentDashboard().publicEnabled ? "success" : "info"} icon={false}>
                     {options.currentDashboard().publicEnabled
-                      ? "Public display is enabled. Copy the link whenever you need it, or disable public access."
-                      : "Public display is disabled. Create a link when you want to share this dashboard without auth."}
+                      ? t().publicEnabledDescription
+                      : t().publicDisabledDescription}
                   </NoticeCard>
                   <div class="flex flex-wrap items-center gap-2">
                     <Button
@@ -118,7 +130,7 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
                       onClick={() => void options.enablePublicLink(options.currentDashboard(), { copy: true })}
                     >
                       <i class="ti ti-copy" />
-                      {options.currentDashboard().publicEnabled ? "Copy public link" : "Create and copy link"}
+                      {options.currentDashboard().publicEnabled ? t().copyPublicLink : t().createPublicLink}
                     </Button>
                     <Show when={options.currentDashboard().publicEnabled}>
                       <Button
@@ -129,7 +141,7 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
                         onClick={() => void options.disablePublicLink(options.currentDashboard())}
                       >
                         <i class="ti ti-link-off" />
-                        Disable public link
+                        {t().disablePublicLink}
                       </Button>
                     </Show>
                   </div>
@@ -137,15 +149,15 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Lifecycle">
+            <SettingsModal.Group title={t().lifecycle}>
               <SettingsModal.Tab
                 id="danger"
-                title="Danger zone"
+                title={t().dangerZone}
                 icon="ti ti-alert-triangle"
                 tone="danger"
-                description="Delete this dashboard."
+                description={t().deleteDashboard}
               >
-                <SettingsGroup title="Delete dashboard" description="Permanently remove this dashboard. This cannot be undone.">
+                <SettingsGroup title={t().deleteDashboard} description={t().deleteDashboardDescription}>
                   <SettingsGroup.Action>
                     <Button
                       type="button"
@@ -155,7 +167,7 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
                       onClick={() => void options.deleteDashboard(options.dashboard).then((result) => result !== "failed" && close())}
                     >
                       <i class="ti ti-trash text-sm" />
-                      Delete dashboard
+                      {t().deleteDashboard}
                     </Button>
                   </SettingsGroup.Action>
                 </SettingsGroup>

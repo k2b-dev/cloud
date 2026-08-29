@@ -1,12 +1,12 @@
 import { Button, CopyButton, prompts } from "@k2b/ui";
 import type { JSX } from "solid-js";
 
-function SecretField(props: { label: string; value: string; copyLabel?: string; tone?: "default" | "primary" }) {
+function SecretField(props: { label: string; value: string; copyLabel: string; tone?: "default" | "primary" }) {
   return (
     <div class="flex flex-col gap-2">
       <div class="flex items-center justify-between gap-3">
         <span class="text-[11px] font-semibold uppercase tracking-[0.28em] text-dimmed">{props.label}</span>
-        <CopyButton text={props.value} label={props.copyLabel ?? "Copy"} />
+        <CopyButton text={props.value} label={props.copyLabel} />
       </div>
       <pre
         class={`overflow-x-auto whitespace-pre-wrap break-all rounded-2xl px-4 py-3 text-sm font-mono leading-relaxed ${
@@ -25,7 +25,8 @@ export function openCredentialDialog(config: {
   title: string;
   icon: string;
   intro: JSX.Element;
-  fields: Array<{ label: string; value: string; copyLabel?: string; tone?: "default" | "primary" }>;
+  fields: Array<{ label: string; value: string; copyLabel: string; tone?: "default" | "primary" }>;
+  doneLabel: string;
 }) {
   return prompts.dialog<void>(
     (close) => (
@@ -38,7 +39,7 @@ export function openCredentialDialog(config: {
         </div>
         <div class="flex justify-end">
           <Button size="sm" onClick={() => close()}>
-            Done
+            {config.doneLabel}
           </Button>
         </div>
       </div>

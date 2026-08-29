@@ -1,5 +1,5 @@
 import { createPagination, ErrorResponseSchema, parsePagination } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -27,6 +27,7 @@ import {
 } from "../retention-policy-contracts";
 import { gridsService } from "../service";
 import { resolvePublicId } from "../service/public-resources";
+import { apiMessages } from "./messages";
 import {
   currentActorUser,
   currentActorUserId,
@@ -48,6 +49,7 @@ import {
   toPublicTables,
 } from "./public-dto";
 import { internalIdParam, publicIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const TrashResponseSchema = z.object({
   tables: z.array(PublicTableSchema),
@@ -91,7 +93,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const scopeGate = await gateCredentialScope(c, "read");
         if (!scopeGate.ok) return respond(c, () => Promise.resolve(scopeGate));
         const boundBaseId = currentResourceBoundBaseId(c);
-        if (boundBaseId === null) return c.json({ message: "This API credential is not bound to a Grids base." }, 403);
+        if (boundBaseId === null) return c.json({ message: apiMessages(c).apiCredentialNeedsBase }, 403);
         const viewer = currentActorViewer(c);
         const { q, limit, offset } = c.req.valid("query");
         const result = await gridsService.base.listVisible({
@@ -121,13 +123,14 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const scopeGate = await gateCredentialScope(c, "write", { allowResourceBound: false });
         if (!scopeGate.ok) return respond(c, () => Promise.resolve(scopeGate));
         const user = currentActorUser(c);
-        if (!user) return c.json({ message: "Sign in to create a base." }, 403);
+        if (!user) return c.json({ message: apiMessages(c).signInToCreateBase }, 403);
         // User-backed actors with write-capable credentials become the base
         // admin through the access entry created by the service.
         const body = c.req.valid("json");
         const result = await gridsService.base.create(
           { name: body.name, description: body.description ?? null, documentDefaults: body.documentDefaults },
           user.id,
+          getLocale(c),
         );
         return result.ok ? c.json(toPublicBase(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
       },
@@ -150,7 +153,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const base = await gridsService.base.get(baseId);
-        if (!base) return c.json({ message: "Base not found" }, 404);
+        if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         return c.json(toPublicBase(base));
       },
     )
@@ -174,7 +177,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const body = c.req.valid("json");
-        const result = await gridsService.base.update(baseId, body, currentActorUserId(c));
+        const result = await gridsService.base.update(baseId, body, currentActorUserId(c), getLocale(c));
         return result.ok ? c.json(toPublicBase(result.data)) : c.json({ message: result.error.message }, result.error.status);
       },
     )
@@ -253,7 +256,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         let scope: { type: "base" } | { type: "table"; tableId: string } = { type: "base" };
         if (body.scope.type === "table") {
           const tableId = await resolveHoldTableScope(baseId, body.scope.tableId);
-          if (!tableId) return c.json({ message: "Table not found" }, 404);
+          if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
           scope = { type: "table", tableId };
         }
         const result = await gridsService.base.preservationHolds.create(
@@ -263,6 +266,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
             id: actor?.id ?? null,
             displayName: actor?.displayName ?? null,
           },
+          getLocale(c),
         );
         return result.ok ? c.json(result.data, 201) : c.json({ message: result.error.message }, result.error.status);
       },
@@ -272,7 +276,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       "/:baseId/preservation-holds/:holdId/release",
       requirePublicIdParam("baseId", "base", "Base"),
       async (c, next) => {
-        if (!publicIdParam(c, "holdId")) return c.json({ message: "Preservation hold not found" }, 404);
+        if (!publicIdParam(c, "holdId")) return c.json({ message: apiMessages(c).preservationHoldNotFound }, 404);
         await next();
       },
       describeRoute({
@@ -292,10 +296,16 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const actor = currentActorUser(c);
-        const result = await gridsService.base.preservationHolds.release(baseId, c.req.param("holdId"), c.req.valid("json"), {
-          id: actor?.id ?? null,
-          displayName: actor?.displayName ?? null,
-        });
+        const result = await gridsService.base.preservationHolds.release(
+          baseId,
+          c.req.param("holdId"),
+          c.req.valid("json"),
+          {
+            id: actor?.id ?? null,
+            displayName: actor?.displayName ?? null,
+          },
+          getLocale(c),
+        );
         return result.ok ? c.json(result.data) : c.json({ message: result.error.message }, result.error.status);
       },
     )
@@ -340,10 +350,16 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const actor = currentActorUser(c);
-        const result = await gridsService.base.controlledDestruction.start(baseId, c.req.valid("json"), {
-          id: actor?.id ?? null,
-          displayName: actor?.displayName ?? null,
-        });
+        const result = await gridsService.base.controlledDestruction.start(
+          baseId,
+          c.req.valid("json"),
+          {
+            id: actor?.id ?? null,
+            displayName: actor?.displayName ?? null,
+          },
+          undefined,
+          getLocale(c),
+        );
         return result.ok ? c.json(result.data, 201) : c.json({ message: result.error.message }, result.error.status);
       },
     )
@@ -352,7 +368,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       "/:baseId/controlled-destruction/:runId",
       requirePublicIdParam("baseId", "base", "Base"),
       async (c, next) => {
-        if (!publicIdParam(c, "runId")) return c.json({ message: "Controlled destruction run not found" }, 404);
+        if (!publicIdParam(c, "runId")) return c.json({ message: apiMessages(c).controlledDestructionRunNotFound }, 404);
         await next();
       },
       describeRoute({
@@ -369,7 +385,9 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const run = await gridsService.base.controlledDestruction.get(baseId, c.req.param("runId"));
-        return run ? c.json(ControlledDestructionRunSchema.parse(run)) : c.json({ message: "Controlled destruction run not found" }, 404);
+        return run
+          ? c.json(ControlledDestructionRunSchema.parse(run))
+          : c.json({ message: apiMessages(c).controlledDestructionRunNotFound }, 404);
       },
     )
 
@@ -377,7 +395,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       "/:baseId/controlled-destruction/:runId/cancel",
       requirePublicIdParam("baseId", "base", "Base"),
       async (c, next) => {
-        if (!publicIdParam(c, "runId")) return c.json({ message: "Controlled destruction run not found" }, 404);
+        if (!publicIdParam(c, "runId")) return c.json({ message: apiMessages(c).controlledDestructionRunNotFound }, 404);
         await next();
       },
       describeRoute({
@@ -394,7 +412,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await gridsService.base.controlledDestruction.cancel(baseId, c.req.param("runId"));
+        const result = await gridsService.base.controlledDestruction.cancel(baseId, c.req.param("runId"), getLocale(c));
         return result.ok
           ? c.json(ControlledDestructionRunSchema.parse(result.data))
           : c.json({ message: result.error.message }, result.error.status);
@@ -513,7 +531,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await gridsService.base.retentionPolicy.getFileContent(baseId, internalIdParam(c, "fileId")!);
+        const result = await gridsService.base.retentionPolicy.getFileContent(baseId, internalIdParam(c, "fileId")!, getLocale(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         const disposition = c.req.valid("query").inline === "true" ? "inline" : "attachment";
         c.header("Content-Type", result.data.mimeType);
@@ -583,7 +601,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await gridsService.base.remove(baseId, currentActorUserId(c));
+        const result = await gridsService.base.remove(baseId, currentActorUserId(c), getLocale(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         return c.body(null, 204);
       },
@@ -605,7 +623,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         const baseId = internalIdParam(c, "baseId")!;
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await gridsService.base.restore(baseId, currentActorUserId(c));
+        const result = await gridsService.base.restore(baseId, currentActorUserId(c), getLocale(c));
         return result.ok ? c.json(toPublicBase(result.data)) : c.json({ message: result.error.message }, result.error.status);
       },
     )

@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip, toast } from "@k2b/ui";
+import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
@@ -15,6 +15,7 @@ import type {
   PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
   PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
 } from "../workspace/workspace-public-state-model";
+import { recordMessages } from "./messages";
 import { openRecordAuditDialog } from "./RecordAuditDialog";
 import RecordComments from "./RecordComments.island";
 import RecordDocumentsSection from "./RecordDocumentsSection";
@@ -68,14 +69,15 @@ type Props = {
 const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraftIntent =>
   launcher.config.kind === "record" ? correctionDraftIntent(launcher.config) : "correction";
 
-const intentLabel = (intent: CorrectionDraftIntent): string => (intent === "cancellation" ? "cancellation" : "correction");
-
 export default function RecordDetailPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   let disposed = false;
   let correctionOperation: { key: string; id: string } | null = null;
   let correctionRecordId: string | null = null;
   const record = () => props.record();
   const mode = () => props.mode();
+  const intentLabel = (intent: CorrectionDraftIntent): string => (intent === "cancellation" ? t().cancellation : t().correction);
   const sharedRecordActionIntent = (): CorrectionDraftIntent | null => {
     const intents = new Set(props.recordActionLaunchers.map(recordLauncherIntent));
     return intents.size === 1 ? (intents.values().next().value ?? null) : null;
@@ -88,12 +90,12 @@ export default function RecordDetailPanel(props: Props) {
     source: record,
     enabled: finalizationQueryEnabled,
     load: async (rec, { abortSignal }) => {
-      if (!rec) throw new Error("No Record is selected.");
+      if (!rec) throw new Error(t().noRecordSelected);
       const response = await apiClient.records[":tableId"][":recordId"].finalization.$get(
         { param: { tableId: props.tableId, recordId: rec.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not refresh Finalization status"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().finalizationRefreshFailed));
       return response.json();
     },
   });
@@ -109,12 +111,12 @@ export default function RecordDetailPanel(props: Props) {
     }).format(new Date(value));
 
   async function refreshFinalization(rec: GridRecord): Promise<PublicRecordFinalizationReadiness> {
-    if (record()?.id !== rec.id) throw new Error("The selected Record changed.");
+    if (record()?.id !== rec.id) throw new Error(t().selectedRecordChanged);
     await finalizationQuery.refresh();
     const refreshError = finalizationQuery.error();
     if (refreshError) throw refreshError;
     const readiness = finalization();
-    if (!readiness) throw new Error("Could not refresh Finalization status");
+    if (!readiness) throw new Error(t().finalizationRefreshFailed);
     return readiness;
   }
 
@@ -122,15 +124,13 @@ export default function RecordDetailPanel(props: Props) {
     prompts.error(error.message);
     const rec = record();
     if (!rec) return;
-    void refreshFinalization(rec).catch(() =>
-      prompts.error("The action failed, and the current Finalization status could not be refreshed."),
-    );
+    void refreshFinalization(rec).catch(() => prompts.error(t().actionRefreshFailed));
   };
   const refreshAfterFinalizationMutation = () => {
     void (async () => {
       await finalizationQuery.refresh();
       if (finalizationQuery.error()) throw finalizationQuery.error();
-    })().catch(() => prompts.error("The action succeeded, but the current Finalization status could not be refreshed."));
+    })().catch(() => prompts.error(t().successRefreshFailed));
   };
 
   // ---- Mutations ---------------------------------------------------------
@@ -143,7 +143,7 @@ export default function RecordDetailPanel(props: Props) {
         },
         { headers: { "If-Match": String(rec.version) } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to update record"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().updateFailed));
       return res.json();
     },
     onSuccess: (updated) => props.onUpdated(updated),
@@ -156,7 +156,7 @@ export default function RecordDetailPanel(props: Props) {
         param: { tableId: props.tableId, recordId: rec.id },
         json: { audit },
       });
-      if (res.status >= 400) throw new Error(await errorMessage(res, "Failed to delete record"));
+      if (res.status >= 400) throw new Error(await errorMessage(res, t().deleteFailed));
       return rec.id;
     },
     onSuccess: () => props.onRemoved(),
@@ -169,7 +169,7 @@ export default function RecordDetailPanel(props: Props) {
         param: { tableId: props.tableId, recordId: rec.id },
         json: { audit },
       });
-      if (res.status >= 400) throw new Error(await errorMessage(res, "Failed to restore record"));
+      if (res.status >= 400) throw new Error(await errorMessage(res, t().restoreFailed));
       return rec.id;
     },
     onSuccess: () => props.onRemoved(),
@@ -187,9 +187,10 @@ export default function RecordDetailPanel(props: Props) {
         recordId: rec.id,
         operationId,
         signal: abortSignal,
+        locale: locale(),
       });
       if (result.tableId !== props.tableId) {
-        throw new CorrectionDraftInvocationError("The linked-Draft workflow returned a Record from another Table.", false);
+        throw new CorrectionDraftInvocationError(t().linkedDraftWrongTable, false);
       }
       return { ...result, originalRecordId: rec.id, intent: recordLauncherIntent(launcher) };
     },
@@ -198,8 +199,8 @@ export default function RecordDetailPanel(props: Props) {
       correctionRecordId = null;
       if (!disposed && record()?.id === result.originalRecordId) props.onOpenRecord(result.recordId);
       const label = intentLabel(result.intent);
-      toast.success(`The linked ${label} Draft is ready.`, {
-        title: result.intent === "cancellation" ? "Cancellation created" : "Correction created",
+      toast.success(t().linkedDraftReady({ intent: label }), {
+        title: result.intent === "cancellation" ? t().cancellationCreated : t().correctionCreated,
       });
     },
     onError: (error) => {
@@ -227,7 +228,7 @@ export default function RecordDetailPanel(props: Props) {
       const res = await apiClient.records[":tableId"][":recordId"].finalize.$post({
         param: { tableId: props.tableId, recordId: rec.id },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to finalize record"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().finalizeFailed));
       return res.json();
     },
     onSuccess: (updated) => {
@@ -247,7 +248,7 @@ export default function RecordDetailPanel(props: Props) {
         param: { tableId: props.tableId, recordId: rec.id },
         json: { comment },
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to request Finalization"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().requestFinalizationFailed));
       return response.json();
     },
     onSuccess: (_request, context) => {
@@ -263,7 +264,7 @@ export default function RecordDetailPanel(props: Props) {
         param: { tableId: props.tableId, recordId: rec.id },
         json: { requestId, comment },
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to approve Finalization"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().approveFinalizationFailed));
       return response.json();
     },
     onSuccess: (updated) => {
@@ -283,7 +284,7 @@ export default function RecordDetailPanel(props: Props) {
         param: { tableId: props.tableId, recordId: rec.id },
         json: { requestId, comment },
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to reject Finalization"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().rejectFinalizationFailed));
       return response.json();
     },
     onSuccess: (_request, context) => {
@@ -304,7 +305,7 @@ export default function RecordDetailPanel(props: Props) {
   const handleEdit = async (rec: GridRecord) => {
     const usable = visibleFields().filter((f) => isUserEditable(f.type) || f.type === "relation");
     if (usable.length === 0) {
-      prompts.error("No editable fields. Add a field first.");
+      prompts.error(t().noEditableFieldsAdd);
       return;
     }
     let audit: RecordMutationAudit | undefined;
@@ -361,10 +362,10 @@ export default function RecordDetailPanel(props: Props) {
     if (requirement && !audit) return;
     if (
       !requirement &&
-      !(await prompts.confirm(`${title}\n${props.tableName}\n\nThis record is moved to trash and can be restored.`, {
-        title: "Move record to trash?",
+      !(await prompts.confirm(t().movedToTrashDetail({ title, table: props.tableName }), {
+        title: t().moveToTrashTitle,
         variant: "danger",
-        confirmText: "Move to trash",
+        confirmText: t().moveToTrash,
       }))
     ) {
       return;
@@ -398,19 +399,13 @@ export default function RecordDetailPanel(props: Props) {
     const intent = recordLauncherIntent(launcher);
     const label = intentLabel(intent);
     const copySummary =
-      launcher.correctionPrefillFieldCount === 0
-        ? "No values are carried over automatically."
-        : `${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"} will be carried over.`;
+      launcher.correctionPrefillFieldCount === 0 ? t().noValuesCarried : t().valuesCarried({ count: launcher.correctionPrefillFieldCount });
     const confirmed = await prompts.confirm(
-      `Create a new editable ${label} Draft linked to this finalized Record?\n\n${copySummary} The original remains unchanged and locked. The new Draft follows the Table's normal numbering rules; Files, other relations, calculated fields, and Documents are not copied.${
-        intent === "cancellation"
-          ? " Grids does not calculate amounts, taxes, or counter-bookings, and it does not generate a Document."
-          : ""
-      }`,
+      t().createLinkedDraftConfirm({ intent: label, copy: copySummary, cancellation: intent === "cancellation" }),
       {
         title: launcher.name,
         icon: intent === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil",
-        confirmText: intent === "cancellation" ? "Create cancellation Draft" : "Create correction Draft",
+        confirmText: intent === "cancellation" ? t().createCancellationDraft : t().createCorrectionDraft,
       },
     );
     if (!confirmed || disposed) return;
@@ -440,35 +435,34 @@ export default function RecordDetailPanel(props: Props) {
       try {
         readiness = await refreshFinalization(rec);
       } catch (error) {
-        prompts.error(error instanceof Error ? error.message : "Could not check Finalization requirements");
+        prompts.error(error instanceof Error ? error.message : t().finalizationRefreshFailed);
         return;
       }
     }
     if (!readiness.enabled) {
-      prompts.error("Finalization is not enabled for this table.");
+      prompts.error(t().finalizationDisabled);
       return;
     }
     if (readiness.missing.length > 0) {
       prompts.error(
-        `Complete these fields before finalizing:\n\n${readiness.missing.map((item) => `• ${item.fieldName}: ${item.message}`).join("\n")}`,
+        t().completeBeforeFinalizing({ fields: readiness.missing.map((item) => `• ${item.fieldName}: ${item.message}`).join("\n") }),
       );
       return;
     }
     if (readiness.mode === "fourEyes") {
       const result = await prompts.form({
-        title: "Request Finalization",
+        title: t().requestFinalization,
         icon: "ti ti-user-check",
-        confirmText: "Request Finalization",
+        confirmText: t().requestFinalization,
         fields: {
           info: {
             type: "info" as const,
-            content:
-              "A different current member of the Table's approver group must review this exact Record version before it can be finalized.",
+            content: t().requestFinalizationInfo,
           },
           comment: {
             type: "text" as const,
-            label: "Comment",
-            description: "Optional context for the reviewer.",
+            label: t().comment,
+            description: t().reviewerContext,
             multiline: true,
             lines: 3,
             maxLength: 2_000,
@@ -480,8 +474,8 @@ export default function RecordDetailPanel(props: Props) {
     }
     const assigned = readiness.assignedOnFinalization.map((item) => item.fieldName);
     const confirmed = await prompts.confirm(
-      `${recordDisplayTitle({ fields: props.fields, record: rec, fieldsByTable: props.fieldsByTable, relationLabels: props.relationLabels, dateConfig: props.dateConfig, viewColumns: props.viewColumns })}\n\n${assigned.length ? `IDs assigned now: ${assigned.join(", ")}\n\n` : ""}After finalization, this record and its files and relations can no longer be changed or removed.`,
-      { title: "Finalize record?", confirmText: "Finalize", variant: "danger" },
+      `${recordDisplayTitle({ fields: props.fields, record: rec, fieldsByTable: props.fieldsByTable, relationLabels: props.relationLabels, dateConfig: props.dateConfig, viewColumns: props.viewColumns })}\n\n${assigned.length ? `${t().idsAssigned({ ids: assigned.join(", ") })}\n\n` : ""}${t().finalizationLockDetail}`,
+      { title: t().finalizeRecordTitle, confirmText: t().finalize, variant: "danger" },
     );
     if (confirmed) finalizeMut.mutate(rec);
   };
@@ -490,26 +484,23 @@ export default function RecordDetailPanel(props: Props) {
     if (resolutionLoading()) return;
     const requestId = finalization()?.request?.id;
     if (!requestId) {
-      prompts.error("The Finalization request changed. Refresh and review the current request.");
+      prompts.error(t().requestChanged);
       return;
     }
     const result = await prompts.form({
-      title: operation === "approve" ? "Approve and finalize Record?" : "Reject Finalization request?",
+      title: operation === "approve" ? t().approveTitle : t().rejectTitle,
       icon: operation === "approve" ? "ti ti-lock-check" : "ti ti-user-x",
-      confirmText: operation === "approve" ? "Approve and finalize" : "Reject request",
+      confirmText: operation === "approve" ? t().approveFinalize : t().rejectRequest,
       ...(operation === "approve" ? { variant: "danger" as const } : {}),
       fields: {
         info: {
           type: "info" as const,
-          content:
-            operation === "approve"
-              ? "Approval immediately finalizes this exact Record version. Its values, files, and relations can no longer be changed or removed."
-              : "The Record remains editable and can be submitted again later.",
+          content: operation === "approve" ? t().approvalDetail : t().rejectionDetail,
         },
         comment: {
           type: "text" as const,
-          label: "Comment",
-          description: "Optional context recorded with this decision.",
+          label: t().comment,
+          description: t().decisionContext,
           multiline: true,
           lines: 3,
           maxLength: 2_000,
@@ -556,10 +547,10 @@ export default function RecordDetailPanel(props: Props) {
                   position="bottom-left"
                   items={[
                     {
-                      sectionLabel: "Danger zone",
+                      sectionLabel: t().dangerZone,
                       items: [
                         {
-                          label: "Move to trash",
+                          label: t().moveToTrash,
                           icon: "ti ti-trash",
                           variant: "danger",
                           action: () => handleDelete(rec),
@@ -573,16 +564,16 @@ export default function RecordDetailPanel(props: Props) {
                     variant="ghost"
                     size="sm"
                     type="button"
-                    label="More record actions"
+                    label={t().moreActions}
                     disabled={deleteMut.loading()}
-                    tooltip="More record actions"
+                    tooltip={t().moreActions}
                   >
                     <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} />
                   </Dropdown.Trigger>
                 </Dropdown.Root>
               </Show>
-              <Tooltip.Anchor content="Close details">
-                <IconButton variant="ghost" size="sm" type="button" label="Close detail panel" onClick={() => props.onClose()}>
+              <Tooltip.Anchor content={t().closeDetails}>
+                <IconButton variant="ghost" size="sm" type="button" label={t().closePanel} onClick={() => props.onClose()}>
                   <i class="ti ti-x" />
                 </IconButton>
               </Tooltip.Anchor>
@@ -600,8 +591,11 @@ export default function RecordDetailPanel(props: Props) {
                         icon: recordLauncherIntent(launcher) === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil",
                         description:
                           launcher.correctionPrefillFieldCount === 0
-                            ? `Create a linked empty ${intentLabel(recordLauncherIntent(launcher))} Draft without changing this final Record.`
-                            : `Create a linked ${intentLabel(recordLauncherIntent(launcher))} Draft and carry over ${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"}.`,
+                            ? t().emptyLinkedDraft({ intent: intentLabel(recordLauncherIntent(launcher)) })
+                            : t().prefilledLinkedDraft({
+                                intent: intentLabel(recordLauncherIntent(launcher)),
+                                count: launcher.correctionPrefillFieldCount,
+                              }),
                         action: () => void handleCreateCorrection(rec, launcher),
                       })),
                     },
@@ -615,18 +609,18 @@ export default function RecordDetailPanel(props: Props) {
                     loading={createCorrectionMut.loading()}
                     loadingLabel={
                       sharedRecordActionIntent() === "cancellation"
-                        ? "Creating cancellation Draft"
+                        ? t().creatingCancellationDraft
                         : sharedRecordActionIntent() === "correction"
-                          ? "Creating correction Draft"
-                          : "Creating linked Draft"
+                          ? t().creatingCorrectionDraft
+                          : t().creatingLinkedDraft
                     }
                   >
                     <i class={sharedRecordActionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"} />
                     {sharedRecordActionIntent() === "cancellation"
-                      ? "Create cancellation"
+                      ? t().createCancellation
                       : sharedRecordActionIntent() === "correction"
-                        ? "Create correction"
-                        : "Create follow-up"}
+                        ? t().createCorrection
+                        : t().createFollowUp}
                   </Dropdown.Trigger>
                 </Dropdown.Root>
               </Show>
@@ -635,11 +629,11 @@ export default function RecordDetailPanel(props: Props) {
                   variant="secondary"
                   size="sm"
                   type="button"
-                  aria-label="Edit record"
+                  aria-label={t().editRecordLabel}
                   onClick={() => handleEdit(rec)}
                   disabled={updateMut.loading()}
                 >
-                  <i class="ti ti-pencil" /> Edit
+                  <i class="ti ti-pencil" /> {t().edit}
                 </Button>
                 <Show when={finalization()?.enabled}>
                   <Show
@@ -651,10 +645,10 @@ export default function RecordDetailPanel(props: Props) {
                         type="button"
                         onClick={() => void handleFinalize(rec)}
                         loading={finalizeMut.loading() || requestFinalizationMut.loading()}
-                        loadingLabel={finalization()?.mode === "fourEyes" ? "Requesting Finalization" : "Finalizing Record"}
+                        loadingLabel={finalization()?.mode === "fourEyes" ? t().requestingFinalization : t().finalizingRecord}
                       >
                         <i class={finalization()?.mode === "fourEyes" ? "ti ti-user-check" : "ti ti-lock"} />
-                        {finalization()?.mode === "fourEyes" ? "Request Finalization" : "Finalize"}
+                        {finalization()?.mode === "fourEyes" ? t().requestFinalization : t().finalize}
                       </Button>
                     }
                   >
@@ -666,9 +660,9 @@ export default function RecordDetailPanel(props: Props) {
                         onClick={() => void resolveFinalizationRequest(rec, "reject")}
                         loading={rejectFinalizationMut.loading()}
                         disabled={resolutionLoading()}
-                        loadingLabel="Rejecting request"
+                        loadingLabel={t().rejectingRequest}
                       >
-                        <i class="ti ti-x" /> Reject
+                        <i class="ti ti-x" /> {t().reject}
                       </Button>
                       <Button
                         variant="primary"
@@ -677,9 +671,9 @@ export default function RecordDetailPanel(props: Props) {
                         onClick={() => void resolveFinalizationRequest(rec, "approve")}
                         loading={approveFinalizationMut.loading()}
                         disabled={resolutionLoading()}
-                        loadingLabel="Finalizing Record"
+                        loadingLabel={t().finalizingRecord}
                       >
-                        <i class="ti ti-lock-check" /> Approve and finalize
+                        <i class="ti ti-lock-check" /> {t().approveFinalize}
                       </Button>
                     </Show>
                   </Show>
@@ -687,7 +681,7 @@ export default function RecordDetailPanel(props: Props) {
               </Show>
               <Show when={props.canWrite && mode() === "trash"}>
                 <Button variant="secondary" size="sm" type="button" onClick={() => handleRestore(rec)} disabled={restoreMut.loading()}>
-                  <i class="ti ti-arrow-back-up" /> Restore
+                  <i class="ti ti-arrow-back-up" /> {t().restore}
                 </Button>
               </Show>
             </>
@@ -706,24 +700,20 @@ export default function RecordDetailPanel(props: Props) {
               !finalizationQuery.error()
             }
           >
-            <NoticeCard
-              tone="neutral"
-              title="Loading Finalization status"
-              detail="Checking whether this Record needs Finalization review."
-            />
+            <NoticeCard tone="neutral" title={t().loadingFinalization} detail={t().checkingFinalization} />
           </Show>
           <Show when={finalizationQueryEnabled() && finalizationQuery.error()}>
             {(error) => (
-              <NoticeCard tone="danger" title="Finalization status unavailable" detail={error().message}>
+              <NoticeCard tone="danger" title={t().finalizationUnavailable} detail={error().message}>
                 <Button
                   variant="secondary"
                   size="sm"
                   type="button"
                   onClick={() => void refreshFinalization(rec).catch(() => undefined)}
                   loading={finalizationQuery.loading() || finalizationQuery.refreshing()}
-                  loadingLabel="Refreshing Finalization"
+                  loadingLabel={t().refreshingFinalization}
                 >
-                  <i class="ti ti-refresh" /> Retry
+                  <i class="ti ti-refresh" /> {t().retry}
                 </Button>
               </NoticeCard>
             )}
@@ -731,8 +721,8 @@ export default function RecordDetailPanel(props: Props) {
           <Show when={finalization()?.request?.status === "pending"}>
             <NoticeCard
               tone="info"
-              title="Finalization requested"
-              detail={`${finalization()!.request!.requestedByDisplayName} requested review on ${formatDateTime(finalization()!.request!.requestedAt)}.${
+              title={t().finalizationRequested}
+              detail={`${t().reviewRequested({ name: finalization()!.request!.requestedByDisplayName, date: formatDateTime(finalization()!.request!.requestedAt) })}${
                 finalization()!.request!.requestComment ? ` ${finalization()!.request!.requestComment}` : ""
               }${finalization()!.resolutionDisabledReason ? ` ${finalization()!.resolutionDisabledReason}` : ""}`}
             />
@@ -744,45 +734,41 @@ export default function RecordDetailPanel(props: Props) {
               type="button"
               onClick={() => void refreshFinalization(rec).catch(() => undefined)}
               loading={finalizationQuery.loading() || finalizationQuery.refreshing()}
-              loadingLabel="Refreshing Finalization"
+              loadingLabel={t().refreshingFinalization}
             >
-              <i class="ti ti-refresh" /> Refresh Finalization
+              <i class="ti ti-refresh" /> {t().refreshFinalization}
             </Button>
           </Show>
           <Show when={finalization()?.request?.status === "rejected" || finalization()?.request?.status === "superseded"}>
             <NoticeCard
               tone="neutral"
-              title={
-                finalization()!.request!.status === "rejected" ? "Finalization request rejected" : "Previous request no longer applies"
-              }
-              detail={`${finalization()!.request!.resolvedByDisplayName ?? "The system"} resolved the request${
-                finalization()!.request!.resolvedAt ? ` on ${formatDateTime(finalization()!.request!.resolvedAt!)}` : ""
-              }.${finalization()!.request!.resolutionComment ? ` ${finalization()!.request!.resolutionComment}` : ""}`}
+              title={finalization()!.request!.status === "rejected" ? t().requestRejected : t().requestSuperseded}
+              detail={`${t().requestResolved({ name: finalization()!.request!.resolvedByDisplayName ?? t().system, date: finalization()!.request!.resolvedAt ? formatDateTime(finalization()!.request!.resolvedAt!) : "" })}${finalization()!.request!.resolutionComment ? ` ${finalization()!.request!.resolutionComment}` : ""}`}
             />
           </Show>
           <Show when={props.detail()?.combinedOrigin}>
             {(origin) => (
-              <DetailPanel.Group label="Combined record source">
-                <DetailPanel.Section title="Combined source" icon="ti ti-stack-2" tone="neutral">
+              <DetailPanel.Group label={t().combinedSourceGroup}>
+                <DetailPanel.Section title={t().combinedSource} icon="ti ti-stack-2" tone="neutral">
                   <DescriptionList
                     layout="rows"
                     size="sm"
                     items={[
                       {
-                        term: "Published from",
+                        term: t().publishedFromLabel,
                         description: `${origin().source.baseName} · ${origin().source.tableName}`,
                       },
                       ...(origin().deletedAt
                         ? [
                             {
-                              term: "Deleted",
+                              term: t().deleted,
                               description: <time dateTime={origin().deletedAt!}>{formatDateTime(origin().deletedAt!)}</time>,
                             },
                           ]
                         : []),
                       {
-                        term: "Access",
-                        description: "Read-only publication. Restore or edit this record in its source table.",
+                        term: t().access,
+                        description: t().readonlyPublication,
                       },
                     ]}
                   />

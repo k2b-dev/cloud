@@ -1,15 +1,17 @@
-import { Button, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip } from "@k2b/ui";
+import { Button, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
+import { workflowMessages } from "./messages";
 import {
-  channelLabels,
   formatWorkflowRunDate as formatDate,
   formatWorkflowRunDuration as formatDuration,
+  workflowChannelLabel,
   workflowStepErrorMessage,
   workflowStepIssueReason,
   workflowStepOutcomeSummary,
   workflowStepPlannedEffects,
+  workflowStepStatusLabel,
   workflowStepStatusTone,
 } from "./workflow-display";
 import type { WorkflowRunDocumentsState } from "./workflow-run-documents";
@@ -28,43 +30,45 @@ export function WorkflowRunExecutionSection(props: {
   canInspectRevision: boolean;
   onInspectRevision: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const startedBy =
     props.provenance?.actorLabel ??
     props.provenance?.serviceAccountLabel ??
-    (props.run.actorUserId ? "User" : props.run.serviceAccountId ? "Service account" : "System");
+    (props.run.actorUserId ? t().user : props.run.serviceAccountId ? t().serviceAccount : t().system);
   return (
     <section class="detail-section">
-      <h3 class="detail-section-label">Execution</h3>
+      <h3 class="detail-section-label">{t().execution}</h3>
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-xs">
-        <dt class="text-dimmed">Channel</dt>
-        <dd class="text-primary">{channelLabels[props.run.channel] ?? props.run.channel}</dd>
-        <dt class="text-dimmed">Started by</dt>
+        <dt class="text-dimmed">{t().channel}</dt>
+        <dd class="text-primary">{workflowChannelLabel(props.run.channel, locale())}</dd>
+        <dt class="text-dimmed">{t().startedBy}</dt>
         <dd class="text-primary">{startedBy}</dd>
-        <dt class="text-dimmed">Run option</dt>
-        <dd class="text-primary">{props.provenance?.launcherName ?? "Direct run"}</dd>
-        <dt class="text-dimmed">Mode</dt>
-        <dd class="text-primary">{props.run.mode === "dryRun" ? "Dry run" : "Execute"}</dd>
-        <dt class="text-dimmed">Revision</dt>
+        <dt class="text-dimmed">{t().runOption}</dt>
+        <dd class="text-primary">{props.provenance?.launcherName ?? t().directRun}</dd>
+        <dt class="text-dimmed">{t().mode}</dt>
+        <dd class="text-primary">{props.run.mode === "dryRun" ? t().dryRun : t().execute}</dd>
+        <dt class="text-dimmed">{t().revision}</dt>
         <dd>
           <Show when={props.canInspectRevision} fallback={<span class="text-primary tabular-nums">{props.run.workflowRevision}</span>}>
             <Button variant="ghost" size="xs" type="button" class="tabular-nums" onClick={props.onInspectRevision}>
-              Revision {props.run.workflowRevision}
+              {t().revisionNumber({ revision: props.run.workflowRevision })}
             </Button>
           </Show>
         </dd>
-        <dt class="text-dimmed">Started</dt>
-        <dd class="text-primary">{formatDate(props.run.startedAt)}</dd>
-        <dt class="text-dimmed">Finished</dt>
-        <dd class="text-primary">{formatDate(props.run.finishedAt)}</dd>
-        <dt class="text-dimmed">Duration</dt>
-        <dd class="text-primary tabular-nums">{formatDuration(props.run)}</dd>
-        <dt class="text-dimmed">Last progress</dt>
-        <dd class="text-primary">{formatDate(props.latestProgressAt)}</dd>
+        <dt class="text-dimmed">{t().started}</dt>
+        <dd class="text-primary">{formatDate(props.run.startedAt, locale())}</dd>
+        <dt class="text-dimmed">{t().finished}</dt>
+        <dd class="text-primary">{formatDate(props.run.finishedAt, locale())}</dd>
+        <dt class="text-dimmed">{t().duration}</dt>
+        <dd class="text-primary tabular-nums">{formatDuration(props.run, locale())}</dd>
+        <dt class="text-dimmed">{t().lastProgress}</dt>
+        <dd class="text-primary">{formatDate(props.latestProgressAt, locale())}</dd>
         <Show when={props.waitingFor}>
           {(summary) => (
             <>
-              <dt class="text-dimmed">Waiting for</dt>
-              <dd class="text-primary">{summary().replace(/^Waiting for\s*/i, "")}</dd>
+              <dt class="text-dimmed">{t().waitingFor}</dt>
+              <dd class="text-primary">{summary().replace(/^(Waiting for|Wartet auf)\s*/i, "")}</dd>
             </>
           )}
         </Show>
@@ -88,11 +92,13 @@ export function WorkflowRunExecutionSection(props: {
 }
 
 export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   return (
     <section class="detail-section">
-      <h3 class="detail-section-label">Input</h3>
+      <h3 class="detail-section-label">{t().input}</h3>
       <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-2 text-xs">
-        <For each={props.inputs} fallback={<span class="text-dimmed">No inputs.</span>}>
+        <For each={props.inputs} fallback={<span class="text-dimmed">{t().noInputs}</span>}>
           {(input) => (
             <>
               <dt class="text-dimmed">{input.label}</dt>
@@ -108,21 +114,23 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
 }
 
 export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[]; truncated: boolean; loading: boolean }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   return (
     <section class="detail-section">
-      <h3 class="detail-section-label">Steps</h3>
+      <h3 class="detail-section-label">{t().steps}</h3>
       <div class="flex flex-col gap-2">
         <For
           each={props.steps}
-          fallback={<Placeholder align="left" class="py-3" description={<>{props.loading ? "Loading steps..." : "No step details."}</>} />}
+          fallback={<Placeholder align="left" class="py-3" description={<>{props.loading ? t().loadingSteps : t().noStepDetails}</>} />}
         >
           {(step) => {
-            const stepError = () => workflowStepErrorMessage(step.outcome);
-            const outcomeSummary = () => workflowStepOutcomeSummary(step.outcome);
+            const stepError = () => workflowStepErrorMessage(step.outcome, locale());
+            const outcomeSummary = () => workflowStepOutcomeSummary(step.outcome, locale());
             const unresolved = () => workflowStepIssueReason(step.outcome) !== null;
             return (
               <div class="grid grid-cols-[auto_1fr_auto] items-start gap-2 py-1 text-xs">
-                <StatusBadge tone={workflowStepStatusTone(step.status)} label={step.status} />
+                <StatusBadge tone={workflowStepStatusTone(step.status)} label={workflowStepStatusLabel(step.status, locale())} />
                 <span class="min-w-0 truncate text-primary">
                   {step.sourcePath.length > 0 ? step.sourcePath.join(".") : step.key} · {step.action ?? step.kind}
                 </span>
@@ -137,7 +145,7 @@ export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[];
                     <p class={`col-span-3 ${unresolved() ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}>{message()}</p>
                   )}
                 </Show>
-                <For each={step.action ? workflowStepPlannedEffects(step.outcome) : []}>
+                <For each={step.action ? workflowStepPlannedEffects(step.outcome, locale()) : []}>
                   {(effect) => (
                     <p class="col-span-3 pl-2 text-primary">
                       <span class="font-medium capitalize">{effect.title}</span>
@@ -153,7 +161,7 @@ export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[];
           }}
         </For>
         <Show when={props.truncated}>
-          <p class="text-xs text-dimmed">Showing the first 500 steps. Additional steps are not shown in this panel.</p>
+          <p class="text-xs text-dimmed">{t().stepsTruncated}</p>
         </Show>
       </div>
     </section>
@@ -170,20 +178,22 @@ export function WorkflowRunDocumentsSection(props: {
   onDownloadAll: () => void;
   onLoadMore: (offset: number) => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   return (
     <section class="detail-section">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="detail-section-label mb-0">Generated documents</h3>
+        <h3 class="detail-section-label mb-0">{t().generatedDocuments}</h3>
         <Show when={props.documents.total > 0}>
           <Button variant="ghost" size="sm" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
-            <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> All
+            <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {t().all}
           </Button>
         </Show>
       </div>
       <div class="mt-3 flex flex-col gap-2">
         <For
           each={props.documents.items}
-          fallback={<Placeholder align="left" class="py-3" description={<>No documents generated by this run.</>} />}
+          fallback={<Placeholder align="left" class="py-3" description={<>{t().noGeneratedDocuments}</>} />}
         >
           {(document) => (
             <div class="grid grid-cols-[auto_1fr_auto] items-center gap-2 py-1 text-xs">
@@ -192,12 +202,12 @@ export function WorkflowRunDocumentsSection(props: {
                 <span class="block truncate text-primary">{document.filename}</span>
                 <span class="block truncate text-dimmed">{document.number}</span>
               </span>
-              <Tooltip.Anchor content="Download document">
+              <Tooltip.Anchor content={t().downloadDocument}>
                 <IconButton
                   variant="ghost"
                   size="sm"
                   type="button"
-                  label={`Download ${document.filename}`}
+                  label={t().downloadNamed({ name: document.filename })}
                   onClick={() => props.onDownload(document)}
                   disabled={props.downloadingDocumentId === document.id}
                 >
@@ -218,7 +228,7 @@ export function WorkflowRunDocumentsSection(props: {
               onClick={() => props.onLoadMore(offset())}
             >
               <i class={props.loadingMore ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} />
-              Load more documents
+              {t().loadMoreDocuments}
             </Button>
           )}
         </Show>

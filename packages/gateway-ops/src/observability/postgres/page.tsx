@@ -1,5 +1,5 @@
 import { ButtonLink, DataPanel, DataTable, type DataTableColumn, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatBytes, formatDateTime as formatDate, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -24,6 +24,7 @@ import {
   type PostgresTableDiagnostic,
 } from "../data/service";
 import PostgresDataFilters from "./_components/PostgresDataFilters.island";
+import { gatewayOpsMessages } from "../../messages";
 
 const normalize = (value: string): string => value.toLowerCase();
 
@@ -55,11 +56,14 @@ const warningGridClass = (count: number): string => {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
   const search = url.searchParams.get("search")?.trim() ?? "";
   const selectedSchema = url.searchParams.get("schema")?.trim() || "all";
   const selectedSort = url.searchParams.get("sort")?.trim() || "size-desc";
-  const [diagnostics, sessions, indexes] = await Promise.all([getPostgresDiagnostics(), listPostgresSessions(), listPostgresIndexes()]);
+  const [diagnostics, sessions, indexes] = await Promise.all([getPostgresDiagnostics(locale), listPostgresSessions(), listPostgresIndexes()]);
   const blockedSessions = sessions.filter((session) => session.blockedBy.length > 0);
   const unnamedSessions = sessions.filter((session) => !session.application).length;
   // Cumulative since the last statistics reset, so this is "not used since
@@ -70,19 +74,19 @@ export default ssr<AuthContext>(async (c) => {
 
   const sessionColumns: DataTableColumn<PostgresSession>[] = [
     { id: "pid", header: "PID", cellClass: "tabular-nums" },
-    { id: "state", header: "State" },
-    { id: "application", header: "Application" },
-    { id: "wait", header: "Waiting on" },
-    { id: "txAge", header: "Transaction", subtitle: "age", align: "right" },
-    { id: "queryAge", header: "Query", subtitle: "age", align: "right" },
-    { id: "query", header: "Statement", cellClass: "max-w-[320px]" },
+    { id: "state", header: t.state },
+    { id: "application", header: t.application },
+    { id: "wait", header: t.waitingOn },
+    { id: "txAge", header: t.transaction, subtitle: t.age, align: "right" },
+    { id: "queryAge", header: t.query, subtitle: t.age, align: "right" },
+    { id: "query", header: t.statement, cellClass: "max-w-[320px]" },
   ];
 
   const indexColumns: DataTableColumn<PostgresIndexDiagnostic>[] = [
-    { id: "index", header: "Index", cellClass: "min-w-[240px]" },
-    { id: "kind", header: "Kind" },
-    { id: "size", header: "Size", align: "right" },
-    { id: "scans", header: "Scans", subtitle: "since reset", align: "right" },
+    { id: "index", header: t.index, cellClass: "min-w-[240px]" },
+    { id: "kind", header: t.kind },
+    { id: "size", header: t.size, align: "right" },
+    { id: "scans", header: t.scans, subtitle: t.sinceReset, align: "right" },
   ];
   const hasCriticalWarning = diagnostics.warnings.some((warning) => warning.tone === "red");
   const searchNeedle = normalize(search);
@@ -150,43 +154,43 @@ export default ssr<AuthContext>(async (c) => {
   };
 
   const tableColumns: DataTableColumn<PostgresTableDiagnostic>[] = [
-    { id: "table", header: "Table", value: (table) => `${table.schema}.${table.name}`, cellClass: "min-w-[220px]" },
+    { id: "table", header: t.table, value: (table) => `${table.schema}.${table.name}`, cellClass: "min-w-[220px]" },
     {
       id: "rows",
-      header: "Rows",
-      subtitle: "estimated",
+      header: t.rows,
+      subtitle: t.estimated,
       value: (table) => table.estimatedRows,
       headerClass: "text-right",
       cellClass: "text-right",
     },
     {
       id: "total",
-      header: "Total",
-      subtitle: "relation",
+      header: t.total,
+      subtitle: t.relation,
       value: (table) => table.totalBytes,
       headerClass: "text-right",
       cellClass: "text-right",
     },
     {
       id: "tableBytes",
-      header: "Table",
-      subtitle: "heap",
+      header: t.table,
+      subtitle: t.heap,
       value: (table) => table.tableBytes,
       headerClass: "text-right",
       cellClass: "text-right",
     },
-    { id: "indexBytes", header: "Indexes", value: (table) => table.indexBytes, headerClass: "text-right", cellClass: "text-right" },
-    { id: "dead", header: "Dead rows", value: (table) => table.deadRows, headerClass: "text-right", cellClass: "text-right" },
-    { id: "analyze", header: "Analyze", value: (table) => table.lastAutoanalyze ?? table.lastAnalyze, cellClass: "whitespace-nowrap" },
-    { id: "warnings", header: "Signals", value: (table) => table.warnings.join(", ") },
+    { id: "indexBytes", header: t.indexes, value: (table) => table.indexBytes, headerClass: "text-right", cellClass: "text-right" },
+    { id: "dead", header: t.deadRows, value: (table) => table.deadRows, headerClass: "text-right", cellClass: "text-right" },
+    { id: "analyze", header: t.analyze, value: (table) => table.lastAutoanalyze ?? table.lastAnalyze, cellClass: "whitespace-nowrap" },
+    { id: "warnings", header: t.signals, value: (table) => table.warnings.join(", ") },
   ];
 
   const extensionColumns: DataTableColumn<PostgresExtensionDiagnostic>[] = [
-    { id: "name", header: "Extension", value: (extension) => extension.name, cellClass: "font-mono text-[11px]" },
-    { id: "status", header: "Status", value: (extension) => extension.installed },
-    { id: "installed", header: "Installed", value: (extension) => extension.installedVersion },
-    { id: "default", header: "Default", value: (extension) => extension.defaultVersion },
-    { id: "comment", header: "Description", value: (extension) => extension.comment, cellClass: "max-w-[34rem]" },
+    { id: "name", header: t.extension, value: (extension) => extension.name, cellClass: "font-mono text-[11px]" },
+    { id: "status", header: t.status, value: (extension) => extension.installed },
+    { id: "installed", header: t.installed, value: (extension) => extension.installedVersion },
+    { id: "default", header: t.default, value: (extension) => extension.defaultVersion },
+    { id: "comment", header: t.description, value: (extension) => extension.comment, cellClass: "max-w-[34rem]" },
   ];
 
   return () => (
@@ -194,20 +198,20 @@ export default ssr<AuthContext>(async (c) => {
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-postgres-title">
           <h1 class="text-base font-semibold text-primary">Postgres</h1>
-          <p class="mt-1 text-xs text-dimmed">Runtime pressure, storage, table statistics, and installed extensions.</p>
+          <p class="mt-1 text-xs text-dimmed">{t.postgresDescription}</p>
         </div>
 
         <StatGrid columns={5}>
           <StatCell
-            label="Storage"
-            value={formatBytes(diagnostics.totalBytes)}
-            sub={`${formatNumber(diagnostics.tables)} tables`}
+            label={t.storage}
+            value={formatBytes(diagnostics.totalBytes, { locale })}
+            sub={t.tablesCount({ count: formatNumber(diagnostics.tables, { locale }) })}
             accent={{ tone: diagnostics.available ? "blue" : "red", icon: "ti ti-database" }}
           />
           <StatCell
-            label="Connections"
-            value={`${formatNumber(diagnostics.runtime.connections)}/${formatNumber(diagnostics.runtime.maxConnections)}`}
-            sub={`${formatNumber(diagnostics.runtime.activeConnections)} active`}
+            label={t.connections}
+            value={`${formatNumber(diagnostics.runtime.connections, { locale })}/${formatNumber(diagnostics.runtime.maxConnections, { locale })}`}
+            sub={t.activeCount({ count: formatNumber(diagnostics.runtime.activeConnections, { locale }) })}
             accent={
               diagnostics.runtime.maxConnections > 0 && diagnostics.runtime.connections / diagnostics.runtime.maxConnections >= 0.8
                 ? { tone: "amber", icon: "ti ti-plug-connected" }
@@ -215,21 +219,21 @@ export default ssr<AuthContext>(async (c) => {
             }
           />
           <StatCell
-            label="Lock waits"
-            value={formatNumber(diagnostics.runtime.waitingLocks)}
-            sub={diagnostics.runtime.waitingLocks ? `${Math.round(diagnostics.runtime.oldestWaitingQuerySeconds)}s oldest query` : "none"}
+            label={t.lockWaits}
+            value={formatNumber(diagnostics.runtime.waitingLocks, { locale })}
+            sub={diagnostics.runtime.waitingLocks ? t.oldestQuerySeconds({ seconds: Math.round(diagnostics.runtime.oldestWaitingQuerySeconds) }) : t.none}
             accent={diagnostics.runtime.waitingLocks ? { tone: "amber", icon: "ti ti-lock" } : undefined}
           />
           <StatCell
-            label="Extensions"
-            value={`${formatNumber(diagnostics.installedExtensions)}/${formatNumber(diagnostics.availableExtensions)}`}
-            sub="installed / available"
+            label={t.extensions}
+            value={`${formatNumber(diagnostics.installedExtensions, { locale })}/${formatNumber(diagnostics.availableExtensions, { locale })}`}
+            sub={t.installedAvailable}
             accent={{ tone: "zinc", icon: "ti ti-plug" }}
           />
           <StatCell
-            label="Warnings"
-            value={formatNumber(diagnostics.warnings.length)}
-            sub={diagnostics.warnings.length ? "needs review" : "none"}
+            label={t.warnings}
+            value={formatNumber(diagnostics.warnings.length, { locale })}
+            sub={diagnostics.warnings.length ? t.needsReview : t.none}
             valueClass={
               hasCriticalWarning
                 ? "text-red-600 dark:text-red-400"
@@ -270,17 +274,14 @@ export default ssr<AuthContext>(async (c) => {
         ) : null}
 
         <section class="paper p-3">
-          <h2 class="text-xs font-semibold text-primary">Storage view</h2>
-          <p class="text-[10px] text-dimmed">
-            Search and schema update charts and table; sorting orders the table. {formatNumber(filteredTables.length)} of{" "}
-            {formatNumber(diagnostics.tableRows.length)} tables match.
-          </p>
+          <h2 class="text-xs font-semibold text-primary">{t.storageView}</h2>
+          <p class="text-[10px] text-dimmed">{t.storageViewDescription({ count: formatNumber(filteredTables.length, { locale }), total: formatNumber(diagnostics.tableRows.length, { locale }) })}</p>
           <div class="mt-2 flex flex-col gap-2">
             <SearchBar
               action={searchAction}
               value={search}
-              placeholder="Search tables or table signals..."
-              ariaLabel="Search Postgres tables"
+              placeholder={t.searchPostgresTables}
+              ariaLabel={t.searchPostgresTablesLabel}
             />
             <PostgresDataFilters search={search} schema={selectedSchema} sort={selectedSort} schemas={schemas} />
           </div>
@@ -288,10 +289,10 @@ export default ssr<AuthContext>(async (c) => {
 
         <section class="grid gap-2 xl:grid-cols-3">
           <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">Size by schema</h2>
-            <p class="text-[10px] text-dimmed">Top schemas within the current table filters.</p>
+            <h2 class="text-xs font-semibold text-primary">{t.sizeBySchema}</h2>
+            <p class="text-[10px] text-dimmed">{t.topSchemasDescription}</p>
             <ObservabilityChart kind="bar" class="mt-2 h-56 text-dimmed" data={schemaChartData} yFormat="bytes" />
-            <nav class="mt-2 flex flex-wrap gap-1" aria-label="Filter tables by schema">
+            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterTablesBySchema}>
               {schemaChartData.slice(0, 5).map((schema) => (
                 <ButtonLink
                   href={postgresFilterHref({ schema: schema.label })}
@@ -305,10 +306,10 @@ export default ssr<AuthContext>(async (c) => {
             </nav>
           </article>
           <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">Largest tables</h2>
-            <p class="text-[10px] text-dimmed">Top 10 within the current table filters.</p>
+            <h2 class="text-xs font-semibold text-primary">{t.largestTables}</h2>
+            <p class="text-[10px] text-dimmed">{t.topTenDescription}</p>
             <ObservabilityChart kind="donut" class="mt-2 h-64 text-dimmed" data={tableChartData} legend />
-            <nav class="mt-2 flex flex-wrap gap-1" aria-label="Inspect a large table">
+            <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.inspectLargeTable}>
               {tableChartData.slice(0, 5).map((table) => (
                 <ButtonLink
                   href={postgresFilterHref({ search: table.label })}
@@ -323,21 +324,21 @@ export default ssr<AuthContext>(async (c) => {
             </nav>
           </article>
           <article class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">Rows by schema</h2>
-            <p class="text-[10px] text-dimmed">Planner row estimates within the current table filters.</p>
+            <h2 class="text-xs font-semibold text-primary">{t.rowsBySchema}</h2>
+            <p class="text-[10px] text-dimmed">{t.plannerRowsDescription}</p>
             <ObservabilityChart kind="bar" class="mt-2 h-56 text-dimmed" data={schemaRowsChartData} yFormat="number" />
           </article>
         </section>
 
         <DataPanel
-          title="Sessions"
+          title={t.sessions}
           subtitle={
             sessions.length === 0
-              ? "No client backends reported"
-              : `${sessions.length} client backends · ${blockedSessions.length} blocked · ${unnamedSessions} unnamed`
+              ? t.noClientBackendsReported
+              : t.sessionSummary({ total: sessions.length, blocked: blockedSessions.length, unnamed: unnamedSessions })
           }
           isEmpty={sessions.length === 0}
-          empty="No client backends are connected."
+          empty={t.noClientBackends}
         >
           <DataTable
             rows={sessions}
@@ -350,7 +351,7 @@ export default ssr<AuthContext>(async (c) => {
                 return (
                   <StatusBadge
                     tone={row.blockedBy.length > 0 ? "error" : row.state === "active" ? "running" : "neutral"}
-                    label={row.blockedBy.length > 0 ? `blocked by ${row.blockedBy.join(", ")}` : (row.state ?? "unknown")}
+                    label={row.blockedBy.length > 0 ? t.blockedBy({ pids: row.blockedBy.join(", ") }) : (row.state ?? t.unknown)}
                     variant="dot"
                   />
                 );
@@ -360,8 +361,8 @@ export default ssr<AuthContext>(async (c) => {
                 ) : (
                   // Cloud does not set application_name yet, so an unattributable
                   // connection is the finding rather than a rendering gap.
-                  <span class="text-[10px] text-amber-600 dark:text-amber-400" title="Connection does not report an application_name">
-                    unnamed
+                  <span class="text-[10px] text-amber-600 dark:text-amber-400" title={t.unnamedConnection}>
+                    {t.unnamed}
                   </span>
                 );
               if (col.id === "txAge")
@@ -382,10 +383,10 @@ export default ssr<AuthContext>(async (c) => {
         </DataPanel>
 
         <DataPanel
-          title="Indexes"
-          subtitle={`Largest ${indexes.length} by size · ${formatBytes(unusedIndexBytes)} in indexes not scanned since the last statistics reset`}
+          title={t.indexes}
+          subtitle={t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) })}
           isEmpty={indexes.length === 0}
-          empty="No user indexes reported."
+          empty={t.noUserIndexes}
         >
           <DataTable
             rows={indexes}
@@ -403,17 +404,17 @@ export default ssr<AuthContext>(async (c) => {
                     </span>
                   </div>
                 );
-              if (col.id === "size") return <span class="text-[10px] tabular-nums text-dimmed">{formatBytes(row.sizeBytes)}</span>;
+              if (col.id === "size") return <span class="text-[10px] tabular-nums text-dimmed">{formatBytes(row.sizeBytes, { locale })}</span>;
               if (col.id === "scans")
                 return (
                   <span
                     class={`text-[10px] tabular-nums ${row.scans === 0 && !row.isPrimary ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}
                   >
-                    {formatNumber(row.scans)}
+                    {formatNumber(row.scans, { locale })}
                   </span>
                 );
               if (col.id === "kind")
-                return <span class="text-[10px] text-dimmed">{row.isPrimary ? "primary" : row.isUnique ? "unique" : "index"}</span>;
+                return <span class="text-[10px] text-dimmed">{row.isPrimary ? t.primary : row.isUnique ? t.unique : t.index.toLowerCase()}</span>;
               return render(value);
             }}
           />
@@ -421,8 +422,8 @@ export default ssr<AuthContext>(async (c) => {
 
         <section class="paper overflow-hidden">
           <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold text-primary">Tables</h2>
-            <p class="text-[10px] text-dimmed">{formatNumber(filteredTables.length)} matching tables. Row counts are planner estimates.</p>
+            <h2 class="text-xs font-semibold text-primary">{t.tables}</h2>
+            <p class="text-[10px] text-dimmed">{t.matchingTables({ count: formatNumber(filteredTables.length, { locale }) })}</p>
           </div>
           <DataTable
             rows={filteredTables}
@@ -432,7 +433,7 @@ export default ssr<AuthContext>(async (c) => {
             hoverRows
             class="max-h-[34rem] overflow-auto"
             rowClass={(table) => (table.warnings.length > 0 ? "bg-amber-500/[0.04]" : "")}
-            empty="No matching tables."
+            empty={t.noMatchingTables}
             renderCell={({ row: table, col, value, render }) => {
               if (col.id === "table") {
                 return (
@@ -443,10 +444,10 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               }
-              if (col.id === "rows" || col.id === "dead") return <span class="tabular-nums">{formatNumber(Number(value ?? 0))}</span>;
+              if (col.id === "rows" || col.id === "dead") return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
               if (col.id === "total" || col.id === "tableBytes" || col.id === "indexBytes")
-                return <span class="tabular-nums">{formatBytes(Number(value ?? 0))}</span>;
-              if (col.id === "analyze") return <span class="text-dimmed">{formatDate(value as string | null)}</span>;
+                return <span class="tabular-nums">{formatBytes(Number(value ?? 0), { locale })}</span>;
+              if (col.id === "analyze") return <span class="text-dimmed">{formatDate(value as string | null, dateConfig)}</span>;
               if (col.id === "warnings") {
                 return table.warnings.length ? (
                   <div class="flex flex-wrap gap-1">
@@ -465,10 +466,8 @@ export default ssr<AuthContext>(async (c) => {
 
         <section class="paper overflow-hidden">
           <div class="px-3 py-2">
-            <h2 class="text-xs font-semibold text-primary">Extensions</h2>
-            <p class="text-[10px] text-dimmed">
-              {formatNumber(diagnostics.installedExtensions)} installed, {formatNumber(diagnostics.availableExtensions)} available.
-            </p>
+            <h2 class="text-xs font-semibold text-primary">{t.extensions}</h2>
+            <p class="text-[10px] text-dimmed">{t.extensionSummary({ installed: formatNumber(diagnostics.installedExtensions, { locale }), available: formatNumber(diagnostics.availableExtensions, { locale }) })}</p>
           </div>
           <DataTable
             rows={filteredExtensions}
@@ -477,16 +476,16 @@ export default ssr<AuthContext>(async (c) => {
             density="compact"
             hoverRows
             class="max-h-80 overflow-auto"
-            empty="No matching extensions."
+            empty={t.noMatchingExtensions}
             renderCell={({ row: extension, col, value, render }) => {
               if (col.id === "status") {
                 return extension.installed ? (
                   <span class="tag bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                     <i class="ti ti-check text-[9px]" />
-                    installed
+                    {t.installed.toLowerCase()}
                   </span>
                 ) : (
-                  <span class="tag bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">available</span>
+                  <span class="tag bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">{t.available}</span>
                 );
               }
               if (col.id === "comment") return <span title={extension.comment ?? undefined}>{extension.comment ?? "-"}</span>;

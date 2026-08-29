@@ -1,5 +1,6 @@
-import { TextInput } from "@k2b/ui";
+import { TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onMount } from "solid-js";
+import { platformMessages } from "../platform-messages";
 
 type SearchBarProps = {
   action?: string;
@@ -12,6 +13,8 @@ type SearchBarProps = {
 
 /** Search bar that filters content via URL query parameter. */
 export default function SearchBar(props: SearchBarProps = {}) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const param = props.param ?? "search";
   const pageParam = props.pageParam ?? "page";
   const [query, setQuery] = createSignal(props.value ?? "");
@@ -59,18 +62,18 @@ export default function SearchBar(props: SearchBarProps = {}) {
       <TextInput
         name={param}
         type="search"
-        placeholder={props.placeholder ?? "Search..."}
-        aria-label={props.ariaLabel ?? "Search"}
+        placeholder={props.placeholder ?? `${t().search}…`}
+        aria-label={props.ariaLabel ?? t().search}
         icon="ti ti-search"
         activeIcon="ti ti-search"
         value={query}
         onValueChange={setQuery}
         clearable
-        clearLabel="Clear search"
+        clearLabel={t().clearSearch}
         onClear={handleClear}
       />
       <button type="submit" class="hidden">
-        Search
+        {t().search}
       </button>
     </form>
   );

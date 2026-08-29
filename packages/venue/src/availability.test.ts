@@ -190,4 +190,21 @@ describe("buildPublicAvailability", () => {
     expect(result.nextOpeningLabel).toContain("Tue");
     expect(result.upcomingOpenings).toHaveLength(0);
   });
+
+  test("formats public availability in the requested locale", () => {
+    const result = project({
+      locale: "de-CH",
+      venue: { openMode: "staffed", timezone: "Europe/Berlin" },
+      assignments: [
+        assignment({
+          templateId: null,
+          startsAt: "2026-07-13T11:00:00.000Z",
+          endsAt: "2026-07-13T13:00:00.000Z",
+        }),
+      ],
+    });
+
+    expect(result.todayLabel).toBe("Heute keine regelmäßigen Öffnungszeiten");
+    expect(result.upcomingOpenings[0]?.title).toBe("Zusätzliche Öffnung");
+  });
 });

@@ -1,13 +1,16 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
+import { authMessages } from "../messages";
 
 type PasswordResetRequestFormProps = {
   redirectTo?: string;
 };
 
 export default function PasswordResetRequestForm(props: PasswordResetRequestFormProps) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [email, setEmail] = createSignal("");
   const [sent, setSent] = createSignal(false);
 
@@ -24,7 +27,7 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
         message?: string;
       } | null;
       if (!res.ok) {
-        throw new Error(data?.message ?? "Failed to request password reset.");
+        throw new Error(data?.message ?? t().resetRequestFailed);
       }
       setSent(true);
     },
@@ -40,13 +43,13 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
     >
       {sent() && (
         <NoticeCard tone="success" icon={false}>
-          If this account can reset a password, a reset link has been sent. The link expires after 15 minutes.
+          {t().resetSent}
         </NoticeCard>
       )}
 
       <TextInput
-        label="Email address"
-        description="Use the email address attached to your organization account."
+        label={t().emailAddress}
+        description={t().organizationEmailDescription}
         placeholder="you@example.org"
         icon="ti ti-mail"
         type="email"
@@ -61,9 +64,9 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel="Sending reset link">
+      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().sendingResetLink}>
         {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
-        Send reset link
+        {t().sendResetLink}
       </Button>
     </form>
   );

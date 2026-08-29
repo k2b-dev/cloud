@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ok } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getDateConfig, jsonResponse, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, jsonResponse } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
 import { describeRoute } from "hono-openapi";
@@ -17,11 +17,13 @@ import { projectPublicIds } from "../service/public-resources";
 import { validateRecordQueryForFields } from "../service/query-validation";
 import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "../service/record-access";
 import { compileGqlToRecordQuery, executeGqlSource } from "./gql-runtime";
+import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { PublicTableQueryResponseSchema, toPublicTableQueryResponse } from "./public-dto";
 import { fromPublicRecordQuery, type PublicTableQueryBody, PublicTableQueryBodySchema } from "./public-query";
 import { queryAdmissionMiddleware } from "./query-admission";
 import { publicIdParam } from "./route-params";
+import { v } from "./validator";
 
 type TableQueryBody = Omit<PublicTableQueryBody, "query" | "filePreviewFieldIds"> & { query?: RecordQuery; filePreviewFieldIds?: string[] };
 type TableQueryResponse = ZodInfer<typeof TableQueryResponseSchema>;
@@ -462,7 +464,7 @@ export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) 
     async (c) => {
       const body = c.req.valid("json");
       const tablePublicId = publicIdParam(c, "tableId");
-      if (!tablePublicId) return c.json({ message: "Table not found" }, 404);
+      if (!tablePublicId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const target = await loadQueryTarget(c, deps, tablePublicId, body.viewId);
       if (!target.ok) return c.json({ message: target.message }, target.status);
 
@@ -473,7 +475,7 @@ export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) 
       if (!query.ok) return c.json({ message: query.error.message }, query.error.status);
       const fieldIds = new Map(tableFields.map((field) => [field.shortId, field.id]));
       const filePreviewFieldIds = body.filePreviewFieldIds?.map((id) => fieldIds.get(id));
-      if (filePreviewFieldIds?.some((id) => !id)) return c.json({ message: "Unknown field ID" }, 400);
+      if (filePreviewFieldIds?.some((id) => !id)) return c.json({ message: apiMessages(c).unknownFieldId }, 400);
       const internalBody: TableQueryBody = {
         ...body,
         query: query.data,
@@ -487,7 +489,7 @@ export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) 
         resolved.data.fields ? Promise.resolve(resolved.data.fields) : Promise.resolve(tableFields),
         deps.dateConfig(c),
       ]);
-      const queryValid = deps.validateQuery(target.data.table.id, resolved.data.query, resolvedFields);
+      const queryValid = deps.validateQuery(target.data.table.id, resolved.data.query, resolvedFields, getLocale(c));
       if (!queryValid.ok) return c.json({ message: queryValid.error.message }, queryValid.error.status);
 
       const viewer = {
@@ -524,7 +526,7 @@ export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) 
       } catch (error) {
         if (isBoundedQueryTimeoutError(error)) {
           c.header("Retry-After", "1");
-          return c.json({ message: "Query took too long. Narrow the query and retry." }, 503);
+          return c.json({ message: apiMessages(c).queryTimeout }, 503);
         }
         throw error;
       }

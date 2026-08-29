@@ -1,27 +1,26 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts } from "@k2b/ui";
+import { Button, prompts, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { hostMessages } from "./messages";
 
 const SyncHosts = () => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const mutation = mutations.create<void, void>({
     mutation: async () => {
       const response = await apiClient.sync.$post();
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message ?? "Failed to start host sync.");
+        throw new Error(t().failedStartSync);
       }
     },
     onSuccess: async () => {
-      const showLogs = await prompts.confirm(
-        "Host sync started. FreeIPA remains the source of truth. The local mirror updates when the sync job finishes. Open the sync logs now?",
-        {
-          title: "Sync started",
-          icon: "ti ti-refresh",
-          confirmText: "Show logs",
-          cancelText: "Stay here",
-        },
-      );
+      const showLogs = await prompts.confirm(t().syncStartedBody, {
+        title: t().syncStarted,
+        icon: "ti ti-refresh",
+        confirmText: t().showLogs,
+        cancelText: t().stayHere,
+      });
       if (showLogs) {
         navigateTo("/admin/observability/logs?source=ipa-hosts:sync");
       }
@@ -30,24 +29,21 @@ const SyncHosts = () => {
   });
 
   const handleClick = async () => {
-    const confirmed = await prompts.confirm(
-      "This starts an immediate host sync from FreeIPA. FreeIPA remains the source of truth and the local mirror will be refreshed from it.",
-      {
-        title: "Run host sync",
-        icon: "ti ti-refresh",
-        confirmText: "Start sync",
-        cancelText: "Cancel",
-      },
-    );
+    const confirmed = await prompts.confirm(t().syncConfirm, {
+      title: t().runSync,
+      icon: "ti ti-refresh",
+      confirmText: t().startSync,
+      cancelText: t().cancel,
+    });
     if (confirmed) {
       await mutation.mutate();
     }
   };
 
   return (
-    <Button size="sm" variant="secondary" onClick={handleClick} loading={mutation.loading()} loadingLabel="Starting sync">
+    <Button size="sm" variant="secondary" onClick={handleClick} loading={mutation.loading()} loadingLabel={t().startingSync}>
       <i class="ti ti-refresh" aria-hidden="true" />
-      Sync now
+      {t().syncNow}
     </Button>
   );
 };

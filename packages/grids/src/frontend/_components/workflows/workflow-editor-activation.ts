@@ -1,13 +1,19 @@
 import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
+import { workflowMessages } from "./messages";
 
-export const automaticTriggerSummary = (plan: WorkflowBoundPlan): string | null => {
+export const automaticTriggerSummary = (plan: WorkflowBoundPlan, locale = "en"): string | null => {
+  const t = workflowMessages.resolve([locale]).t;
   const labels = plan.triggers.flatMap((trigger) => {
     if (trigger.kind === "schedule") {
-      return [`Schedule ${String(trigger.config.cron ?? "")} (${String(trigger.config.timezone ?? "UTC")})`];
+      return [t.scheduleTriggerSummary({ cron: String(trigger.config.cron ?? ""), timezone: String(trigger.config.timezone ?? "UTC") })];
     }
     if (trigger.kind === "recordEvent") {
-      const table = typeof trigger.config.table === "string" ? ` in ${trigger.config.table}` : "";
-      return [`Record ${String(trigger.config.event ?? "updated")}${table}`];
+      return [
+        t.recordTriggerSummary({
+          event: String(trigger.config.event ?? "updated"),
+          ...(typeof trigger.config.table === "string" ? { table: trigger.config.table } : {}),
+        }),
+      ];
     }
     return [];
   });

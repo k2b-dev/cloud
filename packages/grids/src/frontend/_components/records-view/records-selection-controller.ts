@@ -5,6 +5,7 @@ import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQue
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkspaceRecordDetail as WorkspaceRecordDetail } from "../workspace/workspace-public-state-model";
 import { visibleIdsFromResult } from "./live-refresh";
+import { recordsViewMessages } from "./messages";
 
 type RecordsSelectionControllerOptions = {
   tableId: string;
@@ -16,6 +17,7 @@ type RecordsSelectionControllerOptions = {
   initialRecord: GridRecord | null;
   initialDetail: WorkspaceRecordDetail | null;
   syncUrl: (options: { replace: boolean }) => void;
+  locale?: Accessor<string>;
 };
 
 const emptyDetail = (recordId: string): WorkspaceRecordDetail => ({
@@ -29,6 +31,7 @@ const emptyDetail = (recordId: string): WorkspaceRecordDetail => ({
 });
 
 export const createRecordsSelectionController = (options: RecordsSelectionControllerOptions) => {
+  const t = () => recordsViewMessages.resolve([options.locale?.() ?? "en"]).t;
   const [fetchedRecord, setFetchedRecord] = createSignal<GridRecord | null>(null);
   const [detail, setDetail] = createSignal<WorkspaceRecordDetail | null>(options.initialDetail);
   const [failure, setFailure] = createSignal<Error | null>(null);
@@ -70,7 +73,7 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
       signal ? { init: { signal } } : undefined,
     );
     if (response.status === 403 || response.status === 404) return emptyDetail(recordId);
-    if (!response.ok) throw new Error(await errorMessage(response, "Could not load record details"));
+    if (!response.ok) throw new Error(await errorMessage(response, t().loadRecordDetailsFailed));
     return response.json();
   };
 
@@ -89,7 +92,7 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
         if (options.selectedRecordId() === recordId) setDetail(next);
       })
       .catch((error: unknown) => {
-        if (!abort.signal.aborted) prompts.error(error instanceof Error ? error.message : "Could not load record details");
+        if (!abort.signal.aborted) prompts.error(error instanceof Error ? error.message : t().loadRecordDetailsFailed);
       });
   });
 
@@ -121,13 +124,13 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
           if (options.selectedRecordId() === recordId) close();
           return;
         }
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not load record"));
+        if (!response.ok) throw new Error(await errorMessage(response, t().loadRecordFailed));
         const next = await response.json();
         if (options.selectedRecordId() === recordId) setFetchedRecord(() => next);
       })
       .catch((error: unknown) => {
         if (abort.signal.aborted || options.selectedRecordId() !== recordId) return;
-        setFailure(error instanceof Error ? error : new Error("Could not load record."));
+        setFailure(error instanceof Error ? error : new Error(t().loadRecordFailedFallback));
       });
   });
 
@@ -164,7 +167,7 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
     try {
       setDetail(await loadDetail(recordId));
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Could not refresh record details");
+      prompts.error(error instanceof Error ? error.message : t().refreshRecordDetailsFailed);
     }
   };
 

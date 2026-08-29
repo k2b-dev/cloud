@@ -1,6 +1,7 @@
 import type { DataTableColumn } from "@k2b/ui";
 import { Show, type Accessor, type JSX } from "solid-js";
 import type { PulseCurrentState, PulseMetricSeries, PulseRecordedEvent } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import {
   compactDateWithDelta,
   dimensionsSummary,
@@ -32,6 +33,7 @@ const dimensionsTitle = (dimensions: Record<string, string>) =>
     .join(", ");
 
 export const createSignalTableCellRenderers = (options: SignalTableCellRendererOptions): SignalTableCellRenderers => {
+  const t = usePulseMessages();
   const renderSourceLink = (sourceId: string | null | undefined) => {
     if (!sourceId) return <span class="text-xs text-dimmed">-</span>;
     return (
@@ -42,10 +44,10 @@ export const createSignalTableCellRenderers = (options: SignalTableCellRendererO
           event.stopPropagation();
           options.openSource(sourceId);
         }}
-        title="Open source"
+        title={t().openSource}
       >
         <i class="ti ti-database-share shrink-0" />
-        <span class="truncate">{options.sourceNameById().get(sourceId) ?? "Unknown source"}</span>
+        <span class="truncate">{options.sourceNameById().get(sourceId) ?? t().unknownSource}</span>
       </button>
     );
   };

@@ -4,6 +4,7 @@ import { evaluate, renderResult } from "../formula/evaluator";
 import { isFormulaError } from "../formula/functions";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
+import { authoringText } from "./authoring-messages";
 import { applyComputedProjections, buildComputedProjections, readableComputedTargetRecordAccess } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
@@ -14,6 +15,7 @@ import type { Field, GridRecord } from "./types";
 type DbRow = Record<string, unknown>;
 
 type FormulaPreviewDiagnostic = {
+  code: "formula.empty" | "formula.syntax" | "formula.unknown_field" | "formula.evaluation";
   severity: "error" | "info";
   message: string;
 };
@@ -118,11 +120,12 @@ export const checkFormula = async (params: {
   recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<FormulaPreviewResult>> => {
+  const t = authoringText(params.dateConfig?.locale);
   const expression = params.expression.trim();
   if (!expression) {
     return ok({
       ok: true,
-      diagnostics: [{ severity: "info", message: "Type a formula to preview the latest records." }],
+      diagnostics: [{ code: "formula.empty", severity: "info", message: t.formulaPreviewHint }],
       fields: [],
       rows: [],
     });
@@ -132,7 +135,7 @@ export const checkFormula = async (params: {
   if (!parsed.ok) {
     return ok({
       ok: false,
-      diagnostics: [{ severity: "error", message: `Parse error: ${parsed.error}` }],
+      diagnostics: [{ code: "formula.syntax", severity: "error", message: t.formulaSyntax({ detail: parsed.error }) }],
       fields: [],
       rows: [],
     });
@@ -145,7 +148,11 @@ export const checkFormula = async (params: {
   if (missing.length > 0) {
     return ok({
       ok: false,
-      diagnostics: missing.map((ref) => ({ severity: "error", message: `Unknown field reference: ${ref}` })),
+      diagnostics: missing.map((ref) => ({
+        code: "formula.unknown_field" as const,
+        severity: "error" as const,
+        message: t.formulaUnknownField({ field: ref }),
+      })),
       fields: [],
       rows: [],
     });
@@ -179,7 +186,7 @@ export const checkFormula = async (params: {
 
   return ok({
     ok: !hasPreviewError,
-    diagnostics: hasPreviewError ? [{ severity: "error", message: "Some preview rows return a formula error." }] : [],
+    diagnostics: hasPreviewError ? [{ code: "formula.evaluation", severity: "error", message: t.formulaEvaluation }] : [],
     fields: resolved.map((field) => ({
       id: field.id,
       shortId: field.shortId,

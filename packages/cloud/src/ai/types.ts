@@ -943,6 +943,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           projectFiles?: AiProjectFileToolSource;
           skillFiles?: AiSkillFileToolSource;
           selectedModel?: AiResolvedModel;
+          locale?: string;
+          timeZone?: string;
         },
       ): Promise<z.infer<TOutput>>;
     }

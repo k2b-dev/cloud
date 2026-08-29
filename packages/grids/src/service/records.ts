@@ -12,6 +12,7 @@ import {
   buildFormulaSqlProjections,
   readableComputedTargetRecordAccess,
 } from "./computed-projections";
+import { getGridsCrudMessages } from "./crud-messages";
 import { isMultiSelectField, storageOf } from "./field-storage";
 import { listByTable as listFields } from "./fields";
 import { listFirstImagePreviews } from "./files";
@@ -113,14 +114,16 @@ export const list = async (params: {
   signal?: AbortSignal;
   dedupeKey?: string;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<RecordList>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
   const fields = params.fields ?? (await listFields(params.tableId));
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields);
 
   // Filter compilation
   const filterCompiled = compileFilter(params.filter ?? null, fields, { timeZone: params.dateConfig?.timeZone });
-  if (!filterCompiled.ok) return fail(err.badInput(`filter: ${filterCompiled.error}`));
+  if (!filterCompiled.ok) return fail(err.badInput(messages.filterInvalid({ detail: filterCompiled.error })));
   const filterClause = renderClause(filterCompiled.clause);
   const formulaWhereCompiled = params.formulaWhere
     ? compileFormulaPredicateAstToSql(params.formulaWhere, {
@@ -129,7 +132,8 @@ export const list = async (params: {
         dateConfig: params.dateConfig,
       })
     : null;
-  if (formulaWhereCompiled && !formulaWhereCompiled.ok) return fail(err.badInput(`formula where: ${formulaWhereCompiled.error}`));
+  if (formulaWhereCompiled && !formulaWhereCompiled.ok)
+    return fail(err.badInput(messages.formulaWhereInvalid({ detail: formulaWhereCompiled.error })));
   const searchCompiled = await compileSearchClause({
     search: params.search ?? null,
     fields,
@@ -147,10 +151,10 @@ export const list = async (params: {
   const expectedCursorLength = effectiveSort.length;
   const decodedCursor = params.cursor ? decodeCursor(params.cursor, expectedCursorLength) : null;
   if (params.cursor && !decodedCursor) {
-    return fail(err.badInput("invalid cursor"));
+    return fail(err.badInput(messages.invalidCursor));
   }
   const sortCompiled = compileSort(effectiveSort, fields, decodedCursor);
-  if (!sortCompiled.ok) return fail(err.badInput(`sort: ${sortCompiled.error}`));
+  if (!sortCompiled.ok) return fail(err.badInput(messages.sortInvalid({ detail: sortCompiled.error })));
   const { orderBy, cursorWhere, cursorSelect, encodeCursorFromRow } = sortCompiled.result;
 
   // table_id / deleted_at must be qualified — both `r.records`,
@@ -309,7 +313,9 @@ export const group = async (params: {
   signal?: AbortSignal;
   dedupeKey?: string;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<{ buckets: GroupBucket[]; nextCursor: string | null; explode: boolean }>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const fields = params.fields ?? (await listFields(params.tableId));
 
   // Cursor: keys-only (group rows have no id; the tuple itself is unique).
@@ -317,10 +323,10 @@ export const group = async (params: {
   if (params.cursor) {
     try {
       const parsed = JSON.parse(params.cursor) as { k?: unknown[] };
-      if (!Array.isArray(parsed.k)) return fail(err.badInput("invalid cursor"));
+      if (!Array.isArray(parsed.k)) return fail(err.badInput(messages.invalidCursor));
       cursorKeys = { keys: parsed.k };
     } catch {
-      return fail(err.badInput("invalid cursor"));
+      return fail(err.badInput(messages.invalidCursor));
     }
   }
 
@@ -353,7 +359,7 @@ export const group = async (params: {
     timeZone: params.dateConfig?.timeZone,
     dateConfig: params.dateConfig,
   });
-  if (!compiled.ok) return fail(err.badInput(compiled.error));
+  if (!compiled.ok) return fail(err.badInput(messages.groupInvalid({ detail: compiled.error })));
 
   const rows = await runBoundedQuery<DbRow>(compiled.query, RECORD_QUERY_TIMEOUT_MS, params.signal, params.dedupeKey);
   const hasMore = rows.length > limit;
@@ -426,11 +432,13 @@ export const aggregate = async (params: {
   signal?: AbortSignal;
   dedupeKey?: string;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<Record<string, unknown>>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const fields = params.fields ?? (await listFields(params.tableId));
 
   const filterCompiled = compileFilter(params.filter ?? null, fields, { timeZone: params.dateConfig?.timeZone });
-  if (!filterCompiled.ok) return fail(err.badInput(`filter: ${filterCompiled.error}`));
+  if (!filterCompiled.ok) return fail(err.badInput(messages.filterInvalid({ detail: filterCompiled.error })));
   const filterClause = renderClause(filterCompiled.clause);
   const formulaWhereCompiled = params.formulaWhere
     ? compileFormulaPredicateAstToSql(params.formulaWhere, {
@@ -440,7 +448,7 @@ export const aggregate = async (params: {
       })
     : null;
   if (formulaWhereCompiled && !formulaWhereCompiled.ok) {
-    return fail(err.badInput(`formula where: ${formulaWhereCompiled.error}`));
+    return fail(err.badInput(messages.formulaWhereInvalid({ detail: formulaWhereCompiled.error })));
   }
   const searchCompiled = await compileSearchClause({
     search: params.search ?? null,
@@ -453,7 +461,7 @@ export const aggregate = async (params: {
   const needsDeletedRows = recordMetaRequiresDeletedRows(params.recordMeta ?? null);
 
   const aggCompiled = compileAggregates(params.requests, fields);
-  if (!aggCompiled.ok) return fail(err.badInput(`aggregate: ${aggCompiled.error}`));
+  if (!aggCompiled.ok) return fail(err.badInput(messages.aggregateInvalid({ detail: aggCompiled.error })));
 
   if (aggCompiled.columns.length === 0) return ok({});
 

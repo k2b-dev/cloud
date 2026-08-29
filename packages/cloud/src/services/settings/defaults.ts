@@ -10,6 +10,8 @@
  */
 
 import type { SettingKind, SettingOption } from "../../contracts/shared";
+import type { AppSettingPresentationTranslation } from "../../contracts/settings-types";
+import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../../shared/locale";
 import { migrateLegacyMustacheTemplate, validateLiquidTemplate } from "../../shared/template-rendering";
 import { CORE_SETTINGS } from "./core-settings";
 
@@ -22,6 +24,10 @@ type SettingCommon = {
   label?: string;
   description: string;
   placeholder?: string;
+  presentation?: {
+    baseLocale: string;
+    translations: Readonly<Record<string, AppSettingPresentationTranslation>>;
+  };
   group: string;
   envFallback?: SettingEnvResolver;
   envBootstrap?: SettingEnvResolver;
@@ -79,7 +85,23 @@ export type SettingValidationResult = { ok: true; value: SettingDef["default"] }
  * `group` is derived from the dotted prefix: the bespoke admin UIs ignore it,
  * but legacy paths still group by it.
  */
-export const toLegacySettingDefs = (settings: Record<string, unknown>): SettingDef[] =>
+const compilePresentation = (value: unknown, baseLocale: string, key: string): SettingCommon["presentation"] => {
+  if (!value) return undefined;
+  const catalog = value as { translations?: Readonly<Record<string, AppSettingPresentationTranslation>> };
+  const translations: Record<string, AppSettingPresentationTranslation> = {};
+  for (const [locale, translation] of Object.entries(catalog.translations ?? {})) {
+    const canonical = canonicalLocale(locale);
+    if (!canonical) throw new Error(`Setting "${key}" presentation locale ${JSON.stringify(locale)} is invalid`);
+    if (canonical === baseLocale) throw new Error(`Setting "${key}" presentation must not repeat base locale ${baseLocale}`);
+    if (translations[canonical]) throw new Error(`Setting "${key}" presentation locale ${canonical} is duplicated`);
+    translations[canonical] = Object.freeze({ ...translation });
+  }
+  return Object.freeze({ baseLocale, translations: Object.freeze(translations) });
+};
+
+export const toLegacySettingDefs = (settings: Record<string, unknown>, requestedBaseLocale = "en"): SettingDef[] => {
+  const baseLocale = normalizeLocale(requestedBaseLocale);
+  return (
   Object.entries(settings).map(([key, def]) => {
     const d = def as Record<string, unknown>;
     return {
@@ -92,6 +114,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>): SettingD
       label: d.label as string | undefined,
       description: (d.description as string | undefined) ?? "",
       placeholder: d.placeholder as string | undefined,
+      presentation: compilePresentation(d.presentation, baseLocale, key),
       envFallback: d.envFallback as (() => unknown) | undefined,
       envBootstrap: d.envBootstrap as (() => unknown) | undefined,
       templateVars: d.templateVars as readonly string[] | undefined,
@@ -99,7 +122,33 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>): SettingD
       min: d.min as number | undefined,
       max: d.max as number | undefined,
     } as SettingDef;
-  });
+  })
+  );
+};
+
+export const resolveSettingPresentation = (
+  def: SettingDef,
+  requestedLocale?: string,
+): { label: string; description: string; placeholder?: string; options?: SettingOption[] } => {
+  const base = {
+    label: getSettingLabel(def),
+    description: def.description,
+    placeholder: def.placeholder,
+    options: "options" in def ? def.options : undefined,
+  };
+  if (!requestedLocale || !def.presentation) return base;
+  const overlays = new Map(Object.entries(def.presentation.translations));
+  const resolved = localeFallbackChain(requestedLocale, def.presentation.baseLocale)
+    .filter((locale) => locale !== def.presentation!.baseLocale)
+    .reverse()
+    .reduce((value, locale) => ({ ...value, ...overlays.get(locale) }), {} as AppSettingPresentationTranslation);
+  return {
+    label: resolved.label ?? base.label,
+    description: resolved.description ?? base.description,
+    placeholder: resolved.placeholder ?? base.placeholder,
+    options: base.options?.map((option) => ({ ...option, label: resolved.options?.[option.value] ?? option.label })),
+  };
+};
 
 export const SETTINGS: SettingDef[] = [
   // Platform settings — app.*, ai.*, gotenberg.*, freeipa.*, user.*,

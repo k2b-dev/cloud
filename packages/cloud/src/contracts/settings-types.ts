@@ -18,9 +18,22 @@ import type { SettingOption } from "../services/settings/defaults";
 
 type EnvResolver = () => unknown;
 
+export type AppSettingPresentationTranslation = {
+  label?: string;
+  description?: string;
+  placeholder?: string;
+  options?: Readonly<Record<string, string>>;
+};
+
+export type AppSettingPresentation = {
+  /** Partial overlays; the complete fields use the application's presentation base locale. */
+  translations: Readonly<Record<string, AppSettingPresentationTranslation>>;
+};
+
 type CommonDef = {
   label?: string;
   description?: string;
+  presentation?: AppSettingPresentation;
   envBootstrap?: EnvResolver;
   envFallback?: EnvResolver;
 };

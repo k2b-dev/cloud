@@ -22,10 +22,13 @@ export const sourceKindIcon = (kind: PulseSource["kind"]): string => {
   return "ti ti-database-share";
 };
 
-export const sourceStatus = (source: PulseSource) => {
-  if (!source.enabled) return { label: "Paused", dot: "bg-zinc-400", text: "text-dimmed", icon: "ti ti-player-pause" };
-  if (source.lastError) return { label: "Error", dot: "bg-red-500", text: "text-red-600 dark:text-red-300", icon: "ti ti-alert-circle" };
+export const sourceStatus = (
+  source: PulseSource,
+  labels = { paused: "Paused", error: "Error", healthy: "Healthy", waiting: "Waiting" },
+) => {
+  if (!source.enabled) return { label: labels.paused, dot: "bg-zinc-400", text: "text-dimmed", icon: "ti ti-player-pause" };
+  if (source.lastError) return { label: labels.error, dot: "bg-red-500", text: "text-red-600 dark:text-red-300", icon: "ti ti-alert-circle" };
   if (source.lastSeenAt)
-    return { label: "Healthy", dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300", icon: "ti ti-check" };
-  return { label: "Waiting", dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", icon: "ti ti-clock" };
+    return { label: labels.healthy, dot: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300", icon: "ti ti-check" };
+  return { label: labels.waiting, dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-300", icon: "ti ti-clock" };
 };

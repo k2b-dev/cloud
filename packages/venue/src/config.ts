@@ -5,6 +5,15 @@ export const app = defineApp({
   name: "Venues",
   icon: "ti ti-building-carousel",
   description: "Venues, opening hours, staffing shifts, public status pages, and anonymous feedback.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Standorte",
+        description: "Standorte, Öffnungszeiten, Schichten, öffentliche Statusseiten und anonymes Feedback.",
+      },
+    },
+  },
   appearance: { accent: "#a16207", background: { from: "#d97706", to: "#f59e0b", angle: 135 } },
   basePath: "/app/venue",
   baseUrl: "http://app-venue:3000",

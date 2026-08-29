@@ -1,5 +1,6 @@
-import { IconButton, prompts } from "@k2b/ui";
+import { IconButton, prompts, useLocale } from "@k2b/ui";
 import { createEffect, For, Show } from "solid-js";
+import { platformMessages } from "./platform-messages";
 
 export type AppLaunchpadApp = {
   id: string;
@@ -139,11 +140,13 @@ export function AppLaunchpadProvider(props: AppLaunchpadContext) {
 }
 
 export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail" | "header" | "menu"; label?: string }) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const open = () => openAppLaunchpad(props.apps, props.legalLinks);
 
   if (props.variant === "rail") {
     return (
-      <button type="button" class="rail-item" title={props.label ?? "Apps"} aria-label={props.label ?? "Open apps"} onClick={open}>
+      <button type="button" class="rail-item" title={props.label ?? t().apps} aria-label={props.label ?? t().openApps} onClick={open}>
         <i class="ti ti-grid-dots text-base" />
       </button>
     );
@@ -151,7 +154,7 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
 
   if (props.variant === "header") {
     return (
-      <IconButton label={props.label ?? "Open apps"} onClick={open}>
+      <IconButton label={props.label ?? t().openApps} onClick={open}>
         <i class="ti ti-grid-dots text-lg" />
       </IconButton>
     );
@@ -164,7 +167,7 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
       onClick={open}
     >
       <i class="ti ti-grid-dots" />
-      <span>{props.label ?? "Apps"}</span>
+      <span>{props.label ?? t().apps}</span>
     </button>
   );
 }

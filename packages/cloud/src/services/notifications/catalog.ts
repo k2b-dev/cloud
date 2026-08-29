@@ -10,7 +10,7 @@ const log = logger("notifications:catalog");
 
 const isSchemaUnavailable = (error: unknown): boolean => {
   if (!error || typeof error !== "object" || !("code" in error)) return false;
-  return error.code === "42P01" || error.code === "3F000";
+  return error.code === "42P01" || error.code === "42703" || error.code === "3F000";
 };
 
 const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: typeof sql = sql): Promise<void> => {
@@ -18,11 +18,12 @@ const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: 
   const required = toPgTextArray([...(definition.delivery?.required ?? [])]);
   await db`
     INSERT INTO notifications.definitions (
-      id, app_id, kind, label, description, recipient_kind,
+      id, app_id, kind, label, description, presentation, recipient_kind,
       recommended_channels, required_channels, active, last_seen_at, updated_at
     ) VALUES (
       ${definition.id}, ${definition.appId}, ${definition.key}, ${definition.label},
-      ${definition.description}, ${definition.recipient}, ${recommended}::text[],
+      ${definition.description}, (${definition.presentation ? JSON.stringify(definition.presentation) : null}::text)::jsonb,
+      ${definition.recipient}, ${recommended}::text[],
       ${required}::text[], true, now(), now()
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -30,6 +31,7 @@ const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: 
       kind = EXCLUDED.kind,
       label = EXCLUDED.label,
       description = EXCLUDED.description,
+      presentation = EXCLUDED.presentation,
       recipient_kind = EXCLUDED.recipient_kind,
       recommended_channels = EXCLUDED.recommended_channels,
       required_channels = EXCLUDED.required_channels,

@@ -4,6 +4,7 @@ import { type FormValidationRule, FormValidationRuleSchema } from "../contracts"
 import { logAudit } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { validateFormConfig } from "./form-config-validation";
+import { formMessagesFor } from "./form-messages";
 import { parseJsonbRow } from "./jsonb";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { requireStoredTableWritable } from "./parent-checks";
@@ -267,19 +268,20 @@ const isFormFieldEligible = (field: Field): boolean => {
  * field config. Never persisted — the page calls this fresh on every
  * request so schema changes flow through without manual sync.
  */
-export const buildDefaultForm = async (tableId: string): Promise<Form> => {
+export const buildDefaultForm = async (tableId: string, locale?: string): Promise<Form> => {
+  const t = formMessagesFor(locale);
   const fields = await listFields(tableId);
   const eligible = fields.filter(isFormFieldEligible);
   const config: FormConfig = {
-    title: "Quick add",
+    title: t.quickAdd,
     fields: eligible.map((f) => ({
       kind: "user_input" as const,
       fieldId: f.id,
       required: f.required,
       defaultValue: f.defaultValue,
     })),
-    submitLabel: "Save",
-    successMessage: "Saved",
+    submitLabel: t.save,
+    successMessage: t.saved,
   };
   return {
     id: `default-${tableId}`,
@@ -287,7 +289,7 @@ export const buildDefaultForm = async (tableId: string): Promise<Form> => {
     // since it's accessed by the always-derived `default-<tableId>` id.
     shortId: "",
     tableId,
-    name: "Quick add",
+    name: t.quickAdd,
     config,
     publicToken: null,
     isActive: true,
@@ -401,12 +403,15 @@ const generatePublicToken = (): string => {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
 };
 
-export const create = async (input: CreateFormInput, actorId: string | null): Promise<Result<Form>> => {
+export const create = async (input: CreateFormInput, actorId: string | null, locale?: string): Promise<Result<Form>> => {
+  const t = formMessagesFor(locale);
   const name = input.name.trim();
-  if (name.length === 0) return fail(err.badInput("name required"));
+  if (name.length === 0) return fail(err.badInput(t.nameRequired));
   const writable = await requireStoredTableWritable(input.tableId);
-  if (!writable.ok) return writable;
-  const configValid = await validateFormConfig(input.tableId, input.config ?? { fields: [] });
+  if (!writable.ok) {
+    return fail({ ...writable.error, message: writable.error.code === "BAD_INPUT" ? t.storedTableRequired : t.tableUnavailable });
+  }
+  const configValid = await validateFormConfig(input.tableId, input.config ?? { fields: [] }, locale);
   if (!configValid.ok) return configValid;
   const config = configValid.data;
   const publicToken = input.isPublic ? generatePublicToken() : null;
@@ -424,7 +429,7 @@ export const create = async (input: CreateFormInput, actorId: string | null): Pr
       )
       RETURNING ${COLS}
     `;
-    if (!r) throw new Error("insert returned no row");
+    if (!r) throw err.internal(t.insertFailed);
     return r;
   }, "idx_grids_forms_short_id");
   const form = mapRow(row);
@@ -450,16 +455,17 @@ type UpdateFormInput = {
   position?: number;
 };
 
-export const update = async (id: string, input: UpdateFormInput, actorId: string | null): Promise<Result<Form>> => {
+export const update = async (id: string, input: UpdateFormInput, actorId: string | null, locale?: string): Promise<Result<Form>> => {
+  const t = formMessagesFor(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("Form"));
+  if (!existing) return fail({ ...err.notFound("Form"), message: t.formNotFound });
 
   const name = input.name?.trim();
-  if (name !== undefined && name.length === 0) return fail(err.badInput("name cannot be empty"));
+  if (name !== undefined && name.length === 0) return fail(err.badInput(t.nameEmpty));
 
   let config: FormConfig | undefined;
   if (input.config !== undefined) {
-    const configValid = await validateFormConfig(existing.tableId, input.config);
+    const configValid = await validateFormConfig(existing.tableId, input.config, locale);
     if (!configValid.ok) return configValid;
     config = configValid.data;
   }
@@ -480,7 +486,7 @@ export const update = async (id: string, input: UpdateFormInput, actorId: string
     WHERE id = ${id}::uuid AND deleted_at IS NULL
     RETURNING ${COLS}
   `;
-  if (!row) return fail(err.internal("update failed"));
+  if (!row) return fail(err.internal(t.updateFailed));
   const form = mapRow(row);
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "updated", diff: { form: { old: existing.name, new: form.name } } });
   await emitTableMetadataEvent(existing.tableId, {
@@ -496,9 +502,10 @@ export const update = async (id: string, input: UpdateFormInput, actorId: string
  * because getByPublicToken filters out tombstoned rows. The form remains
  * restorable.
  */
-export const remove = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const remove = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const t = formMessagesFor(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("Form"));
+  if (!existing) return fail({ ...err.notFound("Form"), message: t.formNotFound });
   await sql`UPDATE grids.forms SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" });
   await emitTableMetadataEvent(existing.tableId, {
@@ -509,16 +516,17 @@ export const remove = async (id: string, actorId: string | null): Promise<Result
   return ok();
 };
 
-export const restore = async (id: string, actorId: string | null): Promise<Result<Form>> => {
+export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<Form>> => {
+  const t = formMessagesFor(locale);
   const existing = await get(id, { includeDeleted: true });
-  if (!existing) return fail(err.notFound("Form"));
+  if (!existing) return fail({ ...err.notFound("Form"), message: t.formNotFound });
   if (existing.deletedAt === null) return ok(existing);
   const [row] = await sql<DbRow[]>`
     UPDATE grids.forms SET deleted_at = NULL, updated_at = now()
     WHERE id = ${id}::uuid
     RETURNING ${COLS}
   `;
-  if (!row) return fail(err.internal("restore failed"));
+  if (!row) return fail(err.internal(t.restoreFailed));
   const form = mapRow(row);
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" });
   await emitTableMetadataEvent(existing.tableId, {

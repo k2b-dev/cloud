@@ -18,6 +18,7 @@ import { type Accessor, createSignal, onCleanup, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { jsonFetch } from "./helpers";
 import type { GrantableLevel } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type BaseSettingsDialogOptions = {
   base: PulseBase;
@@ -42,6 +43,7 @@ export type BaseSettingsSaveResult = "failed" | "persisted";
 export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) =>
   prompts.dialog<void>(
     (close) => {
+      const t = usePulseMessages();
       let disposed = false;
       const [name, setName] = createSignal(options.base.name);
       const [description, setDescription] = createSignal(options.base.description ?? "");
@@ -108,12 +110,12 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
         try {
           await access.invalidate();
         } catch {
-          if (!disposed) toast.error("Access changed, but the access list could not be refreshed.");
+          if (!disposed) toast.error(t().accessChangedRefreshFailed);
         }
       };
       const requireAccessWritable = () => {
         if (!access.stale() && !access.loading() && !access.refreshing()) return;
-        throw new Error("Refresh the access list before making more changes.");
+        throw new Error(t().refreshAccessBeforeChanges);
       };
       const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
         requireAccessWritable();
@@ -159,37 +161,37 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       return (
         <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">
           <SettingsModal
-            title="Pulse settings"
+            title={t().pulseSettings}
             subtitle={options.base.name}
             icon="ti ti-activity-heartbeat"
             onClose={() => void requestClose()}
-            closeLabel="Close"
+            closeLabel={t().close}
           >
-            <SettingsModal.Group title="Base">
-              <SettingsModal.Tab id="general" title="General" icon="ti ti-settings" description="Name and context shown across Pulse.">
-                <SettingsGroup title="Identity" description="Describe this telemetry workspace for everyone who can access it.">
+            <SettingsModal.Group title={t().base}>
+              <SettingsModal.Tab id="general" title={t().general} icon="ti ti-settings" description={t().baseGeneralDescription}>
+                <SettingsGroup title={t().identity} description={t().identityDescription}>
                   <SettingsField
-                    label="Name"
-                    description="Shown in the Pulse sidebar, overview, and dashboard headers."
-                    error={() => (!name().trim() ? "Name is required" : undefined)}
+                    label={t().name}
+                    description={t().baseNameDescription}
+                    error={() => (!name().trim() ? t().nameRequired : undefined)}
                     changed={() => name() !== saved().name}
                   >
-                    <TextInput aria-label="Name" icon="ti ti-tag" value={name} onValueChange={setName} required />
+                    <TextInput aria-label={t().name} icon="ti ti-tag" value={name} onValueChange={setName} required />
                   </SettingsField>
                   <SettingsField
-                    label="Description"
-                    description="Optional context for teammates who can access this Pulse base."
+                    label={t().description}
+                    description={t().baseDescriptionDescription}
                     error={() => undefined}
                     changed={() => description() !== saved().description}
                   >
                     <TextInput
-                      aria-label="Description"
+                      aria-label={t().description}
                       icon="ti ti-align-left"
                       value={description}
                       onValueChange={setDescription}
                       multiline
                       lines={3}
-                      placeholder="Optional"
+                      placeholder={t().optional}
                     />
                   </SettingsField>
                 </SettingsGroup>
@@ -204,13 +206,13 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Sharing">
-              <SettingsModal.Tab id="access" title="Access" icon="ti ti-users" description="Permission changes save immediately.">
-                <SettingsGroup title="People and groups" description="Grant view, edit, or management access to this Pulse base.">
+            <SettingsModal.Group title={t().sharing}>
+              <SettingsModal.Tab id="access" title={t().access} icon="ti ti-users" description={t().accessDescription}>
+                <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
                   <Show when={access.data() && access.error()}>
                     {(error) => (
-                      <NoticeCard tone="danger" title="Access could not be refreshed" detail={error().message}>
-                        <Button onClick={() => void access.refresh()}>Retry</Button>
+                      <NoticeCard tone="danger" title={t().accessRefreshFailed} detail={error().message}>
+                        <Button onClick={() => void access.refresh()}>{t().retry}</Button>
                       </NoticeCard>
                     )}
                   </Show>
@@ -220,10 +222,10 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     fallback={
                       <NoticeCard
                         tone={access.error() ? "danger" : "neutral"}
-                        title={access.error() ? "Access could not be loaded" : "Loading access"}
+                        title={access.error() ? t().accessLoadFailed : t().loadingAccess}
                         detail={access.error()?.message}
                       >
-                        {access.error() ? <Button onClick={() => void access.refresh()}>Retry</Button> : null}
+                        {access.error() ? <Button onClick={() => void access.refresh()}>{t().retry}</Button> : null}
                       </NoticeCard>
                     }
                   >
@@ -235,9 +237,9 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                         updateAccess={updateAccess}
                         revokeAccess={revokeAccess}
                         allowedLevels={[
-                          { level: "read", label: "View", icon: "ti-eye" },
-                          { level: "write", label: "Edit", icon: "ti-pencil" },
-                          { level: "admin", label: "Manage", icon: "ti-shield" },
+                          { level: "read", label: t().view, icon: "ti-eye" },
+                          { level: "write", label: t().edit, icon: "ti-pencil" },
+                          { level: "admin", label: t().manage, icon: "ti-shield" },
                         ]}
                       />
                     )}
@@ -246,24 +248,24 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Data">
+            <SettingsModal.Group title={t().data}>
               <SettingsModal.Tab
                 id="retention"
-                title="Retention"
+                title={t().retention}
                 icon="ti ti-clock-cog"
-                description="Bound raw, aggregated, and sensitive telemetry independently."
+                description={t().retentionTabDescription}
               >
-                <SettingsGroup title="Data lifecycle" description="Choose how long each class of telemetry remains available.">
+                <SettingsGroup title={t().dataLifecycle} description={t().dataLifecycleDescription}>
                   <SettingsField
-                    label="Raw data retention"
-                    description="Pulse keeps raw metrics, events, and states for this many days before cleanup."
+                    label={t().rawDataRetention}
+                    description={t().rawDataRetentionDescription}
                     error={() => undefined}
                     changed={() => draft().rawRetentionDays !== saved().rawRetentionDays}
                   >
                     <NumberInput
-                      aria-label="Raw data retention"
+                      aria-label={t().rawDataRetention}
                       icon="ti ti-clock"
-                      suffix="days"
+                      suffix={t().days}
                       min={1}
                       max={3650}
                       value={rawRetentionDays}
@@ -272,15 +274,15 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Hourly rollup retention"
-                    description="Pulse keeps hourly aggregates after raw metric samples expire."
+                    label={t().hourlyRollupRetention}
+                    description={t().hourlyRollupRetentionDescription}
                     error={() => undefined}
                     changed={() => draft().rollupRetentionDays !== saved().rollupRetentionDays}
                   >
                     <NumberInput
-                      aria-label="Hourly rollup retention"
+                      aria-label={t().hourlyRollupRetention}
                       icon="ti ti-chart-histogram"
-                      suffix="days"
+                      suffix={t().days}
                       min={1}
                       max={3650}
                       value={rollupRetentionDays}
@@ -289,15 +291,15 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Sensitive event retention"
-                    description="Pulse clears classified fields after this many hours while preserving the event itself."
+                    label={t().sensitiveEventRetention}
+                    description={t().sensitiveEventRetentionDescription}
                     error={() => undefined}
                     changed={() => draft().sensitiveRetentionHours !== saved().sensitiveRetentionHours}
                   >
                     <NumberInput
-                      aria-label="Sensitive event retention"
+                      aria-label={t().sensitiveEventRetention}
                       icon="ti ti-shield-lock"
-                      suffix="hours"
+                      suffix={t().hours}
                       min={1}
                       max={8760}
                       value={sensitiveRetentionHours}
@@ -317,17 +319,17 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Lifecycle">
+            <SettingsModal.Group title={t().lifecycle}>
               <SettingsModal.Tab
                 id="danger"
-                title="Danger zone"
+                title={t().dangerZone}
                 icon="ti ti-alert-triangle"
                 tone="danger"
-                description="Destructive actions for this Pulse base."
+                description={t().destructiveBaseActions}
               >
                 <SettingsGroup
-                  title="Clear telemetry"
-                  description="Remove observed metrics, events, states, resources, and scrape history while keeping configuration."
+                  title={t().clearTelemetry}
+                  description={t().clearTelemetryDescription}
                 >
                   <SettingsGroup.Action>
                     <Button
@@ -338,13 +340,13 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       onClick={() => void options.clearBaseData()}
                     >
                       <i class="ti ti-eraser text-sm" />
-                      Clear telemetry
+                      {t().clearTelemetry}
                     </Button>
                   </SettingsGroup.Action>
                 </SettingsGroup>
                 <SettingsGroup
-                  title="Delete Pulse base"
-                  description="Permanently remove sources, dashboards, saved queries, telemetry, access, and ingest keys."
+                  title={t().deletePulseBase}
+                  description={t().deletePulseBaseDescription}
                 >
                   <SettingsGroup.Action>
                     <Button
@@ -355,7 +357,7 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
                       onClick={() => void options.deleteBase().then((deleted) => deleted && close())}
                     >
                       <i class="ti ti-trash text-sm" />
-                      Delete Pulse base
+                      {t().deletePulseBase}
                     </Button>
                   </SettingsGroup.Action>
                 </SettingsGroup>

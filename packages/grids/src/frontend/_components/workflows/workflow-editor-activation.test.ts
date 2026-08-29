@@ -38,6 +38,7 @@ describe("workflow automatic trigger activation", () => {
         ]),
       ),
     ).toBe("Schedule 0 8 * * * (Europe/Berlin)\nRecord updated in Loans");
+    expect(automaticTriggerSummary(plan([schedule()]), "de-CH")).toBe("Zeitplan 0 8 * * * (Europe/Berlin)");
   });
 
   test("confirms the first activation and newly added automatic triggers", () => {

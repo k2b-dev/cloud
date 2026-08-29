@@ -6,6 +6,15 @@ export const app = defineApp({
   name: "Accounts",
   icon: "ti ti-users-group",
   description: "Manage account access, groups, and account requests.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Konten",
+        description: "Konten, Gruppen, Zugriffe und Kontoanfragen verwalten.",
+      },
+    },
+  },
   appearance: { accent: "#4f46e5", background: { from: "#6366f1" } },
   basePath: "/app/accounts",
   baseUrl: "http://app-accounts:3000",

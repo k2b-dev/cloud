@@ -33,12 +33,23 @@ const expectedTopics = [
   "grids-workflows",
   "grids-permissions",
   "grids-evidence-exports",
+  "grids-retention-preservation",
   "grids-operations-troubleshooting",
 ];
 
 describe("grids help", () => {
   test("keeps every established topic in its existing order", () => {
     expect(gridsHelp.documents.map((document) => document.id)).toEqual(expectedTopics);
+
+    const english = gridsHelp.documentsByLocale?.en ?? [];
+    const german = gridsHelp.documentsByLocale?.de ?? [];
+    expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
+    for (const document of german) {
+      const base = english.find((candidate) => candidate.id === document.id);
+      expect(base).toBeDefined();
+      expect(document.icon).toBe(base!.icon!);
+      expect(document.order).toBe(base!.order);
+    }
   });
 
   test("serves the established reference content from Markdown", () => {
@@ -55,7 +66,9 @@ describe("grids help", () => {
   });
 
   test("keeps implementation stack details out of end-user help", () => {
-    const markdown = gridsHelp.documents.map((document) => gridsHelp.getMarkdown(document.id)).join("\n");
+    const markdown = ["en", "de"]
+      .flatMap((locale) => gridsHelp.documents.map((document) => gridsHelp.getMarkdown(document.id, locale)))
+      .join("\n");
 
     for (const implementationTerm of [
       /\bGotenberg\b/i,
@@ -192,5 +205,29 @@ describe("grids help", () => {
       const parsed = parseFormula(source);
       expect(parsed.ok, source).toBe(true);
     }
+  });
+
+  test("serves every article in German for regional locales", () => {
+    for (const id of expectedTopics) {
+      const german = gridsHelp.getMarkdown(id, "de");
+      expect(german, `${id} should have German Markdown`).toBeDefined();
+      expect(german, `${id} should resolve de-CH through de`).toBe(gridsHelp.getMarkdown(id, "de-CH"));
+      expect(german!.trim().length, `${id} should have complete German content`).toBeGreaterThan(100);
+    }
+    expect(gridsHelp.getMarkdown("grids-overview", "de-CH")).toContain("Mit Grids verwaltet ein Team");
+    expect(gridsHelp.getMarkdown("grids-workflows", "de-CH")).toContain("Ein Workflow benötigt keinen YAML-Trigger");
+    expect(gridsHelp.getMarkdown("grids-retention-preservation", "de-CH")).toContain("Mindestaufbewahrung");
+  });
+
+  test("keeps fenced technical examples identical across locales", () => {
+    const codeBlocks = (markdown: string | undefined) => markdown?.match(/```[\s\S]*?```/g) ?? [];
+
+    for (const id of expectedTopics) {
+      expect(codeBlocks(gridsHelp.getMarkdown(id, "de")), id).toEqual(codeBlocks(gridsHelp.getMarkdown(id, "en")));
+    }
+  });
+
+  test("falls back to English for unsupported locales", () => {
+    expect(gridsHelp.getMarkdown("grids-overview", "fr")).toBe(gridsHelp.getMarkdown("grids-overview"));
   });
 });

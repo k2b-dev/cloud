@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { captureRecordEventSnapshot, enqueueRecordEvent, notifyRecordEventOutbox } from "./record-event-outbox";
 import { insertWithShortIdForDb } from "./short-id";
@@ -67,10 +68,11 @@ const parseCursor = (cursor: string | null | undefined): [string, string] | null
   }
 };
 
-const normalizeBody = (body: string): Result<string> => {
+const normalizeBody = (body: string, locale?: string): Result<string> => {
+  const messages = getGridsCrudMessages(locale);
   const normalized = body.trim();
-  if (!normalized) return fail(err.badInput("Comment text is required."));
-  if (normalized.length > MAX_BODY_LENGTH) return fail(err.badInput(`Comments may contain at most ${MAX_BODY_LENGTH} characters.`));
+  if (!normalized) return fail(err.badInput(messages.commentRequired));
+  if (normalized.length > MAX_BODY_LENGTH) return fail(err.badInput(messages.commentTooLong({ max: MAX_BODY_LENGTH })));
   return ok(normalized);
 };
 
@@ -81,10 +83,12 @@ export const list = async (params: {
   recordAccess: AuthorizedRecordAccess;
   cursor?: string | null;
   limit?: number;
+  locale?: string;
 }): Promise<Result<RecordCommentPage>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const limit = Math.min(Math.max(params.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
   const cursor = parseCursor(params.cursor);
-  if (params.cursor && !cursor) return fail(err.badInput("Invalid comment cursor."));
+  if (params.cursor && !cursor) return fail(err.badInput(messages.invalidCommentCursor));
   const rows = await sql<CommentRow[]>`
     SELECT comment.id::text, comment.short_id,
            comment.author_user_id::text,
@@ -124,9 +128,11 @@ export const create = async (params: {
   actorUserId: string | null;
   body: string;
   recordAccess: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<RecordComment>> => {
-  if (!params.actorUserId) return fail(err.forbidden("Comments require a Cloud user account."));
-  const body = normalizeBody(params.body);
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorUserId) return fail(err.forbidden(messages.commentsRequireUser));
+  const body = normalizeBody(params.body, params.locale);
   if (!body.ok) return body;
 
   let outboxId: string | null = null;
@@ -182,7 +188,7 @@ export const create = async (params: {
     });
     return mapRow(row);
   });
-  if (!created) return fail(err.notFound("Record"));
+  if (!created) return fail(err.notFound(messages.record));
   if (outboxId) notifyRecordEventOutbox(outboxId);
   return ok(created);
 };
@@ -260,14 +266,15 @@ export const update = async (params: {
   canModerate: boolean;
   body: string;
   recordAccess: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<RecordComment>> => {
-  if (!params.actorUserId) return fail(err.forbidden("Comments require a Cloud user account."));
-  const body = normalizeBody(params.body);
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorUserId) return fail(err.forbidden(messages.commentsRequireUser));
+  const body = normalizeBody(params.body, params.locale);
   if (!body.ok) return body;
   const existing = await existingForMutation(params);
-  if (!existing || existing.deleted_at) return fail(err.notFound("Comment"));
-  if (!params.canModerate && existing.author_user_id !== params.actorUserId)
-    return fail(err.forbidden("You can only edit your own comments."));
+  if (!existing || existing.deleted_at) return fail(err.notFound(messages.comment));
+  if (!params.canModerate && existing.author_user_id !== params.actorUserId) return fail(err.forbidden(messages.editOwnComments));
   const result = await sql`
     UPDATE grids.record_comments
     SET body = ${body.data}, updated_at = now()
@@ -276,9 +283,9 @@ export const update = async (params: {
       AND record_id = ${params.recordId}::uuid
       AND deleted_at IS NULL
   `;
-  if (result.count !== 1) return fail(err.notFound("Comment"));
+  if (result.count !== 1) return fail(err.notFound(messages.comment));
   const updated = await getById(params);
-  return updated ? ok(updated) : fail(err.notFound("Comment"));
+  return updated ? ok(updated) : fail(err.notFound(messages.comment));
 };
 
 export const remove = async (params: {
@@ -289,12 +296,13 @@ export const remove = async (params: {
   actorUserId: string | null;
   canModerate: boolean;
   recordAccess: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<void>> => {
-  if (!params.actorUserId) return fail(err.forbidden("Comments require a Cloud user account."));
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorUserId) return fail(err.forbidden(messages.commentsRequireUser));
   const existing = await existingForMutation(params);
-  if (!existing || existing.deleted_at) return fail(err.notFound("Comment"));
-  if (!params.canModerate && existing.author_user_id !== params.actorUserId)
-    return fail(err.forbidden("You can only delete your own comments."));
+  if (!existing || existing.deleted_at) return fail(err.notFound(messages.comment));
+  if (!params.canModerate && existing.author_user_id !== params.actorUserId) return fail(err.forbidden(messages.deleteOwnComments));
   const result = await sql`
     UPDATE grids.record_comments
     SET deleted_at = now(), updated_at = now()
@@ -303,5 +311,5 @@ export const remove = async (params: {
       AND record_id = ${params.recordId}::uuid
       AND deleted_at IS NULL
   `;
-  return result.count === 1 ? ok() : fail(err.notFound("Comment"));
+  return result.count === 1 ? ok() : fail(err.notFound(messages.comment));
 };

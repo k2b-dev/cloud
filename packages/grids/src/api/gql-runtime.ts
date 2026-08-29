@@ -23,11 +23,13 @@ import {
 } from "../query-dsl/source-plan";
 import type { DslQueryAst } from "../query-dsl/types";
 import { gridsService } from "../service";
+import { authoringText, isGermanAuthoringLocale } from "../service/authoring-messages";
 import type { FederatedRevisionScope } from "../service/federated-tables";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "../service/gql-resolver-context";
 import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "../service/record-access";
 import type { Field, Table } from "../service/types";
 import { type GqlRuntimeOperation, type GqlRuntimeTracer, traceGqlRuntime } from "./gql-observability";
+import { apiMessages, apiMessagesForLocale } from "./messages";
 import { actorViewerFor, type GridsAccessContext, gateBaseAtAccess, gridsAccessContext } from "./permissions";
 import { runWithQueryAdmission, runWithQueryAdmissionSignal } from "./query-admission";
 
@@ -42,6 +44,29 @@ export type GridsGqlRuntimeContext = {
   access: GridsAccessContext;
   dateConfig: DateContext;
   signal: AbortSignal;
+};
+
+export type GqlDiagnosticCode = "gql.syntax" | "gql.context" | "gql.resolution" | "gql.execution" | "gql.cursor" | "gql.access";
+
+export const gqlDiagnosticsForLocale = (
+  diagnostics: DslQueryPreviewDiagnostic[],
+  locale: string | undefined,
+  code: GqlDiagnosticCode,
+): DslQueryPreviewDiagnostic[] => {
+  const t = authoringText(locale);
+  const localizedMessage =
+    code === "gql.syntax"
+      ? t.gqlSyntax
+      : code === "gql.context"
+        ? t.gqlContext
+        : code === "gql.execution"
+          ? t.gqlExecution
+          : t.gqlResolution;
+  return diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    code,
+    message: isGermanAuthoringLocale(locale) ? localizedMessage : diagnostic.message,
+  }));
 };
 
 export type PermissionedGqlResolverContext = DslResolverContext & {
@@ -223,18 +248,28 @@ const previewResolvedGqlPlan = async (
     authorizedRecordAccessByTableId: options.authorizedRecordAccessByTableId,
     ...(Object.hasOwn(options, "primaryRecordAccess") ? { primaryRecordAccess: options.primaryRecordAccess } : {}),
   });
-  return result.ok ? result.data : { ok: false, diagnostics: [dslPreviewDiagnosticForCompilerError(plan, result.error.message)] };
+  return result.ok
+    ? result.data
+    : {
+        ok: false,
+        diagnostics: gqlDiagnosticsForLocale(
+          [dslPreviewDiagnosticForCompilerError(plan, result.error.message)],
+          runtime.dateConfig.locale,
+          "gql.execution",
+        ),
+      };
 };
 
 const decodeRuntimeCursor = (
   token: string | undefined,
   fingerprint: string,
   signingKey: string,
+  invalidMessage: string,
 ): { ok: true; cursor: DslResultCursor | null } | { ok: false; diagnostics: DslQueryPreviewDiagnostic[] } => {
   if (!token) return { ok: true, cursor: null };
   const cursor = decodeDslResultCursor(token, signingKey);
   if (!cursor || cursor.fingerprint !== fingerprint) {
-    return { ok: false, diagnostics: [{ message: "The result cursor is invalid or no longer matches this query." }] };
+    return { ok: false, diagnostics: [{ code: "gql.cursor", message: invalidMessage }] };
   }
   return { ok: true, cursor };
 };
@@ -265,14 +300,19 @@ export const canonicalGqlSource = async (
   { ok: true; source: string; tableId: string; plan: DslResolvedSqlQueryPlan } | { ok: false; diagnostics: DslQueryPreviewDiagnostic[] }
 > => {
   const parsed = parseGridsQueryDsl(body.query);
-  if (!parsed.ok) return { ok: false, diagnostics: parsed.diagnostics };
+  if (!parsed.ok) return { ok: false, diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, getDateConfig(c).locale, "gql.syntax") };
   const bound = bindDslQueryContext(parsed.ast);
-  if (!bound.ok) return { ok: false, diagnostics: [{ line: 1, message: bound.error }] };
+  if (!bound.ok)
+    return {
+      ok: false,
+      diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], getDateConfig(c).locale, "gql.context"),
+    };
 
   const ctx = await buildPermissionedGqlResolverContext(c, baseId, body.currentTableId, body.currentSource, bound.ast);
   const ast = sourceAst(bound.ast, body.currentSource, ctx);
   const canonical = canonicalizeDslQuery(ast, ctx);
-  if (!canonical.ok) return { ok: false, diagnostics: canonical.diagnostics };
+  if (!canonical.ok)
+    return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   return { ok: true, source: canonical.source, tableId: canonical.plan.tableId, plan: canonical.plan };
 };
 
@@ -318,13 +358,19 @@ const executeGqlSourceUnadmitted = async (
     const parsed = parseGridsQueryDsl(body.query);
     timings.parseMs = performance.now() - parseStartedAt;
     if (!parsed.ok) {
-      const response = { ok: false as const, diagnostics: parsed.diagnostics };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, runtime.dateConfig.locale, "gql.syntax"),
+      };
       await endTrace({ stage: "parse", outcome: "diagnostic", response });
       return { ok: true as const, response };
     }
     const bound = bindDslQueryContext(parsed.ast, options.context);
     if (!bound.ok) {
-      const response = { ok: false as const, diagnostics: [{ line: 1, message: bound.error }] };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], runtime.dateConfig.locale, "gql.context"),
+      };
       await endTrace({ stage: "parse", outcome: "diagnostic", response });
       return { ok: true as const, response };
     }
@@ -342,14 +388,20 @@ const executeGqlSourceUnadmitted = async (
     const ast = sourceAst(bound.ast, body.currentSource, ctx);
     const canonical = canonicalizeDslQuery(ast, ctx);
     if (!canonical.ok) {
-      const response = { ok: false as const, diagnostics: canonical.diagnostics };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, runtime.dateConfig.locale, "gql.resolution"),
+      };
       timings.resolveMs = performance.now() - resolveStartedAt;
       await endTrace({ stage: "resolve", outcome: "diagnostic", response });
       return { ok: true as const, response };
     }
     const resolved = resolveDslQueryToQueryPlan(ast, ctx);
     if (!resolved.ok) {
-      const response = { ok: false as const, diagnostics: resolved.diagnostics };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale(resolved.diagnostics, runtime.dateConfig.locale, "gql.resolution"),
+      };
       timings.resolveMs = performance.now() - resolveStartedAt;
       await endTrace({ stage: "resolve", outcome: "diagnostic", response });
       return { ok: true as const, response };
@@ -365,7 +417,12 @@ const executeGqlSourceUnadmitted = async (
       canonicalSource: canonical.source,
       scope: await cursorScopeForPlan(sourceScope, resolved.plan, ctx.fieldsByTableId),
     });
-    const decodedCursor = decodeRuntimeCursor(body.cursor, cursorFingerprint, cursorSigningKey);
+    const decodedCursor = decodeRuntimeCursor(
+      body.cursor,
+      cursorFingerprint,
+      cursorSigningKey,
+      apiMessagesForLocale(runtime.dateConfig.locale).resultCursorInvalid,
+    );
     if (!decodedCursor.ok) {
       const response = { ok: false as const, diagnostics: decodedCursor.diagnostics };
       timings.resolveMs = performance.now() - resolveStartedAt;
@@ -453,7 +510,7 @@ const executeSavedViewSourceUnadmitted = async (
     const inaccessibleView = async () => {
       const response = {
         ok: false as const,
-        diagnostics: [{ message: "View not found or you do not have permission to access it." }],
+        diagnostics: [{ code: "gql.access" as const, message: apiMessagesForLocale(runtime.dateConfig.locale).viewInaccessible }],
       };
       await trace.end({ stage: "resolve", outcome: "diagnostic", response });
       return response;
@@ -465,13 +522,19 @@ const executeSavedViewSourceUnadmitted = async (
     if (!access.ok) return inaccessibleView();
     const parsed = parseGridsQueryDsl(view.source);
     if (!parsed.ok) {
-      const response = { ok: false as const, diagnostics: parsed.diagnostics };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, runtime.dateConfig.locale, "gql.syntax"),
+      };
       await trace.end({ stage: "parse", outcome: "diagnostic", response });
       return response;
     }
     const bound = bindDslQueryContext(parsed.ast);
     if (!bound.ok) {
-      const response = { ok: false as const, diagnostics: [{ line: 1, message: bound.error }] };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], runtime.dateConfig.locale, "gql.context"),
+      };
       await trace.end({ stage: "parse", outcome: "diagnostic", response });
       return response;
     }
@@ -483,7 +546,10 @@ const executeSavedViewSourceUnadmitted = async (
     });
     const resolved = resolveDslQueryToQueryPlan(bound.ast, context);
     if (!resolved.ok) {
-      const response = { ok: false as const, diagnostics: resolved.diagnostics };
+      const response = {
+        ok: false as const,
+        diagnostics: gqlDiagnosticsForLocale(resolved.diagnostics, runtime.dateConfig.locale, "gql.resolution"),
+      };
       await trace.end({ stage: "resolve", outcome: "diagnostic", response });
       return response;
     }
@@ -519,7 +585,12 @@ const executeSavedViewSourceUnadmitted = async (
       canonicalSource: options.recordId ? `${view.source}\n# record:${options.recordId}` : view.source,
       scope: await cursorScopeForPlan(`view:${view.id}`, resolved.plan, context.fieldsByTableId),
     });
-    const decodedCursor = decodeRuntimeCursor(options.cursor, cursorFingerprint, cursorSigningKey);
+    const decodedCursor = decodeRuntimeCursor(
+      options.cursor,
+      cursorFingerprint,
+      cursorSigningKey,
+      apiMessagesForLocale(runtime.dateConfig.locale).resultCursorInvalid,
+    );
     if (!decodedCursor.ok) {
       const response = { ok: false as const, diagnostics: decodedCursor.diagnostics };
       await trace.end({ stage: "resolve", outcome: "diagnostic", response });
@@ -565,15 +636,16 @@ export const compileGqlViewWrite = async (
   const source = params.source?.trim() ?? "";
 
   const parsed = parseGridsQueryDsl(source);
-  if (!parsed.ok) return { ok: false, diagnostics: parsed.diagnostics };
+  if (!parsed.ok) return { ok: false, diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, getDateConfig(c).locale, "gql.syntax") };
 
   const currentSource: DslCurrentSource = { kind: "table", tableId: params.tableId };
   const ctx = await buildPermissionedGqlResolverContext(c, params.baseId, params.tableId, currentSource, parsed.ast);
   const ast = sourceAst(parsed.ast, currentSource, ctx);
   const canonical = canonicalizeDslQuery(ast, ctx);
-  if (!canonical.ok) return { ok: false, diagnostics: canonical.diagnostics };
+  if (!canonical.ok)
+    return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   if (canonical.plan.tableId !== params.tableId) {
-    return { ok: false, diagnostics: [{ message: "view source must resolve to this view's table" }] };
+    return { ok: false, diagnostics: [{ code: "gql.resolution", message: apiMessages(c).viewSourceMismatch }] };
   }
 
   return {
@@ -590,21 +662,27 @@ export const compileGqlToRecordQuery = async (
   | { ok: false; diagnostics: DslQueryPreviewDiagnostic[] }
 > => {
   const parsed = parseGridsQueryDsl(params.source);
-  if (!parsed.ok) return { ok: false, diagnostics: parsed.diagnostics };
+  if (!parsed.ok) return { ok: false, diagnostics: gqlDiagnosticsForLocale(parsed.diagnostics, getDateConfig(c).locale, "gql.syntax") };
   const bound = bindDslQueryContext(parsed.ast);
-  if (!bound.ok) return { ok: false, diagnostics: [{ line: 1, message: bound.error }] };
+  if (!bound.ok)
+    return {
+      ok: false,
+      diagnostics: gqlDiagnosticsForLocale([{ line: 1, message: bound.error }], getDateConfig(c).locale, "gql.context"),
+    };
 
   const currentSource: DslCurrentSource = { kind: "table", tableId: params.tableId };
   const ctx = await buildPermissionedGqlResolverContext(c, params.baseId, params.tableId, currentSource, bound.ast);
   const ast = sourceAst(bound.ast, currentSource, ctx);
   const canonical = canonicalizeDslQuery(ast, ctx);
-  if (!canonical.ok) return { ok: false, diagnostics: canonical.diagnostics };
+  if (!canonical.ok)
+    return { ok: false, diagnostics: gqlDiagnosticsForLocale(canonical.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   if (canonical.plan.tableId !== params.tableId) {
-    return { ok: false, diagnostics: [{ message: "query source must resolve to this table" }] };
+    return { ok: false, diagnostics: [{ code: "gql.resolution", message: apiMessages(c).querySourceMismatch }] };
   }
 
   const resolved = resolveDslQueryToRecordQuery(ast, ctx);
-  if (!resolved.ok) return { ok: false, diagnostics: resolved.diagnostics };
+  if (!resolved.ok)
+    return { ok: false, diagnostics: gqlDiagnosticsForLocale(resolved.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   return {
     ok: true,
     source: canonical.source,

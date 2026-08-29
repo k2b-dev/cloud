@@ -1,4 +1,4 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
 import CreateCustomAppButton from "../sidebar/CreateCustomAppButton.island";
 import CreateTableButton from "../sidebar/CreateTableButton.island";
@@ -6,6 +6,7 @@ import CreateWorkflowButton from "../sidebar/CreateWorkflowButton.island";
 import EmailTemplatesButton from "../sidebar/EmailTemplatesButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
 import SidebarTableMeta from "../sidebar/SidebarTableMeta";
+import { workspaceMessages } from "./messages";
 import type {
   PublicOkWorkspaceState,
   PublicWorkspaceQueryResultViewRoute,
@@ -29,6 +30,7 @@ const SidebarLink = (props: Parameters<typeof AppWorkspace.SidebarItem>[0]) => (
 );
 
 export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
+  const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
   const recordsRoute = route.kind === "records" ? (route as PublicWorkspaceRecordsRoute) : null;
@@ -43,18 +45,16 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
     state.canUseQueryWorkspace ? (
       <SidebarLink href={`/app/grids/${state.base.id}/query`} active={route.kind === "query"}>
         <AppWorkspace.SidebarItemIcon icon="ti ti-code" />
-        <AppWorkspace.SidebarItemLabel>Query</AppWorkspace.SidebarItemLabel>
+        <AppWorkspace.SidebarItemLabel>{t.query}</AppWorkspace.SidebarItemLabel>
       </SidebarLink>
     ) : null;
 
   const renderNavigationSections = () => (
     <>
-      <AppWorkspace.SidebarSection title="Tables">
+      <AppWorkspace.SidebarSection title={t.tables}>
         {state.catalog.tables.length === 0 ? (
           <p class="px-2 py-1 text-xs text-dimmed">
-            {state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0
-              ? "No table access."
-              : "No tables yet."}
+            {state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0 ? t.noTableAccessShort : t.noTables}
           </p>
         ) : (
           state.catalog.tables.map((table) => {
@@ -76,7 +76,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
       </AppWorkspace.SidebarSection>
 
       {sidebarViews.length > 0 && (
-        <AppWorkspace.SidebarSection title="Views">
+        <AppWorkspace.SidebarSection title={t.views}>
           {sidebarViews.map(({ table, view }) => {
             const active =
               (recordsRoute?.activeTable.id === table.id && recordsRoute.activeView?.id === view.id) ||
@@ -86,7 +86,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
                 href={keepEdit(`/app/grids/${state.base.id}/table/${table.id}/view/${view.id}`, state.adminModeRequested)}
                 active={active}
                 class={itemClass(active, state.adminModeRequested)}
-                title={`${view.name} (table: ${table.name})`}
+                title={t.tableContext({ name: view.name, table: table.name })}
               >
                 <AppWorkspace.SidebarItemIcon icon={view.icon ?? "ti ti-table-spark"} />
                 <AppWorkspace.SidebarItemLabel>{view.name}</AppWorkspace.SidebarItemLabel>
@@ -98,7 +98,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
       )}
 
       {state.catalog.sidebarForms.length > 0 && (
-        <AppWorkspace.SidebarSection title="Forms">
+        <AppWorkspace.SidebarSection title={t.forms}>
           {state.catalog.sidebarForms.map(({ form, table }) => (
             <FormSidebarEntry
               form={form}
@@ -111,35 +111,35 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         </AppWorkspace.SidebarSection>
       )}
 
-      <AppWorkspace.SidebarSection title="Documents">
-          <SidebarLink
-            href={keepEdit(`/app/grids/${state.base.id}/documents`, state.adminModeRequested)}
-            active={route.kind === "documents"}
-            class={itemClass(route.kind === "documents", state.adminModeRequested)}
-            title="All completed documents"
-          >
-            <AppWorkspace.SidebarItemIcon icon="ti ti-files" />
-            <AppWorkspace.SidebarItemLabel>All documents</AppWorkspace.SidebarItemLabel>
-          </SidebarLink>
-          {state.catalog.sidebarDocumentTemplates.map(({ template, table }) => {
-            const active = route.kind === "documentTemplate" && route.template.id === template.id;
-            return (
-              <SidebarLink
-                href={keepEdit(`/app/grids/${state.base.id}/document/${table.id}/${template.id}`, state.adminModeRequested)}
-                active={active}
-                class={itemClass(active, state.adminModeRequested)}
-                title={`${template.name} (table: ${table.name})`}
-              >
-                <AppWorkspace.SidebarItemIcon icon="ti ti-file-type-pdf" />
-                <AppWorkspace.SidebarItemLabel>{template.name}</AppWorkspace.SidebarItemLabel>
-                <SidebarTableMeta tableName={table.name} />
-              </SidebarLink>
-            );
-          })}
+      <AppWorkspace.SidebarSection title={t.documents}>
+        <SidebarLink
+          href={keepEdit(`/app/grids/${state.base.id}/documents`, state.adminModeRequested)}
+          active={route.kind === "documents"}
+          class={itemClass(route.kind === "documents", state.adminModeRequested)}
+          title={t.allCompletedDocuments}
+        >
+          <AppWorkspace.SidebarItemIcon icon="ti ti-files" />
+          <AppWorkspace.SidebarItemLabel>{t.allDocuments}</AppWorkspace.SidebarItemLabel>
+        </SidebarLink>
+        {state.catalog.sidebarDocumentTemplates.map(({ template, table }) => {
+          const active = route.kind === "documentTemplate" && route.template.id === template.id;
+          return (
+            <SidebarLink
+              href={keepEdit(`/app/grids/${state.base.id}/document/${table.id}/${template.id}`, state.adminModeRequested)}
+              active={active}
+              class={itemClass(active, state.adminModeRequested)}
+              title={t.tableContext({ name: template.name, table: table.name })}
+            >
+              <AppWorkspace.SidebarItemIcon icon="ti ti-file-type-pdf" />
+              <AppWorkspace.SidebarItemLabel>{template.name}</AppWorkspace.SidebarItemLabel>
+              <SidebarTableMeta tableName={table.name} />
+            </SidebarLink>
+          );
+        })}
       </AppWorkspace.SidebarSection>
 
       {(state.catalog.workflows.length > 0 || (state.adminModeRequested && state.canManageBase)) && (
-        <AppWorkspace.SidebarSection title="Workflows">
+        <AppWorkspace.SidebarSection title={t.workflows}>
           {state.catalog.workflows.map((workflow) => {
             const active = workflowsRoute?.activeWorkflow?.id === workflow.id;
             return (
@@ -153,7 +153,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
                 <AppWorkspace.SidebarItemLabel>{workflow.name}</AppWorkspace.SidebarItemLabel>
                 {!workflow.enabled && (
                   <AppWorkspace.SidebarItemMeta>
-                    <span class="text-[9px] uppercase tracking-wider text-dimmed">off</span>
+                    <span class="text-[9px] uppercase tracking-wider text-dimmed">{t.disabled}</span>
                   </AppWorkspace.SidebarItemMeta>
                 )}
               </SidebarLink>
@@ -169,7 +169,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
       )}
 
       {(state.catalog.customApps.length > 0 || (state.adminModeRequested && state.canManageBase)) && (
-        <AppWorkspace.SidebarSection title="Apps">
+        <AppWorkspace.SidebarSection title={t.apps}>
           {state.catalog.customApps.map((app) => (
             <SidebarLink
               href={keepEdit(`/app/grids/${state.base.id}/apps/${app.id}`, true)}
@@ -180,13 +180,13 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
               <AppWorkspace.SidebarItemLabel>{app.name}</AppWorkspace.SidebarItemLabel>
               {!app.publishedAt && (
                 <AppWorkspace.SidebarItemMeta>
-                  <span class="text-[9px] uppercase tracking-wider text-dimmed">draft</span>
+                  <span class="text-[9px] uppercase tracking-wider text-dimmed">{t.draft}</span>
                 </AppWorkspace.SidebarItemMeta>
               )}
               {activeCustomAppId === app.id && (
                 <AppWorkspace.SidebarItemAction
                   icon="ti ti-settings"
-                  label={`Settings for ${app.name}`}
+                  label={t.settingsFor({ name: app.name })}
                   href={`/app/grids/${state.base.id}/apps/${app.id}?edit=true&settings=app`}
                   navigation="document"
                 />
@@ -211,12 +211,12 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
               class={state.adminModeRequested ? "font-medium" : undefined}
             >
               <AppWorkspace.SidebarItemIcon icon={state.adminModeRequested ? "ti ti-check" : "ti ti-tool"} />
-              <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? "Done editing" : "Edit mode"}</AppWorkspace.SidebarItemLabel>
+              <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
             </SidebarLink>
           )}
           <SidebarLink href="/app/grids">
             <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-            <AppWorkspace.SidebarItemLabel>All grids</AppWorkspace.SidebarItemLabel>
+            <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
           </SidebarLink>
           {renderQueryItem()}
           {state.canManageBase && <BaseSettingsButton base={state.base} />}
@@ -232,7 +232,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         <AppWorkspace.SidebarSection>
           <SidebarLink href="/app/grids">
             <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-            <AppWorkspace.SidebarItemLabel>All grids</AppWorkspace.SidebarItemLabel>
+            <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
           </SidebarLink>
           {renderQueryItem()}
         </AppWorkspace.SidebarSection>
@@ -246,7 +246,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
                 class={state.adminModeRequested ? "font-medium" : undefined}
               >
                 <AppWorkspace.SidebarItemIcon icon={state.adminModeRequested ? "ti ti-check" : "ti ti-tool"} />
-                <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? "Done editing" : "Edit mode"}</AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemLabel>{state.adminModeRequested ? t.doneEditing : t.editMode}</AppWorkspace.SidebarItemLabel>
               </SidebarLink>
             )}
             {state.canManageBase && <BaseSettingsButton base={state.base} />}

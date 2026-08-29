@@ -2,8 +2,9 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { type ClientRequest, request as httpRequest, type IncomingMessage, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
-import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname } from "@valentinkolb/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname } from "@valentinkolb/cloud/shared";
+import { workflowServiceText } from "./workflow-service-messages";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -25,6 +26,7 @@ export type WorkflowHttpRequestInput = {
   idempotencyKey?: string;
   body?: string;
   timeoutMs?: number;
+  locale?: string;
 };
 
 type WorkflowHttpResponse = {
@@ -51,32 +53,33 @@ const normalizeHostname = normalizeNetworkHostname;
 
 const isUnsafeHostname = isUnsafeNetworkHostname;
 
-const resolveTarget = async (rawUrl: string, deps: WorkflowHttpClientDeps): Promise<Result<ResolvedTarget>> => {
+const resolveTarget = async (rawUrl: string, deps: WorkflowHttpClientDeps, locale?: string): Promise<Result<ResolvedTarget>> => {
+  const t = workflowServiceText(locale);
   let url: URL;
   try {
     url = new URL(rawUrl);
   } catch {
-    return fail(err.badInput("HTTP request URL is invalid"));
+    return fail(err.badInput(t.httpUrlInvalid));
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return fail(err.badInput("HTTP request URL must use http or https"));
-  if (url.username || url.password) return fail(err.badInput("HTTP request URL must not contain credentials"));
+  if (url.protocol !== "http:" && url.protocol !== "https:") return fail(err.badInput(t.httpProtocolInvalid));
+  if (url.username || url.password) return fail(err.badInput(t.httpCredentialsForbidden));
 
   const hostname = normalizeHostname(url.hostname);
-  if (isUnsafeHostname(hostname)) return fail(err.badInput("HTTP request target is not a public address"));
+  if (isUnsafeHostname(hostname)) return fail(err.badInput(t.httpTargetPrivate));
 
   const literalFamily = isIP(hostname);
   const lookupAll = deps.lookup ?? ((host: string) => dnsLookup(host, { all: true, verbatim: true }) as Promise<LookupAddress[]>);
   const addresses: LookupAddress[] = literalFamily
     ? [{ address: hostname, family: literalFamily }]
     : await lookupAll(hostname, { all: true, verbatim: true }).catch(() => []);
-  if (addresses.length === 0) return fail(err.badInput("HTTP request target could not be resolved"));
+  if (addresses.length === 0) return fail(err.badInput(t.httpTargetUnresolved));
   // Every answer, not just the one dialled: a name that resolves to one public
   // and one private address would otherwise be a way in on the second attempt.
   if (addresses.some((entry) => isUnsafeWorkflowHttpAddress(entry.address))) {
-    return fail(err.badInput("HTTP request target is not a public address"));
+    return fail(err.badInput(t.httpTargetPrivate));
   }
   const selected = addresses[0];
-  if (!selected || (selected.family !== 4 && selected.family !== 6)) return fail(err.badInput("HTTP request target could not be resolved"));
+  if (!selected || (selected.family !== 4 && selected.family !== 6)) return fail(err.badInput(t.httpTargetUnresolved));
   return ok({ url, address: selected.address, family: selected.family });
 };
 
@@ -94,19 +97,20 @@ const BLOCKED_REQUEST_HEADERS = new Set([
 ]);
 
 const requestHeaders = (input: WorkflowHttpRequestInput): Result<Record<string, string>> => {
+  const t = workflowServiceText(input.locale);
   const headers: Record<string, string> = { "accept-encoding": "identity" };
   for (const [rawName, value] of Object.entries(input.headers ?? {})) {
     const name = rawName.trim().toLowerCase();
     if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name) || /[\r\n]/.test(value)) {
-      return fail(err.badInput(`httpRequest header "${rawName}" is invalid`));
+      return fail(err.badInput(t.httpHeaderInvalid({ name: rawName })));
     }
-    if (BLOCKED_REQUEST_HEADERS.has(name)) return fail(err.badInput(`httpRequest header "${rawName}" is not allowed`));
+    if (BLOCKED_REQUEST_HEADERS.has(name)) return fail(err.badInput(t.httpHeaderForbidden({ name: rawName })));
     headers[name] = value;
   }
   if (input.idempotencyKey) headers["idempotency-key"] = input.idempotencyKey;
   if (input.body !== undefined) {
     const bodyBytes = Buffer.byteLength(input.body);
-    if (bodyBytes > MAX_REQUEST_BYTES) return fail(err.badInput("httpRequest body is too large"));
+    if (bodyBytes > MAX_REQUEST_BYTES) return fail(err.badInput(t.httpBodyTooLarge));
     headers["content-type"] ??= "application/json";
     headers["content-length"] = String(bodyBytes);
   }
@@ -118,11 +122,12 @@ const prepareWorkflowHttpRequest = async (
   deps: WorkflowHttpClientDeps,
   signal: AbortSignal,
 ): Promise<Result<PreparedWorkflowHttpRequest>> => {
+  const t = workflowServiceText(input.locale);
   const headers = requestHeaders(input);
   if (!headers.ok) return headers;
   try {
     const target = await Promise.race([
-      resolveTarget(input.url, deps),
+      resolveTarget(input.url, deps, input.locale),
       new Promise<never>((_resolve, reject) => {
         signal.addEventListener("abort", () => reject(Object.assign(new Error("request timed out"), { name: "AbortError" })), {
           once: true,
@@ -132,8 +137,8 @@ const prepareWorkflowHttpRequest = async (
     if (!target.ok) return target;
     return ok({ target: target.data, headers: headers.data });
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return fail(err.badInput("HTTP request target resolution timed out"));
-    return fail(err.badInput("HTTP request target could not be resolved"));
+    if (error instanceof Error && error.name === "AbortError") return fail(err.badInput(t.httpResolutionTimeout));
+    return fail(err.badInput(t.httpTargetUnresolved));
   }
 };
 
@@ -232,6 +237,7 @@ export const requestWorkflowHttp = async (
   input: WorkflowHttpRequestInput,
   deps: WorkflowHttpClientDeps = {},
 ): Promise<Result<WorkflowHttpResponse>> => {
+  const t = workflowServiceText(input.locale);
   const timeoutMs = Math.min(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -246,16 +252,16 @@ export const requestWorkflowHttp = async (
     if (dispatched) {
       return fail({
         code: "WORKFLOW_HTTP_OUTCOME_UNKNOWN",
-        message: "The HTTP request may have reached the remote service, but no complete response was received.",
+        message: t.httpOutcomeUnknown,
         status: 500,
       });
     }
     if (error instanceof Error && error.name === "AbortError") {
-      return fail({ code: "WORKFLOW_HTTP_RETRYABLE", message: "HTTP request timed out before it was sent", status: 500 });
+      return fail({ code: "WORKFLOW_HTTP_RETRYABLE", message: t.httpSendTimeout, status: 500 });
     }
     return fail({
       code: "WORKFLOW_HTTP_RETRYABLE",
-      message: "HTTP request could not connect to the remote service",
+      message: t.httpConnectionFailed,
       status: 500,
     });
   } finally {

@@ -37,6 +37,7 @@ import {
 } from "./capability-contracts";
 import type { PulseBase, PulseCurrentState, PulseRecordedEvent, PulseSavedQuery, PulseSource } from "./contracts";
 import { pulseBaseHref, pulseExplorerHref, pulseResourceHref, pulseSignalHref, pulseSourceHref } from "./resource-hrefs";
+import { resolvePulseMessages } from "./messages";
 import { pulseService } from "./service";
 import { accessScopeFor } from "./service/access-control";
 import {
@@ -58,23 +59,24 @@ const QUERY_RESULT_BUDGET_BYTES = CAPABILITY_MAX_RESULT_BYTES - 16 * 1024;
 
 const encodeCursor = (offset: number): string => Buffer.from(JSON.stringify({ v: 1, offset }), "utf8").toString("base64url");
 
-const decodeCursor = (cursor: string | undefined) => {
+const decodeCursor = (cursor: string | undefined, locale?: string) => {
+  const { t } = resolvePulseMessages(locale);
   if (!cursor) return ok(0);
   try {
     const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { v?: unknown; offset?: unknown };
     return value.v === 1 && Number.isSafeInteger(value.offset) && Number(value.offset) >= 0
       ? ok(Number(value.offset))
-      : fail(err.badInput("Invalid cursor"));
+      : fail(err.badInput(t.invalidCursor));
   } catch {
-    return fail(err.badInput("Invalid cursor"));
+    return fail(err.badInput(t.invalidCursor));
   }
 };
 
 const scopeFor = (context: CapabilityExecutionContext) => accessScopeFor(context.actor, context.accessSubject);
 
-const internalId = async (table: "bases" | "sources" | "saved_queries", id: string) => {
+const internalId = async (table: "bases" | "sources" | "saved_queries", id: string, locale?: string) => {
   const value = await resolvePublicId(table, id);
-  return value ? ok(value) : fail(err.notFound("Pulse resource"));
+  return value ? ok(value) : fail(err.notFound(resolvePulseMessages(locale).t.pulseResource));
 };
 
 const mapBase = (base: PulseBase) => ({
@@ -115,6 +117,7 @@ const pageResult = <T>(items: T[], offset: number, limit: number) => {
 };
 
 const runBaseSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const { t } = resolvePulseMessages(context.locale);
   const scope = scopeFor(context);
   if (!scope.ok) return ok({ data: [] });
   const result = await pulseService.base.list(scope.data, { query: input.query, limit: input.limit });
@@ -126,14 +129,14 @@ const runBaseSearch = async (input: UniversalSearchInput, context: CapabilityExe
     preview: base.description?.slice(0, 2_000),
     icon: "ti ti-activity-heartbeat",
     priority: 7,
-    metadata: [{ label: "Type", value: "Pulse Base" }],
+    metadata: [{ label: t.typeMetadata, value: t.pulseBase }],
     links: [{ rel: "open", href: pulseBaseHref(base.id) }],
   }));
   return ok({ data });
 };
 
 const runBaseList = async (input: z.infer<typeof BaseListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
@@ -157,25 +160,25 @@ const runBaseList = async (input: z.infer<typeof BaseListInputSchema>, context: 
 const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: CapabilityExecutionContext) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const id = await internalId("bases", input.id);
+  const id = await internalId("bases", input.id, context.locale);
   if (!id.ok) return id;
   const result = await pulseService.base.get(id.data, scope.data);
   if (!result.ok) return result;
   const [base] = await projectBases([result.data]);
   return ok({
     data: mapBase(base!),
-    summary: `Read Pulse Base “${base!.name}”.`,
+    summary: resolvePulseMessages(context.locale).t.readBase({ name: base!.name }),
     refs: [{ type: "pulse.base", id: base!.id }],
     links: [{ rel: "open" as const, href: pulseBaseHref(base!.id) }],
   });
 };
 
 const runSourceList = async (input: z.infer<typeof SourceListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.source.list(baseId.data, scope.data, {
     query: input.query,
@@ -200,19 +203,20 @@ const runSourceList = async (input: z.infer<typeof SourceListInputSchema>, conte
 const runSourceRead = async (input: z.infer<typeof SourceReadInputSchema>, context: CapabilityExecutionContext) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const id = await internalId("sources", input.id);
+  const id = await internalId("sources", input.id, context.locale);
   if (!id.ok) return id;
   const result = await pulseService.source.get(id.data, scope.data);
   if (!result.ok) return result;
   const [source] = await projectSources([result.data]);
   return ok({
     data: mapSource(source!),
-    summary: `Read Pulse Source “${source!.name}”.`,
+    summary: resolvePulseMessages(context.locale).t.readSource({ name: source!.name }),
     refs: [{ type: "pulse.source", id: source!.id }],
   });
 };
 
 const runResourceSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const { t } = resolvePulseMessages(context.locale);
   const scope = scopeFor(context);
   if (!scope.ok) return ok({ data: [] });
   const result = await pulseService.query.searchResources(scope.data, {
@@ -233,9 +237,9 @@ const runResourceSearch = async (input: UniversalSearchInput, context: Capabilit
       icon: "ti ti-box",
       priority: 6,
       metadata: [
-        { label: "Base", value: resource.baseName.slice(0, 1_000) },
-        { label: "Base ID", value: baseId },
-        { label: "Resource key", value: resource.key },
+        { label: t.baseMetadata, value: resource.baseName.slice(0, 1_000) },
+        { label: t.baseIdMetadata, value: baseId },
+        { label: t.resourceKeyMetadata, value: resource.key },
       ],
       links: [{ rel: "open", href: pulseResourceHref(baseId, resource.key) }],
     };
@@ -247,9 +251,9 @@ const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, c
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const ref = parseResourceRefId(input.id);
-  if (!ref) return fail(err.badInput("Invalid Pulse resource ID"));
+  if (!ref) return fail(err.badInput(resolvePulseMessages(context.locale).t.invalidPulseResourceId));
   const baseId = await resolvePublicId("bases", ref.baseShortId);
-  if (!baseId) return fail(err.notFound("Pulse resource"));
+  if (!baseId) return fail(err.notFound(resolvePulseMessages(context.locale).t.pulseResource));
   const result = await pulseService.query.resource(baseId, ref.resourceKey, scope.data);
   if (!result.ok) return result;
   const resource = result.data;
@@ -265,17 +269,17 @@ const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, c
       lastSeenAt: resource.lastSeenAt,
       links: [{ rel: "open" as const, href: pulseResourceHref(ref.baseShortId, resource.key) }],
     },
-    summary: `Read Pulse Resource “${resource.label.slice(0, 500)}”.`,
+    summary: resolvePulseMessages(context.locale).t.readResource({ name: resource.label.slice(0, 500) }),
     refs: [{ type: "pulse.resource", id: input.id }],
   });
 };
 
 const runMetricSearch = async (input: z.infer<typeof MetricSearchInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.query.metrics(baseId.data, scope.data, {
     q: input.query,
@@ -300,24 +304,24 @@ const runMetricSearch = async (input: z.infer<typeof MetricSearchInputSchema>, c
 const runSavedQueryRead = async (input: z.infer<typeof SavedQueryReadInputSchema>, context: CapabilityExecutionContext) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const id = await internalId("saved_queries", input.id);
+  const id = await internalId("saved_queries", input.id, context.locale);
   if (!id.ok) return id;
   const result = await pulseService.savedQuery.read(id.data, scope.data);
   if (!result.ok) return result;
   const [query] = await projectSavedQueries([result.data]);
   return ok({
     data: mapSavedQuery(query!),
-    summary: `Read saved Pulse Query “${query!.name}”.`,
+    summary: resolvePulseMessages(context.locale).t.readSavedQuery({ name: query!.name }),
     refs: [{ type: "pulse.saved_query", id: query!.id }],
   });
 };
 
 const runFieldSearch = async (input: z.infer<typeof FieldSearchInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.query.fields(baseId.data, scope.data, {
     q: input.query,
@@ -343,7 +347,7 @@ const runFieldSearch = async (input: z.infer<typeof FieldSearchInputSchema>, con
 const runQueryCompile = async (input: z.infer<typeof QueryTextInputSchema>, context: CapabilityExecutionContext) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.query.compileText({ ...input, baseId: baseId.data, user: scope.data });
   if (!result.ok) return result;
@@ -358,8 +362,8 @@ const runQueryCompile = async (input: z.infer<typeof QueryTextInputSchema>, cont
       diagnostics,
     },
     summary: result.data.ok
-      ? `Validated a ${result.data.compiled?.kind ?? "telemetry"} Pulse query.`
-      : `Pulse query is invalid with ${diagnostics.length} ${diagnostics.length === 1 ? "diagnostic" : "diagnostics"}.`,
+      ? resolvePulseMessages(context.locale).t.validQuery({ kind: result.data.compiled?.kind ?? "telemetry" })
+      : resolvePulseMessages(context.locale).t.invalidQuery({ count: diagnostics.length }),
     refs: [{ type: "pulse.base", id: input.baseId }],
     links: [{ rel: "open" as const, href: pulseExplorerHref(input.baseId) }],
   });
@@ -399,22 +403,23 @@ const compactState = (state: PulseCurrentState) => ({
 
 type QueryExecutionData = z.infer<typeof QueryExecutionDataSchema>;
 
-const queryExecutionSummary = (data: QueryExecutionData, savedQueryName?: string) => {
+const queryExecutionSummary = (data: QueryExecutionData, locale?: string, savedQueryName?: string) => {
+  const { t } = resolvePulseMessages(locale);
   const key = data.kind === "metric" ? "points" : data.kind === "events" ? "events" : "states";
   const count = data[key].length;
-  const countLabel = count === 1 ? (key === "points" ? "point" : key === "events" ? "event" : "state") : key;
-  const target = savedQueryName ? `saved Pulse Query “${savedQueryName}”` : `${data.kind} Pulse query`;
-  return `Executed ${target} with ${count} ${countLabel}${data.truncated ? "; results were truncated" : ""}.`;
+  const countLabel = key === "points" ? t.kindPoint({ count }) : key === "events" ? t.kindEvent({ count }) : t.kindState({ count });
+  const target = savedQueryName ? t.savedQueryTarget({ name: savedQueryName }) : `${data.kind} Pulse query`;
+  return t.executedQuery({ target, count, kind: countLabel, truncated: data.truncated });
 };
 
-const queryCapabilityResult = (data: QueryExecutionData, refs: CloudResourceRef[], savedQueryName?: string) => ({
+const queryCapabilityResult = (data: QueryExecutionData, refs: CloudResourceRef[], locale?: string, savedQueryName?: string) => ({
   data,
-  summary: queryExecutionSummary(data, savedQueryName),
+  summary: queryExecutionSummary(data, locale, savedQueryName),
   refs,
   links: [{ rel: "open" as const, href: pulseExplorerHref(refs[0]!.id) }],
 });
 
-const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[], savedQueryName?: string) => {
+const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[], locale?: string, savedQueryName?: string) => {
   const key = data.kind === "metric" ? "points" : data.kind === "events" ? "events" : "states";
   const values = data[key];
   const resultFor = (count: number) =>
@@ -425,13 +430,14 @@ const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[], save
         truncated: data.truncated || count < values.length,
       },
       refs,
+      locale,
       savedQueryName,
     );
   const jsonBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
   const full = resultFor(values.length);
   if (jsonBytes(full) <= QUERY_RESULT_BUDGET_BYTES) return ok(full);
   if (values.length === 0 || jsonBytes(resultFor(1)) > QUERY_RESULT_BUDGET_BYTES) {
-    return fail(err.badInput("Pulse query result is too large. Use a narrower filter, shorter range, or coarser grouping."));
+    return fail(err.badInput(resolvePulseMessages(locale).t.queryTooLarge));
   }
 
   let low = 1;
@@ -458,7 +464,7 @@ const executeQuery = async (
 ) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = resolvedBaseId ? ok(resolvedBaseId) : await internalId("bases", input.baseId);
+  const baseId = resolvedBaseId ? ok(resolvedBaseId) : await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.query.metricText(
     { ...input, baseId: baseId.data, user: scope.data },
@@ -490,16 +496,17 @@ const executeQuery = async (
       truncated: Boolean(rowQuery && rowQuery.limit > QUERY_ROW_LIMIT && returnedRows > QUERY_ROW_LIMIT),
     },
     [{ type: "pulse.base", id: input.baseId }, ...extraRefs],
+    context.locale,
     savedQueryName,
   );
 };
 
 const runSavedQueryList = async (input: z.infer<typeof SavedQueryListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeCursor(input.cursor);
+  const cursor = decodeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const result = await pulseService.savedQuery.list(baseId.data, scope.data, {
     query: input.query,
@@ -525,10 +532,10 @@ const runSavedQueryList = async (input: z.infer<typeof SavedQueryListInputSchema
 const runSavedQueryExecute = async (input: z.infer<typeof SavedQueryExecuteInputSchema>, context: CapabilityExecutionContext) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
-  const baseId = await internalId("bases", input.baseId);
+  const baseId = await internalId("bases", input.baseId, context.locale);
   if (!baseId.ok) return baseId;
   const queryId = await resolveBasePublicId("saved_queries", baseId.data, input.queryId);
-  if (!queryId) return fail(err.notFound("Saved query"));
+  if (!queryId) return fail(err.notFound(resolvePulseMessages(context.locale).t.savedQuery));
   const saved = await pulseService.savedQuery.get(baseId.data, queryId, scope.data);
   if (!saved.ok) return saved;
   return executeQuery(

@@ -102,7 +102,7 @@ const resolveResetTargetForToken = async (params: { userId: string; email: strin
 };
 
 const sendResetEmail = async (
-  params: ResetTarget & { redirectTo?: string },
+  params: ResetTarget & { redirectTo?: string; locale?: string },
   notificationSender: AuthNotificationSender,
 ): Promise<AuthNotificationDeliveryResult> => {
   const token = await providers.local.auth.createPasswordResetToken({
@@ -117,7 +117,7 @@ const sendResetEmail = async (
     token,
     redirectTo: params.redirectTo,
   });
-  return notificationSender.sendPasswordReset({ email: params.email, resetLink });
+  return notificationSender.sendPasswordReset({ email: params.email, resetLink, locale: params.locale });
 };
 
 const changeTemporaryPassword = async (params: {
@@ -161,7 +161,7 @@ const changeTemporaryPassword = async (params: {
 };
 
 export const request = async (
-  params: { email: string; redirectTo?: string },
+  params: { email: string; redirectTo?: string; locale?: string },
   notificationSender: AuthNotificationSender,
 ): Promise<{ ok: true; message: string }> => {
   const email = normalizeEmail(params.email);
@@ -183,7 +183,7 @@ export const request = async (
   }
 
   try {
-    const result = await sendResetEmail({ ...target, redirectTo: params.redirectTo }, notificationSender);
+    const result = await sendResetEmail({ ...target, redirectTo: params.redirectTo, locale: params.locale }, notificationSender);
     if (result.status === "error") log.error("Password reset delivery failed", { notificationId: result.id, uid: target.uid });
     else log.info("Password reset notification accepted", { notificationId: result.id, uid: target.uid, status: result.status });
   } catch (error) {

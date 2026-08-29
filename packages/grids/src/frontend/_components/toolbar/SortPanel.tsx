@@ -1,8 +1,9 @@
-import { Button, IconButton, Select } from "@k2b/ui";
+import { Button, IconButton, Select, useLocale } from "@k2b/ui";
 import { createMemo, Index } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { RecordMetaSortKey, RecordQuery } from "../../../contracts";
 import { fieldChoiceGroupsFor, fieldOption } from "../fields/field-type-meta";
+import { toolbarMessages } from "./messages";
 
 export type SortRow = NonNullable<RecordQuery["sort"]>[number];
 type Direction = SortRow["direction"];
@@ -20,18 +21,12 @@ type Props = {
 
 const SORTABLE_TYPES = new Set(["text", "longtext", "id", "number", "percent", "duration", "date", "boolean"]);
 
-const RECORD_SORTS: Array<{ key: RecordMetaSortKey; label: string; description: string; icon: string }> = [
-  { key: "createdAt", label: "Created time", description: "Record metadata", icon: "ti ti-clock-plus" },
-  { key: "updatedAt", label: "Modified time", description: "Record metadata", icon: "ti ti-clock-edit" },
-  { key: "deletedAt", label: "Deleted time", description: "Record metadata · deleted records", icon: "ti ti-clock-x" },
-];
+const RECORD_SORT_KEYS: RecordMetaSortKey[] = ["createdAt", "updatedAt", "deletedAt"];
 
 const sortableFields = (fields: Field[]): Field[] => fields.filter((f) => !f.deletedAt && SORTABLE_TYPES.has(f.type));
 
 export const isSortRowComplete = (row: SortRow, fields: Field[]): boolean =>
-  row.source === "record"
-    ? RECORD_SORTS.some((item) => item.key === row.key)
-    : Boolean(row.fieldId && fields.some((f) => f.id === row.fieldId));
+  row.source === "record" ? RECORD_SORT_KEYS.includes(row.key) : Boolean(row.fieldId && fields.some((f) => f.id === row.fieldId));
 
 /** Build a blank sort row for the first sortable field. */
 export const blankSortRow = (fields: Field[]): SortRow | null => {
@@ -56,31 +51,37 @@ const isTimeRow = (row: SortRow, fieldsById: Map<string, Field>): boolean =>
 const isNumericRow = (row: SortRow, fieldsById: Map<string, Field>): boolean =>
   row.source !== "record" && ["number", "percent", "duration"].includes(fieldsById.get(row.fieldId)?.type ?? "");
 
-const directionOptions = (row: SortRow, fieldsById: Map<string, Field>) => {
+const directionOptions = (row: SortRow, fieldsById: Map<string, Field>, t: ReturnType<typeof toolbarMessages.resolve>["t"]) => {
   if (isTimeRow(row, fieldsById)) {
     return [
-      { id: "desc", label: "Newest first", description: "Latest values at the top", icon: "ti ti-sort-descending" },
-      { id: "asc", label: "Oldest first", description: "Earliest values at the top", icon: "ti ti-sort-ascending" },
+      { id: "desc", label: t.newestFirst, description: t.latestFirst, icon: "ti ti-sort-descending" },
+      { id: "asc", label: t.oldestFirst, description: t.earliestFirst, icon: "ti ti-sort-ascending" },
     ];
   }
   if (isNumericRow(row, fieldsById)) {
     return [
-      { id: "asc", label: "Low to high", description: "Smallest values first", icon: "ti ti-sort-ascending-numbers" },
-      { id: "desc", label: "High to low", description: "Largest values first", icon: "ti ti-sort-descending-numbers" },
+      { id: "asc", label: t.lowToHigh, description: t.smallestFirst, icon: "ti ti-sort-ascending-numbers" },
+      { id: "desc", label: t.highToLow, description: t.largestFirst, icon: "ti ti-sort-descending-numbers" },
     ];
   }
   return [
-    { id: "asc", label: "A → Z", description: "Alphabetical order", icon: "ti ti-sort-ascending-letters" },
-    { id: "desc", label: "Z → A", description: "Reverse alphabetical order", icon: "ti ti-sort-descending-letters" },
+    { id: "asc", label: "A → Z", description: t.alphabetical, icon: "ti ti-sort-ascending-letters" },
+    { id: "desc", label: "Z → A", description: t.reverseAlphabetical, icon: "ti ti-sort-descending-letters" },
   ];
 };
 
 export default function SortPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const fields = createMemo(() => sortableFields(props.fields));
   const fieldsById = createMemo(() => new Map(props.fields.map((field) => [field.id, field])));
   const sortOptions = createMemo(() => [
-    ...fields().map((field) => ({ ...fieldOption(field), id: `field:${field.id}` })),
-    ...RECORD_SORTS.map((item) => ({
+    ...fields().map((field) => ({ ...fieldOption(field, t().field, locale()), id: `field:${field.id}` })),
+    ...[
+      { key: "createdAt" as const, label: t().createdTime, description: t().recordMetadata, icon: "ti ti-clock-plus" },
+      { key: "updatedAt" as const, label: t().modifiedTime, description: t().recordMetadata, icon: "ti ti-clock-edit" },
+      { key: "deletedAt" as const, label: t().deletedTime, description: t().deletedRecordMetadata, icon: "ti ti-clock-x" },
+    ].map((item) => ({
       id: `record:${item.key}`,
       label: item.label,
       description: item.description,
@@ -112,26 +113,26 @@ export default function SortPanel(props: Props) {
         {(rowSignal, index) => (
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
             {/* Fixed-width label keeps "sort by" / "then" in the same column. */}
-            <span class="w-12 shrink-0 text-dimmed">{index === 0 ? "sort" : "then"}</span>
+            <span class="w-12 shrink-0 text-dimmed">{index === 0 ? t().sort.toLowerCase() : t().then}</span>
             <div class="w-64 shrink-0">
               <Select
-                aria-label={`Sort ${index + 1} field`}
+                aria-label={t().sortField({ index: index + 1 })}
                 value={() => targetId(rowSignal())}
                 onValueChange={(v) => {
                   if (v !== null) updateTarget(index, v);
                 }}
                 options={sortOptions()}
-                groups={fieldChoiceGroupsFor(fields(), ["system"])}
-                groupsAriaLabel="Filter sort fields"
-                placeholder="Sort by"
+                groups={fieldChoiceGroupsFor(fields(), ["system"], locale())}
+                groupsAriaLabel={t().sortFields}
+                placeholder={t().sortBy}
               />
             </div>
             <div class="w-44 shrink-0">
               <Select
-                aria-label={`Sort ${index + 1} direction`}
+                aria-label={t().sortDirection({ index: index + 1 })}
                 value={() => rowSignal().direction}
                 onValueChange={(v) => updateDirection(index, v as Direction)}
-                options={directionOptions(rowSignal(), fieldsById())}
+                options={directionOptions(rowSignal(), fieldsById(), t())}
               />
             </div>
             <IconButton
@@ -139,7 +140,7 @@ export default function SortPanel(props: Props) {
               size="xs"
               class="text-dimmed hover:text-red-500"
               onClick={() => removeRow(index)}
-              label="Remove sort"
+              label={t().removeSort}
             >
               <i class="ti ti-x" />
             </IconButton>
@@ -149,7 +150,7 @@ export default function SortPanel(props: Props) {
 
       <div class="flex items-center gap-1">
         <Button variant="success" size="sm" type="button" onClick={addRow}>
-          <i class="ti ti-plus" /> Add
+          <i class="ti ti-plus" /> {t().add}
         </Button>
       </div>
     </div>

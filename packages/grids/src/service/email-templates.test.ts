@@ -29,6 +29,19 @@ describe("email templates", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain('email subject uses unknown Liquid variable "secret"');
+    if (!result.ok) expect(result.error.message).toContain('email subject uses unknown Liquid variable "secret".');
+  });
+
+  test("localizes validation errors for regional German locales", () => {
+    const result = validateEmailTemplateWrite(
+      {
+        subject: "{{ secret.token }}",
+        html: "<p>{{ data.name }}</p>",
+      },
+      "de-CH",
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("E-Mail-Betreff verwendet die unbekannte Liquid-Variable „secret“");
   });
 });

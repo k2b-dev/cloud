@@ -9,11 +9,13 @@ import {
   Placeholder,
   panelDialogOptions,
   prompts,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { MutationSource, TableMutationPolicy } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { gridsDialogMessages } from "./messages";
 
 export type MutationPolicyImpactItem = {
   kind: "form" | "workflow" | "action";
@@ -65,11 +67,14 @@ const canonicalPolicy = (policy: TableMutationPolicy): TableMutationPolicy => {
   return sources.length === ALL_SOURCES.length ? { mode: "all" } : { mode: "selected", sources };
 };
 
-export const mutationPolicySummary = (policy: TableMutationPolicy): string => {
+export const mutationPolicySummary = (policy: TableMutationPolicy, locale = "en"): string => {
+  const { t } = gridsDialogMessages.resolve([locale]);
   const canonical = canonicalPolicy(policy);
-  if (canonical.mode === "all") return "All record change sources are allowed.";
-  if (canonical.sources.length === 0) return "Record changes are frozen.";
-  return canonical.sources.map((source) => SOURCE_OPTIONS.find((option) => option.id === source)!.label).join(", ");
+  if (canonical.mode === "all") return t.allSourcesAllowed;
+  if (canonical.sources.length === 0) return t.changesFrozen;
+  return canonical.sources
+    .map((source) => (source === "direct" ? t.directEditing : source === "form" ? t.forms : t.workflowsActions))
+    .join(", ");
 };
 
 const removedSources = (saved: TableMutationPolicy, draft: TableMutationPolicy): MutationSource[] => {
@@ -96,6 +101,23 @@ function MutationPolicyDialog(props: {
   args: { tableId: string; tableName: string; value: TableMutationPolicy };
   close: (value: TableMutationPolicy | null) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
+  const sourceOptions = () =>
+    SOURCE_OPTIONS.map((option) => ({
+      ...option,
+      label: option.id === "direct" ? t().directEditing : option.id === "form" ? t().forms : t().workflowsActions,
+      description:
+        option.id === "direct"
+          ? t().directEditingDescription
+          : option.id === "form"
+            ? t().formsSourceDescription
+            : t().workflowsActionsDescription,
+    }));
+  const impactKind = (kind: MutationPolicyImpactItem["kind"]) => ({
+    ...IMPACT_KIND[kind],
+    label: kind === "form" ? t().form : kind === "workflow" ? t().workflow : t().action,
+  });
   const saved = canonicalPolicy(props.args.value);
   const [policy, setPolicy] = createSignal<TableMutationPolicy>(saved);
   const normalized = createMemo(() => canonicalPolicy(policy()));
@@ -117,7 +139,7 @@ function MutationPolicyDialog(props: {
         { param: { tableId: props.args.tableId }, json: { policy: target } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not check affected entry points"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().impactFailed));
       return { key, impact: (await response.json()) as MutationPolicyImpact };
     },
   });
@@ -134,7 +156,7 @@ function MutationPolicyDialog(props: {
         param: { tableId: props.args.tableId },
         json: { policy: normalized(), ...(isFrozen() ? { confirmFreeze: true as const } : {}) },
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not save record change sources"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().saveSourcesFailed));
       return response.json();
     },
     onSuccess: (result) => props.close(result.policy),
@@ -148,15 +170,12 @@ function MutationPolicyDialog(props: {
   const save = async () => {
     if (!dirty() || !impactReady()) return;
     if (isFrozen() && selectedSources(saved).length > 0) {
-      const confirmed = await prompts.confirm(
-        `No one will be able to create, edit, trash, restore, relate, or attach files in “${props.args.tableName}” until an admin allows a source again. Existing records remain readable.`,
-        {
-          title: "Freeze record changes?",
-          confirmText: "Freeze changes",
-          variant: "danger",
-          confirmationPhrase: props.args.tableName,
-        },
-      );
+      const confirmed = await prompts.confirm(t().freezeConfirm({ table: props.args.tableName }), {
+        title: t().freezeQuestion,
+        confirmText: t().freezeChanges,
+        variant: "danger",
+        confirmationPhrase: props.args.tableName,
+      });
       if (!confirmed) return;
     }
     saveMutation.mutate(undefined);
@@ -174,25 +193,21 @@ function MutationPolicyDialog(props: {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Record changes" subtitle={props.args.tableName} icon="ti ti-route" close={closeIfClean} />
+      <PanelDialog.Header title={t().recordChanges} subtitle={props.args.tableName} icon="ti ti-route" close={closeIfClean} />
       <PanelDialog.Body>
-        <NoticeCard
-          tone="info"
-          title="Choose where record changes can start"
-          detail="Keep All on for normal Grids behavior. Turn it off only when this table should accept changes from selected entry points. Permissions, field rules, audit requirements, history, and finalization still apply. This setting does not by itself provide a legal or regulatory guarantee."
-        />
+        <NoticeCard tone="info" title={t().chooseChangeSources} detail={t().chooseChangeSourcesDetail} />
 
-        <PanelDialog.Section title="Allowed sources" subtitle="Applies to records, Relations, and Files." icon="ti ti-route">
+        <PanelDialog.Section title={t().allowedSources} subtitle={t().allowedSourcesDescription} icon="ti ti-route">
           <CheckboxCard
-            label="All"
-            description="Allow direct changes, Forms, and Workflows. This is the default for existing tables."
+            label={t().all}
+            description={t().allSourcesDescription}
             icon="ti ti-arrows-exchange"
             value={() => policy().mode === "all"}
             onValueChange={setAll}
           />
           <Show when={policy().mode === "selected"}>
             <div class="grid gap-2">
-              <For each={SOURCE_OPTIONS}>
+              <For each={sourceOptions()}>
                 {(option) => (
                   <CheckboxCard
                     label={option.label}
@@ -207,35 +222,24 @@ function MutationPolicyDialog(props: {
             </div>
           </Show>
           <Show when={isFrozen()}>
-            <NoticeCard
-              tone="warning"
-              title="This will freeze record changes"
-              detail="No source will be able to create, edit, trash, restore, relate, or attach files in this table. Existing records remain readable."
-            />
+            <NoticeCard tone="warning" title={t().freezeWarning} detail={t().freezeWarningDetail} />
           </Show>
         </PanelDialog.Section>
 
         <Show when={hasRemovedSources()}>
-          <PanelDialog.Section
-            title="What will stop working"
-            subtitle="Active entry points that use a source you are removing."
-            icon="ti ti-alert-triangle"
-          >
-            <Show
-              when={!impactQuery.loading()}
-              fallback={<Placeholder state="loading" align="left" title="Checking active entry points…" />}
-            >
+          <PanelDialog.Section title={t().stopsWorking} subtitle={t().stopsWorkingDescription} icon="ti ti-alert-triangle">
+            <Show when={!impactQuery.loading()} fallback={<Placeholder state="loading" align="left" title={t().checkingEntryPoints} />}>
               <Show
                 when={!impactQuery.error()}
                 fallback={
                   <Placeholder
                     state="error"
                     align="left"
-                    title="Affected entry points are unavailable"
+                    title={t().entryPointsUnavailable}
                     description={impactQuery.error()?.message}
                     action={
                       <Button variant="secondary" size="sm" type="button" onClick={() => void impactQuery.refresh()}>
-                        Retry
+                        {t().retry}
                       </Button>
                     }
                   />
@@ -245,36 +249,30 @@ function MutationPolicyDialog(props: {
                   {(impact) => (
                     <Show
                       when={impact().total > 0 || !impact().complete}
-                      fallback={
-                        <NoticeCard
-                          tone="neutral"
-                          title="No active configured entry points were found"
-                          detail="The preview found no active Form, Action, or Workflow for the sources you are removing. The policy still applies to every matching request."
-                        />
-                      }
+                      fallback={<NoticeCard tone="neutral" title={t().noEntryPoints} detail={t().noEntryPointsDetail} />}
                     >
                       <NoticeCard
                         tone="warning"
                         title={
                           !impact().complete && impact().total === 0
-                            ? "More active entry points may be affected"
-                            : `${impact().complete ? "" : "At least "}${impact().total} active entry point${impact().total === 1 ? "" : "s"} will stop changing this table`
+                            ? t().moreMayBeAffected
+                            : t().impactCount({ count: impact().total, incomplete: !impact().complete })
                         }
                         detail={
                           !impact().complete
-                            ? "This table is used by many Workflows, so the preview is limited. More active entry points may be affected."
+                            ? t().impactLimited
                             : impact().truncated
-                              ? `Showing ${impact().items.length} of ${impact().total}. More active entry points are affected.`
-                              : "Review these entry points before saving."
+                              ? t().impactShown({ shown: impact().items.length, total: impact().total })
+                              : t().reviewEntryPoints
                         }
                       />
-                      <ul class="paper divide-y divide-[var(--ui-border)]" aria-label="Affected entry points">
+                      <ul class="paper divide-y divide-[var(--ui-border)]" aria-label={t().affectedEntryPoints}>
                         <For each={impact().items}>
                           {(item) => (
                             <li class="flex items-center gap-3 px-3 py-2">
-                              <i class={`${IMPACT_KIND[item.kind].icon} text-base text-dimmed`} aria-hidden="true" />
+                              <i class={`${impactKind(item.kind).icon} text-base text-dimmed`} aria-hidden="true" />
                               <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{item.name}</span>
-                              <span class="text-xs text-dimmed">{IMPACT_KIND[item.kind].label}</span>
+                              <span class="text-xs text-dimmed">{impactKind(item.kind).label}</span>
                             </li>
                           )}
                         </For>
@@ -291,7 +289,7 @@ function MutationPolicyDialog(props: {
         <span />
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={closeIfClean}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button
             variant="primary"
@@ -300,9 +298,9 @@ function MutationPolicyDialog(props: {
             onClick={() => void save()}
             disabled={!dirty() || !impactReady()}
             loading={saveMutation.loading()}
-            loadingLabel="Saving record change sources"
+            loadingLabel={t().savingSources}
           >
-            Save
+            {t().save}
           </Button>
         </div>
       </PanelDialog.Footer>

@@ -12,6 +12,7 @@ import {
   prompts,
   Select,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -21,8 +22,9 @@ import { effectiveDisplayField } from "../../../lookup-display";
 import { ColumnFormatControls, type ColumnFormatControlsHandle } from "../dialogs/ViewColumnSettingsDialog";
 import { FieldInput } from "../forms/form-fields";
 import { errorMessage } from "../utils/api-helpers";
-import { FIELD_TYPE_DESCRIPTIONS, FieldConfigEditor, type FieldConfigState, TYPE_LABELS } from "./field-config-editor";
+import { FieldConfigEditor, type FieldConfigState } from "./field-config-editor";
 import { RECORD_INPUT_FIELD_TYPES } from "./field-render";
+import { gridsFieldMessages } from "./messages";
 
 const PRESENTABLE_TYPES = new Set(["text", "id", "number", "boolean", "date", "select", "percent", "duration"]);
 const INDEXABLE_TYPES = new Set(["text", "longtext", "id", "number", "percent", "duration", "date", "boolean", "select", "principal"]);
@@ -61,13 +63,15 @@ export const openFieldEditDialog = (args: OpenFieldEditArgs): Promise<void> =>
   dialogCore.open<void>((close) => <FieldEditDialog args={args} close={close} />, panelDialogOptions);
 
 function FieldEditDialog(props: { args: OpenFieldEditArgs; close: () => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
   const closeIfClean = async () => {
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
   return (
     <PanelDialog>
-      <PanelDialog.Header title={`Edit field — ${props.args.field.name}`} icon="ti ti-pencil" close={closeIfClean} />
+      <PanelDialog.Header title={t().editField({ name: props.args.field.name })} icon="ti ti-pencil" close={closeIfClean} />
       <FieldEditor
         field={props.args.field}
         tableKind={props.args.tableKind}
@@ -116,6 +120,8 @@ function FieldEditor(props: {
    *  so users have a clear way out without triggering a save. */
   onCancel?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const [name, setName] = createSignal(props.field.name);
   const [description, setDescription] = createSignal(props.field.description ?? "");
   const [icon, setIcon] = createSignal(props.field.icon ?? "");
@@ -196,7 +202,7 @@ function FieldEditor(props: {
           config: config() as Record<string, unknown>,
         },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save field"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveFieldFailed));
       const field = await res.json();
       const nextTableColumns = buildNextTableColumns();
       if (!nextTableColumns) return { field };
@@ -205,7 +211,7 @@ function FieldEditor(props: {
         param: { tableId: props.field.tableId },
         json: { columns: nextTableColumns },
       });
-      if (!tableRes.ok) throw new Error(await errorMessage(tableRes, "Failed to save table display"));
+      if (!tableRes.ok) throw new Error(await errorMessage(tableRes, t().saveTableDisplayFailed));
       const table = await tableRes.json();
       return { field, tableColumns: table.columns };
     },
@@ -220,14 +226,14 @@ function FieldEditor(props: {
 
   const handleSave = () => {
     if (!name().trim()) {
-      prompts.error("Name is required");
+      prompts.error(t().nameRequired);
       return;
     }
     updateMut.mutate(undefined);
   };
 
-  const typeLabel = TYPE_LABELS[props.field.type] ?? props.field.type;
-  const typeDescription = FIELD_TYPE_DESCRIPTIONS[props.field.type];
+  const typeLabel = () => t().typeLabel({ type: props.field.type });
+  const typeDescription = () => t().typeDescription({ type: props.field.type });
 
   return (
     <>
@@ -235,56 +241,46 @@ function FieldEditor(props: {
         {/* Type primer — short, type-specific blurb so the constraint
           inputs further down ("precision", "decimal places", "regex" etc.) make
         immediate sense to non-power users. */}
-        <Show when={typeDescription}>
-          <NoticeCard tone="info" title={`About ${typeLabel} fields`} detail={typeDescription} />
+        <Show when={typeDescription()}>
+          <NoticeCard tone="info" title={t().aboutFields({ type: typeLabel() })} detail={typeDescription()} />
         </Show>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <TextInput
-            label="Name"
-            description="Used as the column header and default form label."
+            label={t().name}
+            description={t().nameDescription}
             value={name}
             onValueChange={wrap(setName)}
             icon="ti ti-typography"
             required
           />
-          <TextInput
-            label="Datatype"
-            description="Field types can't be changed after creation."
-            icon="ti ti-category"
-            value={() => typeLabel}
-            disabled
-          />
+          <TextInput label={t().datatype} description={t().datatypeDescription} icon="ti ti-category" value={typeLabel} disabled />
         </div>
 
         <TextInput
-          label="Description (optional)"
-          description="Shown in forms and record details."
+          label={t().descriptionOptional}
+          description={t().fieldDescriptionDescription}
           value={description}
           onValueChange={wrap(setDescription)}
           icon="ti ti-info-circle"
           multiline
           lines={2}
-          placeholder="e.g. Use the ISO-639-1 language code"
+          placeholder={t().fieldDescriptionExample}
         />
 
         <IconInput
-          label="Icon (optional)"
+          label={t().iconOptional}
           value={icon}
           onValueChange={(value) => wrap(setIcon)(value ?? "")}
-          placeholder="Search icons..."
+          placeholder={t().searchIcons}
         />
 
-        <PanelDialog.Section
-          title="Record behavior"
-          subtitle="Rules that affect how users create, read, and reference records."
-          icon="ti ti-toggle-right"
-        >
+        <PanelDialog.Section title={t().recordBehavior} subtitle={t().recordBehaviorDescription} icon="ti ti-toggle-right">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
             <Show when={supportsRequired()}>
               <CheckboxCard
-                label="Required"
-                description="Every record must have a value for this field."
+                label={t().required}
+                description={t().requiredDescription}
                 icon="ti ti-asterisk"
                 value={required}
                 onValueChange={wrap(setRequired)}
@@ -292,28 +288,24 @@ function FieldEditor(props: {
             </Show>
             <Show when={supportsPresentable()}>
               <CheckboxCard
-                label="Use as record label"
-                description="Show this field when another table links to this record."
+                label={t().recordLabel}
+                description={t().recordLabelDescription}
                 icon="ti ti-tag"
                 value={presentable}
                 onValueChange={wrap(setPresentable)}
               />
             </Show>
             <CheckboxCard
-              label="Hide in table"
-              description="Keep it out of the default table view; detail panels and custom views can still show it."
+              label={t().hideInTable}
+              description={t().hideInTableDescription}
               icon="ti ti-eye-off"
               value={hideInTable}
               onValueChange={wrap(setHideInTable)}
             />
             <Show when={supportsUnique()}>
               <CheckboxCard
-                label="Unique values"
-                description={
-                  forceUnique()
-                    ? "Generated IDs are always unique."
-                    : "No two records can share the same value. Existing duplicates block saving."
-                }
+                label={t().uniqueValues}
+                description={forceUnique() ? t().generatedIdsUnique : t().duplicateValuesBlockSave}
                 icon="ti ti-fingerprint"
                 value={() => (forceUnique() ? true : uniqueConstraint())}
                 onValueChange={forceUnique() ? undefined : wrap(setUniqueConstraint)}
@@ -324,14 +316,10 @@ function FieldEditor(props: {
         </PanelDialog.Section>
 
         <Show when={supportsIndexed()}>
-          <PanelDialog.Section
-            title="Query performance"
-            subtitle="Use only for fields that are filtered or sorted often."
-            icon="ti ti-bolt"
-          >
+          <PanelDialog.Section title={t().queryPerformance} subtitle={t().queryPerformanceDescription} icon="ti ti-bolt">
             <CheckboxCard
-              label="Indexed"
-              description="Faster filters and sorts on this field. Costs disk and write work."
+              label={t().indexed}
+              description={t().indexedDescription}
               icon="ti ti-database-search"
               value={indexed}
               onValueChange={wrap(setIndexed)}
@@ -340,14 +328,10 @@ function FieldEditor(props: {
         </Show>
 
         <Show when={props.tableColumns}>
-          <PanelDialog.Section
-            title="Table display"
-            subtitle="Default label and cell format in this table. Saved views can override this."
-            icon="ti ti-table"
-          >
+          <PanelDialog.Section title={t().tableDisplay} subtitle={t().tableDisplayDescription} icon="ti ti-table">
             <TextInput
-              label="Table column name"
-              description="Empty uses the field name."
+              label={t().tableColumnName}
+              description={t().tableColumnNameDescription}
               value={columnLabel}
               onValueChange={wrap(setColumnLabel)}
               icon="ti ti-heading"
@@ -383,11 +367,7 @@ function FieldEditor(props: {
             matches the field type (NumberInput for number, Select
             for select, etc). Saved as `defaultValue` on the field
             row; null/undefined = no default. */}
-          <PanelDialog.Section
-            title="Default"
-            subtitle="Optional value used when a create request omits this field."
-            icon="ti ti-file-plus"
-          >
+          <PanelDialog.Section title={t().default} subtitle={t().defaultDescription} icon="ti ti-file-plus">
             <Show
               when={props.field.type === "date"}
               fallback={
@@ -408,7 +388,7 @@ function FieldEditor(props: {
               }
             >
               <Select
-                label="Default value"
+                label={t().defaultValue}
                 value={dateDefaultMode}
                 onValueChange={(v) => {
                   const mode = (v as "none" | "fixed" | "now" | null) ?? "none";
@@ -416,13 +396,11 @@ function FieldEditor(props: {
                   wrap(setDefaultValue)(mode === "now" ? { kind: "now" } : mode === "none" ? null : null);
                 }}
                 options={[
-                  { id: "none", label: "None" },
-                  { id: "fixed", label: "Fixed date" },
+                  { id: "none", label: t().none },
+                  { id: "fixed", label: t().fixedDate },
                   {
                     id: "now",
-                    label: (config() as { includeTime?: boolean }).includeTime
-                      ? "Current date and time when created"
-                      : "Current date when created",
+                    label: (config() as { includeTime?: boolean }).includeTime ? t().currentDateTime : t().currentDate,
                   },
                 ]}
               />
@@ -443,11 +421,11 @@ function FieldEditor(props: {
                 />
               </Show>
             </Show>
-            <p class="text-[11px] text-dimmed leading-snug">Leave empty when users should choose the value themselves.</p>
+            <p class="text-[11px] text-dimmed leading-snug">{t().leaveDefaultEmpty}</p>
           </PanelDialog.Section>
         </Show>
 
-        <PanelDialog.Section title="Type settings" subtitle="Constraints and options specific to this datatype." icon="ti ti-adjustments">
+        <PanelDialog.Section title={t().typeSettings} subtitle={t().typeSettingsDescription} icon="ti ti-adjustments">
           <FieldConfigEditor
             currentFieldId={props.field.id}
             type={props.field.type}
@@ -468,8 +446,13 @@ function FieldEditor(props: {
               <NoticeCard
                 tone={series.migrationNote ? "warning" : "info"}
                 role="status"
-                title="Number series"
-                detail={`Numbers are assigned when the record is ${series.assignment === "finalization" ? "finalized" : "created"}. Last number: ${series.lastValue}.${series.preview ? ` Next number: ${series.preview}.` : ""}${series.migrationNote ? ` ${series.migrationNote}` : ""}`}
+                title={t().numberSeries}
+                detail={t().numberSeriesDetail({
+                  assignment: series.assignment === "finalization" ? t().finalized : t().created,
+                  last: series.lastValue,
+                  next: series.preview ?? undefined,
+                  note: series.migrationNote ?? undefined,
+                })}
               />
             )}
           </Show>
@@ -478,12 +461,12 @@ function FieldEditor(props: {
 
       <PanelDialog.Footer>
         <Button variant="ghost" size="sm" type="button" class="text-red-500 hover:text-red-600" onClick={props.onDeleted}>
-          <i class="ti ti-trash" /> Delete field
+          <i class="ti ti-trash" /> {t().deleteField}
         </Button>
         <div class="flex items-center gap-2">
           <Show when={props.onCancel}>
             <Button variant="secondary" size="sm" type="button" onClick={() => props.onCancel?.()}>
-              Cancel
+              {t().cancel}
             </Button>
           </Show>
           <Button
@@ -493,9 +476,9 @@ function FieldEditor(props: {
             onClick={handleSave}
             disabled={!dirty()}
             loading={updateMut.loading()}
-            loadingLabel="Saving field"
+            loadingLabel={t().savingField}
           >
-            Save
+            {t().save}
           </Button>
         </div>
       </PanelDialog.Footer>

@@ -30,15 +30,23 @@ describe("formula preview integration", () => {
       `;
 
       const empty = await checkFormula({ tableId, expression: "   " });
-      expect(empty.ok && empty.data).toMatchObject({ ok: true, rows: [], diagnostics: [{ severity: "info" }] });
+      expect(empty.ok && empty.data).toMatchObject({
+        ok: true,
+        rows: [],
+        diagnostics: [{ code: "formula.empty", severity: "info" }],
+      });
 
       const parse = await checkFormula({ tableId, expression: "LEN(" });
       expect(parse.ok && parse.data.ok).toBe(false);
-      if (parse.ok) expect(parse.data.diagnostics[0]?.message).toContain("Parse error");
+      if (parse.ok)
+        expect(parse.data.diagnostics[0]).toMatchObject({ code: "formula.syntax", message: expect.stringContaining("Parse error") });
 
       const missing = await checkFormula({ tableId, expression: "LEN(Unknown)" });
       expect(missing.ok && missing.data.ok).toBe(false);
-      if (missing.ok) expect(missing.data.diagnostics).toEqual([{ severity: "error", message: "Unknown field reference: Unknown" }]);
+      if (missing.ok)
+        expect(missing.data.diagnostics).toEqual([
+          { code: "formula.unknown_field", severity: "error", message: "Unknown field reference: Unknown" },
+        ]);
 
       const valid = await checkFormula({ tableId, expression: "LEN(Name)" });
       expect(valid.ok && valid.data.ok).toBe(true);
@@ -49,7 +57,11 @@ describe("formula preview integration", () => {
 
       const runtime = await checkFormula({ tableId, expression: "1 / 0" });
       expect(runtime.ok && runtime.data.ok).toBe(false);
-      if (runtime.ok) expect(runtime.data.diagnostics[0]?.message).toContain("formula error");
+      if (runtime.ok)
+        expect(runtime.data.diagnostics[0]).toMatchObject({
+          code: "formula.evaluation",
+          message: expect.stringContaining("formula error"),
+        });
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }

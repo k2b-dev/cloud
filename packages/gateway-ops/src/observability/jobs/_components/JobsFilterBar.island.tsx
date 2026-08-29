@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import {
   buildJobsFilterUrl,
@@ -9,6 +9,7 @@ import {
   jobsDurationOptions,
   jobsWindowOptions,
 } from "./types";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   filter: JobsFilterState;
@@ -16,46 +17,39 @@ type Props = {
 
 const baseUrl = "/admin/observability/jobs";
 
-const windowOptions: FilterChipSection[] = [
-  {
-    options: jobsWindowOptions.map((option) => ({ value: option.value, label: option.label, icon: "ti ti-clock" })),
-  },
-];
-
-const healthOptions: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All states", icon: "ti ti-list" },
-      { value: "failed", label: "Failed", icon: "ti ti-alert-circle" },
-      { value: "running", label: "Running", icon: "ti ti-loader" },
-      { value: "healthy", label: "Healthy", icon: "ti ti-check" },
-    ],
-  },
-];
-
-const typeOptions: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All types", icon: "ti ti-stack-2" },
-      { value: "job", label: "Jobs", icon: "ti ti-briefcase" },
-      { value: "schedule", label: "Schedules", icon: "ti ti-calendar-time" },
-      { value: "backfill", label: "Backfills", icon: "ti ti-database-import" },
-      { value: "ai", label: "AI", icon: "ti ti-sparkles" },
-      { value: "sync", label: "Sync", icon: "ti ti-refresh" },
-      { value: "notification", label: "Notifications", icon: "ti ti-bell" },
-      { value: "http", label: "HTTP", icon: "ti ti-world" },
-      { value: "custom", label: "Custom", icon: "ti ti-settings" },
-    ],
-  },
-];
-
-const durationOptions: FilterChipSection[] = [
-  {
-    options: jobsDurationOptions.map((option) => ({ value: option.value, label: option.label, icon: "ti ti-hourglass" })),
-  },
-];
-
 export default function JobsFilterBar(props: Props) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const windowOptions: FilterChipSection[] = [{
+    options: jobsWindowOptions.map((option) => ({
+      value: option.value,
+      label: option.value.endsWith("m")
+        ? t.lastMinutes({ count: Number(option.value.slice(0, -1)) })
+        : option.value.endsWith("d")
+          ? t.lastDays({ count: Number(option.value.slice(0, -1)) })
+          : t.lastHours({ count: Number(option.value.slice(0, -1)) }),
+      icon: "ti ti-clock",
+    })),
+  }];
+  const healthOptions: FilterChipSection[] = [{ options: [
+    { value: "all", label: t.allStates, icon: "ti ti-list" },
+    { value: "failed", label: t.failed, icon: "ti ti-alert-circle" },
+    { value: "running", label: t.running, icon: "ti ti-loader" },
+    { value: "healthy", label: t.healthy, icon: "ti ti-check" },
+  ] }];
+  const typeOptions: FilterChipSection[] = [{ options: [
+    { value: "all", label: t.allTypes, icon: "ti ti-stack-2" },
+    { value: "job", label: t.backgroundJobs, icon: "ti ti-briefcase" },
+    { value: "schedule", label: t.schedules, icon: "ti ti-calendar-time" },
+    { value: "backfill", label: t.backfills, icon: "ti ti-database-import" },
+    { value: "ai", label: "AI", icon: "ti ti-sparkles" },
+    { value: "sync", label: "Sync", icon: "ti ti-refresh" },
+    { value: "notification", label: t.notifications, icon: "ti ti-bell" },
+    { value: "http", label: "HTTP", icon: "ti ti-world" },
+    { value: "custom", label: t.custom, icon: "ti ti-settings" },
+  ] }];
+  const durationOptions: FilterChipSection[] = [{
+    options: jobsDurationOptions.map((option) => ({ value: option.value, label: option.value === "all" ? t.allDurations : option.label, icon: "ti ti-hourglass" })),
+  }];
   const navigate = (updates: Partial<JobsFilterState>) => {
     navigateTo(buildJobsFilterUrl(baseUrl, { ...updates, page: 1, run: null }, props.filter));
   };
@@ -85,10 +79,10 @@ export default function JobsFilterBar(props: Props) {
 
   return (
     <div class="flex flex-col gap-2">
-      <SearchBar action={searchAction} value={props.filter.search} placeholder="Search sources, jobs, app ids, or span keys..." />
+      <SearchBar action={searchAction} value={props.filter.search} placeholder={t.searchJobs} />
       <div class="flex items-center gap-2 flex-wrap">
         <FilterChip
-          label="Window"
+          label={t.window}
           icon="ti ti-clock"
           options={windowOptions}
           value={[props.filter.window]}
@@ -97,7 +91,7 @@ export default function JobsFilterBar(props: Props) {
           defaultValue={[defaultJobsFilter.window]}
         />
         <FilterChip
-          label="Health"
+          label={t.health}
           icon="ti ti-filter"
           options={healthOptions}
           value={[props.filter.health]}
@@ -106,7 +100,7 @@ export default function JobsFilterBar(props: Props) {
           defaultValue={[defaultJobsFilter.health]}
         />
         <FilterChip
-          label="Type"
+          label={t.type}
           icon="ti ti-stack-2"
           options={typeOptions}
           value={[props.filter.type]}
@@ -115,7 +109,7 @@ export default function JobsFilterBar(props: Props) {
           defaultValue={[defaultJobsFilter.type]}
         />
         <FilterChip
-          label="Duration"
+          label={t.duration}
           icon="ti ti-hourglass"
           options={durationOptions}
           value={[props.filter.duration]}
@@ -124,8 +118,8 @@ export default function JobsFilterBar(props: Props) {
           defaultValue={[defaultJobsFilter.duration]}
         />
         {hasActiveJobsFilters(props.filter) && (
-          <a href={clearUrl} class="text-[10px] text-red-500 tabular-nums hidden sm:inline" aria-label="Clear all filters">
-            <i class="ti ti-x" /> Clear
+          <a href={clearUrl} class="text-[10px] text-red-500 tabular-nums hidden sm:inline" aria-label={t.clearAllFilters}>
+            <i class="ti ti-x" /> {t.clear}
           </a>
         )}
       </div>

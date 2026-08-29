@@ -1,8 +1,9 @@
-import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { DataPanel, DataTable, type DataTableColumn, Pagination, SettingsPage, StatCell, StatGrid, StatusBadge, useLocale } from "@k2b/ui";
 import type { AiProjectAdminListItem, AiProjectAdminSummary } from "@valentinkolb/cloud/ai";
 import { formatDateTime } from "@valentinkolb/cloud/shared";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import AiProjectAdminActions from "./AiProjectAdminActions.island";
+import { settingsMessages } from "./messages";
 
 type Props = {
   projects: AiProjectAdminListItem[];
@@ -14,35 +15,32 @@ type Props = {
 };
 
 export default function AiProjectsAdminPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   const totalPages = Math.ceil(props.total / props.perPage);
   const baseUrl = props.search
     ? `/admin/settings?tab=ai-projects&search=${encodeURIComponent(props.search)}&page=`
     : "/admin/settings?tab=ai-projects&page=";
   const columns: DataTableColumn<AiProjectAdminListItem>[] = [
-    { id: "project", header: "Project", value: (project) => project.name },
-    { id: "updated", header: "Updated", value: (project) => project.updatedAt, cellClass: "whitespace-nowrap" },
-    { id: "access", header: "Access", value: (project) => project.accessCount, cellClass: "whitespace-nowrap" },
-    { id: "admins", header: "Admins", value: (project) => project.adminCount, cellClass: "whitespace-nowrap" },
-    { id: "actions", header: "Settings", headerClass: "w-px text-right", cellClass: "text-right whitespace-nowrap" },
+    { id: "project", header: t().project, value: (project) => project.name },
+    { id: "updated", header: t().updated, value: (project) => project.updatedAt, cellClass: "whitespace-nowrap" },
+    { id: "access", header: t().access, value: (project) => project.accessCount, cellClass: "whitespace-nowrap" },
+    { id: "admins", header: t().admins, value: (project) => project.adminCount, cellClass: "whitespace-nowrap" },
+    { id: "actions", header: t().settings, headerClass: "w-px text-right", cellClass: "text-right whitespace-nowrap" },
   ];
 
   return (
-    <SettingsPage
-      title="AI Projects"
-      subtitle="Recover and manage access to shared AI Projects."
-      icon="ti ti-folders"
-      scrollPreserveKey="admin-ai-projects"
-    >
+    <SettingsPage title={t().aiProjects} subtitle={t().aiProjectsDescription} icon="ti ti-folders" scrollPreserveKey="admin-ai-projects">
       <StatGrid columns={3}>
-        <StatCell label="Projects" value={props.summary.total} sub={props.search ? "filtered" : "shared Projects"} />
+        <StatCell label={t().projects} value={props.summary.total} sub={props.search ? t().filtered : t().sharedProjects} />
         <StatCell
-          label="Without admins"
+          label={t().withoutAdmins}
           value={props.summary.unmanaged}
-          sub={props.summary.unmanaged > 0 ? "recovery required" : "all manageable"}
+          sub={props.summary.unmanaged > 0 ? t().recoveryRequired : t().allManageable}
           valueClass={props.summary.unmanaged > 0 ? "text-red-500" : "text-primary"}
           accent={props.summary.unmanaged > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
         />
-        <StatCell label="Access entries" value={props.summary.totalAccess} sub={props.search ? "in search" : "across all Projects"} />
+        <StatCell label={t().accessEntries} value={props.summary.totalAccess} sub={props.search ? t().inSearch : t().acrossAllProjects} />
       </StatGrid>
 
       <div class="flex items-center gap-2">
@@ -50,18 +48,18 @@ export default function AiProjectsAdminPanel(props: Props) {
           <SearchBar
             action="/admin/settings?tab=ai-projects"
             value={props.search}
-            placeholder="Search Projects by name or ID..."
-            ariaLabel="Search AI Projects"
+            placeholder={t().searchProjects}
+            ariaLabel={t().searchAiProjects}
           />
         </div>
         <span class="shrink-0 text-xs tabular-nums text-dimmed">
-          {props.projects.length} of {props.total}
+          {t().shownOfTotal({ shown: props.projects.length, total: props.total })}
         </span>
       </div>
 
       <DataPanel
-        title="Project records"
-        subtitle="Platform-wide Projects remain listed even when their last administrator account was deleted."
+        title={t().projectRecords}
+        subtitle={t().projectRecordsDescription}
         class="overflow-hidden"
         footer={<Pagination currentPage={props.page} totalPages={totalPages} baseUrl={baseUrl} />}
       >
@@ -71,7 +69,7 @@ export default function AiProjectsAdminPanel(props: Props) {
           getRowId={(project) => project.shortId}
           hoverRows
           class="overflow-x-auto"
-          empty={props.search ? `No Projects matching "${props.search}".` : "No AI Projects found."}
+          empty={props.search ? t().noProjectsMatch({ search: props.search }) : t().noProjects}
           renderCell={({ row: project, col }) => {
             if (col.id === "project") {
               return (
@@ -84,12 +82,13 @@ export default function AiProjectsAdminPanel(props: Props) {
                 </div>
               );
             }
-            if (col.id === "updated") return <span class="text-xs text-dimmed">{formatDateTime(project.updatedAt)}</span>;
+            if (col.id === "updated")
+              return <span class="text-xs text-dimmed">{formatDateTime(project.updatedAt, { locale: locale() })}</span>;
             if (col.id === "access") return <span class="text-xs tabular-nums text-dimmed">{project.accessCount}</span>;
             if (col.id === "admins") {
               return (
                 <StatusBadge
-                  label={project.adminCount === 0 ? "No admins" : `${project.adminCount} ${project.adminCount === 1 ? "admin" : "admins"}`}
+                  label={project.adminCount === 0 ? t().noAdmins : t().adminCount({ count: project.adminCount })}
                   tone={project.adminCount === 0 ? "error" : "neutral"}
                 />
               );

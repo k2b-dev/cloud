@@ -51,7 +51,7 @@ describe("Grids Apps documentation contract", () => {
     const knownIds = new Set(gridsHelp.documents.map((document) => document.id));
 
     for (const filename of detailedHelpFiles) {
-      const markdown = await Bun.file(new URL(`./documents/${filename}`, import.meta.url)).text();
+      const markdown = await Bun.file(new URL(`./documents/en/${filename}`, import.meta.url)).text();
       const id = filename.replace(".help.md", "");
 
       expect(markdown.trim().length, filename).toBeGreaterThan(1_000);
@@ -64,7 +64,7 @@ describe("Grids Apps documentation contract", () => {
   });
 
   test("documents the implemented Record-only page parameter contract", async () => {
-    const markdown = await Bun.file(new URL("./documents/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
+    const markdown = await Bun.file(new URL("./documents/en/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
 
     expect(markdown).toContain("This release supports required Record parameters only.");
     expect(markdown).toContain("its URL and `@params.<name>` value are record public IDs");
@@ -72,9 +72,9 @@ describe("Grids Apps documentation contract", () => {
   });
 
   test("documents progressive visual authoring and contextual GQL", async () => {
-    const overview = await Bun.file(new URL("./documents/grids-custom-apps.help.md", import.meta.url)).text();
-    const builder = await Bun.file(new URL("./documents/grids-build-custom-app.help.md", import.meta.url)).text();
-    const pages = await Bun.file(new URL("./documents/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
+    const overview = await Bun.file(new URL("./documents/en/grids-custom-apps.help.md", import.meta.url)).text();
+    const builder = await Bun.file(new URL("./documents/en/grids-build-custom-app.help.md", import.meta.url)).text();
+    const pages = await Bun.file(new URL("./documents/en/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
 
     expect(overview).toContain("opened in a larger editor without creating a second draft");
     expect(overview).toContain("there is no second Page Record setting");
@@ -91,9 +91,9 @@ describe("Grids Apps documentation contract", () => {
   });
 
   test("keeps removed dual-ID surfaces out of the written contract", async () => {
-    const overview = await Bun.file(new URL("./documents/grids-custom-apps.help.md", import.meta.url)).text();
-    const pages = await Bun.file(new URL("./documents/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
-    const yaml = await Bun.file(new URL("./documents/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
+    const overview = await Bun.file(new URL("./documents/en/grids-custom-apps.help.md", import.meta.url)).text();
+    const pages = await Bun.file(new URL("./documents/en/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
+    const yaml = await Bun.file(new URL("./documents/en/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
     const cli = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 
     expect(overview).not.toContain("**Bulk actions**");
@@ -106,7 +106,7 @@ describe("Grids Apps documentation contract", () => {
   });
 
   test("keeps the strict YAML root example aligned with the public schema", async () => {
-    const markdown = await Bun.file(new URL("./documents/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
+    const markdown = await Bun.file(new URL("./documents/en/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
     const source = markdown.match(/## Use one strict root document[\s\S]*?```yaml\n([\s\S]*?)```/)?.[1];
 
     expect(source).toBeDefined();

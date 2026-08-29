@@ -29,16 +29,20 @@ import {
   pointsToHistogram,
   pointsToLineSeries,
 } from "./workspace/helpers";
+import type { pulseMessages } from "../messages";
+import { usePulseMessages } from "./use-messages";
 
 type Props = {
   snapshot: PulseDashboardSnapshot;
   dateContext: DateContext;
 };
 
-const queryPointColumns = (dateContext: DateContext): DataTableColumn<MetricQueryPoint>[] => [
-  { id: "bucket", header: "Bucket", value: (point) => compactDate(point.bucket, dateContext), cellClass: "w-32 whitespace-nowrap" },
-  { id: "group", header: "Group", value: (point) => metricPointGroupLabel(point) || "-" },
-  { id: "value", header: "Value", value: (point) => formatValue(point.value), cellClass: "w-32 whitespace-nowrap" },
+type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
+
+const queryPointColumns = (dateContext: DateContext, t: Messages): DataTableColumn<MetricQueryPoint>[] => [
+  { id: "bucket", header: t.bucket, value: (point) => compactDate(point.bucket, dateContext), cellClass: "w-32 whitespace-nowrap" },
+  { id: "group", header: t.group, value: (point) => metricPointGroupLabel(point) || "-" },
+  { id: "value", header: t.value, value: (point) => formatValue(point.value), cellClass: "w-32 whitespace-nowrap" },
 ];
 
 const spanClasses: Record<number, string> = {
@@ -112,7 +116,7 @@ const renderLineMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: 
   />
 );
 
-const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: MetricQueryPoint[], dateContext: DateContext): JSX.Element => {
+const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: MetricQueryPoint[], dateContext: DateContext, t: Messages): JSX.Element => {
   const last = metricWidgetLastValue(data);
   switch (widget.visual) {
     case "stat":
@@ -124,7 +128,7 @@ const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: Metr
     case "bar":
       return <Chart kind="bar" class="h-56 text-dimmed" data={pointsToBars(data, dateContext)} showValues={data.length <= 16} />;
     case "histogram":
-      return <Chart kind="histogram" class="h-56 text-dimmed" data={pointsToHistogram(data)} bins={12} yAxis={{ label: "Count" }} />;
+      return <Chart kind="histogram" class="h-56 text-dimmed" data={pointsToHistogram(data)} bins={12} yAxis={{ label: t.count }} />;
     case "heatmap":
       return (
         <Chart
@@ -139,11 +143,11 @@ const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: Metr
       return (
         <DataTable
           rows={data}
-          columns={queryPointColumns(dateContext)}
+          columns={queryPointColumns(dateContext, t)}
           getRowId={(point) => point.bucket}
           density="compact"
           class="max-h-72 overflow-auto"
-          empty="No points yet."
+          empty={t.noPoints}
         />
       );
     default:
@@ -152,6 +156,7 @@ const renderMetricVisual = (widget: PulsePublicDashboardMetricWidget, data: Metr
 };
 
 export function PublicDashboardSections(props: Props) {
+  const t = usePulseMessages();
   const pointsFor = (widget: PulsePublicDashboardMetricWidget): MetricQueryPoint[] => props.snapshot.points[widget.id] ?? [];
 
   const renderWidgetFrame = (widget: { title?: string | null; description?: string | null }, content: JSX.Element) => (
@@ -192,13 +197,13 @@ export function PublicDashboardSections(props: Props) {
                 }`}
               >
                 <i class={`ti ${matched().level === "critical" ? "ti-alert-triangle" : "ti-alert-circle"}`} />
-                <span>{formatDashboardConditionText(matched())}</span>
+                <span>{formatDashboardConditionText(matched(), t())}</span>
               </p>
             )}
           </Show>
           <Show when={widget.description}>{(description) => <p class="mt-2 text-xs leading-relaxed text-dimmed">{description()}</p>}</Show>
         </div>
-        {renderMetricVisual(widget, pointsFor(widget), props.dateContext)}
+        {renderMetricVisual(widget, pointsFor(widget), props.dateContext, t())}
       </article>
     );
   };
@@ -215,15 +220,15 @@ export function PublicDashboardSections(props: Props) {
       <DataTable
         rows={props.snapshot.events[widget.id] ?? []}
         columns={[
-          { id: "time", header: "Time", value: (event) => compactDateWithDelta(event.ts, props.dateContext) },
-          { id: "event", header: "Event", value: (event) => event.kind },
-          { id: "subject", header: "Subject", value: (event) => publicDashboardEventSubject(event) },
-          { id: "value", header: "Value", value: (event) => formatSignalValue(event.value) },
+          { id: "time", header: t().time, value: (event) => compactDateWithDelta(event.ts, props.dateContext) },
+          { id: "event", header: t().event, value: (event) => event.kind },
+          { id: "subject", header: t().subject, value: (event) => publicDashboardEventSubject(event) },
+          { id: "value", header: t().value, value: (event) => formatSignalValue(event.value) },
         ]}
         getRowId={(event) => event.id}
         density="compact"
         class="max-h-80 overflow-auto"
-        empty="No events matched this query."
+        empty={t().noEventsMatched}
       />,
     );
 
@@ -247,15 +252,15 @@ export function PublicDashboardSections(props: Props) {
       <DataTable
         rows={rows}
         columns={[
-          { id: "state", header: "State", value: (state) => state.key },
-          { id: "value", header: "Value", value: (state) => formatSignalValue(state.value) },
-          { id: "entity", header: "Entity", value: (state) => state.entityId },
-          { id: "updated", header: "Updated", value: (state) => compactDateWithDelta(state.updatedAt, props.dateContext) },
+          { id: "state", header: t().state, value: (state) => state.key },
+          { id: "value", header: t().value, value: (state) => formatSignalValue(state.value) },
+          { id: "entity", header: t().entity, value: (state) => state.entityId },
+          { id: "updated", header: t().updated, value: (state) => compactDateWithDelta(state.updatedAt, props.dateContext) },
         ]}
         getRowId={(state) => publicDashboardStateRowId(state)}
         density="compact"
         class="max-h-80 overflow-auto"
-        empty="No states matched this query."
+        empty={t().noStatesMatched}
       />,
     );
   };
@@ -266,7 +271,7 @@ export function PublicDashboardSections(props: Props) {
       widget,
       <Show
         when={series.some((item) => item.data.length)}
-        fallback={<div class="flex h-64 items-center justify-center text-sm text-dimmed">No valid map points matched this query.</div>}
+        fallback={<div class="flex h-64 items-center justify-center text-sm text-dimmed">{t().noMapPointsMatched}</div>}
       >
         <Chart kind="map" class="h-64 text-dimmed" series={series} legend={series.some((item) => Boolean(item.label))} interactive />
       </Show>,

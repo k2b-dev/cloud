@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -12,8 +12,10 @@ import {
   EvidenceExportSchema,
 } from "../evidence-export-contracts";
 import { gridsService } from "../service";
+import { apiMessages } from "./messages";
 import { currentActorUser, gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const RangeQuerySchema = z
   .object({
@@ -36,11 +38,11 @@ const loadTableScope = async (baseId: string, tablePublicId: string | null | und
 
 const loadExportAndGate = async (c: Context<AuthContext>) => {
   const exportItem = await gridsService.evidenceExport.getByShortId(c.req.param("exportId") ?? "");
-  if (!exportItem) return { ok: false as const, response: c.json({ message: "Evidence export not found" }, 404) };
+  if (!exportItem) return { ok: false as const, response: c.json({ message: apiMessages(c).evidenceExportNotFound }, 404) };
   const base = await gridsService.base.getByShortId(exportItem.baseId);
-  if (!base) return { ok: false as const, response: c.json({ message: "Evidence export not found" }, 404) };
+  if (!base) return { ok: false as const, response: c.json({ message: apiMessages(c).evidenceExportNotFound }, 404) };
   const gate = await gateAt(c, { baseId: base.id }, "admin");
-  if (!gate.ok) return { ok: false as const, response: c.json({ message: "Evidence export not found" }, 404) };
+  if (!gate.ok) return { ok: false as const, response: c.json({ message: apiMessages(c).evidenceExportNotFound }, 404) };
   return { ok: true as const, exportItem, base };
 };
 
@@ -79,10 +81,10 @@ const api = new Hono<AuthContext>()
           sections.length !== query.sections.split(",").length ||
           new Set(sections).size !== sections.length)
       ) {
-        return c.json({ message: "Invalid evidence export sections" }, 400);
+        return c.json({ message: apiMessages(c).invalidEvidenceExportSections }, 400);
       }
       const table = await loadTableScope(baseId, query.tableId);
-      if (!table.ok) return c.json({ message: "Table not found" }, 404);
+      if (!table.ok) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       return c.json(
         await gridsService.evidenceExport.preflight({
           baseId,
@@ -90,6 +92,7 @@ const api = new Hono<AuthContext>()
           from: query.from ?? null,
           to: query.to ?? null,
           sections,
+          locale: getLocale(c),
         }),
       );
     },
@@ -133,7 +136,7 @@ const api = new Hono<AuthContext>()
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const body = c.req.valid("json");
       const table = await loadTableScope(baseId, body.tableId);
-      if (!table.ok) return c.json({ message: "Table not found" }, 404);
+      if (!table.ok) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const actor = currentActorUser(c);
       const result = await gridsService.evidenceExport.create({
         baseId,
@@ -143,6 +146,7 @@ const api = new Hono<AuthContext>()
         sections: body.sections,
         requestedBy: actor?.id ?? null,
         requestedByDisplayName: actor ? actor.displayName || actor.uid : null,
+        locale: getLocale(c),
       });
       return result.ok ? c.json(result.data, 201) : respond(c, () => Promise.resolve(result));
     },
@@ -158,7 +162,7 @@ const api = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      if (!ShortIdSchema.safeParse(c.req.param("exportId")).success) return c.json({ message: "Evidence export not found" }, 404);
+      if (!ShortIdSchema.safeParse(c.req.param("exportId")).success) return c.json({ message: apiMessages(c).evidenceExportNotFound }, 404);
       const loaded = await loadExportAndGate(c);
       return loaded.ok ? c.json(loaded.exportItem) : loaded.response;
     },
@@ -178,7 +182,7 @@ const api = new Hono<AuthContext>()
     async (c) => {
       const loaded = await loadExportAndGate(c);
       if (!loaded.ok) return loaded.response;
-      return respond(c, () => gridsService.evidenceExport.retry(loaded.exportItem.id));
+      return respond(c, () => gridsService.evidenceExport.retry(loaded.exportItem.id, getLocale(c)));
     },
   )
   .post(
@@ -196,7 +200,7 @@ const api = new Hono<AuthContext>()
     async (c) => {
       const loaded = await loadExportAndGate(c);
       if (!loaded.ok) return loaded.response;
-      return respond(c, () => gridsService.evidenceExport.cancel(loaded.exportItem.id));
+      return respond(c, () => gridsService.evidenceExport.cancel(loaded.exportItem.id, getLocale(c)));
     },
   )
   .get(
@@ -213,7 +217,7 @@ const api = new Hono<AuthContext>()
     async (c) => {
       const loaded = await loadExportAndGate(c);
       if (!loaded.ok) return loaded.response;
-      const result = await gridsService.evidenceExport.download(loaded.exportItem.id);
+      const result = await gridsService.evidenceExport.download(loaded.exportItem.id, getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       return new Response(result.data.body, {
         headers: {

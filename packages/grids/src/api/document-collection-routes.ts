@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getDateConfig, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
@@ -13,8 +13,10 @@ import {
   PublicDocumentPageQuerySchema,
   projectDocuments,
 } from "./documents-api-shared";
+import { apiMessages } from "./messages";
 import { gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 export const createDocumentCollectionRoutes = () =>
   new Hono<AuthContext>()
@@ -31,7 +33,7 @@ export const createDocumentCollectionRoutes = () =>
       v("query", PublicDocumentListQuerySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const query = c.req.valid("query");
@@ -63,7 +65,7 @@ export const createDocumentCollectionRoutes = () =>
       v("query", DocumentBrowseQuerySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const query = c.req.valid("query");
@@ -100,9 +102,9 @@ export const createDocumentCollectionRoutes = () =>
       v("query", PublicDocumentPageQuerySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const recordId = await resolvePublicIdParam(c, "recordId", "record");
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const query = c.req.valid("query");
@@ -136,9 +138,9 @@ export const createDocumentCollectionRoutes = () =>
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
         const recordId = await resolvePublicIdParam(c, "recordId", "record");
-        if (!tableId || !recordId) return c.json({ message: "Record not found" }, 404);
+        if (!tableId || !recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const query = c.req.valid("query");

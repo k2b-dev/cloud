@@ -169,6 +169,7 @@ type RecordsDataControllerOptions = {
   source: Accessor<RecordsQuerySource>;
   initialData: TableQueryResult;
   initialEventCursor: string | null;
+  locale: string;
   cursor: Accessor<string | null>;
   setCursor: Setter<string | null>;
   isGrouped: Accessor<boolean>;
@@ -402,6 +403,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     liveProvider = createGridsRecordEventsProvider({
       tableId: options.tableId,
       initialCursor: options.initialEventCursor,
+      locale: options.locale,
       onEvent: (event, cursor) => {
         if (!event) return;
         if (cursor) pendingLiveCursor = cursor;

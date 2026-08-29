@@ -21,6 +21,7 @@ import {
   getWorkflowEmailDeliveryIntent,
   type WorkflowEmailDeliveryIntent,
 } from "./workflow-email-deliveries";
+import { workflowServiceText } from "./workflow-service-messages";
 
 export type WorkflowEmailRecipient = { kind: "email" | "user"; value: string };
 
@@ -33,9 +34,9 @@ const recipientSummary = (kind: "email" | "user", value: string): string => {
   return domain ? `${name?.slice(0, 2) ?? ""}***@${domain}` : "***";
 };
 
-const intentRecipient = (intent: WorkflowEmailDeliveryIntent) => {
+const intentRecipient = (intent: WorkflowEmailDeliveryIntent, locale?: string) => {
   const recipient = intent.recipients[0];
-  if (!recipient) throw actionError("WORKFLOW_EMAIL_INVALID", "Workflow email delivery recipient is missing");
+  if (!recipient) throw actionError("WORKFLOW_EMAIL_INVALID", workflowServiceText(locale).emailRecipientMissing);
   return recipient;
 };
 
@@ -47,6 +48,7 @@ export type SendWorkflowEmailInput = {
   occurredAt: string;
   effectKey: string;
   workflowStepKey: string;
+  locale?: string;
 };
 
 export const sendWorkflowEmail = async (input: SendWorkflowEmailInput): Promise<WorkflowJsonValue> => {
@@ -82,13 +84,14 @@ export const sendWorkflowEmail = async (input: SendWorkflowEmailInput): Promise<
           idempotencyKey: `${input.effectKey}:recipient:${index}`,
           subject: rendered.subject,
           renderedHtml: rendered.html,
+          locale: input.locale,
         })),
     );
   }
 
   const recipients: WorkflowJsonValue[] = [];
   for (const intent of intents) {
-    const recipient = intentRecipient(intent);
+    const recipient = intentRecipient(intent, input.locale);
     if (intent.status !== "pending") {
       recipients.push({
         id: intent.notificationId ?? "",
@@ -97,21 +100,23 @@ export const sendWorkflowEmail = async (input: SendWorkflowEmailInput): Promise<
         recipient: recipient.recipient,
         status: intent.providerStatus ?? intent.status,
       });
-      if (intent.status === "failed") throw actionError("WORKFLOW_EMAIL_FAILED", intent.error ?? "email delivery failed");
+      if (intent.status === "failed")
+        throw actionError("WORKFLOW_EMAIL_FAILED", intent.error ?? workflowServiceText(input.locale).emailDeliveryFailed);
       continue;
     }
     if (!intent.recipientValue || !intent.subject || !intent.renderedHtml) {
-      throw actionError("WORKFLOW_EMAIL_INVALID", "Pending email delivery is incomplete");
+      throw actionError("WORKFLOW_EMAIL_INVALID", workflowServiceText(input.locale).emailPendingIncomplete);
     }
     const sent = await notificationSender.send({
       kind: recipient.kind,
       recipient: intent.recipientValue,
       subject: intent.subject,
       html: intent.renderedHtml,
+      locale: input.locale,
       idempotencyKey: intent.idempotencyKey,
       ...(scope.principal.userId ? { sentBy: scope.principal.userId } : {}),
     });
-    const errorMessage = sent.status === "failed" ? (sent.error ?? "email delivery failed") : null;
+    const errorMessage = sent.status === "failed" ? (sent.error ?? workflowServiceText(input.locale).emailDeliveryFailed) : null;
     const delivery = await sql.begin(async (tx) => {
       const finished = await finishWorkflowEmailDeliveryIntent(
         intent.id,
@@ -122,6 +127,7 @@ export const sendWorkflowEmail = async (input: SendWorkflowEmailInput): Promise<
           error: errorMessage,
         },
         tx,
+        input.locale,
       );
       if (finished.transitioned) {
         await logAudit(

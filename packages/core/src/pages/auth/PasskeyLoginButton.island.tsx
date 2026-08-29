@@ -1,17 +1,20 @@
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button } from "@k2b/ui";
+import { NoticeCard, Button, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { authMessages } from "./messages";
 
 export default function PasskeyLoginButton(props: { redirectTo?: string }) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const mutation = mutations.create({
     mutation: async () => {
-      if (!browserSupportsWebAuthn()) throw new Error("This browser does not support passkeys.");
+      if (!browserSupportsWebAuthn()) throw new Error(t().passkeysUnsupported);
 
       const optionsRes = await apiClient.auth.passkeys.authentication.start.$post();
       const options = await optionsRes.json();
-      if (!optionsRes.ok) throw new Error((options as { message?: string }).message ?? "Failed to start passkey login.");
+      if (!optionsRes.ok) throw new Error((options as { message?: string }).message ?? t().passkeyStartFailed);
 
       const response = await startAuthentication({
         optionsJSON: options as never,
@@ -23,7 +26,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
         const data = (await verifyRes.json().catch(() => null)) as {
           message?: string;
         } | null;
-        throw new Error(data?.message ?? "Passkey login failed.");
+        throw new Error(data?.message ?? t().passkeyLoginFailed);
       }
     },
     onSuccess: () => {
@@ -39,11 +42,11 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
         size="lg"
         class="h-12 w-full justify-center text-base"
         loading={mutation.loading()}
-        loadingLabel="Signing in"
+        loadingLabel={t().signingIn}
         onClick={() => mutation.mutate({})}
       >
         {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-key" />}
-        Continue with passkey
+        {t().continueWithPasskey}
       </Button>
       {mutation.error() && (
         <NoticeCard tone="danger" icon={false}>

@@ -1,8 +1,9 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { PasswordSetupFields } from "../PasswordSetupFields";
+import { authMessages } from "../messages";
 
 type NewPasswordFormProps = {
   defaultUsername: string;
@@ -11,6 +12,8 @@ type NewPasswordFormProps = {
 
 /** Form for changing an expired/temporary password. */
 export default function NewPasswordForm(props: NewPasswordFormProps) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [username, setUsername] = createSignal(props.defaultUsername);
   const [currentPassword, setCurrentPassword] = createSignal("");
   const [newPassword, setNewPassword] = createSignal("");
@@ -19,7 +22,7 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
   const mutation = mutations.create({
     mutation: async () => {
       if (newPassword() !== confirmPassword()) {
-        throw new Error("Passwords do not match");
+        throw new Error(t().passwordsDoNotMatch);
       }
       const res = await apiClient.auth["change-expired-password"].$post({
         json: {
@@ -31,7 +34,7 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error("message" in data ? data.message : "Failed to change password");
+        throw new Error("message" in data ? data.message : t().passwordChangeFailed);
       }
     },
     onSuccess: () => {
@@ -48,9 +51,9 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
       class="flex flex-col gap-4"
     >
       <TextInput
-        label="Username"
-        description="Use your organization short name, for example your FreeIPA uid."
-        placeholder="e.g. eva"
+        label={t().username}
+        description={t().organizationUsernameDescription}
+        placeholder={t().usernameShortPlaceholder}
         icon="ti ti-user"
         value={username}
         onValueChange={setUsername}
@@ -58,9 +61,9 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
       />
 
       <TextInput
-        label="Current password"
-        description="Enter the temporary or expired password you used to start this reset."
-        placeholder="Current password"
+        label={t().currentPassword}
+        description={t().currentPasswordDescription}
+        placeholder={t().currentPassword}
         icon="ti ti-lock"
         password
         value={currentPassword}
@@ -81,13 +84,13 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel="Updating password">
+      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().updatingPassword}>
         {mutation.loading() ? (
           <i class="ti ti-loader-2 animate-spin" />
         ) : (
           <>
             <i class="ti ti-lock-check" />
-            <span>Set Password</span>
+            <span>{t().setPassword}</span>
           </>
         )}
       </Button>

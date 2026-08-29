@@ -22,6 +22,10 @@ import {
   type PulseDateContext,
   VISUAL_OPTIONS,
 } from "./helpers";
+import type { pulseMessages } from "../../messages";
+import { usePulseMessages } from "../use-messages";
+
+type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
 type CellRenderer<Row> = (row: Row, col: DataTableColumn<Row>, render: (value: unknown) => JSX.Element) => JSX.Element;
 type PreviewSeries = Array<{ label: string; data: Array<{ x: number; y: number }> }>;
@@ -55,6 +59,7 @@ function QueryExplorerChart(props: {
   series: Accessor<PreviewSeries>;
   dateContext: Accessor<PulseDateContext>;
 }) {
+  const t = usePulseMessages();
   const valueFormat = (value: number) => formatMetricValue(value, props.unit());
   const data = () => props.points();
   const last = () => data().at(-1)?.value ?? null;
@@ -109,7 +114,7 @@ function QueryExplorerChart(props: {
   }
   if (props.visual() === "histogram") {
     return (
-      <Chart kind="histogram" class="h-full min-h-0 text-dimmed" data={pointsToHistogram(data())} bins={12} yAxis={{ label: "Count" }} />
+      <Chart kind="histogram" class="h-full min-h-0 text-dimmed" data={pointsToHistogram(data())} bins={12} yAxis={{ label: t().count }} />
     );
   }
   if (props.visual() === "heatmap") {
@@ -136,12 +141,11 @@ function QueryExplorerChart(props: {
   );
 }
 
-const noMetricPointsMessage = (queryWasRun: boolean): string =>
-  queryWasRun
-    ? "No points matched this metric query. Try a wider since range or check whether the source is still ingesting."
-    : "Run a metric query to preview data.";
+const noMetricPointsMessage = (queryWasRun: boolean, t: Messages): string => (queryWasRun ? t.noMetricPoints : t.runMetricPreview);
 
-const renderEventsResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
+const renderEventsResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.events()}
     columns={props.eventColumns}
@@ -149,12 +153,15 @@ const renderEventsResult = (props: QueryExplorerResultPaneProps): JSX.Element =>
     selectedRowId={null}
     density="compact"
     class="h-full min-h-0 overflow-auto"
-    empty="Run an events query to see events."
+    empty={t().runEventsQuery}
     renderCell={({ row: event, col, render }) => props.renderEventCell(event, col, render)}
   />
-);
+  );
+};
 
-const renderStatesResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
+const renderStatesResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.states()}
     columns={props.stateColumns}
@@ -162,21 +169,25 @@ const renderStatesResult = (props: QueryExplorerResultPaneProps): JSX.Element =>
     selectedRowId={null}
     density="compact"
     class="h-full min-h-0 overflow-auto"
-    empty="Run a states query to see current states."
+    empty={t().runStatesQuery}
     renderCell={({ row: state, col, render }) => props.renderStateCell(state, col, render)}
   />
-);
+  );
+};
 
-const renderMetricTableResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
+const renderMetricTableResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.points()}
     columns={queryPointColumns}
     getRowId={(point) => point.bucket}
     density="compact"
     class="h-full min-h-0 overflow-auto"
-    empty={props.queryWasRun() ? noMetricPointsMessage(true) : "Run a metric query to see points."}
+    empty={props.queryWasRun() ? noMetricPointsMessage(true, t()) : t().runMetricPoints}
   />
-);
+  );
+};
 
 const renderMetricChartResult = (props: QueryExplorerResultPaneProps): JSX.Element => (
   <QueryExplorerChart
@@ -189,15 +200,19 @@ const renderMetricChartResult = (props: QueryExplorerResultPaneProps): JSX.Eleme
   />
 );
 
-const renderEmptyMetricResult = (queryWasRun: boolean): JSX.Element => (
+const renderEmptyMetricResult = (queryWasRun: boolean): JSX.Element => {
+  const t = usePulseMessages();
+  return (
   <div class="flex h-full min-h-0 items-center justify-center px-6 text-center text-sm text-dimmed">
-    {noMetricPointsMessage(queryWasRun)}
+    {noMetricPointsMessage(queryWasRun, t())}
   </div>
-);
+  );
+};
 
-const renderNonMetricChartFallback = (): JSX.Element => (
-  <div class="flex h-full min-h-0 items-center justify-center text-sm text-dimmed">Use Table or Compiled for this query type.</div>
-);
+const renderNonMetricChartFallback = (): JSX.Element => {
+  const t = usePulseMessages();
+  return <div class="flex h-full min-h-0 items-center justify-center text-sm text-dimmed">{t().useTableOrCompiled}</div>;
+};
 
 const renderChartResult = (props: QueryExplorerResultPaneProps, compiled: PulseExplorerQuery | null): JSX.Element => {
   if (compiled && compiled.kind !== "metric" && !(compiled.kind === "events" && isEventAggregateQuery(compiled)))
@@ -214,13 +229,38 @@ const renderDataResult = (props: QueryExplorerResultPaneProps, compiled: PulseEx
 };
 
 const renderQueryExplorerResult = (props: QueryExplorerResultPaneProps): JSX.Element => {
+  const t = usePulseMessages();
   const compiled = props.compiled();
   if (props.resultView() === "compiled")
-    return <StructuredDataPreview data={compiled ?? {}} empty="Run a query to see the compiled shape." />;
+    return <StructuredDataPreview data={compiled ?? {}} empty={t().runCompiledShape} />;
   return renderDataResult(props, compiled);
 };
 
 export default function QueryExplorerResultPane(props: QueryExplorerResultPaneProps) {
+  const t = usePulseMessages();
+  const resultViewOptions = () =>
+    RESULT_VIEW_OPTIONS.map((option) => ({
+      ...option,
+      label: option.id === "chart" ? t().chart : option.id === "table" ? t().table : t().compiled,
+    }));
+  const visualOptions = () =>
+    VISUAL_OPTIONS.map((option) => ({
+      ...option,
+      label:
+        option.id === "line"
+          ? t().line
+          : option.id === "bar"
+            ? t().bar
+            : option.id === "stat"
+              ? t().stat
+              : option.id === "gauge"
+                ? t().gauge
+                : option.id === "barGauge"
+                  ? t().barGauge
+                  : option.id === "histogram"
+                    ? t().histogram
+                    : t().heatmap,
+    }));
   return (
     <div class="flex h-full min-h-0 flex-col overflow-hidden">
       <div class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
@@ -240,7 +280,7 @@ export default function QueryExplorerResultPane(props: QueryExplorerResultPanePr
                   : (value as ExplorerResultView),
               )
             }
-            options={RESULT_VIEW_OPTIONS}
+            options={resultViewOptions()}
           />
         </div>
         <Show when={props.resultView() === "chart"}>
@@ -249,7 +289,7 @@ export default function QueryExplorerResultPane(props: QueryExplorerResultPanePr
               icon="ti ti-chart-line"
               value={props.visual}
               onValueChange={(value) => props.setVisual(value as PanelVisual)}
-              options={VISUAL_OPTIONS}
+              options={visualOptions()}
             />
           </div>
         </Show>
@@ -259,17 +299,17 @@ export default function QueryExplorerResultPane(props: QueryExplorerResultPanePr
           size="sm"
           disabled={!props.compiled()}
           onClick={() => void props.onCopyWidgetSnippet()}
-          title="Copy a Dashboard DSL widget snippet for this query"
+          title={t().copyWidgetTitle}
         >
-          <i class="ti ti-copy" /> Copy widget
+          <i class="ti ti-copy" /> {t().copyWidget}
         </Button>
         <span class="ml-auto text-xs text-dimmed">
           {props.compiled()?.kind === "events" &&
           !isEventAggregateQuery(props.compiled() as Extract<PulseExplorerQuery, { kind: "events" }>)
-            ? `${props.events().length} events`
+            ? t().eventCountLabel({ count: props.events().length })
             : props.compiled()?.kind === "states"
-              ? `${props.states().length} states`
-              : `${props.points().length} points`}
+              ? t().stateCountLabel({ count: props.states().length })
+              : t().pointCount({ count: props.points().length })}
         </span>
       </div>
       <div class={props.resultView() === "table" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-hidden p-3"}>

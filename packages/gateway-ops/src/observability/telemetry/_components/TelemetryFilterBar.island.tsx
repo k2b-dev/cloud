@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { ButtonLink, FilterChip, type FilterChipSection } from "@k2b/ui";
+import { ButtonLink, FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import {
   DEFAULT_TELEMETRY_ROUTE_SORT,
   TELEMETRY_RANGES,
@@ -9,6 +9,7 @@ import {
   type TelemetryRouteSort,
 } from "../contracts";
 import { buildTelemetryFilterUrl, clearTelemetryFiltersUrl, hasActiveTelemetryFilters, selectAppUrl, type TelemetryFilter } from "./types";
+import { gatewayOpsMessages, type GatewayOpsMessages } from "../../../messages";
 
 export type TelemetryAppFilterOption = {
   id: string;
@@ -21,13 +22,13 @@ type Props = {
   apps: TelemetryAppFilterOption[];
 };
 
-const RANGE_LABELS: Record<TelemetryRange, string> = {
-  "1h": "Last hour",
-  "6h": "Last 6 hours",
-  "24h": "Last 24 hours",
-  "7d": "Last 7 days",
-  "30d": "Last 30 days",
-};
+const rangeLabels = (t: GatewayOpsMessages): Record<TelemetryRange, string> => ({
+  "1h": t.lastHour,
+  "6h": t.lastHours({ count: 6 }),
+  "24h": t.lastHours({ count: 24 }),
+  "7d": t.lastDays({ count: 7 }),
+  "30d": t.lastDays({ count: 30 }),
+});
 
 const SORT_ICONS: Record<TelemetryRouteSort, string> = {
   errorRate: "ti ti-percentage",
@@ -37,45 +38,38 @@ const SORT_ICONS: Record<TelemetryRouteSort, string> = {
   duration: "ti ti-hourglass",
 };
 
-const rangeOptions: FilterChipSection[] = [
-  {
-    options: (Object.keys(TELEMETRY_RANGES) as TelemetryRange[]).map((value) => ({
-      value,
-      label: RANGE_LABELS[value],
-      icon: "ti ti-clock",
-    })),
-  },
-];
-
-const sortOptions: FilterChipSection[] = [
-  {
-    options: TELEMETRY_ROUTE_SORTS.map((value) => ({
-      value,
-      label: TELEMETRY_SORT_LABELS[value],
-      icon: SORT_ICONS[value],
-    })),
-  },
-];
-
-const scopeOptions: FilterChipSection[] = [
-  {
-    options: [
-      { value: "errors", label: "With errors", icon: "ti ti-alert-circle" },
-      { value: "slow", label: "With slow requests", icon: "ti ti-clock-exclamation" },
-    ],
-    multiple: true,
-  },
-];
+const translatedSortLabel = (sort: TelemetryRouteSort, t: GatewayOpsMessages): string => {
+  if (sort === "errorRate") return t.errorRate;
+  if (sort === "errors") return t.errors;
+  if (sort === "requests") return t.requests;
+  if (sort === "slow") return t.slow;
+  return t.duration;
+};
 
 /**
  * Navigation only — the server owns every value shown here. This is an island
  * purely because `FilterChip` needs click handlers.
  */
 export default function TelemetryFilterBar(props: Props) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const labels = rangeLabels(t);
+  const rangeOptions: FilterChipSection[] = [{
+    options: (Object.keys(TELEMETRY_RANGES) as TelemetryRange[]).map((value) => ({ value, label: labels[value], icon: "ti ti-clock" })),
+  }];
+  const sortOptions: FilterChipSection[] = [{
+    options: TELEMETRY_ROUTE_SORTS.map((value) => ({ value, label: translatedSortLabel(value, t), icon: SORT_ICONS[value] })),
+  }];
+  const scopeOptions: FilterChipSection[] = [{
+    options: [
+      { value: "errors", label: t.withErrors, icon: "ti ti-alert-circle" },
+      { value: "slow", label: t.withSlowRequests, icon: "ti ti-clock-exclamation" },
+    ],
+    multiple: true,
+  }];
   const appOptions = (): FilterChipSection[] => [
     {
       options: [
-        { value: "", label: "All apps", icon: "ti ti-apps" },
+        { value: "", label: t.allApps, icon: "ti ti-apps" },
         ...props.apps.map((app) => ({ value: app.id, label: app.label, icon: app.icon })),
       ],
     },
@@ -86,7 +80,7 @@ export default function TelemetryFilterBar(props: Props) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label={RANGE_LABELS[props.filter.range]}
+        label={labels[props.filter.range]}
         icon="ti ti-clock"
         options={rangeOptions}
         value={[props.filter.range]}
@@ -98,7 +92,7 @@ export default function TelemetryFilterBar(props: Props) {
         defaultValue={[props.filter.range]}
       />
       <FilterChip
-        label="App"
+        label={t.app}
         icon="ti ti-apps"
         options={appOptions()}
         value={props.filter.appId ? [props.filter.appId] : []}
@@ -107,7 +101,7 @@ export default function TelemetryFilterBar(props: Props) {
         defaultValue={[]}
       />
       <FilterChip
-        label={`Sort: ${TELEMETRY_SORT_LABELS[props.filter.sort]}`}
+        label={t.sortLabel({ label: translatedSortLabel(props.filter.sort, t) })}
         icon="ti ti-arrows-sort"
         options={sortOptions}
         value={[props.filter.sort]}
@@ -119,7 +113,7 @@ export default function TelemetryFilterBar(props: Props) {
         defaultValue={[DEFAULT_TELEMETRY_ROUTE_SORT]}
       />
       <FilterChip
-        label="Show only"
+        label={t.showOnly}
         icon="ti ti-filter"
         options={scopeOptions}
         value={activeScope()}
@@ -136,7 +130,7 @@ export default function TelemetryFilterBar(props: Props) {
       />
       {hasActiveTelemetryFilters(props.filter) ? (
         <ButtonLink href={clearTelemetryFiltersUrl(props.filter)} variant="secondary" size="sm">
-          <i class="ti ti-x" aria-hidden="true" /> Clear
+          <i class="ti ti-x" aria-hidden="true" /> {t.clear}
         </ButtonLink>
       ) : null}
     </div>

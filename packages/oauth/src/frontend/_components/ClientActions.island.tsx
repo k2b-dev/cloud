@@ -1,16 +1,19 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { CopyButton, Dropdown, dialogCore, panelDialogWideOptions, prompts, toast } from "@k2b/ui";
+import { CopyButton, Dropdown, dialogCore, panelDialogWideOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { OAuthClient, UpdateOAuthClient } from "@/contracts";
 import OAuthClientDialog from "./OAuthClientDialog";
+import { oauthMessages } from "../messages";
 
 type ClientActionsProps = {
   client: OAuthClient;
 };
 
 const ClientActions = (props: ClientActionsProps) => {
+  const locale = useLocale();
+  const t = () => oauthMessages.resolve([locale()]).t;
   const { client } = props;
 
   const updateMutation = mutations.create<{ message: string }, UpdateOAuthClient>({
@@ -21,12 +24,12 @@ const ClientActions = (props: ClientActionsProps) => {
       });
       const result = await res.json();
       if (!res.ok) {
-        throw new Error((result as { message?: string }).message ?? "Failed to update client.");
+        throw new Error(t().failedUpdate);
       }
       return result as { message: string };
     },
     onSuccess: () => {
-      toast.success("OAuth client updated");
+      toast.success(t().clientUpdated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -39,12 +42,12 @@ const ClientActions = (props: ClientActionsProps) => {
       });
       const result = await res.json();
       if (!res.ok) {
-        throw new Error((result as { message?: string }).message ?? "Failed to delete client.");
+        throw new Error(t().failedDelete);
       }
       return result as { message: string };
     },
     onSuccess: () => {
-      toast.success("OAuth client deleted");
+      toast.success(t().clientDeleted);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -57,7 +60,7 @@ const ClientActions = (props: ClientActionsProps) => {
       });
       const result = await res.json();
       if (!res.ok) {
-        throw new Error((result as { message?: string }).message ?? "Failed to regenerate secret.");
+        throw new Error(t().failedRegenerate);
       }
       return result as { clientSecret: string };
     },
@@ -65,7 +68,7 @@ const ClientActions = (props: ClientActionsProps) => {
       await prompts.alert(
         <div class="space-y-3">
           <div>
-            <div class="text-xs text-dimmed mb-1">New Client Secret</div>
+            <div class="text-xs text-dimmed mb-1">{t().newClientSecret}</div>
             <div class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded px-3 py-2">
               <code class="text-sm flex-1 break-all">{data.clientSecret}</code>
               <CopyButton text={data.clientSecret} />
@@ -73,11 +76,11 @@ const ClientActions = (props: ClientActionsProps) => {
           </div>
           <div class="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
             <i class="ti ti-alert-triangle" />
-            Save this secret now - it won't be shown again!
+            {t().saveSecretNow}
           </div>
         </div>,
         {
-          title: "Secret Regenerated",
+          title: t().secretRegenerated,
           icon: "ti ti-key",
         },
       );
@@ -106,12 +109,12 @@ const ClientActions = (props: ClientActionsProps) => {
   const handleDelete = async () => {
     const isDynamic = client.registrationKind === "dynamic";
     const confirmed = await prompts.confirm(
-      `Are you sure you want to ${isDynamic ? "revoke" : "delete"} "${client.name}"? This will invalidate all tokens for this client.`,
+      t().confirmRemove({ action: isDynamic ? t().revokeAction : t().deleteAction, name: client.name }),
       {
-        title: isDynamic ? "Revoke Client?" : "Delete Client?",
+        title: isDynamic ? t().revokeClient : t().deleteClient,
         icon: "ti ti-trash",
-        confirmText: isDynamic ? "Revoke" : "Delete",
-        cancelText: "Cancel",
+        confirmText: isDynamic ? t().revokeAction : t().deleteAction,
+        cancelText: t().cancel,
         variant: "danger",
       },
     );
@@ -121,15 +124,12 @@ const ClientActions = (props: ClientActionsProps) => {
   };
 
   const handleRegenerateSecret = async () => {
-    const confirmed = await prompts.confirm(
-      "This will invalidate the current secret. The application will need to be updated with the new secret.",
-      {
-        title: "Regenerate Secret?",
-        icon: "ti ti-key",
-        confirmText: "Regenerate",
-        cancelText: "Cancel",
-      },
-    );
+    const confirmed = await prompts.confirm(t().regenerateWarning, {
+      title: t().regenerateSecret,
+      icon: "ti ti-key",
+      confirmText: t().regenerate,
+      cancelText: t().cancel,
+    });
     if (confirmed) {
       await regenerateSecretMutation.mutate();
     }
@@ -138,9 +138,9 @@ const ClientActions = (props: ClientActionsProps) => {
   const handleCopyClientId = async () => {
     try {
       await clipboard.copy(client.clientId);
-      toast.success("Client ID copied");
+      toast.success(t().copiedClientId);
     } catch {
-      toast.error("Could not copy Client ID");
+      toast.error(t().copyClientIdFailed);
     }
   };
 
@@ -153,14 +153,14 @@ const ClientActions = (props: ClientActionsProps) => {
           items: [
             {
               icon: "ti ti-copy",
-              label: "Copy Client ID",
+              label: t().copyClientId,
               action: handleCopyClientId,
             },
             ...(client.registrationKind === "managed"
               ? [
                   {
                     icon: "ti ti-pencil",
-                    label: "Edit",
+                    label: t().edit,
                     action: handleEdit,
                   },
                 ]
@@ -169,7 +169,7 @@ const ClientActions = (props: ClientActionsProps) => {
               ? [
                   {
                     icon: "ti ti-key",
-                    label: "Regenerate",
+                    label: t().regenerate,
                     action: handleRegenerateSecret,
                   },
                 ]
@@ -182,7 +182,7 @@ const ClientActions = (props: ClientActionsProps) => {
                 items: [
                   {
                     icon: "ti ti-trash",
-                    label: client.registrationKind === "dynamic" ? "Revoke" : "Delete",
+                    label: client.registrationKind === "dynamic" ? t().revokeAction : t().deleteAction,
                     action: handleDelete,
                     variant: "danger" as const,
                   },
@@ -192,7 +192,7 @@ const ClientActions = (props: ClientActionsProps) => {
           : []),
       ]}
     >
-      <Dropdown.Trigger iconOnly size="xs" label="OAuth client actions" tooltip="OAuth client actions">
+      <Dropdown.Trigger iconOnly size="xs" label={t().oauthClientActions} tooltip={t().oauthClientActions}>
         <i class="ti ti-dots-vertical text-sm" />
       </Dropdown.Trigger>
     </Dropdown.Root>

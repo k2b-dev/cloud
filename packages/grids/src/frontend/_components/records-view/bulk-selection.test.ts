@@ -52,11 +52,19 @@ describe("records bulk selection helpers", () => {
     expect(bulkWorkflowActionLabel("Print labels", 0)).toBe("Run Print labels for current query");
     expect(bulkWorkflowActionLabel("Print labels", 3)).toBe("Run Print labels for 3 selected");
     expect(bulkWorkflowActionLabel("Close selection", 0, true)).toBe("Select Records to run Close selection");
+    expect(bulkWorkflowActionLabel("Etiketten drucken", 0, false, "de")).toBe("„Etiketten drucken“ für die aktuelle Abfrage ausführen");
+    expect(bulkWorkflowActionLabel("Etiketten drucken", 3, false, "de-CH")).toBe(
+      "„Etiketten drucken“ für 3 ausgewählte Datensätze ausführen",
+    );
+    expect(bulkWorkflowActionLabel("Auswahl schließen", 0, true, "de-CH")).toBe("Datensätze auswählen, um „Auswahl schließen“ auszuführen");
   });
 
   test("describes the queued workflow target without reporting zero records", () => {
     expect(bulkWorkflowTargetLabel(0)).toBe("the current result set");
     expect(bulkWorkflowTargetLabel(1)).toBe("1 record");
     expect(bulkWorkflowTargetLabel(3)).toBe("3 records");
+    expect(bulkWorkflowTargetLabel(0, "de")).toBe("die aktuelle Ergebnismenge");
+    expect(bulkWorkflowTargetLabel(1, "de-CH")).toBe("1 Datensatz");
+    expect(bulkWorkflowTargetLabel(3, "de")).toBe("3 Datensätze");
   });
 });

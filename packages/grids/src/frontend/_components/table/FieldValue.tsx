@@ -1,10 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, dialogCore, MarkdownView, PanelDialog, ProgressBar, panelDialogFixedOptions, TemplatePreview } from "@k2b/ui";
+import { Button, dialogCore, MarkdownView, PanelDialog, ProgressBar, panelDialogFixedOptions, TemplatePreview, useLocale } from "@k2b/ui";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { FormatSpec } from "../../../contracts";
 import { BarcodeDisplay } from "./BarcodeCell";
 import { type FieldDisplayIntent, type RelationDisplayItem, relationIds, resolveFieldDisplay } from "./field-display";
+import { tableMessages } from "./messages";
 import { RecordLink } from "./RecordLink";
 import { SelectValueBadges } from "./select-badges";
 
@@ -73,34 +74,39 @@ function RelationValue(
 }
 
 function ProgressValue(props: { intent: Extract<FieldDisplayIntent, { kind: "progress" }> }) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   const percent = () => Math.round(props.intent.ratio * 100);
   return (
     <span class="flex min-w-36 items-center gap-3">
-      <ProgressBar value={percent()} size="sm" class="w-32 shrink-0" label="Field progress" />
+      <ProgressBar value={percent()} size="sm" class="w-32 shrink-0" label={t().fieldProgress} />
       <Show when={props.intent.label}>{(text) => <span class="whitespace-nowrap tabular-nums text-primary">{text()}</span>}</Show>
     </span>
   );
 }
 
 const openHtmlTemplatePreview = (field: Field, html: string) =>
-  dialogCore.open<void>(
-    (close) => (
+  dialogCore.open<void>((close) => {
+    const locale = useLocale();
+    const t = () => tableMessages.resolve([locale()]).t;
+    return (
       <PanelDialog>
-        <PanelDialog.Header title={`${field.name} — HTML preview`} icon="ti ti-template" close={() => close()} />
+        <PanelDialog.Header title={t().htmlPreview({ field: field.name })} icon="ti ti-template" close={() => close()} />
         <PanelDialog.Body>
-          <TemplatePreview html={html} title={`${field.name} HTML preview`} class="h-[65dvh] min-h-[24rem]" />
+          <TemplatePreview html={html} title={t().htmlPreviewTitle({ field: field.name })} class="h-[65dvh] min-h-[24rem]" />
         </PanelDialog.Body>
       </PanelDialog>
-    ),
-    panelDialogFixedOptions,
-  );
+    );
+  }, panelDialogFixedOptions);
 
 function HtmlTemplateValue(props: { field: Field; value: unknown; mode: FieldValueMode; empty: JSX.Element | string }) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   const html = () => (typeof props.value === "string" ? props.value : "");
   const PreviewButton = () => (
     <Show
       when={html() !== "#TEMPLATE_ERROR!"}
-      fallback={<span class="text-xs font-medium text-red-600 dark:text-red-400">Render error</span>}
+      fallback={<span class="text-xs font-medium text-red-600 dark:text-red-400">{t().renderError}</span>}
     >
       <Button
         variant="secondary"
@@ -112,7 +118,7 @@ function HtmlTemplateValue(props: { field: Field; value: unknown; mode: FieldVal
           void openHtmlTemplatePreview(props.field, html());
         }}
       >
-        <i class="ti ti-eye" /> Preview
+        <i class="ti ti-eye" /> {t().preview}
       </Button>
     </Show>
   );
@@ -134,6 +140,7 @@ function HtmlTemplateValue(props: { field: Field; value: unknown; mode: FieldVal
 }
 
 export function FieldValue(props: FieldValueProps) {
+  const locale = useLocale();
   const mode = () => props.mode ?? "table";
   const emptyValue = () => props.empty ?? defaultEmpty(props.field, mode());
   const display = createMemo(() =>
@@ -146,6 +153,7 @@ export function FieldValue(props: FieldValueProps) {
       dateConfig: props.dateConfig,
       format: props.format,
       relationValueMode: props.relationValueMode,
+      locale: locale(),
     }),
   );
 

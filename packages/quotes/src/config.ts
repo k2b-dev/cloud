@@ -4,7 +4,13 @@ export const app = defineApp({
   id: "quotes",
   name: "Quotes",
   icon: "ti ti-quote",
-  description: "Display a cached motivational quote that refreshes hourly.",
+  description: "Show a quote that changes hourly.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { name: "Zitate", description: "Zeigt ein Zitat, das stündlich wechselt." },
+    },
+  },
   appearance: { accent: "#be185d", background: { from: "#ec4899", to: "#f59e0b", angle: 135 } },
   basePath: "/app/quotes",
   baseUrl: "http://app-quotes:3000",

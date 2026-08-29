@@ -1,7 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, prompts } from "@k2b/ui";
+import { Button, NoticeCard, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { useAccountsMessages } from "../messages";
 
 type DenyRequestProps = {
   requestId: string;
@@ -10,6 +11,7 @@ type DenyRequestProps = {
 };
 
 export default function DenyRequest(props: DenyRequestProps) {
+  const messages = useAccountsMessages();
   const mutation = mutations.create<void, { reason?: string }>({
     mutation: async (vars) => {
       const res = await apiClient["account-requests"][":id"].deny.$post({
@@ -18,7 +20,7 @@ export default function DenyRequest(props: DenyRequestProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to deny request.");
+        throw new Error(data.message ?? messages().denyRequestFailed);
       }
     },
     onSuccess: () => {
@@ -29,24 +31,24 @@ export default function DenyRequest(props: DenyRequestProps) {
 
   const handleClick = async () => {
     const result = await prompts.form({
-      title: "Deny Account Request",
+      title: messages().denyAccountRequest,
       icon: "ti ti-x",
-      confirmText: "Deny Request",
+      confirmText: messages().denyRequest,
       fields: {
         info: {
           type: "info",
           content: () => (
             <NoticeCard tone="warning" icon={false}>
-              Are you sure you want to deny the request from <strong>{props.firstName}</strong> ({props.email})?
+              {messages().denyConfirm({ name: props.firstName, email: props.email })}
             </NoticeCard>
           ),
         },
         reason: {
           type: "text",
           multiline: true,
-          label: "Reason (optional)",
-          placeholder: "Explain why the request was denied...",
-          description: "If provided, an email with this reason will be sent to the user.",
+          label: messages().optionalReason,
+          placeholder: messages().denyReasonPlaceholder,
+          description: messages().denyReasonDescription,
         },
       },
     });
@@ -61,7 +63,7 @@ export default function DenyRequest(props: DenyRequestProps) {
   return (
     <Button size="sm" variant="danger" onClick={handleClick} disabled={mutation.loading()}>
       {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-x" />}
-      <span>Deny</span>
+      <span>{messages().deny}</span>
     </Button>
   );
 }

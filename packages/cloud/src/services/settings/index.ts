@@ -11,7 +11,7 @@
 
 import { redis, sql } from "bun";
 import { decryptValue, encryptValue, getAppSecret } from "./crypto";
-import { getSettingLabel, SETTINGS, SETTINGS_MAP, type SettingDef, validateSettingValue } from "./defaults";
+import { SETTINGS, SETTINGS_MAP, resolveSettingPresentation, type SettingDef, validateSettingValue } from "./defaults";
 import { bulkRead, deleteKey, invalidateSettingsCache, readKey, writeKey } from "./store";
 
 type SqlClient = typeof sql;
@@ -178,7 +178,7 @@ import type { SettingEntry } from "../../contracts/shared";
 export { invalidateSettingsCache } from "./store";
 export type { SettingEntry } from "../../contracts/shared";
 
-export async function getAll(): Promise<SettingEntry[]> {
+export async function getAll(locale?: string): Promise<SettingEntry[]> {
   // Determine which keys have a custom row in Postgres (vs. falling back to
   // env / code default). One indexed scan, then bulk-read all values.
   const customRows = await sql<{ key: string }[]>`SELECT key FROM settings.entries`;
@@ -188,16 +188,17 @@ export async function getAll(): Promise<SettingEntry[]> {
   const values = await bulkRead(allKeys);
 
   return SETTINGS.map((def) => {
+    const presentation = resolveSettingPresentation(def, locale);
     const isCustom = customKeys.has(def.key);
     const envFallback = resolveEnvValue(def, "fallback");
     const resetValue = envFallback ?? def.default;
 
     return {
       key: def.key,
-      label: getSettingLabel(def),
+      label: presentation.label,
       kind: def.kind,
-      description: def.description,
-      placeholder: def.placeholder,
+      description: presentation.description ?? "",
+      placeholder: presentation.placeholder,
       group: def.group,
       value: values.get(def.key),
       default: def.default,
@@ -206,7 +207,7 @@ export async function getAll(): Promise<SettingEntry[]> {
       resetValueSource: envFallback === undefined ? "default" : "env",
       isCustom,
       templateVars: "templateVars" in def ? def.templateVars : undefined,
-      options: "options" in def ? def.options : undefined,
+      options: presentation.options,
       min: "min" in def ? def.min : undefined,
       max: "max" in def ? def.max : undefined,
     };

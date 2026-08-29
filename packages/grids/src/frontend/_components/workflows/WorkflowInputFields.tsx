@@ -1,9 +1,10 @@
-import { DatePicker, DateTimePicker, MultiSelectInput, NoticeCard, NumberInput, Select, TextInput } from "@k2b/ui";
+import { DatePicker, DateTimePicker, MultiSelectInput, NoticeCard, NumberInput, Select, TextInput, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowIrInput } from "@valentinkolb/cloud/workflows";
 import { For, Match, Show, Switch } from "solid-js";
 import type { PublicTable } from "../../../api/public-dto";
 import RecordPicker from "../records/RecordPicker";
 import { fetchRecordLookup } from "../records/record-lookup";
+import { workflowMessages } from "./messages";
 import {
   type WorkflowRunInputDraft,
   type WorkflowRunInputDraftValue,
@@ -34,6 +35,8 @@ const resolveInputTable = (
 };
 
 export function WorkflowInputFields(props: Props) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const inputs = () => props.workflow.plan.inputs;
   const value = (name: string) => props.draft()[name];
   const errorFor = (name: string) => () => props.errors?.()[name];
@@ -54,7 +57,7 @@ export function WorkflowInputFields(props: Props) {
                   tableId={table!.id}
                   label={label}
                   description={description}
-                  placeholder="Choose a record..."
+                  placeholder={t().chooseRecord}
                   clearable={!required}
                   value={() => (typeof value(name) === "string" ? (value(name) as string) : "")}
                   onChange={(recordId) => props.onValueChange(name, recordId)}
@@ -64,13 +67,13 @@ export function WorkflowInputFields(props: Props) {
                 <MultiSelectInput
                   label={label}
                   description={description}
-                  placeholder="Choose records..."
+                  placeholder={t().chooseRecords}
                   required={required}
                   clearable={!required}
                   value={() => (Array.isArray(value(name)) ? (value(name) as string[]) : [])}
                   onValueChange={(recordIds) => props.onValueChange(name, recordIds)}
                   fetchData={async (query, signal) =>
-                    (await fetchRecordLookup({ tableId: table!.id, query, signal })).map((record) => ({
+                    (await fetchRecordLookup({ tableId: table!.id, query, signal, locale: locale() })).map((record) => ({
                       id: record.id,
                       label: record.label,
                       icon: "ti ti-database",
@@ -80,7 +83,7 @@ export function WorkflowInputFields(props: Props) {
               </Match>
               <Match when={(input.type === "record" || input.type === "recordList") && !table}>
                 <NoticeCard tone="danger" icon={false}>
-                  The table for {label} is unavailable.
+                  {t().inputTableUnavailable({ label })}
                 </NoticeCard>
               </Match>
               <Match when={input.type === "number"}>
@@ -101,8 +104,8 @@ export function WorkflowInputFields(props: Props) {
                   required={required}
                   clearable={!required}
                   options={[
-                    { id: "true", label: "Yes" },
-                    { id: "false", label: "No" },
+                    { id: "true", label: t().yes },
+                    { id: "false", label: t().no },
                   ]}
                   value={() => (typeof value(name) === "boolean" ? String(value(name)) : "")}
                   onValueChange={(next) => props.onValueChange(name, next === "" ? undefined : next === "true")}
@@ -159,7 +162,7 @@ export function WorkflowInputFields(props: Props) {
         }}
       </For>
       <Show when={inputs().length === 0}>
-        <p class="text-sm text-dimmed">{props.emptyText ?? "This workflow does not require input."}</p>
+        <p class="text-sm text-dimmed">{props.emptyText ?? t().noInputRequired}</p>
       </Show>
     </div>
   );

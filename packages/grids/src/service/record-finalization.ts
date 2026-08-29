@@ -3,6 +3,7 @@ import { getEffectiveGroupIds } from "@valentinkolb/cloud/server";
 import { type SQLQuery, sql } from "bun";
 import { getRecordWritableFieldType } from "../field-types";
 import { logAudit, type SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordRevision, prepareRecordMutation } from "./durable-history";
 import { listByTable as listFields } from "./fields";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
@@ -15,7 +16,7 @@ import { get as getRecord } from "./record-read";
 import { insertWithShortIdForDb } from "./short-id";
 import type { Field, GridRecord } from "./types";
 
-export const finalizedRecordConflict = () => err.conflict("This record is finalized and cannot be changed.");
+export const finalizedRecordConflict = (locale?: string) => err.conflict(getGridsCrudMessages(locale).recordFinalized);
 
 export type RecordFinalizationMode = "direct" | "fourEyes";
 export type RecordFinalizationRequestStatus = "pending" | "approved" | "rejected" | "superseded";
@@ -63,15 +64,16 @@ export type RecordFinalizationReadiness = {
 
 const iso = (value: Date | string): string => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
 
-export const assertRecordMutable = async (client: SqlClient, tableId: string, recordId: string): Promise<Result<void>> => {
+export const assertRecordMutable = async (client: SqlClient, tableId: string, recordId: string, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const [record] = await client<Array<{ finalized_at: Date | string | null }>>`
     SELECT finalized_at
     FROM grids.records
     WHERE id = ${recordId}::uuid AND table_id = ${tableId}::uuid
     FOR UPDATE
   `;
-  if (!record) return fail(err.notFound("Record"));
-  return record.finalized_at ? fail(finalizedRecordConflict()) : ok();
+  if (!record) return fail(err.notFound(messages.record));
+  return record.finalized_at ? fail(finalizedRecordConflict(locale)) : ok();
 };
 
 export const supersedePendingFinalizationRequest = async (
@@ -88,8 +90,8 @@ export const supersedePendingFinalizationRequest = async (
   `;
 };
 
-export const getStatus = async (tableId: string, client: SqlClient = sql): Promise<Result<RecordFinalizationStatus>> => {
-  const writable = await requireStoredTableWritable(tableId, client);
+export const getStatus = async (tableId: string, client: SqlClient = sql, locale?: string): Promise<Result<RecordFinalizationStatus>> => {
+  const writable = await requireStoredTableWritable(tableId, client, locale);
   if (!writable.ok) return writable;
   const [row] = await client<
     Array<{
@@ -115,7 +117,7 @@ export const getStatus = async (tableId: string, client: SqlClient = sql): Promi
     GROUP BY activation.enabled_at, activation.mode, activation.approver_group_id,
              approver_group.name, activation.policy_revision, history.status
   `;
-  if (!row) return fail(err.notFound("Table"));
+  if (!row) return fail(err.notFound(getGridsCrudMessages(locale).table));
   const durableHistory = row.history_status ?? "disabled";
   if (!row.enabled_at) return ok({ enabled: false, durableHistory });
   const finalizedCount = Number(row.finalized_count);
@@ -136,8 +138,10 @@ export const setPolicy = async (
   tableId: string,
   input: { mode: RecordFinalizationMode; approverGroupId?: string | null },
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<RecordFinalizationStatus>> =>
   sql.begin(async (tx): Promise<Result<RecordFinalizationStatus>> => {
+    const messages = getGridsCrudMessages(locale);
     await tx`SELECT id FROM grids.tables WHERE id = ${tableId}::uuid FOR UPDATE`;
     const [activation] = await tx<Array<{ mode: "direct" | "four_eyes"; approver_group_id: string | null }>>`
       SELECT mode, approver_group_id::text
@@ -145,15 +149,15 @@ export const setPolicy = async (
       WHERE table_id = ${tableId}::uuid
       FOR UPDATE
     `;
-    if (!activation) return fail(err.badInput("Finalization is not enabled for this table."));
+    if (!activation) return fail(err.badInput(messages.finalizationDisabled));
     const approverGroupId = input.mode === "fourEyes" ? (input.approverGroupId ?? null) : null;
-    if (input.mode === "fourEyes" && !approverGroupId) return fail(err.badInput("Choose an approver group for Four-eyes Finalization."));
+    if (input.mode === "fourEyes" && !approverGroupId) return fail(err.badInput(messages.approverGroupRequired));
     if (approverGroupId) {
       const [group] = await tx<Array<{ id: string }>>`SELECT id::text FROM auth.groups WHERE id = ${approverGroupId}::uuid`;
-      if (!group) return fail(err.badInput("Approver group not found."));
+      if (!group) return fail(err.badInput(messages.approverGroupNotFound));
     }
     const dbMode = input.mode === "fourEyes" ? "four_eyes" : "direct";
-    if (activation.mode === dbMode && activation.approver_group_id === approverGroupId) return getStatus(tableId, tx);
+    if (activation.mode === dbMode && activation.approver_group_id === approverGroupId) return getStatus(tableId, tx, locale);
     await tx`
       UPDATE grids.record_finalization_requests
       SET status = 'superseded', resolved_by = ${actorId}::uuid, resolved_at = now(),
@@ -166,7 +170,7 @@ export const setPolicy = async (
       WHERE id = ${tableId}::uuid
       RETURNING finalization_policy_revision AS policy_revision
     `;
-    if (!revision) return fail(err.notFound("Table"));
+    if (!revision) return fail(err.notFound(messages.table));
     await tx`
       UPDATE grids.table_finalization_activations
       SET mode = ${dbMode}, approver_group_id = ${approverGroupId}::uuid, policy_revision = ${revision.policy_revision}
@@ -187,28 +191,29 @@ export const setPolicy = async (
       },
       tx,
     );
-    return getStatus(tableId, tx);
+    return getStatus(tableId, tx, locale);
   });
 
 export const enable = async (
   tableId: string,
   input: { mode: RecordFinalizationMode; approverGroupId?: string | null },
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<RecordFinalizationStatus>> =>
   sql.begin(async (tx): Promise<Result<RecordFinalizationStatus>> => {
-    const writable = await requireStoredTableWritable(tableId, tx);
+    const messages = getGridsCrudMessages(locale);
+    const writable = await requireStoredTableWritable(tableId, tx, locale);
     if (!writable.ok) return writable;
     await tx`SELECT id FROM grids.tables WHERE id = ${tableId}::uuid FOR UPDATE`;
     const [history] = await tx<Array<{ status: string }>>`
       SELECT status FROM grids.durable_history_activations WHERE table_id = ${tableId}::uuid FOR SHARE
     `;
-    if (history?.status !== "active")
-      return fail(err.badInput("Durable History must finish its baseline before Finalization can be enabled."));
+    if (history?.status !== "active") return fail(err.badInput(messages.durableHistoryBaselineRequired));
     const approverGroupId = input.mode === "fourEyes" ? (input.approverGroupId ?? null) : null;
-    if (input.mode === "fourEyes" && !approverGroupId) return fail(err.badInput("Choose an approver group for Four-eyes Finalization."));
+    if (input.mode === "fourEyes" && !approverGroupId) return fail(err.badInput(messages.approverGroupRequired));
     if (approverGroupId) {
       const [group] = await tx<Array<{ id: string }>>`SELECT id::text FROM auth.groups WHERE id = ${approverGroupId}::uuid`;
-      if (!group) return fail(err.badInput("Approver group not found."));
+      if (!group) return fail(err.badInput(messages.approverGroupNotFound));
     }
     const [existing] = await tx<Array<{ mode: "direct" | "four_eyes"; approver_group_id: string | null }>>`
       SELECT mode, approver_group_id::text
@@ -219,9 +224,9 @@ export const enable = async (
     if (existing) {
       const requestedMode = input.mode === "fourEyes" ? "four_eyes" : "direct";
       if (existing.mode !== requestedMode || existing.approver_group_id !== approverGroupId) {
-        return fail(err.conflict("Finalization is already enabled with a different policy. Refresh before changing it."));
+        return fail(err.conflict(messages.finalizationPolicyConflict));
       }
-      return getStatus(tableId, tx);
+      return getStatus(tableId, tx, locale);
     }
     const [revision] = await tx<Array<{ policy_revision: number }>>`
       UPDATE grids.tables
@@ -229,7 +234,7 @@ export const enable = async (
       WHERE id = ${tableId}::uuid
       RETURNING finalization_policy_revision AS policy_revision
     `;
-    if (!revision) return fail(err.notFound("Table"));
+    if (!revision) return fail(err.notFound(messages.table));
     await tx`
       INSERT INTO grids.table_finalization_activations (
         table_id, enabled_by, mode, approver_group_id, policy_revision
@@ -239,27 +244,28 @@ export const enable = async (
       )
     `;
     await logAudit({ tableId, userId: actorId, action: "finalization.enabled", diff: { mode: { old: null, new: input.mode } } }, tx);
-    return getStatus(tableId, tx);
+    return getStatus(tableId, tx, locale);
   });
 
-export const disable = async (tableId: string, actorId: string | null): Promise<Result<RecordFinalizationStatus>> =>
+export const disable = async (tableId: string, actorId: string | null, locale?: string): Promise<Result<RecordFinalizationStatus>> =>
   sql.begin(async (tx): Promise<Result<RecordFinalizationStatus>> => {
+    const messages = getGridsCrudMessages(locale);
     await tx`SELECT id FROM grids.tables WHERE id = ${tableId}::uuid FOR UPDATE`;
     const [activation] = await tx<Array<{ table_id: string }>>`
       SELECT table_id::text FROM grids.table_finalization_activations WHERE table_id = ${tableId}::uuid FOR UPDATE
     `;
-    if (!activation) return getStatus(tableId, tx);
+    if (!activation) return getStatus(tableId, tx, locale);
     const [records] = await tx<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count FROM grids.records WHERE table_id = ${tableId}::uuid AND finalized_at IS NOT NULL
     `;
-    if ((records?.count ?? 0) > 0) return fail(err.conflict("Finalization cannot be disabled after the first record is finalized."));
+    if ((records?.count ?? 0) > 0) return fail(err.conflict(messages.finalizationCannotDisable));
     const [finalizationFields] = await tx<Array<{ count: number }>>`
       SELECT COUNT(*)::int AS count
       FROM grids.fields
       WHERE table_id = ${tableId}::uuid AND deleted_at IS NULL AND type = 'id' AND config->>'assignment' = 'finalization'
     `;
     if ((finalizationFields?.count ?? 0) > 0) {
-      return fail(err.conflict("Change every ID field to assign on record creation before disabling Finalization."));
+      return fail(err.conflict(messages.finalizationIdFieldsBlockDisable));
     }
     await tx`
       UPDATE grids.record_finalization_requests
@@ -269,7 +275,7 @@ export const disable = async (tableId: string, actorId: string | null): Promise<
     `;
     await tx`DELETE FROM grids.table_finalization_activations WHERE table_id = ${tableId}::uuid`;
     await logAudit({ tableId, userId: actorId, action: "finalization.disabled" }, tx);
-    return getStatus(tableId, tx);
+    return getStatus(tableId, tx, locale);
   });
 
 const loadRecordValues = async (
@@ -299,7 +305,9 @@ const requirements = async (
   recordId: string,
   fields: Field[],
   data: Record<string, unknown>,
+  locale?: string,
 ): Promise<{ missing: FinalizationRequirement[]; assignedOnFinalization: Array<{ fieldId: string; fieldName: string }> }> => {
+  const messages = getGridsCrudMessages(locale);
   const missing: FinalizationRequirement[] = [];
   const assignedOnFinalization: Array<{ fieldId: string; fieldName: string }> = [];
   const invalidRelations = new Set(
@@ -324,7 +332,7 @@ const requirements = async (
       if ((field.config as { assignment?: string }).assignment === "finalization") {
         assignedOnFinalization.push({ fieldId: field.id, fieldName: field.name });
       } else {
-        missing.push({ fieldId: field.id, fieldName: field.name, message: "The generated ID is missing." });
+        missing.push({ fieldId: field.id, fieldName: field.name, message: messages.generatedIdMissing });
       }
       continue;
     }
@@ -334,11 +342,11 @@ const requirements = async (
         SELECT COUNT(*)::int AS count FROM grids.file_attachments
         WHERE record_id = ${recordId}::uuid AND field_id = ${field.id}::uuid
       `;
-      if ((count?.count ?? 0) === 0) missing.push({ fieldId: field.id, fieldName: field.name, message: "A file is required." });
+      if ((count?.count ?? 0) === 0) missing.push({ fieldId: field.id, fieldName: field.name, message: messages.requiredFileMissing });
       continue;
     }
     if (field.type === "relation" && invalidRelations.has(field.id)) {
-      missing.push({ fieldId: field.id, fieldName: field.name, message: "A linked record is no longer available." });
+      missing.push({ fieldId: field.id, fieldName: field.name, message: messages.linkedRecordUnavailable });
       continue;
     }
     const handler = getRecordWritableFieldType(field.type);
@@ -348,7 +356,7 @@ const requirements = async (
       missing.push({
         fieldId: field.id,
         fieldName: field.name,
-        message: result.error === "required" ? "A value is required." : result.error,
+        message: result.error === "required" ? messages.valueRequired : result.error,
       });
     }
   }
@@ -419,15 +427,17 @@ export const inspect = async (params: {
   actorId?: string | null;
   recordAccess?: AuthorizedRecordAccess;
   client?: SqlClient;
+  locale?: string;
 }): Promise<Result<RecordFinalizationReadiness>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const client = params.client ?? sql;
-  const status = await getStatus(params.tableId, client);
+  const status = await getStatus(params.tableId, client, params.locale);
   if (!status.ok) return status;
   const record = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(messages.record));
   const finalizedAt = record.row.finalized_at ? iso(record.row.finalized_at as Date | string) : null;
   const fields = await listFields(params.tableId, false, client);
-  const checked = await requirements(client, params.recordId, fields, record.data);
+  const checked = await requirements(client, params.recordId, fields, record.data, params.locale);
   const storedRequest = await latestFinalizationRequest(client, params.tableId, params.recordId);
   const request =
     storedRequest?.request.status === "pending" &&
@@ -438,11 +448,11 @@ export const inspect = async (params: {
   let canResolveRequest = false;
   let resolutionDisabledReason: string | null = null;
   if (request?.status === "pending" && status.data.enabled && status.data.mode === "fourEyes") {
-    if (!params.actorId) resolutionDisabledReason = "Sign in as a member of the approver group to resolve this request.";
-    else if (request.requestedBy === params.actorId) resolutionDisabledReason = "Another person must resolve your Finalization request.";
-    else if (!status.data.approverGroupId) resolutionDisabledReason = "The Table no longer has an approver group.";
+    if (!params.actorId) resolutionDisabledReason = messages.finalizationSignInToResolve;
+    else if (request.requestedBy === params.actorId) resolutionDisabledReason = messages.finalizationDifferentResolver;
+    else if (!status.data.approverGroupId) resolutionDisabledReason = messages.finalizationApproverGroupMissing;
     else if (!(await getEffectiveGroupIds({ userId: params.actorId }, client)).includes(status.data.approverGroupId)) {
-      resolutionDisabledReason = "Only a current member of the approver group can resolve this request.";
+      resolutionDisabledReason = messages.finalizationApproverGroupOnly;
     } else canResolveRequest = true;
   }
   return ok({
@@ -467,20 +477,22 @@ export const requestFinalizationInTransaction = async (
     comment?: string | null;
     expectedPolicyRevision?: number;
     recordAccess?: AuthorizedRecordAccess;
+    locale?: string;
   },
 ): Promise<Result<RecordFinalizationRequest>> => {
-  if (!params.actorId) return fail(err.forbidden("A signed-in user is required to request Four-eyes Finalization."));
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorId) return fail(err.forbidden(messages.finalizationRequestUserRequired));
   const [activation] = await client<Array<{ mode: string; policy_revision: number }>>`
       SELECT mode, policy_revision
       FROM grids.table_finalization_activations
       WHERE table_id = ${params.tableId}::uuid
       FOR SHARE
   `;
-  if (!activation) return fail(err.badInput("Finalization is not enabled for this table."));
+  if (!activation) return fail(err.badInput(messages.finalizationDisabled));
   if (params.expectedPolicyRevision !== undefined && Number(activation.policy_revision) !== Number(params.expectedPolicyRevision)) {
-    return fail(err.conflict("The Table Finalization policy changed after it was previewed."));
+    return fail(err.conflict(messages.finalizationPolicyChangedAfterPreview));
   }
-  if (activation.mode !== "four_eyes") return fail(err.conflict("This Table uses Direct Finalization."));
+  if (activation.mode !== "four_eyes") return fail(err.conflict(messages.directFinalizationOnly));
   const [record] = await client<Array<{ version: number; finalized_at: Date | null }>>`
       SELECT record.version, record.finalized_at
       FROM grids.records record
@@ -488,8 +500,8 @@ export const requestFinalizationInTransaction = async (
         AND record.deleted_at IS NULL AND ${recordAccessPredicate(params.recordAccess, "record")}
       FOR UPDATE
     `;
-  if (!record) return fail(err.notFound("Record"));
-  if (record.finalized_at) return fail(finalizedRecordConflict());
+  if (!record) return fail(err.notFound(messages.record));
+  if (record.finalized_at) return fail(finalizedRecordConflict(params.locale));
   const [pending] = await finalizationRequestRows(
     client,
     sql`request.table_id = ${params.tableId}::uuid AND request.record_id = ${params.recordId}::uuid AND request.status = 'pending'`,
@@ -504,7 +516,7 @@ export const requestFinalizationInTransaction = async (
     const staleRequest =
       Number(pending.record_version) !== Number(record.version) || Number(pending.policy_revision) !== Number(activation.policy_revision);
     if (!staleRequest) {
-      return fail(err.conflict("This Record already has a pending Finalization request."));
+      return fail(err.conflict(messages.finalizationRequestPending));
     }
     await client`
         UPDATE grids.record_finalization_requests
@@ -514,11 +526,11 @@ export const requestFinalizationInTransaction = async (
       `;
   }
   const loaded = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
-  if (!loaded) return fail(err.notFound("Record"));
+  if (!loaded) return fail(err.notFound(messages.record));
   const fields = await listFields(params.tableId, false, client);
-  const checked = await requirements(client, params.recordId, fields, loaded.data);
+  const checked = await requirements(client, params.recordId, fields, loaded.data, params.locale);
   if (checked.missing.length > 0) {
-    return fail(err.badInput(`Record is not ready to finalize: ${checked.missing.map((item) => item.fieldName).join(", ")}.`));
+    return fail(err.badInput(messages.recordNotReady({ fields: checked.missing.map((item) => item.fieldName).join(", ") })));
   }
   await insertWithShortIdForDb(client, "idx_grids_record_finalization_requests_short_id", async (attempt, shortId) => {
     await attempt`
@@ -541,7 +553,7 @@ export const requestFinalizationInTransaction = async (
     client,
   );
   const created = await latestFinalizationRequest(client, params.tableId, params.recordId);
-  return created ? ok(created.request) : fail(err.notFound("Finalization request"));
+  return created ? ok(created.request) : fail(err.notFound(messages.finalizationRequest));
 };
 
 export const requestFinalization = async (params: {
@@ -551,14 +563,16 @@ export const requestFinalization = async (params: {
   comment?: string | null;
   expectedPolicyRevision?: number;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<RecordFinalizationRequest>> => sql.begin((tx) => requestFinalizationInTransaction(tx, params));
 
 const validateResolver = async (
   client: SqlClient,
-  params: { tableId: string; recordId: string; requestId: string; actorId: string | null },
+  params: { tableId: string; recordId: string; requestId: string; actorId: string | null; locale?: string },
   operation: "approve" | "reject",
 ): Promise<Result<{ request: FinalizationRequestRow; approverGroupId: string; replay: boolean }>> => {
-  if (!params.actorId) return fail(err.forbidden("A signed-in user is required to resolve Four-eyes Finalization."));
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorId) return fail(err.forbidden(messages.finalizationResolveUserRequired));
   const [activation] = await client<Array<{ mode: string; approver_group_id: string | null; policy_revision: number }>>`
     SELECT mode, approver_group_id::text, policy_revision
     FROM grids.table_finalization_activations
@@ -566,7 +580,7 @@ const validateResolver = async (
     FOR SHARE
   `;
   if (!activation || activation.mode !== "four_eyes" || !activation.approver_group_id) {
-    return fail(err.conflict("This Table does not currently use Four-eyes Finalization."));
+    return fail(err.conflict(messages.fourEyesNotEnabled));
   }
   const [record] = await client<Array<{ version: number; deleted_at: Date | null; finalized_at: Date | null }>>`
     SELECT version, deleted_at, finalized_at
@@ -574,21 +588,21 @@ const validateResolver = async (
     WHERE id = ${params.recordId}::uuid AND table_id = ${params.tableId}::uuid
     FOR UPDATE
   `;
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(messages.record));
   const [request] = await finalizationRequestRows(
     client,
     sql`request.table_id = ${params.tableId}::uuid AND request.record_id = ${params.recordId}::uuid AND request.short_id = ${params.requestId}`,
     true,
   );
-  if (!request) return fail(err.notFound("Finalization request"));
+  if (!request) return fail(err.notFound(messages.finalizationRequest));
   if (request.status !== "pending") {
     const replayStatus = operation === "approve" ? "approved" : "rejected";
     if (request.status === replayStatus && request.resolved_by === params.actorId) {
       return ok({ request, approverGroupId: activation.approver_group_id, replay: true });
     }
-    return fail(err.conflict("The Finalization request has already been resolved."));
+    return fail(err.conflict(messages.finalizationRequestResolved));
   }
-  if (request.requested_by === params.actorId) return fail(err.forbidden("You cannot resolve your own Finalization request."));
+  if (request.requested_by === params.actorId) return fail(err.forbidden(messages.ownFinalizationRequest));
   if (Number(request.policy_revision) !== Number(activation.policy_revision)) {
     await client`
       UPDATE grids.record_finalization_requests
@@ -596,11 +610,11 @@ const validateResolver = async (
           resolution_comment = 'The Table Finalization policy changed.'
       WHERE id = ${request.id}::uuid AND status = 'pending'
     `;
-    return fail(err.conflict("The Table Finalization policy changed. Submit a new request."));
+    return fail(err.conflict(messages.finalizationPolicyChanged));
   }
   const groupIds = await getEffectiveGroupIds({ userId: params.actorId }, client);
   if (!groupIds.includes(activation.approver_group_id)) {
-    return fail(err.forbidden("You are not a member of this Table's approver group."));
+    return fail(err.forbidden(messages.approverMembershipRequired));
   }
   if (record.deleted_at || record.finalized_at || Number(record.version) !== Number(request.record_version)) {
     await client`
@@ -609,17 +623,18 @@ const validateResolver = async (
           resolution_comment = 'The Record changed after Finalization was requested.'
       WHERE id = ${request.id}::uuid AND status = 'pending'
     `;
-    return fail(err.conflict("The Record changed after Finalization was requested. Submit a new request."));
+    return fail(err.conflict(messages.recordChangedAfterRequest));
   }
   return ok({ request, approverGroupId: activation.approver_group_id, replay: false });
 };
 
 const resolvedReplay = async (
   client: SqlClient,
-  params: { tableId: string; recordId: string; requestId: string; actorId: string | null },
+  params: { tableId: string; recordId: string; requestId: string; actorId: string | null; locale?: string },
   operation: "approve" | "reject",
 ): Promise<Result<FinalizationRequestRow | null>> => {
-  if (!params.actorId) return fail(err.forbidden("A signed-in user is required to resolve Four-eyes Finalization."));
+  const messages = getGridsCrudMessages(params.locale);
+  if (!params.actorId) return fail(err.forbidden(messages.finalizationResolveUserRequired));
   const [request] = await finalizationRequestRows(
     client,
     sql`request.table_id = ${params.tableId}::uuid AND request.record_id = ${params.recordId}::uuid
@@ -629,7 +644,7 @@ const resolvedReplay = async (
   if (!request) return ok(null);
   const replayStatus = operation === "approve" ? "approved" : "rejected";
   if (request.status === replayStatus && request.resolved_by === params.actorId) return ok(request);
-  return fail(err.conflict("The Finalization request has already been resolved."));
+  return fail(err.conflict(messages.finalizationRequestResolved));
 };
 
 export const finalizeInTransaction = async (
@@ -643,11 +658,13 @@ export const finalizeInTransaction = async (
     expectedPolicyRevision?: number;
     recordAccess?: AuthorizedRecordAccess;
     dateConfig?: DateContext;
+    locale?: string;
   },
 ): Promise<Result<{ record: GridRecord; outboxId: string | null; approvalRequestInternalId?: string; approvalReplay?: boolean }>> => {
-  const writable = await requireStoredTableWritable(params.tableId, client);
+  const messages = getGridsCrudMessages(params.locale);
+  const writable = await requireStoredTableWritable(params.tableId, client, params.locale);
   if (!writable.ok) return writable;
-  const allowed = await assertMutationAllowed(client, params.tableId, params.origin);
+  const allowed = await assertMutationAllowed(client, params.tableId, params.origin, params.locale);
   if (!allowed.ok) return allowed;
   const [target] = await client<Array<{ id: string }>>`
     SELECT record.id::text
@@ -655,21 +672,21 @@ export const finalizeInTransaction = async (
     WHERE record.id = ${params.recordId}::uuid AND record.table_id = ${params.tableId}::uuid
       AND record.deleted_at IS NULL AND ${recordAccessPredicate(params.recordAccess, "record")}
   `;
-  if (!target) return fail(err.notFound("Record"));
+  if (!target) return fail(err.notFound(messages.record));
   const [activation] = await client<Array<{ table_id: string; mode: "direct" | "four_eyes"; policy_revision: number }>>`
     SELECT table_id::text, mode, policy_revision FROM grids.table_finalization_activations
     WHERE table_id = ${params.tableId}::uuid FOR SHARE
   `;
-  if (!activation) return fail(err.badInput("Finalization is not enabled for this table."));
+  if (!activation) return fail(err.badInput(messages.finalizationDisabled));
   if (params.expectedPolicyRevision !== undefined && Number(activation.policy_revision) !== Number(params.expectedPolicyRevision)) {
-    return fail(err.conflict("The Table Finalization policy changed after it was previewed."));
+    return fail(err.conflict(messages.finalizationPolicyChangedAfterPreview));
   }
   if (params.approvalRequestId) {
     const admission = await validateResolver(client, { ...params, requestId: params.approvalRequestId }, "approve");
     if (!admission.ok) return admission;
     if (admission.data.replay) {
       const replayed = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
-      if (!replayed?.row.finalized_at) return fail(err.conflict("The approved Finalization request no longer matches a finalized Record."));
+      if (!replayed?.row.finalized_at) return fail(err.conflict(messages.approvedRequestMismatch));
       return ok({
         record: mapRecordRow(replayed.row),
         outboxId: null,
@@ -679,17 +696,17 @@ export const finalizeInTransaction = async (
     }
     params = { ...params, approvalRequestId: admission.data.request.id };
   } else if (activation.mode === "four_eyes") {
-    return fail(err.conflict("This Table requires a Four-eyes Finalization request."));
+    return fail(err.conflict(messages.fourEyesRequestRequired));
   }
   await prepareRecordMutation(client, params.tableId, params.recordId);
   const record = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(messages.record));
   if (record.row.finalized_at) return ok({ record: mapRecordRow(record.row), outboxId: null });
 
   const fields = await listFields(params.tableId, false, client);
-  const checked = await requirements(client, params.recordId, fields, record.data);
+  const checked = await requirements(client, params.recordId, fields, record.data, params.locale);
   if (checked.missing.length > 0) {
-    return fail(err.badInput(`Record is not ready to finalize: ${checked.missing.map((item) => item.fieldName).join(", ")}.`));
+    return fail(err.badInput(messages.recordNotReady({ fields: checked.missing.map((item) => item.fieldName).join(", ") })));
   }
 
   const data = { ...mapRecordRow(record.row).data };
@@ -716,7 +733,7 @@ export const finalizeInTransaction = async (
       AND ${recordAccessPredicate(params.recordAccess, "grids.records")}
     RETURNING *
   `;
-  if (!updated) return fail(finalizedRecordConflict());
+  if (!updated) return fail(finalizedRecordConflict(params.locale));
   for (const allocation of allocations) await bindNumberAllocation(client, allocation.id, { kind: "record", id: params.recordId });
   const revision = await captureRecordRevision(client, {
     tableId: params.tableId,
@@ -766,6 +783,7 @@ export const finalize = async (params: {
   origin: MutationOrigin;
   recordAccess?: AuthorizedRecordAccess;
   dateConfig?: DateContext;
+  locale?: string;
 }): Promise<Result<GridRecord>> => {
   const result = await sql.begin((tx) => finalizeInTransaction(tx, params));
   if (!result.ok) return result;
@@ -774,7 +792,7 @@ export const finalize = async (params: {
     recordAccess: params.recordAccess,
     dateConfig: params.dateConfig,
   });
-  return record ? ok(record) : fail(err.notFound("Record"));
+  return record ? ok(record) : fail(err.notFound(getGridsCrudMessages(params.locale).record));
 };
 
 export const approveFinalization = async (params: {
@@ -785,13 +803,15 @@ export const approveFinalization = async (params: {
   comment?: string | null;
   recordAccess?: AuthorizedRecordAccess;
   dateConfig?: DateContext;
+  locale?: string;
 }): Promise<Result<GridRecord>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const result = await sql.begin(async (tx): Promise<Result<{ record: GridRecord; outboxId: string | null }>> => {
     const replay = await resolvedReplay(tx, params, "approve");
     if (!replay.ok) return replay;
     if (replay.data) {
       const record = await loadRecordValues(tx, params.tableId, params.recordId, params.recordAccess);
-      if (!record?.row.finalized_at) return fail(err.conflict("The approved Finalization request no longer matches a finalized Record."));
+      if (!record?.row.finalized_at) return fail(err.conflict(messages.approvedRequestMismatch));
       return ok({ record: mapRecordRow(record.row), outboxId: null });
     }
     const finalized = await finalizeInTransaction(tx, {
@@ -802,6 +822,7 @@ export const approveFinalization = async (params: {
       approvalRequestId: params.requestId,
       recordAccess: params.recordAccess,
       dateConfig: params.dateConfig,
+      locale: params.locale,
     });
     if (!finalized.ok) return finalized;
     if (finalized.data.approvalReplay) return finalized;
@@ -829,7 +850,7 @@ export const approveFinalization = async (params: {
     recordAccess: params.recordAccess,
     dateConfig: params.dateConfig,
   });
-  return record ? ok(record) : fail(err.notFound("Record"));
+  return record ? ok(record) : fail(err.notFound(messages.record));
 };
 
 export const rejectFinalization = async (params: {
@@ -838,6 +859,7 @@ export const rejectFinalization = async (params: {
   requestId: string;
   actorId: string | null;
   comment?: string | null;
+  locale?: string;
 }): Promise<Result<RecordFinalizationRequest>> =>
   sql.begin(async (tx): Promise<Result<RecordFinalizationRequest>> => {
     const replay = await resolvedReplay(tx, params, "reject");
@@ -863,5 +885,5 @@ export const rejectFinalization = async (params: {
       tx,
     );
     const rejected = await latestFinalizationRequest(tx, params.tableId, params.recordId);
-    return rejected ? ok(rejected.request) : fail(err.notFound("Finalization request"));
+    return rejected ? ok(rejected.request) : fail(err.notFound(getGridsCrudMessages(params.locale).finalizationRequest));
   });

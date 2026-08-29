@@ -3,6 +3,7 @@ import { type SQL, sql } from "bun";
 import type { RecordSnapshot, RecordSnapshotSummary } from "../contracts";
 import { logAudit } from "./audit";
 import { type DocumentDbRow, mapRecordSnapshot, mapRecordSnapshotSummary } from "./document-mappers";
+import { documentServiceText } from "./document-messages";
 import type { AuthorizedRecordAccess } from "./record-access";
 import { recordAccessPredicate } from "./record-access";
 import { createReader, type RecordReader } from "./record-read";
@@ -99,6 +100,7 @@ const buildRecordSnapshotGraph = async (
     maxRecords?: number;
   },
 ): Promise<Result<{ root: SnapshotRecord; graph: { rootId: string; records: Record<string, SnapshotRecord> } }>> => {
+  const t = documentServiceText(options.dateConfig?.locale);
   const maxDepth = options.maxDepth ?? SNAPSHOT_MAX_DEPTH;
   const maxRecords = options.maxRecords ?? SNAPSHOT_MAX_RECORDS;
   const records: Record<string, SnapshotRecord> = {};
@@ -156,24 +158,24 @@ const buildRecordSnapshotGraph = async (
     for (const [currentTableId, recordIds] of pendingByTable) {
       const table = await loadTable(currentTableId);
       if (!table) {
-        if (depth === 0) return fail(err.notFound("Table"));
+        if (depth === 0) return fail(err.notFound(t.tableNotFound));
         continue;
       }
-      if (depth === 0 && table.baseId !== options.baseId) return fail(err.badInput("record does not belong to base"));
+      if (depth === 0 && table.baseId !== options.baseId) return fail(err.badInput(t.baseMismatch));
 
       const ids = [...recordIds];
       const reader = await loadReader(table);
       if (!reader) {
-        if (depth === 0) return fail(err.notFound("Record"));
+        if (depth === 0) return fail(err.notFound(t.recordNotFound));
         continue;
       }
       const loaded = await reader.getMany(ids);
-      if (seen.size + loaded.length > maxRecords) return fail(err.badInput(`snapshot exceeds ${maxRecords} records`));
+      if (seen.size + loaded.length > maxRecords) return fail(err.badInput(t.snapshotRecordLimit({ limit: maxRecords })));
       const loadedById = new Map(loaded.map((record) => [record.id, record]));
       for (const id of ids) {
         const record = loadedById.get(id);
         if (!record) {
-          if (depth === 0) return fail(err.notFound("Record"));
+          if (depth === 0) return fail(err.notFound(t.recordNotFound));
           continue;
         }
         seen.add(`${currentTableId}:${id}`);
@@ -197,7 +199,7 @@ const buildRecordSnapshotGraph = async (
 
   const rootId = `${tableId}:${recordId}`;
   const root = records[rootId];
-  if (!root) return fail(err.internal("Snapshot root was not captured"));
+  if (!root) return fail(err.internal(t.snapshotRootMissing));
   for (const captured of Object.values(records)) {
     for (const field of captured.fields) {
       if (field.type !== "relation") continue;
@@ -241,7 +243,12 @@ export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotPara
   });
 };
 
-export const persistRecordSnapshot = async (snapshot: RecordSnapshotDraft, executor: SQL): Promise<Result<RecordSnapshot>> => {
+export const persistRecordSnapshot = async (
+  snapshot: RecordSnapshotDraft,
+  executor: SQL,
+  locale?: string,
+): Promise<Result<RecordSnapshot>> => {
+  const t = documentServiceText(locale);
   const row = await insertWithShortIdForDb(executor, "idx_grids_record_snapshots_short_id", async (attempt, shortId) => {
     const [created] = await attempt<DocumentDbRow[]>`
         INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph, created_by, created_at)
@@ -251,7 +258,7 @@ export const persistRecordSnapshot = async (snapshot: RecordSnapshotDraft, execu
     if (!created) throw new Error("insert returned no row");
     return created;
   });
-  if (!row) return fail(err.internal("Could not create record snapshot"));
+  if (!row) return fail(err.internal(t.snapshotCreateFailed));
   const persisted = mapRecordSnapshot(row);
   const rootVersion = typeof snapshot.root.version === "number" ? snapshot.root.version : null;
   await logAudit(
@@ -274,7 +281,7 @@ export const persistRecordSnapshot = async (snapshot: RecordSnapshotDraft, execu
 export const createRecordSnapshot = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshot>> => {
   const draft = await createRecordSnapshotDraft(params);
   if (!draft.ok) return draft;
-  return sql.begin((tx) => persistRecordSnapshot(draft.data, tx));
+  return sql.begin((tx) => persistRecordSnapshot(draft.data, tx, params.dateConfig?.locale));
 };
 
 export const getSnapshot = async (snapshotId: string): Promise<RecordSnapshot | null> => {

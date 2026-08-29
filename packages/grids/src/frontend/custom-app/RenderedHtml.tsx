@@ -1,5 +1,6 @@
 import { Placeholder, TemplatePreview } from "@k2b/ui";
 import { HTML_TEMPLATE_ERROR } from "../../field-types/html-template";
+import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
 type CustomAppHtmlHeight = "compact" | "normal" | "large";
 
@@ -28,6 +29,7 @@ export const isolatedCustomAppHtml = (html: string): string =>
   `<meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}"><meta name="referrer" content="no-referrer">${html}`;
 
 export function RenderedHtml(props: { html: unknown; title: string; height: CustomAppHtmlHeight }) {
+  const messages = useCustomAppRuntimeMessages();
   const html = () => (typeof props.html === "string" ? props.html : null);
   return html() && html() !== HTML_TEMPLATE_ERROR ? (
     <div inert>
@@ -41,8 +43,8 @@ export function RenderedHtml(props: { html: unknown; title: string; height: Cust
     <Placeholder
       variant="compact"
       align="left"
-      title="Rendered HTML unavailable"
-      description={html() === HTML_TEMPLATE_ERROR ? "The template could not be rendered." : "This record has no rendered HTML."}
+      title={messages().renderedHtmlUnavailable}
+      description={html() === HTML_TEMPLATE_ERROR ? messages().templateRenderFailed : messages().noRenderedHtml}
     />
   );
 }

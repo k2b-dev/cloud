@@ -11,32 +11,41 @@ import {
   SettingsGroup,
   StatusBadge,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { PublicTableAdminOverviewItem, PublicTableAdminOverviewPage } from "../../../api/table-admin-overview";
 import { openHistoryProtectionDialog } from "../dialogs/HistoryProtectionDialog";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
 const PAGE_SIZE = 25;
 
-const historyLabel = (value: PublicTableAdminOverviewItem["durableHistory"]) =>
-  value === "active" ? "History active" : value === "preparing" ? "History preparing" : "History off";
-const finalizationLabel = (value: PublicTableAdminOverviewItem["finalizationMode"]) =>
-  value === "fourEyes" ? "Four-eyes" : value === "direct" ? "Direct" : "Finalization off";
-const mutationLabel = (item: PublicTableAdminOverviewItem) =>
-  item.mutationPolicy.mode === "all"
-    ? "All write paths"
-    : item.mutationPolicy.sources.map((source) => (source === "direct" ? "Direct" : source === "form" ? "Forms" : "Workflows")).join(", ");
-
-const columns = [
-  { id: "table", header: "Table" },
-  { id: "fields", header: "Fields", align: "right" as const },
-  { id: "protection", header: "History & Finalization" },
-  { id: "writes", header: "Allowed writes" },
-  { id: "actions", header: "Actions", align: "right" as const },
-];
-
 function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const historyLabel = (value: PublicTableAdminOverviewItem["durableHistory"]) =>
+    value === "active" ? messages().historyActive : value === "preparing" ? messages().historyPreparing : messages().historyOff;
+  const finalizationLabel = (value: PublicTableAdminOverviewItem["finalizationMode"]) =>
+    value === "fourEyes"
+      ? messages().finalizationFourEyes
+      : value === "direct"
+        ? messages().finalizationDirect
+        : messages().finalizationOff;
+  const mutationLabel = (item: PublicTableAdminOverviewItem) =>
+    item.mutationPolicy.mode === "all"
+      ? messages().allWritePaths
+      : item.mutationPolicy.sources
+          .map((source) => (source === "direct" ? messages().direct : source === "form" ? messages().forms : messages().workflows))
+          .join(", ");
+  const columns = () => [
+    { id: "table", header: messages().table },
+    { id: "fields", header: messages().fields, align: "right" as const },
+    { id: "protection", header: messages().historyAndFinalization },
+    { id: "writes", header: messages().allowedWrites },
+    { id: "actions", header: messages().actions, align: "right" as const },
+  ];
   const [searchInput, setSearchInput] = createSignal("");
   const [search, setSearch] = createSignal("");
   const [kind, setKind] = createSignal<"all" | "stored" | "combined">("all");
@@ -63,7 +72,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
     source: requestUrl,
     load: async (url, { abortSignal }): Promise<PublicTableAdminOverviewPage> => {
       const response = await fetch(url, { signal: abortSignal });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load Tables"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().loadTablesFailed));
       return response.json();
     },
   });
@@ -71,9 +80,9 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
   const totalPages = createMemo(() => Math.max(1, Math.ceil((result()?.total ?? 0) / PAGE_SIZE)));
   const rangeLabel = createMemo(() => {
     const value = result();
-    if (!value || value.total === 0) return "No Tables";
+    if (!value || value.total === 0) return messages().noTables;
     const start = (page() - 1) * PAGE_SIZE + 1;
-    return `${start}–${start + value.items.length - 1} of ${value.total} Tables`;
+    return messages().tablesRange({ start: number(start), end: number(start + value.items.length - 1), total: number(value.total) });
   });
   const setFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1);
@@ -83,8 +92,8 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Table overview"
-        subtitle="Find a Table, compare its safeguards, or open its settings."
+        title={messages().tableOverview}
+        subtitle={messages().tableOverviewSubtitle}
         icon="ti ti-table-options"
         close={props.close}
       />
@@ -92,15 +101,15 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
         <DataTable.Panel class="flex min-h-0 flex-1 flex-col overflow-hidden">
           <DataTable.Header title={rangeLabel()} size="sm">
             <Button size="sm" variant="secondary" disabled={tables.loading() || tables.refreshing()} onClick={() => void tables.refresh()}>
-              <i class={tables.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> Refresh
+              <i class={tables.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> {messages().refresh}
             </Button>
           </DataTable.Header>
           <DataTable.Controls>
             <div class="w-full">
               <TextInput
                 type="search"
-                aria-label="Search Tables"
-                placeholder="Search by name or ID"
+                aria-label={messages().searchTables}
+                placeholder={messages().searchByNameOrId}
                 icon="ti ti-search"
                 activeIcon="ti ti-search"
                 clearable
@@ -117,14 +126,14 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <FilterChip
-                label="Type"
+                label={messages().type}
                 icon="ti ti-table"
                 options={[
                   {
                     options: [
-                      { value: "all", label: "All types" },
-                      { value: "stored", label: "Stored Tables" },
-                      { value: "combined", label: "Combined Tables" },
+                      { value: "all", label: messages().allTypes },
+                      { value: "stored", label: messages().storedTables },
+                      { value: "combined", label: messages().combinedTables },
                     ],
                   },
                 ]}
@@ -134,15 +143,15 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                 onValueChange={(value) => setFilter(setKind, value[0] === "stored" || value[0] === "combined" ? value[0] : "all")}
               />
               <FilterChip
-                label="Durable History"
+                label={messages().durableHistory}
                 icon="ti ti-history"
                 options={[
                   {
                     options: [
-                      { value: "all", label: "Any history state" },
-                      { value: "off", label: "Off" },
-                      { value: "preparing", label: "Preparing" },
-                      { value: "active", label: "Active" },
+                      { value: "all", label: messages().anyHistoryState },
+                      { value: "off", label: messages().off },
+                      { value: "preparing", label: messages().preparing },
+                      { value: "active", label: messages().active },
                     ],
                   },
                 ]}
@@ -154,15 +163,15 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                 }
               />
               <FilterChip
-                label="Finalization"
+                label={messages().finalization}
                 icon="ti ti-lock-check"
                 options={[
                   {
                     options: [
-                      { value: "all", label: "Any Finalization mode" },
-                      { value: "off", label: "Off" },
-                      { value: "direct", label: "Direct" },
-                      { value: "fourEyes", label: "Four-eyes" },
+                      { value: "all", label: messages().anyFinalizationMode },
+                      { value: "off", label: messages().off },
+                      { value: "direct", label: messages().direct },
+                      { value: "fourEyes", label: messages().fourEyes },
                     ],
                   },
                 ]}
@@ -181,11 +190,11 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
             fallback={
               <Placeholder
                 state="error"
-                title="Tables are unavailable"
-                description={tables.error() instanceof Error ? tables.error()!.message : "Could not load Tables"}
+                title={messages().tablesUnavailable}
+                description={tables.error() instanceof Error ? tables.error()!.message : messages().loadTablesFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void tables.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -193,9 +202,9 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
           >
             <DataTable
               rows={result()?.items ?? []}
-              columns={columns}
+              columns={columns()}
               getRowId={(row) => row.id}
-              ariaLabel="Table administration overview"
+              ariaLabel={messages().tableAdminOverviewAria}
               density="compact"
               surface="plain"
               hoverRows
@@ -203,11 +212,11 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
               class="min-h-0 flex-1 overflow-auto"
               empty={
                 tables.loading() ? (
-                  <span>Loading Tables…</span>
+                  <span>{messages().loadingTables}</span>
                 ) : search() || kind() !== "all" || history() !== "all" || finalization() !== "all" ? (
-                  <span>No Tables match these filters.</span>
+                  <span>{messages().noTablesMatch}</span>
                 ) : (
-                  <span>This Base has no Tables.</span>
+                  <span>{messages().baseHasNoTables}</span>
                 )
               }
               renderCell={({ row, col }) => {
@@ -224,16 +233,16 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                         </a>
                       </div>
                       <div class="text-xs text-dimmed">
-                        {row.kind === "combined" ? "Combined Table" : "Stored Table"} · {row.id}
+                        {row.kind === "combined" ? messages().combinedTable : messages().storedTable} · {row.id}
                       </div>
                     </div>
                   );
                 if (col.id === "fields")
                   return (
                     <div class="whitespace-nowrap text-sm">
-                      <div>{row.fieldCount}</div>
+                      <div>{number(row.fieldCount)}</div>
                       <div class="text-xs text-dimmed">
-                        {row.indexedFieldCount} indexed · {row.uniqueFieldCount} unique
+                        {messages().indexedAndUnique({ indexed: number(row.indexedFieldCount), unique: number(row.uniqueFieldCount) })}
                       </div>
                     </div>
                   );
@@ -261,7 +270,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                       variant="secondary"
                       onClick={() => void openHistoryProtectionDialog({ tableId: row.id, tableName: row.name })}
                     >
-                      <i class="ti ti-shield-cog" aria-hidden="true" /> Manage
+                      <i class="ti ti-shield-cog" aria-hidden="true" /> {messages().manage}
                     </Button>
                   );
                 return null;
@@ -270,9 +279,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
           </Show>
           <Show when={totalPages() > 1}>
             <DataTable.Footer class="flex items-center justify-between gap-3">
-              <span class="text-xs text-dimmed">
-                Page {page()} of {totalPages()}
-              </span>
+              <span class="text-xs text-dimmed">{messages().pageOf({ page: number(page()), total: number(totalPages()) })}</span>
               <div class="flex gap-2">
                 <Button
                   size="sm"
@@ -280,7 +287,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                   disabled={tables.loading() || tables.refreshing() || page() <= 1}
                   onClick={() => setPage((value) => value - 1)}
                 >
-                  Previous
+                  {messages().previous}
                 </Button>
                 <Button
                   size="sm"
@@ -288,7 +295,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
                   disabled={tables.loading() || tables.refreshing() || page() >= totalPages()}
                   onClick={() => setPage((value) => value + 1)}
                 >
-                  Next
+                  {messages().next}
                 </Button>
               </div>
             </DataTable.Footer>
@@ -303,19 +310,17 @@ export const openTablesOverviewDialog = (baseId: string) =>
   dialogCore.open<void>((close) => <TablesOverviewDialog baseId={baseId} close={() => close()} />, panelDialogWorkspaceOptions);
 
 export function TablesOverviewSection(props: { baseId: string }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
   return (
-    <SettingsGroup
-      title="Table overview"
-      description="Compare Table structure, write paths, Durable History, and Finalization in one place."
-    >
+    <SettingsGroup title={messages().tableOverview} description={messages().tableOverviewDescription}>
       <SettingsGroup.Action>
         <Button size="sm" variant="secondary" onClick={() => void openTablesOverviewDialog(props.baseId)}>
-          <i class="ti ti-table-search" aria-hidden="true" /> Review Tables
+          <i class="ti ti-table-search" aria-hidden="true" /> {messages().reviewTables}
         </Button>
       </SettingsGroup.Action>
       <NoticeCard tone="info" icon="ti ti-table-options">
-        Use this overview when you need to find Tables that do not keep history yet, or check where Records require approval before they
-        become final.
+        {messages().tableOverviewGuidance}
       </NoticeCard>
     </SettingsGroup>
   );

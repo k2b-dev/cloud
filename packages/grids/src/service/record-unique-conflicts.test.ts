@@ -13,7 +13,7 @@ describe("recordUniqueConflict", () => {
     expect(bunConflict?.ok).toBe(false);
     expect(postgresJsConflict?.ok).toBe(false);
     if (bunConflict && !bunConflict.ok) expect(bunConflict.error.code).toBe("CONFLICT");
-    if (postgresJsConflict && !postgresJsConflict.ok) expect(postgresJsConflict.error.message).toContain('field "External id"');
+    if (postgresJsConflict && !postgresJsConflict.ok) expect(postgresJsConflict.error.message).toContain("field “External id”");
   });
 
   test("ignores unrelated constraints and non-unique fields", () => {

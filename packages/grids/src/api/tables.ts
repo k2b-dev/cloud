@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import { projectPublicIds, resolvePublicIds } from "../service/public-resources"
 import { ALL_RECORD_ACCESS } from "../service/record-access";
 import * as recordFinalizationService from "../service/record-finalization";
 import { PublicDurableHistoryStatusSchema, toPublicDurableHistoryStatus } from "./durable-history";
+import { apiMessages } from "./messages";
 import { currentAccessSubject, currentActorUserId, currentCredentialPermission, currentResourceBoundBaseId, gateAt } from "./permissions";
 import {
   fromPublicCreateTable,
@@ -55,6 +56,7 @@ import {
   toPublicTableAdminOverview,
 } from "./table-admin-overview";
 import { tableQueryRoutes } from "./table-query-routes";
+import { v } from "./validator";
 
 const PublicRelationLookupResponseSchema = z.object({
   items: z.array(z.object({ id: ShortIdSchema, label: z.string() })),
@@ -76,7 +78,7 @@ const requireSourceBaseAdmins = async (c: Parameters<typeof gateAt>[0], sourceTa
     }),
   );
   if (administered.some((allowed) => !allowed)) {
-    return { response: c.json({ message: "One or more source tables are unavailable or not administrable." }, 403) };
+    return { response: c.json({ message: apiMessages(c).sourceTablesUnavailable }, 403) };
   }
   return { response: null };
 };
@@ -131,7 +133,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const source = await gridsService.table.get(tableId);
-      if (!source || source.kind !== "stored") return c.json({ message: "Source table not found" }, 404);
+      if (!source || source.kind !== "stored") return c.json({ message: apiMessages(c).sourceTableNotFound }, 404);
       const gate = await gateAt(c, { baseId: source.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       return c.json(await toPublicFederatedSourcePublications(await gridsService.table.federation.listPublicationsForSource(tableId)));
@@ -153,14 +155,14 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table || table.kind !== "federated") return c.json({ message: "Combined table not found" }, 404);
+      if (!table || table.kind !== "federated") return c.json({ message: apiMessages(c).combinedTableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const [draft, current] = await Promise.all([
         gridsService.table.federation.getDraft(tableId),
         gridsService.table.federation.getCurrent(tableId),
       ]);
-      if (!draft) return c.json({ message: "Combined table draft not found" }, 404);
+      if (!draft) return c.json({ message: apiMessages(c).combinedTableDraftNotFound }, 404);
       const administeredSources = await sourceTablesAdministeredByActor(c, [draft, current]);
       return c.json({
         current: current ? await toPublicFederatedRevision(current, administeredSources) : null,
@@ -185,7 +187,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const target = await gridsService.table.get(tableId);
-      if (!target || target.kind !== "federated") return c.json({ message: "Combined table not found" }, 404);
+      if (!target || target.kind !== "federated") return c.json({ message: apiMessages(c).combinedTableNotFound }, 404);
       const targetGate = await gateAt(c, { baseId: target.baseId }, "admin");
       if (!targetGate.ok) return respond(c, () => Promise.resolve(targetGate));
 
@@ -222,7 +224,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const target = await gridsService.table.get(tableId);
-      if (!target || target.kind !== "federated") return c.json({ message: "Combined table not found" }, 404);
+      if (!target || target.kind !== "federated") return c.json({ message: apiMessages(c).combinedTableNotFound }, 404);
       const targetGate = await gateAt(c, { baseId: target.baseId }, "admin");
       if (!targetGate.ok) return respond(c, () => Promise.resolve(targetGate));
       const { draftToken, ...body } = c.req.valid("json");
@@ -231,7 +233,7 @@ export const tablesRoutes = new Hono<AuthContext>()
       const sourceGate = await requireSourceBaseAdmins(c, internal.data.sourceTableIds);
       if (sourceGate.response) return sourceGate.response;
       const draft = await gridsService.table.federation.getDraft(tableId);
-      if (!draft) return c.json({ message: "Combined table draft not found" }, 404);
+      if (!draft) return c.json({ message: apiMessages(c).combinedTableDraftNotFound }, 404);
       const administeredSources = await sourceTablesAdministeredByActor(c, [draft]);
       const result = await gridsService.table.federation.updateDraft(
         tableId,
@@ -239,6 +241,7 @@ export const tablesRoutes = new Hono<AuthContext>()
         draftToken,
         currentActorUserId(c),
         publicationAuthorization(c),
+        getLocale(c),
       );
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       const administeredUpdatedSources = await sourceTablesAdministeredByActor(c, [result.data]);
@@ -263,7 +266,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const target = await gridsService.table.get(tableId);
-      if (!target || target.kind !== "federated") return c.json({ message: "Combined table not found" }, 404);
+      if (!target || target.kind !== "federated") return c.json({ message: apiMessages(c).combinedTableNotFound }, 404);
       const targetGate = await gateAt(c, { baseId: target.baseId }, "admin");
       if (!targetGate.ok) return respond(c, () => Promise.resolve(targetGate));
       const body = c.req.valid("json");
@@ -276,6 +279,7 @@ export const tablesRoutes = new Hono<AuthContext>()
       const validation = await gridsService.table.federation.validateDraft(
         tableId,
         draft ? retainUnadministeredDraftSources(internal.data, draft, administeredSources) : internal.data,
+        getLocale(c),
       );
       return c.json({ ...validation, diagnostics: await toPublicFederatedDiagnostics(validation.diagnostics, administeredSources) });
     },
@@ -298,11 +302,11 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const target = await gridsService.table.get(tableId);
-      if (!target || target.kind !== "federated") return c.json({ message: "Combined table not found" }, 404);
+      if (!target || target.kind !== "federated") return c.json({ message: apiMessages(c).combinedTableNotFound }, 404);
       const targetGate = await gateAt(c, { baseId: target.baseId }, "admin");
       if (!targetGate.ok) return respond(c, () => Promise.resolve(targetGate));
       const draft = await gridsService.table.federation.getDraft(tableId);
-      if (!draft) return c.json({ message: "Combined table draft not found" }, 404);
+      if (!draft) return c.json({ message: apiMessages(c).combinedTableDraftNotFound }, 404);
       const current = await gridsService.table.federation.getCurrent(tableId);
       const sourceGate = await requireSourceBaseAdmins(
         c,
@@ -317,12 +321,18 @@ export const tablesRoutes = new Hono<AuthContext>()
         }),
       );
       if (sourceGate.response) return sourceGate.response;
-      const result = await gridsService.table.federation.publishDraft(tableId, currentActorUserId(c), publicationAuthorization(c), {
-        draftId: draft.id,
-        draftToken: draft.revisionToken,
-        currentId: current?.id ?? null,
-        currentToken: current?.revisionToken ?? null,
-      });
+      const result = await gridsService.table.federation.publishDraft(
+        tableId,
+        currentActorUserId(c),
+        publicationAuthorization(c),
+        {
+          draftId: draft.id,
+          draftToken: draft.revisionToken,
+          currentId: current?.id ?? null,
+          currentToken: current?.revisionToken ?? null,
+        },
+        getLocale(c),
+      );
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       const administeredSources = await sourceTablesAdministeredByActor(c, [result.data]);
       return c.json(await toPublicFederatedRevision(result.data, administeredSources));
@@ -347,7 +357,7 @@ export const tablesRoutes = new Hono<AuthContext>()
       const tableId = internalIdParam(c, "tableId")!;
       const sourceTableId = internalIdParam(c, "sourceTableId")!;
       const source = await gridsService.table.get(sourceTableId, { includeDeleted: true });
-      if (!source) return c.json({ message: "Source table not found" }, 404);
+      if (!source) return c.json({ message: apiMessages(c).sourceTableNotFound }, 404);
       const sourceGate = await gateAt(c, { baseId: source.baseId }, "admin");
       if (!sourceGate.ok) return respond(c, () => Promise.resolve(sourceGate));
       const result = await gridsService.table.federation.revokeSource(
@@ -355,6 +365,7 @@ export const tablesRoutes = new Hono<AuthContext>()
         sourceTableId,
         currentActorUserId(c),
         publicationAuthorization(c),
+        getLocale(c),
       );
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
       return c.body(null, 204);
@@ -441,6 +452,7 @@ export const tablesRoutes = new Hono<AuthContext>()
           icon: converted.data.icon ?? null,
         },
         currentActorUserId(c),
+        getLocale(c),
       );
       return result.ok ? c.json(await toPublicTable(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
     },
@@ -463,11 +475,11 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
-      if (table.kind !== "stored") return c.json({ message: "Mutation policies are only available for stored tables." }, 400);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
+      if (table.kind !== "stored") return c.json({ message: apiMessages(c).mutationPolicyStoredOnly }, 400);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.mutationPolicy.getImpact(tableId, c.req.valid("json").policy);
+      const result = await gridsService.table.mutationPolicy.getImpact(tableId, c.req.valid("json").policy, { locale: getLocale(c) });
       return result.ok ? c.json(result.data) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -489,11 +501,16 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
-      if (table.kind !== "stored") return c.json({ message: "Mutation policies are only available for stored tables." }, 400);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
+      if (table.kind !== "stored") return c.json({ message: apiMessages(c).mutationPolicyStoredOnly }, 400);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.mutationPolicy.update(tableId, c.req.valid("json").policy, currentActorUserId(c));
+      const result = await gridsService.table.mutationPolicy.update(
+        tableId,
+        c.req.valid("json").policy,
+        currentActorUserId(c),
+        getLocale(c),
+      );
       return result.ok ? c.json({ policy: result.data }) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -514,10 +531,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.durableHistory.getStatus(tableId);
+      const result = await gridsService.table.durableHistory.getStatus(tableId, getLocale(c));
       return result.ok ? c.json(toPublicDurableHistoryStatus(result.data)) : c.json({ message: result.error.message }, result.error.status);
     },
   )
@@ -538,10 +555,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.durableHistory.enable(tableId, currentActorUserId(c));
+      const result = await gridsService.table.durableHistory.enable(tableId, currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(toPublicDurableHistoryStatus(result.data)) : c.json({ message: result.error.message }, result.error.status);
     },
   )
@@ -562,10 +579,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.durableHistory.continueActivation(tableId);
+      const result = await gridsService.table.durableHistory.continueActivation(tableId, getLocale(c));
       return result.ok ? c.json(toPublicDurableHistoryStatus(result.data)) : c.json({ message: result.error.message }, result.error.status);
     },
   )
@@ -586,10 +603,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.finalization.getStatus(tableId);
+      const result = await gridsService.table.finalization.getStatus(tableId, undefined, getLocale(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -612,10 +629,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await recordFinalizationService.enable(tableId, c.req.valid("json"), currentActorUserId(c));
+      const result = await recordFinalizationService.enable(tableId, c.req.valid("json"), currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -636,10 +653,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await recordFinalizationService.disable(tableId, currentActorUserId(c));
+      const result = await recordFinalizationService.disable(tableId, currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -661,10 +678,10 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await recordFinalizationService.setPolicy(tableId, c.req.valid("json"), currentActorUserId(c));
+      const result = await recordFinalizationService.setPolicy(tableId, c.req.valid("json"), currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -684,7 +701,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       return c.json(await toPublicTable(table));
@@ -709,7 +726,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const converted = await fromPublicUpdateTable(tableId, c.req.valid("json"));
@@ -734,7 +751,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.table.remove(tableId, currentActorUserId(c));
@@ -759,7 +776,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId, { includeDeleted: true });
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.table.restore(tableId, currentActorUserId(c));
@@ -806,7 +823,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
@@ -856,13 +873,13 @@ export const tablesRoutes = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const access = await gateAt(c, { baseId: table.baseId }, "read");
       if (!access.ok) return respond(c, () => Promise.resolve(access));
 
       const { q, limit, excludeIds, includeDeleted } = c.req.valid("query");
       const excluded = await resolvePublicIds("record", excludeIds);
-      if (excluded.size !== new Set(excludeIds).size) return c.json({ message: "Unknown excluded record" }, 400);
+      if (excluded.size !== new Set(excludeIds).size) return c.json({ message: apiMessages(c).unknownExcludedRecord }, 400);
 
       const result = await gridsService.relations.lookup({
         targetTableId: tableId,

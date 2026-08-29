@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, MarkdownView, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accounts,
   accountsAppService as accountsService,
@@ -15,6 +15,7 @@ import { Layout } from "@valentinkolb/cloud/ssr";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import NotificationBatchActions from "./NotificationBatchActions.island";
 import NotificationRecipientActions from "./NotificationRecipientActions.island";
 import NotificationRecipientStatusFilters from "./NotificationRecipientStatusFilters.island";
@@ -39,20 +40,6 @@ const statusClass = (status: NotificationBatch["status"] | NotificationBatchReci
   if (status === "running" || status === "ready" || status === "pending" || status === "sending")
     return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
   return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-};
-
-const statusLabel = (status: NotificationBatch["status"] | NotificationBatchRecipient["status"]) =>
-  status
-    .split("_")
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join(" ");
-
-const RULE_LABELS: Record<string, { label: string; icon: string }> = {
-  account_manager: { label: "Account managers", icon: "ti ti-shield-check" },
-  local: { label: "Local accounts", icon: "ti ti-device-desktop" },
-  ipa: { label: "FreeIPA accounts", icon: "ti ti-server" },
-  guest: { label: "Guests", icon: "ti ti-user-question" },
-  user: { label: "Full users", icon: "ti ti-user" },
 };
 
 type LegacyAudienceSelection = {
@@ -87,6 +74,29 @@ const recipientBaseUrl = (batchId: string, status?: string) => {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const statusLabel = (status: NotificationBatch["status"] | NotificationBatchRecipient["status"]) =>
+    ({
+      draft: t.draft,
+      ready: t.ready,
+      running: t.running,
+      completed: t.completed,
+      completed_with_errors: t.withErrors,
+      failed: t.failed,
+      cancelled: t.cancelled,
+      pending: t.pending,
+      sending: t.sending,
+      sent: t.sent,
+      skipped: t.skipped,
+      error: t.error,
+    })[status];
+  const ruleLabels: Record<string, { label: string; icon: string }> = {
+    account_manager: { label: t.accountManagers, icon: "ti ti-shield-check" },
+    local: { label: t.localAccounts, icon: "ti ti-device-desktop" },
+    ipa: { label: t.freeIpaAccounts, icon: "ti ti-server" },
+    guest: { label: t.guests, icon: "ti ti-user-question" },
+    user: { label: t.fullUsers, icon: "ti ti-user" },
+  };
   const user = expectUserBackedActor(c);
   const batchId = c.req.param("id");
   if (!batchId) return c.notFound();
@@ -129,26 +139,26 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const selectionRules = storedSelection.rules ?? [];
   const legacySources = [
-    storedSelection.all ? { label: "All users", icon: "ti ti-users" } : null,
-    storedSelection.accountManagers?.mode === "all" ? { label: "All account managers", icon: "ti ti-shield-check" } : null,
-    storedSelection.providers?.includes("local") ? { label: "Local accounts", icon: "ti ti-device-desktop" } : null,
-    storedSelection.providers?.includes("ipa") ? { label: "FreeIPA accounts", icon: "ti ti-server" } : null,
-    storedSelection.profiles?.includes("guest") ? { label: "Guests", icon: "ti ti-user-question" } : null,
-    storedSelection.profiles?.includes("user") ? { label: "Full users", icon: "ti ti-user" } : null,
+    storedSelection.all ? { label: t.allUsers, icon: "ti ti-users" } : null,
+    storedSelection.accountManagers?.mode === "all" ? { label: t.allAccountManagers, icon: "ti ti-shield-check" } : null,
+    storedSelection.providers?.includes("local") ? { label: t.localAccounts, icon: "ti ti-device-desktop" } : null,
+    storedSelection.providers?.includes("ipa") ? { label: t.freeIpaAccounts, icon: "ti ti-server" } : null,
+    storedSelection.profiles?.includes("guest") ? { label: t.guests, icon: "ti ti-user-question" } : null,
+    storedSelection.profiles?.includes("user") ? { label: t.fullUsers, icon: "ti ti-user" } : null,
   ].filter((entry): entry is { label: string; icon: string } => Boolean(entry));
   const legacyFallbackSource =
     selectionGroupIds.length > 0
-      ? { label: "All users in selected groups", icon: "ti ti-users-group" }
-      : { label: "All accounts", icon: "ti ti-users" };
+      ? { label: t.allUsersInSelectedGroups, icon: "ti ti-users-group" }
+      : { label: t.allAccounts, icon: "ti ti-users" };
 
   const columns: DataTableColumn<NotificationBatchRecipient>[] = [
-    { id: "user", header: "User", value: (entry) => entry.displayName || entry.uid, cellClass: "min-w-[14rem]" },
-    { id: "recipient", header: "Email", value: (entry) => entry.recipient, cellClass: "max-w-[18rem]" },
-    { id: "provider", header: "Provider", value: (entry) => entry.provider },
-    { id: "profile", header: "Profile", value: (entry) => entry.profile },
-    { id: "status", header: "Status", value: (entry) => entry.status },
-    { id: "attempts", header: "Attempts", value: (entry) => entry.attemptCount },
-    { id: "sent", header: "Sent", value: (entry) => entry.sentAt, cellClass: "whitespace-nowrap" },
+    { id: "user", header: t.user, value: (entry) => entry.displayName || entry.uid, cellClass: "min-w-[14rem]" },
+    { id: "recipient", header: t.email, value: (entry) => entry.recipient, cellClass: "max-w-[18rem]" },
+    { id: "provider", header: t.provider, value: (entry) => entry.provider },
+    { id: "profile", header: t.profile, value: (entry) => entry.profile },
+    { id: "status", header: t.status, value: (entry) => entry.status },
+    { id: "attempts", header: t.attempts, value: (entry) => entry.attemptCount },
+    { id: "sent", header: t.sent, value: (entry) => entry.sentAt, cellClass: "whitespace-nowrap" },
     { id: "actions", header: "", value: () => "", cellClass: "w-0 whitespace-nowrap text-right" },
   ];
 
@@ -157,9 +167,9 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       title={[
-        { title: "Start", href: "/" },
-        { title: "Accounts", href: "/app/accounts" },
-        { title: "Notifications", href: "/app/accounts/notifications" },
+        { title: t.start, href: "/" },
+        { title: t.accounts, href: "/app/accounts" },
+        { title: t.notifications, href: "/app/accounts/notifications" },
         { title: batch.subject },
       ]}
     >
@@ -173,7 +183,7 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex items-start gap-2">
             <div class="min-w-0 flex-1">
               <h1 class="truncate text-base font-semibold text-primary">{batch.subject}</h1>
-              <p class="mt-1 text-xs text-dimmed">Created {dates.formatDateTime(batch.createdAt)}</p>
+              <p class="mt-1 text-xs text-dimmed">{t.createdLabel({ value: dates.formatDateTime(batch.createdAt, { locale }) })}</p>
             </div>
             <NotificationBatchActions
               batchId={batch.id}
@@ -181,33 +191,29 @@ export default ssr<AuthContext>(async (c) => {
               selection={activeSelection}
               selectionHash={batch.selectionHash}
               errorCount={batch.errorCount}
-              finalizeDisabledReason={
-                isLegacyRuleAudience && batch.status === "draft"
-                  ? "Legacy rule-based drafts can no longer be finalized. Create a new notification batch with users and groups."
-                  : undefined
-              }
+              finalizeDisabledReason={isLegacyRuleAudience && batch.status === "draft" ? t.legacyDraftBlocked : undefined}
             />
           </div>
 
           <StatGrid columns={5}>
             <StatCell
-              label="Status"
+              label={t.status}
               value={
                 <span class={`inline-flex w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(batch.status)}`}>
                   {statusLabel(batch.status)}
                 </span>
               }
             />
-            <StatCell label="Matched" value={formatNumber(batch.targetCount)} />
+            <StatCell label={t.matched} value={formatNumber(batch.targetCount, { locale })} />
             <StatCell
-              label="Deliverable"
-              value={formatNumber(batch.deliverableCount)}
-              sub={`${formatNumber(batch.skippedCount)} skipped`}
+              label={t.deliverable}
+              value={formatNumber(batch.deliverableCount, { locale })}
+              sub={t.skippedCount({ count: formatNumber(batch.skippedCount, { locale }) })}
             />
-            <StatCell label="Sent" value={formatNumber(batch.sentCount)} />
+            <StatCell label={t.sent} value={formatNumber(batch.sentCount, { locale })} />
             <StatCell
-              label="Errors"
-              value={formatNumber(batch.errorCount)}
+              label={t.errors}
+              value={formatNumber(batch.errorCount, { locale })}
               valueClass={batch.errorCount > 0 ? "text-red-600 dark:text-red-400" : undefined}
               accent={batch.errorCount > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
             />
@@ -219,15 +225,11 @@ export default ssr<AuthContext>(async (c) => {
                 <i class={isLegacyRuleAudience ? "ti ti-filter" : "ti ti-user-plus"} />
               </span>
               <div class="min-w-0 flex-1">
-                <h2 class="text-sm font-semibold text-primary">Audience</h2>
-                <p class="mt-1 text-xs text-dimmed">
-                  {isLegacyRuleAudience
-                    ? "This batch stores a legacy rule-based audience. Finalized recipient snapshots remain available; legacy drafts must be recreated."
-                    : "This batch targets explicitly selected users and recursive group members."}
-                </p>
+                <h2 class="text-sm font-semibold text-primary">{t.audience}</h2>
+                <p class="mt-1 text-xs text-dimmed">{isLegacyRuleAudience ? t.legacyAudienceDescription : t.explicitAudienceDescription}</p>
                 {isLegacyRuleAudience && batch.status === "draft" ? (
                   <NoticeCard tone="warning" icon={false} class="mt-2">
-                    Legacy rule-based drafts can no longer be finalized. Create a new notification batch with users and groups.
+                    {t.legacyDraftBlocked}
                   </NoticeCard>
                 ) : null}
               </div>
@@ -236,7 +238,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class="mt-2 grid gap-2 lg:grid-cols-2">
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-                  {isLegacyRuleAudience ? "Legacy filters" : "Users"}
+                  {isLegacyRuleAudience ? t.legacyFilters : t.users}
                 </p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   {!isLegacyRuleAudience ? (
@@ -257,16 +259,18 @@ export default ssr<AuthContext>(async (c) => {
                         {selectionUserIds.length > previewSelectionUserIds.length ? (
                           <span class="chip max-w-full">
                             <i class="ti ti-dots" />
-                            <span>{formatNumber(selectionUserIds.length - previewSelectionUserIds.length)} more</span>
+                            <span>
+                              {t.moreCount({ count: formatNumber(selectionUserIds.length - previewSelectionUserIds.length, { locale }) })}
+                            </span>
                           </span>
                         ) : null}
                       </>
                     ) : (
-                      <span class="text-xs text-dimmed">No users selected.</span>
+                      <span class="text-xs text-dimmed">{t.noSelectedUsers}</span>
                     )
                   ) : selectionRules.length > 0 ? (
                     selectionRules.map((rule) => {
-                      const item = RULE_LABELS[rule] ?? { label: rule, icon: "ti ti-filter" };
+                      const item = ruleLabels[rule] ?? { label: rule, icon: "ti ti-filter" };
                       return (
                         <span class="chip max-w-full">
                           <i class={item.icon} />
@@ -291,7 +295,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
 
               <div>
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">Groups</p>
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">{t.groups}</p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   {selectionGroups.length > 0 ? (
                     <>
@@ -304,12 +308,14 @@ export default ssr<AuthContext>(async (c) => {
                       {selectionGroupIds.length > previewSelectionGroupIds.length ? (
                         <span class="chip max-w-full">
                           <i class="ti ti-dots" />
-                          <span>{formatNumber(selectionGroupIds.length - previewSelectionGroupIds.length)} more</span>
+                          <span>
+                            {t.moreCount({ count: formatNumber(selectionGroupIds.length - previewSelectionGroupIds.length, { locale }) })}
+                          </span>
                         </span>
                       ) : null}
                     </>
                   ) : (
-                    <span class="text-xs text-dimmed">No groups selected.</span>
+                    <span class="text-xs text-dimmed">{t.noSelectedGroups}</span>
                   )}
                 </div>
               </div>
@@ -317,7 +323,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <div class="paper p-4">
-            <h2 class="text-sm font-semibold text-primary">Message preview</h2>
+            <h2 class="text-sm font-semibold text-primary">{t.messagePreview}</h2>
             <div class="mt-2 rounded-lg bg-muted/30 p-4">
               <MarkdownView trustedHtml={batch.bodyHtml} headingScale="compact" />
             </div>
@@ -326,11 +332,11 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-col gap-2">
             <div class="flex items-end gap-2">
               <div class="min-w-0 flex-1">
-                <h2 class="text-sm font-semibold text-primary">Recipients</h2>
+                <h2 class="text-sm font-semibold text-primary">{t.recipients}</h2>
                 <p class="mt-1 text-xs text-dimmed">
                   {batch.status === "draft"
-                    ? "Recipients are snapshotted when the batch is finalized."
-                    : `${formatNumber(recipientsPage.total)} recipients`}
+                    ? t.recipientsSnapshotted
+                    : t.recipientCount({ count: formatNumber(recipientsPage.total, { locale }) })}
                 </p>
               </div>
             </div>
@@ -339,16 +345,10 @@ export default ssr<AuthContext>(async (c) => {
             {batch.status === "draft" ? (
               <Placeholder
                 surface="paper"
-                description={
-                  <>
-                    {isLegacyRuleAudience
-                      ? "Create a new notification batch with users and groups."
-                      : "Finalize this draft to create the recipient snapshot."}
-                  </>
-                }
+                description={<>{isLegacyRuleAudience ? t.createNewNotificationBatch : t.finalizeDraftForRecipients}</>}
               />
             ) : recipientsPage.items.length === 0 ? (
-              <Placeholder surface="paper" description={<>No recipients found.</>} />
+              <Placeholder surface="paper" description={<>{t.noRecipients}</>} />
             ) : (
               <div class="paper overflow-hidden">
                 <DataTable
@@ -387,9 +387,9 @@ export default ssr<AuthContext>(async (c) => {
                           {statusLabel(entry.status)}
                         </span>
                       );
-                    if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(entry.attemptCount)}</span>;
+                    if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(entry.attemptCount, { locale })}</span>;
                     if (col.id === "sent")
-                      return <span class="text-dimmed">{entry.sentAt ? dates.formatDateTime(entry.sentAt) : "-"}</span>;
+                      return <span class="text-dimmed">{entry.sentAt ? dates.formatDateTime(entry.sentAt, { locale }) : "-"}</span>;
                     if (col.id === "actions")
                       return (
                         <NotificationRecipientActions batchId={batch.id} userId={entry.userId} status={entry.status} error={entry.error} />

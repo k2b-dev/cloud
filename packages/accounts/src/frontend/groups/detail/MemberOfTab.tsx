@@ -1,6 +1,7 @@
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import { getProviderBadge } from "../../lib/account-badges";
+import { useAccountsMessages } from "../../messages";
 import AddGroupToGroup from "./AddGroupToGroup.island";
 import RemoveFromGroup from "./RemoveFromGroup.island";
 import TabToolbar from "./TabToolbar";
@@ -17,19 +18,20 @@ type MemberOfTabProps = {
 };
 
 export default function MemberOfTab(props: MemberOfTabProps) {
+  const messages = useAccountsMessages();
   const hasGroups = props.items.length > 0;
   const columns: DataTableColumn<EntityListItem>[] = [
-    { id: "group", header: "Group", value: (item) => (item.kind === "group" ? item.group.name : "") },
+    { id: "group", header: messages().group, value: (item) => (item.kind === "group" ? item.group.name : "") },
     {
       id: "description",
-      header: "Description",
+      header: messages().description,
       value: (item) => (item.kind === "group" ? item.group.description : ""),
       cellClass: "max-w-[24rem]",
     },
-    { id: "provider", header: "Provider", value: (item) => (item.kind === "group" ? item.group.provider : "") },
+    { id: "provider", header: messages().provider, value: (item) => (item.kind === "group" ? item.group.provider : "") },
     {
       id: "actions",
-      header: "Actions",
+      header: messages().actions,
       headerClass: "text-right",
       cellClass: "w-10 text-right whitespace-nowrap max-w-none",
     },
@@ -46,7 +48,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
       />
 
       {!hasGroups ? (
-        <Placeholder surface="paper" icon="ti ti-users-group" description={<>This group is not a member of any other group.</>} />
+        <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noParentGroups}</>} />
       ) : (
         <div class="paper overflow-hidden">
           <DataTable
@@ -70,14 +72,16 @@ export default function MemberOfTab(props: MemberOfTabProps) {
                 );
               if (col.id === "description") {
                 return (
-                  <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || "No description"}>
-                    {group.description || <span class="italic">No description</span>}
+                  <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || messages().noDescription}>
+                    {group.description || <span class="italic">{messages().noDescription}</span>}
                   </a>
                 );
               }
               if (col.id === "provider")
                 return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>{providerBadge.label}</span>
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
+                    {group.provider === "ipa" ? "FreeIPA" : messages().local}
+                  </span>
                 );
               if (col.id === "actions")
                 return props.isAdmin ? (

@@ -2,7 +2,6 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
   Disclosure,
-  formatFileViewSize,
   InlineGuidance,
   Placeholder,
   prompts,
@@ -12,11 +11,13 @@ import {
   StatGrid,
   StatusBadge,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ControlledDestructionOverview, ControlledDestructionRun } from "../../../controlled-destruction-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
 const active = (run: ControlledDestructionRun) => ["queued", "running", "cancel_requested"].includes(run.status);
 const tone = (run: ControlledDestructionRun): "neutral" | "warning" | "ok" | "error" => {
@@ -27,6 +28,27 @@ const tone = (run: ControlledDestructionRun): "neutral" | "warning" | "ok" | "er
 };
 
 export function ControlledDestructionSection(props: { baseId: string; baseName: string; onSavingChange: (saving: boolean) => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const bytes = (value: number) => {
+    const format = (amount: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(amount);
+    if (value < 1024) return `${format(value)} B`;
+    if (value < 1024 * 1024) return `${format(value / 1024)} KB`;
+    return `${format(value / (1024 * 1024))} MB`;
+  };
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const statusLabel = (status: ControlledDestructionRun["status"]) =>
+    ({
+      queued: messages().statusQueued,
+      running: messages().statusRunning,
+      cancel_requested: messages().statusCancelRequested,
+      completed: messages().statusCompleted,
+      partial: messages().statusPartial,
+      failed: messages().statusFailed,
+      canceled: messages().statusCanceled,
+    })[status];
   const [refresh, setRefresh] = createSignal(0);
   const overview = query.create({
     source: refresh,
@@ -35,7 +57,7 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
         { param: { baseId: props.baseId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load controlled destruction"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().destructionLoadFailed));
       return (await response.json()) as ControlledDestructionOverview;
     },
   });
@@ -50,12 +72,15 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
   const start = mutation.create<ControlledDestructionRun, void>({
     mutation: async (_, { abortSignal }) => {
       const current = overview.data()?.preview;
-      if (!current || current.items.length === 0) throw new Error("Refresh the preview before starting destruction.");
+      if (!current || current.items.length === 0) throw new Error(messages().refreshBeforeDestruction);
       const confirmed = await prompts.confirm(
-        `This permanently removes ${current.items.length} unreferenced File${current.items.length === 1 ? "" : "s"} (${formatFileViewSize(current.items.reduce((sum, item) => sum + item.sizeBytes, 0))}). Eligibility and holds are checked again before every File.`,
+        messages().destructionConfirm({
+          count: number(current.items.length),
+          size: bytes(current.items.reduce((sum, item) => sum + item.sizeBytes, 0)),
+        }),
         {
-          title: "Destroy unreferenced File bytes?",
-          confirmText: "Start destruction",
+          title: messages().destroyFileBytes,
+          confirmText: messages().startDestruction,
           variant: "danger",
           confirmationPhrase: props.baseName,
         },
@@ -71,11 +96,11 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not start controlled destruction"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().destructionStartFailed));
       return (await response.json()) as ControlledDestructionRun;
     },
     onSuccess: () => {
-      toast.success("Controlled destruction started");
+      toast.success(messages().destructionStarted);
       setRefresh((value) => value + 1);
     },
     onError: (error) => {
@@ -85,9 +110,9 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
 
   const cancel = mutation.create<ControlledDestructionRun, string>({
     mutation: async (runId, { abortSignal }) => {
-      const confirmed = await prompts.confirm("Only remaining work is canceled. File bytes already destroyed cannot be recovered.", {
-        title: "Cancel remaining destruction?",
-        confirmText: "Cancel remaining work",
+      const confirmed = await prompts.confirm(messages().cancelDestructionWarning, {
+        title: messages().cancelRemainingDestruction,
+        confirmText: messages().cancelRemainingWork,
         variant: "danger",
       });
       if (!confirmed) throw new DOMException("Canceled", "AbortError");
@@ -95,7 +120,7 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
         { param: { baseId: props.baseId, runId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not cancel controlled destruction"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().destructionCancelFailed));
       return (await response.json()) as ControlledDestructionRun;
     },
     onSuccess: () => setRefresh((value) => value + 1),
@@ -112,27 +137,27 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
   });
 
   return (
-    <SettingsGroup
-      title="Controlled File destruction"
-      description="Manually remove only unreferenced File bytes whose retention floor has been reached. Records and evidence artifacts are never included."
-    >
+    <SettingsGroup title={messages().controlledFileDestruction} description={messages().controlledFileDestructionDescription}>
       <SettingsGroup.Action>
         <Button size="sm" variant="secondary" disabled={overview.loading() || saving()} onClick={() => setRefresh((value) => value + 1)}>
-          Refresh
+          {messages().refresh}
         </Button>
       </SettingsGroup.Action>
-      <Show when={!overview.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading destruction preview" />}>
+      <Show
+        when={!overview.loading()}
+        fallback={<Placeholder state="loading" variant="compact" title={messages().loadingDestructionPreview} />}
+      >
         <Show
           when={!overview.error()}
           fallback={
             <Placeholder
               state="error"
               variant="compact"
-              title="Controlled destruction is unavailable"
-              description={overview.error() instanceof Error ? overview.error()!.message : "Could not load controlled destruction"}
+              title={messages().destructionUnavailable}
+              description={overview.error() instanceof Error ? overview.error()!.message : messages().destructionLoadFailed}
               action={
                 <Button size="sm" variant="secondary" onClick={() => setRefresh((value) => value + 1)}>
-                  Retry
+                  {messages().retry}
                 </Button>
               }
             />
@@ -142,22 +167,25 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
             {(value) => (
               <>
                 <InlineGuidance tone="danger" icon="ti ti-alert-triangle">
-                  Destruction is permanent. Every File is rechecked before removal; Records and evidence artifacts are never included.
+                  {messages().destructionGuidance}
                 </InlineGuidance>
                 <StatGrid columns={4} size="sm" surface="muted">
                   <StatCell
-                    label="Eligible Files"
-                    value={value.preview.counts.eligible}
-                    sub={formatFileViewSize(value.preview.counts.eligibleBytes)}
+                    label={messages().eligibleFiles}
+                    value={number(value.preview.counts.eligible)}
+                    sub={bytes(value.preview.counts.eligibleBytes)}
                   />
-                  <StatCell label="Retained" value={value.preview.counts.retained} sub="Floor not reached" />
-                  <StatCell label="Held" value={value.preview.counts.held} sub="Preservation hold" />
-                  <StatCell label="Protected" value={value.preview.counts.unknown} sub="Unknown or protected" />
+                  <StatCell label={messages().retained} value={number(value.preview.counts.retained)} sub={messages().floorNotReached} />
+                  <StatCell label={messages().held} value={number(value.preview.counts.held)} sub={messages().preservationHold} />
+                  <StatCell label={messages().protected} value={number(value.preview.counts.unknown)} sub={messages().unknownOrProtected} />
                 </StatGrid>
                 <div class="flex items-center justify-between gap-3">
                   <p class="text-xs text-dimmed">
-                    Calculated {new Date(value.preview.observedAt).toLocaleString()}. The next run contains {value.preview.items.length} of{" "}
-                    {value.preview.counts.eligible} eligible Files, at most 100.
+                    {messages().destructionPreviewSummary({
+                      date: dateTime(value.preview.observedAt),
+                      shown: number(value.preview.items.length),
+                      eligible: number(value.preview.counts.eligible),
+                    })}
                   </p>
                   <Button
                     variant="danger"
@@ -165,21 +193,26 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
                     disabled={saving() || value.preview.items.length === 0}
                     onClick={() => start.mutate(undefined)}
                   >
-                    Destroy eligible Files
+                    {messages().destroyEligibleFiles}
                   </Button>
                 </div>
                 <Show when={value.preview.items.length > 0}>
-                  <Disclosure summary={`Files in next run (${value.preview.items.length})`}>
-                    <SettingsCollection title="Exact candidates">
+                  <Disclosure summary={messages().filesInNextRun({ count: number(value.preview.items.length) })}>
+                    <SettingsCollection title={messages().exactCandidates}>
                       <For each={value.preview.items}>
                         {(item) => (
                           <SettingsCollection.Item
                             title={item.filename}
-                            description={`${item.tableName} (${item.tableId}) · File ${item.fileId} · eligible since ${new Date(item.notBefore).toLocaleString()}`}
+                            description={messages().eligibleFileDescription({
+                              table: item.tableName,
+                              tableId: item.tableId,
+                              fileId: item.fileId,
+                              date: dateTime(item.notBefore),
+                            })}
                             icon={<i class="ti ti-paperclip" aria-hidden="true" />}
                           >
                             <SettingsCollection.Item.Status>
-                              <StatusBadge tone="warning" label={formatFileViewSize(item.sizeBytes)} icon={null} />
+                              <StatusBadge tone="warning" label={bytes(item.sizeBytes)} icon={null} />
                             </SettingsCollection.Item.Status>
                           </SettingsCollection.Item>
                         )}
@@ -187,21 +220,27 @@ export function ControlledDestructionSection(props: { baseId: string; baseName: 
                     </SettingsCollection>
                   </Disclosure>
                 </Show>
-                <SettingsCollection title="Recent destruction runs" empty="No controlled destruction runs yet.">
+                <SettingsCollection title={messages().recentDestructionRuns} empty={messages().noDestructionRuns}>
                   <For each={value.runs}>
                     {(run) => (
                       <SettingsCollection.Item
-                        title={`Run ${run.id}`}
-                        description={`${run.counts.destroyed} destroyed · ${run.counts.skipped} skipped · ${run.counts.failed} failed · requested ${new Date(run.requestedAt).toLocaleString()}${run.requestedByDisplayName ? ` by ${run.requestedByDisplayName}` : ""}`}
+                        title={messages().runTitle({ id: run.id })}
+                        description={messages().runDescription({
+                          destroyed: number(run.counts.destroyed),
+                          skipped: number(run.counts.skipped),
+                          failed: number(run.counts.failed),
+                          date: dateTime(run.requestedAt),
+                          by: run.requestedByDisplayName ?? "",
+                        })}
                         icon={<i class="ti ti-trash-x" aria-hidden="true" />}
                       >
                         <SettingsCollection.Item.Status>
-                          <StatusBadge tone={tone(run)} label={run.status.replaceAll("_", " ")} icon={null} />
+                          <StatusBadge tone={tone(run)} label={statusLabel(run.status)} icon={null} />
                         </SettingsCollection.Item.Status>
                         <Show when={active(run) && run.status !== "cancel_requested"}>
                           <SettingsCollection.Item.Actions>
                             <Button size="sm" variant="secondary" disabled={saving()} onClick={() => cancel.mutate(run.id)}>
-                              Cancel remaining
+                              {messages().cancelRemaining}
                             </Button>
                           </SettingsCollection.Item.Actions>
                         </Show>

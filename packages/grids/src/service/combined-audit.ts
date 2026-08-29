@@ -10,6 +10,7 @@ import { getActive, type LoadedFederatedRevision, verifyRevisionScope } from "./
 import { listByTables } from "./field-read";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
+import { serviceMessagesFor } from "./messages";
 import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { get as getTable } from "./tables";
 import type { AuditAction, AuditEntry, Field } from "./types";
@@ -92,6 +93,7 @@ type CombinedAuditListParams = {
   limit?: number;
   cursor?: string | null;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 };
 
 const AuditCursorSchema = z.object({
@@ -251,9 +253,11 @@ type ProjectionSourceBuildContext = {
 const buildProjectionSource = (
   source: LoadedFederatedRevision["sources"][number],
   context: ProjectionSourceBuildContext,
+  locale?: string,
 ): Result<ProjectionSource> => {
+  const t = serviceMessagesFor(locale);
   const label = context.sourceLabels.get(source.sourceTableId);
-  if (!label) return fail(err.conflict("Combined table source is no longer available"));
+  if (!label) return fail(err.conflict(t.combinedSourceUnavailable));
   const sourceFields = new Map((context.sourceFieldsByTable.get(source.sourceTableId) ?? []).map((field) => [field.id, field]));
   const mappings: CombinedAuditProjectionMapping[] = [];
 
@@ -262,7 +266,7 @@ const buildProjectionSource = (
     const targetField = context.targetFieldsById.get(mapping.targetFieldId);
     const sourceField = sourceFields.get(mapping.sourceFieldId);
     if (!targetField || !sourceField || sourceField.deletedAt) {
-      return fail(err.conflict("Combined table mapping is no longer available"));
+      return fail(err.conflict(t.combinedMappingUnavailable));
     }
     if (context.allowedTargetFieldIds?.has(mapping.targetFieldId) === false) continue;
     mappings.push({
@@ -287,9 +291,10 @@ const buildProjectionSources = (params: {
   sourceFieldsByTable: ReadonlyMap<string, Field[]>;
   sourceRows: readonly SourceRow[];
   fieldIds?: readonly string[];
+  locale?: string;
 }): Result<ProjectionSource[]> => {
   if (params.sourceRows.length !== params.revision.sources.length) {
-    return fail(err.conflict("Combined table source is no longer available"));
+    return fail(err.conflict(serviceMessagesFor(params.locale).combinedSourceUnavailable));
   }
   const context: ProjectionSourceBuildContext = {
     revision: params.revision,
@@ -300,22 +305,22 @@ const buildProjectionSources = (params: {
   };
   const sources: ProjectionSource[] = [];
   for (const source of params.revision.sources) {
-    const built = buildProjectionSource(source, context);
+    const built = buildProjectionSource(source, context, params.locale);
     if (!built.ok) return built;
     sources.push(built.data);
   }
   return ok(sources);
 };
 
-const loadProjection = async (tableId: string, fieldIds?: readonly string[]): Promise<Result<Projection>> => {
-  const [table, active, targetFields] = await Promise.all([getTable(tableId), getActive(tableId), listFields(tableId)]);
-  if (!table || table.kind !== "federated") return fail(err.badInput("Audit projection requires a Combined table"));
+const loadProjection = async (tableId: string, fieldIds?: readonly string[], locale?: string): Promise<Result<Projection>> => {
+  const [table, active, targetFields] = await Promise.all([getTable(tableId), getActive(tableId, locale), listFields(tableId)]);
+  if (!table || table.kind !== "federated") return fail(err.badInput(serviceMessagesFor(locale).combinedAuditTableRequired));
   if (!active.ok) return active;
 
   const revision = active.data;
   const sourceTableIds = revision.sources.map((source) => source.sourceTableId);
   const [sourceFieldsByTable, sourceRows] = await Promise.all([listByTables(sourceTableIds), loadSourceRows(sourceTableIds)]);
-  const sources = buildProjectionSources({ revision, targetFields, sourceFieldsByTable, sourceRows, fieldIds });
+  const sources = buildProjectionSources({ revision, targetFields, sourceFieldsByTable, sourceRows, fieldIds, locale });
   if (!sources.ok) return sources;
 
   return ok({
@@ -332,6 +337,7 @@ const resolveOrigin = async (
   projection: Projection,
   recordId: string,
   recordAccess?: AuthorizedRecordAccess,
+  locale?: string,
 ): Promise<Result<CombinedRecordOrigin>> => {
   const fields = await listFields(projection.targetTableId);
   const recordSource = await buildDslSqlRecordSource(
@@ -339,7 +345,7 @@ const resolveOrigin = async (
     { [projection.targetTableId]: fields },
     { includeDeleted: true },
   );
-  if (!recordSource) return fail(err.notFound("Combined record"));
+  if (!recordSource) return fail(err.notFound(serviceMessagesFor(locale).combinedRecord));
   await assertFederatedPublication(recordSource);
   const rows = await sql<Array<{ source_table_id: string; deleted_at: Date | null }>>`
     SELECT source_table_id::text, deleted_at
@@ -348,10 +354,10 @@ const resolveOrigin = async (
       AND ${recordAccessPredicate(recordAccess, "combined_record")}
     LIMIT 2
   `;
-  if (rows.length !== 1) return fail(err.notFound("Combined record"));
+  if (rows.length !== 1) return fail(err.notFound(serviceMessagesFor(locale).combinedRecord));
   const row = rows[0]!;
   const source = projection.sources.find((item) => item.tableId === row.source_table_id);
-  if (!source) return fail(err.conflict("Combined record source is no longer published"));
+  if (!source) return fail(err.conflict(serviceMessagesFor(locale).combinedRecordSourceUnpublished));
   return ok({
     source: source.descriptor,
     deletedAt: row.deleted_at ? iso(row.deleted_at) : null,
@@ -382,17 +388,17 @@ const mapAuditRow = (row: DbRow, projection: Projection): CombinedAuditEntry | n
 
 const scopeProjectionSources = async (
   projection: Projection,
-  params: Pick<CombinedAuditListParams, "recordId" | "sourceRef" | "recordAccess">,
+  params: Pick<CombinedAuditListParams, "recordId" | "sourceRef" | "recordAccess" | "locale">,
 ): Promise<Result<ProjectionSource[]>> => {
   let sources = projection.sources;
   if (params.recordId) {
-    const origin = await resolveOrigin(projection, params.recordId, params.recordAccess);
+    const origin = await resolveOrigin(projection, params.recordId, params.recordAccess, params.locale);
     if (!origin.ok) return origin;
     sources = sources.filter((source) => source.descriptor.ref === origin.data.source.ref);
   }
   if (params.sourceRef === undefined) return ok(sources);
   sources = sources.filter((source) => source.descriptor.ref === params.sourceRef);
-  return sources.length > 0 ? ok(sources) : fail(err.badInput("Unknown Combined source filter"));
+  return sources.length > 0 ? ok(sources) : fail(err.badInput(serviceMessagesFor(params.locale).unknownCombinedSourceFilter));
 };
 
 const resolveListCursor = (
@@ -400,10 +406,10 @@ const resolveListCursor = (
   params: CombinedAuditListParams,
 ): Result<{ cursor: AuditCursor | null; fingerprint: string }> => {
   const cursor = decodeCursor(params.cursor);
-  if (params.cursor && !cursor) return fail(err.badInput("Invalid audit cursor"));
+  if (params.cursor && !cursor) return fail(err.badInput(serviceMessagesFor(params.locale).invalidAuditCursor));
   const fingerprint = auditCursorFingerprint(projection.fingerprint, params);
   if (cursor && cursor.fingerprint !== fingerprint) {
-    return fail(err.conflict("Combined audit filters or publication changed; restart the audit search"));
+    return fail(err.conflict(serviceMessagesFor(params.locale).combinedAuditChanged));
   }
   return ok({ cursor, fingerprint });
 };
@@ -458,7 +464,7 @@ const loadAuditRows = (
   `;
 };
 
-const mapAuditRows = (rows: readonly AuditRow[], projection: Projection): Result<CombinedAuditEntry[]> => {
+const mapAuditRows = (rows: readonly AuditRow[], projection: Projection, locale?: string): Result<CombinedAuditEntry[]> => {
   try {
     const entries: CombinedAuditEntry[] = [];
     for (const row of rows) {
@@ -467,7 +473,7 @@ const mapAuditRows = (rows: readonly AuditRow[], projection: Projection): Result
     }
     return ok(entries);
   } catch {
-    return fail(err.conflict("Combined audit history contains invalid mutation context"));
+    return fail(err.conflict(serviceMessagesFor(locale).combinedAuditInvalidContext));
   }
 };
 
@@ -475,14 +481,15 @@ export const describeRecord = async (
   tableId: string,
   recordId: string,
   recordAccess?: AuthorizedRecordAccess,
+  locale?: string,
 ): Promise<Result<CombinedRecordOrigin>> => {
-  const projection = await loadProjection(tableId);
+  const projection = await loadProjection(tableId, undefined, locale);
   if (!projection.ok) return projection;
-  return resolveOrigin(projection.data, recordId, recordAccess);
+  return resolveOrigin(projection.data, recordId, recordAccess, locale);
 };
 
 export const list = async (params: CombinedAuditListParams): Promise<Result<CombinedAuditPage>> => {
-  const projectionResult = await loadProjection(params.tableId, params.fieldIds);
+  const projectionResult = await loadProjection(params.tableId, params.fieldIds, params.locale);
   if (!projectionResult.ok) return projectionResult;
   const projection = projectionResult.data;
   const scopedSources = await scopeProjectionSources(projection, params);
@@ -491,15 +498,18 @@ export const list = async (params: CombinedAuditListParams): Promise<Result<Comb
   if (!cursorResult.ok) return cursorResult;
   const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
   const rows = await loadAuditRows(params, scopedSources.data, cursorResult.data.cursor, limit);
-  const currentRevision = await verifyRevisionScope([
-    {
-      tableId: projection.targetTableId,
-      revisionId: projection.revisionId,
-      revisionToken: projection.revisionToken,
-    },
-  ]);
+  const currentRevision = await verifyRevisionScope(
+    [
+      {
+        tableId: projection.targetTableId,
+        revisionId: projection.revisionId,
+        revisionToken: projection.revisionToken,
+      },
+    ],
+    params.locale,
+  );
   if (!currentRevision.ok) return currentRevision;
-  const mapped = mapAuditRows(rows, projection);
+  const mapped = mapAuditRows(rows, projection, params.locale);
   if (!mapped.ok) return mapped;
   const items = mapped.data.slice(0, limit);
   const lastRow = rows[items.length - 1];
@@ -522,8 +532,9 @@ export const listByRecord = async (
   recordId: string,
   limit = 50,
   fieldIds?: readonly string[],
+  locale?: string,
 ): Promise<CombinedAuditEntry[]> => {
-  const page = await list({ tableId, recordId, limit, fieldIds });
+  const page = await list({ tableId, recordId, limit, fieldIds, locale });
   if (!page.ok) throw new Error(page.error.message);
   return page.data.items;
 };

@@ -95,6 +95,19 @@ describe("Spaces item form", () => {
     expect(html).not.toContain(">Organize</h3>");
   });
 
+  test("renders a focused quick-create form for a new task", () => {
+    const html = renderForm("task", undefined, true);
+
+    expect(html).toContain('placeholder="What needs to be done?"');
+    expect(html).toContain("Add description");
+    expect(html).toContain("More options");
+    expect(html).not.toContain(">Schedule<span");
+    expect(html).not.toContain("All-day event");
+    expect(html).not.toContain("Add location or link");
+    expect(html).not.toContain(">General</h3>");
+    expect(html).not.toContain(">Organize</h3>");
+  });
+
   test("pairs the recurrence end mode with its date field", () => {
     const html = renderForm("event", {
       rrule: "FREQ=DAILY;UNTIL=20260815T235959Z",

@@ -12,6 +12,7 @@ import {
 import { gridsService } from "../service";
 import { projectPublicIds } from "../service/public-resources";
 import type { DslCurrentSource } from "./gql-runtime";
+import { apiMessagesForLocale } from "./messages";
 
 const PublicDslCurrentSourceSchema = z
   .discriminatedUnion("kind", [
@@ -82,6 +83,7 @@ type GqlPublicDeps = {
   getViewByShortId?: typeof gridsService.view.getByShortId;
   getTable?: typeof gridsService.table.get;
   listFields?: typeof gridsService.field.listByTable;
+  locale?: string;
 };
 
 export const fromPublicGqlScope = async (
@@ -89,34 +91,36 @@ export const fromPublicGqlScope = async (
   input: PublicGqlScope,
   deps: GqlPublicDeps = {},
 ): Promise<Result<{ currentTableId?: string; currentSource?: DslCurrentSource; filePreviewFieldIds?: string[] }>> => {
+  const t = apiMessagesForLocale(deps.locale);
   const getTableByShortId = deps.getTableByShortId ?? gridsService.table.getByShortId;
   const getViewByShortId = deps.getViewByShortId ?? gridsService.view.getByShortId;
   const getTable = deps.getTable ?? gridsService.table.get;
   const currentTable = input.currentTableId ? await getTableByShortId(input.currentTableId) : null;
-  if (input.currentTableId && (!currentTable || currentTable.baseId !== baseId)) return fail(err.notFound("Table"));
+  if (input.currentTableId && (!currentTable || currentTable.baseId !== baseId))
+    return fail({ ...err.notFound("Table"), message: t.tableNotFound });
 
   let currentSource: DslCurrentSource;
   let sourceTable = currentTable;
   if (input.currentSource?.kind === "table") {
     const table = await getTableByShortId(input.currentSource.tableId);
-    if (!table || table.baseId !== baseId) return fail(err.notFound("Table"));
+    if (!table || table.baseId !== baseId) return fail({ ...err.notFound("Table"), message: t.tableNotFound });
     currentSource = { kind: "table", tableId: table.id };
     sourceTable = table;
   } else if (input.currentSource?.kind === "view") {
     const view = await getViewByShortId(input.currentSource.viewId);
     const table = view ? await getTable(view.tableId) : null;
-    if (!view || !table || table.baseId !== baseId) return fail(err.notFound("View"));
+    if (!view || !table || table.baseId !== baseId) return fail({ ...err.notFound("View"), message: t.viewNotFound });
     currentSource = { kind: "view", viewId: view.id };
     sourceTable = table;
   }
 
   let filePreviewFieldIds: string[] | undefined;
   if (input.filePreviewFieldIds) {
-    if (!sourceTable) return fail(err.badInput("A table scope is required for file preview fields"));
+    if (!sourceTable) return fail(err.badInput(t.filePreviewNeedsTable));
     const fields = await (deps.listFields ?? gridsService.field.listByTable)(sourceTable.id);
     const byPublicId = new Map(fields.map((field) => [field.shortId, field.id]));
     const ids = input.filePreviewFieldIds.map((id) => byPublicId.get(id));
-    if (ids.some((id) => !id)) return fail(err.badInput("Unknown field ID"));
+    if (ids.some((id) => !id)) return fail(err.badInput(t.unknownFieldId));
     filePreviewFieldIds = ids.filter((id): id is string => Boolean(id));
   }
   return ok({

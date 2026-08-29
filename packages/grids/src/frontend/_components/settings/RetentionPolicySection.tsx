@@ -1,7 +1,6 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
-  formatFileViewSize,
   InlineGuidance,
   NumberInput,
   Placeholder,
@@ -12,11 +11,13 @@ import {
   StatCell,
   StatGrid,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type RetentionPolicy, type RetentionPreview } from "../../../retention-policy-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 import { openRetentionFilesDialog } from "./RetentionFilesDialog";
 import { openRetentionRecordsDialog } from "./RetentionRecordsDialog";
 
@@ -25,11 +26,22 @@ export function RetentionPolicySection(props: {
   onDirtyChange: (dirty: boolean) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const bytes = (value: number) => {
+    const format = (amount: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(amount);
+    if (value < 1024) return `${format(value)} B`;
+    if (value < 1024 * 1024) return `${format(value / 1024)} KB`;
+    return `${format(value / (1024 * 1024))} MB`;
+  };
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   const policy = query.create({
     source: () => props.baseId,
     load: async (baseId, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"]["retention-policy"].$get({ param: { baseId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load retention policy"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().retentionPolicyLoadFailed));
       return (await response.json()).policy as RetentionPolicy | null;
     },
   });
@@ -56,7 +68,7 @@ export function RetentionPolicySection(props: {
         { param: { baseId: props.baseId }, json: { minimumDays } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not preview retention floor"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().retentionPreviewFailed));
       return { minimumDays, value: (await response.json()) as RetentionPreview };
     },
   });
@@ -68,26 +80,26 @@ export function RetentionPolicySection(props: {
   const save = mutations.create<RetentionPolicy, void>({
     mutation: async (_, { abortSignal }) => {
       const minimumDays = days();
-      if (minimumDays === null) throw new Error("Enter a minimum number of days");
+      if (minimumDays === null) throw new Error(messages().enterMinimumDays);
       if (savedDays() !== null && minimumDays < savedDays()!) {
-        const confirmed = await prompts.confirm(
-          "This shorter floor may let future controlled destruction become eligible earlier. Nothing is deleted now.",
-          { title: "Shorten minimum retention?", confirmText: "Shorten floor" },
-        );
+        const confirmed = await prompts.confirm(messages().shortenFloorWarning, {
+          title: messages().shortenMinimumRetention,
+          confirmText: messages().shortenFloor,
+        });
         if (!confirmed) throw new DOMException("Canceled", "AbortError");
       }
       const response = await apiClient.bases[":baseId"]["retention-policy"].$put(
         { param: { baseId: props.baseId }, json: { minimumDays } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not save retention policy"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().retentionSaveFailed));
       return (await response.json()).policy as RetentionPolicy;
     },
     onSuccess: (next) => {
       setSavedDays(next.minimumDays);
       setDays(next.minimumDays);
       void policy.invalidate();
-      toast.success("Minimum retention saved");
+      toast.success(messages().minimumRetentionSaved);
     },
     onError: (error) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) prompts.error(error.message);
@@ -96,22 +108,22 @@ export function RetentionPolicySection(props: {
 
   const remove = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        "Removing the floor does not delete anything, but future controlled destruction may become eligible earlier.",
-        { title: "Remove minimum retention?", confirmText: "Remove floor" },
-      );
+      const confirmed = await prompts.confirm(messages().removeFloorWarning, {
+        title: messages().removeMinimumRetention,
+        confirmText: messages().removeFloor,
+      });
       if (!confirmed) throw new DOMException("Canceled", "AbortError");
       const response = await apiClient.bases[":baseId"]["retention-policy"].$delete(
         { param: { baseId: props.baseId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not remove retention policy"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().retentionRemoveFailed));
     },
     onSuccess: () => {
       setSavedDays(null);
       setDays(null);
       void policy.invalidate();
-      toast.success("Minimum retention removed");
+      toast.success(messages().minimumRetentionRemoved);
     },
     onError: (error) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) prompts.error(error.message);
@@ -123,41 +135,40 @@ export function RetentionPolicySection(props: {
 
   return (
     <>
-      <SettingsGroup
-        title="Base retention floor"
-        description="Preserve trashed Records and newly unreferenced Files for the configured minimum time."
-      >
+      <SettingsGroup title={messages().baseRetentionFloor} description={messages().baseRetentionFloorDescription}>
         <SettingsGroup.Action>
           <Show when={savedDays() !== null}>
             <Button variant="secondary" size="sm" disabled={saving()} onClick={() => remove.mutate(undefined)}>
-              Remove floor
+              {messages().removeFloor}
             </Button>
           </Show>
         </SettingsGroup.Action>
         <InlineGuidance tone="info" icon="ti ti-info-circle">
-          This floor only delays eligibility. It never deletes Records or Files, starts no cleanup job, and is not a legal or compliance
-          assessment.
+          {messages().retentionFloorGuidance}
         </InlineGuidance>
-        <Show when={!policy.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading retention policy" />}>
+        <Show
+          when={!policy.loading()}
+          fallback={<Placeholder state="loading" variant="compact" title={messages().loadingRetentionPolicy} />}
+        >
           <Show
             when={!policy.error()}
             fallback={
               <Placeholder
                 state="error"
                 variant="compact"
-                title="Retention policy is unavailable"
-                description={policy.error() instanceof Error ? policy.error()!.message : "Could not load retention policy"}
+                title={messages().retentionPolicyUnavailable}
+                description={policy.error() instanceof Error ? policy.error()!.message : messages().retentionPolicyLoadFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void policy.invalidate()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
             }
           >
             <NumberInput
-              label="Minimum retention days"
-              description="Starts when a Record enters trash or a File loses its last reference. Finalized Records and protected Files remain protected independently."
+              label={messages().minimumRetentionDays}
+              description={messages().minimumRetentionDaysDescription}
               min={RETENTION_MIN_DAYS}
               max={RETENTION_MAX_DAYS}
               step={1}
@@ -167,24 +178,20 @@ export function RetentionPolicySection(props: {
               disabled={saving()}
             />
             <Show when={days() === null}>
-              <p class="text-sm text-muted">
-                {savedDays() === null
-                  ? "No minimum retention configured. Existing behavior is unchanged."
-                  : "An empty value cannot replace the saved floor. Discard the draft or use Remove floor."}
-              </p>
+              <p class="text-sm text-muted">{savedDays() === null ? messages().noMinimumRetention : messages().emptyRetentionDraft}</p>
             </Show>
             <Show when={validDays() && preview.loading()}>
-              <Placeholder state="loading" variant="compact" title="Calculating impact" />
+              <Placeholder state="loading" variant="compact" title={messages().calculatingImpact} />
             </Show>
             <Show when={preview.error()}>
               <Placeholder
                 state="error"
                 variant="compact"
-                title="Impact could not be calculated"
-                description={preview.error() instanceof Error ? preview.error()!.message : "Preview failed"}
+                title={messages().impactUnavailable}
+                description={preview.error() instanceof Error ? preview.error()!.message : messages().previewFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void preview.invalidate()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -192,22 +199,43 @@ export function RetentionPolicySection(props: {
             <Show when={currentPreview()} keyed>
               {(impact) => (
                 <div class="space-y-3">
-                  <StatGrid title="Retention preview" columns={3} size="sm" surface="muted">
-                    <StatCell label="Records retained" value={impact.counts.retainedUntilLater} sub="Until later" />
-                    <StatCell label="Records at floor" value={impact.counts.floorReached} sub="No destruction performed" />
-                    <StatCell label="Finalized Records" value={impact.counts.protectedFinalized} sub="Protected independently" />
-                    <StatCell label="Files retained" value={impact.files.counts.retainedUntilLater} sub="Until later" />
-                    <StatCell label="Files at floor" value={impact.files.counts.floorReached} sub="Protected references excluded" />
+                  <StatGrid title={messages().retentionPreview} columns={3} size="sm" surface="muted">
                     <StatCell
-                      label="Unreferenced storage"
-                      value={formatFileViewSize(impact.files.counts.sizeBytes)}
-                      sub={`${impact.files.counts.unreferenced} Files`}
+                      label={messages().recordsRetained}
+                      value={number(impact.counts.retainedUntilLater)}
+                      sub={messages().untilLater}
+                    />
+                    <StatCell
+                      label={messages().recordsAtFloor}
+                      value={number(impact.counts.floorReached)}
+                      sub={messages().noDestructionPerformed}
+                    />
+                    <StatCell
+                      label={messages().finalizedRecords}
+                      value={number(impact.counts.protectedFinalized)}
+                      sub={messages().protectedIndependently}
+                    />
+                    <StatCell
+                      label={messages().filesRetained}
+                      value={number(impact.files.counts.retainedUntilLater)}
+                      sub={messages().untilLater}
+                    />
+                    <StatCell
+                      label={messages().filesAtFloor}
+                      value={number(impact.files.counts.floorReached)}
+                      sub={messages().protectedReferencesExcluded}
+                    />
+                    <StatCell
+                      label={messages().unreferencedStorage}
+                      value={bytes(impact.files.counts.sizeBytes)}
+                      sub={messages().fileCount({ count: number(impact.files.counts.unreferenced) })}
                     />
                   </StatGrid>
                   <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-dimmed">
-                      Calculated {new Date(impact.observedAt).toLocaleString()}
-                      {changed() ? ` for the unsaved ${days()}-day floor` : ""}.
+                      {changed()
+                        ? messages().calculatedUnsavedFloor({ date: dateTime(impact.observedAt), days: number(days()!) })
+                        : messages().calculatedAt({ date: dateTime(impact.observedAt) })}
                     </p>
                     <div class="flex flex-wrap gap-2">
                       <Button
@@ -216,7 +244,7 @@ export function RetentionPolicySection(props: {
                         disabled={impact.counts.trashedRecords === 0}
                         onClick={() => void openRetentionRecordsDialog(props.baseId, impact.minimumDays)}
                       >
-                        Review Records
+                        {messages().reviewRecords}
                       </Button>
                       <Button
                         size="sm"
@@ -224,7 +252,7 @@ export function RetentionPolicySection(props: {
                         disabled={impact.files.counts.unreferenced === 0}
                         onClick={() => void openRetentionFilesDialog(props.baseId, impact.minimumDays)}
                       >
-                        Review Files
+                        {messages().reviewFiles}
                       </Button>
                     </div>
                   </div>

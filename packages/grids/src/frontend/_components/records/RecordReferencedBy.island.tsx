@@ -1,6 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Placeholder } from "@k2b/ui";
+import { Button, DetailPanel, Placeholder, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { recordMessages } from "./messages";
 
 export type ReferencedByItem = {
   sourceTableId: string;
@@ -33,14 +34,14 @@ export const groupReferencedByItems = (items: readonly ReferencedByItem[]): Refe
 
 export const referencedByActionTitle = (item: ReferencedByItem): string => `${item.relationFieldName} · ${item.sourceRecordLabel}`;
 
-const readError = async (response: Response): Promise<string> => {
+const readError = async (response: Response, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
-  return body && typeof body === "object" && "message" in body && typeof body.message === "string"
-    ? body.message
-    : "Referenced records could not be loaded.";
+  return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
 export default function RecordReferencedBy(props: { baseId: string; tableId: string; recordId: string }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const [mounted, setMounted] = createSignal(false);
   const endpoint = () => referencedByEndpoint(props.tableId, props.recordId);
   const pages = query.createInfinite<string, ReferencedByPage, string>({
@@ -53,7 +54,7 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
         headers: { Accept: "application/json" },
         signal: abortSignal,
       });
-      if (!response.ok) throw new Error(await readError(response));
+      if (!response.ok) throw new Error(await readError(response, t().loadReferencesFailed));
       return response.json() as Promise<ReferencedByPage>;
     },
     getNextCursor: (page) => page.nextCursor ?? undefined,
@@ -62,23 +63,23 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
   onMount(() => setMounted(true));
 
   return (
-    <DetailPanel.Section title="Referenced by" icon="ti ti-link-plus" tone="accent">
+    <DetailPanel.Section title={t().referencedBy} icon="ti ti-link-plus" tone="accent">
       <div class="flex flex-col gap-3">
         <Show when={pages.loading() && pages.pages().length === 0}>
-          <Placeholder align="left" class="px-0 py-2" description={<>Loading referenced records…</>} />
+          <Placeholder align="left" class="px-0 py-2" description={<>{t().loadingReferences}</>} />
         </Show>
         <Show when={pages.error()}>
           {(error) => (
             <div class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400" role="alert">
               <span>{error().message}</span>
               <Button size="xs" variant="ghost" onClick={() => void pages.invalidate()}>
-                Retry
+                {t().retry}
               </Button>
             </div>
           )}
         </Show>
         <Show when={!pages.loading() && !pages.error() && groups().length === 0}>
-          <Placeholder align="left" class="px-0 py-2" description={<>No live records reference this record.</>} />
+          <Placeholder align="left" class="px-0 py-2" description={<>{t().noReferences}</>} />
         </Show>
         <For each={groups()}>
           {(group) => (
@@ -101,10 +102,10 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
             size="sm"
             class="w-fit"
             loading={pages.loadingMore()}
-            loadingLabel="Loading more"
+            loadingLabel={t().loadingMore}
             onClick={() => void pages.loadMore()}
           >
-            Load more
+            {t().loadingMore}
           </Button>
         </Show>
       </div>

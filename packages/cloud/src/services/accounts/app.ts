@@ -408,6 +408,7 @@ export const accountsAppService = {
       data: CreateUserInput;
       processedBy: string;
       notificationSender: AccountsNotificationSender;
+      locale?: string;
     }): Promise<Result<CreateUserResult>> => {
       const adminError = await requireAdminActor<{ id: string; uid: string; accountExpires: string | null; notificationSent: boolean }>({
         actor: config.actor,
@@ -511,12 +512,14 @@ export const accountsAppService = {
                   uid: created.user.uid,
                   temporaryPassword: created.temporaryPassword,
                   accountExpires: created.user.accountExpires,
+                  locale: config.locale,
                 })
               : config.data.provider === "local"
                 ? await config.notificationSender.sendLocalWelcome({
                     userId: created.user.id,
                     email: created.user.mail,
                     accountExpires: created.user.accountExpires,
+                    locale: config.locale,
                   })
                 : null;
           notificationSent = delivery?.status === "delivered" || delivery?.status === "queued";
@@ -710,7 +713,7 @@ export const accountsAppService = {
         result,
       });
     },
-    sendLoginLink: async (config: { actor: AccountsActor; id: string; notificationSender: AccountsNotificationSender }) => {
+    sendLoginLink: async (config: { actor: AccountsActor; id: string; notificationSender: AccountsNotificationSender; locale?: string }) => {
       const target = await users.getMinimal({ id: config.id });
       const adminError = await requireAdminActor<void>({
         actor: config.actor,
@@ -1407,7 +1410,7 @@ export const accountsAppService = {
         result,
       });
     },
-    deny: async (config: { id: string; reason?: string; actor: AccountsActor; notificationSender: AccountsNotificationSender }) => {
+    deny: async (config: { id: string; reason?: string; actor: AccountsActor; notificationSender: AccountsNotificationSender; locale?: string }) => {
       const adminError = await requireAdminActor<void>({
         actor: config.actor,
         action: "accounts.request.deny",
@@ -1457,6 +1460,7 @@ export const accountsAppService = {
             firstName: request.first_name as string,
             reason: config.reason,
             sentBy: config.actor.userId,
+            locale: config.locale,
           });
           notificationStatus = delivery.status;
           if (delivery.status === "error" || delivery.status === "suppressed") {

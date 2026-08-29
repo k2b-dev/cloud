@@ -1,4 +1,4 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { accountsAppService } from "@valentinkolb/cloud/services";
 import { type PrincipalReference, PrincipalReferenceSchema } from "../field-types/principal";
 import type { Field } from "./types";
@@ -12,6 +12,24 @@ const defaultDeps: PrincipalValueValidationDeps = {
   getUser: accountsAppService.user.get,
   listEntities: accountsAppService.entity.list,
 };
+
+const principalValueMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      signInRequired: "Sign in to select users or groups.",
+      accountUnavailable: "The current account is unavailable.",
+      selectionUnavailable: ({ field }: { field: string }) => `Field “${field}”: a selected user or group is unavailable.`,
+    },
+    de: {
+      signInRequired: "Melde dich an, um Benutzer oder Gruppen auszuwählen.",
+      accountUnavailable: "Das aktuelle Konto ist nicht verfügbar.",
+      selectionUnavailable: ({ field }) => `Im Feld „${field}“ ist ein ausgewählter Benutzer oder eine ausgewählte Gruppe nicht verfügbar.`,
+    },
+  },
+});
+
+const messagesFor = (locale?: string) => principalValueMessages.resolve(locale ? [locale] : []).t;
 
 const actorForUser = async (userId: string, deps: PrincipalValueValidationDeps) => {
   const user = await deps.getUser({ id: userId });
@@ -94,14 +112,16 @@ export const validatePrincipalValuesForActor = async (
   data: Record<string, unknown>,
   fields: Field[],
   actorId: string | null,
+  locale?: string,
   deps: PrincipalValueValidationDeps = defaultDeps,
 ): Promise<Result<void>> => {
+  const messages = messagesFor(locale);
   const entries = principalValues(data, fields);
   if (entries.length === 0) return ok();
-  if (!actorId) return fail(err.forbidden("Sign in to select users or groups."));
+  if (!actorId) return fail(err.forbidden(messages.signInRequired));
 
   const actor = await actorForUser(actorId, deps);
-  if (!actor) return fail(err.forbidden("The current account is unavailable."));
+  if (!actor) return fail(err.forbidden(messages.accountUnavailable));
 
   const users = new Set<string>();
   const groups = new Set<string>();
@@ -129,7 +149,7 @@ export const validatePrincipalValuesForActor = async (
 
   for (const entry of entries) {
     if (entry.values.some((value) => !visible.has(`${value.type}:${value.id}`))) {
-      return fail(err.badInput(`Field "${entry.field.name}": a selected user or group is unavailable`));
+      return fail(err.badInput(messages.selectionUnavailable({ field: entry.field.name })));
     }
   }
   return ok();

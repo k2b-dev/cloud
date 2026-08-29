@@ -20,7 +20,7 @@ const flush = async () => {
 
 const status = (name: string): PublicStatus => ({
   venue: {
-    id: "venue-1",
+    id: "VENU01",
     slug: "student-cafe",
     name,
     icon: "ti ti-building",
@@ -98,7 +98,7 @@ describe("Venue public polling behavior", () => {
     const dispose = render(
       () =>
         createComponent(PublicVenuePage, {
-          slug: "student-cafe",
+          venueId: "VENU01",
           initialStatus: status("Last good"),
           displayHeight: "scroll",
           feedbackUrl: "https://cloud.example/feedback",

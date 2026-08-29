@@ -104,4 +104,23 @@ describe("Help registration compiler", () => {
       }),
     ).toThrow(`${HELP_REGISTRY_MAX_BYTES}-byte registry limit`);
   });
+
+  test("omits derivable search text when that keeps the corpus within its bound", () => {
+    const body = "Searchable help content. ".repeat(2_800);
+    const compiled = compileHelp({
+      appId: "inventory",
+      appName: "Inventory",
+      appIcon: "ti ti-package",
+      definition: defineHelp({
+        baseLocale: "en",
+        documents: {
+          en: [article("large-a", "Large A", 10, body), article("large-b", "Large B", 20, body)],
+          de: [article("large-a", "Gross A", 10, body), article("large-b", "Gross B", 20, body)],
+        },
+      }),
+    });
+
+    expect(compiled.registryEntry.documents[0]?.searchText).toBeUndefined();
+    expect(compiled.registryEntry.documentsByLocale?.de?.[0]?.searchText).toBeUndefined();
+  });
 });

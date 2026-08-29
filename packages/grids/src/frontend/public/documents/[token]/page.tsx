@@ -1,17 +1,19 @@
-import { ButtonLink, NoticeCard, Paper } from "@k2b/ui";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { ButtonLink, LocaleProvider, NoticeCard, Paper, useLocale } from "@k2b/ui";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { type JSX, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";
+import { resolveGridsMessages } from "../../../messages";
 
-const remainingTime = (expiresAt: string, now = Date.now()): string => {
+const remainingTime = (expiresAt: string, locale: string, now = Date.now()): string => {
+  const { t } = resolveGridsMessages(locale);
   const remainingMs = Math.max(0, new Date(expiresAt).getTime() - now);
   const minutes = Math.ceil(remainingMs / 60_000);
-  if (minutes < 60) return minutes <= 1 ? "less than a minute" : `${minutes} minutes`;
+  if (minutes < 60) return minutes <= 1 ? t.lessThanMinute : t.minutes({ count: minutes });
   const hours = Math.ceil(remainingMs / 3_600_000);
-  if (hours < 48) return hours === 1 ? "1 hour" : `${hours} hours`;
+  if (hours < 48) return t.hours({ count: hours });
   const days = Math.ceil(remainingMs / 86_400_000);
-  return days === 1 ? "1 day" : `${days} days`;
+  return t.days({ count: days });
 };
 
 export function PublicDocumentShare(props: {
@@ -20,6 +22,8 @@ export function PublicDocumentShare(props: {
   expiresAtLabel?: string;
   downloadHref?: string;
 }): JSX.Element {
+  const locale = useLocale();
+  const t = () => resolveGridsMessages(locale()).t;
   const available = () => Boolean(props.filename && props.expiresAt && props.expiresAtLabel && props.downloadHref);
 
   return (
@@ -31,14 +35,7 @@ export function PublicDocumentShare(props: {
         <Paper as="article" elevated class="w-full p-6 sm:p-8">
           <Show
             when={available()}
-            fallback={
-              <NoticeCard
-                tone="warning"
-                icon="ti ti-link-off"
-                title="Link no longer available"
-                detail="This document link has expired or was revoked."
-              />
-            }
+            fallback={<NoticeCard tone="warning" icon="ti ti-link-off" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}
           >
             <div class="flex items-center gap-3">
               <span class="app-accent-text flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)]">
@@ -52,20 +49,16 @@ export function PublicDocumentShare(props: {
             <NoticeCard
               class="mt-6"
               tone="info"
-              title={`Link expires in ${remainingTime(props.expiresAt!)}`}
-              detail={
-                <span>
-                  Available until <time datetime={props.expiresAt}>{props.expiresAtLabel}</time>.
-                </span>
-              }
+              title={t().linkExpiresIn({ duration: remainingTime(props.expiresAt!, locale()) })}
+              detail={<span>{t().availableUntil({ date: props.expiresAtLabel! })}</span>}
             />
 
             <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
               <ButtonLink href={props.downloadHref} navigation="document" size="md" variant="primary" download="">
                 <i class="ti ti-download" aria-hidden="true" />
-                Download PDF
+                {t().downloadPdf}
               </ButtonLink>
-              <p class="text-xs text-dimmed">Shared securely through Grids</p>
+              <p class="text-xs text-dimmed">{t().sharedThroughGrids}</p>
             </div>
           </Show>
         </Paper>
@@ -76,13 +69,19 @@ export function PublicDocumentShare(props: {
 
 export default ssr<AuthContext>(async (c) => {
   const token = c.req.param("token") ?? "";
+  const locale = getLocale(c);
+  const { t } = resolveGridsMessages(locale);
   const resolved = await gridsService.document.resolveDocumentLinkDownload(token);
   c.get("page").theme = "light";
 
   if (!resolved.ok) {
     c.status(404);
-    c.get("page").title = "Link no longer available";
-    return () => <PublicDocumentShare />;
+    c.get("page").title = t.linkUnavailable;
+    return () => (
+      <LocaleProvider locale={locale}>
+        <PublicDocumentShare />
+      </LocaleProvider>
+    );
   }
 
   const dateConfig = await getDateConfig(c);
@@ -94,14 +93,16 @@ export default ssr<AuthContext>(async (c) => {
   }).format(new Date(expiresAt));
 
   c.get("page").title = resolved.data.document.filename;
-  c.get("page").description = "A PDF document shared through Grids.";
+  c.get("page").description = t.sharedPdfDescription;
 
   return () => (
-    <PublicDocumentShare
-      filename={resolved.data.document.filename}
-      expiresAt={expiresAt}
-      expiresAtLabel={expiresAtLabel}
-      downloadHref={`/share/grids/documents/${encodeURIComponent(token)}/download`}
-    />
+    <LocaleProvider locale={locale}>
+      <PublicDocumentShare
+        filename={resolved.data.document.filename}
+        expiresAt={expiresAt}
+        expiresAtLabel={expiresAtLabel}
+        downloadHref={`/share/grids/documents/${encodeURIComponent(token)}/download`}
+      />
+    </LocaleProvider>
   );
 });

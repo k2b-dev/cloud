@@ -111,7 +111,7 @@ export default function ItemForm(props: ItemFormProps) {
     }));
 
   const defaultColumnId = () => props.columns[0]?.id ?? "";
-  const quickCreate = () => props.quickCreate && !isEditMode() && isEvent() && !showFullEditor();
+  const quickCreate = () => props.quickCreate && !isEditMode() && !showFullEditor();
   const quickRecurrenceValue = () => {
     if (!recurrenceEnabled()) return "never";
     if (
@@ -559,7 +559,7 @@ export default function ItemForm(props: ItemFormProps) {
             <div class="flex flex-col gap-5">
               <TextInput
                 label={t.title}
-                placeholder={t.eventTitle}
+                placeholder={isEvent() ? t.eventTitle : t.titlePlaceholder}
                 icon="ti ti-text-caption"
                 value={title}
                 onValueChange={(value) => {
@@ -570,43 +570,45 @@ export default function ItemForm(props: ItemFormProps) {
                 required
               />
 
-              <DateRangePicker
-                withTime={!allDay()}
-                label={t.schedule}
-                description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
-                value={eventRange}
-                onValueChange={(value) => {
-                  setStartsAt(value.start ?? "");
-                  setEndsAt(value.end ?? "");
-                  setError("");
-                }}
-                dateConfig={props.dateConfig}
-                datePresets={scheduleDatePresets(props.dateConfig)}
-                durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
-                required
-                clearable
-              />
+              <Show when={isEvent()}>
+                <DateRangePicker
+                  withTime={!allDay()}
+                  label={t.schedule}
+                  description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
+                  value={eventRange}
+                  onValueChange={(value) => {
+                    setStartsAt(value.start ?? "");
+                    setEndsAt(value.end ?? "");
+                    setError("");
+                  }}
+                  dateConfig={props.dateConfig}
+                  datePresets={scheduleDatePresets(props.dateConfig)}
+                  durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
+                  required
+                  clearable
+                />
 
-              <Switch label={t.allDayEvent} value={allDay} onValueChange={handleAllDayChange} />
+                <Switch label={t.allDayEvent} value={allDay} onValueChange={handleAllDayChange} />
 
-              <Select
-                label={t.repeat}
-                icon="ti ti-repeat"
-                value={quickRecurrenceValue}
-                onValueChange={handleQuickRecurrenceChange}
-                options={quickRecurrenceOptions}
-              />
+                <Select
+                  label={t.repeat}
+                  icon="ti ti-repeat"
+                  value={quickRecurrenceValue}
+                  onValueChange={handleQuickRecurrenceChange}
+                  options={quickRecurrenceOptions}
+                />
 
-              <Show when={recurrenceEnabled()}>
-                <div
-                  class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300"
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  <i class="ti ti-calendar-repeat mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                  <span>{recurrenceSummary()}</span>
-                </div>
+                <Show when={recurrenceEnabled()}>
+                  <div
+                    class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  >
+                    <i class="ti ti-calendar-repeat mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
+                    <span>{recurrenceSummary()}</span>
+                  </div>
+                </Show>
               </Show>
 
               <Show when={showQuickDescription()}>
@@ -619,7 +621,7 @@ export default function ItemForm(props: ItemFormProps) {
                 />
               </Show>
 
-              <Show when={showQuickEventDetails()}>
+              <Show when={isEvent() && showQuickEventDetails()}>
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <TextInput
                     label={t.location}
@@ -650,7 +652,7 @@ export default function ItemForm(props: ItemFormProps) {
                     {t.addDescription}
                   </Button>
                 </Show>
-                <Show when={!showQuickEventDetails()}>
+                <Show when={isEvent() && !showQuickEventDetails()}>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickEventDetails(true)}>
                     <i class="ti ti-map-pin" aria-hidden="true" />
                     {t.addLocationOrLink}

@@ -7,6 +7,21 @@ export const app = defineApp({
   name: "Gateway",
   icon: "ti ti-route-scan",
   description: "Admin console for gateway operations, observability, and notifications.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        description: "Administration für Gateway-Betrieb, Systembeobachtung und Benachrichtigungen.",
+        adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
+        adminLinks: {
+          "/admin/gateway/apps": "Apps", "/admin/gateway/routes": "Routen", "/admin/observability": "Übersicht",
+          "/admin/observability/logs": "Protokolle", "/admin/observability/jobs": "Jobs", "/admin/observability/workflows": "Workflows",
+          "/admin/observability/telemetry": "Telemetrie", "/admin/observability/metrics": "Metriken", "/admin/observability/postgres": "Postgres",
+          "/admin/observability/redis": "Redis", "/admin/observability/alerts": "Webhooks", "/admin/observability/notifications": "Benachrichtigungen",
+        },
+      },
+    },
+  },
   // Petrol rather than red: the console uses red for failures and amber for
   // warnings throughout, so a red chrome carried the same hue as its own most
   // urgent signal. Deep cyan stays clear of every status colour — the blue
@@ -18,6 +33,7 @@ export const app = defineApp({
   adminHref: "/admin/gateway",
   adminNav: [
     {
+      id: "gateway",
       label: "Gateway",
       links: [
         { href: "/admin/gateway/apps", icon: "ti-apps", label: "Apps" },
@@ -25,6 +41,7 @@ export const app = defineApp({
       ],
     },
     {
+      id: "observability",
       label: "Observability",
       links: [
         { href: "/admin/observability", icon: "ti-stethoscope", label: "Overview" },

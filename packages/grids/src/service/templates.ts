@@ -4,7 +4,7 @@ import { parseDataUrl } from "@valentinkolb/cloud/shared";
 import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
 import { sql } from "bun";
 import { documentTemplateStarterById } from "../document-template-starters";
-import { type GridTemplate, getTemplate, type TemplateDateExpression, type TemplateRef, templates } from "../templates";
+import { type GridTemplate, getTemplate, getTemplates, type TemplateDateExpression, type TemplateRef } from "../templates";
 import type { GridsWorkflow } from "../workflows/contracts";
 import * as bases from "./bases";
 import * as customApps from "./custom-apps";
@@ -14,6 +14,7 @@ import * as fields from "./fields";
 import * as files from "./files";
 import type { FormConfig } from "./forms";
 import * as forms from "./forms";
+import { serviceMessagesFor } from "./messages";
 import * as records from "./records";
 import { newShortId } from "./short-id";
 import * as tables from "./tables";
@@ -69,10 +70,10 @@ const summarizeTemplate = (template: GridTemplate): TemplateSummary => ({
   icon: template.icon,
 });
 
-export const list = (): TemplateSummary[] => templates.map(summarizeTemplate);
+export const list = (locale?: string): TemplateSummary[] => getTemplates(locale).map(summarizeTemplate);
 
-export const get = (id: string): TemplateSummary | null => {
-  const template = getTemplate(id);
+export const get = (id: string, locale?: string): TemplateSummary | null => {
+  const template = getTemplate(id, locale);
   return template ? summarizeTemplate(template) : null;
 };
 
@@ -385,7 +386,7 @@ const createViews = async (template: GridTemplate, actorId: string | null, ctx: 
   }
 };
 
-const createForms = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext) => {
+const createForms = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, locale?: string) => {
   for (const form of template.forms ?? []) {
     const tableId = ctx.tables.get(form.table);
     if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${form.table}`));
@@ -399,6 +400,7 @@ const createForms = async (template: GridTemplate, actorId: string | null, ctx: 
           config: resolveValue(form.config, ctx) as FormConfig,
         },
         actorId,
+        locale,
       ),
     );
     ctx.forms.set(form.key, created.id);
@@ -406,7 +408,7 @@ const createForms = async (template: GridTemplate, actorId: string | null, ctx: 
   }
 };
 
-const createCustomApps = async (template: GridTemplate, base: Base, actorId: string | null, ctx: TemplateContext) => {
+const createCustomApps = async (template: GridTemplate, base: Base, actorId: string | null, ctx: TemplateContext, locale?: string) => {
   for (const templateApp of template.customApps ?? []) {
     const appId = newShortId();
     const resolved = resolveCustomAppValue(templateApp.definition, ctx);
@@ -418,17 +420,18 @@ const createCustomApps = async (template: GridTemplate, base: Base, actorId: str
           baseId: base.shortId,
         },
         actorId,
+        locale,
       ),
     );
-    requireResult(await customApps.publish(created.id, actorId));
+    requireResult(await customApps.publish(created.id, actorId, locale));
   }
 };
 
-const createDocumentTemplates = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext) => {
+const createDocumentTemplates = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, locale?: string) => {
   for (const definition of template.documentTemplates ?? []) {
     const tableId = ctx.tables.get(definition.table);
     if (!tableId) throw new TemplateError(err.badInput(`template table not found: ${definition.table}`));
-    const starter = documentTemplateStarterById(definition.starterId);
+    const starter = documentTemplateStarterById(definition.starterId, locale);
     if (!starter) throw new TemplateError(err.badInput(`document template starter not found: ${definition.starterId}`));
     const source = definition.source === undefined ? starter.source(tableId) : resolveGqlValue(definition.source, ctx);
     if (typeof source !== "string" || !source.trim()) {
@@ -446,12 +449,13 @@ const createDocumentTemplates = async (template: GridTemplate, actorId: string |
           enabled: definition.enabled,
         },
         actorId,
+        locale,
       ),
     );
   }
 };
 
-const createEmailTemplates = async (template: GridTemplate, baseId: string, actorId: string | null) => {
+const createEmailTemplates = async (template: GridTemplate, baseId: string, actorId: string | null, locale?: string) => {
   for (const definition of template.emailTemplates ?? []) {
     requireResult(
       await emailTemplates.create(
@@ -465,12 +469,13 @@ const createEmailTemplates = async (template: GridTemplate, baseId: string, acto
           enabled: definition.enabled,
         },
         actorId,
+        locale,
       ),
     );
   }
 };
 
-const createWorkflows = async (template: GridTemplate, baseId: string, actorId: string | null, ctx: TemplateContext) => {
+const createWorkflows = async (template: GridTemplate, baseId: string, actorId: string | null, ctx: TemplateContext, locale?: string) => {
   for (const definition of template.workflows ?? []) {
     const created = requireResult(
       await createWorkflow(
@@ -482,13 +487,14 @@ const createWorkflows = async (template: GridTemplate, baseId: string, actorId: 
           enabled: definition.enabled,
         },
         actorId,
+        locale,
       ),
     );
     ctx.workflows.set(definition.key, created);
   }
 };
 
-const createWorkflowLaunchers = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext) => {
+const createWorkflowLaunchers = async (template: GridTemplate, actorId: string | null, ctx: TemplateContext, locale?: string) => {
   for (const definition of template.workflowLaunchers ?? []) {
     const workflow = ctx.workflows.get(definition.workflow);
     if (!workflow) throw new TemplateError(err.badInput(`template workflow not found: ${definition.workflow}`));
@@ -501,6 +507,7 @@ const createWorkflowLaunchers = async (template: GridTemplate, actorId: string |
           enabled: definition.enabled,
         },
         actorId,
+        locale,
       ),
     );
     ctx.launchers.set(definition.key, created.id);
@@ -508,9 +515,15 @@ const createWorkflowLaunchers = async (template: GridTemplate, actorId: string |
   }
 };
 
-export const instantiate = async (templateId: string, input: InstantiateTemplateInput, actorId: string | null): Promise<Result<Base>> => {
-  const template = getTemplate(templateId);
-  if (!template) return fail(err.notFound("Template"));
+export const instantiate = async (
+  templateId: string,
+  input: InstantiateTemplateInput,
+  actorId: string | null,
+  locale?: string,
+): Promise<Result<Base>> => {
+  const t = serviceMessagesFor(locale);
+  const template = getTemplate(templateId, locale);
+  if (!template) return fail({ ...err.notFound("Template"), message: t.templateNotFound });
 
   const name = input.name?.trim() || template.baseName;
   const baseResult = await bases.create(
@@ -544,12 +557,12 @@ export const instantiate = async (templateId: string, input: InstantiateTemplate
     await applyTableDisplayConfigs(template, actorId, ctx);
     if (input.withSampleData !== false) await createRecords(template, actorId, ctx);
     await createViews(template, actorId, ctx);
-    await createForms(template, actorId, ctx);
-    await createDocumentTemplates(template, actorId, ctx);
-    await createEmailTemplates(template, base.id, actorId);
-    await createWorkflows(template, base.id, actorId, ctx);
-    await createWorkflowLaunchers(template, actorId, ctx);
-    await createCustomApps(template, base, actorId, ctx);
+    await createForms(template, actorId, ctx, locale);
+    await createDocumentTemplates(template, actorId, ctx, locale);
+    await createEmailTemplates(template, base.id, actorId, locale);
+    await createWorkflows(template, base.id, actorId, ctx, locale);
+    await createWorkflowLaunchers(template, actorId, ctx, locale);
+    await createCustomApps(template, base, actorId, ctx, locale);
     return ok(base);
   } catch (error) {
     // Nothing in the kernel references a Grids table, so dropping the base does
@@ -562,6 +575,6 @@ export const instantiate = async (templateId: string, input: InstantiateTemplate
       templateId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return fail(err.internal("Could not create base from template."));
+    return fail({ ...err.internal("Could not create base from template."), message: t.templateCreateFailed });
   }
 };

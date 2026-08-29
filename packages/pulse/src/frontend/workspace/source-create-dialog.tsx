@@ -2,23 +2,22 @@ import { NoticeCard, Button, dialogCore, NumberInput, PanelDialog, panelDialogOp
 import { createSignal, Show, type Accessor } from "solid-js";
 import { SOURCE_TYPE_OPTIONS } from "./helpers";
 import type { CreateSourceInput, SourceCreateKind } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type SourceCreateDialogOptions = {
   loading: Accessor<boolean>;
   createSource: (input: CreateSourceInput) => Promise<boolean>;
 };
 
-const sourceInfo =
-  "After creating this source, add one or more labeled API keys from the source detail panel. Use them as Bearer tokens from ingestors, apps, automations, imports, or jobs.";
-
 export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
   dialogCore.open<void>((close) => {
+    const t = usePulseMessages();
     const [kind, setKind] = createSignal<SourceCreateKind>("http_ingest");
     const [name, setName] = createSignal("");
     const [endpointUrl, setEndpointUrl] = createSignal("");
     const [bearerToken, setBearerToken] = createSignal("");
     const [scrapeIntervalSeconds, setScrapeIntervalSeconds] = createSignal<number | null>(60);
-    const title = () => (kind() === "http_ingest" ? "HTTP ingest" : "Metrics endpoint");
+    const title = () => (kind() === "http_ingest" ? t().httpIngest : t().metricsEndpoint);
 
     const submit = async () => {
       const created = await options.createSource({
@@ -41,36 +40,40 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
       >
         <PanelDialog>
           <PanelDialog.Header
-            title="New source"
-            subtitle="Add one telemetry input for this Pulse base."
+            title={t().newSource}
+            subtitle={t().newSourceDescription}
             icon="ti ti-plug-connected"
             close={close}
           />
           <PanelDialog.Body>
             <TextInput
-              label="Name"
-              description="Shown in source lists, dashboard filters, and setup examples."
+              label={t().name}
+              description={t().sourceNameDescription}
               icon="ti ti-tag"
               value={name}
               onValueChange={setName}
-              placeholder={kind() === "http_ingest" ? "Sales pipeline" : "Service metrics"}
+              placeholder={kind() === "http_ingest" ? t().salesPipelineExample : t().serviceMetricsExample}
             />
 
-            <PanelDialog.Section title={title()} subtitle="Choose how Pulse should receive data." icon="ti ti-route">
+            <PanelDialog.Section title={title()} subtitle={t().sourceReceiveDescription} icon="ti ti-route">
               <Select
-                label="Type"
-                description="Pick a scrape target or an ingest source that pushes data into Pulse."
+                label={t().type}
+                description={t().sourceTypeDescription}
                 icon="ti ti-plug-connected"
                 value={kind}
                 onValueChange={(value) => setKind(value as SourceCreateKind)}
-                options={SOURCE_TYPE_OPTIONS}
+                options={SOURCE_TYPE_OPTIONS.map((option) => ({
+                  ...option,
+                  label: option.id === "http_ingest" ? t().httpIngest : t().metricsEndpoint,
+                  description: option.id === "http_ingest" ? t().ingestDescription : t().metricsEndpointEditDescription,
+                }))}
                 required
               />
               <Show when={kind() === "metrics"}>
                 <div class="grid gap-3 md:grid-cols-2">
                   <TextInput
-                    label="Endpoint URL"
-                    description="Pulse will scrape this /metrics endpoint on the configured interval."
+                    label={t().endpointUrl}
+                    description={t().endpointUrlDescription}
                     type="url"
                     icon="ti ti-link"
                     value={endpointUrl}
@@ -79,10 +82,10 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                     required
                   />
                   <NumberInput
-                    label="Scrape interval"
-                    description="How often Pulse scrapes the endpoint."
+                    label={t().scrapeInterval}
+                    description={t().scrapeIntervalDescription}
                     icon="ti ti-refresh"
-                    suffix="sec"
+                    suffix={t().secondsShort}
                     min={10}
                     max={86_400}
                     value={scrapeIntervalSeconds}
@@ -90,12 +93,12 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                   />
                 </div>
                 <TextInput
-                  label="Bearer token"
-                  description="Optional. Stored encrypted by Pulse."
+                  label={t().bearerToken}
+                  description={t().bearerTokenDescription}
                   icon="ti ti-key"
                   value={bearerToken}
                   onValueChange={setBearerToken}
-                  placeholder="Optional"
+                  placeholder={t().optional}
                   password
                 />
               </Show>
@@ -103,7 +106,7 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
                 <NoticeCard tone="info" icon={false}>
                   <div class="flex items-start gap-2">
                     <i class="ti ti-info-circle mt-0.5 shrink-0 text-blue-500" />
-                    <p>{sourceInfo}</p>
+                    <p>{t().sourceInfo}</p>
                   </div>
                 </NoticeCard>
               </Show>
@@ -111,11 +114,11 @@ export const openSourceCreateDialog = (options: SourceCreateDialogOptions) =>
           </PanelDialog.Body>
           <PanelDialog.Footer>
             <Button type="button" variant="secondary" size="sm" onClick={() => close()} disabled={options.loading()}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button type="submit" size="sm" disabled={options.loading() || (kind() === "metrics" && !endpointUrl().trim())}>
               <i class={`ti ${options.loading() ? "ti-loader-2 animate-spin" : "ti-plus"} text-sm`} />
-              Add
+              {t().add}
             </Button>
           </PanelDialog.Footer>
         </PanelDialog>

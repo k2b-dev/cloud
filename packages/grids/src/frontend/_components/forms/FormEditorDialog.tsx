@@ -11,6 +11,7 @@ import {
   panelDialogWideOptions,
   prompts,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -20,6 +21,7 @@ import type { FormFieldEntry } from "../../../service/forms";
 import { errorMessage } from "../utils/api-helpers";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import { FormValidationsEditor } from "./FormValidationsEditor";
+import { gridsFormMessages } from "./messages";
 
 type OpenFormEditorDialogArgs = {
   form: PublicForm;
@@ -32,13 +34,15 @@ export const openFormEditorDialog = (args: OpenFormEditorDialogArgs) =>
   dialogCore.open<void>((close) => <FormEditorDialog args={args} close={close} />, panelDialogWideOptions);
 
 function FormEditorDialog(props: { args: OpenFormEditorDialogArgs; close: () => void }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const [dirty, setDirty] = createSignal(false);
   const closeIfClean = async () => {
     if (await confirmDiscardIfDirty(dirty)) props.close();
   };
   return (
     <PanelDialog>
-      <PanelDialog.Header title={`Edit form — ${props.args.form.name}`} icon="ti ti-forms" close={closeIfClean} />
+      <PanelDialog.Header title={t().editForm({ name: props.args.form.name })} icon="ti ti-forms" close={closeIfClean} />
       <FormEditor
         form={props.args.form}
         tableFields={props.args.tableFields}
@@ -79,6 +83,8 @@ function FormEditor(props: {
   onDirtyChange?: (dirty: boolean) => void;
   onCancel?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const [name, setName] = createSignal(props.form.name);
   const [isPublic, setIsPublic] = createSignal(Boolean(props.form.publicToken));
   const [isActive, setIsActive] = createSignal(props.form.isActive);
@@ -108,7 +114,7 @@ function FormEditor(props: {
   const updateMut = mutations.create<PublicForm, SaveFormRequest, SaveFormRequest>({
     onBefore: (request) => request,
     mutation: async (request) => {
-      if (!props.form.id) throw new Error("The default form cannot be edited directly.");
+      if (!props.form.id) throw new Error(t().defaultFormCannotEdit);
       const res = await apiClient.forms[":formId"].$patch({
         param: { formId: props.form.id },
         json: {
@@ -128,7 +134,7 @@ function FormEditor(props: {
           },
         },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save form"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveFormFailed));
       return res.json();
     },
     onSuccess: (next, request) => {
@@ -143,14 +149,11 @@ function FormEditor(props: {
 
   const handleSave = async () => {
     if (!name().trim()) {
-      prompts.error("Name is required");
+      prompts.error(t().nameRequired);
       return;
     }
     if (props.form.publicToken && props.form.isActive) {
-      const confirmed = await prompts.confirm(
-        "This public form is live. Saved changes affect new submissions immediately. Existing submissions stay as-is. Continue?",
-        { title: "Save live form?", confirmText: "Save" },
-      );
+      const confirmed = await prompts.confirm(t().liveFormWarning, { title: t().saveLiveForm, confirmText: t().save });
       if (!confirmed) return;
     }
     void updateMut.mutate({ closeMainDialog: true });
@@ -160,10 +163,10 @@ function FormEditor(props: {
     <>
       <PanelDialog.Body>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <TextInput label="Name" value={name} onValueChange={wrap(setName)} icon="ti ti-typography" required />
+          <TextInput label={t().name} value={name} onValueChange={wrap(setName)} icon="ti ti-typography" required />
           <TextInput
-            label="Title"
-            description="Heading shown on the form page (defaults to the name above)."
+            label={t().title}
+            description={t().titleDescription}
             value={title}
             onValueChange={wrap(setTitle)}
             icon="ti ti-heading"
@@ -171,8 +174,8 @@ function FormEditor(props: {
           />
         </div>
         <TextInput
-          label="Description"
-          description="Optional subtitle shown under the title on the form page."
+          label={t().description}
+          description={t().descriptionDescription}
           value={description}
           onValueChange={wrap(setDescription)}
           icon="ti ti-align-left"
@@ -180,31 +183,27 @@ function FormEditor(props: {
           lines={2}
         />
         <ImageInput
-          label="Title image (optional)"
-          description="Shown as a banner at the top of the form. Free aspect ratio; capped at 1600 px on the longest side."
+          label={t().titleImage}
+          description={t().titleImageDescription}
           value={titleImage}
           onValueChange={wrap(setTitleImage)}
           transform={bannerTransform}
         />
 
-        <FormEditorSection title="Availability" subtitle="Control whether submissions and the public link are live." icon="ti ti-world">
-          <Checkbox
-            label="Active"
-            description="Submissions are accepted. Turn this off to pause the form without deleting it."
-            value={isActive}
-            onValueChange={wrap(setIsActive)}
-          />
+        <FormEditorSection title={t().availability} subtitle={t().availabilityDescription} icon="ti ti-world">
+          <Checkbox label={t().active} description={t().activeDescription} value={isActive} onValueChange={wrap(setIsActive)} />
           <div class="flex items-center gap-3 flex-wrap">
             <Checkbox
-              label="Public"
-              description="Anyone with the link can submit, no login required."
+              label={t().public}
+              description={t().publicDescription}
               value={isPublic}
               onValueChange={async (next) => {
                 if (!next && props.form.publicToken) {
-                  const confirmed = await prompts.confirm(
-                    "This permanently breaks the existing share link. Anyone with it will no longer be able to access this form. Re-enabling later generates a fresh token. Continue?",
-                    { title: "Disable public link?", variant: "danger", confirmText: "Disable" },
-                  );
+                  const confirmed = await prompts.confirm(t().disablePublicWarning, {
+                    title: t().disablePublicLink,
+                    variant: "danger",
+                    confirmText: t().disable,
+                  });
                   if (!confirmed) {
                     setIsPublic(false);
                     queueMicrotask(() => setIsPublic(true));
@@ -226,28 +225,28 @@ function FormEditor(props: {
           </div>
         </FormEditorSection>
 
-        <FormEditorSection title="Submission" subtitle="What happens after a visitor submits the form." icon="ti ti-send">
+        <FormEditorSection title={t().submission} subtitle={t().submissionDescription} icon="ti ti-send">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <TextInput
-              label="Submit button label"
-              description='Defaults to "Save".'
+              label={t().submitButtonLabel}
+              description={t().defaultsToSave}
               value={submitLabel}
               onValueChange={wrap(setSubmitLabel)}
               icon="ti ti-send"
-              placeholder="Save"
+              placeholder={t().save}
             />
             <TextInput
-              label="Success message"
-              description='Shown after a successful submit. Defaults to "Saved".'
+              label={t().successMessage}
+              description={t().successMessageDescription}
               value={successMessage}
               onValueChange={wrap(setSuccessMessage)}
               icon="ti ti-circle-check"
-              placeholder="Saved"
+              placeholder={t().saved}
             />
           </div>
           <TextInput
-            label="Redirect URL"
-            description="When set, the public form redirects here after submit instead of showing the success message. Leave empty for the default in-page success card."
+            label={t().redirectUrl}
+            description={t().redirectUrlDescription}
             value={redirectUrl}
             onValueChange={wrap(setRedirectUrl)}
             icon="ti ti-external-link"
@@ -256,7 +255,7 @@ function FormEditor(props: {
           />
         </FormEditorSection>
 
-        <FormEditorSection title="Fields" subtitle="Form structure and per-field behavior." icon="ti ti-forms">
+        <FormEditorSection title={t().fields} subtitle={t().fieldsDescription} icon="ti ti-forms">
           <FormFieldsEditor
             tableFields={props.tableFields}
             entries={entries}
@@ -267,11 +266,7 @@ function FormEditor(props: {
           />
         </FormEditorSection>
 
-        <FormEditorSection
-          title="Cross-field validation"
-          subtitle="Compare compatible visible inputs before a record is created. The server enforces the same rules."
-          icon="ti ti-arrows-left-right"
-        >
+        <FormEditorSection title={t().crossFieldValidation} subtitle={t().crossFieldValidationDescription} icon="ti ti-arrows-left-right">
           <FormValidationsEditor
             fields={props.tableFields}
             entries={entries()}
@@ -286,12 +281,12 @@ function FormEditor(props: {
 
       <PanelDialog.Footer>
         <Button variant="ghost" size="sm" type="button" class="text-red-500 hover:text-red-600" onClick={props.onDelete}>
-          <i class="ti ti-trash" /> Delete form
+          <i class="ti ti-trash" /> {t().deleteForm}
         </Button>
         <div class="flex items-center gap-2">
           <Show when={props.onCancel}>
             <Button variant="secondary" size="sm" type="button" onClick={() => props.onCancel?.()}>
-              Cancel
+              {t().cancel}
             </Button>
           </Show>
           <Button
@@ -301,9 +296,9 @@ function FormEditor(props: {
             onClick={handleSave}
             disabled={!dirty()}
             loading={updateMut.loading()}
-            loadingLabel="Saving form"
+            loadingLabel={t().savingForm}
           >
-            Save
+            {t().save}
           </Button>
         </div>
       </PanelDialog.Footer>

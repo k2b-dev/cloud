@@ -18,6 +18,7 @@ import {
 } from "@valentinkolb/cloud/capabilities";
 import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@valentinkolb/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
+import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export type AssistantContextScope = "chat" | "project";
 
@@ -66,11 +67,12 @@ export function AssistantContextRow(props: {
   menuLabel?: string;
   trailing?: JSX.Element;
 }) {
+  const text = useAssistantText();
   const leading = () => (props.icon ? <i class={props.icon} aria-hidden="true" /> : undefined);
   const trailing = () => (
     <>
       <Show when={props.showScope && props.scope === "project"}>
-        <span class="shrink-0 rounded-full bg-[var(--ui-surface)] px-1.5 py-0.5 text-[0.625rem] text-dimmed">Project</span>
+        <span class="shrink-0 rounded-full bg-[var(--ui-surface)] px-1.5 py-0.5 text-[0.625rem] text-dimmed">{text("Project")}</span>
       </Show>
       {props.trailing}
     </>
@@ -83,7 +85,7 @@ export function AssistantContextRow(props: {
       trailing={trailing()}
       onClick={props.onClick}
       menuItems={props.menuItems}
-      menuLabel={props.menuLabel ?? `Actions for ${props.title}`}
+      menuLabel={props.menuLabel ?? `${text("Actions for")} ${props.title}`}
     />
   ) : props.onClick ? (
     <DetailPanel.Action
@@ -136,6 +138,7 @@ export const openAssistantMarkdown = (title: string, markdown: string, icon = "t
   );
 
 export const openAssistantKnowledgeSearch = async (items: readonly { id: string; title: string; content: string }[]) => {
+  const text = assistantBrowserText;
   const selected = await prompts.search<{ title: string; content: string }>(
     ({ query }) => {
       const normalized = query.trim().toLocaleLowerCase();
@@ -147,11 +150,11 @@ export const openAssistantKnowledgeSearch = async (items: readonly { id: string;
         .map((item) => ({ value: { title: item.title, content: item.content }, label: item.title, icon: "ti ti-bulb" }));
     },
     {
-      title: "Project knowledge",
+      title: text("Project knowledge"),
       icon: "ti ti-bulb",
-      placeholder: "Search Project knowledge…",
+      placeholder: text("Search Project knowledge…"),
       minQueryLength: 0,
-      noResultsText: "No matching knowledge.",
+      noResultsText: text("No matching knowledge."),
       size: "small",
     },
   );
@@ -159,15 +162,16 @@ export const openAssistantKnowledgeSearch = async (items: readonly { id: string;
 };
 
 export const confirmOpenAssistantLink = async (title: string, href: string) => {
+  const text = assistantBrowserText;
   let destination: URL;
   try {
     destination = new URL(href, window.location.href);
   } catch {
     return;
   }
-  const confirmed = await prompts.confirm(`Open “${title}” from ${destination.host || "Cloud"} in a new tab?`, {
-    title: "Open link",
-    confirmText: "Open in new tab",
+  const confirmed = await prompts.confirm(assistantBrowserCopy().openExternalLink({ title, host: destination.host || "Cloud" }), {
+    title: text("Open link"),
+    confirmText: text("Open in new tab"),
   });
   if (confirmed) window.open(destination.href, "_blank", "noopener,noreferrer");
 };
@@ -201,7 +205,7 @@ export const resolveAssistantCloudResource = async (
     const app = catalog.data.apps.find((candidate) => candidate.appId === appId);
     if (app) {
       const reader = resolveCapabilityResourceReader(app.manifest, ref);
-      if (!reader) throw new Error("This Cloud resource has no reader.");
+      if (!reader) throw new Error(assistantBrowserText("This Cloud resource has no reader."));
       const result = await dependencies.invoke({ appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } });
       if (!result.ok) throw new Error(result.error.message);
       const localType = ref.type.slice(appId.length + 1);
@@ -215,7 +219,7 @@ export const resolveAssistantCloudResource = async (
     }
     cursor = catalog.data.page.hasMore ? catalog.data.page.nextCursor : undefined;
   } while (cursor);
-  throw new Error("The application for this reference is unavailable.");
+  throw new Error(assistantBrowserText("The application for this reference is unavailable."));
 };
 
 export const openAssistantCloudReference = async (title: string, ref: CloudResourceRef) => {
@@ -223,16 +227,16 @@ export const openAssistantCloudReference = async (title: string, ref: CloudResou
     const resource = await resolveAssistantCloudResource(ref);
     return resource.href
       ? confirmOpenAssistantLink(title, resource.href)
-      : void prompts.error("This Cloud resource has no open link.", { title: "Could not open reference" });
+      : void prompts.error(assistantBrowserText("This Cloud resource has no open link."), { title: assistantBrowserText("Could not open reference") });
   } catch (error) {
-    return void prompts.error(error instanceof Error ? error.message : "The Cloud resource could not be resolved.", {
-      title: "Could not open reference",
+    return void prompts.error(error instanceof Error ? error.message : assistantBrowserText("The Cloud resource could not be resolved."), {
+      title: assistantBrowserText("Could not open reference"),
     });
   }
 };
 
 const virtualPath = (file: AssistantContextFile): string =>
-  `/${file.scope === "project" ? "Project" : "Chat"}/${file.path.replace(/^\/+/, "")}`;
+  `/${assistantBrowserText(file.scope === "project" ? "Project" : "Chat")}/${file.path.replace(/^\/+/, "")}`;
 
 export const assistantContextFileSource = (files: readonly AssistantContextFile[]): FileSource => ({
   async list(): Promise<FileTreeEntry[]> {
@@ -245,7 +249,7 @@ export const assistantContextFileSource = (files: readonly AssistantContextFile[
   },
   async read(path: string): Promise<FileViewContent> {
     const file = files.find((candidate) => virtualPath(candidate) === path);
-    if (!file) throw new Error("File is no longer available.");
+    if (!file) throw new Error(assistantBrowserText("File is no longer available."));
     return file.source.read(file.path);
   },
   downloadHref(path) {
@@ -261,9 +265,9 @@ export const assistantProjectFileSource = (projectId: string, files: () => reado
   },
   async read(path) {
     const file = files().find((candidate) => candidate.path === path);
-    if (!file) throw new Error("Project file is no longer available.");
+    if (!file) throw new Error(assistantBrowserText("Project file is no longer available."));
     const response = await fetch(`/api/ai/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(file.id)}`);
-    if (!response.ok) throw new Error("Project file could not be loaded.");
+    if (!response.ok) throw new Error(assistantBrowserText("Project file could not be loaded."));
     const payload = (await response.json()) as { content: string; encoding: "base64"; file: { mediaType: string } };
     return { content: payload.content, encoding: payload.encoding, mediaType: payload.file.mediaType };
   },
@@ -300,7 +304,7 @@ export const openAssistantContextFiles = (files: readonly AssistantContextFile[]
         />
       </div>
     ),
-    { title: "Files", icon: "ti ti-files", size: "wide" },
+    { title: assistantBrowserText("Files"), icon: "ti ti-files", size: "wide" },
   );
 
 export const loadAssistantContextImages = async (files: readonly AssistantContextFile[]) =>
@@ -320,7 +324,8 @@ export function AssistantContextRows(props: { children: JSX.Element }) {
 }
 
 export function AssistantContextViewAll(props: { onClick: () => void }) {
-  return <AssistantContextRow icon="ti ti-eye" title="View all" onClick={props.onClick} />;
+  const text = useAssistantText();
+  return <AssistantContextRow icon="ti ti-eye" title={text("View all")} onClick={props.onClick} />;
 }
 
 export function AssistantContextEmpty(props: { children: JSX.Element }) {

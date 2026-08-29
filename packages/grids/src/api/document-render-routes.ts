@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, getDateConfig, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
@@ -24,8 +24,10 @@ import {
   snapshotRecordAccessResolver,
 } from "./documents-api-shared";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
+import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 export const createDocumentRenderRoutes = () =>
   new Hono<AuthContext>()
@@ -42,15 +44,15 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentTemplateDraftPreviewSchema),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found", phase: "data" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound, phase: "data" }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found", phase: "data" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound, phase: "data" }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
-        if (!recordId) return c.json({ message: "Record not found", phase: "data" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound, phase: "data" }, 404);
         return renderDraftPdfResponse(c, { template: draftTemplateFromBody(body), tableId, recordId });
       },
     )
@@ -68,15 +70,15 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentTemplateDraftPreviewSchema),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found", phase: "data" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound, phase: "data" }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found", phase: "data" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound, phase: "data" }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
-        if (!recordId) return c.json({ message: "Record not found", phase: "data" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound, phase: "data" }, 404);
         return renderDraftDataResponse(c, { template: draftTemplateFromBody(body), tableId, recordId });
       },
     )
@@ -94,13 +96,13 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentTemplateDraftPreviewSchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found", phase: "data" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound, phase: "data" }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
-        if (!recordId) return c.json({ message: "Record not found", phase: "data" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound, phase: "data" }, 404);
         return renderDraftPdfResponse(c, {
           template: draftTemplateFromBody(body, loaded.template),
           tableId: loaded.table.id,
@@ -122,13 +124,13 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentTemplateDraftPreviewSchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found", phase: "data" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound, phase: "data" }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
-        if (!recordId) return c.json({ message: "Record not found", phase: "data" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound, phase: "data" }, 404);
         return renderDraftDataResponse(c, {
           template: draftTemplateFromBody(body, loaded.template),
           tableId: loaded.table.id,
@@ -150,12 +152,12 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentRecordBodySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const recordId = await resolveDocumentRecordId(c.req.valid("json").recordId);
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const createdAt = new Date();
         const dateConfig = await getDateConfig(c);
         const rendered = await liveRenderData(c, {
@@ -169,11 +171,11 @@ export const createDocumentRenderRoutes = () =>
         const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, createdAt, dateConfig });
         if (!data.ok) return data.response;
         if (loaded.template.renderer.kind === "profile") {
-          const input = await gridsService.document.renderProfileInput(loaded.template, data.data);
+          const input = await gridsService.document.renderProfileInput(loaded.template, data.data, getLocale(c));
           if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
           return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
         }
-        const html = await gridsService.document.renderHtml(loaded.template, data.data);
+        const html = await gridsService.document.renderHtml(loaded.template, data.data, getLocale(c));
         if (!html.ok) return c.json({ message: html.error.message }, html.error.status);
         return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
       },
@@ -192,11 +194,11 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentRecordBodySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateEnabledTemplateWrite(c, loaded);
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const recordId = await resolveDocumentRecordId(c.req.valid("json").recordId);
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const createdAt = new Date();
         const dateConfig = await getDateConfig(c);
         const rendered = await liveRenderData(c, {
@@ -210,7 +212,7 @@ export const createDocumentRenderRoutes = () =>
         const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, createdAt, dateConfig });
         if (!data.ok) return data.response;
         if (loaded.template.renderer.kind === "profile") {
-          const input = await gridsService.document.renderProfileInput(loaded.template, data.data);
+          const input = await gridsService.document.renderProfileInput(loaded.template, data.data, getLocale(c));
           if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
           const preview = await gridsService.document.preview({
             profileId: loaded.template.renderer.id,
@@ -220,10 +222,16 @@ export const createDocumentRenderRoutes = () =>
           });
           if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
           const artifact = preview.data.find((candidate) => candidate.key === "pdf");
-          if (!artifact) return c.json({ message: "Document profile produced no PDF." }, 500);
+          if (!artifact) return c.json({ message: apiMessages(c).documentProducedNoPdf }, 500);
           return pdfResponse(artifact.bytes, artifact.filename, {}, "inline");
         }
-        const pdf = await gridsService.document.renderPdfPreview(loaded.template, data.data, `${loaded.template.shortId}-preview.html`);
+        const pdf = await gridsService.document.renderPdfPreview(
+          loaded.template,
+          data.data,
+          `${loaded.template.shortId}-preview.html`,
+          undefined,
+          getLocale(c),
+        );
         if (!pdf.ok) {
           return c.json(
             { message: pdf.error.message, phase: pdf.error.phase, code: pdf.error.code },
@@ -247,14 +255,14 @@ export const createDocumentRenderRoutes = () =>
       v("json", PublicDocumentGenerateBodySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
-        if (!loaded.template.enabled) return c.json({ message: "Document template is disabled" }, 400);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
+        if (!loaded.template.enabled) return c.json({ message: apiMessages(c).documentTemplateDisabled }, 400);
         const gate = await gateTemplate(c, loaded, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const dateConfig = await getDateConfig(c);
         const issued = await gridsService.document.createDocumentForRecord({
           template: loaded.template,
@@ -270,7 +278,7 @@ export const createDocumentRenderRoutes = () =>
           tags: body.tags,
         });
         if (!issued.ok) return c.json({ message: issued.error.message }, issued.error.status);
-        const artifact = await gridsService.document.getDocumentArtifact(issued.data.id, "pdf");
+        const artifact = await gridsService.document.getDocumentArtifact(issued.data.id, "pdf", getLocale(c));
         if (!artifact.ok) return c.json({ message: artifact.error.message }, artifact.error.status);
         return pdfResponse(artifact.data.bytes, artifact.data.filename, {
           "X-Grids-Document-Id": issued.data.shortId,

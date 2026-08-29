@@ -12,6 +12,7 @@ import {
   projectRecordSnapshotSummaries,
   snapshotRecordAccessResolver,
 } from "./documents-api-shared";
+import { apiMessages } from "./messages";
 import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
 
@@ -30,14 +31,14 @@ export const createDocumentSnapshotRoutes = () =>
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
         const recordId = await resolvePublicIdParam(c, "recordId", "record");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         if (!(await gridsService.record.get(tableId, recordId, { recordAccess: ALL_RECORD_ACCESS }))) {
-          return c.json({ message: "Record not found" }, 404);
+          return c.json({ message: apiMessages(c).recordNotFound }, 404);
         }
         const snapshots = await gridsService.document.listSnapshotsForRecord(tableId, recordId);
         return c.json({ items: await projectRecordSnapshotSummaries(snapshots) });
@@ -57,10 +58,10 @@ export const createDocumentSnapshotRoutes = () =>
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
         const recordId = await resolvePublicIdParam(c, "recordId", "record");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const snapshot = await gridsService.document.createRecordSnapshot({
@@ -89,9 +90,9 @@ export const createDocumentSnapshotRoutes = () =>
       }),
       async (c) => {
         const snapshotId = await resolvePublicIdParam(c, "snapshotId", "documentSnapshot");
-        if (!snapshotId) return c.json({ message: "Record snapshot not found" }, 404);
+        if (!snapshotId) return c.json({ message: apiMessages(c).recordSnapshotNotFound }, 404);
         const snapshot = await gridsService.document.getSnapshot(snapshotId);
-        if (!snapshot) return c.json({ message: "Record snapshot not found" }, 404);
+        if (!snapshot) return c.json({ message: apiMessages(c).recordSnapshotNotFound }, 404);
         const gate = await gateAt(c, { baseId: snapshot.baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         if (
@@ -100,7 +101,7 @@ export const createDocumentSnapshotRoutes = () =>
             deleted: "include",
           }))
         ) {
-          return c.json({ message: "Record snapshot not found" }, 404);
+          return c.json({ message: apiMessages(c).recordSnapshotNotFound }, 404);
         }
         return c.json(
           await projectRecordSnapshot(await gridsService.document.filterSnapshotRelatedRecords(snapshot, snapshotRecordAccessResolver(c))),

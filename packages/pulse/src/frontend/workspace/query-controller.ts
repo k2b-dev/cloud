@@ -37,6 +37,7 @@ import {
 import { createPulseSavedQuery, deletePulseSavedQuery } from "./saved-query-actions";
 import { openSaveQueryDialog } from "./saved-query-dialog";
 import type { ExplorerResultView, QueryHistoryEntry } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type QueryControllerDeps = {
   selectedBaseId: Accessor<string>;
@@ -71,6 +72,7 @@ type QueryControllerDeps = {
 };
 
 export const createQueryController = (deps: QueryControllerDeps) => {
+  const t = usePulseMessages();
   let runId = 0;
   let disposed = false;
   const [runIntent, setRunIntent] = createSignal<{ baseId: string; query: string; requestId: number } | null>(null);
@@ -105,7 +107,7 @@ export const createQueryController = (deps: QueryControllerDeps) => {
   };
   const requireWritable = (): boolean => {
     if (!deps.writeBlocked()) return true;
-    toast.error("Refresh Pulse data before making more changes.");
+    toast.error(t().refreshBeforeChanges);
     return false;
   };
   const current = () => deps.queryText().trim() || deps.defaultQueryText() || defaultPulseQuery(deps.metrics());
@@ -185,7 +187,7 @@ export const createQueryController = (deps: QueryControllerDeps) => {
       if (shouldRememberQueryRun(options)) remember(baseId, query);
     } catch (error) {
       if (requestId !== runId) return;
-      const message = error instanceof Error ? error.message : "Query failed";
+      const message = error instanceof Error ? error.message : t().queryFailed;
       if (shouldToastQueryError(options)) toast.error(message);
       else deps.setQueryDiagnostics(failedQueryDiagnostics(message));
     } finally {
@@ -205,10 +207,10 @@ export const createQueryController = (deps: QueryControllerDeps) => {
       await saveMutation.mutate({ baseId, name: result.name, description: result.description, query });
       if (disposed) return;
       if (saveMutation.error()) throw saveMutation.error();
-      if (!(await reconcileSavedQueries("The query was saved, but the saved-query list could not be refreshed."))) return;
-      toast.success("Query saved");
+      if (!(await reconcileSavedQueries(t().querySavedRefreshFailed))) return;
+      toast.success(t().querySaved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save query");
+      toast.error(error instanceof Error ? error.message : t().querySaveFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -221,17 +223,17 @@ export const createQueryController = (deps: QueryControllerDeps) => {
     try {
       await clipboard.copy(dashboardWidgetSnippetFromQuery(query, compiled, deps.selectedVisual()));
       if (disposed) return;
-      toast.success("Dashboard widget DSL copied");
+      toast.success(t().widgetDslCopied);
     } catch (error) {
       if (disposed) return;
-      toast.error(error instanceof Error ? error.message : "Could not copy widget DSL");
+      toast.error(error instanceof Error ? error.message : t().widgetDslCopyFailed);
     }
   };
 
   const removeSaved = async (query: PulseSavedQuery) => {
     if (!requireWritable()) return;
     if (
-      !(await prompts.confirm(`Remove saved query "${query.name}"?`, { title: "Remove query", variant: "danger" })) ||
+      !(await prompts.confirm(t().removeSavedQueryConfirm({ name: query.name }), { title: t().removeQuery, variant: "danger" })) ||
       disposed ||
       !requireWritable()
     )
@@ -241,10 +243,10 @@ export const createQueryController = (deps: QueryControllerDeps) => {
       await deleteMutation.mutate(query);
       if (disposed) return;
       if (deleteMutation.error()) throw deleteMutation.error();
-      if (!(await reconcileSavedQueries("The query was removed, but the saved-query list could not be refreshed."))) return;
-      toast.success("Query removed");
+      if (!(await reconcileSavedQueries(t().queryRemovedRefreshFailed))) return;
+      toast.success(t().queryRemoved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not remove query");
+      toast.error(error instanceof Error ? error.message : t().queryRemoveFailed);
     } finally {
       deps.setLoading(false);
     }

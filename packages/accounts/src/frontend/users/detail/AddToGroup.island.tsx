@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { EntitySearch } from "@valentinkolb/cloud/account/ui";
 import { apiClient } from "@/api/client";
+import { useAccountsMessages } from "../../messages";
 
 type AddToGroupProps = {
   id: string;
@@ -12,6 +13,7 @@ type AddToGroupProps = {
 };
 
 export default function AddToGroup(props: AddToGroupProps) {
+  const messages = useAccountsMessages();
   const mutation = mutations.create<void, string>({
     mutation: async (groupId) => {
       const res = await apiClient.groups[":id"].members.$post({
@@ -21,7 +23,7 @@ export default function AddToGroup(props: AddToGroupProps) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to add user to group.");
+        throw new Error(data.message ?? messages().addUserFailed);
       }
     },
     onSuccess: () => refreshCurrentPath(),
@@ -35,7 +37,7 @@ export default function AddToGroup(props: AddToGroupProps) {
           providers={props.userProvider === "local" ? ["local"] : undefined}
           includeGroups
           excludeGroupIds={props.excludeGroups}
-          placeholder="Search groups..."
+          placeholder={messages().searchGroups}
           disabled={mutation.loading()}
           onSelect={async (result) => {
             if (result.type === "group") {
@@ -45,14 +47,14 @@ export default function AddToGroup(props: AddToGroupProps) {
           }}
         />
       ),
-      { title: "Add to Group", icon: "ti ti-users-plus" },
+      { title: messages().addToGroup, icon: "ti ti-users-plus" },
     );
   };
 
   return (
     <Button size="sm" variant="subtle" onClick={handleClick} disabled={mutation.loading()}>
       <i class="ti ti-plus" />
-      <span>{mutation.loading() ? "Adding..." : "Add"}</span>
+      <span>{mutation.loading() ? messages().adding : messages().add}</span>
     </Button>
   );
 }

@@ -1,10 +1,13 @@
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, Checkbox, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, Checkbox, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal, onMount, Show } from "solid-js";
+import { authMessages } from "./messages";
 
 export default function GuestLoginForm(props: { redirectTo?: string; token?: string; allowSelfRegistration: boolean }) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [email, setEmail] = createSignal("");
   const [acceptedAgb, setAcceptedAgb] = createSignal(!!props.token);
   const [tokenInput, setTokenInput] = createSignal(props.token ?? "");
@@ -12,25 +15,25 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
 
   const emailMutation = mutations.create({
     mutation: async () => {
-      if (!acceptedAgb()) throw new Error("Please accept the Terms of Service and Privacy Policy.");
+      if (!acceptedAgb()) throw new Error(t().acceptLegal);
       const res = await apiClient.auth["email-login"].$post({
         json: { email: email(), acceptedAgb: true, redirectTo: props.redirectTo },
       });
       const data = (await res.json()) as Record<string, unknown>;
-      if (!res.ok) throw new Error((data.message as string) ?? "Request failed");
+      if (!res.ok) throw new Error((data.message as string) ?? t().requestFailed);
     },
     onSuccess: () => setShowTokenInput(true),
   });
 
   const tokenMutation = mutations.create({
     mutation: async () => {
-      if (!acceptedAgb()) throw new Error("Please accept the Terms of Service and Privacy Policy.");
+      if (!acceptedAgb()) throw new Error(t().acceptLegal);
       const res = await apiClient.auth["verify-token"].$post({
         json: { token: tokenInput(), acceptedAgb: true },
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(data?.message ?? "Invalid or expired token");
+        throw new Error(data?.message ?? t().invalidToken);
       }
     },
     onSuccess: () => {
@@ -58,13 +61,13 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
           class="flex flex-col gap-4"
         >
           <NoticeCard tone="success" icon={false}>
-            Check your email for the login code. The code expires after a few minutes.
+            {t().checkEmail}
           </NoticeCard>
 
           <TextInput
-            label="Login code"
-            description="Enter the one-time code from your email."
-            placeholder="Login code"
+            label={t().loginCode}
+            description={t().loginCodeDescription}
+            placeholder={t().loginCode}
             icon="ti ti-key"
             value={tokenInput}
             onValueChange={setTokenInput}
@@ -80,13 +83,13 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
           <Checkbox
             label={
               <span>
-                I accept the{" "}
+                {t().termsPrefix}{" "}
                 <a href="/legal/terms" target="_blank" class="text-primary hover:underline">
-                  Terms of Service
+                  {t().terms}
                 </a>{" "}
-                and the{" "}
+                {t().privacyJoin}{" "}
                 <a href="/legal/privacy" target="_blank" class="text-primary hover:underline">
-                  Privacy Policy
+                  {t().privacy}
                 </a>
               </span>
             }
@@ -94,8 +97,8 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
             onValueChange={setAcceptedAgb}
           />
 
-          <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel="Verifying">
-            {tokenMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : "Verify"}
+          <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().verifying}>
+            {tokenMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : t().verify}
           </Button>
         </form>
       }
@@ -108,12 +111,8 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
         class="flex flex-col gap-4"
       >
         <TextInput
-          label="Email address"
-          description={
-            props.allowSelfRegistration
-              ? "Use your Cloud email address. A guest account will be created automatically on first login."
-              : "Use the email address for your existing Cloud account."
-          }
+          label={t().emailAddress}
+          description={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
           placeholder="you@example.org"
           type="email"
           icon="ti ti-mail"
@@ -131,13 +130,13 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
         <Checkbox
           label={
             <span>
-              I accept the{" "}
+              {t().termsPrefix}{" "}
               <a href="/legal/terms" target="_blank" class="text-primary hover:underline">
-                Terms of Service
+                {t().terms}
               </a>{" "}
-              and the{" "}
+              {t().privacyJoin}{" "}
               <a href="/legal/privacy" target="_blank" class="text-primary hover:underline">
-                Privacy Policy
+                {t().privacy}
               </a>
             </span>
           }
@@ -145,15 +144,13 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
           onValueChange={setAcceptedAgb}
         />
 
-        <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel="Sending login link">
+        <Button type="submit" class="w-full justify-center py-2" loading={loading()} loadingLabel={t().sendingLoginLink}>
           {emailMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-send" />}
-          Send login link
+          {t().sendLoginLink}
         </Button>
 
         <div class="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-xs leading-5 text-dimmed dark:border-zinc-800 dark:bg-zinc-900">
-          {props.allowSelfRegistration
-            ? "New to Cloud? Enter your email address. A guest account will be created automatically on first login."
-            : "Email links only open existing accounts. Need a new account? Contact an administrator."}
+          {props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}
         </div>
       </form>
     </Show>

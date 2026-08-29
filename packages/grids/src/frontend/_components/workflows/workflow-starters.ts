@@ -1,5 +1,6 @@
 import type { PublicField, PublicTable } from "../../../api/public-dto";
 import type { CorrectionDraftIntent, GridsWorkflowLauncherConfig } from "../../../workflows/contracts";
+import { workflowMessages } from "./messages";
 
 export type WorkflowStarter = {
   name: string;
@@ -12,9 +13,9 @@ export type WorkflowStarter = {
   };
 };
 
-export const closeSelectionWorkflowStarter = (table: Pick<PublicTable, "id" | "name">): WorkflowStarter => ({
-  name: `Close selected ${table.name} Records`,
-  description: "Finalize an exact reviewed selection, or request Four-eyes Finalization when the Table requires approval.",
+export const closeSelectionWorkflowStarter = (table: Pick<PublicTable, "id" | "name">, locale = "en"): WorkflowStarter => ({
+  name: workflowMessages.resolve([locale]).t.closeSelectedRecords({ table: table.name }),
+  description: workflowMessages.resolve([locale]).t.closeSelectionDescription,
   enabled: true,
   source: `inputs:
   records:
@@ -37,7 +38,7 @@ steps:
           expectedPolicyRevision: inputs.closePolicyRevision
 `,
   launcher: {
-    name: "Close selection",
+    name: workflowMessages.resolve([locale]).t.closeSelection,
     config: {
       kind: "bulk",
       input: "records",
@@ -46,18 +47,22 @@ steps:
   },
 });
 
-export const correctionDraftWorkflowStarter = (params: {
-  table: Pick<PublicTable, "id" | "name">;
-  intent: CorrectionDraftIntent;
-  typeField: Pick<PublicField, "id">;
-  typeValue: string;
-  originalField: Pick<PublicField, "id">;
-  copyFields: Array<Pick<PublicField, "id">>;
-}): WorkflowStarter => {
-  const intentLabel = params.intent === "cancellation" ? "cancellation" : "correction";
+export const correctionDraftWorkflowStarter = (
+  params: {
+    table: Pick<PublicTable, "id" | "name">;
+    intent: CorrectionDraftIntent;
+    typeField: Pick<PublicField, "id">;
+    typeValue: string;
+    originalField: Pick<PublicField, "id">;
+    copyFields: Array<Pick<PublicField, "id">>;
+  },
+  locale = "en",
+): WorkflowStarter => {
+  const t = workflowMessages.resolve([locale]).t;
+  const intentLabel = params.intent === "cancellation" ? t.cancellationIntent : t.correctionIntent;
   return {
-    name: `Create ${params.table.name} ${intentLabel} Draft`,
-    description: `Create one ${intentLabel} Draft linked to an unchanged finalized original Record.`,
+    name: t.correctionDraftName({ table: params.table.name, intent: intentLabel }),
+    description: t.correctionDraftDescription({ intent: intentLabel }),
     enabled: true,
     source: `inputs:
   original:
@@ -78,7 +83,7 @@ ${
 }
 `,
     launcher: {
-      name: `Create ${intentLabel}`,
+      name: t.createIntent({ intent: intentLabel }),
       config: {
         kind: "record",
         input: "original",

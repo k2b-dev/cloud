@@ -1,5 +1,5 @@
 import { listApps } from "@valentinkolb/cloud";
-import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@valentinkolb/cloud/server";
 import {
   latestGatewayRouteSnapshot,
   settingsDeleteLegacyKeys,
@@ -31,6 +31,7 @@ import { metricsApiRoutes } from "./observability/metrics/api";
 import { TELEMETRY_RANGES, type TelemetryRange } from "./observability/telemetry/contracts";
 import { getTelemetryPrefixTotals } from "./observability/telemetry/service";
 import { removeOfflineRegisteredApp } from "./registered-apps";
+import { gatewayOpsMessages } from "./messages";
 import { getTelemetrySummary, listTelemetryApps, listTelemetryEvents } from "./telemetry";
 
 const GATEWAY_SETTING_GROUP = "gateway";
@@ -87,6 +88,14 @@ const HealthWebhookInputSchema = z.object({
 
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
+const healthWebhookInputError = (c: Parameters<typeof getLocale>[0], error: unknown): string => {
+  const { t } = gatewayOpsMessages.resolve([getLocale(c)]);
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === "Webhook URL must use http or https.") return t.webhookUrlProtocol;
+  if (message === "Webhook name is required.") return t.webhookNameRequired;
+  return message;
+};
+
 export const apiRoutes = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("admin"))
@@ -96,7 +105,7 @@ export const apiRoutes = new Hono<AuthContext>()
     return respond(c, removeOfflineRegisteredApp(id, await listApps()));
   })
   .get("/settings", async (c) => {
-    const result = await settingsService.entry.list({ filter: { group: GATEWAY_SETTING_GROUP } });
+    const result = await settingsService.entry.list({ filter: { group: GATEWAY_SETTING_GROUP }, locale: getLocale(c) });
     return respond(c, ok(result.items));
   })
   // Compatibility shim for older ops clients. Core owns platform settings now;
@@ -157,9 +166,9 @@ export const apiRoutes = new Hono<AuthContext>()
       }),
     );
   })
-  .get("/data", async (c) => respond(c, ok(await getDataDiagnostics())))
-  .get("/data/postgres", async (c) => respond(c, ok(await getPostgresDiagnostics())))
-  .get("/data/redis", async (c) => respond(c, ok(await getRedisDiagnostics())))
+  .get("/data", async (c) => respond(c, ok(await getDataDiagnostics(getLocale(c)))))
+  .get("/data/postgres", async (c) => respond(c, ok(await getPostgresDiagnostics(getLocale(c)))))
+  .get("/data/redis", async (c) => respond(c, ok(await getRedisDiagnostics(getLocale(c)))))
   .get("/data/postgres/sessions", async (c) => respond(c, ok({ items: await listPostgresSessions() })))
   .get("/data/postgres/indexes", async (c) => respond(c, ok({ items: await listPostgresIndexes() })))
   .get("/telemetry/summary", v("query", TelemetrySummaryQuerySchema), async (c) => {
@@ -193,29 +202,31 @@ export const apiRoutes = new Hono<AuthContext>()
     try {
       return respond(c, ok(await createHealthWebhook(c.req.valid("json"))));
     } catch (error) {
-      return respond(c, fail(err.badInput(error instanceof Error ? error.message : String(error))));
+      return respond(c, fail(err.badInput(healthWebhookInputError(c, error))));
     }
   })
   .put("/health/webhooks/:id", v("param", HealthWebhookIdParamSchema), v("json", HealthWebhookInputSchema), async (c) => {
     const { id } = c.req.valid("param");
     try {
       const webhook = await updateHealthWebhook(id, c.req.valid("json"));
-      if (!webhook) return respond(c, fail(err.notFound("Health webhook")));
+      if (!webhook) return respond(c, fail(err.notFound(gatewayOpsMessages.resolve([getLocale(c)]).t.healthWebhookNotFound)));
       return respond(c, ok(webhook));
     } catch (error) {
-      return respond(c, fail(err.badInput(error instanceof Error ? error.message : String(error))));
+      return respond(c, fail(err.badInput(healthWebhookInputError(c, error))));
     }
   })
   .delete("/health/webhooks/:id", v("param", HealthWebhookIdParamSchema), async (c) => {
     const { id } = c.req.valid("param");
-    if (!(await deleteHealthWebhook(id))) return respond(c, fail(err.notFound("Health webhook")));
-    return respond(c, ok({ message: "Webhook deleted" }));
+    const { t } = gatewayOpsMessages.resolve([getLocale(c)]);
+    if (!(await deleteHealthWebhook(id))) return respond(c, fail(err.notFound(t.healthWebhookNotFound)));
+    return respond(c, ok({ message: t.webhookDeleted }));
   })
   .post("/health/webhooks/:id/test", v("param", HealthWebhookIdParamSchema), async (c) => {
     const { id } = c.req.valid("param");
-    if (!(await getHealthWebhook(id))) return respond(c, fail(err.notFound("Health webhook")));
+    const { t } = gatewayOpsMessages.resolve([getLocale(c)]);
+    if (!(await getHealthWebhook(id))) return respond(c, fail(err.notFound(t.healthWebhookNotFound)));
     const jobId = await testHealthWebhook(id);
-    return respond(c, ok({ message: "Webhook test submitted", jobId }));
+    return respond(c, ok({ message: t.webhookTestSubmitted, jobId }));
   });
 
 export type ApiType = typeof apiRoutes;

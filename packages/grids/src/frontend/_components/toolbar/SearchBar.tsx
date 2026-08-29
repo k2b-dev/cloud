@@ -1,8 +1,9 @@
 import { timed as timing } from "@k2b/stdlib/solid";
-import { MultiSelectInput, TextInput } from "@k2b/ui";
+import { MultiSelectInput, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { fieldChoiceGroupsFor, fieldTypeGroups } from "../fields/field-type-meta";
+import { toolbarMessages } from "./messages";
 
 type Props = {
   /** Fields the server-side search compiler can search. */
@@ -27,6 +28,8 @@ type Props = {
  * inline as a compact multi-select on the right.
  */
 export default function SearchBar(props: Props) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const [q, setQ] = createSignal(props.initialQ);
   const [qFields, setQFields] = createSignal<string[]>(props.initialQFields);
 
@@ -52,12 +55,12 @@ export default function SearchBar(props: Props) {
   };
 
   const allFieldsLabel = () => {
-    if (qFields().length === 0) return "Search all";
+    if (qFields().length === 0) return t().searchAll;
     if (qFields().length === 1) {
       const f = props.fields.find((f) => f.id === qFields()[0]);
-      return f?.name ?? "1 column";
+      return f?.name ?? t().oneColumn;
     }
-    return `${qFields().length} columns`;
+    return t().columns({ count: qFields().length });
   };
 
   return (
@@ -66,9 +69,9 @@ export default function SearchBar(props: Props) {
         <TextInput
           name="grids-record-search"
           type="search"
-          aria-label="Search records"
+          aria-label={t().searchRecords}
           icon="ti ti-search"
-          placeholder="Search records..."
+          placeholder={t().searchRecordsPlaceholder}
           value={q}
           onValueChange={onInput}
           clearable
@@ -82,7 +85,7 @@ export default function SearchBar(props: Props) {
       <Show when={props.fields.length > 0}>
         <div class="min-w-40 flex-[0_1_16rem]">
           <MultiSelectInput
-            aria-label="Search record columns"
+            aria-label={t().searchColumns}
             icon="ti ti-columns"
             placeholder={allFieldsLabel()}
             value={qFields}
@@ -94,8 +97,8 @@ export default function SearchBar(props: Props) {
               description: f.type,
               groups: fieldTypeGroups(f.type),
             }))}
-            groups={fieldChoiceGroupsFor(props.fields)}
-            groupsAriaLabel="Filter columns"
+            groups={fieldChoiceGroupsFor(props.fields, [], locale())}
+            groupsAriaLabel={t().filterColumns}
             renderOption={(option) => (
               <span class="flex min-w-0 items-baseline gap-1.5">
                 <strong class="truncate">{option.label}</strong>

@@ -1,11 +1,12 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import DenyRequest from "../users/DenyRequest.island";
 import CreateUserForm from "../users/new/CreateUserForm.island";
 
@@ -36,6 +37,9 @@ const STATUS_PILL: Record<Exclude<StatusFilter, "all">, string> = {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const statusLabel = (value: StatusFilter) =>
+    value === "all" ? t.all : value === "pending" ? t.pending : value === "completed" ? t.completed : t.denied;
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const page = parsePage(c.req.query("page"));
@@ -59,22 +63,22 @@ export default ssr<AuthContext>(async (c) => {
   const paginationUrl = paginationBaseUrl.includes("?") ? `${paginationBaseUrl}&page=` : `${paginationBaseUrl}?page=`;
   type RequestRow = (typeof requestsPage.items)[number];
   const columns: DataTableColumn<RequestRow>[] = [
-    { id: "request", header: "Request", value: (request) => request.displayName || `${request.firstName} ${request.lastName}` },
-    { id: "email", header: "Email", value: (request) => request.email },
-    { id: "status", header: "Status", value: (request) => request.status },
-    { id: "requested", header: "Requested", value: (request) => request.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "comment", header: "Comment", value: (request) => request.comment, cellClass: "max-w-[20rem]" },
-    { id: "actions", header: "Actions", headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
+    { id: "request", header: t.request, value: (request) => request.displayName || `${request.firstName} ${request.lastName}` },
+    { id: "email", header: t.email, value: (request) => request.email },
+    { id: "status", header: t.status, value: (request) => request.status },
+    { id: "requested", header: t.requested, value: (request) => request.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "comment", header: t.comment, value: (request) => request.comment, cellClass: "max-w-[20rem]" },
+    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
   ];
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Requests" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.requests }]}>
       <AccountsWorkspace active="requests" isAdmin={true} pendingRequests={pendingPage.total} scrollPreserveKey="accounts-requests">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-requests-title">
-            <h1 class="text-base font-semibold text-primary">Requests</h1>
+            <h1 class="text-base font-semibold text-primary">{t.requests}</h1>
             <p class="mt-1 text-xs text-dimmed">
-              {requestsPage.total} {status === "all" ? "requests" : `${status} requests`}
+              {t.requestCount({ count: requestsPage.total, status: status === "all" ? undefined : status })}
             </p>
           </div>
 
@@ -86,7 +90,7 @@ export default ssr<AuthContext>(async (c) => {
                 variant={status === value ? "primary" : "subtle"}
                 aria-current={status === value ? "page" : undefined}
               >
-                {value === "all" ? "All" : value[0]!.toUpperCase() + value.slice(1)}
+                {statusLabel(value)}
               </ButtonLink>
             ))}
             <div class="ml-auto">
@@ -95,7 +99,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           {requestsPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>No requests found.</>} />
+            <Placeholder surface="paper" description={<>{t.noRequests}</>} />
           ) : (
             <>
               <div class="paper overflow-hidden" style="view-transition-name: accounts-requests-table">
@@ -114,9 +118,11 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "email") return <span class="text-dimmed">{request.email}</span>;
                     if (col.id === "status")
                       return (
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_PILL[request.status]}`}>{request.status}</span>
+                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_PILL[request.status]}`}>
+                          {statusLabel(request.status)}
+                        </span>
                       );
-                    if (col.id === "requested") return <span class="text-dimmed">{dates.formatDate(request.createdAt)}</span>;
+                    if (col.id === "requested") return <span class="text-dimmed">{dates.formatDate(request.createdAt, { locale })}</span>;
                     if (col.id === "comment")
                       return (
                         <span class="truncate text-dimmed" title={request.comment || "-"}>
@@ -128,7 +134,7 @@ export default ssr<AuthContext>(async (c) => {
                         <div class="flex justify-end gap-1">
                           {freeIpaEnabled ? (
                             <CreateUserForm
-                              buttonLabel="Create"
+                              buttonLabel={t.create}
                               buttonIcon="ti ti-user-plus"
                               freeIpaEnabled={freeIpaEnabled}
                               prefill={{

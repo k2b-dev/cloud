@@ -1,37 +1,15 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import DeletedAccountDetails from "./DeletedAccountDetails.island";
 import DeletedAccountsFilters from "./DeletedAccountsFilters.island";
-
-const formatReason = (reason: string): string => {
-  switch (reason) {
-    case "ipa_expired_demoted":
-      return "IPA expired demotion";
-    case "ipa_expired_deleted":
-      return "IPA expired deletion";
-    case "sync_out_of_scope_demoted":
-      return "Sync out-of-scope demotion";
-    case "sync_out_of_scope_deleted":
-      return "Sync out-of-scope deletion";
-    case "guest_expired_deleted":
-      return "Expired guest cleanup";
-    case "local_user_expired_deleted":
-      return "Expired local user cleanup";
-    case "manual_demote":
-      return "Manual demotion";
-    case "manual_delete":
-      return "Manual deletion";
-    default:
-      return reason;
-  }
-};
 
 const parsePage = (value: string | undefined): number => {
   const parsed = Number.parseInt(value ?? "1", 10);
@@ -48,6 +26,18 @@ const buildUrl = (params: { search?: string; reason?: string; page?: number }) =
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const formatReason = (reason: string): string =>
+    ({
+      ipa_expired_demoted: t.deletedReasonIpaDemoted,
+      ipa_expired_deleted: t.deletedReasonIpaDeleted,
+      sync_out_of_scope_demoted: t.deletedReasonSyncDemoted,
+      sync_out_of_scope_deleted: t.deletedReasonSyncDeleted,
+      guest_expired_deleted: t.deletedReasonGuestExpired,
+      local_user_expired_deleted: t.deletedReasonLocalExpired,
+      manual_demote: t.deletedReasonManualDemote,
+      manual_delete: t.deletedReasonManualDelete,
+    })[reason] ?? reason;
   const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
@@ -74,36 +64,34 @@ export default ssr<AuthContext>(async (c) => {
   })();
   type DeletedAccountRow = (typeof deletedAccountsPage.items)[number];
   const columns: DataTableColumn<DeletedAccountRow>[] = [
-    { id: "account", header: "Account", value: (entry) => entry.displayName || entry.uid },
-    { id: "email", header: "Email", value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
-    { id: "provider", header: "Provider", value: (entry) => entry.previousProvider },
-    { id: "profile", header: "Profile", value: (entry) => entry.previousProfile },
-    { id: "reason", header: "Reason", value: (entry) => formatReason(entry.reason) },
-    { id: "deleted", header: "Deleted", value: (entry) => entry.deletedAt, cellClass: "whitespace-nowrap" },
-    { id: "details", header: "Details", headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
+    { id: "account", header: t.account, value: (entry) => entry.displayName || entry.uid },
+    { id: "email", header: t.email, value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
+    { id: "provider", header: t.provider, value: (entry) => entry.previousProvider },
+    { id: "profile", header: t.profile, value: (entry) => entry.previousProfile },
+    { id: "reason", header: t.reason, value: (entry) => formatReason(entry.reason) },
+    { id: "deleted", header: t.deleted, value: (entry) => entry.deletedAt, cellClass: "whitespace-nowrap" },
+    { id: "details", header: t.details, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
   ];
 
   return () => (
     <Layout
       c={c}
       fullWidth
-      title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Deleted Accounts" }]}
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.deletedAccounts }]}
     >
       <AccountsWorkspace active="deleted-accounts" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-deleted">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-deleted-title">
-            <h1 class="text-base font-semibold text-primary">Deleted Accounts</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {deletedAccountsPage.total} {deletedAccountsPage.total === 1 ? "deleted account" : "deleted accounts"}
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.deletedAccounts}</h1>
+            <p class="mt-1 text-xs text-dimmed">{t.deletedAccountCount({ count: deletedAccountsPage.total })}</p>
           </div>
 
           <div style="view-transition-name: accounts-deleted-search">
             <SearchBar
               action={buildUrl({ reason, page: 1 })}
               value={search}
-              placeholder="Search deleted accounts..."
-              ariaLabel="Search deleted accounts"
+              placeholder={t.searchDeletedAccounts}
+              ariaLabel={t.searchDeletedAccounts}
             />
           </div>
 
@@ -112,7 +100,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           {deletedAccountsPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>No deleted accounts found.</>} />
+            <Placeholder surface="paper" description={<>{t.noDeletedAccounts}</>} />
           ) : (
             <div class="paper overflow-hidden" style="view-transition-name: accounts-deleted-table">
               <DataTable
@@ -133,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "provider") return <span class="text-dimmed">{entry.previousProvider || "-"}</span>;
                   if (col.id === "profile") return <span class="text-dimmed">{entry.previousProfile || "-"}</span>;
                   if (col.id === "reason") return <span class="text-dimmed">{formatReason(entry.reason)}</span>;
-                  if (col.id === "deleted") return <span class="text-dimmed">{dates.formatDateTime(entry.deletedAt)}</span>;
+                  if (col.id === "deleted") return <span class="text-dimmed">{dates.formatDateTime(entry.deletedAt, { locale })}</span>;
                   if (col.id === "details") {
                     return (
                       <DeletedAccountDetails
@@ -143,7 +131,7 @@ export default ssr<AuthContext>(async (c) => {
                         previousProvider={entry.previousProvider}
                         previousProfile={entry.previousProfile}
                         reason={formatReason(entry.reason)}
-                        deletedAt={dates.formatDateTime(entry.deletedAt)}
+                        deletedAt={dates.formatDateTime(entry.deletedAt, { locale })}
                         metadata={entry.meta}
                       />
                     );

@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accountsAppService as accountsService,
   coreSettings,
@@ -16,16 +16,9 @@ import { ssr } from "../../../config";
 import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import RemoveMember from "../../groups/detail/RemoveMember.island";
-import {
-  getAccountTypeLabel,
-  getManagementBadge,
-  getManagementLabel,
-  getPrimaryAccountBadge,
-  getSupplementalRoleColor,
-  getSupplementalRoleLabel,
-  getSupplementalRoles,
-} from "../../lib/account-badges";
+import { getManagementBadge, getPrimaryAccountBadge, getSupplementalRoleColor, getSupplementalRoles } from "../../lib/account-badges";
 import { buildUserDetailUrl, buildUsersUrl, parseUsersListState } from "../../lib/url-state";
+import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
 import AddToGroup from "./AddToGroup.island";
 import UserActions from "./UserActions.island";
@@ -45,9 +38,9 @@ const formatAddress = (a: {
   return parts.length > 0 ? parts.join(", ") : null;
 };
 
-const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value) : "-");
-
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const id = c.req.param("id")!;
   const recursive = c.req.query("recursive") === "true";
   const sessionUser = expectUserBackedActor(c);
@@ -68,18 +61,18 @@ export default ssr<AuthContext>(async (c) => {
         c={c}
         fullWidth
         title={[
-          { title: "Start", href: "/" },
-          { title: "Accounts", href: "/app/accounts" },
-          { title: "Users", href: "/app/accounts/users" },
-          { title: "Not Found" },
+          { title: t.start, href: "/" },
+          { title: t.accounts, href: "/app/accounts" },
+          { title: t.users, href: "/app/accounts/users" },
+          { title: t.notFound },
         ]}
       >
         <div class="flex-1 flex items-center justify-center">
           <div class="text-center text-dimmed flex flex-col items-center gap-2">
             <i class="ti ti-user-off text-4xl" />
-            <p class="text-sm">User not found.</p>
+            <p class="text-sm">{t.userNotFound}</p>
             <a href={buildUsersUrl(listState)} class="text-xs hover:text-primary">
-              Back to Users
+              {t.backToUsers}
             </a>
           </div>
         </div>
@@ -143,104 +136,104 @@ export default ssr<AuthContext>(async (c) => {
 
   const facts: Array<{ label: string; value: JSX.Element }> = [
     { label: "UID", value: <span class="font-mono">{user.uid}</span> },
-    { label: "Database ID", value: <span class="truncate font-mono text-[11px]">{user.id}</span> },
-    { label: "Managed by", value: <span>{getManagementLabel(user)}</span> },
-    { label: "Access", value: <span>{getAccountTypeLabel(user)}</span> },
+    { label: t.databaseId, value: <span class="truncate font-mono text-[11px]">{user.id}</span> },
+    { label: t.managedBy, value: <span>{user.provider === "ipa" ? "FreeIPA" : t.local}</span> },
+    { label: t.access, value: <span>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span> },
     {
-      label: "Email",
-      value: user.mail ? <span class="truncate">{user.mail}</span> : <span class="italic text-dimmed">Not set</span>,
+      label: t.email,
+      value: user.mail ? <span class="truncate">{user.mail}</span> : <span class="italic text-dimmed">{t.notSet}</span>,
     },
     {
-      label: isIpaUser ? "Password expires" : "Account expires",
+      label: isIpaUser ? t.passwordExpires : t.accountExpires,
       value: isIpaUser ? (
         ipa?.passwordExpires ? (
-          <span>{dates.formatDate(ipa.passwordExpires)}</span>
+          <span>{dates.formatDate(ipa.passwordExpires, { locale })}</span>
         ) : (
-          <span class="italic text-dimmed">Never</span>
+          <span class="italic text-dimmed">{t.never}</span>
         )
       ) : user.accountExpires ? (
         <span class={isExpired ? "text-red-600 dark:text-red-400" : ""}>
-          {dates.formatDate(user.accountExpires)}
-          {isExpired ? " (expired)" : ""}
+          {dates.formatDate(user.accountExpires, { locale })}
+          {isExpired ? t.expiredSuffix : ""}
         </span>
       ) : (
-        <span class="italic text-dimmed">Never</span>
+        <span class="italic text-dimmed">{t.never}</span>
       ),
     },
     {
-      label: isIpaUser ? "Account expires" : isGuestProfile ? "Guest expires" : "Last web login",
+      label: isIpaUser ? t.accountExpires : isGuestProfile ? t.guestExpires : t.lastWebLogin,
       value: isIpaUser ? (
         user.accountExpires ? (
           <span class={isExpired ? "text-red-600 dark:text-red-400" : ""}>
-            {dates.formatDate(user.accountExpires)}
-            {isExpired ? " (expired)" : ""}
+            {dates.formatDate(user.accountExpires, { locale })}
+            {isExpired ? t.expiredSuffix : ""}
           </span>
         ) : (
-          <span class="italic text-dimmed">Never</span>
+          <span class="italic text-dimmed">{t.never}</span>
         )
       ) : user.lastLoginLocal ? (
-        <span>{dates.formatDate(user.lastLoginLocal)}</span>
+        <span>{dates.formatDate(user.lastLoginLocal, { locale })}</span>
       ) : (
-        <span class="italic text-dimmed">Never</span>
+        <span class="italic text-dimmed">{t.never}</span>
       ),
     },
     {
-      label: isIpaUser ? "Last Kerberos login" : "Direct groups",
+      label: isIpaUser ? t.lastKerberosLogin : t.directGroups,
       value: isIpaUser ? (
         ipa?.lastLoginIpa ? (
-          <span>{dates.formatDate(ipa.lastLoginIpa)}</span>
+          <span>{dates.formatDate(ipa.lastLoginIpa, { locale })}</span>
         ) : (
-          <span class="italic text-dimmed">Never / Not tracked</span>
+          <span class="italic text-dimmed">{t.neverTracked}</span>
         )
       ) : (
         <span>{directGroups.length}</span>
       ),
     },
     {
-      label: isIpaUser ? "Last web login" : "Managed groups",
+      label: isIpaUser ? t.lastWebLogin : t.managedGroups,
       value: isIpaUser ? (
         user.lastLoginLocal ? (
-          <span>{dates.formatDate(user.lastLoginLocal)}</span>
+          <span>{dates.formatDate(user.lastLoginLocal, { locale })}</span>
         ) : (
-          <span class="italic text-dimmed">Never</span>
+          <span class="italic text-dimmed">{t.never}</span>
         )
       ) : (
         <span>{managedGroups.length}</span>
       ),
     },
-    { label: "API keys", value: <span>{apiKeysPage.total}</span> },
+    { label: t.apiKeys, value: <span>{apiKeysPage.total}</span> },
   ];
 
   if (isIpaUser && ipa?.employeeType) {
-    facts.push({ label: "Role", value: <span>{ipa.employeeType}</span> });
+    facts.push({ label: t.role, value: <span>{ipa.employeeType}</span> });
   }
   if (isIpaUser && ipa?.mobile && ipa.mobile !== ipa.phone) {
-    facts.push({ label: "Mobile", value: <span>{ipa.mobile}</span> });
+    facts.push({ label: t.mobile, value: <span>{ipa.mobile}</span> });
   }
   if (isIpaUser && ipa?.address && formatAddress(ipa.address)) {
-    facts.push({ label: "Address", value: <span>{formatAddress(ipa.address)}</span> });
+    facts.push({ label: t.address, value: <span>{formatAddress(ipa.address)}</span> });
   }
 
   const detailHref = buildUserDetailUrl(id, listState);
   const toggleUrl = recursive ? detailHref : `${detailHref}${detailHref.includes("?") ? "&" : "?"}recursive=true`;
   const memberGroupColumns: DataTableColumn<BaseGroup>[] = [
-    { id: "group", header: "Group", value: (group) => group.name },
-    { id: "description", header: "Description", value: (group) => group.description, cellClass: "max-w-[24rem]" },
-    { id: "provider", header: "Provider", value: (group) => group.provider },
-    { id: "membership", header: "Membership", value: (group) => (directGroupSet.has(group.id) ? "Direct" : "Inherited") },
-    { id: "actions", header: "Actions", headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
+    { id: "group", header: t.group, value: (group) => group.name },
+    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[24rem]" },
+    { id: "provider", header: t.provider, value: (group) => group.provider },
+    { id: "membership", header: t.membership, value: (group) => (directGroupSet.has(group.id) ? t.direct : t.inherited) },
+    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
   ];
   const managedGroupColumns: DataTableColumn<BaseGroup>[] = [
-    { id: "group", header: "Group", value: (group) => group.name },
-    { id: "description", header: "Description", value: (group) => group.description, cellClass: "max-w-[24rem]" },
-    { id: "provider", header: "Provider", value: (group) => group.provider },
+    { id: "group", header: t.group, value: (group) => group.name },
+    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[24rem]" },
+    { id: "provider", header: t.provider, value: (group) => group.provider },
   ];
   const apiKeyColumns: DataTableColumn<ServiceAccountCredentialOverview>[] = [
-    { id: "key", header: "API Key", value: (key) => key.name, cellClass: "min-w-[14rem]" },
-    { id: "expires", header: "Expires", value: (key) => key.expiresAt, cellClass: "whitespace-nowrap" },
-    { id: "lastUsed", header: "Last used", value: (key) => key.lastUsedAt, cellClass: "whitespace-nowrap" },
-    { id: "created", header: "Created", value: (key) => key.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "actions", header: "Actions", headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
+    { id: "key", header: t.apiKey, value: (key) => key.name, cellClass: "min-w-[14rem]" },
+    { id: "expires", header: t.expires, value: (key) => key.expiresAt, cellClass: "whitespace-nowrap" },
+    { id: "lastUsed", header: t.lastUsed, value: (key) => key.lastUsedAt, cellClass: "whitespace-nowrap" },
+    { id: "created", header: t.created, value: (key) => key.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
   ];
 
   return () => (
@@ -248,9 +241,9 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       title={[
-        { title: "Start", href: "/" },
-        { title: "Accounts", href: "/app/accounts" },
-        { title: "Users", href: "/app/accounts/users" },
+        { title: t.start, href: "/" },
+        { title: t.accounts, href: "/app/accounts" },
+        { title: t.users, href: "/app/accounts/users" },
         { title: user.uid },
       ]}
     >
@@ -269,16 +262,20 @@ export default ssr<AuthContext>(async (c) => {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h1 class="text-xl font-semibold tracking-tight text-primary">{displayTitle}</h1>
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>{primaryBadge.label}</span>
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${managementBadge.className}`}>{managementBadge.label}</span>
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>
+                    {user.profile === "user" ? t.fullAccount : t.guestAccount}
+                  </span>
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${managementBadge.className}`}>
+                    {user.provider === "ipa" ? "FreeIPA" : t.local}
+                  </span>
                   {supplementalRoles.map((role) => (
                     <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${getSupplementalRoleColor(role)}`}>
-                      {getSupplementalRoleLabel(role)}
+                      {role === "group-manager" ? t.groupManager : t.admin}
                     </span>
                   ))}
                   {isExpired && (
                     <span class="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/50 dark:text-red-300">
-                      Expired
+                      {t.expired}
                     </span>
                   )}
                 </div>
@@ -302,7 +299,7 @@ export default ssr<AuthContext>(async (c) => {
                 <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs text-dimmed">
                   <span class="flex items-center gap-2">
                     <i class="ti ti-key text-sm" />
-                    {ipa?.sshPublicKeys.length ?? 0} SSH {(ipa?.sshPublicKeys.length ?? 0) === 1 ? "key" : "keys"}
+                    {t.sshKeyCount({ count: ipa?.sshPublicKeys.length ?? 0 })}
                   </span>
                   <i class="ti ti-chevron-right text-xs transition-transform group-open:rotate-90" />
                 </summary>
@@ -320,10 +317,8 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-api-keys">
             <div class="flex flex-wrap items-end justify-between gap-2">
               <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">API Keys</h2>
-                <p class="mt-1 text-xs text-dimmed">
-                  {apiKeysPage.total} active personal automation {apiKeysPage.total === 1 ? "key" : "keys"}
-                </p>
+                <h2 class="text-base font-semibold text-primary">{t.apiKeys}</h2>
+                <p class="mt-1 text-xs text-dimmed">{t.personalAutomationKeys({ count: apiKeysPage.total })}</p>
               </div>
               <ButtonLink
                 href={`/app/accounts/service-accounts?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`}
@@ -331,7 +326,7 @@ export default ssr<AuthContext>(async (c) => {
                 variant="subtle"
               >
                 <i class="ti ti-external-link" />
-                View all
+                {t.viewAll}
               </ButtonLink>
             </div>
 
@@ -355,23 +350,25 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     if (col.id === "expires") return <span class="text-dimmed">{formatNullableDate(key.expiresAt)}</span>;
                     if (col.id === "lastUsed") return <span class="text-dimmed">{formatNullableDate(key.lastUsedAt)}</span>;
-                    if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(key.createdAt)}</span>;
+                    if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(key.createdAt, { locale })}</span>;
                     if (col.id === "actions") return <ServiceAccountCredentialActions credentialId={key.id} name={key.name} />;
                     return "";
                   }}
                 />
               </div>
             ) : (
-              <Placeholder surface="paper" description={<>No active API keys for this user.</>} />
+              <Placeholder surface="paper" description={<>{t.noActiveApiKeys}</>} />
             )}
           </div>
 
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-memberships">
             <div class="flex flex-wrap items-end justify-between gap-2">
               <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">Groups</h2>
+                <h2 class="text-base font-semibold text-primary">{t.groups}</h2>
                 <p class="mt-1 text-xs text-dimmed">
-                  {totalMemberGroups} {recursive ? "memberships including inherited groups" : "direct group memberships"}
+                  {recursive
+                    ? t.membershipsIncludingInherited({ count: totalMemberGroups })
+                    : t.directMemberships({ count: totalMemberGroups })}
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
@@ -380,10 +377,10 @@ export default ssr<AuthContext>(async (c) => {
                   size="sm"
                   variant={recursive ? "primary" : "subtle"}
                   aria-current={recursive ? "true" : undefined}
-                  title={recursive ? "Show direct memberships only" : "Show all memberships including inherited ones"}
+                  title={recursive ? t.showDirectOnly : t.showAllMemberships}
                 >
                   <i class="ti ti-git-branch" />
-                  {recursive ? "All groups" : "Direct only"}
+                  {recursive ? t.allGroups : t.directOnly}
                 </ButtonLink>
                 <AddToGroup id={user.id} userProvider={user.provider} excludeGroups={allGroups.map((group) => group.id)} />
               </div>
@@ -410,15 +407,15 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     if (col.id === "description") {
                       return (
-                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || "No description"}>
-                          {group.description || <span class="italic">No description</span>}
+                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || t.noDescription}>
+                          {group.description || <span class="italic">{t.noDescription}</span>}
                         </a>
                       );
                     }
                     if (col.id === "provider")
                       return (
                         <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                          {group.provider === "ipa" ? "FreeIPA" : "Local"}
+                          {group.provider === "ipa" ? "FreeIPA" : t.local}
                         </span>
                       );
                     if (col.id === "membership") {
@@ -426,7 +423,7 @@ export default ssr<AuthContext>(async (c) => {
                         <span
                           class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${isDirect ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"}`}
                         >
-                          {isDirect ? "Direct" : "Inherited"}
+                          {isDirect ? t.direct : t.inherited}
                         </span>
                       );
                     }
@@ -439,17 +436,15 @@ export default ssr<AuthContext>(async (c) => {
                 />
               </div>
             ) : (
-              <Placeholder surface="paper" description={<>Not a member of any groups.</>} />
+              <Placeholder surface="paper" description={<>{t.noGroupMemberships}</>} />
             )}
           </div>
 
           {managedGroups.length > 0 && (
             <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-managed-groups">
               <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">Manages</h2>
-                <p class="mt-1 text-xs text-dimmed">
-                  {managedGroups.length} manageable group{managedGroups.length === 1 ? "" : "s"}
-                </p>
+                <h2 class="text-base font-semibold text-primary">{t.manages}</h2>
+                <p class="mt-1 text-xs text-dimmed">{t.manageableGroups({ count: managedGroups.length })}</p>
               </div>
 
               <div class="paper overflow-hidden">
@@ -470,8 +465,8 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     if (col.id === "description") {
                       return (
-                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || "No description"}>
-                          {group.description || <span class="italic">No description</span>}
+                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || t.noDescription}>
+                          {group.description || <span class="italic">{t.noDescription}</span>}
                         </a>
                       );
                     }
@@ -480,7 +475,7 @@ export default ssr<AuthContext>(async (c) => {
                         <span
                           class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${group.provider === "ipa" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"}`}
                         >
-                          {group.provider === "ipa" ? "FreeIPA" : "Local"}
+                          {group.provider === "ipa" ? "FreeIPA" : t.local}
                         </span>
                       );
                     }

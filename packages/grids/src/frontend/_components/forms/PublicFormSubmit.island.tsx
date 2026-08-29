@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, NoticeCard, PanelHeader } from "@k2b/ui";
+import { Button, NoticeCard, PanelHeader, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { evaluateFormValidations } from "../../../form-validations";
@@ -13,6 +13,7 @@ import {
   type InlineCreateState,
   userInputEntriesOf,
 } from "./form-fields";
+import { gridsFormMessages } from "./messages";
 
 type Props = {
   /** Form config (fields, labels, defaults) — server-trusted. */
@@ -40,6 +41,8 @@ type Props = {
  * Checkbox / Select / CheckboxCards for select).
  */
 export default function FormSubmit(props: Props) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
   const entries = userInputEntriesOf(props.form.config.fields);
   let formRef: HTMLFormElement | undefined;
@@ -98,7 +101,7 @@ export default function FormSubmit(props: Props) {
             json: submitPayload,
           });
       if (!res.ok) {
-        setError(await errorMessage(res, "Submit failed"));
+        setError(await errorMessage(res, t().submitFailed));
         return;
       }
       if (props.submitUrl) {
@@ -115,7 +118,7 @@ export default function FormSubmit(props: Props) {
       }
       setDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Submit failed");
+      setError(e instanceof Error ? e.message : t().submitFailed);
     } finally {
       setSubmitting(false);
     }
@@ -151,7 +154,7 @@ export default function FormSubmit(props: Props) {
         fallback={
           <NoticeCard tone="success" icon={false} bodyClass="flex items-center gap-2">
             <i class="ti ti-circle-check shrink-0" />
-            <span>{props.form.config.successMessage ?? "Saved"}</span>
+            <span>{props.form.config.successMessage ?? t().saved}</span>
           </NoticeCard>
         }
       >
@@ -164,7 +167,7 @@ export default function FormSubmit(props: Props) {
           <Show when={hasInlineCreate()}>
             <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
               <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-              <span>This form can create linked records too. Everything is saved together when you submit.</span>
+              <span>{t().linkedRecordsWarning}</span>
             </NoticeCard>
           </Show>
           <For each={entries}>
@@ -202,7 +205,7 @@ export default function FormSubmit(props: Props) {
               <Show when={submitting()} fallback={<i class="ti ti-send" />}>
                 <i class="ti ti-loader-2 animate-spin" />
               </Show>
-              {props.form.config.submitLabel ?? "Submit"}
+              {props.form.config.submitLabel ?? t().submit}
             </Button>
           </div>
         </form>

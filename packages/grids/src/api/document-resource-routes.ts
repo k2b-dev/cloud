@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -7,14 +7,16 @@ import { DocumentProfileSummarySchema } from "../document-profile-contracts";
 import { gridsService } from "../service";
 import {
   gateDocument,
-  PublicDocumentPageQuerySchema,
   PublicDocumentListSchema,
+  PublicDocumentPageQuerySchema,
   PublicDocumentSchema,
   projectDocuments,
 } from "./documents-api-shared";
 import { pdfResponse } from "./download-response";
+import { apiMessages } from "./messages";
 import { gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const DocumentArtifactKeySchema = z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/);
 
@@ -83,11 +85,11 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       }),
       async (c) => {
         const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const [projected] = await projectDocuments([gridsService.document.summarizeDocument(document)]);
-        return projected ? c.json(projected) : c.json({ message: "Document not found" }, 404);
+        return projected ? c.json(projected) : c.json({ message: apiMessages(c).documentNotFound }, 404);
       },
     )
     .get(
@@ -100,10 +102,10 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       }),
       async (c) => {
         const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const artifact = await gridsService.document.getDocumentArtifact(document.id, "pdf");
+        const artifact = await gridsService.document.getDocumentArtifact(document.id, "pdf", getLocale(c));
         if (!artifact.ok) return respond(c, () => Promise.resolve(artifact));
         return pdfResponse(artifact.data.bytes, artifact.data.filename, {
           "X-Grids-Document-Id": document.shortId,
@@ -123,10 +125,10 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       }),
       async (c) => {
         const document = await gridsService.document.getDocument(internalIdParam(c, "documentId")!);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const artifact = await gridsService.document.getDocumentArtifact(document.id, c.req.valid("param").artifactKey);
+        const artifact = await gridsService.document.getDocumentArtifact(document.id, c.req.valid("param").artifactKey, getLocale(c));
         return artifact.ok ? artifactResponse(artifact.data) : respond(c, () => Promise.resolve(artifact));
       },
     );

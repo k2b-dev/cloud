@@ -1,8 +1,9 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
-import { NoticeCard, Button, Checkbox, prompts } from "@k2b/ui";
+import { Button, Checkbox, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { formatNumber } from "@valentinkolb/cloud/shared";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { useAccountsMessages } from "../messages";
 
 type SelectionPayload = {
   userIds?: string[];
@@ -39,6 +40,8 @@ function FinalizeDialog(props: {
   onConfirm: () => Promise<void>;
   close: () => void;
 }) {
+  const messages = useAccountsMessages();
+  const locale = useLocale();
   const [confirmed, setConfirmed] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
 
@@ -60,23 +63,25 @@ function FinalizeDialog(props: {
       <NoticeCard tone="warning" icon={false} bodyClass="flex min-w-0 items-start gap-2">
         <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
         <span class="min-w-0 break-words">
-          This will send the email to {formatNumber(props.deliverableCount)} recipients. {formatNumber(props.skippedNoEmailCount)} selected
-          accounts have no email address and will be skipped.
+          {messages().deliveryWarning({
+            deliverable: formatNumber(props.deliverableCount, { locale: locale() }),
+            skipped: formatNumber(props.skippedNoEmailCount, { locale: locale() }),
+          })}
         </span>
       </NoticeCard>
       <Checkbox
-        label="I confirmed the recipient count and message."
+        label={messages().confirmRecipients}
         value={confirmed}
         onValueChange={setConfirmed}
-        description="Finalizing snapshots the recipients and starts the async delivery job."
+        description={messages().finalizeDescription}
       />
       <div class="flex flex-wrap justify-end gap-2 pt-1">
         <Button size="sm" variant="secondary" onClick={props.close} disabled={loading()}>
-          Cancel
+          {messages().cancel}
         </Button>
         <Button size="sm" onClick={confirm} disabled={!confirmed() || loading()}>
           <i class={loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} />
-          <span>{loading() ? "Starting..." : "Finalize and send"}</span>
+          <span>{loading() ? messages().starting : messages().finalizeAndSend}</span>
         </Button>
       </div>
     </div>
@@ -84,6 +89,7 @@ function FinalizeDialog(props: {
 }
 
 export default function NotificationBatchActions(props: Props) {
+  const messages = useAccountsMessages();
   const [loadingAction, setLoadingAction] = createSignal<"finalize" | "delete" | "retry" | null>(null);
   const isLoading = () => loadingAction() !== null;
   const finalizeBlocked = () => Boolean(props.finalizeDisabledReason);
@@ -96,10 +102,10 @@ export default function NotificationBatchActions(props: Props) {
     setLoadingAction("finalize");
     try {
       const previewRes = await apiClient.notifications.batches.preview.$post({ json: { selection: props.selection } });
-      if (!previewRes.ok) throw new Error(await readError(previewRes, "Failed to preview recipients."));
+      if (!previewRes.ok) throw new Error(await readError(previewRes, messages().previewRecipientsFailed));
       const preview = (await previewRes.json()) as RecipientPreview;
       if (preview.deliverableCount === 0) {
-        prompts.error("No deliverable recipients match this batch.");
+        prompts.error(messages().noDeliverableBatch);
         return;
       }
       await prompts.dialog<void>(
@@ -117,12 +123,12 @@ export default function NotificationBatchActions(props: Props) {
                   expectedRecipientHash: preview.recipientHash,
                 },
               });
-              if (!res.ok) throw new Error(await readError(res, "Failed to finalize batch."));
+              if (!res.ok) throw new Error(await readError(res, messages().finalizeBatchFailed));
               refreshCurrentPath();
             }}
           />
         ),
-        { title: "Finalize Notification Batch", icon: "ti ti-send" },
+        { title: messages().finalizeNotificationBatch, icon: "ti ti-send" },
       );
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
@@ -135,7 +141,7 @@ export default function NotificationBatchActions(props: Props) {
     setLoadingAction("retry");
     try {
       const res = await apiClient.notifications.batches[":id"]["retry-failed"].$post({ param: { id: props.batchId } });
-      if (!res.ok) throw new Error(await readError(res, "Failed to retry recipients."));
+      if (!res.ok) throw new Error(await readError(res, messages().retryRecipientsFailed));
       refreshCurrentPath();
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
@@ -145,9 +151,9 @@ export default function NotificationBatchActions(props: Props) {
   };
 
   const deleteDraft = async () => {
-    const confirmed = await prompts.confirm("Delete this notification draft? It has not been sent yet and cannot be restored.", {
-      title: "Delete draft",
-      confirmText: "Delete draft",
+    const confirmed = await prompts.confirm(messages().deleteDraftConfirm, {
+      title: messages().deleteDraft,
+      confirmText: messages().deleteDraft,
       variant: "danger",
     });
     if (!confirmed) return;
@@ -155,7 +161,7 @@ export default function NotificationBatchActions(props: Props) {
     setLoadingAction("delete");
     try {
       const res = await apiClient.notifications.batches[":id"].$delete({ param: { id: props.batchId } });
-      if (!res.ok) throw new Error(await readError(res, "Failed to delete draft."));
+      if (!res.ok) throw new Error(await readError(res, messages().deleteDraftFailed));
       navigateTo("/app/accounts/notifications");
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : String(error));
@@ -169,7 +175,7 @@ export default function NotificationBatchActions(props: Props) {
       <Show when={props.status === "draft"}>
         <Button size="sm" variant="danger" onClick={deleteDraft} disabled={isLoading()}>
           <i class={loadingAction() === "delete" ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} />
-          <span>Delete draft</span>
+          <span>{messages().deleteDraft}</span>
         </Button>
         <Button
           size="sm"
@@ -179,13 +185,13 @@ export default function NotificationBatchActions(props: Props) {
           aria-disabled={finalizeBlocked() ? "true" : undefined}
         >
           <i class={loadingAction() === "finalize" ? "ti ti-loader-2 animate-spin" : "ti ti-send"} />
-          <span>{loadingAction() === "finalize" ? "Checking..." : "Finalize"}</span>
+          <span>{loadingAction() === "finalize" ? messages().checking : messages().finalize}</span>
         </Button>
       </Show>
       <Show when={props.errorCount > 0 && props.status !== "draft"}>
         <Button size="sm" variant="subtle" onClick={retryFailed} disabled={isLoading()}>
           <i class={loadingAction() === "retry" ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
-          <span>Retry failed</span>
+          <span>{messages().retryFailed}</span>
         </Button>
       </Show>
     </div>

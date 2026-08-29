@@ -233,6 +233,20 @@ describe("Grids record live events adapter", () => {
     expect(callbacks).toEqual(["error:stream_failed", "revoked:access_denied"]);
     expect(call.terminations).toEqual([{ code: "access_denied", message: "Denied" }]);
   });
+
+  test("localizes record stream fallback errors with language fallback", () => {
+    const messages: string[] = [];
+    createGridsRecordEventsProvider({
+      tableId: TABLE_ID,
+      locale: "de-CH",
+      onRevoked: (error) => messages.push(error.message),
+    });
+    const call = providerCalls[0]!;
+
+    deliver(call, { type: "grids.records.revoked" });
+
+    expect(messages).toEqual(["Dein Zugriff auf diese Tabelle hat sich geändert. Lade die Seite neu."]);
+  });
 });
 
 describe("Grids metadata live events adapter", () => {

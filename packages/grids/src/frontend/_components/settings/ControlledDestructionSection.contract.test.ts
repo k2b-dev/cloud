@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./ControlledDestructionSection.tsx", import.meta.url), "utf8");
+const messages = readFileSync(new URL("./messages.ts", import.meta.url), "utf8");
 
 describe("Controlled destruction settings contract", () => {
   test("uses one owner-local overview and the typed API for every action", () => {
@@ -27,7 +28,8 @@ describe("Controlled destruction settings contract", () => {
       "No controlled destruction runs yet.",
       "Cancel remaining",
     ])
-      expect(source).toContain(text);
+      expect(messages).toContain(text);
+    expect(source).toContain("useGridsSettingsMessages(locale)");
     expect(source).toContain("<StatGrid");
     expect(source).toContain("<StatCell");
   });

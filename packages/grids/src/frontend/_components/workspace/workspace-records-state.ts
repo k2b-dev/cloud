@@ -8,6 +8,7 @@ import type { AuthorizedRecordAccess } from "../../../service/record-access";
 import { filterSearchableFields } from "../../../service/search";
 import { activeDisplayConfig } from "../records-view/display-mode";
 import { parseRecordsState, type RecordsState } from "../records-view/query-url";
+import { resolveWorkspaceMessages } from "./messages";
 import { emptyRecordDetail, loadRecordDetailData, writableDocumentTemplates } from "./workspace-record-detail-state";
 import { compileViewSource, isComputedColumn, loadInitialRecords, outputFieldsForQuery } from "./workspace-records-query";
 import { recordAccessForUser, resolveBaseLevel } from "./workspace-state-access";
@@ -25,8 +26,8 @@ import type {
   WorkspaceRecordsRoute,
 } from "./workspace-state-model";
 
-const diagnosticsMessage = (diagnostics: Array<Pick<DslResolverDiagnostic, "message">>) =>
-  diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
+const diagnosticsMessage = (diagnostics: Array<Pick<DslResolverDiagnostic, "message">>, fallback: string) =>
+  diagnostics.map((diagnostic) => diagnostic.message).join("; ") || fallback;
 
 const workflowLaunchersForTable = async (
   user: AuthUser,
@@ -176,10 +177,11 @@ const resolveRecordsView = async (
       ? ({ ok: true, kind: "queryResult", fieldIds: [] } as const)
       : localCompiledView;
   if (compiledView && !compiledView.ok) {
+    const t = resolveWorkspaceMessages(common.params.locale);
     return {
       kind: "invalidQuery",
-      title: "Invalid view GQL source",
-      message: diagnosticsMessage(compiledView.diagnostics),
+      title: t.invalidViewSource,
+      message: diagnosticsMessage(compiledView.diagnostics, t.invalidGqlSource),
     };
   }
   const activeViewForQuery: RuntimeView | null =
@@ -276,6 +278,7 @@ const buildRecordsRoute = async (params: {
           record: selectedRecord,
           fields: view.fields,
           viewer: buildViewer(common.params.user),
+          locale: common.params.locale,
         })
       : activeTable.kind === "federated" && view.activeViewForQuery
         ? await loadRecordDetailData({
@@ -285,6 +288,7 @@ const buildRecordsRoute = async (params: {
             fields: view.fields,
             viewer: buildViewer(common.params.user),
             scope: "history",
+            locale: common.params.locale,
           })
         : emptyRecordDetail(selectedRecord.id)
     : null;

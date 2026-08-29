@@ -11,12 +11,14 @@ import {
   TemplatePreview,
   type TemplateVariable,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { FormulaExpressionEditor } from "./FormulaExpressionEditor";
+import { gridsFieldMessages } from "./messages";
 
 // =============================================================================
 // Type catalog
@@ -194,6 +196,8 @@ const CONFIGURABLE = new Set([
  * through to a "nothing to configure" hint.
  */
 export function FieldConfigEditor(props: EditorProps) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   // Description has been promoted to a top-level Field column; the new
   // table editor renders its own input for it. This component now focuses
   // purely on type-specific constraint forms.
@@ -259,23 +263,25 @@ export function FieldConfigEditor(props: EditorProps) {
         <FileConstraints config={props.config} onChange={props.onChange} />
       </Show>
       <Show when={!CONFIGURABLE.has(props.type)}>
-        <p class="text-xs text-dimmed">This field type has no extra configuration.</p>
+        <p class="text-xs text-dimmed">{t().noExtraConfig}</p>
       </Show>
     </div>
   );
 }
 
 function PrincipalConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cardinality = () => (props.config().cardinality === "single" ? "single" : "multiple");
   return (
     <Select
-      label="Cardinality"
-      description="Choose whether a record can name one identity or several participants."
+      label={t().cardinality}
+      description={t().principalCardinalityDescription}
       value={cardinality}
       onValueChange={(value) => props.onChange({ ...props.config(), cardinality: value })}
       options={[
-        { id: "single", label: "One user or group" },
-        { id: "multiple", label: "Multiple users or groups" },
+        { id: "single", label: t().onePrincipal },
+        { id: "multiple", label: t().multiplePrincipals },
       ]}
     />
   );
@@ -286,6 +292,8 @@ function PrincipalConstraints(props: { config: () => FieldConfigState; onChange:
 // =============================================================================
 
 function TextConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void; markdown?: boolean }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
 
@@ -310,30 +318,44 @@ function TextConstraints(props: { config: () => FieldConfigState; onChange: (nex
   return (
     <div class="grid grid-cols-2 gap-3">
       <TextInput
-        label="Min length (optional)"
-        description="Empty = no minimum."
+        label={t().minLength}
+        description={t().noMinimum}
         value={minLen}
         onValueChange={(v) => onLength("minLength", v)}
-        placeholder="e.g. 3"
+        placeholder={t().exampleValue({ value: "3" })}
       />
       <TextInput
-        label="Max length (optional)"
-        description="Empty = no maximum."
+        label={t().maxLength}
+        description={t().noMaximum}
         value={maxLen}
         onValueChange={(v) => onLength("maxLength", v)}
-        placeholder="e.g. 50"
+        placeholder={t().exampleValue({ value: "50" })}
       />
       <div class="col-span-2">
         <TextInput
-          label="Pattern (regex, optional)"
-          description="Empty = no pattern check."
+          label={t().pattern}
+          description={t().noPattern}
           value={regex}
           onValueChange={(v) => update({ regex: v.trim() === "" ? undefined : v })}
-          placeholder="e.g. ^[A-Z]{3}-\\d+$"
+          placeholder={t().exampleValue({ value: "^[A-Z]{3}-\\d+$" })}
           icon="ti ti-regex"
         />
         <div class="mt-2 flex flex-wrap gap-1.5">
-          <For each={REGEX_PRESETS}>
+          <For
+            each={REGEX_PRESETS.map((preset) => ({
+              ...preset,
+              label:
+                preset.label === "Email"
+                  ? t().email
+                  : preset.label === "Phone"
+                    ? t().phone
+                    : preset.label === "Slug"
+                      ? t().slug
+                      : preset.label === "ISBN"
+                        ? t().isbn
+                        : t().url,
+            }))}
+          >
             {(preset) => (
               <Button variant="secondary" size="sm" type="button" onClick={() => update({ regex: preset.value })}>
                 {preset.label}
@@ -345,8 +367,8 @@ function TextConstraints(props: { config: () => FieldConfigState; onChange: (nex
       <Show when={props.markdown}>
         <div class="col-span-2">
           <CheckboxCard
-            label="Render as Markdown"
-            description="Use Markdown input while editing and render formatted text in tables and detail panels."
+            label={t().renderMarkdown}
+            description={t().renderMarkdownDescription}
             icon="ti ti-markdown"
             value={markdown}
             onValueChange={(checked) => update({ markdown: checked || undefined })}
@@ -358,6 +380,8 @@ function TextConstraints(props: { config: () => FieldConfigState; onChange: (nex
 }
 
 function NumberConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
 
@@ -385,53 +409,53 @@ function NumberConstraints(props: { config: () => FieldConfigState; onChange: (n
   return (
     <div class="grid grid-cols-2 gap-3">
       <TextInput
-        label="Min (optional)"
-        description="Empty = no minimum."
+        label={t().minimum}
+        description={t().noMinimum}
         value={min}
         onValueChange={(v) => onBound("min", v)}
-        placeholder="e.g. 0"
+        placeholder={t().exampleValue({ value: "0" })}
       />
       <TextInput
-        label="Max (optional)"
-        description="Empty = no maximum."
+        label={t().maximum}
+        description={t().noMaximum}
         value={max}
         onValueChange={(v) => onBound("max", v)}
-        placeholder="e.g. 100"
+        placeholder={t().exampleValue({ value: "100" })}
       />
       <TextInput
-        label="Precision (optional)"
-        description="Max total digits. Empty = no limit."
+        label={t().precision}
+        description={t().precisionDescription}
         value={precision}
         onValueChange={(v) => onInt("precision", v, 1, 38)}
-        placeholder="e.g. 16"
+        placeholder={t().exampleValue({ value: "16" })}
       />
       <TextInput
-        label="Decimal places (optional)"
-        description="Empty = flexible. Use 0 for whole numbers."
+        label={t().decimalPlaces}
+        description={t().decimalPlacesDescription}
         value={decimalPlaces}
         onValueChange={(v) => onInt("decimalPlaces", v, 0, 20)}
-        placeholder="e.g. 2"
+        placeholder={t().exampleValue({ value: "2" })}
       />
       <TextInput
-        label="Unit (optional)"
-        description="Display-only label such as EUR, kg, %, or credits."
+        label={t().unit}
+        description={t().unitDescription}
         value={unit}
         onValueChange={(v) => update({ unit: v.trim() === "" ? undefined : v.trim() })}
-        placeholder="e.g. EUR"
+        placeholder={t().exampleValue({ value: "EUR" })}
       />
       <Select
-        label="Unit position"
+        label={t().unitPosition}
         value={unitPosition}
         onValueChange={(v) => update({ unitPosition: v })}
         options={[
-          { id: "suffix", label: "After value" },
-          { id: "prefix", label: "Before value" },
+          { id: "suffix", label: t().afterValue },
+          { id: "prefix", label: t().beforeValue },
         ]}
       />
       <div class="col-span-2">
         <CheckboxCard
-          label="Integer only"
-          description="Reject decimal values for this field."
+          label={t().integerOnly}
+          description={t().integerOnlyDescription}
           icon="ti ti-number"
           value={integerOnly}
           onValueChange={(checked) => update({ integerOnly: checked || undefined, decimalPlaces: checked ? 0 : undefined })}
@@ -442,6 +466,8 @@ function NumberConstraints(props: { config: () => FieldConfigState; onChange: (n
 }
 
 function DateConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
 
@@ -452,26 +478,26 @@ function DateConstraints(props: { config: () => FieldConfigState; onChange: (nex
     <div class="grid grid-cols-2 gap-3">
       <div class="col-span-2">
         <CheckboxCard
-          label="Include time-of-day"
-          description="Store and edit date plus time. Leave off for pure calendar dates."
+          label={t().includeTime}
+          description={t().includeTimeDescription}
           icon="ti ti-clock"
           value={() => Boolean(cfg().includeTime)}
           onValueChange={(checked) => update({ includeTime: checked || undefined })}
         />
       </div>
       <TextInput
-        label="Min date (optional, YYYY-MM-DD)"
-        description="Empty = no minimum."
+        label={t().minDate}
+        description={t().noMinimum}
         value={min}
         onValueChange={(v) => update({ min: v.trim() === "" ? undefined : v.trim() })}
-        placeholder="e.g. 2020-01-01"
+        placeholder={t().exampleValue({ value: "2020-01-01" })}
       />
       <TextInput
-        label="Max date (optional, YYYY-MM-DD)"
-        description="Empty = no maximum."
+        label={t().maxDate}
+        description={t().noMaximum}
         value={max}
         onValueChange={(v) => update({ max: v.trim() === "" ? undefined : v.trim() })}
-        placeholder="e.g. 2099-12-31"
+        placeholder={t().exampleValue({ value: "2099-12-31" })}
       />
     </div>
   );
@@ -491,6 +517,8 @@ const slugify = (s: string): string =>
 type SelectOption = { id: string; label: string; color?: string; description?: string };
 
 function SelectConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const multiple = () => cfg().multiple === true;
   const options = () => (Array.isArray(cfg().options) ? (cfg().options as SelectOption[]) : []);
@@ -500,7 +528,7 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
   const addOption = () => {
     const idx = options().length;
     const color = DEFAULT_COLORS[idx % DEFAULT_COLORS.length];
-    writeOptions([...options(), { id: `option-${idx + 1}`, label: `Option ${idx + 1}`, color }]);
+    writeOptions([...options(), { id: `option-${idx + 1}`, label: t().option({ number: idx + 1 }), color }]);
   };
 
   const updateOption = (i: number, patch: Partial<SelectOption>) => {
@@ -523,7 +551,7 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
   return (
     <div class="flex flex-col gap-3">
       <Select
-        label="Mode"
+        label={t().mode}
         value={() => (multiple() ? "multiple" : "single")}
         onValueChange={(v) =>
           props.onChange({
@@ -534,26 +562,26 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
           })
         }
         options={[
-          { id: "single", label: "Single choice", description: "Users can pick one option." },
-          { id: "multiple", label: "Multiple choices", description: "Users can pick several options." },
+          { id: "single", label: t().singleChoice, description: t().singleChoiceDescription },
+          { id: "multiple", label: t().multipleChoices, description: t().multipleChoicesDescription },
         ]}
       />
       <div class="flex items-center justify-between">
-        <span class="text-xs text-secondary">Options</span>
+        <span class="text-xs text-secondary">{t().options}</span>
         <Button variant="success" size="sm" type="button" onClick={addOption}>
-          <i class="ti ti-plus" /> Add option
+          <i class="ti ti-plus" /> {t().addOption}
         </Button>
       </div>
-      <Show when={options().length > 0} fallback={<p class="text-xs text-dimmed py-1">No options yet.</p>}>
+      <Show when={options().length > 0} fallback={<p class="text-xs text-dimmed py-1">{t().noOptions}</p>}>
         <div class="flex flex-col gap-2">
           {/* Column headers — sit above the input cells. The leading w-7
               spacer matches the colour swatch column so "Label" and
               "Value" line up with the inputs below. */}
           <div class="flex items-center gap-2 text-[11px] text-dimmed">
             <span class="w-7 shrink-0" />
-            <span class="min-w-44 flex-1">Label</span>
-            <span class="min-w-56 flex-1">Description</span>
-            <span class="w-40 shrink-0">Value</span>
+            <span class="min-w-44 flex-1">{t().label}</span>
+            <span class="min-w-56 flex-1">{t().description}</span>
+            <span class="w-40 shrink-0">{t().value}</span>
             <span class="w-5 shrink-0" />
           </div>
           {/* Index (not For) — keys by position. Each keystroke writes
@@ -566,14 +594,14 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
               <div class="flex items-center gap-2">
                 <ColorInput
                   compact
-                  aria-label={`Option ${i + 1} color`}
+                  aria-label={t().optionColor({ number: i + 1 })}
                   value={() => opt().color ?? "#3b82f6"}
                   onValueChange={(c) => updateOption(i, { color: c })}
                 />
                 <div class="flex-1">
                   <TextInput
-                    aria-label={`Option ${i + 1} label`}
-                    placeholder="Label"
+                    aria-label={t().optionLabel({ number: i + 1 })}
+                    placeholder={t().label}
                     icon="ti ti-tag"
                     value={() => opt().label}
                     onValueChange={(v) => onLabelChange(i, v)}
@@ -581,8 +609,8 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
                 </div>
                 <div class="flex-1">
                   <TextInput
-                    aria-label={`Option ${i + 1} description`}
-                    placeholder="Description"
+                    aria-label={t().optionDescription({ number: i + 1 })}
+                    placeholder={t().description}
                     icon="ti ti-info-circle"
                     value={() => opt().description ?? ""}
                     onValueChange={(v) => updateOption(i, { description: v.trim() ? v : undefined })}
@@ -591,8 +619,8 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
                 </div>
                 <div class="w-40 shrink-0">
                   <TextInput
-                    aria-label={`Option ${i + 1} value`}
-                    placeholder="Value"
+                    aria-label={t().optionValue({ number: i + 1 })}
+                    placeholder={t().value}
                     icon="ti ti-id"
                     value={() => opt().id}
                     onValueChange={(v) => updateOption(i, { id: v })}
@@ -603,7 +631,7 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
                   size="xs"
                   class="shrink-0 text-dimmed hover:text-red-500"
                   onClick={() => removeOption(i)}
-                  label="Remove option"
+                  label={t().removeOption}
                 >
                   <i class="ti ti-x" />
                 </IconButton>
@@ -615,7 +643,7 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
       <Show when={multiple()}>
         <div class="grid grid-cols-2 gap-3 pt-2">
           <NumberField
-            label="Min selected (optional)"
+            label={t().minSelected}
             value={() => (typeof cfg().minSelected === "number" ? String(cfg().minSelected) : "")}
             min={0}
             onInput={(v) => {
@@ -626,7 +654,7 @@ function SelectConstraints(props: { config: () => FieldConfigState; onChange: (n
             }}
           />
           <NumberField
-            label="Max selected (optional)"
+            label={t().maxSelected}
             value={() => (typeof cfg().maxSelected === "number" ? String(cfg().maxSelected) : "")}
             min={1}
             onInput={(v) => {
@@ -688,6 +716,8 @@ const ID_STRATEGY_OPTIONS = [
 ];
 
 function IdConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
   const strategy = () => (typeof cfg().strategy === "string" ? (cfg().strategy as string) : "sequence");
@@ -701,18 +731,18 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
 
   const PrefixInput = () => (
     <TextInput
-      label="Prefix (optional)"
-      description="Text added before each generated ID."
+      label={t().prefix}
+      description={t().prefixDescription}
       value={prefix}
       onValueChange={(v) => update({ prefix: v === "" ? undefined : v })}
-      placeholder="e.g. INV- or LOAN-"
+      placeholder={t().prefixExample}
     />
   );
 
   const PaddingInput = () => (
     <NumberField
-      label="Padding"
-      description="Minimum digits for the sequence part."
+      label={t().padding}
+      description={t().paddingDescription}
       value={padding}
       min={1}
       max={16}
@@ -726,8 +756,8 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
   return (
     <div class="flex flex-col gap-3">
       <Select
-        label="ID type"
-        description="Choose how new record IDs are generated."
+        label={t().idType}
+        description={t().idTypeDescription}
         value={strategy}
         onValueChange={(v) => {
           if (v === "sequence") props.onChange({ strategy: v, prefix: prefix(), padding: 4, assignment: assignment() });
@@ -737,17 +767,43 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
           else if (v === "random_code") props.onChange({ strategy: v, prefix: prefix(), groups: 2, segmentLength: 4 });
           else props.onChange({ strategy: v, prefix: prefix() });
         }}
-        options={ID_STRATEGY_OPTIONS}
+        options={ID_STRATEGY_OPTIONS.map((option) => ({
+          ...option,
+          label:
+            option.id === "sequence"
+              ? t().sequence
+              : option.id === "date_sequence"
+                ? t().dateSequence
+                : option.id === "short_code"
+                  ? t().shortCode
+                  : option.id === "random_code"
+                    ? t().randomCode
+                    : option.label,
+          description:
+            option.id === "sequence"
+              ? t().sequenceDescription
+              : option.id === "date_sequence"
+                ? t().dateSequenceDescription
+                : option.id === "short_code"
+                  ? t().shortCodeDescription
+                  : option.id === "random_code"
+                    ? t().randomCodeDescription
+                    : option.id === "uuid"
+                      ? t().uuidDescription
+                      : option.id === "uuidv7"
+                        ? t().uuidv7Description
+                        : t().ulidDescription,
+        }))}
       />
       <Show when={strategy() === "sequence" || strategy() === "date_sequence"}>
         <Select
-          label="Assign"
-          description="Creation is the default. Finalization leaves the field empty while the record is a draft."
+          label={t().assign}
+          description={t().assignDescription}
           value={assignment}
           onValueChange={(value) => update({ assignment: value })}
           options={[
-            { id: "creation", label: "On record creation" },
-            { id: "finalization", label: "On finalization" },
+            { id: "creation", label: t().onCreation },
+            { id: "finalization", label: t().onFinalization },
           ]}
         />
       </Show>
@@ -763,14 +819,14 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
           <PaddingInput />
         </div>
         <Select
-          label="Reset"
-          description="When the sequence number starts again."
+          label={t().reset}
+          description={t().resetDescription}
           value={period}
           onValueChange={(v) => update({ period: v })}
           options={[
-            { id: "year", label: "Yearly", description: "LOAN-2026-0001", icon: "ti ti-calendar" },
-            { id: "month", label: "Monthly", description: "LOAN-202606-0001", icon: "ti ti-calendar-month" },
-            { id: "day", label: "Daily", description: "LOAN-20260607-0001", icon: "ti ti-calendar-event" },
+            { id: "year", label: t().yearly, description: "LOAN-2026-0001", icon: "ti ti-calendar" },
+            { id: "month", label: t().monthly, description: "LOAN-202606-0001", icon: "ti ti-calendar-month" },
+            { id: "day", label: t().daily, description: "LOAN-20260607-0001", icon: "ti ti-calendar-event" },
           ]}
         />
       </Show>
@@ -778,8 +834,8 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
         <div class="grid grid-cols-2 gap-3">
           <PrefixInput />
           <NumberField
-            label="Code length"
-            description="Characters generated after the prefix."
+            label={t().codeLength}
+            description={t().codeLengthDescription}
             value={length}
             min={4}
             max={12}
@@ -794,8 +850,8 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
         <PrefixInput />
         <div class="grid grid-cols-2 gap-3">
           <NumberField
-            label="Groups"
-            description="How many readable code segments."
+            label={t().groups}
+            description={t().groupsDescription}
             value={groups}
             min={2}
             max={4}
@@ -805,8 +861,8 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
             }}
           />
           <NumberField
-            label="Characters per group"
-            description="Characters inside each segment."
+            label={t().charsPerGroup}
+            description={t().charsPerGroupDescription}
             value={segmentLength}
             min={3}
             max={6}
@@ -818,12 +874,7 @@ function IdConstraints(props: { config: () => FieldConfigState; onChange: (next:
         </div>
       </Show>
       <Show when={strategy() === "sequence" || strategy() === "date_sequence"}>
-        <NoticeCard
-          tone="info"
-          role="status"
-          title="Each record gets its own number"
-          detail="Grids assigns the next number when a record is created. A number is never used twice, but gaps can occur if creating a record fails. Format changes apply only to new records."
-        />
+        <NoticeCard tone="info" role="status" title={t().uniqueNumber} detail={t().uniqueNumberDescription} />
       </Show>
       <Show when={strategy() === "uuid" || strategy() === "uuidv7" || strategy() === "ulid"}>
         <PrefixInput />
@@ -839,6 +890,8 @@ function RelationConstraints(props: {
   otherTables: Array<{ id: string; name: string }>;
   fieldsByTable: Record<string, Field[]>;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
 
@@ -847,30 +900,27 @@ function RelationConstraints(props: {
 
   return (
     <div class="flex flex-col gap-3">
-      <Show
-        when={props.otherTables.length > 0}
-        fallback={<p class="text-xs text-amber-600 dark:text-amber-400">No tables available to link to.</p>}
-      >
+      <Show when={props.otherTables.length > 0} fallback={<p class="text-xs text-amber-600 dark:text-amber-400">{t().noTables}</p>}>
         <Select
-          label="Target table"
+          label={t().targetTable}
           value={targetTableId}
           onValueChange={(v) => update({ targetTableId: v })}
           options={props.otherTables.map((t) => ({
             id: t.id,
             label: t.name,
-            description: t.id === props.currentTableId ? "Current table" : undefined,
+            description: t.id === props.currentTableId ? gridsFieldMessages.resolve([locale()]).t.currentTable : undefined,
           }))}
-          placeholder="Pick a table..."
+          placeholder={t().pickTable}
           required
         />
       </Show>
       <Select
-        label="Cardinality"
+        label={t().cardinality}
         value={cardinality}
         onValueChange={(v) => update({ cardinality: v })}
         options={[
-          { id: "single", label: "Single — one linked record" },
-          { id: "multiple", label: "Multiple — many linked records" },
+          { id: "single", label: t().oneRelation },
+          { id: "multiple", label: t().manyRelations },
         ]}
       />
     </div>
@@ -884,6 +934,8 @@ function LookupRollupConstraints(props: {
   currentTableId: string;
   fieldsByTable: Record<string, Field[]>;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
 
@@ -916,48 +968,42 @@ function LookupRollupConstraints(props: {
         when={relationFields().length > 0}
         fallback={
           <p class="text-xs text-amber-600 dark:text-amber-400">
-            No relation fields on this table yet. Add a relation field first to enable {props.isRollup ? "rollup" : "lookup"}.
+            {t().noRelationFields({ kind: props.isRollup ? t().typeLabel({ type: "rollup" }) : t().typeLabel({ type: "lookup" }) })}
           </p>
         }
       >
         <Select
-          label="Relation field"
-          description="The relation on this table to follow."
+          label={t().relationField}
+          description={t().relationFieldDescription}
           value={relationFieldId}
           // Reset targetFieldId when the relation changes — its old
           // value would point at fields on the previous target table.
           onValueChange={(v) => update({ relationFieldId: v || undefined, targetFieldId: undefined })}
           options={relationFields().map((f) => ({ id: f.id, label: f.name }))}
-          placeholder="Pick a relation..."
+          placeholder={t().pickRelation}
           required
         />
       </Show>
 
       <Show when={selectedRelation() && !targetTableId()}>
-        <p class="text-xs text-amber-600 dark:text-amber-400">
-          The selected relation has no target table set yet. Configure that relation field first.
-        </p>
+        <p class="text-xs text-amber-600 dark:text-amber-400">{t().relationWithoutTarget}</p>
       </Show>
 
       <Show when={targetTableId() && targetFields().length > 0}>
         <Select
-          label="Target field"
-          description={
-            props.isRollup
-              ? "Numeric field on the linked table to aggregate."
-              : "Field on the linked table to show here. Formula fields are recalculated on read."
-          }
+          label={t().targetField}
+          description={props.isRollup ? t().rollupTargetDescription : t().lookupTargetDescription}
           value={targetFieldId}
           onValueChange={(v) => update({ targetFieldId: v || undefined })}
           options={targetFields().map((f) => ({ id: f.id, label: f.name }))}
-          placeholder="Pick a field..."
+          placeholder={t().pickField}
           required
         />
       </Show>
 
       <Show when={props.isRollup}>
         <Select
-          label="Aggregate"
+          label={t().aggregate}
           value={() => (typeof cfg().agg === "string" ? (cfg().agg as string) : "count")}
           onValueChange={(v) => update({ agg: v })}
           options={[
@@ -974,6 +1020,8 @@ function LookupRollupConstraints(props: {
 }
 
 function FileConstraints(props: { config: () => FieldConfigState; onChange: (next: FieldConfigState) => void }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
   const maxFiles = () => (typeof cfg().maxFiles === "number" ? String(cfg().maxFiles) : "10");
@@ -987,7 +1035,7 @@ function FileConstraints(props: { config: () => FieldConfigState; onChange: (nex
   return (
     <div class="grid grid-cols-1 gap-3">
       <NumberField
-        label="Max files per record"
+        label={t().maxFiles}
         value={maxFiles}
         min={1}
         max={100}
@@ -997,8 +1045,8 @@ function FileConstraints(props: { config: () => FieldConfigState; onChange: (nex
         }}
       />
       <TextInput
-        label="Accepted MIME types/extensions (optional)"
-        description="Comma-separated. Empty accepts any file type."
+        label={t().acceptedFiles}
+        description={t().acceptedFilesDescription}
         value={accept}
         onValueChange={(v) => {
           const items = v
@@ -1010,7 +1058,25 @@ function FileConstraints(props: { config: () => FieldConfigState; onChange: (nex
         placeholder="image/png, application/pdf, .txt"
       />
       <div class="flex flex-wrap gap-1.5">
-        <For each={FILE_ACCEPT_PRESETS}>
+        <For
+          each={FILE_ACCEPT_PRESETS.map((preset) => ({
+            ...preset,
+            label:
+              preset.label === "Images"
+                ? t().images
+                : preset.label === "Photos"
+                  ? t().photos
+                  : preset.label === "PDF"
+                    ? t().pdf
+                    : preset.label === "Spreadsheets"
+                      ? t().spreadsheets
+                      : preset.label === "Documents"
+                        ? t().documents
+                        : preset.label === "Text"
+                          ? t().textFiles
+                          : t().archives,
+          }))}
+        >
           {(preset) => (
             <Button variant="secondary" size="sm" type="button" onClick={() => appendAccept(preset.values)}>
               {preset.label}
@@ -1018,7 +1084,7 @@ function FileConstraints(props: { config: () => FieldConfigState; onChange: (nex
           )}
         </For>
       </div>
-      <p class="text-xs text-dimmed leading-snug">The global per-file size limit is managed from the Grids admin settings.</p>
+      <p class="text-xs text-dimmed leading-snug">{t().globalFileLimit}</p>
     </div>
   );
 }
@@ -1060,20 +1126,22 @@ function HtmlTemplateConstraints(props: {
   currentFieldId?: string;
   currentTableId: string;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const cfg = () => props.config();
   const template = () => (typeof cfg().template === "string" ? (cfg().template as string) : "");
   const css = () => (typeof cfg().css === "string" ? (cfg().css as string) : "");
   const update = (patch: FieldConfigState) => props.onChange({ ...cfg(), ...patch });
   const variables = (): TemplateVariable[] => [
-    { name: "record.id", kind: "string", description: "Public record ID" },
-    { name: "record.tableId", kind: "string", description: "Public table ID" },
+    { name: "record.id", kind: "string", description: t().publicRecordId },
+    { name: "record.tableId", kind: "string", description: t().publicTableId },
     { name: "record.version", kind: "number" },
     ...props.fields
       .filter((field) => field.id !== props.currentFieldId && field.type !== "html_template" && !field.deletedAt)
       .map((field) => ({
         name: `record.data.${field.id}`,
         kind: (["number", "percent", "duration", "rollup"].includes(field.type) ? "number" : "string") as TemplateVariable["kind"],
-        description: `${field.name} · ${TYPE_LABELS[field.type] ?? field.type}`,
+        description: `${field.name} · ${t().typeLabel({ type: field.type })}`,
       })),
     { name: "table.id", kind: "string" },
     { name: "table.name", kind: "string" },
@@ -1104,7 +1172,7 @@ function HtmlTemplateConstraints(props: {
         },
         { init: { signal: abort.signal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not preview HTML template."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().previewHtmlFailed));
       const data: HtmlTemplatePreviewResponse = await response.json();
       if (currentToken === token) {
         setPreview(data);
@@ -1112,11 +1180,11 @@ function HtmlTemplateConstraints(props: {
           setSelectedRecordId(data.rows[0]?.recordId ?? null);
         }
       }
-    } catch (error) {
+    } catch {
       if (currentToken === token) {
         setPreview({
           ok: false,
-          diagnostics: [{ severity: "error", message: error instanceof Error ? error.message : "Could not preview HTML template." }],
+          diagnostics: [{ severity: "error", message: t().previewHtmlFailed }],
           rows: [],
         });
         setSelectedRecordId(null);
@@ -1144,12 +1212,12 @@ function HtmlTemplateConstraints(props: {
         onValueChange={(value) => update({ template: value })}
         variables={variables()}
         lines={12}
-        aria-label="HTML template"
+        aria-label={t().htmlTemplate}
         placeholder={"<p>{{ record.data.FIELD_ID }}</p>"}
       />
       <TextInput
-        label="CSS (optional)"
-        description="CSS is validated and inlined into each rendered HTML value."
+        label={t().cssOptional}
+        description={t().cssDescription}
         value={css}
         onValueChange={(value) => update({ css: value })}
         multiline
@@ -1157,10 +1225,10 @@ function HtmlTemplateConstraints(props: {
         placeholder="p { color: #18181b; }"
       />
       <div class="flex items-center justify-between gap-2 text-xs">
-        <span class="font-medium text-secondary">Latest-record preview</span>
+        <span class="font-medium text-secondary">{t().latestPreview}</span>
         <Show when={loading()}>
           <span class="text-dimmed" role="status" aria-live="polite">
-            <i class="ti ti-loader-2 animate-spin" /> Rendering
+            <i class="ti ti-loader-2 animate-spin" /> {t().rendering}
           </span>
         </Show>
       </div>
@@ -1187,14 +1255,12 @@ function HtmlTemplateConstraints(props: {
         </div>
       </Show>
       <Show when={!loading() && selected()}>
-        {(row) => <TemplatePreview html={row().html} title={`HTML template preview for record ${row().recordId}`} class="min-h-64" />}
+        {(row) => <TemplatePreview html={row().html} title={t().htmlPreviewTitle({ id: row().recordId })} class="min-h-64" />}
       </Show>
       <Show when={!loading() && preview()?.ok && preview()?.diagnostics.length === 0 && preview()?.rows.length === 0}>
-        <p class="text-xs text-dimmed">No records to preview yet.</p>
+        <p class="text-xs text-dimmed">{t().noPreviewRecords}</p>
       </Show>
-      <p class="text-xs text-dimmed">
-        Values are escaped by default. Use the Liquid <code>raw</code> filter only for trusted HTML.
-      </p>
+      <p class="text-xs text-dimmed">{t().escapedValues}</p>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { PulseDashboardCondition } from "../contracts";
+import { pulseMessages } from "../messages";
 
 const CONDITION_MATCHERS: Record<PulseDashboardCondition["operator"], (value: number, target: number) => boolean> = {
   ">": (value, target) => value > target,
@@ -29,6 +30,11 @@ export const matchDashboardCondition = (
   return match;
 };
 
-export const formatDashboardConditionText = (condition: PulseDashboardCondition): string =>
+export const formatDashboardConditionText = (
+  condition: PulseDashboardCondition,
+  t: ReturnType<typeof pulseMessages.resolve>["t"] = pulseMessages.resolve().t,
+): string =>
   condition.message?.trim() ||
-  `${condition.level === "critical" ? "Critical" : "Warning"} when value ${condition.operator} ${String(condition.value)}`;
+  (condition.level === "critical"
+    ? t.criticalCondition({ operator: condition.operator, value: String(condition.value) })
+    : t.warningCondition({ operator: condition.operator, value: String(condition.value) }));

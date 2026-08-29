@@ -1,28 +1,27 @@
-import { Avatar, Button, Combobox, type ComboboxOption, dialogCore, PanelDialog, panelDialogOptions, prompts, Select, Tag } from "@k2b/ui";
+import {
+  Avatar,
+  Button,
+  Combobox,
+  type ComboboxOption,
+  dialogCore,
+  PanelDialog,
+  panelDialogOptions,
+  prompts,
+  Select,
+  Tag,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { RecordActor, RecordFinalizationState, RecordMetaQuery, RecordMetaUserKey } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { recordsViewMessages } from "./messages";
 
 type UserKeyConfig = {
   key: RecordMetaUserKey;
-  label: string;
 };
 
-const USER_KEYS: UserKeyConfig[] = [
-  {
-    key: "createdBy",
-    label: "Created by",
-  },
-  {
-    key: "updatedBy",
-    label: "Modified by",
-  },
-  {
-    key: "deletedBy",
-    label: "Deleted by",
-  },
-];
+const USER_KEYS: UserKeyConfig[] = [{ key: "createdBy" }, { key: "updatedBy" }, { key: "deletedBy" }];
 
 const cleanIds = (ids: string[] | undefined): string[] => [...new Set((ids ?? []).filter(Boolean))];
 
@@ -58,7 +57,13 @@ const actorToOption = (actor: RecordActor): ComboboxOption => ({
   icon: "ti ti-user",
 });
 
-const fetchActors = async (tableId: string, kind: RecordMetaUserKey | "any", query: string, ids: string[] = []): Promise<RecordActor[]> => {
+const fetchActors = async (
+  tableId: string,
+  kind: RecordMetaUserKey | "any",
+  query: string,
+  fallback: string,
+  ids: string[] = [],
+): Promise<RecordActor[]> => {
   const res = await apiClient.tables[":tableId"]["record-actors"].$get({
     param: { tableId },
     query: {
@@ -68,7 +73,7 @@ const fetchActors = async (tableId: string, kind: RecordMetaUserKey | "any", que
       limit: String(ids.length > 0 ? Math.max(ids.length, 12) : 12),
     },
   });
-  if (!res.ok) throw new Error(await errorMessage(res, "Failed to load users"));
+  if (!res.ok) throw new Error(await errorMessage(res, fallback));
   return (await res.json()).items;
 };
 
@@ -80,18 +85,22 @@ const ActorPicker = (props: {
   setLabels: (next: Record<string, RecordActor>) => void;
   onChange: (next: string[]) => void;
 }) => {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
+  const label = () =>
+    props.config.key === "createdBy" ? t().createdBy : props.config.key === "updatedBy" ? t().modifiedBy : t().deletedBy;
   const selectedActors = () => props.selectedIds().map((id) => props.labels()[id] ?? { id, label: id, subtitle: null, avatarHash: null });
 
   createEffect(() => {
     const missing = props.selectedIds().filter((id) => !props.labels()[id]);
     if (missing.length === 0) return;
-    void fetchActors(props.tableId, "any", "", missing)
+    void fetchActors(props.tableId, "any", "", t().loadUsersFailed, missing)
       .then((actors) => {
         const next = { ...props.labels() };
         for (const actor of actors) next[actor.id] = actor;
         props.setLabels(next);
       })
-      .catch((error) => prompts.error(error instanceof Error ? error.message : "Failed to load users"));
+      .catch((error) => prompts.error(error instanceof Error ? error.message : t().loadUsersFailed));
   });
 
   const remove = (id: string) => props.onChange(props.selectedIds().filter((selected) => selected !== id));
@@ -112,14 +121,14 @@ const ActorPicker = (props: {
   return (
     <div class="grid gap-2 py-1 md:grid-cols-[10rem_1fr] md:items-start">
       <div class="min-w-0 pt-1">
-        <div class="text-sm font-medium leading-tight">{props.config.label}</div>
+        <div class="text-sm font-medium leading-tight">{label()}</div>
       </div>
       <div class="min-w-0">
         <Show when={selectedActors().length > 0}>
           <div class="mb-2 flex flex-wrap gap-1.5">
             <For each={selectedActors()}>
               {(actor) => (
-                <Tag size="sm" class="max-w-full" onRemove={() => remove(actor.id)} removeLabel={`Remove ${actor.label}`}>
+                <Tag size="sm" class="max-w-full" onRemove={() => remove(actor.id)} removeLabel={t().remove({ name: actor.label })}>
                   <Avatar
                     name={actor.label}
                     src={
@@ -138,10 +147,10 @@ const ActorPicker = (props: {
           </div>
         </Show>
         <Combobox
-          aria-label="Search users"
-          placeholder="Search users..."
+          aria-label={t().searchUsers}
+          placeholder={t().searchUsersPlaceholder}
           fetchData={async (query) => {
-            const actors = await fetchActors(props.tableId, props.config.key, query);
+            const actors = await fetchActors(props.tableId, props.config.key, query, t().loadUsersFailed);
             const next = { ...props.labels() };
             for (const actor of actors) next[actor.id] = actor;
             props.setLabels(next);
@@ -159,6 +168,8 @@ export const openRecordMetadataDialog = (args: {
   initial?: RecordMetaQuery | null;
 }): Promise<RecordMetaQuery | undefined | null> =>
   dialogCore.open<RecordMetaQuery | undefined | null>((close) => {
+    const locale = useLocale();
+    const t = () => recordsViewMessages.resolve([locale()]).t;
     const initial = cleanRecordMetaQuery(args.initial);
     const [createdBy, setCreatedBy] = createSignal<string[]>(cleanIds(initial?.users?.createdBy));
     const [updatedBy, setUpdatedBy] = createSignal<string[]>(cleanIds(initial?.users?.updatedBy));
@@ -182,31 +193,26 @@ export const openRecordMetadataDialog = (args: {
 
     return (
       <PanelDialog>
-        <PanelDialog.Header
-          title="Record metadata"
-          subtitle="Filter by Finalization state or by who changed records."
-          icon="ti ti-user-search"
-          close={() => close(null)}
-        />
+        <PanelDialog.Header title={t().recordMetadata} subtitle={t().metadataSubtitle} icon="ti ti-user-search" close={() => close(null)} />
         <PanelDialog.Body>
           <div class="flex flex-col gap-3">
             <Select
-              label="Finalization state"
+              label={t().finalizationState}
               value={finalizationState}
               onValueChange={(value) =>
                 setFinalizationState(value === "draft" || value === "awaitingReview" || value === "finalized" ? value : null)
               }
-              placeholder="Any state"
+              placeholder={t().anyState}
               clearable
               options={[
-                { id: "draft", label: "Draft", description: "Finalization is active, with no current review request.", icon: "ti ti-edit" },
+                { id: "draft", label: t().draft, description: t().draftDescription, icon: "ti ti-edit" },
                 {
                   id: "awaitingReview",
-                  label: "Awaiting review",
-                  description: "A current Four-eyes request is waiting for another person.",
+                  label: t().awaitingReview,
+                  description: t().awaitingReviewDescription,
                   icon: "ti ti-users",
                 },
-                { id: "finalized", label: "Finalized", description: "The Record is locked as a final version.", icon: "ti ti-lock" },
+                { id: "finalized", label: t().finalized, description: t().finalizedDescription, icon: "ti ti-lock" },
               ]}
             />
             <For each={USER_KEYS}>
@@ -229,14 +235,14 @@ export const openRecordMetadataDialog = (args: {
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <Button variant="ghost" size="sm" type="button" onClick={() => close(undefined)}>
-            Clear
+            {t().clear}
           </Button>
           <div class="flex items-center gap-2">
             <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="button" onClick={apply}>
-              Apply
+              {t().apply}
             </Button>
           </div>
         </PanelDialog.Footer>

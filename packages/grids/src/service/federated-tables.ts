@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { buildAccessPrincipalCondition } from "@valentinkolb/cloud/server";
 import { escapeLikePattern, toPgUuidArray } from "@valentinkolb/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   FederatedDiagnostic,
@@ -20,6 +20,7 @@ import { buildComputedProjections, buildFormulaSqlProjections } from "./computed
 import { mapFieldRow } from "./field-read";
 import { outputSqlTypeForField } from "./field-storage";
 import { parseJsonbRow } from "./jsonb";
+import { serviceMessagesFor } from "./messages";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { hasAtLeast } from "./permission-resolver";
 import type { Field } from "./types";
@@ -243,14 +244,23 @@ export const getDraft = (tableId: string): Promise<LoadedFederatedRevision | nul
 export const getCurrent = (tableId: string): Promise<LoadedFederatedRevision | null> =>
   getRevisionByStatus(tableId, ["active", "degraded"]);
 
-export const getActive = async (tableId: string): Promise<Result<LoadedFederatedRevision>> => {
+const localizedDiagnostics = (diagnostics: FederatedDiagnostic[], locale?: string): FederatedDiagnostic[] => {
+  const t = serviceMessagesFor(locale);
+  return diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    message: t.federatedDiagnostic({ code: diagnostic.code, fallback: diagnostic.message }),
+  }));
+};
+
+export const getActive = async (tableId: string, locale?: string): Promise<Result<LoadedFederatedRevision>> => {
+  const t = serviceMessagesFor(locale);
   const current = await getCurrent(tableId);
-  if (!current) return fail(err.badInput("combined table has no published configuration"));
+  if (!current) return fail(err.badInput(t.combinedNoPublication));
   if (current.status === "degraded" || current.diagnostics.length > 0) {
-    return fail(err.conflict(current.diagnostics[0]?.message ?? "combined table configuration is degraded"));
+    return fail(err.conflict(localizedDiagnostics(current.diagnostics, locale)[0]?.message ?? t.combinedDegraded));
   }
   if (current.sources.some((source) => source.revokedAt !== null)) {
-    return fail(err.forbidden("combined table source access has been revoked"));
+    return fail(err.forbidden(t.combinedRevoked));
   }
   return ok(current);
 };
@@ -280,10 +290,11 @@ export const captureRevisionScope = async (tableIds: string[]): Promise<Federate
 /** Verifies a previously captured query scope in one round-trip. This is used
  * after relation/file expansion and between export pages, where one SQL
  * statement alone cannot protect the complete response. */
-export const verifyRevisionScope = async (scope: FederatedRevisionScope): Promise<Result<void>> => {
+export const verifyRevisionScope = async (scope: FederatedRevisionScope, locale?: string): Promise<Result<void>> => {
+  const t = serviceMessagesFor(locale);
   if (scope.length === 0) return ok();
   const expected = new Map(scope.map((entry) => [entry.tableId, `${entry.revisionId}:${entry.revisionToken}`]));
-  if (expected.size !== scope.length) return fail(err.internal("combined table revision scope contains duplicate tables"));
+  if (expected.size !== scope.length) return fail(err.internal(t.revisionScopeDuplicate));
   const rows = await sql<Array<{ table_id: string; revision_id: string; revision_token: string }>>`
     SELECT table_id::text, id::text AS revision_id,
            extract(epoch FROM updated_at)::numeric::text AS revision_token
@@ -292,7 +303,7 @@ export const verifyRevisionScope = async (scope: FederatedRevisionScope): Promis
       AND status = 'active'
   `;
   if (rows.length !== expected.size || rows.some((row) => expected.get(row.table_id) !== `${row.revision_id}:${row.revision_token}`)) {
-    return fail(err.conflict("combined table publication changed while the query was running; retry the query"));
+    return fail(err.conflict(t.publicationChangedQuery));
   }
   return ok();
 };
@@ -668,11 +679,11 @@ const validateInput = async (
   return { diagnostics, context: { table, sourceTables, targetFields, sourceFields } };
 };
 
-export const validateDraft = async (tableId: string, input: FederatedDraftInput): Promise<FederatedValidation> => {
-  const resolved = await resolveDraftInput(tableId, input, sql);
+export const validateDraft = async (tableId: string, input: FederatedDraftInput, locale?: string): Promise<FederatedValidation> => {
+  const resolved = await resolveDraftInput(tableId, input, sql, locale);
   if (!resolved.ok) return { valid: false, diagnostics: [{ code: "retained_source_invalid", message: resolved.error.message }] };
   const validation = await validateInput(tableId, resolved.data, sql);
-  return { valid: validation.diagnostics.length === 0, diagnostics: validation.diagnostics };
+  return { valid: validation.diagnostics.length === 0, diagnostics: localizedDiagnostics(validation.diagnostics, locale) };
 };
 
 const draftRow = async (tableId: string, client: SqlClient, lock = false): Promise<DbRow | null> => {
@@ -736,14 +747,16 @@ export const resolveDraftInput = async (
   tableId: string,
   input: FederatedDraftInput,
   client: SqlClient = sql,
+  locale?: string,
 ): Promise<Result<FederatedDraftInput>> => {
+  const t = serviceMessagesFor(locale);
   const retainedIds = [...new Set(input.retainedSourceIds ?? [])];
   if (retainedIds.length === 0) return ok({ sourceTableIds: input.sourceTableIds, mappings: input.mappings });
   const row = await draftRow(tableId, client);
-  if (!row) return fail(err.notFound("combined table draft"));
+  if (!row) return fail(err.notFound(t.combinedDraft));
   const draft = await loadRevision(client, row);
   const retained = draft.sources.filter((source) => retainedIds.includes(source.id));
-  if (retained.length !== retainedIds.length) return fail(err.badInput("retained source is not part of this combined table draft"));
+  if (retained.length !== retainedIds.length) return fail(err.badInput(t.retainedSourceInvalid));
   const explicitSourceIds = new Set(input.sourceTableIds);
   const retainedTableIds = retained.map((source) => source.sourceTableId).filter((sourceId) => !explicitSourceIds.has(sourceId));
   const retainedTableIdSet = new Set(retainedTableIds);
@@ -759,23 +772,26 @@ export const updateDraft = async (
   expectedDraftToken: string,
   actorId: string | null,
   authorization: FederatedPublicationAuthorization | null,
+  locale?: string,
 ): Promise<Result<LoadedFederatedRevision>> => {
+  const t = serviceMessagesFor(locale);
   const result = await sql.begin(async (tx): Promise<Result<LoadedFederatedRevision>> => {
     const initialRow = await draftRow(tableId, tx);
-    if (!initialRow) return fail(err.notFound("combined table draft"));
-    const initialResolved = await resolveDraftInput(tableId, input, tx);
+    if (!initialRow) return fail(err.notFound(t.combinedDraft));
+    const initialResolved = await resolveDraftInput(tableId, input, tx, locale);
     if (!initialResolved.ok) return fail(initialResolved.error);
     await lockFederatedSchemaTables(await schemaTableIdsForInput(tableId, initialResolved.data, tx), tx);
 
     const row = await draftRow(tableId, tx, true);
-    if (!row) return fail(err.notFound("combined table draft"));
+    if (!row) return fail(err.notFound(t.combinedDraft));
     if (row.revision_token !== expectedDraftToken) {
-      return fail(err.conflict("combined table draft changed; reload it before saving"));
+      return fail(err.conflict(t.draftChangedSave));
     }
-    const resolved = await resolveDraftInput(tableId, input, tx);
+    const resolved = await resolveDraftInput(tableId, input, tx, locale);
     if (!resolved.ok) return fail(resolved.error);
     const validation = await validateInput(tableId, resolved.data, tx);
-    if (!validation.context) return fail(err.badInput(validation.diagnostics[0]?.message ?? "invalid combined table"));
+    if (!validation.context)
+      return fail(err.badInput(localizedDiagnostics(validation.diagnostics, locale)[0]?.message ?? t.combinedInvalid));
     if (authorization) {
       const baseIds = [
         validation.context.table.baseId,
@@ -787,7 +803,7 @@ export const updateDraft = async (
       await lockBaseAuthorization(baseIds, tx);
       for (const baseId of [...new Set(baseIds)]) {
         if (!(await hasTransactionalBaseAdmin(baseId, authorization, tx))) {
-          return fail(err.forbidden("You no longer have admin access to every base required by this combined table draft."));
+          return fail(err.forbidden(t.draftAdminLost));
         }
       }
     }
@@ -806,7 +822,7 @@ export const updateDraft = async (
       tx,
     );
     const updated = await draftRow(tableId, tx);
-    if (!updated) return fail(err.internal("combined table draft disappeared during update"));
+    if (!updated) return fail(err.internal(t.draftDisappeared));
     return ok(await loadRevision(tx, updated));
   });
   if (result.ok) {
@@ -855,33 +871,36 @@ export const publishDraft = async (
     currentId: string | null;
     currentToken: string | null;
   },
+  locale?: string,
 ): Promise<Result<LoadedFederatedRevision>> => {
+  const t = serviceMessagesFor(locale);
   const result = await sql.begin(async (tx): Promise<Result<LoadedFederatedRevision>> => {
     const initialRow = await draftRow(tableId, tx);
-    if (!initialRow) return fail(err.notFound("combined table draft"));
+    if (!initialRow) return fail(err.notFound(t.combinedDraft));
     const initialDraft = await loadRevision(tx, initialRow);
     await lockFederatedSchemaTables(await schemaTableIdsForInput(tableId, revisionInput(initialDraft), tx), tx);
 
     const row = await draftRow(tableId, tx, true);
-    if (!row) return fail(err.notFound("combined table draft"));
+    if (!row) return fail(err.notFound(t.combinedDraft));
     const draft = await loadRevision(tx, row);
     if (draft.id !== expected.draftId || draft.revisionToken !== expected.draftToken) {
-      return fail(err.conflict("combined table draft changed before it could be published"));
+      return fail(err.conflict(t.draftChangedPublish));
     }
     const currentRow = await getRevisionByStatus(tableId, ["active", "degraded"], tx, true);
     if (currentRow?.id !== expected.currentId || (currentRow?.revisionToken ?? null) !== expected.currentToken) {
-      return fail(err.conflict("combined table publication changed before the draft could be published"));
+      return fail(err.conflict(t.publicationChangedPublish));
     }
     const input = revisionInput(draft);
     const sourcesRequiringAuthorization = new Set(sourceIdsRequiringAuthorization(currentRow, input));
     const validation = await validateInput(tableId, input, tx);
-    if (!validation.context) return fail(err.badInput(validation.diagnostics[0]?.message ?? "invalid combined table"));
+    if (!validation.context)
+      return fail(err.badInput(localizedDiagnostics(validation.diagnostics, locale)[0]?.message ?? t.combinedInvalid));
     await lockBaseAuthorization(
       [validation.context.table.baseId, ...[...validation.context.sourceTables.values()].map((source) => source.baseId)],
       tx,
     );
     if (!(await hasTransactionalBaseAdmin(validation.context.table.baseId, authorization, tx))) {
-      return fail(err.forbidden("You no longer have admin access to the combined table base."));
+      return fail(err.forbidden(t.combinedBaseAdminLost));
     }
     const sourceBaseRows = await tx<Array<{ source_table_id: string; base_id: string }>>`
       SELECT source.id::text AS source_table_id, source.base_id::text
@@ -895,12 +914,12 @@ export const publishDraft = async (
       FOR SHARE OF source, source_base
     `;
     if (sourceBaseRows.length !== input.sourceTableIds.length) {
-      return fail(err.badInput("One or more source tables are no longer available."));
+      return fail(err.badInput(t.sourcesUnavailable));
     }
     for (const source of sourceBaseRows) {
       if (!sourcesRequiringAuthorization.has(source.source_table_id)) continue;
       if (!(await hasTransactionalBaseAdmin(source.base_id, authorization, tx))) {
-        return fail(err.forbidden("You no longer have admin access to every source base required by this publication."));
+        return fail(err.forbidden(t.sourceBaseAdminLost));
       }
     }
     if (validation.diagnostics.length > 0) {
@@ -909,7 +928,13 @@ export const publishDraft = async (
         SET diagnostics = ${validation.diagnostics}::jsonb, updated_at = now()
         WHERE id = ${draft.id}::uuid
       `;
-      return fail(err.badInput(validation.diagnostics.map((diagnostic) => diagnostic.message).join("; ")));
+      return fail(
+        err.badInput(
+          localizedDiagnostics(validation.diagnostics, locale)
+            .map((diagnostic) => diagnostic.message)
+            .join("; "),
+        ),
+      );
     }
 
     await tx`
@@ -957,7 +982,7 @@ export const publishDraft = async (
       VALUES (${tableId}::uuid, ${nextRevision}, 'draft', ${actorId}::uuid)
       RETURNING id::text
     `;
-    if (!next) return fail(err.internal("failed to create the next combined table draft"));
+    if (!next) return fail(err.internal(t.nextDraftFailed));
     await writeDraftRows(next.id, input, [], tx);
 
     await logAudit(
@@ -971,7 +996,7 @@ export const publishDraft = async (
       tx,
     );
     const active = await getRevisionByStatus(tableId, ["active"], tx);
-    return active ? ok(active) : fail(err.internal("published combined table revision could not be loaded"));
+    return active ? ok(active) : fail(err.internal(t.publicationLoadFailed));
   });
   if (result.ok) {
     await emitTableMetadataEvent(tableId, {
@@ -989,7 +1014,9 @@ export const revokeSource = async (
   sourceTableId: string,
   actorId: string | null,
   authorization: FederatedPublicationAuthorization,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const t = serviceMessagesFor(locale);
   const result = await sql.begin(async (tx): Promise<Result<void>> => {
     const [row] = await tx<{ revision_id: string; base_id: string; source_base_id: string }[]>`
       SELECT r.id::text AS revision_id, target.base_id::text AS base_id, source_table.base_id::text AS source_base_id
@@ -1002,10 +1029,10 @@ export const revokeSource = async (
         AND r.status IN ('active', 'degraded')
       FOR UPDATE OF r, source
     `;
-    if (!row) return fail(err.notFound("published combined table source"));
+    if (!row) return fail(err.notFound(t.publishedSource));
     await lockBaseAuthorization([row.source_base_id], tx);
     if (!(await hasTransactionalBaseAdmin(row.source_base_id, authorization, tx))) {
-      return fail(err.forbidden("You no longer have admin access to the source base."));
+      return fail(err.forbidden(t.sourceBaseAdminLostSingle));
     }
     const diagnostic: FederatedDiagnostic = {
       code: "source_access_revoked",

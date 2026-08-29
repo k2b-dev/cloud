@@ -1,6 +1,7 @@
 import { Button, IconButton, Tooltip } from "@k2b/ui";
 import { For, Show, type Accessor } from "solid-js";
 import type { PulseSavedQuery } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext } from "./helpers";
 import type { QueryHistoryEntry } from "./types";
 
@@ -12,10 +13,11 @@ export function SavedQueriesPane(props: {
   onSaveCurrent: () => void | Promise<void>;
   onRemove: (query: PulseSavedQuery) => void | Promise<void>;
 }) {
+  const t = usePulseMessages();
   return (
     <div class="flex h-full min-h-0 flex-col overflow-hidden">
       <div class="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
-        <span class="text-label text-xs">Saved queries</span>
+        <span class="text-label text-xs">{t().savedQueries}</span>
         <Button
           type="button"
           variant="ghost"
@@ -23,11 +25,11 @@ export function SavedQueriesPane(props: {
           disabled={!props.currentQuery() || props.loading()}
           onClick={() => void props.onSaveCurrent()}
         >
-          <i class="ti ti-device-floppy" /> Save current
+          <i class="ti ti-device-floppy" /> {t().saveCurrent}
         </Button>
       </div>
       <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
-        <Show when={props.queries().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No saved queries.</p>}>
+        <Show when={props.queries().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noSavedQueries}</p>}>
           <For each={props.queries()}>
             {(item) => (
               <div class="group flex items-start gap-2 rounded px-2 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-900">
@@ -35,9 +37,9 @@ export function SavedQueriesPane(props: {
                   <span class="block truncate text-sm font-medium text-secondary">{item.name}</span>
                   <code class="block truncate font-mono text-[11px] text-dimmed">{item.query}</code>
                 </button>
-                <Tooltip.Anchor content="Remove saved query">
+                <Tooltip.Anchor content={t().removeSavedQuery}>
                   <IconButton
-                    label={`Remove saved query ${item.name}`}
+                    label={t().removeNamedSavedQuery({ name: item.name })}
                     variant="ghost"
                     size="xs"
                     class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
@@ -60,9 +62,10 @@ export function QueryHistoryPane(props: {
   dateContext: Accessor<PulseDateContext>;
   onSelect: (query: string) => void;
 }) {
+  const t = usePulseMessages();
   return (
     <div class="h-full min-h-0 overflow-auto p-2">
-      <Show when={props.history().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No runs yet.</p>}>
+      <Show when={props.history().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noRunsYet}</p>}>
         <For each={props.history()}>
           {(item) => (
             <button

@@ -7,6 +7,7 @@ import { groupedColumnFieldId } from "../presentation-ids";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
+import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForTableSchemaChange, lockFederatedSchemaTables, refreshForTableSchemaChange } from "./federated-tables";
 import { getFieldDependents, hasBlockingDependents } from "./field-dependents";
 import {
@@ -95,7 +96,12 @@ const updatedNullableText = (value: string | null | undefined, current: string |
   return typeof value === "string" ? value.trim() || null : null;
 };
 
-const ensureUniqueFieldName = async (tableId: string, name: string, exceptFieldId: string | null = null): Promise<Result<void>> => {
+const ensureUniqueFieldName = async (
+  tableId: string,
+  name: string,
+  exceptFieldId: string | null = null,
+  locale?: string,
+): Promise<Result<void>> => {
   const [row] = await sql<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM grids.fields
@@ -104,28 +110,29 @@ const ensureUniqueFieldName = async (tableId: string, name: string, exceptFieldI
       AND lower(trim(name)) = ${normalizeRefKey(name)}
       AND (${exceptFieldId}::uuid IS NULL OR id <> ${exceptFieldId}::uuid)
   `;
-  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict("field name must be unique within this table"));
+  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict(getGridsCrudMessages(locale).fieldNameUnique));
 };
 
-const validateCombinedCanonicalField = async (tableKind: string, candidate: Field): Promise<Result<void>> => {
+const validateCombinedCanonicalField = async (tableKind: string, candidate: Field, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   if (
     candidate.type === "html_template" &&
     (candidate.required || candidate.defaultValue !== null || candidate.indexed || candidate.uniqueConstraint || candidate.presentable)
   ) {
-    return fail(err.badInput("HTML template fields cannot define write constraints, defaults, indexes, uniqueness, or record labels"));
+    return fail(err.badInput(messages.htmlFieldConstraints));
   }
   if (tableKind !== "federated") return ok();
   if (candidate.type === "html_template") {
-    return fail(err.badInput("Combined tables do not support HTML template fields"));
+    return fail(err.badInput(messages.combinedHtmlUnsupported));
   }
   if (candidate.type === "lookup" || candidate.type === "rollup") {
-    return fail(err.badInput(`Combined tables do not support canonical ${candidate.type} fields; use a SQL-stable formula instead`));
+    return fail(err.badInput(messages.combinedComputedUnsupported({ type: candidate.type })));
   }
   if (candidate.type !== "formula") return ok();
   const fields = await listByTable(candidate.tableId);
   const prospective = [...fields.filter((field) => field.id !== candidate.id), candidate];
   const compiled = buildFormulaSqlProjections(prospective).some((projection) => projection.fieldId === candidate.id);
-  return compiled ? ok() : fail(err.badInput("Combined-table formulas must compile completely to SQL"));
+  return compiled ? ok() : fail(err.badInput(messages.combinedFormulaSql));
 };
 
 type FieldCreateState = {
@@ -146,28 +153,28 @@ const requireFinalizationForIdConfig = async (
   tableId: string,
   type: string,
   config: Record<string, unknown>,
+  locale?: string,
 ): Promise<Result<void>> => {
   if (type !== "id" || config.assignment !== "finalization") return ok();
   const rows = await client`
     SELECT table_id FROM grids.table_finalization_activations
     WHERE table_id = ${tableId}::uuid FOR SHARE
   `;
-  return rows.length > 0
-    ? ok()
-    : fail(err.badInput("Assign on finalization becomes available when Finalization is enabled for the table."));
+  return rows.length > 0 ? ok() : fail(err.badInput(getGridsCrudMessages(locale).finalizationAssignmentUnavailable));
 };
 
-const validateFieldCreateIdentity = async (input: CreateFieldInput): Promise<Result<string>> => {
+const validateFieldCreateIdentity = async (input: CreateFieldInput, locale?: string): Promise<Result<string>> => {
+  const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
-  if (name.length === 0) return fail(err.badInput("name required"));
-  if (!isKnownFieldType(input.type)) return fail(err.badInput(`unknown field type "${input.type}"`));
-  const uniqueName = await ensureUniqueFieldName(input.tableId, name);
+  if (name.length === 0) return fail(err.badInput(messages.nameRequired));
+  if (!isKnownFieldType(input.type)) return fail(err.badInput(messages.unknownFieldType({ type: input.type })));
+  const uniqueName = await ensureUniqueFieldName(input.tableId, name, null, locale);
   if (!uniqueName.ok) return uniqueName;
   return ok(name);
 };
 
-const validateFieldCreateValues = async (input: CreateFieldInput, name: string): Promise<Result<ValidatedFieldCreate>> => {
-  const configResult = validateFieldConfig(input.type, input.config ?? {});
+const validateFieldCreateValues = async (input: CreateFieldInput, name: string, locale?: string): Promise<Result<ValidatedFieldCreate>> => {
+  const configResult = validateFieldConfig(input.type, input.config ?? {}, locale);
   if (!configResult.ok) return configResult;
   const config = configResult.data as Record<string, unknown>;
   if (input.type === "id" && config.assignment === "finalization") {
@@ -176,25 +183,24 @@ const validateFieldCreateValues = async (input: CreateFieldInput, name: string):
         SELECT 1 FROM grids.table_finalization_activations WHERE table_id = ${input.tableId}::uuid
       ) AS enabled
     `;
-    if (!enabled?.enabled)
-      return fail(err.badInput("Assign on finalization becomes available when Finalization is enabled for the table."));
+    if (!enabled?.enabled) return fail(err.badInput(getGridsCrudMessages(locale).finalizationAssignmentUnavailable));
   }
-  const linkResult = await validateLinkOrComputedConfig(input.type, config, input.tableId);
+  const linkResult = await validateLinkOrComputedConfig(input.type, config, input.tableId, locale);
   if (!linkResult.ok) return linkResult;
-  const defaultResult = validateDefaultValue(input.type, config, input.defaultValue);
+  const defaultResult = validateDefaultValue(input.type, config, input.defaultValue, locale);
   if (!defaultResult.ok) return defaultResult;
 
   return ok({ name, config, defaultValue: defaultResult.data });
 };
 
-const loadFieldCreateTableKind = async (input: CreateFieldInput): Promise<Result<string>> => {
+const loadFieldCreateTableKind = async (input: CreateFieldInput, locale?: string): Promise<Result<string>> => {
   const [parentTable] = await sql<{ kind: string }[]>`
     SELECT kind FROM grids.tables WHERE id = ${input.tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!parentTable) return fail(err.notFound("Table"));
+  if (!parentTable) return fail(err.notFound(getGridsCrudMessages(locale).table));
   const hasStoredConstraints = input.required || input.defaultValue !== undefined || input.indexed || input.uniqueConstraint;
   if (parentTable.kind === "federated" && hasStoredConstraints) {
-    return fail(err.badInput("Combined-table fields cannot define write constraints, defaults, or storage indexes"));
+    return fail(err.badInput(getGridsCrudMessages(locale).combinedStoredConstraints));
   }
   return ok(parentTable.kind);
 };
@@ -223,15 +229,15 @@ const buildFieldCreateCandidate = (input: CreateFieldInput, validated: Validated
   };
 };
 
-const prepareFieldCreate = async (input: CreateFieldInput): Promise<Result<FieldCreateState>> => {
-  const name = await validateFieldCreateIdentity(input);
+const prepareFieldCreate = async (input: CreateFieldInput, locale?: string): Promise<Result<FieldCreateState>> => {
+  const name = await validateFieldCreateIdentity(input, locale);
   if (!name.ok) return name;
-  const tableKind = await loadFieldCreateTableKind(input);
+  const tableKind = await loadFieldCreateTableKind(input, locale);
   if (!tableKind.ok) return tableKind;
-  const validated = await validateFieldCreateValues(input, name.data);
+  const validated = await validateFieldCreateValues(input, name.data, locale);
   if (!validated.ok) return validated;
   const candidate = buildFieldCreateCandidate(input, validated.data, tableKind.data);
-  const canonicalResult = await validateCombinedCanonicalField(tableKind.data, candidate);
+  const canonicalResult = await validateCombinedCanonicalField(tableKind.data, candidate, locale);
   if (!canonicalResult.ok) return canonicalResult;
 
   return ok({
@@ -245,10 +251,10 @@ const prepareFieldCreate = async (input: CreateFieldInput): Promise<Result<Field
   });
 };
 
-const insertPreparedField = async (state: FieldCreateState, actorId: string | null): Promise<Result<Field>> =>
+const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<Field>> =>
   sql.begin(async (tx): Promise<Result<Field>> => {
     const field = state.candidate;
-    const finalization = await requireFinalizationForIdConfig(tx, field.tableId, field.type, field.config);
+    const finalization = await requireFinalizationForIdConfig(tx, field.tableId, field.type, field.config, locale);
     if (!finalization.ok) return finalization;
     if (state.tableKind === "federated") await degradeForTableSchemaChange(field.tableId, actorId, tx);
     const created = await writeNamedResource(
@@ -276,7 +282,7 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
           "idx_grids_fields_short_id",
         ),
       "idx_grids_fields_live_name",
-      "field name must be unique within this table",
+      getGridsCrudMessages(locale).fieldNameUnique,
     );
     if (!created.ok) return created;
     const inserted = mapFieldRow(created.data);
@@ -293,13 +299,13 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
     return ok(inserted);
   });
 
-const prepareCreateUniqueIndex = async (field: Field): Promise<Result<boolean>> => {
+const prepareCreateUniqueIndex = async (field: Field, locale?: string): Promise<Result<boolean>> => {
   if (!field.uniqueConstraint || !isUniqueable(field.type)) return ok(false);
   try {
     await ensureFieldUniqueIndex(field.id, field.type, field.tableId);
     return ok(true);
   } catch (error) {
-    return fail(err.internal(`field unique-constraint index build failed: ${(error as Error).message}`));
+    return fail(err.internal(getGridsCrudMessages(locale).fieldUniqueIndexBuildFailed({ detail: (error as Error).message })));
   }
 };
 
@@ -307,9 +313,10 @@ const insertWithUniqueIndexCleanup = async (
   state: FieldCreateState,
   actorId: string | null,
   uniqueIndexCreated: boolean,
+  locale?: string,
 ): Promise<Result<Field>> => {
   try {
-    const inserted = await insertPreparedField(state, actorId);
+    const inserted = await insertPreparedField(state, actorId, locale);
     if (inserted.ok || !uniqueIndexCreated) return inserted;
     const cleanup = await cleanupPreparedUniqueIndex(state.candidate.id);
     return cleanup.ok ? inserted : fail(cleanup.error);
@@ -321,12 +328,12 @@ const insertWithUniqueIndexCleanup = async (
   }
 };
 
-export const create = async (input: CreateFieldInput, actorId: string | null): Promise<Result<Field>> => {
-  const prepared = await prepareFieldCreate(input);
+export const create = async (input: CreateFieldInput, actorId: string | null, locale?: string): Promise<Result<Field>> => {
+  const prepared = await prepareFieldCreate(input, locale);
   if (!prepared.ok) return prepared;
-  const uniqueIndex = await prepareCreateUniqueIndex(prepared.data.candidate);
+  const uniqueIndex = await prepareCreateUniqueIndex(prepared.data.candidate, locale);
   if (!uniqueIndex.ok) return uniqueIndex;
-  const inserted = await insertWithUniqueIndexCleanup(prepared.data, actorId, uniqueIndex.data);
+  const inserted = await insertWithUniqueIndexCleanup(prepared.data, actorId, uniqueIndex.data, locale);
   if (!inserted.ok) return inserted;
   const field = inserted.data;
 
@@ -343,12 +350,18 @@ export const create = async (input: CreateFieldInput, actorId: string | null): P
   return ok(field);
 };
 
-const validateFieldUpdate = async (existing: Field, input: UpdateFieldInput, tableKind: string): Promise<Result<FieldUpdateState>> => {
+const validateFieldUpdate = async (
+  existing: Field,
+  input: UpdateFieldInput,
+  tableKind: string,
+  locale?: string,
+): Promise<Result<FieldUpdateState>> => {
+  const messages = getGridsCrudMessages(locale);
   const name = input.name?.trim();
-  if (name !== undefined && name.length === 0) return fail(err.badInput("name cannot be empty"));
+  if (name !== undefined && name.length === 0) return fail(err.badInput(messages.nameEmpty));
 
   const rawConfig = input.config !== undefined ? input.config : existing.config;
-  const cfgValidation = validateFieldConfig(existing.type, rawConfig);
+  const cfgValidation = validateFieldConfig(existing.type, rawConfig, locale);
   if (!cfgValidation.ok) return cfgValidation;
   const config = cfgValidation.data as Record<string, unknown>;
   if (existing.type === "id" && config.assignment === "finalization") {
@@ -357,18 +370,17 @@ const validateFieldUpdate = async (existing: Field, input: UpdateFieldInput, tab
         SELECT 1 FROM grids.table_finalization_activations WHERE table_id = ${existing.tableId}::uuid
       ) AS enabled
     `;
-    if (!enabled?.enabled)
-      return fail(err.badInput("Assign on finalization becomes available when Finalization is enabled for the table."));
+    if (!enabled?.enabled) return fail(err.badInput(messages.finalizationAssignmentUnavailable));
   }
   // Same-base + cross-table consistency on every update path. Important:
   // the user can't change `tableId` after creation, so the source-table
   // scope is stable, but config keys (targetTableId / relationFieldId /
   // targetFieldId) ARE editable — re-validate.
-  const linkValidation = await validateLinkOrComputedConfig(existing.type, config as Record<string, unknown>, existing.tableId);
+  const linkValidation = await validateLinkOrComputedConfig(existing.type, config as Record<string, unknown>, existing.tableId, locale);
   if (!linkValidation.ok) return linkValidation;
 
   const rawDefaultValue = tableKind === "federated" ? null : input.defaultValue !== undefined ? input.defaultValue : existing.defaultValue;
-  const defaultValid = validateDefaultValue(existing.type, config as Record<string, unknown>, rawDefaultValue);
+  const defaultValid = validateDefaultValue(existing.type, config as Record<string, unknown>, rawDefaultValue, locale);
   if (!defaultValid.ok) return defaultValid;
 
   return ok({
@@ -388,26 +400,30 @@ const validateFieldUpdate = async (existing: Field, input: UpdateFieldInput, tab
   });
 };
 
-const ensureUniqueToggleAllowed = async (fieldId: string, existing: Field, input: UpdateFieldInput): Promise<Result<void>> => {
+const ensureUniqueToggleAllowed = async (
+  fieldId: string,
+  existing: Field,
+  input: UpdateFieldInput,
+  locale?: string,
+): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   // Pre-flight conflict check so users get a clean 409 before the unique
   // index build could fail with a generic Postgres duplicate-key error.
   if (input.uniqueConstraint === true && !existing.uniqueConstraint) {
     if (!isUniqueable(existing.type)) {
-      return fail(err.badInput(`unique_constraint not supported for type "${existing.type}" (use a scalar type)`));
+      return fail(err.badInput(messages.uniqueConstraintUnsupported({ type: existing.type })));
     }
     const conflicts = await findUniqueConflicts(fieldId, existing.tableId);
     if (conflicts.length > 0) {
       return fail(
-        err.conflict(
-          `unique_constraint cannot be enabled — duplicate values: ${conflicts.slice(0, 5).join(", ")}${conflicts.length > 5 ? ` (+${conflicts.length - 5} more)` : ""}`,
-        ),
+        err.conflict(messages.duplicateFieldValues({ values: conflicts.slice(0, 5).join(", "), more: Math.max(0, conflicts.length - 5) })),
       );
     }
   }
   return ok();
 };
 
-const persistFieldUpdate = async (id: string, next: FieldUpdateState, client: SqlClient = sql): Promise<Result<Field>> => {
+const persistFieldUpdate = async (id: string, next: FieldUpdateState, client: SqlClient = sql, locale?: string): Promise<Result<Field>> => {
   // Same primitive-to-JSONB stringify dance as create.
   const nextDefaultValueJsonb = next.defaultValue === undefined || next.defaultValue === null ? null : JSON.stringify(next.defaultValue);
   const [row] = await client<DbRow[]>`
@@ -427,7 +443,7 @@ const persistFieldUpdate = async (id: string, next: FieldUpdateState, client: Sq
     WHERE id = ${id}::uuid
     RETURNING *
   `;
-  if (!row) return fail(err.internal("update failed"));
+  if (!row) return fail(err.internal(getGridsCrudMessages(locale).updateFailed));
   return ok(mapFieldRow(row));
 };
 
@@ -459,10 +475,15 @@ const logFieldUpdateDiff = async (
   }
 };
 
-const compensateUniqueConstraintDisable = async (existing: Field, field: Field, actorId: string | null): Promise<Field | null> => {
+const compensateUniqueConstraintDisable = async (
+  existing: Field,
+  field: Field,
+  actorId: string | null,
+  locale?: string,
+): Promise<Field | null> => {
   try {
     const restored = await sql.begin(async (tx) => {
-      const restoredResult = await persistFieldUpdate(field.id, fieldUpdateState(existing), tx);
+      const restoredResult = await persistFieldUpdate(field.id, fieldUpdateState(existing), tx, locale);
       if (!restoredResult.ok) throw new Error(restoredResult.error.message);
       if (existing.type === "id") {
         await syncNumberSeriesFormat(
@@ -490,7 +511,7 @@ const compensateUniqueConstraintDisable = async (existing: Field, field: Field, 
   }
 };
 
-const syncFieldIndexes = async (existing: Field, field: Field, actorId: string | null): Promise<Result<Field>> => {
+const syncFieldIndexes = async (existing: Field, field: Field, actorId: string | null, locale?: string): Promise<Result<Field>> => {
   // Unique-constraint enable is prepared before the row transaction. Only
   // disabling remains here. Resolve it before best-effort performance-index
   // work so compensation can restore the complete prior field state.
@@ -499,12 +520,12 @@ const syncFieldIndexes = async (existing: Field, field: Field, actorId: string |
       try {
         await dropFieldUniqueIndex(field.id, { throwOnError: true });
       } catch {
-        const compensated = await compensateUniqueConstraintDisable(existing, field, actorId);
+        const compensated = await compensateUniqueConstraintDisable(existing, field, actorId, locale);
         return fail(
           err.internal(
             compensated
-              ? "unique-constraint index drop failed; the field change was rolled back"
-              : "unique-constraint index drop failed and field metadata could not be reconciled",
+              ? getGridsCrudMessages(locale).fieldIndexDropRolledBack
+              : getGridsCrudMessages(locale).fieldIndexDropCompensationFailed,
           ),
         );
       }
@@ -525,14 +546,15 @@ const syncFieldIndexes = async (existing: Field, field: Field, actorId: string |
   return ok(field);
 };
 
-export const update = async (id: string, input: UpdateFieldInput, actorId: string | null): Promise<Result<Field>> => {
+export const update = async (id: string, input: UpdateFieldInput, actorId: string | null, locale?: string): Promise<Result<Field>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing || existing.deletedAt) return fail(err.notFound("Field"));
+  if (!existing || existing.deletedAt) return fail(err.notFound(messages.field));
 
   const [parentTable] = await sql<{ kind: string }[]>`
     SELECT kind FROM grids.tables WHERE id = ${existing.tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!parentTable) return fail(err.notFound("Table"));
+  if (!parentTable) return fail(err.notFound(messages.table));
   if (
     parentTable.kind === "federated" &&
     (input.required === true ||
@@ -540,21 +562,25 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
       input.indexed === true ||
       input.uniqueConstraint === true)
   ) {
-    return fail(err.badInput("Combined-table fields cannot define write constraints, defaults, or storage indexes"));
+    return fail(err.badInput(messages.combinedStoredConstraints));
   }
 
-  const nextResult = await validateFieldUpdate(existing, input, parentTable.kind);
+  const nextResult = await validateFieldUpdate(existing, input, parentTable.kind, locale);
   if (!nextResult.ok) return nextResult;
-  const canonicalValidation = await validateCombinedCanonicalField(parentTable.kind, {
-    ...existing,
-    ...nextResult.data,
-    defaultValue: nextResult.data.defaultValue ?? null,
-  });
+  const canonicalValidation = await validateCombinedCanonicalField(
+    parentTable.kind,
+    {
+      ...existing,
+      ...nextResult.data,
+      defaultValue: nextResult.data.defaultValue ?? null,
+    },
+    locale,
+  );
   if (!canonicalValidation.ok) return canonicalValidation;
-  const uniqueName = await ensureUniqueFieldName(existing.tableId, nextResult.data.name, existing.id);
+  const uniqueName = await ensureUniqueFieldName(existing.tableId, nextResult.data.name, existing.id, locale);
   if (!uniqueName.ok) return uniqueName;
 
-  const uniqueAllowed = await ensureUniqueToggleAllowed(id, existing, input);
+  const uniqueAllowed = await ensureUniqueToggleAllowed(id, existing, input, locale);
   if (!uniqueAllowed.ok) return uniqueAllowed;
 
   const uniqueIndexEnabled = !existing.uniqueConstraint && nextResult.data.uniqueConstraint;
@@ -563,7 +589,7 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
       // Prepare correctness-critical enforcement before changing metadata.
       await ensureFieldUniqueIndex(id, existing.type, existing.tableId);
     } catch (error) {
-      return fail(err.internal(`unique-constraint index build failed: ${(error as Error).message}`));
+      return fail(err.internal(messages.fieldUniqueIndexBuildFailed({ detail: (error as Error).message })));
     }
   }
 
@@ -572,9 +598,9 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
     txResult = await sql
       .begin(async (tx): Promise<Result<Field>> => {
         await degradeForTableSchemaChange(existing.tableId, actorId, tx);
-        const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, nextResult.data.config);
+        const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, nextResult.data.config, locale);
         if (!finalization.ok) return finalization;
-        const fieldResult = await persistFieldUpdate(id, nextResult.data, tx);
+        const fieldResult = await persistFieldUpdate(id, nextResult.data, tx, locale);
         if (!fieldResult.ok) throw fieldResult;
         const field = fieldResult.data;
         if (field.type === "id") {
@@ -598,9 +624,9 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
         if (typeof e === "object" && e !== null && "ok" in e && (e as { ok?: unknown }).ok === false) {
           return e as Result<Field>;
         }
-        const conflict = namedResourceConflict<Field>(e, "idx_grids_fields_live_name", "field name must be unique within this table");
+        const conflict = namedResourceConflict<Field>(e, "idx_grids_fields_live_name", messages.fieldNameUnique);
         if (conflict) return conflict;
-        return fail(err.internal(`field update failed: ${(e as Error).message}`));
+        return fail(err.internal(messages.fieldUpdateFailed({ detail: (e as Error).message })));
       });
   } catch (error) {
     if (uniqueIndexEnabled) {
@@ -618,7 +644,7 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
   }
   const field = txResult.data;
 
-  const synchronizedField = await syncFieldIndexes(existing, field, actorId);
+  const synchronizedField = await syncFieldIndexes(existing, field, actorId, locale);
   if (!synchronizedField.ok) return synchronizedField;
 
   await emitTableMetadataEvent(existing.tableId, {
@@ -637,13 +663,13 @@ export const update = async (id: string, input: UpdateFieldInput, actorId: strin
  * positions in ONE round-trip via UNNEST + a CASE-driven UPDATE so the
  * change is atomic and the wire cost is constant in the field count.
  */
-export const reorder = async (tableId: string, fieldIds: string[], actorId: string | null): Promise<Result<void>> => {
+export const reorder = async (tableId: string, fieldIds: string[], actorId: string | null, locale?: string): Promise<Result<void>> => {
   if (fieldIds.length === 0) return ok();
 
   const [parentTable] = await sql<{ kind: string }[]>`
     SELECT kind FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!parentTable) return fail(err.notFound("Table"));
+  if (!parentTable) return fail(err.notFound(getGridsCrudMessages(locale).table));
 
   // Filter to ids that actually belong to this table — protects against
   // the client passing an id from another (e.g. recently-renamed) table.
@@ -695,19 +721,20 @@ export const reorder = async (tableId: string, fieldIds: string[], actorId: stri
  * when the user accidentally deletes a field they want back; rare
  * enough that the form/view re-add cost is acceptable.
  */
-export const restore = async (id: string, actorId: string | null): Promise<Result<Field>> => {
+export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<Field>> => {
+  const messages = getGridsCrudMessages(locale);
   // get() now returns trashed rows but enforces the live-parent JOIN —
   // a field whose parent table or base is trashed resolves to null
   // here, which we surface as notFound (top-down restore: act on the
   // parent first).
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("Field"));
+  if (!existing) return fail(err.notFound(messages.field));
   if (existing.deletedAt === null) return ok(existing);
   const [parentTable] = await sql<{ kind: string }[]>`
     SELECT kind FROM grids.tables WHERE id = ${existing.tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!parentTable) return fail(err.notFound("Table"));
-  const canonicalValidation = await validateCombinedCanonicalField(parentTable.kind, { ...existing, deletedAt: null });
+  if (!parentTable) return fail(err.notFound(messages.table));
+  const canonicalValidation = await validateCombinedCanonicalField(parentTable.kind, { ...existing, deletedAt: null }, locale);
   if (!canonicalValidation.ok) return canonicalValidation;
   const restoreUniqueIndex = existing.uniqueConstraint && isUniqueable(existing.type);
   if (restoreUniqueIndex) {
@@ -715,16 +742,16 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
       await ensureFieldUniqueIndex(id, existing.type, existing.tableId);
     } catch (error) {
       if (isUniqueViolation(error)) {
-        return fail(err.conflict("field cannot be restored because its existing values are not unique"));
+        return fail(err.conflict(messages.fieldRestoreValuesNotUnique));
       }
-      return fail(err.internal(`field restore failed while rebuilding its unique index: ${(error as Error).message}`));
+      return fail(err.internal(messages.fieldRestoreIndexFailed({ detail: (error as Error).message })));
     }
   }
   let restored: Result<Field>;
   try {
     restored = await sql.begin(async (tx): Promise<Result<Field>> => {
       await degradeForTableSchemaChange(existing.tableId, actorId, tx);
-      const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, existing.config);
+      const finalization = await requireFinalizationForIdConfig(tx, existing.tableId, existing.type, existing.config, locale);
       if (!finalization.ok) return finalization;
       const result = await writeNamedResource(
         () =>
@@ -739,7 +766,7 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
             return mapFieldRow(row);
           }),
         "idx_grids_fields_live_name",
-        "field name must be unique within this table",
+        messages.fieldNameUnique,
       );
       if (!result.ok) return result;
       await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
@@ -764,9 +791,10 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
   return ok({ ...existing, deletedAt: null });
 };
 
-export const softDelete = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const softDelete = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing || existing.deletedAt) return fail(err.notFound("Field"));
+  if (!existing || existing.deletedAt) return fail(err.notFound(messages.field));
 
   const deleted = await sql.begin(async (tx): Promise<Result<void>> => {
     // Keep the same lock order as Combined-table publication: schema lock,
@@ -782,11 +810,11 @@ export const softDelete = async (id: string, actorId: string | null): Promise<Re
       WHERE id = ${existing.tableId}::uuid AND deleted_at IS NULL
       FOR UPDATE
     `;
-    if (!table) return fail(err.notFound("Table"));
+    if (!table) return fail(err.notFound(messages.table));
 
     const blockers = (await getFieldDependents(id, tx)).filter((dependent) => dependent.blocking);
     if (hasBlockingDependents(blockers)) {
-      return fail(err.conflict(`Field is still used by ${blockers.map((dependent) => dependent.resourceName).join(", ")}`));
+      return fail(err.conflict(messages.fieldStillUsed({ resources: blockers.map((dependent) => dependent.resourceName).join(", ") })));
     }
 
     await degradeForTableSchemaChange(existing.tableId, actorId, tx);
@@ -795,7 +823,7 @@ export const softDelete = async (id: string, actorId: string | null): Promise<Re
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING id
     `;
-    if (!deleted) throw err.notFound("Field");
+    if (!deleted) throw err.notFound(messages.field);
     if (existing.type === "id") await setNumberSeriesArchived(tx, { kind: "field", id }, true);
     await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" }, tx);
     // Auto-cleanup: strip the soft-deleted field id from every form's

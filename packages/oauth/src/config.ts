@@ -5,6 +5,10 @@ export const app = defineApp({
   name: "OAuth",
   icon: "ti ti-key",
   description: "Manage OAuth/OIDC clients, redirects, scopes, and secrets.",
+  presentation: {
+    baseLocale: "en",
+    translations: { de: { description: "OAuth/OIDC-Clients, Weiterleitungen, Scopes und Secrets verwalten." } },
+  },
   appearance: { accent: "#4338ca", background: { from: "#4f46e5", to: "#8b5cf6", angle: 135 } },
   basePath: "/oauth",
   baseUrl: "http://app-oauth:3000",

@@ -2,6 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { AccessEntry, AccessSubject, PermissionLevel, Principal } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { emitMetadataEvent } from "./metadata-events";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 
@@ -82,22 +83,28 @@ const authorizeMutation = async (
   binding: AccessBinding,
   authorization: BaseAdminAuthorization | undefined,
   client: SqlClient,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   if (!authorization) return ok();
-  return (await hasTransactionalBaseAdmin(binding.baseId, authorization, client))
-    ? ok()
-    : fail(err.forbidden("You no longer have admin access to this base."));
+  return (await hasTransactionalBaseAdmin(binding.baseId, authorization, client)) ? ok() : fail(err.forbidden(messages.adminAccessLost));
 };
 
-export const validateAccessPermission = (resourceType: AccessResourceType, permission: string): string | null => {
+export const validateAccessPermission = (resourceType: AccessResourceType, permission: string, locale?: string): string | null => {
+  const messages = getGridsCrudMessages(locale);
   const definition = ACCESS_RESOURCES[resourceType];
-  return (definition.allowedPermissions as readonly string[]).includes(permission) ? null : definition.invalidPermissionMessage;
+  return (definition.allowedPermissions as readonly string[]).includes(permission)
+    ? null
+    : resourceType === "base"
+      ? messages.basePermissionInvalid
+      : messages.appPermissionInvalid;
 };
 
-export const validateAccessPrincipal = (resourceType: AccessResourceType, principal: Principal): string | null => {
-  if (resourceType === "base" && principal.type === "public") return "Public access is only supported for Grids Apps.";
+export const validateAccessPrincipal = (resourceType: AccessResourceType, principal: Principal, locale?: string): string | null => {
+  const messages = getGridsCrudMessages(locale);
+  if (resourceType === "base" && principal.type === "public") return messages.publicAccessAppsOnly;
   if (resourceType === "customApp" && principal.type === "service_account") {
-    return "Grids App access does not support service accounts; grant access to the delegated user instead.";
+    return messages.appServiceAccountUnsupported;
   }
   return null;
 };
@@ -161,7 +168,9 @@ const getAccessSnapshot = async (accessId: string, client: SqlClient = sql): Pro
 const insertAccessRow = async (
   params: { principal: Principal; permission: PermissionLevel },
   client: SqlClient,
+  locale?: string,
 ): Promise<Result<{ id: string }>> => {
+  const messages = getGridsCrudMessages(locale);
   let userId: string | null = null;
   let groupId: string | null = null;
   let serviceAccountId: string | null = null;
@@ -170,17 +179,17 @@ const insertAccessRow = async (
   if (params.principal.type === "user") {
     userId = params.principal.userId;
     const [user] = await client<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ${userId}::uuid`;
-    if (!user) return fail(err.notFound("User"));
+    if (!user) return fail(err.notFound(messages.user));
   } else if (params.principal.type === "group") {
     groupId = params.principal.groupId;
     const [group] = await client<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${groupId}::uuid`;
-    if (!group) return fail(err.notFound("Group"));
+    if (!group) return fail(err.notFound(messages.group));
   } else if (params.principal.type === "service_account") {
     serviceAccountId = params.principal.serviceAccountId;
     const [account] = await client<{ id: string }[]>`
       SELECT id FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid AND status = 'active'
     `;
-    if (!account) return fail(err.notFound("Service account"));
+    if (!account) return fail(err.notFound(messages.serviceAccount));
   } else if (params.principal.type === "authenticated") {
     authenticatedOnly = true;
   }
@@ -190,7 +199,7 @@ const insertAccessRow = async (
     VALUES (${userId}::uuid, ${groupId}::uuid, ${serviceAccountId}::uuid, ${authenticatedOnly}, ${params.permission}::auth.permission_level)
     RETURNING id
   `;
-  return row ? ok({ id: row.id }) : fail(err.internal("Failed to create access entry"));
+  return row ? ok({ id: row.id }) : fail(err.internal(messages.accessCreateFailed));
 };
 
 const insertAccessBinding = async (
@@ -244,22 +253,24 @@ export const grantAccess = async (params: {
   permission: PermissionLevel;
   actorId?: string | null;
   authorization?: BaseAdminAuthorization;
+  locale?: string;
 }): Promise<Result<{ accessId: string }>> => {
-  const validationError = validateAccessPermission(params.resourceType, params.permission);
+  const messages = getGridsCrudMessages(params.locale);
+  const validationError = validateAccessPermission(params.resourceType, params.permission, params.locale);
   if (validationError) return fail(err.badInput(validationError));
-  const principalError = validateAccessPrincipal(params.resourceType, params.principal);
+  const principalError = validateAccessPrincipal(params.resourceType, params.principal, params.locale);
   if (principalError) return fail(err.badInput(principalError));
   const result = await sql.begin(async (tx): Promise<Result<{ accessId: string }>> => {
     const binding = await resolveResourceBinding(params.resourceType, params.resourceId, { client: tx });
-    if (!binding) return fail(err.notFound("Resource"));
+    if (!binding) return fail(err.notFound(messages.resource));
     await lockBaseAuthorization([binding.baseId], tx);
-    const authorized = await authorizeMutation(binding, params.authorization, tx);
+    const authorized = await authorizeMutation(binding, params.authorization, tx, params.locale);
     if (!authorized.ok) return fail(authorized.error);
-    const created = await insertAccessRow({ principal: params.principal, permission: params.permission }, tx);
+    const created = await insertAccessRow({ principal: params.principal, permission: params.permission }, tx, params.locale);
     if (!created.ok) return fail(created.error);
     await insertAccessBinding(params.resourceType, params.resourceId, created.data.id, tx);
     const access = await getAccessSnapshot(created.data.id, tx);
-    if (!access) throw err.internal("Failed to resolve access entry");
+    if (!access) throw err.internal(messages.accessResolveFailed);
     await logAccessAudit({
       action: "access.granted",
       binding,
@@ -337,21 +348,23 @@ export const updateAccessLevel = async (
   level: PermissionLevel,
   actorId: string | null = null,
   authorization?: BaseAdminAuthorization,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const result = await sql.begin(async (tx): Promise<Result<AccessBinding>> => {
     const binding = await resolveAccessBinding(accessId, tx);
-    if (!binding) return fail(err.notFound("Access entry"));
-    const validationError = validateAccessPermission(binding.resourceType, level);
+    if (!binding) return fail(err.notFound(messages.accessEntry));
+    const validationError = validateAccessPermission(binding.resourceType, level, locale);
     if (validationError) return fail(err.badInput(validationError));
     await lockBaseAuthorization([binding.baseId], tx);
-    const authorized = await authorizeMutation(binding, authorization, tx);
+    const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);
-    if (!access) return fail(err.notFound("Access entry"));
+    if (!access) return fail(err.notFound(messages.accessEntry));
     const update = await tx`
       UPDATE auth.access SET permission = ${level}::auth.permission_level WHERE id = ${accessId}::uuid
     `;
-    if (update.count === 0) return fail(err.notFound("Access entry"));
+    if (update.count === 0) return fail(err.notFound(messages.accessEntry));
     if (access.permission !== level) {
       await logAccessAudit({ action: "access.updated", binding, access, actorId, nextPermission: level, client: tx });
     }
@@ -366,17 +379,19 @@ export const revokeAccess = async (
   accessId: string,
   actorId: string | null = null,
   authorization?: BaseAdminAuthorization,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const result = await sql.begin(async (tx): Promise<Result<AccessBinding>> => {
     const binding = await resolveAccessBinding(accessId, tx);
-    if (!binding) return fail(err.notFound("Access entry"));
+    if (!binding) return fail(err.notFound(messages.accessEntry));
     await lockBaseAuthorization([binding.baseId], tx);
-    const authorized = await authorizeMutation(binding, authorization, tx);
+    const authorized = await authorizeMutation(binding, authorization, tx, locale);
     if (!authorized.ok) return fail(authorized.error);
     const access = await getAccessSnapshot(accessId, tx);
-    if (!access) return fail(err.notFound("Access entry"));
+    if (!access) return fail(err.notFound(messages.accessEntry));
     const deleted = await tx`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
-    if (deleted.count === 0) return fail(err.notFound("Access entry"));
+    if (deleted.count === 0) return fail(err.notFound(messages.accessEntry));
     await logAccessAudit({ action: "access.revoked", binding, access, actorId, nextPermission: null, client: tx });
     return ok(binding);
   });

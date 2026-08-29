@@ -55,23 +55,31 @@ const socket = (status: number) =>
     send: () => status,
   }) as unknown as ServerWebSocket<unknown>;
 
-const workspaceSession = (token: string | null, overrides: NonNullable<Parameters<typeof createWorkspaceWebSocketSession>[1]> = {}) =>
-  createWorkspaceWebSocketSession(token, {
-    resolvePublicId: async (type, id) => {
-      if (type === "base" && id === publicBaseId) return baseId;
-      if (type === "table" && id === publicTableId) return tableId;
-      if (type === "workflow" && id === publicWorkflowId) return workflowId;
-      return null;
+const workspaceSession = (
+  token: string | null,
+  overrides: NonNullable<Parameters<typeof createWorkspaceWebSocketSession>[1]> = {},
+  locale = "en",
+) =>
+  createWorkspaceWebSocketSession(
+    token,
+    {
+      resolvePublicId: async (type, id) => {
+        if (type === "base" && id === publicBaseId) return baseId;
+        if (type === "table" && id === publicTableId) return tableId;
+        if (type === "workflow" && id === publicWorkflowId) return workflowId;
+        return null;
+      },
+      projectPublicId: async (type, id) => (type === "base" && id === baseId ? publicBaseId : null),
+      projectRecordEvent: async (event) => ({ ...event, baseId: publicBaseId, tableId: publicTableId, recordId: publicRecordId }),
+      projectMetadataEvent: async (event) => ({
+        ...event,
+        baseId: publicBaseId,
+        resource: { ...event.resource, id: publicTableId, ...(event.resource.tableId ? { tableId: publicTableId } : {}) },
+      }),
+      ...overrides,
     },
-    projectPublicId: async (type, id) => (type === "base" && id === baseId ? publicBaseId : null),
-    projectRecordEvent: async (event) => ({ ...event, baseId: publicBaseId, tableId: publicTableId, recordId: publicRecordId }),
-    projectMetadataEvent: async (event) => ({
-      ...event,
-      baseId: publicBaseId,
-      resource: { ...event.resource, id: publicTableId, ...(event.resource.tableId ? { tableId: publicTableId } : {}) },
-    }),
-    ...overrides,
-  });
+    locale,
+  );
 
 describe("Grids websocket delivery", () => {
   test("accepts only messages written without backpressure or drops", () => {
@@ -137,6 +145,19 @@ describe("Grids websocket cursor baseline", () => {
 });
 
 describe("Grids websocket server sessions", () => {
+  test("localizes protocol presentation without changing stable error codes", async () => {
+    const socket = testSocket();
+    const session = workspaceSession(null, {}, "de-CH");
+    session.open(socket.socket);
+    session.message("{");
+    await session.drain();
+
+    expect(socket.messages).toEqual([
+      { type: "grids.records.error", payload: { code: "invalid_json", message: "Ungültige JSON-Nutzlast" } },
+    ]);
+    expect(socket.closes).toEqual([{ code: 1008, reason: "invalid_json" }]);
+  });
+
   test("closes malformed, non-text, oversized, and invalid subscription messages terminally", async () => {
     const cases: unknown[] = [
       "{",
@@ -240,6 +261,41 @@ describe("Grids websocket server sessions", () => {
     });
     expect(socket.closes).toEqual([{ code: 1008, reason: "access_denied" }]);
     expect(canceled).toBe(1);
+  });
+
+  test("localizes access revocation while preserving its protocol code", async () => {
+    const refresh: { current: (() => void) | null } = { current: null };
+    const socket = testSocket();
+    const session = workspaceSession(
+      "session",
+      {
+        evaluateBaseAccess: async () => ({ ok: true, baseId }),
+        evaluateSubscriptionAccess: async () => ({ ok: false, code: "access_denied", message: "ignored" }),
+        latestMetadataCursor: async () => "1-0",
+        metadataEvents: async function* ({ signal }: { signal?: AbortSignal }) {
+          await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
+        } as never,
+        schedule: ((callback: () => void) => {
+          refresh.current = callback;
+          return 1;
+        }) as never,
+        cancel: (() => undefined) as never,
+      },
+      "de-DE",
+    );
+    session.open(socket.socket);
+    session.message(metadataSubscribe());
+    await session.drain();
+
+    if (!refresh.current) throw new Error("Expected access refresh callback");
+    refresh.current();
+    await Bun.sleep(0);
+
+    expect(socket.messages.at(-1)).toEqual({
+      type: "grids.metadata.revoked",
+      payload: { code: "access_denied", message: "Der Zugriff wurde entzogen", baseId: publicBaseId },
+    });
+    expect(socket.closes).toEqual([{ code: 1008, reason: "access_denied" }]);
   });
 
   test("delivers metadata events for every resource in a readable base", async () => {

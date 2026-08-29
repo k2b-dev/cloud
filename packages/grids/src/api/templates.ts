@@ -1,11 +1,13 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { gridsService } from "../service";
+import { apiMessages } from "./messages";
 import { currentActorUser, gateCredentialScope } from "./permissions";
 import { PublicBaseSchema, toPublicBase } from "./public-dto";
+import { v } from "./validator";
 
 const TemplateSummarySchema = z.object({
   id: z.string(),
@@ -33,7 +35,7 @@ export const createTemplatesApi = (deps: { requireAuthenticated?: MiddlewareHand
         summary: "List built-in base templates",
         responses: { 200: jsonResponse(TemplateListSchema, "Templates") },
       }),
-      (c) => c.json(gridsService.template.list()),
+      (c) => c.json(gridsService.template.list(getLocale(c))),
     )
 
     .post(
@@ -52,12 +54,13 @@ export const createTemplatesApi = (deps: { requireAuthenticated?: MiddlewareHand
         const scopeGate = await gateCredentialScope(c, "write", { allowResourceBound: false });
         if (!scopeGate.ok) return respond(c, () => Promise.resolve(scopeGate));
         const user = currentActorUser(c);
-        if (!user) return c.json({ message: "Sign in to create a base from this template." }, 403);
+        if (!user) return c.json({ message: apiMessages(c).signInToCreateBaseFromTemplate }, 403);
         const body = c.req.valid("json");
         const result = await gridsService.template.instantiate(
           c.req.param("templateId")!,
           { name: body.name, withSampleData: body.withSampleData },
           user.id,
+          getLocale(c),
         );
         return result.ok ? c.json(toPublicBase(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
       },

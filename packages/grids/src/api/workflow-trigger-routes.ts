@@ -1,6 +1,6 @@
 import { ok } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import type { z } from "zod";
@@ -14,7 +14,9 @@ import {
 } from "../service/workflow-launcher-invocations";
 import { invokeGridsWorkflow } from "../service/workflow-runtime";
 import { GridsWorkflowInvocationRequestSchema } from "../workflows/contracts";
+import { apiMessages } from "./messages";
 import { publicIdParam, resolvePublicIdParam } from "./route-params";
+import { v } from "./validator";
 import {
   BulkLauncherRequestSchema,
   CustomAppLauncherRequestSchema,
@@ -30,7 +32,7 @@ type DirectInvocation = z.infer<typeof GridsWorkflowInvocationRequestSchema>;
 
 export const DIRECT_WORKFLOW_CHANNEL = "api" as const;
 
-const invokeDirect = (workflowId: string, body: DirectInvocation, principal: ReturnType<typeof workflowPrincipal>) =>
+const invokeDirect = (workflowId: string, body: DirectInvocation, principal: ReturnType<typeof workflowPrincipal>, locale: string) =>
   invokeGridsWorkflow({
     workflowId,
     mode: body.mode,
@@ -39,6 +41,7 @@ const invokeDirect = (workflowId: string, body: DirectInvocation, principal: Ret
     idempotencyKey: body.idempotencyKey,
     expectedRevision: body.expectedRevision,
     principal,
+    context: { locale },
   });
 
 const publicReceipt = async <T extends Awaited<ReturnType<typeof invokeDirect>>>(result: T) =>
@@ -63,9 +66,9 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", GridsWorkflowInvocationRequestSchema),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const body = c.req.valid("json");
-        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c))));
+        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c), getLocale(c))));
       },
     )
     .post(
@@ -85,9 +88,9 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", GridsWorkflowInvocationRequestSchema),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const body = c.req.valid("json");
-        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c))));
+        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c), getLocale(c))));
       },
     )
     .post(
@@ -107,9 +110,9 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", GridsWorkflowInvocationRequestSchema),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const body = c.req.valid("json");
-        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c))));
+        return respond(c, async () => publicReceipt(await invokeDirect(workflowId, body, workflowPrincipal(c), getLocale(c))));
       },
     )
     .post(
@@ -129,13 +132,14 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", ScannerLauncherRequestSchema),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         return respond(c, async () =>
           publicReceipt(
             await invokeScannerLauncher({
               ...c.req.valid("json"),
               launcherId,
               principal: workflowPrincipal(c),
+              locale: getLocale(c),
             }),
           ),
         );
@@ -158,13 +162,13 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", BulkLauncherRequestSchema),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         const body = c.req.valid("json");
         const principal = workflowPrincipal(c);
-        const admission = await admitBulkLauncher({ launcherId, expectedRevision: body.expectedRevision, principal });
+        const admission = await admitBulkLauncher({ launcherId, expectedRevision: body.expectedRevision, principal, locale: getLocale(c) });
         if (!admission.ok) return respond(c, () => Promise.resolve(admission));
         const resolved = "recordIds" in body ? await resolveBulkRecordIds(body.recordIds) : undefined;
-        if (resolved === null) return c.json({ message: "Record not found" }, 404);
+        if (resolved === null) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         return respond(c, async () =>
           publicReceipt(
             await invokeBulkLauncher({
@@ -172,6 +176,7 @@ export const createWorkflowTriggerRoutes = () =>
               ...(resolved ? { recordIds: resolved } : {}),
               launcherId,
               principal,
+              locale: getLocale(c),
             }),
           ),
         );
@@ -193,15 +198,20 @@ export const createWorkflowTriggerRoutes = () =>
       }),
       v("json", RecordLauncherRequestSchema),
       async (c) => {
-        if (!publicIdParam(c, "launcherId")) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!publicIdParam(c, "launcherId")) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Workflow launcher not found" }, 404);
+        if (!launcherId) return c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
         const body = c.req.valid("json");
         const principal = workflowPrincipal(c);
-        const admission = await admitRecordLauncher({ launcherId, expectedRevision: body.expectedRevision, principal });
+        const admission = await admitRecordLauncher({
+          launcherId,
+          expectedRevision: body.expectedRevision,
+          principal,
+          locale: getLocale(c),
+        });
         if (!admission.ok) return respond(c, () => Promise.resolve(admission));
         const [recordId] = (await resolveBulkRecordIds([body.recordId])) ?? [];
-        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        if (!recordId) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         return respond(c, async () =>
           publicReceipt(
             await invokeRecordLauncher({
@@ -209,6 +219,7 @@ export const createWorkflowTriggerRoutes = () =>
               launcherId,
               recordId,
               principal,
+              locale: getLocale(c),
             }),
           ),
         );
@@ -231,13 +242,14 @@ export const createWorkflowTriggerRoutes = () =>
       v("json", CustomAppLauncherRequestSchema),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         return respond(c, async () =>
           publicReceipt(
             await invokeCustomAppLauncher({
               ...c.req.valid("json"),
               launcherId,
               principal: workflowPrincipal(c),
+              locale: getLocale(c),
             }),
           ),
         );

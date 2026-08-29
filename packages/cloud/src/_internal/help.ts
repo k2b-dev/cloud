@@ -15,6 +15,9 @@ const serializedBytes = (value: unknown): number => new TextEncoder().encode(JSO
 
 const helpHash = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+const omitSearchText = (documents: readonly HelpRegistryEntry["documents"][number][]) =>
+  documents.map(({ searchText: _searchText, ...document }) => document);
+
 const normalizedBasePath = (basePath: string | undefined): string => {
   const value = basePath?.replace(/\/$/, "") ?? "";
   return value || "";
@@ -60,7 +63,7 @@ export const compileHelp = (input: {
   const manifestByLocale = Object.fromEntries(
     Object.entries(documentsByLocale).map(([locale, localized]) => [locale, toManifest(localized)]),
   );
-  const registryEntry: HelpRegistryEntry = {
+  let registryEntry: HelpRegistryEntry = {
     appId: input.appId,
     appName: input.appName,
     appIcon: input.appIcon,
@@ -69,7 +72,19 @@ export const compileHelp = (input: {
     documentsByLocale,
     documents,
   };
-  const bytes = serializedBytes(registryEntry);
+  let bytes = serializedBytes(registryEntry);
+  if (bytes > HELP_REGISTRY_MAX_BYTES) {
+    registryEntry = {
+      ...registryEntry,
+      documents: omitSearchText(registryEntry.documents),
+      documentsByLocale: registryEntry.documentsByLocale
+        ? Object.fromEntries(
+            Object.entries(registryEntry.documentsByLocale).map(([locale, localized]) => [locale, omitSearchText(localized)]),
+          )
+        : undefined,
+    };
+    bytes = serializedBytes(registryEntry);
+  }
   if (bytes > HELP_REGISTRY_MAX_BYTES) {
     throw new Error(`Help corpus exceeds the ${HELP_REGISTRY_MAX_BYTES}-byte registry limit`);
   }

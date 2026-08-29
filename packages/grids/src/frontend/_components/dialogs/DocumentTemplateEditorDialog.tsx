@@ -11,12 +11,14 @@ import {
   Select,
   type TemplateVariable,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { DocumentPreviewResponse, DocumentTemplateRenderer } from "../../../contracts";
 import type { DocumentTemplateStarter } from "../../../document-template-starters";
 import { requestDocumentTemplateDraftPreview } from "../documents/document-transfer-client";
+import { documentMessages, documentStarterPresentation } from "../documents/messages";
 import type { PublicDocumentTemplate } from "../documents/public-document-types";
 import { GqlSourceEditor } from "../query/GqlSourceEditor";
 import RecordPicker from "../records/RecordPicker";
@@ -41,9 +43,6 @@ const DOCUMENT_TEMPLATE_VARIABLES: TemplateVariable[] = [
   { name: "images", kind: "array" },
   { name: "primaryImage", kind: "object" },
 ];
-
-const diagnosticText = (diagnostic: { message: string; line?: number; column?: number }) =>
-  diagnostic.line && diagnostic.column ? `Line ${diagnostic.line}, col ${diagnostic.column}: ${diagnostic.message}` : diagnostic.message;
 
 const hasLiquidTags = (value: string) => /{{|{%/.test(value);
 
@@ -116,14 +115,24 @@ function DocumentTemplateEditorDialog(props: {
   };
   close: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
+  const diagnosticText = (diagnostic: { message: string; line?: number; column?: number }) =>
+    diagnostic.line && diagnostic.column
+      ? t().lineDiagnostic({ line: diagnostic.line, column: diagnostic.column, message: diagnostic.message })
+      : diagnostic.message;
   const template = props.args.template;
-  const initialStarter = starterPayload(props.args.starter ?? defaultDocumentStarter(), props.args.tableId);
+  const starter = props.args.starter ?? defaultDocumentStarter();
+  const starterPresentation = documentStarterPresentation(starter, locale());
+  const initialStarter = starterPayload(starter, props.args.tableId);
+  const initialName = template?.name ?? (starter.id === "blank" ? "" : starterPresentation.name);
+  const initialDescription = template?.description ?? (starter.id === "blank" ? "" : starterPresentation.description);
   const initialRenderer = template?.renderer ?? initialStarter.renderer;
   const blankRenderer = defaultDocumentStarter().renderer;
-  if (blankRenderer.kind !== "html") throw new Error("Blank Document starter must use the HTML renderer");
+  if (blankRenderer.kind !== "html") throw new Error(t().blankStarterHtml);
   const starterRenderer = initialStarter.renderer.kind === "html" ? initialStarter.renderer : blankRenderer;
-  const [name, setName] = createSignal(template?.name ?? initialStarter.name);
-  const [description, setDescription] = createSignal(template?.description ?? initialStarter.description);
+  const [name, setName] = createSignal(initialName);
+  const [description, setDescription] = createSignal(initialDescription);
   const [numberTemplate, setNumberTemplate] = createSignal(
     initialRenderer.kind === "html" ? initialRenderer.numberTemplate : defaultDocumentNumberTemplate,
   );
@@ -140,7 +149,7 @@ function DocumentTemplateEditorDialog(props: {
   );
   const [profiles] = createResource(async () => {
     const response = await fetch("/api/grids/documents/renderers");
-    if (!response.ok) throw new Error(await errorMessage(response, "Failed to load Document renderers"));
+    if (!response.ok) throw new Error(await errorMessage(response, t().failedLoadRenderers));
     return response.json() as Promise<Array<{ id: string; version: number; title: string; description: string }>>;
   });
   const selectProfile = (value: string | null) => {
@@ -187,8 +196,8 @@ function DocumentTemplateEditorDialog(props: {
     };
   };
   const dirty = () =>
-    name() !== (template?.name ?? initialStarter.name) ||
-    description() !== (template?.description ?? initialStarter.description) ||
+    name() !== initialName ||
+    description() !== initialDescription ||
     source() !== (template?.source ?? initialStarter.source) ||
     JSON.stringify(currentRenderer()) !== JSON.stringify(initialRenderer) ||
     enabled() !== (template?.enabled ?? false);
@@ -208,7 +217,7 @@ function DocumentTemplateEditorDialog(props: {
   const saveMut = mutations.create<PublicDocumentTemplate, void>({
     mutation: async () => {
       const renderer = currentRenderer();
-      if (!renderer) throw new Error("Select an available Document renderer");
+      if (!renderer) throw new Error(t().selectRenderer);
       const payload = {
         name: name().trim(),
         description: description().trim() || null,
@@ -216,16 +225,16 @@ function DocumentTemplateEditorDialog(props: {
         renderer,
         enabled: enabled(),
       };
-      if (!payload.name) throw new Error("Name is required");
-      if (!payload.source) throw new Error("GQL source is required");
-      if (renderer.kind === "html" && !renderer.body) throw new Error("HTML body is required");
-      if (renderer.kind === "html" && !renderer.numberTemplate) throw new Error("Document number pattern is required");
-      if (renderer.kind === "html" && !renderer.filenameTemplate) throw new Error("Filename template is required");
-      if (renderer.kind === "profile" && !renderer.inputTemplate) throw new Error("Renderer input is required");
+      if (!payload.name) throw new Error(t().nameRequired);
+      if (!payload.source) throw new Error(t().gqlSourceRequired);
+      if (renderer.kind === "html" && !renderer.body) throw new Error(t().htmlBodyRequired);
+      if (renderer.kind === "html" && !renderer.numberTemplate) throw new Error(t().numberPatternRequired);
+      if (renderer.kind === "html" && !renderer.filenameTemplate) throw new Error(t().filenameTemplateRequired);
+      if (renderer.kind === "profile" && !renderer.inputTemplate) throw new Error(t().rendererInputRequired);
       const res = template
         ? await apiClient.documents.templates[":templateId"].$patch({ param: { templateId: template.id }, json: payload })
         : await apiClient.documents.templates["by-table"][":tableId"].$post({ param: { tableId: props.args.tableId }, json: payload });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save document template"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().failedSaveTemplate));
       return res.json();
     },
     onSuccess: (saved) => {
@@ -237,9 +246,9 @@ function DocumentTemplateEditorDialog(props: {
 
   const previewPdf = async () => {
     const recordId = previewRecordId().trim();
-    if (!recordId) throw new Error("Preview record ID is required");
+    if (!recordId) throw new Error(t().previewRecordRequired);
     const renderer = currentRenderer();
-    if (!renderer) throw new Error("Select an available Document renderer");
+    if (!renderer) throw new Error(t().selectRenderer);
     const payload = {
       source: source().trim(),
       renderer,
@@ -261,12 +270,12 @@ function DocumentTemplateEditorDialog(props: {
     if (previewSourceError()) warnings.push(previewSourceError()!);
     if (gqlDiagnostics().length > 0) warnings.push(...gqlDiagnostics().slice(0, 3).map(diagnosticText));
     if (enabled() && !hasCurrentSuccessfulPreview()) {
-      warnings.push("This enabled template has not rendered a successful PDF preview for the current draft.");
+      warnings.push(t().enabledWithoutPreview);
     }
     if (warnings.length > 0) {
-      const confirmed = await prompts.confirm(`Save this template anyway?\n\n${warnings.map((warning) => `• ${warning}`).join("\n")}`, {
-        title: "Template has warnings",
-        confirmText: "Save anyway",
+      const confirmed = await prompts.confirm(t().saveAnywayPrompt({ warnings: warnings.map((warning) => `• ${warning}`).join("\n") }), {
+        title: t().templateWarnings,
+        confirmText: t().saveAnyway,
       });
       if (!confirmed) return;
     }
@@ -297,14 +306,14 @@ function DocumentTemplateEditorDialog(props: {
           },
         });
         if (token !== gqlDiagnosticsToken) return;
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not validate GQL source"));
+        if (!response.ok) throw new Error(await errorMessage(response, t().couldNotValidateGql));
         const data = await response.json();
         setGqlDiagnostics(data.diagnostics ?? []);
         setGqlDiagnosticError(null);
       } catch (e) {
         if (token === gqlDiagnosticsToken) {
           setGqlDiagnostics([]);
-          setGqlDiagnosticError(e instanceof Error ? e.message : "Could not validate GQL source");
+          setGqlDiagnosticError(e instanceof Error ? e.message : t().couldNotValidateGql);
         }
       }
     }, 300);
@@ -346,7 +355,7 @@ function DocumentTemplateEditorDialog(props: {
             });
         if (token !== previewDataToken) return;
         if (!response.ok) {
-          const details = await readDocumentPreviewError(response, "Could not load preview data");
+          const details = await readDocumentPreviewError(response, t().couldNotLoadPreviewData);
           setPreviewSourceError(details.phase === "source" ? details.message : null);
           throw new Error(details.message);
         }
@@ -355,7 +364,7 @@ function DocumentTemplateEditorDialog(props: {
       } catch (e) {
         if (token === previewDataToken) {
           setPreviewData(null);
-          setPreviewDataError(e instanceof Error ? e.message : "Could not load preview data");
+          setPreviewDataError(e instanceof Error ? e.message : t().couldNotLoadPreviewData);
         }
       } finally {
         if (token === previewDataToken) setPreviewDataLoading(false);
@@ -367,29 +376,29 @@ function DocumentTemplateEditorDialog(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={`${template ? "Edit" : "Add"} template — ${props.args.tableName}`}
+        title={t().editOrAddTemplate({ editing: Boolean(template), table: props.args.tableName })}
         icon="ti ti-file-type-pdf"
         close={closeIfClean}
         actions={
           <Button variant="secondary" size="sm" type="button" onClick={() => openTemplateReferenceWindow(props.args.baseId)}>
-            <i class="ti ti-external-link" /> Reference
+            <i class="ti ti-external-link" /> {t().reference}
           </Button>
         }
       />
       <PanelDialog.Body>
         <div class="flex h-full min-h-0 flex-col gap-2">
           <div class="grid shrink-0 gap-2 lg:grid-cols-2">
-            <TextInput label="Name" value={name} onValueChange={setName} icon="ti ti-typography" required />
+            <TextInput label={t().name} value={name} onValueChange={setName} icon="ti ti-typography" required />
             <TextInput
-              label="Description"
+              label={t().description}
               value={description}
               onValueChange={setDescription}
               icon="ti ti-align-left"
-              placeholder="Optional"
+              placeholder={t().optional}
             />
             <Select
-              label="Renderer"
-              description="Choose HTML/PDF or an installed renderer such as E-Invoice."
+              label={t().renderer}
+              description={t().chooseRenderer}
               value={profileKey}
               onValueChange={selectProfile}
               options={(profiles() ?? []).map((profile) => ({
@@ -397,13 +406,13 @@ function DocumentTemplateEditorDialog(props: {
                 label: profile.title,
                 description: profile.description,
               }))}
-              placeholder="HTML/PDF"
+              placeholder={t().htmlPdf}
               clearable
             />
             <div>
               <TextInput
-                label="Document number"
-                description="Liquid pattern for stable generated document numbers."
+                label={t().documentNumber}
+                description={t().numberPatternDescription}
                 value={numberTemplate}
                 onValueChange={setNumberTemplate}
                 icon="ti ti-hash"
@@ -413,16 +422,19 @@ function DocumentTemplateEditorDialog(props: {
               />
               <NoticeCard tone={template?.numberSeries?.migrationNote ? "warning" : "info"} icon={false} class="mt-2" role="status">
                 {profileKey()
-                  ? "The selected renderer owns numbering and filenames."
+                  ? t().rendererOwnsNumbering
                   : template?.numberSeries
-                    ? `Number series ${template.numberSeries.id} · Last allocated ${template.numberSeries.lastValue}. Technical gaps can occur; pattern changes apply only to future documents.`
-                    : "A durable number series is created automatically when this template is saved. Technical gaps can occur."}
+                    ? t().numberSeries({
+                        id: template.numberSeries.id,
+                        value: new Intl.NumberFormat(locale()).format(template.numberSeries.lastValue),
+                      })
+                    : t().numberSeriesCreated}
               </NoticeCard>
             </div>
             <div>
               <TextInput
-                label="Filename"
-                description="Liquid pattern for generated PDF filenames. Users can edit the final filename before generating."
+                label={t().filename}
+                description={t().filenamePatternDescription}
                 value={filenameTemplate}
                 onValueChange={setFilenameTemplate}
                 icon="ti ti-file-text"
@@ -435,8 +447,8 @@ function DocumentTemplateEditorDialog(props: {
               <CheckboxCard
                 value={enabled}
                 onValueChange={setEnabled}
-                label="Enabled"
-                description="Enabled templates appear in document generation lists and the Documents sidebar."
+                label={t().enabled}
+                description={t().enabledDescription}
                 icon="ti ti-file-check"
                 variant="input"
               />
@@ -445,18 +457,18 @@ function DocumentTemplateEditorDialog(props: {
               <RecordPicker
                 tableId={props.args.tableId}
                 templateId={template?.id}
-                label="Preview record"
+                label={t().previewRecord}
                 value={previewRecordId}
                 onChange={setPreviewRecordId}
-                placeholder="Search preview record..."
+                placeholder={t().searchPreviewRecord}
               />
             </div>
             <div class="lg:col-span-2">
               <div class="mb-1.5 flex items-center justify-between gap-2">
                 <div class="text-sm font-medium text-primary">
-                  GQL source <span class="text-red-500">*</span>
+                  {t().gqlSource} <span class="text-red-500">*</span>
                 </div>
-                <span class="text-xs text-dimmed">Scoped to {props.args.tableName}</span>
+                <span class="text-xs text-dimmed">{t().scopedTo({ table: props.args.tableName })}</span>
               </div>
               <GqlSourceEditor
                 baseId={props.args.baseId}
@@ -466,7 +478,7 @@ function DocumentTemplateEditorDialog(props: {
                 lines={4}
                 placeholder={`from table ${props.args.tableName}\nwhere record.id = "{{ record.id }}"\nlimit 1`}
                 spellcheck={false}
-                aria-label="GQL source"
+                aria-label={t().gqlSource}
               />
               <Show when={gqlDiagnosticError() || previewSourceError() || gqlDiagnostics().length > 0}>
                 <NoticeCard tone="danger" icon={false} class="mt-2">
@@ -509,7 +521,7 @@ function DocumentTemplateEditorDialog(props: {
         <span />
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={closeIfClean}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button
             variant="primary"
@@ -517,9 +529,9 @@ function DocumentTemplateEditorDialog(props: {
             type="button"
             onClick={() => void saveTemplate()}
             loading={saveMut.loading()}
-            loadingLabel="Saving template"
+            loadingLabel={t().savingTemplate}
           >
-            Save template
+            {t().saveTemplate}
           </Button>
         </div>
       </PanelDialog.Footer>

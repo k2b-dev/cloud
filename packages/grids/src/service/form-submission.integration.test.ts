@@ -164,7 +164,7 @@ describe("form submission integration", () => {
         },
       });
       expect(tampered.ok).toBe(false);
-      if (!tampered.ok) expect(tampered.error.message).toContain("is fixed by this form context");
+      if (!tampered.ok) expect(tampered.error.message).toContain("is fixed by this Form context");
 
       const inlineTampered = await submitForm({
         form: formFor(item),
@@ -179,7 +179,7 @@ describe("form submission integration", () => {
         },
       });
       expect(inlineTampered.ok).toBe(false);
-      if (!inlineTampered.ok) expect(inlineTampered.error.message).toContain("is fixed by this form context");
+      if (!inlineTampered.ok) expect(inlineTampered.error.message).toContain("is fixed by this Form context");
 
       const [{ recordsBeforeCreate } = { recordsBeforeCreate: 0 }] = await sql<Array<{ recordsBeforeCreate: number }>>`
         SELECT count(*)::int AS "recordsBeforeCreate"
@@ -300,7 +300,7 @@ describe("form submission integration", () => {
         },
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe('Field "Name" is required');
+      if (!result.ok) expect(result.error.message).toBe("Field “Name” is required.");
 
       const [{ records, links, events } = { records: 0, links: 0, events: 0 }] = await sql<
         Array<{ records: number; links: number; events: number }>
@@ -335,7 +335,7 @@ describe("form submission integration", () => {
         },
       });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe('Field "Contact" contains a duplicate inline draft id');
+      if (!result.ok) expect(result.error.message).toBe("Field “Contact” contains a duplicate inline draft ID.");
 
       const [{ records, events } = { records: 0, events: 0 }] = await sql<Array<{ records: number; events: number }>>`
         SELECT

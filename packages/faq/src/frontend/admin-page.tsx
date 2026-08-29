@@ -1,17 +1,12 @@
 import { MarkdownView, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import { faqService } from "../service";
 import CreateFaqButton from "./_components/CreateFaqButton.island";
 import DeleteFaqButton from "./_components/DeleteFaqButton.island";
 import EditFaqButton from "./_components/EditFaqButton.island";
-
-const AUDIENCE_LABELS: Record<string, string> = {
-  anonymous: "Anonymous",
-  guest: "Guests",
-  user: "Users",
-};
+import { faqMessages } from "./messages";
 
 const AUDIENCE_TONE: Record<string, StatusTone> = {
   anonymous: "neutral",
@@ -20,6 +15,8 @@ const AUDIENCE_TONE: Record<string, StatusTone> = {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = faqMessages.resolve([getLocale(c)]);
+  const audienceLabels: Record<string, string> = { anonymous: t.anonymous, guest: t.guests, user: t.users };
   const entries = (await faqService.entry.list()).items;
 
   return () => (
@@ -29,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
           <div class="min-w-0">
             <h1 class="text-base font-semibold text-primary">FAQ</h1>
             <p class="mt-1 text-xs text-dimmed">
-              {entries.length} {entries.length === 1 ? "entry" : "entries"} — visible at <code class="text-[10px]">/faq</code>
+              {t.entryCount({ count: entries.length })} — {t.visibleAt} <code class="text-[10px]">/faq</code>
             </p>
           </div>
           <CreateFaqButton />
@@ -45,7 +42,7 @@ export default ssr<AuthContext>(async (c) => {
                       <div class="flex flex-wrap items-center gap-2">
                         <h3 class="text-sm font-medium text-primary">{entry.question}</h3>
                         {entry.audience.map((aud) => (
-                          <StatusBadge tone={AUDIENCE_TONE[aud] ?? "neutral"} label={AUDIENCE_LABELS[aud] ?? aud} icon={null} />
+                          <StatusBadge tone={AUDIENCE_TONE[aud] ?? "neutral"} label={audienceLabels[aud] ?? aud} icon={null} />
                         ))}
                       </div>
                     </div>
@@ -62,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </section>
         ) : (
-          <Placeholder surface="paper" description={<>No FAQ entries yet. Use New Entry to create the first one.</>} />
+          <Placeholder surface="paper" description={<>{t.noAdminEntries}</>} />
         )}
       </div>
     </AdminLayout>

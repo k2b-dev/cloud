@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import {
   activeDocumentViewMode,
   appendDocumentBrowserPage,
+  documentActionState,
   documentBrowserEmptyText,
   documentBrowserKey,
   documentCountLabel,
-  documentActionState,
   replaceDocumentBrowserPage,
   serializeDocumentBrowserKey,
 } from "./document-browser-model";
-import type { PublicDocumentFolder, PublicDocument } from "./public-document-types";
+import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
 
 const document = (id: string): PublicDocument => ({
   id,
@@ -47,12 +47,7 @@ describe("document browser model", () => {
 
   test("pagination appends only to the browser request that started it", () => {
     const initial = replaceDocumentBrowserPage({ items: [document("one")], folders: [], hasMore: true, cursor: "next" });
-    const appended = appendDocumentBrowserPage(
-      initial,
-      { items: [document("two")], hasMore: true, cursor: "last" },
-      "same",
-      "same",
-    );
+    const appended = appendDocumentBrowserPage(initial, { items: [document("two")], hasMore: true, cursor: "last" }, "same", "same");
     expect(appended.documents.map((item) => item.id)).toEqual(["one", "two"]);
     expect(appended.cursor).toBe("last");
 
@@ -65,6 +60,8 @@ describe("document browser model", () => {
     expect(documentCountLabel("folders", [folder("2026", 4), folder("2025", 2)], [], false)).toBe("6 documents");
     expect(documentBrowserEmptyText("invoice", "list", [])).toBe("No documents match this search.");
     expect(documentBrowserEmptyText("", "folders", ["2026"])).toBe("This folder is empty.");
+    expect(documentCountLabel("folders", [folder("2026", 4), folder("2025", 2)], [], false, "de-CH")).toBe("6 Dokumente");
+    expect(documentBrowserEmptyText("rechnung", "list", [], "de-CH")).toBe("Keine Dokumente entsprechen dieser Suche.");
   });
 
   test("read users only get download actions and busy state is per Document", () => {

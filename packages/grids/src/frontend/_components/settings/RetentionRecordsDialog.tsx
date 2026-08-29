@@ -11,29 +11,31 @@ import {
   panelDialogWorkspaceOptions,
   StatusBadge,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { RetentionRecord, RetentionRecordStatus, RetentionRecordsResponse } from "../../../retention-policy-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
 const PAGE_SIZE = 25;
 
-const columns: DataTableColumn<RetentionRecord>[] = [
-  { id: "record", header: "Record", value: (row) => row.recordId },
-  { id: "table", header: "Table", value: (row) => row.tableName },
-  { id: "status", header: "Floor", value: (row) => row.status },
-  { id: "deletedAt", header: "Moved to trash", value: (row) => row.deletedAt },
-  { id: "notBefore", header: "Floor date", value: (row) => row.notBefore },
-  { id: "actions", header: "", align: "right" },
-];
-
-const statusLabel = (status: RetentionRecord["status"]): string => {
-  if (status === "protected") return "Finalized";
-  if (status === "retained") return "Retained";
-  return "Floor reached";
-};
-
 function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; close: () => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  const columns = (): DataTableColumn<RetentionRecord>[] => [
+    { id: "record", header: messages().record, value: (row) => row.recordId },
+    { id: "table", header: messages().table, value: (row) => row.tableName },
+    { id: "status", header: messages().floor, value: (row) => row.status },
+    { id: "deletedAt", header: messages().movedToTrash, value: (row) => row.deletedAt },
+    { id: "notBefore", header: messages().floorDate, value: (row) => row.notBefore },
+    { id: "actions", header: "", align: "right" },
+  ];
+  const statusLabel = (value: RetentionRecord["status"]) =>
+    value === "protected" ? messages().finalized : value === "retained" ? messages().retained : messages().floorReached;
   const [searchInput, setSearchInput] = createSignal("");
   const [search, setSearch] = createSignal("");
   const [status, setStatus] = createSignal<RetentionRecordStatus>("all");
@@ -57,24 +59,24 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
     source: requestUrl,
     load: async (url, { abortSignal }): Promise<RetentionRecordsResponse> => {
       const response = await fetch(url, { signal: abortSignal });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load retained Records"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().loadRetainedRecordsFailed));
       return response.json();
     },
   });
   const result = () => records.data();
   const rangeLabel = createMemo(() => {
     const value = result();
-    if (!value || value.pagination.total === 0) return "No Records";
+    if (!value || value.pagination.total === 0) return messages().noRecords;
     const start = (value.pagination.page - 1) * value.pagination.per_page + 1;
     const end = start + value.items.length - 1;
-    return `${start}–${end} of ${value.pagination.total} Records`;
+    return messages().recordsRange({ start: number(start), end: number(end), total: number(value.pagination.total) });
   });
 
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Trashed Records"
-        subtitle={`Preview for a ${props.minimumDays}-day retention floor`}
+        title={messages().trashedRecords}
+        subtitle={messages().retentionPreviewDays({ days: number(props.minimumDays) })}
         icon="ti ti-archive"
         close={props.close}
       />
@@ -87,15 +89,15 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
               disabled={records.loading() || records.refreshing()}
               onClick={() => void records.refresh()}
             >
-              <i class={records.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> Refresh
+              <i class={records.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> {messages().refresh}
             </Button>
           </DataTable.Header>
           <DataTable.Controls>
             <div class="w-full">
               <TextInput
                 type="search"
-                aria-label="Search retained Records"
-                placeholder="Search Record ID or Table"
+                aria-label={messages().searchRetainedRecords}
+                placeholder={messages().searchRecordOrTable}
                 icon="ti ti-search"
                 activeIcon="ti ti-search"
                 clearable
@@ -112,15 +114,15 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <FilterChip
-                label="Floor status"
+                label={messages().floorStatus}
                 icon="ti ti-filter"
                 options={[
                   {
                     options: [
-                      { value: "all", label: "All Records" },
-                      { value: "protected", label: "Finalized" },
-                      { value: "retained", label: "Retained until later" },
-                      { value: "reached", label: "Floor reached" },
+                      { value: "all", label: messages().allRecords },
+                      { value: "protected", label: messages().finalized },
+                      { value: "retained", label: messages().retainedUntilLater },
+                      { value: "reached", label: messages().floorReached },
                     ],
                   },
                 ]}
@@ -139,11 +141,11 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
             fallback={
               <Placeholder
                 state="error"
-                title="Retained Records are unavailable"
-                description={records.error() instanceof Error ? records.error()!.message : "Could not load retained Records"}
+                title={messages().retainedRecordsUnavailable}
+                description={records.error() instanceof Error ? records.error()!.message : messages().loadRetainedRecordsFailed}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => void records.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -151,9 +153,9 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
           >
             <DataTable
               rows={result()?.items ?? []}
-              columns={columns}
+              columns={columns()}
               getRowId={(row) => row.recordId}
-              ariaLabel="Trashed Records under the retention floor"
+              ariaLabel={messages().retainedRecordsAria}
               density="compact"
               surface="plain"
               hoverRows
@@ -161,11 +163,11 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
               class="min-h-0 flex-1 overflow-auto"
               empty={
                 records.loading() ? (
-                  <span>Loading retained Records…</span>
+                  <span>{messages().loadingRetainedRecords}</span>
                 ) : search() || status() !== "all" ? (
-                  <span>No Records match these filters.</span>
+                  <span>{messages().noRecordsMatch}</span>
                 ) : (
-                  <span>No Records are currently in trash for this Base.</span>
+                  <span>{messages().noRecordsInTrash}</span>
                 )
               }
               renderCell={({ row, col, render, value }) => {
@@ -179,8 +181,8 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
                   );
                 }
                 if (col.id === "status") return <StatusBadge tone="neutral" label={statusLabel(row.status)} />;
-                if (col.id === "deletedAt") return new Date(row.deletedAt).toLocaleString();
-                if (col.id === "notBefore") return row.notBefore ? new Date(row.notBefore).toLocaleString() : "Protected independently";
+                if (col.id === "deletedAt") return dateTime(row.deletedAt);
+                if (col.id === "notBefore") return row.notBefore ? dateTime(row.notBefore) : messages().protectedIndependently;
                 if (col.id === "actions") {
                   return (
                     <ButtonLink
@@ -188,7 +190,7 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
                       variant="ghost"
                       href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(row.tableId)}?trash=1&record=${encodeURIComponent(row.recordId)}`}
                     >
-                      Open in Trash <i class="ti ti-arrow-up-right" aria-hidden="true" />
+                      {messages().openInTrash} <i class="ti ti-arrow-up-right" aria-hidden="true" />
                     </ButtonLink>
                   );
                 }
@@ -199,7 +201,7 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
           <Show when={(result()?.pagination.total_pages ?? 0) > 1}>
             <DataTable.Footer class="flex items-center justify-between gap-3">
               <span class="text-xs text-dimmed">
-                Page {page()} of {result()?.pagination.total_pages}
+                {messages().pageOf({ page: number(page()), total: number(result()?.pagination.total_pages ?? 1) })}
               </span>
               <div class="flex gap-2">
                 <Button
@@ -208,7 +210,7 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
                   disabled={records.loading() || page() <= 1}
                   onClick={() => setPage((value) => value - 1)}
                 >
-                  Previous
+                  {messages().previous}
                 </Button>
                 <Button
                   size="sm"
@@ -216,7 +218,7 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
                   disabled={records.loading() || !result()?.pagination.has_next}
                   onClick={() => setPage((value) => value + 1)}
                 >
-                  Next
+                  {messages().next}
                 </Button>
               </div>
             </DataTable.Footer>

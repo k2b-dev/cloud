@@ -47,6 +47,7 @@ import { loadWorkflowCatalog } from "./workflow-catalog";
 import { assertWorkflowEmailTemplatesAvailable, lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import { getWorkflow } from "./workflow-read";
 import { emitWorkflowRuntimeEvent } from "./workflow-runtime-events";
+import { workflowServiceText } from "./workflow-service-messages";
 
 export {
   getWorkflowByShortIdForBase,
@@ -63,9 +64,9 @@ const APP_ID = "grids";
 
 type DbRow = Record<string, unknown>;
 
-const revisionConflict = () => ({
+const revisionConflict = (locale?: string) => ({
   code: "CONFLICT" as const,
-  message: "Workflow changed since you opened it. Reload the latest version before saving.",
+  message: workflowServiceText(locale).workflowChangedEditor,
   status: 409 as const,
 });
 
@@ -136,6 +137,7 @@ export const createWorkflow = async (
   baseId: string,
   input: CreateGridsWorkflowInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<GridsWorkflow>> => {
   const plan = await compileAndBind(baseId, input.source);
   if (!plan.ok) return plan;
@@ -143,7 +145,7 @@ export const createWorkflow = async (
 
   const created = await sql.begin(async (tx): Promise<Result<string>> => {
     await lockWorkflowCatalogMutation(baseId, tx);
-    const available = await assertWorkflowEmailTemplatesAvailable(baseId, plan.data.plan, tx);
+    const available = await assertWorkflowEmailTemplatesAvailable(baseId, plan.data.plan, tx, locale);
     if (!available.ok) return fail(available.error);
 
     const workflow = await createKernelWorkflow(
@@ -203,7 +205,7 @@ export const createWorkflow = async (
   if (!created.ok) return created;
 
   const workflow = await getWorkflow(created.data);
-  if (!workflow) return fail(err.notFound("workflow"));
+  if (!workflow) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
   await metadataEvent("workflow.created", workflow, actorId);
   return ok(workflow);
 };
@@ -214,10 +216,11 @@ export const updateWorkflow = async (
   actorId: string | null,
   expectedRevision: number,
   audit: { action?: "workflow.updated" | "workflow.revision.restored"; restoredRevision?: number } = {},
+  locale?: string,
 ): Promise<Result<GridsWorkflow>> => {
   const existing = await getWorkflow(id);
-  if (!existing) return fail(err.notFound("workflow"));
-  if (existing.revision !== expectedRevision) return fail(revisionConflict());
+  if (!existing) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
+  if (existing.revision !== expectedRevision) return fail(revisionConflict(locale));
 
   const source = input.source ?? existing.source;
   const enabled = input.enabled ?? existing.enabled;
@@ -236,7 +239,7 @@ export const updateWorkflow = async (
   const updated = await sql.begin(async (tx): Promise<Result<null>> => {
     await lockWorkflowCatalogMutation(existing.baseId, tx);
     if (publishes || activating) {
-      const available = await assertWorkflowEmailTemplatesAvailable(existing.baseId, compiled.data.plan, tx);
+      const available = await assertWorkflowEmailTemplatesAvailable(existing.baseId, compiled.data.plan, tx, locale);
       if (!available.ok) return fail(available.error);
     }
 
@@ -253,7 +256,7 @@ export const updateWorkflow = async (
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING id
     `;
-    if (!row) return fail(err.notFound("workflow"));
+    if (!row) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
 
     if (input.name !== undefined || input.description !== undefined) {
       await renameKernelWorkflow(
@@ -302,7 +305,7 @@ export const updateWorkflow = async (
   if (!updated.ok) return updated;
 
   const workflow = await getWorkflow(id);
-  if (!workflow) return fail(err.notFound("workflow"));
+  if (!workflow) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
 
   /*
    * A new plan may have changed the inputs a run option supplies, so every
@@ -318,7 +321,7 @@ export const updateWorkflow = async (
           diagnostics = ${[
             {
               code: "launcher.revalidate",
-              message: "Workflow changed. Review this run option before enabling it again.",
+              message: workflowServiceText(locale).launcherChangedReview,
               severity: "warning",
               path: [],
             },
@@ -398,18 +401,23 @@ export const restoreWorkflowRevision = async (
   revision: number,
   actorId: string | null,
   expectedRevision: number,
+  locale?: string,
 ): Promise<Result<GridsWorkflow>> => {
   const snapshot = await getWorkflowRevision(id, revision);
-  if (!snapshot) return fail(err.notFound("workflow revision"));
-  return updateWorkflow(id, { source: snapshot.source }, actorId, expectedRevision, {
-    action: "workflow.revision.restored",
-    restoredRevision: revision,
-  });
+  if (!snapshot) return fail({ ...err.notFound("workflow revision"), message: workflowServiceText(locale).workflowVersionNotFound });
+  return updateWorkflow(
+    id,
+    { source: snapshot.source },
+    actorId,
+    expectedRevision,
+    { action: "workflow.revision.restored", restoredRevision: revision },
+    locale,
+  );
 };
 
-export const removeWorkflow = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const removeWorkflow = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
   const existing = await getWorkflow(id);
-  if (!existing) return fail(err.notFound("workflow"));
+  if (!existing) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
   await sql.begin(async (tx) => {
     const [row] = await tx<DbRow[]>`
       UPDATE grids.workflow_profile

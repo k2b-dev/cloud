@@ -36,6 +36,17 @@ describe("workflow starters", () => {
     expect(starter.launcher.config).toEqual({ kind: "record", input: "original", profile: "correctionDraft", intent: "correction" });
   });
 
+  test("localizes starter presentation without changing workflow source", () => {
+    const table = { id: "table-1", name: "Rechnungen" };
+    const english = closeSelectionWorkflowStarter(table);
+    const german = closeSelectionWorkflowStarter(table, "de-CH");
+
+    expect(german.name).toBe("Ausgewählte Datensätze aus Rechnungen abschließen");
+    expect(german.description).toContain("Vier-Augen-Prinzip");
+    expect(german.launcher.name).toBe("Auswahl abschließen");
+    expect(german.source).toBe(english.source);
+  });
+
   test("binds cancellation wording to the linked-Draft workflow plan", () => {
     const starter = correctionDraftWorkflowStarter({
       table: { id: "TmZCsi", name: "Loan Items" },
@@ -71,13 +82,12 @@ describe("workflow starters", () => {
     const starterSource = await Bun.file(new URL("../sidebar/CreateWorkflowButton.island.tsx", import.meta.url)).text();
     const launcherSource = await Bun.file(new URL("./WorkflowLauncherManager.tsx", import.meta.url)).text();
 
-    expect(starterSource).toContain('label="Action"');
+    expect(starterSource).toContain("label={t.action}");
     expect(starterSource).toContain('id: "cancellation"');
-    expect(starterSource).toContain("Grids creates and links the Draft");
-    expect(starterSource).toContain("It does not calculate amounts, taxes, or counter-bookings");
-    expect(launcherSource).toContain('label="Action"');
+    expect(starterSource).toContain("{t.cancellationNotice}");
+    expect(launcherSource).toContain("label={t().action}");
     expect(launcherSource).toContain("correctionDraftPlanIntent(props.workflow.plan, input())");
-    expect(launcherSource).toContain("Defined by the workflow so the wording and stored follow-up type cannot disagree.");
+    expect(launcherSource).toContain("description={t().actionDefinedByWorkflow}");
   });
 
   test("aborts launcher manager requests when their owner closes", async () => {

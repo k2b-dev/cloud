@@ -3,6 +3,7 @@ import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
 import { getRecordWritableFieldType, isRecordWritableFieldType } from "../field-types";
 import { logAudit, type SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { captureRecordRevision, lockDurableHistoryMutationBoundary, prepareRecordMutation } from "./durable-history";
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
 import { generatedIdRequiresRetry, generateIdValue, isGeneratedIdUniqueCollision } from "./generated-ids";
@@ -24,14 +25,18 @@ import type { Field, GridRecord } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-const recordVersionConflict = () => ({
+const recordVersionConflict = (locale?: string) => ({
   code: "CONFLICT" as const,
   status: 409 as const,
-  message: "This record changed since you opened it. Another user or tab may have edited it in the meantime. Reload and try again.",
+  message: getGridsCrudMessages(locale).recordChanged,
 });
 
-const formatFieldValidationError = (fieldName: string, validationError: string): string =>
-  validationError === "required" ? `Field "${fieldName}" is required` : `Field "${fieldName}": ${validationError}`;
+const formatFieldValidationError = (fieldName: string, validationError: string, locale?: string): string => {
+  const messages = getGridsCrudMessages(locale);
+  return validationError === "required"
+    ? messages.fieldRequired({ field: fieldName })
+    : messages.fieldInvalid({ field: fieldName, detail: validationError });
+};
 
 /**
  * Pre-flight relation-target existence, batched per targetTableId. The
@@ -47,7 +52,9 @@ const preflightRelationTargets = async (
   fieldsById: Map<string, Field>,
   client: SqlClient = sql,
   viewer?: ExpansionViewer,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   // Group all (fieldId, toIds) by their relation field's targetTableId.
   // Track which fields contributed to each group so we can attribute
   // missing-target errors back to the right field name in the message.
@@ -70,10 +77,8 @@ const preflightRelationTargets = async (
     const check =
       accessByTableId && !access ? { ok: false as const, missing: ids } : await validateRelationTargets(targetTableId, ids, client, access);
     if (!check.ok) {
-      const fieldNamePart =
-        group.fieldNames.length === 1 ? `field "${group.fieldNames[0]}"` : `fields [${group.fieldNames.map((n) => `"${n}"`).join(", ")}]`;
-      const noun = check.missing.length === 1 ? "record" : "records";
-      return fail(err.badInput(`${fieldNamePart}: linked ${noun} no longer exists or is unavailable`));
+      const fieldNamePart = group.fieldNames.map((name) => `“${name}”`).join(", ");
+      return fail(err.badInput(messages.relationTargetsUnavailable({ fields: fieldNamePart, count: check.missing.length })));
     }
   }
   return ok();
@@ -87,16 +92,17 @@ const preflightRelationTargets = async (
 const validateForCreate = async (
   tableId: string,
   payload: Record<string, unknown>,
-  options: { actorId: string | null; dateConfig?: DateContext; client?: SqlClient; fields?: Field[] },
+  options: { actorId: string | null; dateConfig?: DateContext; client?: SqlClient; fields?: Field[]; locale?: string },
 ): Promise<Result<Record<string, unknown>>> => {
+  const messages = getGridsCrudMessages(options.locale);
   const fields = options.fields ?? (await listFields(tableId, false, options.client));
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
 
   for (const key of Object.keys(payload)) {
     const field = fieldsById.get(key);
-    if (!field) return fail(err.badInput("unknown field"));
+    if (!field) return fail(err.badInput(messages.unknownField));
     if (!isRecordWritableFieldType(field.type)) {
-      return fail(err.badInput(`field "${field.name}" is not user-writable`));
+      return fail(err.badInput(messages.fieldNotWritable({ field: field.name })));
     }
   }
 
@@ -115,12 +121,12 @@ const validateForCreate = async (
     const provided = Object.prototype.hasOwnProperty.call(payload, field.id);
     const raw = provided ? payload[field.id] : materializeFieldDefault(field, { dateConfig: options.dateConfig });
     const result = handler.validate(raw, field.config, field.required);
-    if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error)));
+    if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error, options.locale)));
     if (result.value !== null && result.value !== undefined) {
       out[field.id] = result.value;
     }
   }
-  const principals = await validatePrincipalValuesForActor(out, fields, options.actorId);
+  const principals = await validatePrincipalValuesForActor(out, fields, options.actorId, options.locale);
   return principals.ok ? ok(out) : principals;
 };
 
@@ -134,11 +140,13 @@ const validateForUpdate = async (
   payload: Record<string, unknown>,
   fields: Field[],
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<Record<string, unknown>>> => {
+  const messages = getGridsCrudMessages(locale);
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
 
   for (const key of Object.keys(payload)) {
-    if (!fieldsById.has(key)) return fail(err.badInput("unknown field"));
+    if (!fieldsById.has(key)) return fail(err.badInput(messages.unknownField));
   }
 
   const out: Record<string, unknown> = {};
@@ -146,13 +154,13 @@ const validateForUpdate = async (
     const field = fieldsById.get(fieldId)!;
     const handler = getRecordWritableFieldType(field.type);
     if (!handler) {
-      return fail(err.badInput(`field "${field.name}" is not user-writable`));
+      return fail(err.badInput(messages.fieldNotWritable({ field: field.name })));
     }
     const result = handler.validate(raw, field.config, field.required);
-    if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error)));
+    if (!result.ok) return fail(err.badInput(formatFieldValidationError(field.name, result.error, locale)));
     out[fieldId] = result.value;
   }
-  const principals = await validatePrincipalValuesForActor(out, fields, actorId);
+  const principals = await validatePrincipalValuesForActor(out, fields, actorId, locale);
   return principals.ok ? ok(out) : principals;
 };
 
@@ -212,11 +220,13 @@ export const createInTransaction = async (
     dateConfig?: DateContext;
     recordAccess?: AuthorizedRecordAccess;
     viewer?: ExpansionViewer;
+    locale?: string;
   } = {},
 ): Promise<Result<CreateRecordInTransactionResult>> => {
-  const writable = await requireStoredTableWritable(tableId, client);
+  const messages = getGridsCrudMessages(opts.locale);
+  const writable = await requireStoredTableWritable(tableId, client, opts.locale);
   if (!writable.ok) return writable;
-  const allowed = await assertMutationAllowed(client, tableId, origin);
+  const allowed = await assertMutationAllowed(client, tableId, origin, opts.locale);
   if (!allowed.ok) return allowed;
   await lockDurableHistoryMutationBoundary(client, tableId);
 
@@ -225,7 +235,7 @@ export const createInTransaction = async (
       SELECT disable_direct_insert FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL
     `;
     if (row?.disable_direct_insert) {
-      return fail(err.forbidden("Direct insert is disabled for this table; records can only be added via a form."));
+      return fail(err.forbidden(messages.directInsertDisabled));
     }
   }
 
@@ -244,12 +254,13 @@ export const createInTransaction = async (
       dateConfig: opts.dateConfig,
       client,
       fields,
+      locale: opts.locale,
     });
     if (!validated.ok) return validated;
 
     split = splitRelationsFromData(validated.data, fields);
     const recordData = split.data;
-    const preflight = await preflightRelationTargets(split.relations, fieldsById, client, opts.viewer);
+    const preflight = await preflightRelationTargets(split.relations, fieldsById, client, opts.viewer, opts.locale);
     if (!preflight.ok) return preflight;
 
     id = Bun.randomUUIDv7();
@@ -292,7 +303,7 @@ export const createInTransaction = async (
       throw e;
     }
   }
-  if (!row && hasRetryGeneratedId) return fail(err.conflict("Could not generate a unique ID. Try again."));
+  if (!row && hasRetryGeneratedId) return fail(err.conflict(messages.generatedIdFailed));
   if (!row) throw new Error("insert returned no row");
   if (!validated?.ok || !split) throw new Error("record create validation state missing");
 
@@ -358,6 +369,7 @@ export const create = async (
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     recordAccess?: AuthorizedRecordAccess;
+    locale?: string;
   } = {},
 ): Promise<Result<GridRecord>> => {
   const created = await sql
@@ -366,16 +378,17 @@ export const create = async (
         dateConfig: opts.dateConfig,
         recordAccess: opts.recordAccess,
         viewer: opts.viewer,
+        locale: opts.locale,
       }),
     )
     .catch(async (error: unknown) => {
-      const conflict = recordUniqueConflict<CreateRecordInTransactionResult>(error, await listFields(tableId));
+      const conflict = recordUniqueConflict<CreateRecordInTransactionResult>(error, await listFields(tableId), opts.locale);
       if (conflict) return conflict;
       throw error;
     });
   if (!created.ok) return created;
   const record = await get(tableId, created.data.record.id, opts);
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(getGridsCrudMessages(opts.locale).record));
   notifyRecordEventOutbox(created.data.outboxId);
   return ok(record);
 };
@@ -390,6 +403,7 @@ export const createMany = async (
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     recordAccess?: AuthorizedRecordAccess;
+    locale?: string;
   } = {},
 ): Promise<Result<GridRecord[]>> => {
   if (payloads.length === 0) return ok([]);
@@ -402,6 +416,7 @@ export const createMany = async (
           dateConfig: opts.dateConfig,
           recordAccess: opts.recordAccess,
           viewer: opts.viewer,
+          locale: opts.locale,
         });
         if (!result.ok) {
           const rollback = new Error(result.error.message) as RollbackError;
@@ -414,7 +429,7 @@ export const createMany = async (
     })
     .catch(async (error: unknown) => {
       if (error && typeof error === "object" && "result" in error) return (error as RollbackError).result;
-      const conflict = recordUniqueConflict<CreateRecordInTransactionResult[]>(error, await listFields(tableId));
+      const conflict = recordUniqueConflict<CreateRecordInTransactionResult[]>(error, await listFields(tableId), opts.locale);
       if (conflict) return conflict;
       throw error;
     });
@@ -422,7 +437,7 @@ export const createMany = async (
 
   const reader = await createReader(tableId, opts);
   const records = await reader.getMany(created.data.map((item) => item.record.id));
-  if (records.length !== created.data.length) return fail(err.notFound("Record"));
+  if (records.length !== created.data.length) return fail(err.notFound(getGridsCrudMessages(opts.locale).record));
   for (const item of created.data) notifyRecordEventOutbox(item.outboxId);
   return ok(records);
 };
@@ -440,21 +455,28 @@ export const updateInTransaction = async (
   actorId: string | null,
   origin: MutationOrigin,
   ifMatchVersion?: number,
-  opts: { dateConfig?: DateContext; audit?: RecordMutationAudit; recordAccess?: AuthorizedRecordAccess; viewer?: ExpansionViewer } = {},
+  opts: {
+    dateConfig?: DateContext;
+    audit?: RecordMutationAudit;
+    recordAccess?: AuthorizedRecordAccess;
+    viewer?: ExpansionViewer;
+    locale?: string;
+  } = {},
 ): Promise<Result<UpdateRecordInTransactionResult>> => {
-  const writable = await requireStoredTableWritable(tableId, client);
+  const messages = getGridsCrudMessages(opts.locale);
+  const writable = await requireStoredTableWritable(tableId, client, opts.locale);
   if (!writable.ok) return writable;
-  const allowed = await assertMutationAllowed(client, tableId, origin);
+  const allowed = await assertMutationAllowed(client, tableId, origin, opts.locale);
   if (!allowed.ok) return allowed;
   await lockDurableHistoryMutationBoundary(client, tableId);
   const fields = await listFields(tableId, false, client);
   const existing = await loadStoredRecordForUpdate(client, tableId, recordId, fields, opts.recordAccess);
-  if (!existing || existing.deletedAt) return fail(err.notFound("Record"));
+  if (!existing || existing.deletedAt) return fail(err.notFound(messages.record));
   if (ifMatchVersion !== undefined && ifMatchVersion !== existing.version) {
-    return fail(recordVersionConflict());
+    return fail(recordVersionConflict(opts.locale));
   }
 
-  const validated = await validateForUpdate(tableId, payload, fields, actorId);
+  const validated = await validateForUpdate(tableId, payload, fields, actorId, opts.locale);
   if (!validated.ok) return validated;
 
   const fieldsIncludingDeleted = await listFields(tableId, true, client);
@@ -463,7 +485,7 @@ export const updateInTransaction = async (
   // Pre-flight relation-target existence check (same reasoning as create).
   // Batched per target table; runs outside the write transaction.
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
-  const preflight = await preflightRelationTargets(split.relations, fieldsById, client, opts.viewer);
+  const preflight = await preflightRelationTargets(split.relations, fieldsById, client, opts.viewer, opts.locale);
   if (!preflight.ok) return preflight;
 
   // Merge: existing JSONB data + only the validated NON-RELATION fields.
@@ -475,15 +497,15 @@ export const updateInTransaction = async (
   // Build the diff up front so we can pass it into the transaction.
   const diff = buildRecordDiff(existing.data, validated.data);
   if (Object.keys(diff).length === 0) {
-    const mutable = await assertRecordMutable(client, tableId, recordId);
+    const mutable = await assertRecordMutable(client, tableId, recordId, opts.locale);
     return mutable.ok ? ok({ record: existing, outboxId: null }) : mutable;
   }
-  const auditPolicy = await loadTableAuditPolicy(client, tableId);
+  const auditPolicy = await loadTableAuditPolicy(client, tableId, opts.locale);
   if (!auditPolicy.ok) return auditPolicy;
-  const auditContext = buildRecordAuditContext(auditPolicy.data, "update", Object.keys(diff), opts.audit);
+  const auditContext = buildRecordAuditContext(auditPolicy.data, "update", Object.keys(diff), opts.audit, opts.locale);
   if (!auditContext.ok) return auditContext;
   await prepareRecordMutation(client, tableId, recordId);
-  const mutable = await assertRecordMutable(client, tableId, recordId);
+  const mutable = await assertRecordMutable(client, tableId, recordId, opts.locale);
   if (!mutable.ok) return mutable;
   const eventPayload = {
     v: 1,
@@ -506,7 +528,7 @@ export const updateInTransaction = async (
         AND ${recordAccessPredicate(opts.recordAccess, "grids.records")}
       RETURNING *, grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
     `;
-  if (!row) return fail(recordVersionConflict());
+  if (!row) return fail(recordVersionConflict(opts.locale));
 
   await supersedePendingFinalizationRequest(client, tableId, recordId, actorId);
 
@@ -549,6 +571,7 @@ export const update = async (
     dateConfig?: DateContext;
     audit?: RecordMutationAudit;
     recordAccess?: AuthorizedRecordAccess;
+    locale?: string;
   } = {},
 ): Promise<Result<GridRecord>> => {
   const fields = await listFields(tableId);
@@ -559,17 +582,18 @@ export const update = async (
         audit: opts.audit,
         recordAccess: opts.recordAccess,
         viewer: opts.viewer,
+        locale: opts.locale,
       }),
     )
     .catch((error: unknown) => {
-      const conflict = recordUniqueConflict<UpdateRecordInTransactionResult>(error, fields);
+      const conflict = recordUniqueConflict<UpdateRecordInTransactionResult>(error, fields, opts.locale);
       if (conflict) return conflict;
       throw error;
     });
   if (!updated.ok) return updated;
 
   const record = await get(tableId, recordId, opts);
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(getGridsCrudMessages(opts.locale).record));
   if (updated.data.outboxId) notifyRecordEventOutbox(updated.data.outboxId);
   return ok(record);
 };
@@ -581,11 +605,13 @@ export const softDelete = async (
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
   recordAccess?: AuthorizedRecordAccess,
+  locale?: string,
 ): Promise<Result<void>> => {
-  const writable = await requireStoredTableWritable(tableId);
+  const messages = getGridsCrudMessages(locale);
+  const writable = await requireStoredTableWritable(tableId, sql, locale);
   if (!writable.ok) return writable;
   const existing = await get(tableId, recordId, { recordAccess });
-  if (!existing || existing.deletedAt) return fail(err.notFound("Record"));
+  if (!existing || existing.deletedAt) return fail(err.notFound(messages.record));
   const eventPayload = {
     v: 1,
     type: "record.deleted",
@@ -595,15 +621,15 @@ export const softDelete = async (
   };
   const deleted = await sql
     .begin(async (tx): Promise<Result<string>> => {
-      const allowed = await assertMutationAllowed(tx, tableId, origin);
+      const allowed = await assertMutationAllowed(tx, tableId, origin, locale);
       if (!allowed.ok) return allowed;
       await lockDurableHistoryMutationBoundary(tx, tableId);
-      const auditPolicy = await loadTableAuditPolicy(tx, tableId);
+      const auditPolicy = await loadTableAuditPolicy(tx, tableId, locale);
       if (!auditPolicy.ok) return auditPolicy;
-      const auditContext = buildRecordAuditContext(auditPolicy.data, "delete", [], audit);
+      const auditContext = buildRecordAuditContext(auditPolicy.data, "delete", [], audit, locale);
       if (!auditContext.ok) return auditContext;
       await prepareRecordMutation(tx, tableId, recordId);
-      const mutable = await assertRecordMutable(tx, tableId, recordId);
+      const mutable = await assertRecordMutable(tx, tableId, recordId, locale);
       if (!mutable.ok) return mutable;
       const [row] = await tx<Array<{ outbox_id: string }>>`
         UPDATE grids.records
@@ -638,7 +664,7 @@ export const softDelete = async (
       return ok(row.outbox_id);
     })
     .catch((error: unknown) => {
-      if ((error as { __versionConflict?: true })?.__versionConflict) return fail(recordVersionConflict());
+      if ((error as { __versionConflict?: true })?.__versionConflict) return fail(recordVersionConflict(locale));
       throw error;
     });
   if (!deleted.ok) return deleted;
@@ -653,7 +679,9 @@ export const restore = async (
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
   recordAccess?: AuthorizedRecordAccess,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const fields = await listFields(tableId);
   const eventPayload = {
     v: 1,
@@ -664,17 +692,17 @@ export const restore = async (
   };
   const restored = await sql
     .begin(async (tx): Promise<Result<string>> => {
-      const writable = await requireStoredTableWritable(tableId, tx);
+      const writable = await requireStoredTableWritable(tableId, tx, locale);
       if (!writable.ok) return writable;
-      const allowed = await assertMutationAllowed(tx, tableId, origin);
+      const allowed = await assertMutationAllowed(tx, tableId, origin, locale);
       if (!allowed.ok) return allowed;
       await lockDurableHistoryMutationBoundary(tx, tableId);
-      const auditPolicy = await loadTableAuditPolicy(tx, tableId);
+      const auditPolicy = await loadTableAuditPolicy(tx, tableId, locale);
       if (!auditPolicy.ok) return auditPolicy;
-      const auditContext = buildRecordAuditContext(auditPolicy.data, "restore", [], audit);
+      const auditContext = buildRecordAuditContext(auditPolicy.data, "restore", [], audit, locale);
       if (!auditContext.ok) return auditContext;
       await prepareRecordMutation(tx, tableId, recordId);
-      const mutable = await assertRecordMutable(tx, tableId, recordId);
+      const mutable = await assertRecordMutable(tx, tableId, recordId, locale);
       if (!mutable.ok) return mutable;
       const [row] = await tx<Array<{ outbox_id: string }>>`
         UPDATE grids.records
@@ -683,7 +711,7 @@ export const restore = async (
           AND ${recordAccessPredicate(recordAccess, "grids.records")}
         RETURNING grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
       `;
-      if (!row) return fail(err.notFound("Record"));
+      if (!row) return fail(err.notFound(messages.record));
       await supersedePendingFinalizationRequest(tx, tableId, recordId, actorId, "The Record was restored from trash.");
       await captureRecordEventSnapshot(tx, {
         snapshotId: row.outbox_id,
@@ -696,7 +724,7 @@ export const restore = async (
       return ok(row.outbox_id);
     })
     .catch((error: unknown) => {
-      const conflict = recordUniqueConflict<string>(error, fields);
+      const conflict = recordUniqueConflict<string>(error, fields, locale);
       if (conflict) return conflict;
       throw error;
     });

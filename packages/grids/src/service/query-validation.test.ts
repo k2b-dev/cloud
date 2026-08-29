@@ -35,8 +35,8 @@ const fields = [
   field(deletedId, "Removed", "text", "2026-01-02T00:00:00.000Z"),
 ];
 
-const expectBadInput = (query: Parameters<typeof validateRecordQueryForFields>[1], message: string): void => {
-  const result = validateRecordQueryForFields(tableId, query, fields);
+const expectBadInput = (query: Parameters<typeof validateRecordQueryForFields>[1], message: string, locale?: string): void => {
+  const result = validateRecordQueryForFields(tableId, query, fields, locale);
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.error.code).toBe("BAD_INPUT");
@@ -46,18 +46,18 @@ const expectBadInput = (query: Parameters<typeof validateRecordQueryForFields>[1
 
 describe("record query validation", () => {
   test("rejects unknown or deleted fields in every query surface", () => {
-    expectBadInput({ filter: { fieldId: missingId, op: "equals", value: "x" } }, "filter:");
-    expectBadInput({ sort: [{ fieldId: missingId, direction: "asc" }] }, "sort:");
+    expectBadInput({ filter: { fieldId: missingId, op: "equals", value: "x" } }, "filter is invalid");
+    expectBadInput({ sort: [{ fieldId: missingId, direction: "asc" }] }, "sort is invalid");
     expectBadInput({ search: { q: "x", fieldIds: [missingId] } }, "no longer exists");
     expectBadInput({ columns: [{ fieldId: missingId }] }, "no longer exists");
     expectBadInput({ columns: [{ fieldId: deletedId }] }, "no longer exists");
   });
 
   test("rejects non-searchable fields and invalid computed expressions", () => {
-    expectBadInput({ search: { q: "x", fieldIds: [fileId] } }, 'field "Attachment" is not searchable');
+    expectBadInput({ search: { q: "x", fieldIds: [fileId] } }, "Field “Attachment” is not searchable");
     expectBadInput(
       { columns: [{ kind: "computed", id: "computed_parse", label: "Broken", expression: "LEN(" }] },
-      'computed column "Broken"',
+      "Computed column “Broken”",
     );
     expectBadInput(
       { columns: [{ kind: "computed", id: "computed_ref", label: "Missing", expression: "LEN(Unknown)" }] },
@@ -66,8 +66,8 @@ describe("record query validation", () => {
   });
 
   test("requires grouping before grouped sort and validates grouped fields", () => {
-    expectBadInput({ groupSort: [{ fieldId: "*", agg: "count", direction: "desc" }] }, "groupSort requires groupBy");
-    expectBadInput({ groupBy: [{ fieldId: missingId }] }, "unknown group-by field");
+    expectBadInput({ groupSort: [{ fieldId: "*", agg: "count", direction: "desc" }] }, "Group sorting requires a grouping");
+    expectBadInput({ groupBy: [{ fieldId: missingId }] }, "grouping is invalid");
   });
 
   test("accepts one coherent query spanning all supported sections", () => {
@@ -83,5 +83,14 @@ describe("record query validation", () => {
         fields,
       ).ok,
     ).toBe(true);
+  });
+
+  test("localizes validation errors for regional German locales", () => {
+    expectBadInput({ search: { q: "x", fieldIds: [fileId] } }, "Das Feld „Attachment“ kann nicht durchsucht werden.", "de-CH");
+    expectBadInput(
+      { columns: [{ kind: "computed", id: "computed_parse", label: "Fehlerhaft", expression: "LEN(" }] },
+      "Die berechnete Spalte „Fehlerhaft“ enthält eine ungültige Formel.",
+      "de-CH",
+    );
   });
 });

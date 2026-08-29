@@ -1,6 +1,7 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { FileBaseInfo } from "@/contracts";
+import { filesMessages } from "../messages";
 
 type BaseSidebarProps = {
   bases: FileBaseInfo[];
@@ -23,12 +24,14 @@ const getHref = (base: FileBaseInfo) => {
 const getHomeLabel = (name: string) => name.replace("Home (", "").replace(")", "");
 
 export default function BaseSidebar(props: BaseSidebarProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const homeBases = props.bases.filter((b) => b.type === "home");
   const groupBases = props.bases.filter((b) => b.type === "group");
   const isSearch = props.currentBaseType === "search";
   const currentBase = props.bases.find((base) => isActive(base, props.currentBaseType, props.currentBaseId));
   const currentBaseLabel = currentBase ? (currentBase.type === "home" ? getHomeLabel(currentBase.name) : currentBase.name) : null;
-  const sidebarTitle = isSearch ? "Search" : (currentBaseLabel ?? "Files");
+  const sidebarTitle = isSearch ? t().search : (currentBaseLabel ?? t().files);
   const renderBaseItem = (base: FileBaseInfo) => (
     <AppWorkspace.SidebarItem
       href={getHref(base)}
@@ -47,7 +50,7 @@ export default function BaseSidebar(props: BaseSidebarProps) {
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileItems>
           <AppWorkspace.SidebarItem href="/app/files/search" navigation="document" icon="ti ti-search" active={isSearch}>
-            Search
+            {t().search}
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="files-sidebar-mobile">
@@ -56,7 +59,7 @@ export default function BaseSidebar(props: BaseSidebarProps) {
             {props.bases.length === 0 && (
               <p class="px-2 py-1 text-xs text-dimmed">
                 <i class="ti ti-folder-off mr-1" />
-                No accessible bases
+                {t().noAccessibleBases}
               </p>
             )}
           </AppWorkspace.SidebarSection>
@@ -67,22 +70,24 @@ export default function BaseSidebar(props: BaseSidebarProps) {
         <div class="flex flex-col gap-3">
           <AppWorkspace.SidebarSection>
             <AppWorkspace.SidebarItem href="/app/files/search" navigation="document" icon="ti ti-search" active={isSearch}>
-              Search
+              {t().search}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarSection>
         </div>
 
         <AppWorkspace.SidebarBody scrollPreserveKey="files-sidebar">
-          {homeBases.length > 0 && <AppWorkspace.SidebarSection title="Home">{homeBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>}
+          {homeBases.length > 0 && (
+            <AppWorkspace.SidebarSection title={t().home}>{homeBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
+          )}
 
           {groupBases.length > 0 && (
-            <AppWorkspace.SidebarSection title="Groups">{groupBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title={t().groups}>{groupBases.map(renderBaseItem)}</AppWorkspace.SidebarSection>
           )}
 
           {props.bases.length === 0 && (
             <p class="px-2 py-1 text-xs text-dimmed">
               <i class="ti ti-folder-off mr-1" />
-              No accessible bases
+              {t().noAccessibleBases}
             </p>
           )}
 

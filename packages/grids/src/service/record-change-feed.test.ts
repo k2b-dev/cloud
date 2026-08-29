@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { decodeRecordChangeFeedCursor, encodeRecordChangeFeedCursor } from "./record-change-feed";
+import { decodeRecordChangeFeedCursor, encodeRecordChangeFeedCursor, listRecordChanges } from "./record-change-feed";
 
 describe("Record change feed cursor", () => {
   const key = "record-change-feed-test-key";
@@ -24,5 +24,13 @@ describe("Record change feed cursor", () => {
     expect(decodeRecordChangeFeedCursor(`${cursor.slice(0, -1)}x`, scope, key)).toBeNull();
     expect(decodeRecordChangeFeedCursor("not-a-cursor", scope, key)).toBeNull();
     expect(decodeRecordChangeFeedCursor("x".repeat(2_001), scope, key)).toBeNull();
+  });
+
+  test("localizes invalid-cursor errors for regional German locales", async () => {
+    const result = await listRecordChanges({ scope, cursor: "not-a-cursor", cursorSigningKey: key, locale: "de-CH" });
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "BAD_INPUT", status: 400, message: "Der Cursor des Datensatz-Änderungsfeeds ist ungültig." },
+    });
   });
 });

@@ -1,9 +1,11 @@
 import type { ResourceApiKey, ResourceApiKeysProps } from "@valentinkolb/cloud/access/ui";
-import { Button, DataTable, TextInput, type DataTableColumn } from "@k2b/ui";
+import { Button, DataTable, TextInput, type DataTableColumn, useLocale } from "@k2b/ui";
 import { Show, type Accessor, type JSX } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
-import { compactDateWithDelta, formatIngestCounts, sourceKindIcon, sourceStatus, type PulseDateContext } from "./helpers";
+import { compactDateWithDelta, sourceKindIcon, sourceStatus, type PulseDateContext } from "./helpers";
 import SourceDetailView from "./SourceDetailView";
+import type { pulseMessages } from "../../messages";
+import { usePulseMessages } from "../use-messages";
 
 type PublishedCounts = {
   resources: number;
@@ -12,21 +14,23 @@ type PublishedCounts = {
   events: number;
 };
 
-const sourceColumns: DataTableColumn<PulseSource>[] = [
-  { id: "source", header: "Source", value: "name", cellClass: "min-w-56" },
-  { id: "status", header: "Status", cellClass: "w-28 whitespace-nowrap" },
-  { id: "resources", header: "Resources", cellClass: "w-24 whitespace-nowrap" },
-  { id: "signals", header: "Signals", cellClass: "w-32 whitespace-nowrap" },
-  { id: "target", header: "Target", cellClass: "min-w-48" },
-  { id: "seen", header: "Last seen", cellClass: "w-48 whitespace-nowrap" },
+type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
+
+const sourceColumns = (t: Messages): DataTableColumn<PulseSource>[] => [
+  { id: "source", header: t.source, value: "name", cellClass: "min-w-56" },
+  { id: "status", header: t.status, cellClass: "w-28 whitespace-nowrap" },
+  { id: "resources", header: t.resources, cellClass: "w-24 whitespace-nowrap" },
+  { id: "signals", header: t.signals, cellClass: "w-32 whitespace-nowrap" },
+  { id: "target", header: t.target, cellClass: "min-w-48" },
+  { id: "seen", header: t.lastSeen, cellClass: "w-48 whitespace-nowrap" },
 ];
 
-const sourceScrapeColumns: DataTableColumn<PulseSourceScrape>[] = [
-  { id: "status", header: "Status", cellClass: "w-28 whitespace-nowrap" },
-  { id: "finished", header: "Finished", cellClass: "w-44 whitespace-nowrap" },
-  { id: "samples", header: "Data", cellClass: "w-28 whitespace-nowrap" },
-  { id: "duration", header: "Time", cellClass: "w-20 whitespace-nowrap" },
-  { id: "error", header: "Error", cellClass: "min-w-40" },
+const sourceScrapeColumns = (t: Messages): DataTableColumn<PulseSourceScrape>[] => [
+  { id: "status", header: t.status, cellClass: "w-28 whitespace-nowrap" },
+  { id: "finished", header: t.finished, cellClass: "w-44 whitespace-nowrap" },
+  { id: "samples", header: t.data, cellClass: "w-28 whitespace-nowrap" },
+  { id: "duration", header: t.time, cellClass: "w-20 whitespace-nowrap" },
+  { id: "error", header: t.error, cellClass: "min-w-40" },
 ];
 
 const renderSourceTitleCell = (source: PulseSource): JSX.Element => {
@@ -43,8 +47,8 @@ const renderSourceTitleCell = (source: PulseSource): JSX.Element => {
   );
 };
 
-const renderSourceStatusCell = (source: PulseSource): JSX.Element => {
-  const status = sourceStatus(source);
+const renderSourceStatusCell = (source: PulseSource, t: Messages): JSX.Element => {
+  const status = sourceStatus(source, { paused: t.paused, error: t.error, healthy: t.healthy, waiting: t.waiting });
   return (
     <span class={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${status.text}`}>
       <i class={status.icon} />
@@ -53,11 +57,11 @@ const renderSourceStatusCell = (source: PulseSource): JSX.Element => {
   );
 };
 
-const renderSourceSignalsCell = (counts: PublishedCounts): JSX.Element => {
+const renderSourceSignalsCell = (counts: PublishedCounts, locale: string): JSX.Element => {
   const total = counts.metricVariants + counts.states + counts.events;
   return (
     <span class="text-xs text-secondary">
-      {total.toLocaleString()}{" "}
+      {total.toLocaleString(locale)}{" "}
       <span class="text-dimmed">
         ({counts.metricVariants}m/{counts.states}s/{counts.events}e)
       </span>
@@ -65,19 +69,19 @@ const renderSourceSignalsCell = (counts: PublishedCounts): JSX.Element => {
   );
 };
 
-const renderSourceTargetCell = (source: PulseSource): JSX.Element => {
+const renderSourceTargetCell = (source: PulseSource, t: Messages): JSX.Element => {
   if (source.kind === "metrics") {
     return (
       <div class="min-w-0">
         <p class="truncate text-xs text-secondary" title={source.endpointUrl ?? ""}>
-          {source.endpointUrl ?? "No endpoint"}
+          {source.endpointUrl ?? t.noEndpointShort}
         </p>
-        <p class="mt-1 text-xs text-dimmed">Every {source.scrapeIntervalSeconds ?? 60}s</p>
+        <p class="mt-1 text-xs text-dimmed">{t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 })}</p>
       </div>
     );
   }
-  if (source.kind === "http_ingest") return <span class="text-xs text-secondary">Token ingest endpoint</span>;
-  return <span class="text-xs text-secondary">Internal app telemetry</span>;
+  if (source.kind === "http_ingest") return <span class="text-xs text-secondary">{t.tokenIngestEndpoint}</span>;
+  return <span class="text-xs text-secondary">{t.internalAppTelemetry}</span>;
 };
 
 export type SourcesViewProps = {
@@ -110,20 +114,22 @@ export type SourcesViewProps = {
 };
 
 export default function SourcesView(props: SourcesViewProps) {
+  const t = usePulseMessages();
+  const locale = useLocale();
   const renderSourceCell = (
     source: PulseSource,
     col: DataTableColumn<PulseSource>,
     render: (value: unknown) => JSX.Element,
   ): JSX.Element => {
     if (col.id === "source") return renderSourceTitleCell(source);
-    if (col.id === "status") return renderSourceStatusCell(source);
+    if (col.id === "status") return renderSourceStatusCell(source, t());
     if (col.id === "resources") {
       const counts = props.publishedCounts(source.id);
-      return <span class="text-xs text-secondary">{counts.resources.toLocaleString()}</span>;
+      return <span class="text-xs text-secondary">{counts.resources.toLocaleString(locale())}</span>;
     }
-    if (col.id === "signals") return renderSourceSignalsCell(props.publishedCounts(source.id));
-    if (col.id === "target") return renderSourceTargetCell(source);
-    if (col.id === "seen") return source.lastSeenAt ? compactDateWithDelta(source.lastSeenAt, props.dateContext()) : "Waiting";
+    if (col.id === "signals") return renderSourceSignalsCell(props.publishedCounts(source.id), locale());
+    if (col.id === "target") return renderSourceTargetCell(source, t());
+    if (col.id === "seen") return source.lastSeenAt ? compactDateWithDelta(source.lastSeenAt, props.dateContext()) : t().waiting;
     return render(source[col.id as keyof PulseSource]);
   };
 
@@ -136,7 +142,7 @@ export default function SourcesView(props: SourcesViewProps) {
             icon="ti ti-search"
             value={props.search}
             onValueChange={props.setSearch}
-            placeholder="Search sources..."
+            placeholder={t().searchSourcesPlaceholder}
             clearable
           />
         </div>
@@ -147,19 +153,19 @@ export default function SourcesView(props: SourcesViewProps) {
           disabled={!props.selectedBaseId() || props.loading()}
           onClick={() => void props.addSource()}
         >
-          <i class="ti ti-plus" /> Source
+          <i class="ti ti-plus" /> {t().addSource}
         </Button>
       </div>
       <DataTable
         rows={props.sources()}
-        columns={sourceColumns}
+        columns={sourceColumns(t())}
         getRowId={(source) => source.id}
         selectedRowId={props.selectedSourceId() || null}
         onRowClick={props.selectSource}
         density="compact"
         fillHeight
         class="min-h-[32rem] flex-1 overflow-auto"
-        empty="No sources yet."
+        empty={t().noSources}
         scrollPreserveKey="pulse-sources-table"
         renderCell={({ row: source, col, render }) => renderSourceCell(source, col, render)}
       />
@@ -168,6 +174,7 @@ export default function SourcesView(props: SourcesViewProps) {
 }
 
 export function SourcesDetailPanel(props: SourcesViewProps) {
+  const t = usePulseMessages();
   const renderSourceScrapeCell = (scrape: PulseSourceScrape, col: DataTableColumn<PulseSourceScrape>): JSX.Element => {
     if (col.id === "status") {
       return (
@@ -179,13 +186,13 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
           }`}
         >
           <i class={`ti ${scrape.success ? "ti-check" : "ti-alert-circle"}`} />
-          {scrape.success ? "Success" : "Error"}
+          {scrape.success ? t().success : t().error}
         </span>
       );
     }
     if (col.id === "finished")
       return <span class="text-xs text-secondary">{compactDateWithDelta(scrape.finishedAt, props.dateContext())}</span>;
-    if (col.id === "samples") return <span class="text-xs text-secondary">{formatIngestCounts(scrape)}</span>;
+    if (col.id === "samples") return <span class="text-xs text-secondary">{t().ingestCounts(scrape)}</span>;
     if (col.id === "duration") return <span class="text-xs text-secondary">{scrape.durationMs}ms</span>;
     if (col.id === "error") {
       return (
@@ -208,7 +215,7 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
           loading={props.loading()}
           scrapes={props.selectedSourceScrapes()}
           apiKeys={props.selectedSourceApiKeys()}
-          scrapeColumns={sourceScrapeColumns}
+          scrapeColumns={sourceScrapeColumns(t())}
           renderScrapeCell={renderSourceScrapeCell}
           copySetupText={props.copySetupText}
           openSourceResources={props.openSourceResources}

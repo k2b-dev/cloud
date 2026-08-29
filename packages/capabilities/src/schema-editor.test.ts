@@ -72,6 +72,15 @@ describe("capability schema editor", () => {
     });
   });
 
+  test("localizes form guidance and validation with regional fallback", () => {
+    const complex = createSchemaEditorModel({ type: "array" }, "de-CH");
+    expect(complex).toMatchObject({ mode: "json", reason: "Dieses Schema ist zu komplex für das Formular. Gib die Anfrage als JSON ein." });
+    expect(buildCapabilityInput(complex, { values: {}, source: "[]" }, "de-CH")).toMatchObject({
+      ok: false,
+      formError: "Die Anfrage muss ein JSON-Objekt sein.",
+    });
+  });
+
   test("keeps required empty strings and arrays valid when the schema allows them", () => {
     const schema = {
       type: "object",

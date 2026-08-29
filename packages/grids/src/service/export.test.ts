@@ -188,4 +188,12 @@ describe("HTML template export limits", () => {
     expect(validateHtmlTemplateExportLimit([html], { limit: 1_000 }).ok).toBe(true);
     expect(validateHtmlTemplateExportLimit([mkField({ id: "fld-text", type: "text" })], {}).ok).toBe(true);
   });
+
+  test("localizes the limit error for regional German locales", () => {
+    const result = validateHtmlTemplateExportLimit([html], {}, "de-CH");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.error.message).toBe("HTML-Vorlagenfelder erfordern ein ausdrückliches Exportlimit von höchstens 1000 Datensätzen");
+  });
 });

@@ -44,12 +44,6 @@ type UploadStartResponse = {
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
-const getErrorMessage = (value: unknown, fallback: string): string => {
-  if (!isObject(value)) return fallback;
-  const message = value["message"];
-  return typeof message === "string" ? message : fallback;
-};
-
 const isUploadStartResponse = (value: unknown): value is UploadStartResponse => {
   if (!isObject(value)) return false;
   return (
@@ -70,7 +64,17 @@ const isUploadStartResponse = (value: unknown): value is UploadStartResponse => 
  * Create an upload manager for handling file uploads with progress tracking.
  * Always uses chunked uploads for consistent behavior and progress tracking.
  */
-export function createUploadManager() {
+type UploadMessages = {
+  emptyFile: string;
+  preparationFailed: string;
+  startFailed: string;
+  chunkFailed: string;
+  cancelled: string;
+  uploadFailed: string;
+  selectFailed: string;
+};
+
+export function createUploadManager(messages: () => UploadMessages) {
   const [state, setState] = createStore<UploadManagerState>({
     files: [],
     isUploading: false,
@@ -94,14 +98,14 @@ export function createUploadManager() {
 
     // Check for empty files
     if (!file.size || file.size <= 0) {
-      throw new Error("Cannot upload empty file");
+      throw new Error(messages().emptyFile);
     }
 
     const upload = await chunks.prepare({ file, chunkSize: CHUNK_SIZE });
 
     // Verify fileSize was set correctly
     if (!upload.fileSize || upload.fileSize <= 0) {
-      throw new Error("Upload preparation failed");
+      throw new Error(messages().preparationFailed);
     }
 
     const unsubscribe = upload.subscribe((s: UploadState) => {
@@ -125,13 +129,12 @@ export function createUploadManager() {
       });
 
       if (!startRes.ok) {
-        const data = await startRes.json().catch(() => ({ message: "Failed to start upload" }));
-        throw new Error(getErrorMessage(data, "Failed to start upload"));
+        throw new Error(messages().startFailed);
       }
 
       const uploadData = await startRes.json();
       if (!isUploadStartResponse(uploadData)) {
-        throw new Error("Failed to start upload");
+        throw new Error(messages().startFailed);
       }
       const { uploadId, uploadTicket } = uploadData;
 
@@ -139,7 +142,7 @@ export function createUploadManager() {
         retries: 3,
         concurrency: 5,
         fn: async ({ index, data }) => {
-          if (signal.aborted) throw new Error("Upload cancelled");
+          if (signal.aborted) throw new Error(messages().cancelled);
 
           const chunkRes = await fetch(`/api/files/${baseType}/${baseId}/upload/${uploadId}?index=${index}`, {
             method: "PUT",
@@ -152,8 +155,7 @@ export function createUploadManager() {
           });
 
           if (!chunkRes.ok) {
-            const errData = await chunkRes.json().catch(() => ({ message: "Chunk upload failed" }));
-            throw new Error(getErrorMessage(errData, "Chunk upload failed"));
+            throw new Error(messages().chunkFailed);
           }
         },
       });
@@ -212,7 +214,7 @@ export function createUploadManager() {
         } catch (err) {
           updateFile(item.id, {
             status: "error",
-            error: controller.signal.aborted ? "Cancelled" : err instanceof Error ? err.message : "Upload failed",
+            error: controller.signal.aborted ? messages().cancelled : err instanceof Error ? err.message : messages().uploadFailed,
           });
         }
       };
@@ -235,7 +237,7 @@ export function createUploadManager() {
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes("cancelled")) return;
-      options?.onError?.(err instanceof Error ? err : new Error("Failed to select files"));
+      options?.onError?.(err instanceof Error ? err : new Error(messages().selectFailed));
     } finally {
       setState("isUploading", false);
       setAbortController(null);

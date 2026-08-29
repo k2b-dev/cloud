@@ -1,4 +1,4 @@
-import { dialogCore } from "@k2b/ui";
+import { dialogCore, useLocale } from "@k2b/ui";
 import type { SearchItem } from "../api/search/schemas";
 import CloudResourceSearch from "../browser/CloudResourceSearch";
 import { type GlobalSearchHelpApp, openGlobalSearchHelpDialog } from "./GlobalSearchHelpDialog";
@@ -9,9 +9,10 @@ type GlobalSearchDialogProps = {
 };
 
 export default function GlobalSearchDialog(props: GlobalSearchDialogProps) {
+  const locale = useLocale();
   const openHelp = () => {
     props.close();
-    queueMicrotask(() => openGlobalSearchHelpDialog(props.helpApps));
+    queueMicrotask(() => openGlobalSearchHelpDialog(props.helpApps, locale()));
   };
 
   const openItem = (item: SearchItem) => {

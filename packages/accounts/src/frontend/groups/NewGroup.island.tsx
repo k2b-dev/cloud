@@ -1,9 +1,10 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, Checkbox, CopyButton, prompts, TextInput } from "@k2b/ui";
+import { Button, Checkbox, CopyButton, NoticeCard, prompts, TextInput } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BaseGroup, BaseGroupSchema, ErrorResponseSchema } from "@/contracts";
+import { type accountsMessages, useAccountsMessages } from "../messages";
 
 type ProviderChoice = "ipa" | "local";
 
@@ -13,25 +14,29 @@ const normalizeName = (v: string): string =>
     .replace(/[_ ]/g, "-")
     .replace(/[^a-z0-9-]/g, "");
 
-const PROVIDER_CARDS: Array<{
+type AccountsCopy = ReturnType<typeof accountsMessages.resolve>["t"];
+
+const providerCards = (
+  t: AccountsCopy,
+): Array<{
   value: ProviderChoice;
   title: string;
   eyebrow: string;
   description: string;
   icon: string;
-}> = [
+}> => [
   {
     value: "ipa",
-    title: "FreeIPA group",
-    eyebrow: "Directory",
-    description: "Use this for centrally managed groups. This is the right choice when the group must exist in FreeIPA.",
+    title: t.freeIpaGroup,
+    eyebrow: t.directory,
+    description: t.freeIpaGroupDescription,
     icon: "ti ti-building-fortress",
   },
   {
     value: "local",
-    title: "Local group",
-    eyebrow: "App-managed",
-    description: "Use this for app-owned access control. Local groups can include local and FreeIPA users.",
+    title: t.localGroup,
+    eyebrow: t.appManaged,
+    description: t.localGroupDescription,
     icon: "ti ti-home-spark",
   },
 ];
@@ -54,15 +59,16 @@ type CreateGroupResult = {
 };
 
 function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => void }) {
+  const messages = useAccountsMessages();
   return (
     <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">Where should this group be managed?</p>
-        <p class="text-xs text-dimmed">Choose the provider first. The available options depend on that decision.</p>
+        <p class="text-sm font-medium text-primary">{messages().chooseGroupProviderQuestion}</p>
+        <p class="text-xs text-dimmed">{messages().chooseGroupProviderDescription}</p>
       </div>
 
       <div class="grid gap-3 md:grid-cols-2">
-        {PROVIDER_CARDS.map((provider) => (
+        {providerCards(messages()).map((provider) => (
           <button type="button" class={PROVIDER_CARD_CLASS} onClick={() => props.close(provider.value)}>
             <div class="flex items-center gap-3">
               <div class={PROVIDER_CARD_ICON_CLASS}>
@@ -82,6 +88,7 @@ function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => 
 }
 
 function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: CreateGroupPayload) => void }) {
+  const messages = useAccountsMessages();
   const [name, setName] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [posix, setPosix] = createSignal(props.provider === "ipa");
@@ -90,7 +97,7 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
   const handleSubmit = () => {
     const normalized = normalizeName(name());
     if (!normalized) {
-      setError("Name must contain at least one alphanumeric character.");
+      setError(messages().groupNameInvalid);
       return;
     }
 
@@ -105,11 +112,11 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
   return (
     <div class="flex flex-col gap-5">
       <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">{props.provider === "ipa" ? "Create FreeIPA group" : "Create local group"}</p>
+        <p class="text-sm font-medium text-primary">
+          {props.provider === "ipa" ? messages().createFreeIpaGroup : messages().createLocalGroup}
+        </p>
         <p class="text-xs text-dimmed">
-          {props.provider === "ipa"
-            ? "FreeIPA groups stay directory-backed and can optionally be POSIX-enabled for shared files."
-            : "Local groups are the app-owned authorization layer and can mix local and FreeIPA users."}
+          {props.provider === "ipa" ? messages().freeIpaGroupCreationDescription : messages().localGroupCreationDescription}
         </p>
       </div>
 
@@ -118,10 +125,8 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
           <div class="flex items-start gap-3">
             <i class="ti ti-info-circle mt-0.5 text-base" />
             <div class="flex flex-col gap-1">
-              <span class="font-medium">Directory groups are authoritative in FreeIPA.</span>
-              <span class="text-xs text-blue-700/90 dark:text-blue-200/80">
-                Enable POSIX only when the group also needs a shared filesystem identity.
-              </span>
+              <span class="font-medium">{messages().directoryGroupsAuthoritative}</span>
+              <span class="text-xs text-blue-700/90 dark:text-blue-200/80">{messages().posixOnlyWhenNeeded}</span>
             </div>
           </div>
         </NoticeCard>
@@ -129,7 +134,7 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
 
       <div class="grid gap-4">
         <TextInput
-          label="Name"
+          label={messages().name}
           required
           icon="ti ti-hash"
           value={name}
@@ -139,22 +144,22 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
           }}
           error={error}
           placeholder="my-group"
-          description="Will be normalized to lowercase with hyphens."
+          description={messages().normalizedGroupName}
         />
         <TextInput
-          label="Description"
+          label={messages().description}
           icon="ti ti-notes"
           value={description}
           onValueChange={setDescription}
-          placeholder="Explain what this group is for"
+          placeholder={messages().groupPurposePlaceholder}
           multiline
         />
       </div>
 
       <Show when={props.provider === "ipa"}>
         <Checkbox
-          label="Create as POSIX group"
-          description="Only POSIX groups can be used for shared filesystem access."
+          label={messages().createPosixGroup}
+          description={messages().posixGroupDescription}
           value={posix}
           onValueChange={setPosix}
         />
@@ -162,7 +167,7 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
 
       <div class="flex justify-end">
         <Button size="sm" onClick={handleSubmit}>
-          Continue
+          {messages().continue}
         </Button>
       </div>
     </div>
@@ -170,13 +175,14 @@ function CreateGroupDialog(props: { provider: ProviderChoice; close: (payload?: 
 }
 
 export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
+  const messages = useAccountsMessages();
   const freeIpaEnabled = props.freeIpaEnabled ?? true;
 
   const createMutation = mutation.create<CreateGroupResult | undefined, void>({
     mutation: async () => {
       const provider = freeIpaEnabled
         ? await prompts.dialog<ProviderChoice>((close) => <ProviderSelectionDialog close={close} />, {
-            title: "Choose group provider",
+            title: messages().chooseGroupProvider,
             icon: "ti ti-users-group",
             size: "medium",
           })
@@ -184,7 +190,7 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
       if (!provider) return undefined;
 
       const payload = await prompts.dialog<CreateGroupPayload>((close) => <CreateGroupDialog provider={provider} close={close} />, {
-        title: provider === "ipa" ? "Create FreeIPA group" : "Create local group",
+        title: provider === "ipa" ? messages().createFreeIpaGroup : messages().createLocalGroup,
         icon: provider === "ipa" ? "ti ti-building-fortress" : "ti ti-home-spark",
         size: "large",
       });
@@ -192,26 +198,26 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
 
       const confirmed = await prompts.confirm(
         <div class="flex flex-col gap-4 text-sm">
-          <p>Please confirm the new group.</p>
+          <p>{messages().confirmNewGroup}</p>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-            <dt class="text-dimmed">Managed by</dt>
-            <dd>{payload.provider === "ipa" ? "FreeIPA" : "Local"}</dd>
-            <dt class="text-dimmed">Name</dt>
+            <dt class="text-dimmed">{messages().managedBy}</dt>
+            <dd>{payload.provider === "ipa" ? "FreeIPA" : messages().local}</dd>
+            <dt class="text-dimmed">{messages().name}</dt>
             <dd class="font-mono">{payload.name}</dd>
             <Show when={payload.description}>
-              <dt class="text-dimmed">Description</dt>
+              <dt class="text-dimmed">{messages().description}</dt>
               <dd>{payload.description}</dd>
             </Show>
             <Show when={payload.provider === "ipa"}>
               <dt class="text-dimmed">POSIX</dt>
-              <dd>{payload.posix ? "Yes" : "No"}</dd>
+              <dd>{payload.posix ? messages().yes : messages().no}</dd>
             </Show>
           </dl>
         </div>,
         {
-          title: "Confirm group creation",
+          title: messages().confirmGroupCreation,
           icon: "ti ti-users-group",
-          confirmText: "Create group",
+          confirmText: messages().createGroup,
           size: "large",
         },
       );
@@ -220,7 +226,7 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
       const res = await apiClient.groups.$post({ json: payload });
       if (!res.ok) {
         const data = ErrorResponseSchema.safeParse(await res.json());
-        throw new Error(data.success ? data.data.message : "Failed to create group.");
+        throw new Error(data.success ? data.data.message : messages().createGroupFailed);
       }
 
       const data = BaseGroupSchema.parse(await res.json());
@@ -233,8 +239,8 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
       if (!result) return;
 
       if (!result.command) {
-        await prompts.success(`Group "${result.group.name}" created successfully.`, {
-          title: "Group created",
+        await prompts.success(messages().groupCreatedMessage({ name: result.group.name }), {
+          title: messages().groupCreated,
           icon: "ti ti-check",
         });
         refreshCurrentPath();
@@ -246,15 +252,15 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
         (close) => (
           <div class="flex flex-col gap-4">
             <NoticeCard tone="success" icon={false}>
-              FreeIPA group <code class="font-mono font-semibold">{result.group.name}</code> created successfully.
+              {messages().freeIpaGroupCreatedMessage({ name: result.group.name })}
             </NoticeCard>
             <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex flex-col">
-                  <span class="text-sm font-medium text-primary">NFS follow-up</span>
-                  <span class="text-xs text-dimmed">Run this on the NFS server.</span>
+                  <span class="text-sm font-medium text-primary">{messages().nfsFollowUp}</span>
+                  <span class="text-xs text-dimmed">{messages().runOnNfsServer}</span>
                 </div>
-                <CopyButton text={command} label="Copy" />
+                <CopyButton text={command} label={messages().copy} />
               </div>
               <pre class="overflow-x-auto whitespace-pre rounded-xl bg-white/80 px-3 py-3 text-xs font-mono text-secondary dark:bg-zinc-950/80">
                 {command}
@@ -268,15 +274,15 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
                   refreshCurrentPath();
                 }}
               >
-                Done
+                {messages().done}
               </Button>
             </div>
           </div>
         ),
-        { title: "Group created", icon: "ti ti-check", size: "large" },
+        { title: messages().groupCreated, icon: "ti ti-check", size: "large" },
       );
     },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to create group."),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : messages().createGroupFailed),
   });
 
   return (
@@ -288,7 +294,7 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
       disabled={createMutation.loading()}
     >
       <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
-      <span class="hidden sm:inline">{createMutation.loading() ? "Creating..." : "New Group"}</span>
+      <span class="hidden sm:inline">{createMutation.loading() ? messages().creating : messages().newGroup}</span>
     </Button>
   );
 }

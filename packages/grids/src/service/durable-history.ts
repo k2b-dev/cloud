@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
+import { serviceMessagesFor } from "./messages";
 import { insertWithShortIdForDb } from "./short-id";
 import type { Field } from "./types";
 
@@ -361,19 +362,21 @@ const statusFor = async (tableId: string, client: SqlClient = sql): Promise<Dura
   };
 };
 
-export const getStatus = async (tableId: string): Promise<Result<DurableHistoryStatus>> => {
+export const getStatus = async (tableId: string, locale?: string): Promise<Result<DurableHistoryStatus>> => {
+  const t = serviceMessagesFor(locale);
   const [table] = await sql<Array<{ kind: string }>>`
     SELECT kind FROM grids.tables WHERE id = ${tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!table) return fail(err.notFound("Table"));
-  if (table.kind !== "stored") return fail(err.badInput("Durable history is available only for stored tables"));
+  if (!table) return fail(err.notFound(t.table));
+  if (table.kind !== "stored") return fail(err.badInput(t.durableStoredOnly));
   return ok(await statusFor(tableId));
 };
 
-export const continueActivation = async (tableId: string): Promise<Result<DurableHistoryStatus>> =>
+export const continueActivation = async (tableId: string, locale?: string): Promise<Result<DurableHistoryStatus>> =>
   sql.begin(async (tx) => {
+    const t = serviceMessagesFor(locale);
     const enabled = await activation(tableId, tx);
-    if (!enabled) return fail(err.badInput("Durable history is not enabled"));
+    if (!enabled) return fail(err.badInput(t.durableNotEnabled));
     if (enabled.status === "active") return ok(await statusFor(tableId, tx));
     const records = await tx<Array<{ id: string }>>`
       SELECT record.id::text AS id
@@ -415,7 +418,8 @@ export const continueActivation = async (tableId: string): Promise<Result<Durabl
     return ok(await statusFor(tableId, tx));
   });
 
-export const enable = async (tableId: string, actorId: string | null): Promise<Result<DurableHistoryStatus>> => {
+export const enable = async (tableId: string, actorId: string | null, locale?: string): Promise<Result<DurableHistoryStatus>> => {
+  const t = serviceMessagesFor(locale);
   const started = await sql.begin(async (tx): Promise<Result<void>> => {
     await lockActivationBoundary(tx, tableId);
     const [table] = await tx<Array<{ base_id: string; kind: string }>>`
@@ -424,8 +428,8 @@ export const enable = async (tableId: string, actorId: string | null): Promise<R
       WHERE id = ${tableId}::uuid AND deleted_at IS NULL
       FOR UPDATE
     `;
-    if (!table) return fail(err.notFound("Table"));
-    if (table.kind !== "stored") return fail(err.badInput("Durable history is available only for stored tables"));
+    if (!table) return fail(err.notFound(t.table));
+    if (table.kind !== "stored") return fail(err.badInput(t.durableStoredOnly));
     if (await activation(tableId, tx)) return ok();
     const schema = await ensureSchemaRevision(tx, tableId);
     const [created] = await tx<Array<{ activated_at: Date | string }>>`
@@ -447,7 +451,7 @@ export const enable = async (tableId: string, actorId: string | null): Promise<R
     );
     return ok();
   });
-  return started.ok ? continueActivation(tableId) : started;
+  return started.ok ? continueActivation(tableId, locale) : started;
 };
 
 export const listRecordRevisions = async (params: {
@@ -455,6 +459,7 @@ export const listRecordRevisions = async (params: {
   recordId: string;
   limit?: number;
   cursor?: string | null;
+  locale?: string;
 }): Promise<Result<{ status: DurableHistoryStatus; items: RecordRevision[]; nextCursor: string | null }>> => {
   const historyStatus = await statusFor(params.tableId);
   if (!historyStatus.enabled) return ok({ status: historyStatus, items: [], nextCursor: null });
@@ -467,7 +472,7 @@ export const listRecordRevisions = async (params: {
         AND table_id = ${params.tableId}::uuid
         AND record_id = ${params.recordId}::uuid
     `;
-    if (!row) return fail(err.badInput("Invalid durable history cursor"));
+    if (!row) return fail(err.badInput(serviceMessagesFor(params.locale).invalidHistoryCursor));
   }
   const rows = await sql<RevisionRow[]>`
     SELECT revision.*, schema_revision.fields AS schema_fields
@@ -514,10 +519,11 @@ export const getRevisionFileContent = async (params: {
   recordId: string;
   revisionShortId: string;
   fileId: string;
+  locale?: string;
 }): Promise<Result<HistoricalFileContent>> => {
   const revision = await getRevision(params.tableId, params.recordId, params.revisionShortId);
   const snapshotFile = revision?.files.find((file) => file.id === params.fileId);
-  if (!revision || !snapshotFile) return fail(err.notFound("Historical file"));
+  if (!revision || !snapshotFile) return fail(err.notFound(serviceMessagesFor(params.locale).historicalFile));
   const [row] = await sql<
     Array<{
       id: string;
@@ -535,7 +541,7 @@ export const getRevisionFileContent = async (params: {
       AND protection.owner_kind = 'record_revision'
       AND protection.owner_id = ${revision.id}::uuid
   `;
-  if (!row) return fail(err.notFound("Historical file"));
+  if (!row) return fail(err.notFound(serviceMessagesFor(params.locale).historicalFile));
   return ok({
     id: row.id,
     fieldId: snapshotFile.fieldId,

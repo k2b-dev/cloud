@@ -14,4 +14,4 @@ export {
 } from "./openapi";
 export { type RateLimitConfig, type RateLimitRouteOverride, rateLimit } from "./rate-limit";
 export { requestLogger } from "./request-logger";
-export { v, validator } from "./validator";
+export { type ValidatorError, type ValidatorErrorResolver, v, validator } from "./validator";

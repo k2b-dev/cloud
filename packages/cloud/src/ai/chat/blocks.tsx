@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Chat, isStructuredDataValue, SplitButton, StructuredDataPreview } from "@k2b/ui";
+import { Button, ButtonLink, Chat, isStructuredDataValue, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
@@ -30,17 +30,18 @@ import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock } from "./w
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
 
-const reviewDetailText = (detail: ReviewDetail): string => {
+const reviewDetailText = (detail: ReviewDetail, locale: string): string => {
   if (detail.format === "date")
     return /^\d{4}-\d{2}-\d{2}$/.test(detail.value)
-      ? dates.formatDate(`${detail.value}T12:00:00.000Z`, { timeZone: "UTC" })
-      : dates.formatDate(detail.value);
-  if (detail.format === "date-time") return dates.formatDateTime(detail.value);
+      ? dates.formatDate(`${detail.value}T12:00:00.000Z`, { locale, timeZone: "UTC" })
+      : dates.formatDate(detail.value, { locale });
+  if (detail.format === "date-time") return dates.formatDateTime(detail.value, { locale });
   return detail.value;
 };
 
 function ReviewDetailValue(props: { detail: ReviewDetail }) {
-  const value = () => reviewDetailText(props.detail);
+  const locale = useLocale();
+  const value = () => reviewDetailText(props.detail, locale());
   return (
     <Show when={props.detail.format} fallback={value()}>
       <time dateTime={props.detail.value}>{value()}</time>
@@ -72,6 +73,7 @@ function ThinkingBlockView(props: { text: string; streaming?: boolean }) {
 }
 
 function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind: "compaction" }> }) {
+  const locale = useLocale();
   const status = () => props.block.status;
   const description = () => {
     if (status() === "completed") return "Context compacted";
@@ -95,11 +97,11 @@ function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind: "compa
               <dl class="grid grid-cols-2 gap-2">
                 <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
                   <dt class="uppercase tracking-wide text-dimmed">Before</dt>
-                  <dd class="font-medium text-primary">{compactResult().entriesBefore.toLocaleString()}</dd>
+                  <dd class="font-medium text-primary">{compactResult().entriesBefore.toLocaleString(locale())}</dd>
                 </div>
                 <div class="rounded-md bg-white/65 px-2 py-1 dark:bg-white/5">
                   <dt class="uppercase tracking-wide text-dimmed">After</dt>
-                  <dd class="font-medium text-primary">{compactResult().entriesAfter.toLocaleString()}</dd>
+                  <dd class="font-medium text-primary">{compactResult().entriesAfter.toLocaleString(locale())}</dd>
                 </div>
               </dl>
             )}

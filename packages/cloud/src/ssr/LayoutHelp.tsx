@@ -222,7 +222,7 @@ const HelpShell = (props: {
     description: t().shortcutsDescription,
     order: 0,
     kind: "content",
-    children: <Shortcuts openSearchHelp={() => openGlobalSearchHelpDialog(props.searchHelpApps)} />,
+    children: <Shortcuts openSearchHelp={() => openGlobalSearchHelpDialog(props.searchHelpApps, locale())} />,
   }));
   const topics = createMemo(() => (props.includeShortcuts === false ? externalTopics() : [shortcutsTopic(), ...externalTopics()]));
   const documentTopics = createMemo(() =>
@@ -263,7 +263,7 @@ const HelpShell = (props: {
             signal: controller.signal,
             headers: { Accept: "application/json" },
           });
-          if (!response.ok) throw new Error(t().searchFailed({ status: response.status }));
+          if (!response.ok) throw new Error(t().searchFailed);
           const payload = (await response.json()) as Partial<HelpSearchPayload>;
           return Array.isArray(payload.ids) ? payload.ids.filter((id): id is string => typeof id === "string") : [];
         }),
@@ -335,7 +335,7 @@ const HelpShell = (props: {
     if (cached) return cached;
 
     const response = await fetch(topic.url, { signal, headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(t().requestFailed({ status: response.status }));
+    if (!response.ok) throw new Error(t().requestFailed);
     const value = (await response.json()) as Partial<HelpDocumentPayload>;
     if (
       value.id !== topic.id ||

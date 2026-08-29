@@ -1,11 +1,23 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DatePicker, DateRangePicker, DateTimePicker, IconButton, MultiSelectInput, NumberInput, Select, TextInput } from "@k2b/ui";
+import {
+  Button,
+  DatePicker,
+  DateRangePicker,
+  DateTimePicker,
+  IconButton,
+  MultiSelectInput,
+  NumberInput,
+  Select,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
 import { createEffect, createMemo, createSignal, For, Index, Match, onMount, Switch, untrack } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { fieldChoiceGroupsFor, fieldOption } from "../fields/field-type-meta";
 import RelationPicker from "../records/RelationPicker";
-import { type FilterOp, filterableFields, opsForType } from "./filter-ops";
+import { type FilterOp, filterableFields, localizedOpsForType, opsForType } from "./filter-ops";
+import { toolbarMessages } from "./messages";
 
 export type FilterLeaf = {
   fieldId: string;
@@ -55,6 +67,8 @@ export const blankLeaf = (fields: Field[]): FilterLeaf | null => {
 };
 
 export default function FilterPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const fields = createMemo(() => filterableFields(props.fields));
 
   const updateLeaf = (index: number, patch: Partial<FilterLeaf>) => {
@@ -88,7 +102,7 @@ export default function FilterPanel(props: Props) {
         {(leafSignal, index) => {
           const leaf = leafSignal;
           const field = createMemo(() => props.fields.find((f) => f.id === leaf().fieldId) ?? null);
-          const ops = createMemo<FilterOp[]>(() => (field() ? opsForType(field()!.type) : []));
+          const ops = createMemo<FilterOp[]>(() => (field() ? localizedOpsForType(field()!.type, locale()) : []));
           const op = createMemo<FilterOp | null>(() => ops().find((o) => o.id === leaf().op) ?? null);
 
           return (
@@ -96,29 +110,29 @@ export default function FilterPanel(props: Props) {
               {/* Fixed-width label so all rows align: "where" (5 chars)
                   and "and" (3 chars) sit in the same column → the field
                   Select below stays vertically aligned across rows. */}
-              <span class="w-12 shrink-0 text-dimmed">{index === 0 ? "where" : "and"}</span>
+              <span class="w-12 shrink-0 text-dimmed">{index === 0 ? t().where : t().and}</span>
               <div class="w-64 shrink-0">
                 <Select
-                  aria-label={`Filter ${index + 1} field`}
+                  aria-label={t().filterField({ index: index + 1 })}
                   value={() => leaf().fieldId}
                   onValueChange={(v) => {
                     if (v !== null) updateLeaf(index, { fieldId: v });
                   }}
-                  options={fields().map((f) => fieldOption(f))}
-                  groups={fieldChoiceGroupsFor(fields())}
-                  groupsAriaLabel="Filter fields"
-                  placeholder="Field"
+                  options={fields().map((f) => fieldOption(f, t().field, locale()))}
+                  groups={fieldChoiceGroupsFor(fields(), [], locale())}
+                  groupsAriaLabel={t().filterFields}
+                  placeholder={t().field}
                 />
               </div>
               <div class="w-56 shrink-0">
                 <Select
-                  aria-label={`Filter ${index + 1} operator`}
+                  aria-label={t().filterOperator({ index: index + 1 })}
                   value={() => leaf().op}
                   onValueChange={(v) => {
                     if (v !== null) updateLeaf(index, { op: v, value: "" });
                   }}
                   options={ops().map((o) => ({ id: o.id, label: o.label, description: o.description, icon: o.icon }))}
-                  placeholder="Operator"
+                  placeholder={t().operator}
                 />
               </div>
 
@@ -135,7 +149,7 @@ export default function FilterPanel(props: Props) {
                 size="xs"
                 class="text-dimmed hover:text-red-500 px-1"
                 onClick={() => removeLeaf(index)}
-                label="Remove filter"
+                label={t().removeFilter}
               >
                 <i class="ti ti-x" />
               </IconButton>
@@ -148,7 +162,7 @@ export default function FilterPanel(props: Props) {
           floating Apply/Cancel chips (one for the whole query state). */}
       <div class="flex items-center gap-1">
         <Button variant="success" size="sm" type="button" onClick={addLeaf}>
-          <i class="ti ti-plus" /> Add
+          <i class="ti ti-plus" /> {t().add}
         </Button>
       </div>
     </div>
@@ -182,6 +196,8 @@ function FilterValueInput(props: {
   onChange: (v: unknown) => void;
   dateConfig?: DateContext;
 }) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const kind = createMemo<ValueKind>(() => {
     const field = props.field;
     const op = props.op;
@@ -227,7 +243,7 @@ function FilterValueInput(props: {
               {isDate() ? (
                 <div class="w-96">
                   <DateRangePicker
-                    aria-label="Filter date range"
+                    aria-label={t().filterDateRange}
                     withTime={includeTime()}
                     dateConfig={props.dateConfig}
                     value={() => ({ start: dateAt(0) || null, end: dateAt(1) || null })}
@@ -239,16 +255,16 @@ function FilterValueInput(props: {
                 <>
                   <div class="w-52">
                     <NumberInput
-                      aria-label="Filter range start"
+                      aria-label={t().filterRangeStart}
                       value={() => numAt(0)}
                       onValueChange={(v) => props.onChange([v, range()[1]])}
                       decimalPlaces={10}
                     />
                   </div>
-                  <span class="text-dimmed">to</span>
+                  <span class="text-dimmed">{t().to}</span>
                   <div class="w-52">
                     <NumberInput
-                      aria-label="Filter range end"
+                      aria-label={t().filterRangeEnd}
                       value={() => numAt(1)}
                       onValueChange={(v) => props.onChange([range()[0], v])}
                       decimalPlaces={10}
@@ -264,7 +280,7 @@ function FilterValueInput(props: {
       <Match when={kind() === "select"}>
         <div class="w-80">
           <Select
-            aria-label="Filter value"
+            aria-label={t().filterValue}
             value={() => (typeof props.value === "string" ? props.value : "")}
             onValueChange={(v) => props.onChange(v)}
             options={(
@@ -279,8 +295,8 @@ function FilterValueInput(props: {
       <Match when={kind() === "multi"}>
         <div class="w-96">
           <MultiSelectInput
-            aria-label="Filter values"
-            placeholder="Options"
+            aria-label={t().filterValues}
+            placeholder={t().options}
             value={() => (Array.isArray(props.value) ? props.value.filter((item): item is string => typeof item === "string") : [])}
             onValueChange={(value) => props.onChange(value)}
             options={(
@@ -304,12 +320,12 @@ function FilterValueInput(props: {
       <Match when={kind() === "boolean"}>
         <div class="w-44">
           <Select
-            aria-label="Filter boolean value"
+            aria-label={t().filterBoolean}
             value={() => (props.value === true ? "true" : props.value === false ? "false" : "")}
             onValueChange={(v) => props.onChange(v === "" ? "" : v === "true")}
             options={[
-              { id: "true", label: "true", description: "Value is checked", icon: "ti ti-check" },
-              { id: "false", label: "false", description: "Value is unchecked", icon: "ti ti-x" },
+              { id: "true", label: t().trueLabel, description: t().checkedDescription, icon: "ti ti-check" },
+              { id: "false", label: t().falseLabel, description: t().uncheckedDescription, icon: "ti ti-x" },
             ]}
             placeholder="—"
             clearable
@@ -321,7 +337,7 @@ function FilterValueInput(props: {
         <div class="w-80">
           {(() => {
             const targetTableId = (props.field?.config as { targetTableId?: string } | undefined)?.targetTableId;
-            if (!targetTableId) return <span class="text-xs text-amber-600 dark:text-amber-400">Pick a target table first.</span>;
+            if (!targetTableId) return <span class="text-xs text-amber-600 dark:text-amber-400">{t().pickTargetTable}</span>;
             return (
               <RelationPicker
                 targetTableId={targetTableId}
@@ -342,9 +358,9 @@ function FilterValueInput(props: {
       <Match when={kind() === "number-days"}>
         <div class="w-56">
           <NumberInput
-            aria-label="Filter number of days"
+            aria-label={t().filterDays}
             min={1}
-            placeholder="days"
+            placeholder={t().days}
             value={() => {
               const v = props.value;
               const n = typeof v === "number" ? v : Number(v);
@@ -363,14 +379,14 @@ function FilterValueInput(props: {
             const onChange = (v: string | null) => props.onChange(v ?? "");
             return includeTime() ? (
               <DateTimePicker
-                aria-label="Filter date and time"
+                aria-label={t().filterDateTime}
                 dateConfig={props.dateConfig}
                 value={value}
                 onValueChange={onChange}
                 clearable
               />
             ) : (
-              <DatePicker aria-label="Filter date" dateConfig={props.dateConfig} value={value} onValueChange={onChange} clearable />
+              <DatePicker aria-label={t().filterDate} dateConfig={props.dateConfig} value={value} onValueChange={onChange} clearable />
             );
           })()}
         </div>
@@ -379,7 +395,7 @@ function FilterValueInput(props: {
       <Match when={kind() === "number"}>
         <div class="w-56">
           <NumberInput
-            aria-label="Filter number"
+            aria-label={t().filterNumber}
             value={() => {
               const v = props.value;
               const n = typeof v === "number" ? v : Number(v);
@@ -394,7 +410,7 @@ function FilterValueInput(props: {
       <Match when={kind() === "text"}>
         <div class="w-80">
           <TextInput
-            aria-label="Filter value"
+            aria-label={t().filterValue}
             value={() => (typeof props.value === "string" ? props.value : "")}
             onValueChange={(v) => props.onChange(v)}
           />
@@ -407,13 +423,15 @@ function FilterValueInput(props: {
 type PrincipalFilterOption = { id: string; type: "user" | "group"; label: string };
 
 function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown) => void }) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const ids = () => (Array.isArray(props.value) ? props.value.filter((item): item is string => typeof item === "string") : []);
   const [options, setOptions] = createSignal<PrincipalFilterOption[]>([]);
 
   createEffect(() => {
     const nextIds = ids();
     const current = new Map(untrack(options).map((option) => [option.id, option]));
-    setOptions(nextIds.map((id) => current.get(id) ?? { id, type: "user", label: "Selected identity" }));
+    setOptions(nextIds.map((id) => current.get(id) ?? { id, type: "user", label: t().selectedIdentity }));
   });
 
   onMount(async () => {
@@ -472,7 +490,7 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
             <div class="flex items-center gap-2 rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1.5">
               <i class={`ti ${option.type === "user" ? "ti-user" : "ti-users-group"} text-dimmed`} aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate text-sm">{option.label}</span>
-              <IconButton size="xs" variant="ghost" label={`Remove ${option.label}`} onClick={() => remove(option.id)}>
+              <IconButton size="xs" variant="ghost" label={t().removeIdentity({ name: option.label })} onClick={() => remove(option.id)}>
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </div>
@@ -483,7 +501,7 @@ function PrincipalFilterInput(props: { value: unknown; onChange: (value: unknown
           includeGroups
           excludeUserIds={ids()}
           excludeGroupIds={ids()}
-          placeholder="Search users and groups..."
+          placeholder={t().searchUsersGroups}
           resultsHeightClass="max-h-48"
           onSelect={add}
         />

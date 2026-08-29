@@ -1,4 +1,5 @@
 import type { output, ZodType } from "zod";
+import { canonicalLocale, localeFallbackChain } from "../shared/locale";
 
 export type NotificationRecipientKind = "user" | "email";
 
@@ -40,19 +41,37 @@ export type EmailNotificationPresentation = {
   rawHtml?: string;
 };
 
+export type NotificationRenderContext = {
+  /** Canonical locale selected by the sender for this rendered notification. */
+  locale: string;
+};
+
 export type NotificationDeliveryPolicy = {
   recommended?: readonly NotificationChannelId[];
   required?: readonly NotificationChannelId[];
+};
+
+export type NotificationDefinitionPresentationTranslation = {
+  label?: string;
+  description?: string;
+};
+
+export type NotificationDefinitionPresentationCatalog = {
+  /** Locale of the complete `label` and `description` declaration. */
+  baseLocale: string;
+  /** Partial presentation overlays with exact -> ancestor -> base fallback. */
+  translations: Readonly<Record<string, NotificationDefinitionPresentationTranslation>>;
 };
 
 export type NotificationDefinitionInput<R extends NotificationRecipientKind, S extends ZodType> = {
   recipient: R;
   label: string;
   description: string;
+  presentation?: NotificationDefinitionPresentationCatalog;
   data: S;
   delivery?: NotificationDeliveryPolicy;
-  render: (data: output<S>) => NotificationPresentation | Promise<NotificationPresentation>;
-  email?: (data: output<S>) => EmailNotificationPresentation | Promise<EmailNotificationPresentation>;
+  render: (data: output<S>, context: NotificationRenderContext) => NotificationPresentation | Promise<NotificationPresentation>;
+  email?: (data: output<S>, context: NotificationRenderContext) => EmailNotificationPresentation | Promise<EmailNotificationPresentation>;
 };
 
 const notificationDefinitionMarker = Symbol("cloud.notification-definition");
@@ -67,6 +86,7 @@ type AnyNotificationDefinition = Readonly<{
   recipient: NotificationRecipientKind;
   label: string;
   description: string;
+  presentation?: NotificationDefinitionPresentationCatalog;
   data: ZodType;
   delivery?: NotificationDeliveryPolicy;
   render: (...args: never[]) => NotificationPresentation | Promise<NotificationPresentation>;
@@ -108,10 +128,61 @@ export type NotificationSendInput<D extends AnyBoundNotificationDefinition> =
         data: output<S>;
         idempotencyKey: string;
         sentBy?: string;
+        /** Locale for final human-facing notification and email content. */
+        locale?: string;
       }
     : never;
 
 const hasDuplicates = (values: readonly string[]): boolean => new Set(values).size !== values.length;
+
+const requiredPresentationText = (value: string, field: string): string => {
+  const normalized = value.trim();
+  if (!normalized) throw new Error(`Notification presentation ${field} is required`);
+  return normalized;
+};
+
+const compileDefinitionPresentation = (
+  catalog: NotificationDefinitionPresentationCatalog | undefined,
+): NotificationDefinitionPresentationCatalog | undefined => {
+  if (!catalog) return undefined;
+  const baseLocale = canonicalLocale(catalog.baseLocale);
+  if (!baseLocale) throw new Error("Notification presentation baseLocale must be a valid BCP 47 locale");
+
+  const translations: Record<string, NotificationDefinitionPresentationTranslation> = {};
+  for (const [locale, translation] of Object.entries(catalog.translations)) {
+    const canonical = canonicalLocale(locale);
+    if (!canonical) throw new Error(`Notification presentation locale ${JSON.stringify(locale)} is not a valid BCP 47 locale`);
+    if (canonical === baseLocale) throw new Error(`Notification presentation translations must not repeat base locale ${baseLocale}`);
+    if (translations[canonical]) throw new Error(`Notification presentation locale ${canonical} is duplicated after canonicalization`);
+    translations[canonical] = Object.freeze({
+      ...(translation.label !== undefined ? { label: requiredPresentationText(translation.label, `${canonical}.label`) } : {}),
+      ...(translation.description !== undefined
+        ? { description: requiredPresentationText(translation.description, `${canonical}.description`) }
+        : {}),
+    });
+  }
+  return Object.freeze({ baseLocale, translations: Object.freeze(translations) });
+};
+
+export const resolveNotificationDefinitionPresentation = (
+  definition: {
+    label: string;
+    description: string;
+    presentation?: NotificationDefinitionPresentationCatalog | null;
+  },
+  requestedLocale?: string | null,
+): { label: string; description: string } => {
+  const catalog = definition.presentation;
+  if (!catalog || !requestedLocale) return { label: definition.label, description: definition.description };
+  const translations = new Map(Object.entries(catalog.translations));
+  return localeFallbackChain(requestedLocale, catalog.baseLocale)
+    .filter((locale) => locale !== catalog.baseLocale)
+    .reverse()
+    .reduce((resolved, locale) => ({ ...resolved, ...translations.get(locale) }), {
+      label: definition.label,
+      description: definition.description,
+    });
+};
 
 export const notification = <const R extends NotificationRecipientKind, const S extends ZodType>(
   input: NotificationDefinitionInput<R, S>,
@@ -133,11 +204,13 @@ export const notification = <const R extends NotificationRecipientKind, const S 
   if (input.recipient === "email" && !required.includes("email")) {
     throw new Error(`Email-recipient notification "${label}" must require the email channel`);
   }
+  const presentation = compileDefinitionPresentation(input.presentation);
 
   const definition: NotificationDefinition<R, S> = {
     ...input,
     label,
     description,
+    ...(presentation ? { presentation } : {}),
     delivery: Object.freeze({ recommended: Object.freeze(recommended), required: Object.freeze(required) }),
     [notificationDefinitionMarker]: true,
   };

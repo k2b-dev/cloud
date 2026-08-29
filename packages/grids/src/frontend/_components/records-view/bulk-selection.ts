@@ -1,4 +1,5 @@
 import type { RecordQuery } from "../../../contracts";
+import { recordsViewMessages } from "./messages";
 
 type BulkSelectionRunPayload = { recordIds: string[] } | { query: RecordQuery };
 
@@ -37,12 +38,16 @@ export const sameBulkSelection = (left: ReadonlySet<string>, right: ReadonlySet<
   return true;
 };
 
-export const bulkWorkflowActionLabel = (workflowName: string, selectedCount: number, explicitOnly = false): string =>
-  selectedCount > 0
-    ? `Run ${workflowName} for ${selectedCount} selected`
+export const bulkWorkflowActionLabel = (workflowName: string, selectedCount: number, explicitOnly = false, locale = "en"): string => {
+  const { t } = recordsViewMessages.resolve([locale]);
+  return selectedCount > 0
+    ? t.runWorkflowForSelected({ name: workflowName, count: selectedCount })
     : explicitOnly
-      ? `Select Records to run ${workflowName}`
-      : `Run ${workflowName} for current query`;
+      ? t.selectRecordsToRun({ name: workflowName })
+      : t.runWorkflowForQuery({ name: workflowName });
+};
 
-export const bulkWorkflowTargetLabel = (selectedCount: number): string =>
-  selectedCount > 0 ? `${selectedCount} record${selectedCount === 1 ? "" : "s"}` : "the current result set";
+export const bulkWorkflowTargetLabel = (selectedCount: number, locale = "en"): string => {
+  const { t } = recordsViewMessages.resolve([locale]);
+  return selectedCount > 0 ? t.workflowTarget({ count: selectedCount }) : t.currentResultSet;
+};

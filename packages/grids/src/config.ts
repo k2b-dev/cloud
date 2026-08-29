@@ -6,6 +6,10 @@ export const app = defineApp({
   name: "Grids",
   icon: "ti ti-table",
   description: "Flexible tables: bases, fields, records, views, forms.",
+  presentation: {
+    baseLocale: "en",
+    translations: { de: { description: "Flexible Tabellen mit Bases, Feldern, Datensätzen, Ansichten und Formularen." } },
+  },
   appearance: {
     accent: "#008f4c",
     background: {

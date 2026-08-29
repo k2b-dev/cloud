@@ -4,35 +4,43 @@ import { sql } from "bun";
 import type { MutationSource, TableMutationPolicy } from "../contracts";
 import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
+import { serviceMessagesFor } from "./messages";
 import { emitMetadataEvent } from "./metadata-events";
 
 export type MutationOrigin = MutationSource;
 
-const sourceLabels: Record<MutationOrigin, string> = {
-  direct: "direct editing and the record API",
-  form: "forms",
-  workflow: "workflows and actions",
-};
-
-const parsePolicy = (value: unknown): Result<TableMutationPolicy> => {
+const parsePolicy = (value: unknown, locale?: string): Result<TableMutationPolicy> => {
+  const t = serviceMessagesFor(locale);
   const parsed = TableMutationPolicySchema.safeParse(value);
-  return parsed.success ? ok(parsed.data) : fail(err.forbidden("This table's mutation policy is invalid; an admin must repair it."));
+  return parsed.success ? ok(parsed.data) : fail(err.forbidden(t.mutationPolicyInvalid));
 };
 
-export const assertMutationAllowed = async (client: SqlClient, tableId: string, origin: MutationOrigin): Promise<Result<void>> => {
+export const assertMutationAllowed = async (
+  client: SqlClient,
+  tableId: string,
+  origin: MutationOrigin,
+  locale?: string,
+): Promise<Result<void>> => {
+  const t = serviceMessagesFor(locale);
   const trustedOrigin = MutationSourceSchema.safeParse(origin);
-  if (!trustedOrigin.success) return fail(err.forbidden("A trusted mutation source is required."));
+  if (!trustedOrigin.success) return fail(err.forbidden(t.trustedMutationSource));
   const [row] = await client<Array<{ kind: string; mutation_policy: unknown }>>`
     SELECT kind, mutation_policy
     FROM grids.tables
     WHERE id = ${tableId}::uuid AND deleted_at IS NULL
     FOR SHARE
   `;
-  if (!row || row.kind !== "stored") return fail(err.notFound("Table"));
-  const policy = parsePolicy(row.mutation_policy);
+  if (!row || row.kind !== "stored") return fail(err.notFound(t.table));
+  const policy = parsePolicy(row.mutation_policy, locale);
   if (!policy.ok) return policy;
   if (policy.data.mode === "all" || policy.data.sources.includes(trustedOrigin.data)) return ok();
-  return fail(err.forbidden(`This table does not allow changes from ${sourceLabels[trustedOrigin.data]}.`));
+  const source =
+    trustedOrigin.data === "direct"
+      ? t.mutationSourceDirect
+      : trustedOrigin.data === "form"
+        ? t.mutationSourceForm
+        : t.mutationSourceWorkflow;
+  return fail(err.forbidden(t.mutationSourceDenied({ source })));
 };
 
 export type MutationPolicyImpactItem = {
@@ -146,18 +154,19 @@ export const workflowMutatesTable = (plan: unknown, tableId: string): boolean =>
 export const getImpact = async (
   tableId: string,
   policy: TableMutationPolicy,
-  options: { limit?: number; client?: SqlClient } = {},
+  options: { limit?: number; client?: SqlClient; locale?: string } = {},
 ): Promise<Result<MutationPolicyImpact>> => {
+  const t = serviceMessagesFor(options.locale);
   const client = options.client ?? sql;
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
   const parsedPolicy = TableMutationPolicySchema.safeParse(policy);
-  if (!parsedPolicy.success) return fail(err.badInput(parsedPolicy.error.issues[0]?.message ?? "Invalid mutation policy"));
+  if (!parsedPolicy.success) return fail(err.badInput(t.invalidMutationPolicy));
   const [table] = await client<Array<{ base_id: string; kind: string; mutation_policy: unknown }>>`
     SELECT base_id::text, kind, mutation_policy FROM grids.tables
     WHERE id = ${tableId}::uuid AND deleted_at IS NULL
   `;
-  if (!table || table.kind !== "stored") return fail(err.notFound("Table"));
-  const currentPolicy = parsePolicy(table.mutation_policy);
+  if (!table || table.kind !== "stored") return fail(err.notFound(t.table));
+  const currentPolicy = parsePolicy(table.mutation_policy, options.locale);
   if (!currentPolicy.ok) return fail(currentPolicy.error);
   const currentAllowed =
     currentPolicy.data.mode === "all" ? new Set<MutationSource>(["direct", "form", "workflow"]) : new Set(currentPolicy.data.sources);
@@ -260,18 +269,20 @@ export const update = async (
   tableId: string,
   policy: TableMutationPolicy,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<TableMutationPolicy>> => {
+  const t = serviceMessagesFor(locale);
   const result = await sql.begin(async (tx): Promise<Result<{ baseId: string; changed: boolean; policy: TableMutationPolicy }>> => {
     const parsed = TableMutationPolicySchema.safeParse(policy);
-    if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mutation policy"));
+    if (!parsed.success) return fail(err.badInput(t.invalidMutationPolicy));
     const [row] = await tx<Array<{ base_id: string; kind: string; mutation_policy: unknown }>>`
         SELECT base_id::text, kind, mutation_policy
         FROM grids.tables
         WHERE id = ${tableId}::uuid AND deleted_at IS NULL
         FOR UPDATE
       `;
-    if (!row || row.kind !== "stored") return fail(err.notFound("Table"));
-    const previous = parsePolicy(row.mutation_policy);
+    if (!row || row.kind !== "stored") return fail(err.notFound(t.table));
+    const previous = parsePolicy(row.mutation_policy, locale);
     if (!previous.ok) return previous;
     if (JSON.stringify(previous.data) === JSON.stringify(parsed.data)) {
       return ok({ baseId: row.base_id, changed: false, policy: previous.data });

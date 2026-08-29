@@ -1,22 +1,27 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, CopyButton, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, prompts, TextInput } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  CopyButton,
+  dialogCore,
+  NoticeCard,
+  PanelDialog,
+  panelDialogOptions,
+  prompts,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { DocumentLinkTtl } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
-import type { PublicCreateDocumentLinkResponse, PublicDocumentLink, PublicDocument } from "./public-document-types";
+import { documentMessages } from "./messages";
+import type { PublicCreateDocumentLinkResponse, PublicDocument, PublicDocumentLink } from "./public-document-types";
 
 type DocumentLinkDialogArgs = {
   document: PublicDocument;
   onCreated: (link: PublicDocumentLink) => void | Promise<void>;
 };
-
-const ttlOptions: Array<{ value: DocumentLinkTtl; label: string; description: string }> = [
-  { value: "1d", label: "1 day", description: "Short handoff" },
-  { value: "7d", label: "7 days", description: "One week" },
-  { value: "30d", label: "30 days", description: "Default" },
-  { value: "90d", label: "90 days", description: "Long running" },
-];
 
 const absoluteUrl = (url: string): string => {
   if (typeof window === "undefined") return url;
@@ -27,6 +32,14 @@ export const openDocumentLinkDialog = (args: DocumentLinkDialogArgs) =>
   dialogCore.open<void>((close) => <DocumentLinkDialog args={args} close={close} />, panelDialogOptions);
 
 function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => void }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
+  const ttlOptions = () => [
+    { value: "1d" as const, label: t().oneDay, description: t().shortHandoff },
+    { value: "7d" as const, label: t().sevenDays, description: t().oneWeek },
+    { value: "30d" as const, label: t().thirtyDays, description: t().default },
+    { value: "90d" as const, label: t().ninetyDays, description: t().longRunning },
+  ];
   const optionRefs: HTMLButtonElement[] = [];
   const [expiresIn, setExpiresIn] = createSignal<DocumentLinkTtl>("30d");
   const [comment, setComment] = createSignal("");
@@ -38,7 +51,7 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
         param: { documentId: props.args.document.id },
         json: { expiresIn: expiresIn(), comment: comment().trim() || null },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not create document link"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().couldNotCreateDocumentLink));
       return res.json();
     },
     onSuccess: async (created) => {
@@ -58,7 +71,7 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
   });
 
   const selectOption = (index: number) => {
-    const option = ttlOptions[index];
+    const option = ttlOptions()[index];
     if (!option) return;
     setExpiresIn(option.value);
     queueMicrotask(() => optionRefs[index]?.focus());
@@ -67,12 +80,12 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
   const onOptionKeyDown = (event: KeyboardEvent, index: number) => {
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
-      selectOption((index + 1) % ttlOptions.length);
+      selectOption((index + 1) % ttlOptions().length);
       return;
     }
     if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault();
-      selectOption((index - 1 + ttlOptions.length) % ttlOptions.length);
+      selectOption((index - 1 + ttlOptions().length) % ttlOptions().length);
       return;
     }
     if (event.key === "Home") {
@@ -82,22 +95,22 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
     }
     if (event.key === "End") {
       event.preventDefault();
-      selectOption(ttlOptions.length - 1);
+      selectOption(ttlOptions().length - 1);
     }
   };
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Create public link" subtitle={props.args.document.filename} icon="ti ti-link" close={props.close} />
+      <PanelDialog.Header title={t().createLinkTitle} subtitle={props.args.document.filename} icon="ti ti-link" close={props.close} />
       <PanelDialog.Body>
         <Show
           when={createdUrl()}
           fallback={
             <section class="flex flex-col gap-3">
               <div>
-                <p class="text-sm font-medium text-primary">Validity</p>
-                <div class="mt-2 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Public link validity">
-                  <For each={ttlOptions}>
+                <p class="text-sm font-medium text-primary">{t().validity}</p>
+                <div class="mt-2 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t().publicLinkValidity}>
+                  <For each={ttlOptions()}>
                     {(option, index) => (
                       <button
                         ref={(element) => {
@@ -123,18 +136,14 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
                 </div>
               </div>
               <TextInput
-                label="Comment"
-                description="Optional internal note. It is not visible to people using the link."
+                label={t().comment}
+                description={t().commentDescription}
                 value={comment}
                 onValueChange={setComment}
                 icon="ti ti-message"
-                placeholder="Why this link exists"
+                placeholder={t().commentPlaceholder}
               />
-              <NoticeCard
-                tone="info"
-                title="Anyone with the link can download this PDF"
-                detail="The link works without login until it expires or you revoke it. It does not provide access to other documents."
-              />
+              <NoticeCard tone="info" title={t().anyoneCanDownload} detail={t().publicLinkScope} />
             </section>
           }
         >
@@ -142,17 +151,17 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
             <section class="flex flex-col gap-3">
               <NoticeCard
                 tone="success"
-                title={copiedOnCreate() ? "Link created and copied" : "Link created"}
-                detail={copiedOnCreate() ? "You can paste it wherever you want to share the PDF." : "Use Copy link to copy the URL."}
+                title={copiedOnCreate() ? t().linkCreatedCopied : t().linkCreated}
+                detail={copiedOnCreate() ? t().sharePdf : t().copyLinkGuidance}
               />
               <code class="block break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-field)] p-2 font-mono text-xs text-secondary">
                 {url()}
               </code>
               <div class="flex flex-wrap items-center gap-2">
-                <CopyButton text={url()} label="Copy link" variant="secondary" size="sm" />
+                <CopyButton text={url()} label={t().copyLink} variant="secondary" size="sm" />
                 <ButtonLink variant="secondary" size="sm" href={url()} target="_blank" rel="noreferrer">
                   <i class="ti ti-external-link" />
-                  Open link
+                  {t().openLink}
                 </ButtonLink>
               </div>
             </section>
@@ -163,12 +172,12 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
         <span />
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={props.close} disabled={createMut.loading()}>
-            {createdUrl() ? "Done" : "Cancel"}
+            {createdUrl() ? t().done : t().cancel}
           </Button>
           <Show when={!createdUrl()}>
             <Button variant="primary" size="sm" type="button" onClick={() => createMut.mutate(undefined)} disabled={createMut.loading()}>
               {createMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-link-plus" />}
-              Create link
+              {t().createLink}
             </Button>
           </Show>
         </div>

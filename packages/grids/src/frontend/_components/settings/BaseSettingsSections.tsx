@@ -12,6 +12,7 @@ import {
   StatusBadge,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
@@ -21,6 +22,7 @@ import type { DocumentDefaults } from "../../../contracts";
 import { createDraft } from "../editor-draft";
 import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
 type DocumentDefaultsDraft = Required<Record<keyof DocumentDefaults, string>>;
 
@@ -53,6 +55,8 @@ export function DocumentDefaultsForm(props: {
   onDirtyChange: (dirty: boolean) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = useGridsSettingsMessages(locale);
   const initial = normalizeDocumentDefaults(props.base.documentDefaults);
   const [saved, setSaved] = createSignal(initial);
   const draft = createDraft(initial);
@@ -77,14 +81,14 @@ export function DocumentDefaultsForm(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save document defaults"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveDocumentDefaultsFailed));
       return res.json();
     },
     onSuccess: (next) => {
       const snapshot = normalizeDocumentDefaults(next.documentDefaults);
       setSaved(snapshot);
       draft.markSaved(snapshot);
-      toast.success("Document details saved");
+      toast.success(t().documentDetailsSaved);
       refreshCurrentPath();
     },
     onError: (e) => prompts.error(e.message),
@@ -97,17 +101,17 @@ export function DocumentDefaultsForm(props: {
 
   return (
     <>
-      <SettingsGroup title="Business identity" description="Names and address shown on generated documents.">
+      <SettingsGroup title={t().businessIdentity} description={t().businessIdentityDescription}>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <TextInput
-            label="Legal name"
+            label={t().legalName}
             icon="ti ti-building"
             value={value("legalName")}
             onValueChange={(v) => patch({ legalName: v })}
             disabled={mutation.loading()}
           />
           <TextInput
-            label="Department"
+            label={t().department}
             icon="ti ti-users"
             value={value("department")}
             onValueChange={(v) => patch({ department: v })}
@@ -115,8 +119,8 @@ export function DocumentDefaultsForm(props: {
           />
           <div class="lg:col-span-2">
             <TextInput
-              label="Sender line"
-              description="Shown above recipient address blocks."
+              label={t().senderLine}
+              description={t().senderLineDescription}
               icon="ti ti-mail-forward"
               value={value("senderLine")}
               onValueChange={(v) => patch({ senderLine: v })}
@@ -125,7 +129,7 @@ export function DocumentDefaultsForm(props: {
           </div>
           <div class="lg:col-span-2">
             <TextInput
-              label="Address"
+              label={t().address}
               icon="ti ti-map-pin"
               value={value("address")}
               onValueChange={(v) => patch({ address: v })}
@@ -137,17 +141,17 @@ export function DocumentDefaultsForm(props: {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup title="Contact" description="Contact details available to templates.">
+      <SettingsGroup title={t().contact} description={t().contactDescription}>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <TextInput
-            label="Contact email"
+            label={t().contactEmail}
             icon="ti ti-mail"
             value={value("contactEmail")}
             onValueChange={(v) => patch({ contactEmail: v })}
             disabled={mutation.loading()}
           />
           <TextInput
-            label="Phone"
+            label={t().phone}
             icon="ti ti-phone"
             value={value("phone")}
             onValueChange={(v) => patch({ phone: v })}
@@ -155,7 +159,7 @@ export function DocumentDefaultsForm(props: {
           />
           <div class="lg:col-span-2">
             <TextInput
-              label="Website"
+              label={t().website}
               icon="ti ti-link"
               value={value("url")}
               onValueChange={(v) => patch({ url: v })}
@@ -165,24 +169,24 @@ export function DocumentDefaultsForm(props: {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup title="Billing and footer" description="Payment, registration, and closing details for documents.">
+      <SettingsGroup title={t().billingAndFooter} description={t().billingAndFooterDescription}>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <TextInput
-            label="Tax ID / VAT"
+            label={t().taxId}
             icon="ti ti-receipt-tax"
             value={value("taxId")}
             onValueChange={(v) => patch({ taxId: v })}
             disabled={mutation.loading()}
           />
           <TextInput
-            label="Registration"
+            label={t().registration}
             icon="ti ti-certificate"
             value={value("registration")}
             onValueChange={(v) => patch({ registration: v })}
             disabled={mutation.loading()}
           />
           <TextInput
-            label="Bank"
+            label={t().bank}
             icon="ti ti-building-bank"
             value={value("bankName")}
             onValueChange={(v) => patch({ bankName: v })}
@@ -204,7 +208,7 @@ export function DocumentDefaultsForm(props: {
           />
           <div class="lg:col-span-2">
             <TextInput
-              label="Payment terms"
+              label={t().paymentTerms}
               icon="ti ti-calendar-dollar"
               value={value("paymentTerms")}
               onValueChange={(v) => patch({ paymentTerms: v })}
@@ -215,7 +219,7 @@ export function DocumentDefaultsForm(props: {
           </div>
           <div class="lg:col-span-2">
             <TextInput
-              label="Footer text"
+              label={t().footerText}
               icon="ti ti-text-caption"
               value={value("footerText")}
               onValueChange={(v) => patch({ footerText: v })}
@@ -240,11 +244,13 @@ export function DocumentDefaultsForm(props: {
 }
 
 export function TrashSection(props: { baseId: string }) {
+  const locale = useLocale();
+  const t = useGridsSettingsMessages(locale);
   // Lazy-load on mount via createResource — trash is base-admin-only
   // and rarely viewed, so we don't bloat the SSR payload with it.
   const [trash, { refetch }] = createResource(async () => {
     const res = await apiClient.bases[":baseId"].trash.$get({ param: { baseId: props.baseId } });
-    if (!res.ok) throw new Error(await errorMessage(res, "Failed to load trash"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().loadTrashFailed));
     return res.json();
   });
   const [restoringId, setRestoringId] = createSignal<string | null>(null);
@@ -271,13 +277,15 @@ export function TrashSection(props: { baseId: string }) {
           : item.kind === "Field"
             ? await apiClient.fields[":fieldId"].restore.$post({ param: { fieldId: itemId } })
             : await apiClient.forms[":formId"].restore.$post({ param: { formId: itemId } });
-      if (!response.ok) throw new Error(await errorMessage(response, `Failed to restore ${item.kind.toLowerCase()}`));
-      toast.success(`${item.kind} restored`);
+      const kind = item.kind === "Table" ? t().table : item.kind === "Field" ? t().field : t().form;
+      if (!response.ok) throw new Error(await errorMessage(response, t().restoreFailed({ kind })));
+      toast.success(t().restored({ kind }));
       await refetch();
-      if (trash.error) prompts.error(`${item.kind} was restored, but the trash list could not be refreshed.`);
+      if (trash.error) prompts.error(t().restoredRefreshFailed({ kind }));
       if (item.kind === "Table") refreshCurrentPath();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : `Failed to restore ${item.kind.toLowerCase()}`);
+      const kind = item.kind === "Table" ? t().table : item.kind === "Field" ? t().field : t().form;
+      prompts.error(error instanceof Error ? error.message : t().restoreFailed({ kind }));
     } finally {
       setRestoringId(null);
     }
@@ -286,37 +294,41 @@ export function TrashSection(props: { baseId: string }) {
   const formatDeletedAt = (iso: string | null) => {
     if (!iso) return "";
     const date = new Date(iso);
-    return date.toLocaleDateString();
+    return date.toLocaleDateString(locale());
   };
 
   return (
-    <Show when={!trash.loading} fallback={<Placeholder state="loading" variant="compact" title="Loading trash" />}>
+    <Show when={!trash.loading} fallback={<Placeholder state="loading" variant="compact" title={t().loadingTrash} />}>
       <Show
         when={!trash.error}
         fallback={
           <Placeholder
             state="error"
             variant="compact"
-            title="Trash is unavailable"
-            description={trash.error instanceof Error ? trash.error.message : "Failed to load trash"}
+            title={t().trashUnavailable}
+            description={trash.error instanceof Error ? trash.error.message : t().loadTrashFailed}
             action={
               <Button variant="secondary" size="sm" type="button" onClick={() => void refetch()}>
-                Retry
+                {t().retry}
               </Button>
             }
           />
         }
       >
-        <SettingsCollection title="Recently deleted" description="Restore tables, fields, and forms to this Base." empty="Trash is empty.">
+        <SettingsCollection title={t().recentlyDeleted} description={t().recentlyDeletedDescription} empty={t().trashEmpty}>
           <For each={items()}>
             {(item) => (
               <SettingsCollection.Item
                 title={item.name}
-                description={item.deletedAt ? `Deleted ${formatDeletedAt(item.deletedAt)}` : "Deletion time unavailable"}
+                description={item.deletedAt ? t().deleted({ date: formatDeletedAt(item.deletedAt) }) : t().deletionTimeUnavailable}
                 icon={<i class={`ti ${item.icon}`} aria-hidden="true" />}
               >
                 <SettingsCollection.Item.Status>
-                  <StatusBadge tone="neutral" label={item.kind} icon={null} />
+                  <StatusBadge
+                    tone="neutral"
+                    label={item.kind === "Table" ? t().table : item.kind === "Field" ? t().field : t().form}
+                    icon={null}
+                  />
                 </SettingsCollection.Item.Status>
                 <SettingsCollection.Item.Actions>
                   <Button
@@ -324,11 +336,11 @@ export function TrashSection(props: { baseId: string }) {
                     size="sm"
                     type="button"
                     loading={restoringId() === item.id}
-                    loadingLabel={`Restoring ${item.name}`}
+                    loadingLabel={t().restoring({ name: item.name })}
                     disabled={restoringId() !== null}
                     onClick={() => void restore(item)}
                   >
-                    <i class="ti ti-arrow-back-up" aria-hidden="true" /> Restore
+                    <i class="ti ti-arrow-back-up" aria-hidden="true" /> {t().restore}
                   </Button>
                 </SettingsCollection.Item.Actions>
               </SettingsCollection.Item>
@@ -345,6 +357,8 @@ export function GeneralForm(props: {
   onDirtyChange: (dirty: boolean) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = useGridsSettingsMessages(locale);
   const initial = {
     name: props.base.name,
     description: props.base.description ?? "",
@@ -369,7 +383,7 @@ export function GeneralForm(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save"));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveFailed));
       return res.json();
     },
     onSuccess: (next) => {
@@ -379,7 +393,7 @@ export function GeneralForm(props: {
       };
       setSaved(snapshot);
       draft.markSaved(snapshot);
-      toast.success("Base details saved");
+      toast.success(t().baseDetailsSaved);
       refreshCurrentPath();
     },
     onError: (e) => prompts.error(e.message),
@@ -398,18 +412,18 @@ export function GeneralForm(props: {
 
   return (
     <>
-      <SettingsGroup title="Identity" description="Describe this Base wherever it appears in Grids.">
+      <SettingsGroup title={t().identity} description={t().identityDescription}>
         <SettingsField
-          label="Name"
-          description="Shown in navigation, the overview, and Base selectors."
-          error={() => (!name().trim() ? "Name is required" : undefined)}
+          label={t().name}
+          description={t().nameDescription}
+          error={() => (!name().trim() ? t().nameRequired : undefined)}
           changed={() => name() !== saved().name}
         >
           {(control) => (
             <TextInput
-              aria-label="Name"
+              aria-label={t().name}
               aria-describedby={control.describedBy()}
-              placeholder="My Base"
+              placeholder={t().namePlaceholder}
               icon="ti ti-typography"
               value={name}
               onValueChange={(v) => patch({ name: v })}
@@ -420,16 +434,16 @@ export function GeneralForm(props: {
           )}
         </SettingsField>
         <SettingsField
-          label="Description"
-          description="Optional context for people who can access this Base."
+          label={t().description}
+          description={t().descriptionDescription}
           error={() => undefined}
           changed={() => description() !== saved().description}
         >
           {(control) => (
             <TextInput
-              aria-label="Description"
+              aria-label={t().description}
               aria-describedby={control.describedBy()}
-              placeholder="What is this Base for?"
+              placeholder={t().descriptionPlaceholder}
               icon="ti ti-align-left"
               value={description}
               onValueChange={(v) => patch({ description: v })}
@@ -459,11 +473,13 @@ export function PermissionsSection(props: { baseId: string; initialEntries: Acce
 }
 
 export function DangerZone(props: { baseId: string; baseName: string; onSavingChange: (saving: boolean) => void }) {
+  const locale = useLocale();
+  const t = useGridsSettingsMessages(locale);
   const deleteMut = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
       const res = await apiClient.bases[":baseId"].$delete({ param: { baseId: props.baseId } }, { init: { signal: abortSignal } });
       // hono-openapi typed client only declares non-204 statuses; check range manually.
-      if (res.status >= 400) throw new Error(await errorMessage(res, "Failed to move Base to trash"));
+      if (res.status >= 400) throw new Error(await errorMessage(res, t().moveBaseFailed));
     },
     onSuccess: () => navigateTo("/app/grids"),
     onError: (e) => prompts.error(e.message),
@@ -475,26 +491,19 @@ export function DangerZone(props: { baseId: string; baseName: string; onSavingCh
   });
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm(`Move "${props.baseName}" and its tables out of the active app? The Base remains restorable.`, {
-      title: "Move Base to trash?",
+    const confirmed = await prompts.confirm(t().moveBaseQuestion({ name: props.baseName }), {
+      title: t().moveBaseTitle,
       variant: "danger",
-      confirmText: "Move to trash",
+      confirmText: t().moveToTrash,
     });
     if (!confirmed) return;
     deleteMut.mutate(undefined);
   };
 
   return (
-    <Button
-      variant="danger"
-      size="sm"
-      type="button"
-      onClick={handleDelete}
-      loading={deleteMut.loading()}
-      loadingLabel="Moving Base to trash"
-    >
+    <Button variant="danger" size="sm" type="button" onClick={handleDelete} loading={deleteMut.loading()} loadingLabel={t().movingBase}>
       <i class="ti ti-trash mr-1" aria-hidden="true" />
-      Move to trash
+      {t().moveToTrash}
     </Button>
   );
 }

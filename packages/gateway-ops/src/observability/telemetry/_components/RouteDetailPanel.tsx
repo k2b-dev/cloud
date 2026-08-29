@@ -1,13 +1,7 @@
-import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, DetailPanel, IconButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { formatDateTime, formatDurationMs } from "@valentinkolb/cloud/shared";
 import type { TelemetryEventRow } from "../service";
-
-const eventColumns: DataTableColumn<TelemetryEventRow>[] = [
-  { id: "time", header: "Time" },
-  { id: "method", header: "Method" },
-  { id: "status", header: "Status", align: "right" },
-  { id: "duration", header: "Duration", align: "right" },
-];
+import { gatewayOpsMessages } from "../../../messages";
 
 const statusTone = (status: number) => {
   if (status >= 500) return "text-red-500";
@@ -25,24 +19,32 @@ export type RouteDetailPanelProps = {
 };
 
 export default function RouteDetailPanel(props: RouteDetailPanelProps) {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  const eventColumns: DataTableColumn<TelemetryEventRow>[] = [
+    { id: "time", header: t.time },
+    { id: "method", header: t.method },
+    { id: "status", header: t.status, align: "right" },
+    { id: "duration", header: t.duration, align: "right" },
+  ];
   return (
-    <aside class="paper min-h-0 p-3" aria-label="Route detail">
+    <aside class="paper min-h-0 p-3" aria-label={t.routeDetail}>
       <DetailPanel>
         <DetailPanel.Header
           icon="ti ti-route"
           title={<code class="font-mono">{props.route}</code>}
-          subtitle={`Last ${props.eventLimit} requests in this range`}
+          subtitle={t.lastRequestsInRange({ count: props.eventLimit })}
           actions={
-            <IconButtonLink href={props.closeHref} size="sm" label="Close route detail">
+            <IconButtonLink href={props.closeHref} size="sm" label={t.closeRouteDetail}>
               <i class="ti ti-x" aria-hidden="true" />
             </IconButtonLink>
           }
         />
 
         <DetailPanel.Body>
-          <DetailPanel.Section title="Requests" icon="ti ti-list-details" tone="accent">
+          <DetailPanel.Section title={t.requests} icon="ti ti-list-details" tone="accent">
             {props.events.length === 0 ? (
-              <Placeholder variant="compact" description="No individual requests retained for this range." />
+              <Placeholder variant="compact" description={t.noRetainedRequests} />
             ) : (
               <DataTable
                 rows={props.events}
@@ -51,7 +53,7 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
                 highlightColumns={false}
                 density="compact"
                 renderCell={({ row, col }) => {
-                  if (col.id === "time") return <span class="text-[10px] text-dimmed">{formatDateTime(row.occurredAt)}</span>;
+                  if (col.id === "time") return <span class="text-[10px] text-dimmed">{formatDateTime(row.occurredAt, { locale: locale() })}</span>;
                   if (col.id === "method") return <span class="text-[10px] font-medium text-dimmed">{row.method}</span>;
                   if (col.id === "status")
                     return (
@@ -64,7 +66,7 @@ export default function RouteDetailPanel(props: RouteDetailPanelProps) {
                       <span
                         class={`text-[10px] tabular-nums ${row.durationMs >= props.slowRequestMs ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}
                       >
-                        {formatDurationMs(row.durationMs)}
+                        {formatDurationMs(row.durationMs, { locale: locale() })}
                       </span>
                     );
                   return "";

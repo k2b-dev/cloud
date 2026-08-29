@@ -10,11 +10,13 @@ import {
   StatCell,
   StatGrid,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import { type AiForkMessageInput, type AiRetryMessageInput, aiToolIcon, displayToolName, formatWorkedDuration } from "./message-utils";
+import { aiChatMessages } from "./messages";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
 export type AiTurnActionRequest = { turnId: string; callId: string; name: string };
@@ -56,10 +58,10 @@ const usageValue = (usage: Usage | null | undefined, key: "input" | "output" | "
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 };
 
-const formatDateTime = (value: string) =>
-  new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+const formatDateTime = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 
-const assistantResponseInfo = (entries: AiStoredMessage[]) => {
+const assistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
   const assistantEntries = entries.filter((entry) => entry.kind === "message" && entry.message.role === "assistant");
   const entry = assistantEntries.findLast((candidate) => candidate.loopAggregate) ?? assistantEntries.at(-1) ?? entries.at(-1);
   if (!entry) return null;
@@ -76,7 +78,7 @@ const assistantResponseInfo = (entries: AiStoredMessage[]) => {
     { label: "Model profile", value: entry.modelProfileId ?? "Unknown" },
     { label: "Loop id", value: entry.loopId ?? "Legacy message" },
     { label: "Finished", value: `${entry.loopDoneReason ?? "unknown"} · ${entry.stopReason ?? "unknown"}` },
-    { label: "Created", value: formatDateTime(entry.createdAt) },
+    { label: "Created", value: formatDateTime(entry.createdAt, locale) },
   ];
 
   const issues = [
@@ -107,11 +109,13 @@ const assistantResponseInfo = (entries: AiStoredMessage[]) => {
   };
 };
 
-const openAssistantResponseInfo = (entries: AiStoredMessage[]) => {
-  const info = assistantResponseInfo(entries);
+const openAssistantResponseInfo = (entries: AiStoredMessage[], locale: string) => {
+  const info = assistantResponseInfo(entries, locale);
   if (!info) return;
 
-  const tokens = (value: number | null) => value?.toLocaleString() ?? "–";
+  const t = aiChatMessages(locale);
+  const number = (value: number) => value.toLocaleString(locale);
+  const tokens = (value: number | null) => (value === null ? "–" : number(value));
   const issueSummary = info.issues.map((issue) => `${issue.count} ${issue.label}`).join(" · ");
   const issueTotal = info.issues.reduce((sum, issue) => sum + issue.count, 0);
 
@@ -155,7 +159,7 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[]) => {
                   label="Output speed"
                   value={
                     timing().outputTokensPerSecond !== undefined
-                      ? `${timing().outputTokensPerSecond?.toLocaleString(undefined, { maximumFractionDigits: 1 })} tok/s`
+                      ? `${timing().outputTokensPerSecond?.toLocaleString(locale, { maximumFractionDigits: 1 })} tok/s`
                       : "–"
                   }
                 />
@@ -167,21 +171,21 @@ const openAssistantResponseInfo = (entries: AiStoredMessage[]) => {
             <StatCell label="Input tokens" value={tokens(info.usage.input)} />
             <StatCell label="Output tokens" value={tokens(info.usage.output)} />
             <StatCell label="Total tokens" value={tokens(info.usage.total)} />
-            <StatCell label="Assistant turns" value={info.turns.toLocaleString()} />
-            <StatCell label="Tool calls" value={info.toolCallCount.toLocaleString()} />
+            <StatCell label={t.assistantTurns} value={number(info.turns)} />
+            <StatCell label={t.toolCalls} value={number(info.toolCallCount)} />
             <Show
               when={info.issues.length > 0}
-              fallback={<StatCell label="Tool issues" value="None" accent={{ tone: "emerald", icon: "ti ti-check", text: "ok" }} />}
+              fallback={<StatCell label={t.toolIssues} value={t.none} accent={{ tone: "emerald", icon: "ti ti-check", text: "ok" }} />}
             >
               <StatCell
-                label="Tool issues"
-                value={issueTotal.toLocaleString()}
+                label={t.toolIssues}
+                value={number(issueTotal)}
                 sub={issueSummary}
                 accent={{ tone: "red", icon: "ti ti-alert-triangle" }}
               />
             </Show>
             <Show when={info.usage.credits !== null && info.usage.credits > 0}>
-              <StatCell label="Credits" value={info.usage.credits?.toLocaleString(undefined, { maximumFractionDigits: 6 }) ?? "–"} />
+              <StatCell label="Credits" value={info.usage.credits?.toLocaleString(locale, { maximumFractionDigits: 6 }) ?? "–"} />
             </Show>
           </StatGrid>
 
@@ -308,6 +312,7 @@ export function createAssistantMessageActions(props: {
   copyText: string;
   actions: AiChatActions;
 }): ChatAction[] {
+  const locale = useLocale();
   const actions = props.actions;
   const result: ChatAction[] = [
     ...(actions.onMessageFeedback
@@ -340,7 +345,7 @@ export function createAssistantMessageActions(props: {
       id: "info",
       label: "Message info",
       icon: "ti ti-info-circle",
-      onSelect: () => openAssistantResponseInfo(props.entries),
+      onSelect: () => openAssistantResponseInfo(props.entries, locale()),
     },
   ];
   if (props.copyText) {

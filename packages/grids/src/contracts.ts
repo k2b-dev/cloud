@@ -973,6 +973,7 @@ export const DslQueryAutocompleteBodySchema = DslQueryAutocompleteBaseBodySchema
 );
 
 const DslQueryPreviewDiagnosticSchema = z.object({
+  code: z.enum(["gql.syntax", "gql.context", "gql.resolution", "gql.execution", "gql.cursor", "gql.access"]).optional(),
   line: z.number().int().min(1).optional(),
   column: z.number().int().min(1).optional(),
   length: z.number().int().min(1).optional(),

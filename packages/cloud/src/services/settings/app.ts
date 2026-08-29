@@ -30,8 +30,8 @@ const redactSecretValue = (entry: SettingEntry): SettingEntry => {
 
 export const settingsService = {
   entry: {
-    list: async (config?: { pagination?: PageParams; filter?: { query?: string; group?: string } }): Promise<Paginated<SettingEntry>> => {
-      const entries = await settingsPrimitives.getAll();
+    list: async (config?: { pagination?: PageParams; filter?: { query?: string; group?: string }; locale?: string }): Promise<Paginated<SettingEntry>> => {
+      const entries = await settingsPrimitives.getAll(config?.locale);
       const query = config?.filter?.query?.trim().toLowerCase();
       const group = config?.filter?.group?.trim().toLowerCase();
 

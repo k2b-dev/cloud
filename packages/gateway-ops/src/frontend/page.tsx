@@ -1,5 +1,5 @@
 import { readAppRegistrySnapshot } from "@valentinkolb/cloud";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { latestGatewayRouteSnapshot } from "@valentinkolb/cloud/services";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "../observability/telemetry/contracts";
@@ -23,17 +23,18 @@ import { ssr } from "../config";
 import { getTelemetryAppTotals, getTelemetryPrefixTotals } from "../observability/telemetry/service";
 import { listRegisteredAppStatus, type RegisteredAppStatus } from "../registered-apps";
 import RemoveRegisteredAppButton from "./RemoveRegisteredAppButton.island";
+import { gatewayOpsMessages, type GatewayOpsMessages } from "../messages";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const APP_ICON_CLASSES = "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400";
 
-const timeAgo = (ts: number) => {
+const timeAgo = (ts: number, t: GatewayOpsMessages) => {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 5) return "just now";
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
+  if (s < 5) return t.justNow;
+  if (s < 60) return t.secondsAgo({ count: s });
+  if (s < 3600) return t.minutesAgo({ count: Math.floor(s / 60) });
+  return t.hoursAgo({ count: Math.floor(s / 3600) });
 };
 
 const fmtUptime = (ms: number) => {
@@ -62,6 +63,8 @@ type GatewayRouteRow = {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
   const isRoutesPage = url.pathname.endsWith("/routes");
   const range = isTelemetryRange(url.searchParams.get("range"))
@@ -111,10 +114,10 @@ export default ssr<AuthContext>(async (c) => {
       };
       if (!app.isOnline) {
         runtimeStatus.status = "error";
-        runtimeStatus.signals = [...runtimeStatus.signals, "No live registry heartbeat."];
+        runtimeStatus.signals = [...runtimeStatus.signals, t.noLiveHeartbeat];
       } else if (!fresh && runtimeStatus.status === "ok") {
         runtimeStatus.status = "warn";
-        runtimeStatus.signals = [...runtimeStatus.signals, "Registry heartbeat expires soon."];
+        runtimeStatus.signals = [...runtimeStatus.signals, t.heartbeatExpiresSoon];
       }
       const isHealthy = runtimeStatus.status === "ok";
       const upSince = app.live ? Math.max(0, Date.now() - app.live.createdAt) : app.offlineForMs;
@@ -133,50 +136,50 @@ export default ssr<AuthContext>(async (c) => {
     .sort((a, b) => b.count - a.count);
   const filteredRoutes = searchQuery ? allRoutes.filter((r) => r.prefix.includes(searchQuery) || r.appId.includes(searchQuery)) : allRoutes;
   const appColumns: DataTableColumn<GatewayAppRow>[] = [
-    { id: "app", header: "App", value: (app) => app.name },
-    { id: "status", header: "Status", value: (app) => app.isOnline, headerClass: "text-center", cellClass: "text-center" },
-    { id: "runtime", header: "Release", value: (app) => (app.live?.runtime ?? app.runtime)?.release },
-    { id: "baseUrl", header: "Base URL", value: (app) => app.baseUrl },
-    { id: "nav", header: "Nav", value: (app) => app.nav?.href, headerClass: "text-center", cellClass: "text-center" },
-    { id: "admin", header: "Admin", value: (app) => app.nav?.adminHref, headerClass: "text-center", cellClass: "text-center" },
+    { id: "app", header: t.app, value: (app) => app.name },
+    { id: "status", header: t.status, value: (app) => app.isOnline, headerClass: "text-center", cellClass: "text-center" },
+    { id: "runtime", header: t.release, value: (app) => (app.live?.runtime ?? app.runtime)?.release },
+    { id: "baseUrl", header: t.baseUrl, value: (app) => app.baseUrl },
+    { id: "nav", header: t.navigation, value: (app) => app.nav?.href, headerClass: "text-center", cellClass: "text-center" },
+    { id: "admin", header: t.admin, value: (app) => app.nav?.adminHref, headerClass: "text-center", cellClass: "text-center" },
     {
       id: "capabilities",
-      header: "Capabilities",
+      header: t.capabilities,
       value: (app) => app.capabilities,
       headerClass: "text-center",
       cellClass: "text-center",
     },
     {
       id: "heartbeat",
-      header: "Heartbeat",
+      header: t.heartbeat,
       value: (app) => app.updatedAt,
       headerClass: "text-right",
       cellClass: "text-right whitespace-nowrap",
     },
     {
       id: "upSince",
-      header: "Up since",
+      header: t.upSince,
       value: (app) => app.upSince,
       headerClass: "text-right",
       cellClass: "text-right whitespace-nowrap",
     },
     {
       id: "requests",
-      header: "Requests",
+      header: t.requests,
       value: (app) => app.traffic?.count,
       headerClass: "text-right",
       cellClass: "text-right tabular-nums",
     },
     {
       id: "latency",
-      header: "Latency",
+      header: t.latency,
       value: (app) => (app.traffic ? app.traffic.totalMs / app.traffic.count : null),
       headerClass: "text-right",
       cellClass: "text-right tabular-nums",
     },
     {
       id: "errors",
-      header: "Errors",
+      header: t.errors,
       subtitle: range,
       value: (app) => app.traffic?.errors,
       headerClass: "text-right",
@@ -184,36 +187,37 @@ export default ssr<AuthContext>(async (c) => {
     },
     {
       id: "actions",
-      header: <span class="sr-only">Actions</span>,
+      header: <span class="sr-only">{t.actions}</span>,
       headerClass: "text-right",
       cellClass: "text-right whitespace-nowrap max-w-none",
     },
   ];
   const routeColumns: DataTableColumn<GatewayRouteRow>[] = [
-    { id: "prefix", header: "Prefix", value: (route) => route.prefix },
-    { id: "app", header: "App", value: (route) => route.appId },
+    { id: "prefix", header: t.prefix, value: (route) => route.prefix },
+    { id: "app", header: t.app, value: (route) => route.appId },
     {
       id: "hits",
-      header: "Hits",
+      header: t.hits,
       subtitle: range,
       value: (route) => route.count,
       headerClass: "text-right",
       cellClass: "text-right tabular-nums",
     },
-    { id: "errors", header: "Errors", value: (route) => route.errors, headerClass: "text-right", cellClass: "text-right tabular-nums" },
+    { id: "errors", header: t.errors, value: (route) => route.errors, headerClass: "text-right", cellClass: "text-right tabular-nums" },
   ];
+  const title = isRoutesPage ? t.gatewayRoutesTitle : t.gatewayAppsTitle;
   return () => (
-    <AdminLayout c={c} title={isRoutesPage ? "Routes" : "Apps"}>
+    <AdminLayout c={c} title={title}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-gateway-title">
-          <h1 class="text-base font-semibold text-primary">{isRoutesPage ? "Routes" : "Apps"}</h1>
+          <h1 class="text-base font-semibold text-primary">{title}</h1>
           <p class="mt-1 text-xs text-dimmed">
-            {isRoutesPage ? "Route prefixes currently served by the gateway router." : "Registered apps and their current gateway health."}
+            {isRoutesPage ? t.gatewayRoutesDescription : t.gatewayAppsDescription}
           </p>
         </div>
 
-        <nav class="flex flex-wrap items-center gap-1" aria-label="Traffic window">
-          <span class="mr-1 text-[10px] text-dimmed">Traffic window</span>
+        <nav class="flex flex-wrap items-center gap-1" aria-label={t.trafficWindow}>
+          <span class="mr-1 text-[10px] text-dimmed">{t.trafficWindow}</span>
           {TELEMETRY_RANGE_KEYS.map((option) => (
             <ButtonLink
               href={rangeUrl(url, option)}
@@ -228,34 +232,34 @@ export default ssr<AuthContext>(async (c) => {
 
         {/* ── Stats — see skills/cloud-app/references/frontend.md § Stats ── */}
         <StatGrid columns={6}>
-          <StatCell value={appCount} label="Apps" sub={`${withNav.length} nav · ${withAdmin.length} admin`} />
+          <StatCell value={appCount} label={t.apps} sub={t.navAdminSummary({ nav: withNav.length, admin: withAdmin.length })} />
           <StatCell
             value={routerSnapshot?.routeCount ?? 0}
-            label="Routes"
-            sub={routerSnapshot ? `v${routerSnapshot.tableVersion}` : "no router"}
+            label={t.gatewayRoutesTitle}
+            sub={routerSnapshot ? `v${routerSnapshot.tableVersion}` : t.noRouter}
           />
           <StatCell
             value={fmtCount(windowRequests)}
-            label="Requests"
-            sub={unmatchedRequests > 0 ? `${fmtCount(unmatchedRequests)} unmatched · ${range}` : range}
+            label={t.requests}
+            sub={unmatchedRequests > 0 ? t.unmatchedRequests({ count: fmtCount(unmatchedRequests), range }) : range}
             href={`/admin/observability/telemetry?range=${range}`}
             accent={unmatchedRequests > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : undefined}
           />
-          <StatCell value={withCapabilities.length} label="Capabilities" sub="providers" />
+          <StatCell value={withCapabilities.length} label={t.capabilities} sub={t.providers} />
           <StatCell
             value={routerSnapshot ? fmtUptime(Date.now() - routerSnapshot.startedAt) : "—"}
-            label="Uptime"
+            label={t.uptime}
             sub={
               routerSnapshot
-                ? `since ${new Date(routerSnapshot.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                : "no router snapshot"
+                ? t.sinceTime({ time: new Date(routerSnapshot.startedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) })
+                : t.noRouterSnapshot
             }
           />
           <StatCell
             value={`${healthy.length}/${appCount}`}
-            label="Healthy"
+            label={t.healthy}
             sub={
-              healthy.length === appCount ? "all systems" : `${offlineCount} offline · ${appCount - healthy.length - offlineCount} degraded`
+              healthy.length === appCount ? t.allSystems : t.healthSummary({ offline: offlineCount, degraded: appCount - healthy.length - offlineCount })
             }
             accent={healthy.length === appCount ? { tone: "emerald", icon: "ti ti-check" } : { tone: "red", icon: "ti ti-alert-circle" }}
           />
@@ -267,15 +271,15 @@ export default ssr<AuthContext>(async (c) => {
             {registry.issues.length > 0 ? (
               <NoticeCard
                 tone="danger"
-                title={`${registry.issues.length} invalid app registry ${registry.issues.length === 1 ? "entry" : "entries"}`}
+                title={t.invalidRegistryEntries({ count: registry.issues.length })}
                 detail={registry.issues.map((issue) => `${issue.key}: ${issue.reason}`).join(" · ")}
                 class="m-3"
               />
             ) : null}
             <div class="flex flex-col gap-2 px-3 py-3">
               <div>
-                <h2 class="text-xs font-semibold text-primary">Apps</h2>
-                <p class="text-[10px] text-dimmed">{appRows.length} registered apps</p>
+                <h2 class="text-xs font-semibold text-primary">{t.apps}</h2>
+                <p class="text-[10px] text-dimmed">{t.registeredApps({ count: appRows.length })}</p>
               </div>
             </div>
             <DataTable
@@ -308,12 +312,12 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "baseUrl") return <code class="text-[10px] text-dimmed">{app.baseUrl}</code>;
                 if (col.id === "status") {
                   const label = !app.isOnline
-                    ? "Offline"
+                    ? t.offline
                     : app.runtimeStatus.status === "error"
-                      ? "Incompatible"
+                      ? t.incompatible
                       : app.runtimeStatus.status === "warn"
-                        ? "Degraded"
-                        : "Live";
+                        ? t.degraded
+                        : t.live;
                   return (
                     <div class="flex max-w-64 flex-col items-center gap-1">
                       <StatusBadge
@@ -331,8 +335,8 @@ export default ssr<AuthContext>(async (c) => {
                   const runtime = app.live?.runtime ?? app.runtime;
                   return (
                     <div class="flex flex-col whitespace-nowrap">
-                      <code class="text-[10px] text-primary">{runtime?.release ?? "unknown"}</code>
-                      <span class="text-[9px] text-dimmed">Sync {runtime?.syncVersion ?? "unknown"}</span>
+                      <code class="text-[10px] text-primary">{runtime?.release ?? t.unknown}</code>
+                      <span class="text-[9px] text-dimmed">Sync {runtime?.syncVersion ?? t.unknown}</span>
                     </div>
                   );
                 }
@@ -352,7 +356,7 @@ export default ssr<AuthContext>(async (c) => {
                   return (
                     <span class={`text-[10px] ${app.isHealthy ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
                       <i class={`ti ${app.isHealthy ? "ti-heartbeat" : "ti-alert-triangle"} text-[9px]`} />{" "}
-                      {app.isOnline ? timeAgo(app.live!.updatedAt) : `last ${timeAgo(app.lastSeenAt)}`}
+                      {app.isOnline ? timeAgo(app.live!.updatedAt, t) : t.lastSeen({ value: timeAgo(app.lastSeenAt, t) })}
                     </span>
                   );
                 }
@@ -360,7 +364,7 @@ export default ssr<AuthContext>(async (c) => {
                   return (
                     <span
                       class={`text-[10px] tabular-nums ${app.isHealthy ? "text-dimmed" : "text-red-500"}`}
-                      title={new Date(app.live?.createdAt ?? app.lastSeenAt).toLocaleString()}
+                      title={new Date(app.live?.createdAt ?? app.lastSeenAt).toLocaleString(locale)}
                     >
                       {fmtUptime(app.upSince)}
                     </span>
@@ -398,16 +402,16 @@ export default ssr<AuthContext>(async (c) => {
           <section class="paper overflow-hidden">
             <div class="flex flex-col gap-2 px-3 py-3">
               <div>
-                <h2 class="text-xs font-semibold text-primary">Routes</h2>
+                <h2 class="text-xs font-semibold text-primary">{t.gatewayRoutesTitle}</h2>
                 <p class="text-[10px] text-dimmed">
-                  {searchQuery ? `${filteredRoutes.length} of ${allRoutes.length} routes` : `${allRoutes.length} routes`}
+                  {searchQuery ? t.filteredRoutesCount({ count: filteredRoutes.length, total: allRoutes.length }) : t.routesCount({ count: allRoutes.length })}
                 </p>
               </div>
               <SearchBar
                 action="/admin/gateway/routes"
                 value={searchQuery}
-                placeholder="Filter routes by prefix or app..."
-                ariaLabel="Filter routes"
+                placeholder={t.filterRoutes}
+                ariaLabel={t.filterRoutesLabel}
               />
             </div>
             <DataTable
@@ -418,12 +422,12 @@ export default ssr<AuthContext>(async (c) => {
               highlightColumns={false}
               density="compact"
               class="overflow-x-auto"
-              empty={`No routes match "${searchQuery}"`}
+              empty={t.noMatchingRoutes({ query: searchQuery })}
               renderCell={({ row: route, col }) => {
                 if (col.id === "prefix") return <code class="text-[10px] text-primary">{route.prefix}</code>;
                 if (col.id === "app") return <span class="text-[10px] text-dimmed">{route.appId}</span>;
                 if (col.id === "hits")
-                  return <span class="text-[10px] text-dimmed">{route.count > 0 ? route.count.toLocaleString() : "—"}</span>;
+                  return <span class="text-[10px] text-dimmed">{route.count > 0 ? route.count.toLocaleString(locale) : "—"}</span>;
                 if (col.id === "errors") {
                   return route.errors > 0 ? (
                     <span class="text-[10px] tabular-nums text-red-500">{route.errors}</span>

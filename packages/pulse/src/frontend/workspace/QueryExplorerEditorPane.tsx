@@ -2,7 +2,8 @@ import { AutocompleteEditor, Button, TextInput, type Completion } from "@k2b/ui"
 import { For, Show, type Accessor } from "solid-js";
 import type { MetricQuery, PulseQueryCompileResult, PulseSource } from "../../contracts";
 import { pulseQueryHighlight } from "../query-authoring";
-import { plural, suggestionTagClass } from "./helpers";
+import { suggestionTagClass } from "./helpers";
+import { usePulseMessages } from "../use-messages";
 
 type QuerySourceSuggestion = {
   source: PulseSource;
@@ -61,7 +62,9 @@ type QueryExplorerEditorPaneProps = {
 
 const QueryEditorInput = (
   props: Pick<QueryExplorerEditorPaneProps, "queryText" | "onQueryInput" | "onRun" | "completions" | "diagnostics">,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <AutocompleteEditor
     value={props.queryText}
     onValueChange={props.onQueryInput}
@@ -73,12 +76,15 @@ const QueryEditorInput = (
     lines={7}
     spellcheck={false}
     placeholder="metric orders.created increase every 1h since 7d where channel=web"
-    aria-label="Pulse query"
+    aria-label={t().pulseQuery}
     aria-invalid={props.diagnostics()?.ok === false}
   />
-);
+  );
+};
 
-const QueryDiagnostics = (props: Pick<QueryExplorerEditorPaneProps, "diagnostics" | "running">) => (
+const QueryDiagnostics = (props: Pick<QueryExplorerEditorPaneProps, "diagnostics" | "running">) => {
+  const t = usePulseMessages();
+  return (
   <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
     <For each={props.diagnostics()?.diagnostics ?? []}>
       {(diagnostic) => (
@@ -89,11 +95,12 @@ const QueryDiagnostics = (props: Pick<QueryExplorerEditorPaneProps, "diagnostics
     </For>
     <Show when={props.running()}>
       <span class="text-dimmed">
-        <i class="ti ti-loader-2 animate-spin" /> Updating preview...
+        <i class="ti ti-loader-2 animate-spin" /> {t().updatingPreview}
       </span>
     </Show>
   </div>
-);
+  );
+};
 
 const SuggestionStat = (props: { icon: string; label: string }) => (
   <span class="inline-flex items-center gap-1">
@@ -104,7 +111,9 @@ const SuggestionStat = (props: { icon: string; label: string }) => (
 
 const SuggestionToggle = (
   props: Pick<QueryExplorerEditorPaneProps, "suggestionOverflow" | "suggestionsExpanded" | "setSuggestionsExpanded">,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <Show when={props.suggestionOverflow() > 0 || props.suggestionsExpanded()}>
     <Button
       type="button"
@@ -114,10 +123,11 @@ const SuggestionToggle = (
       onClick={() => props.setSuggestionsExpanded((expanded) => !expanded)}
     >
       <i class={`ti ${props.suggestionsExpanded() ? "ti-chevron-up" : "ti-adjustments-horizontal"}`} />
-      {props.suggestionsExpanded() ? "Show less" : `Browse${props.suggestionOverflow() > 0 ? ` +${props.suggestionOverflow()}` : ""}`}
+      {props.suggestionsExpanded() ? t().showLess : t().browseMore({ count: props.suggestionOverflow() })}
     </Button>
   </Show>
-);
+  );
+};
 
 const SuggestedRefinementsHeader = (
   props: Pick<
@@ -129,19 +139,21 @@ const SuggestedRefinementsHeader = (
     | "suggestionsExpanded"
     | "setSuggestionsExpanded"
   >,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
-        <h3 class="text-sm font-semibold text-primary">Suggested refinements</h3>
-        <span class="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-dimmed dark:bg-zinc-900">click to autocomplete</span>
+        <h3 class="text-sm font-semibold text-primary">{t().suggestedRefinements}</h3>
+        <span class="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-dimmed dark:bg-zinc-900">{t().autocompleteHint}</span>
       </div>
-      <p class="mt-1 text-xs text-dimmed">Based on the matched variants. Add a source or label to narrow the query.</p>
+      <p class="mt-1 text-xs text-dimmed">{t().suggestedRefinementsDescription}</p>
     </div>
     <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-dimmed">
-      <SuggestionStat icon="ti-stack-2" label={plural(props.matchingSeriesCount(), "variant")} />
-      <SuggestionStat icon="ti-database-share" label={plural(props.matchingSourcesCount(), "source")} />
-      <SuggestionStat icon="ti-tags" label={plural(props.filterSuggestionCount(), "label key")} />
+      <SuggestionStat icon="ti-stack-2" label={t().variantCount({ count: props.matchingSeriesCount() })} />
+      <SuggestionStat icon="ti-database-share" label={t().sourceCount({ count: props.matchingSourcesCount() })} />
+      <SuggestionStat icon="ti-tags" label={t().labelKeyCount({ count: props.filterSuggestionCount() })} />
       <SuggestionToggle
         suggestionOverflow={props.suggestionOverflow}
         suggestionsExpanded={props.suggestionsExpanded}
@@ -149,11 +161,14 @@ const SuggestedRefinementsHeader = (
       />
     </div>
   </div>
-);
+  );
+};
 
 const SuggestionSearch = (
   props: Pick<QueryExplorerEditorPaneProps, "suggestionsExpanded" | "suggestionSearch" | "setSuggestionSearch">,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <Show when={props.suggestionsExpanded()}>
     <div class="mt-3 max-w-xl">
       <TextInput
@@ -161,19 +176,22 @@ const SuggestionSearch = (
         icon="ti ti-search"
         value={props.suggestionSearch}
         onValueChange={props.setSuggestionSearch}
-        placeholder="Search suggested sources and labels..."
+        placeholder={t().suggestedSearchPlaceholder}
         clearable
       />
     </div>
   </Show>
-);
+  );
+};
 
 const SourceSuggestionRow = (
   props: Pick<QueryExplorerEditorPaneProps, "compiledMetricQuery" | "visibleSourceSuggestions" | "onApplySourceFilter">,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <Show when={!props.compiledMetricQuery()?.sourceId && props.visibleSourceSuggestions().length > 0}>
     <div class="grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-2">
-      <div class="pt-1 text-xs font-medium text-dimmed">Sources</div>
+      <div class="pt-1 text-xs font-medium text-dimmed">{t().sources}</div>
       <div class="flex flex-wrap gap-2">
         <For each={props.visibleSourceSuggestions()}>
           {({ source, count }) => (
@@ -187,14 +205,17 @@ const SourceSuggestionRow = (
       </div>
     </div>
   </Show>
-);
+  );
+};
 
 const LabelSuggestionRow = (props: {
   group: QueryLabelSuggestion;
   onApplyDimensionFilter: QueryExplorerEditorPaneProps["onApplyDimensionFilter"];
-}) => (
+}) => {
+  const t = usePulseMessages();
+  return (
   <div class="grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-2">
-    <div class="truncate pt-1 text-xs font-medium text-dimmed" title={`${props.group.key} · ${plural(props.group.count, "variant")}`}>
+    <div class="truncate pt-1 text-xs font-medium text-dimmed" title={`${props.group.key} · ${t().variantCount({ count: props.group.count })}`}>
       {props.group.key}
     </div>
     <div class="flex flex-wrap gap-2">
@@ -204,7 +225,7 @@ const LabelSuggestionRow = (props: {
             type="button"
             class={suggestionTagClass}
             onClick={() => props.onApplyDimensionFilter(filter.key, filter.value)}
-            title={`Add where ${filter.key}=${filter.value}`}
+            title={t().addWhereFilter({ key: filter.key, value: filter.value })}
           >
             <i class="ti ti-tag" />
             <span class="truncate">{filter.value}</span>
@@ -213,11 +234,12 @@ const LabelSuggestionRow = (props: {
         )}
       </For>
       <Show when={props.group.hiddenValues > 0}>
-        <span class="inline-flex h-7 items-center px-2 text-xs text-dimmed">+{props.group.hiddenValues} more</span>
+        <span class="inline-flex h-7 items-center px-2 text-xs text-dimmed">{t().moreCount({ count: props.group.hiddenValues })}</span>
       </Show>
     </div>
   </div>
-);
+  );
+};
 
 const SuggestedRefinementRows = (
   props: Pick<
@@ -230,7 +252,9 @@ const SuggestedRefinementRows = (
     | "suggestionsExpanded"
     | "suggestionMatches"
   >,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <div class="mt-3 space-y-2">
     <SourceSuggestionRow
       compiledMetricQuery={props.compiledMetricQuery}
@@ -243,10 +267,11 @@ const SuggestedRefinementRows = (
     <Show
       when={props.suggestionsExpanded() && props.suggestionMatches().sources.length === 0 && props.suggestionMatches().labels.length === 0}
     >
-      <p class="text-xs text-dimmed">No suggested filters match this search.</p>
+      <p class="text-xs text-dimmed">{t().noSuggestedFilters}</p>
     </Show>
   </div>
-);
+  );
+};
 
 const SuggestedRefinements = (props: QueryExplorerEditorPaneProps) => (
   <Show when={props.compiledMetricQuery() && props.matchingSeriesCount() > 0}>
@@ -258,28 +283,34 @@ const SuggestedRefinements = (props: QueryExplorerEditorPaneProps) => (
   </Show>
 );
 
-const EmptyMetricMatch = (props: Pick<QueryExplorerEditorPaneProps, "compiledMetricQuery" | "matchingSeriesCount">) => (
+const EmptyMetricMatch = (props: Pick<QueryExplorerEditorPaneProps, "compiledMetricQuery" | "matchingSeriesCount">) => {
+  const t = usePulseMessages();
+  return (
   <Show when={props.compiledMetricQuery() && props.matchingSeriesCount() === 0}>
     <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-dimmed">
       <span class="inline-flex items-center gap-1">
-        <i class="ti ti-stack-2" />0 variants matched
+        <i class="ti ti-stack-2" /> {t().noVariantsMatched}
       </span>
     </div>
   </Show>
-);
+  );
+};
 
 const QueryExplorerActions = (
   props: Pick<QueryExplorerEditorPaneProps, "canRun" | "running" | "onRun" | "canOpenReference" | "onOpenReference">,
-) => (
+) => {
+  const t = usePulseMessages();
+  return (
   <div class="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
     <Button type="button" variant="secondary" size="sm" disabled={!props.canRun() || props.running()} onClick={props.onRun}>
-      <i class={`ti ${props.running() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} /> Reload
+      <i class={`ti ${props.running() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} /> {t().reload}
     </Button>
     <Button type="button" variant="secondary" size="sm" disabled={!props.canOpenReference()} onClick={props.onOpenReference}>
-      <i class="ti ti-external-link" /> Open reference
+      <i class="ti ti-external-link" /> {t().openReference}
     </Button>
   </div>
-);
+  );
+};
 
 export default function QueryExplorerEditorPane(props: QueryExplorerEditorPaneProps) {
   return (

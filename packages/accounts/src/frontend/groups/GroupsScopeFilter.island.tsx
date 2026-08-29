@@ -1,40 +1,41 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
 import { buildGroupsUrl, type GroupsListState } from "../lib/url-state";
+import { useAccountsMessages } from "../messages";
 
 type GroupsScopeFilterProps = {
   state: GroupsListState;
   defaultScope: GroupsListState["scope"];
 };
 
-const SCOPE_OPTIONS: FilterChipSection[] = [
-  {
-    label: "Membership",
-    options: [
-      { value: "managed", label: "Managed by me", icon: "ti ti-shield-check" },
-      { value: "member", label: "My groups", icon: "ti ti-users-group" },
-      { value: "all", label: "All groups", icon: "ti ti-layout-grid" },
-    ],
-  },
-  {
-    label: "Origin",
-    options: [
-      { value: "", label: "All origins", icon: "ti ti-stack-2" },
-      { value: "ipa", label: "FreeIPA", icon: "ti ti-building-fortress" },
-      { value: "local", label: "Local", icon: "ti ti-home" },
-    ],
-  },
-];
-
 const SCOPE_VALUES = new Set<GroupsListState["scope"]>(["managed", "member", "all"]);
 const PROVIDER_VALUES = new Set<Exclude<GroupsListState["provider"], never>>(["", "ipa", "local"]);
 
 export default function GroupsScopeFilter(props: GroupsScopeFilterProps) {
+  const messages = useAccountsMessages();
+  const options = (): FilterChipSection[] => [
+    {
+      label: messages().membership,
+      options: [
+        { value: "managed", label: messages().managedByMe, icon: "ti ti-shield-check" },
+        { value: "member", label: messages().myGroups, icon: "ti ti-users-group" },
+        { value: "all", label: messages().allGroups, icon: "ti ti-layout-grid" },
+      ],
+    },
+    {
+      label: messages().origin,
+      options: [
+        { value: "", label: messages().allOrigins, icon: "ti ti-stack-2" },
+        { value: "ipa", label: "FreeIPA", icon: "ti ti-building-fortress" },
+        { value: "local", label: messages().local, icon: "ti ti-home" },
+      ],
+    },
+  ];
   return (
     <FilterChip
-      label="View"
+      label={messages().view}
       icon="ti ti-adjustments-horizontal"
-      options={SCOPE_OPTIONS}
+      options={options()}
       value={[props.state.scope, props.state.provider]}
       onValueChange={(value) => {
         const nextScope =

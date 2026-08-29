@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, Placeholder, ScrollArea } from "@k2b/ui";
+import { Button, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { RecordDisplayConfig } from "../../../contracts";
@@ -8,6 +8,7 @@ import { recordDisplayTitle } from "../records/record-display";
 import { FieldValue } from "../table/FieldValue";
 import { fieldDisplayFormat, formatFieldValueText } from "../table/field-value-format";
 import { visibleCardFields } from "./display-mode";
+import { recordsViewMessages } from "./messages";
 import type { CardSize } from "./query-url";
 
 const cardPaddingClass: Record<CardSize, string> = {
@@ -52,6 +53,8 @@ export function RecordCardsView(props: {
   coverUrl?: (preview: GridFilePreview) => string;
   titleForRecord?: (record: GridRecord, fields: Field[]) => string;
 }) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   const size = () => props.cardSize ?? "medium";
   const cardFields = () => visibleCardFields(props.fields, props.displayConfig);
   const title = (record: GridRecord) =>
@@ -89,7 +92,7 @@ export function RecordCardsView(props: {
     <ScrollArea class="flex flex-1 flex-col" scrollPreserveKey={`grids-cards-${props.tableId}`}>
       <Show
         when={props.items.length > 0}
-        fallback={<Placeholder icon="ti ti-table" class="min-h-48 justify-center" description={props.emptyText ?? <>No records</>} />}
+        fallback={<Placeholder icon="ti ti-table" class="min-h-48 justify-center" description={props.emptyText ?? <>{t().noRecords}</>} />}
       >
         <div class="grids-record-card-grid grid px-3 pb-3 pt-0.5" data-card-size={size()}>
           <For each={props.items}>
@@ -110,7 +113,7 @@ export function RecordCardsView(props: {
                     <button
                       type="button"
                       class="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-focus)]"
-                      aria-label={`Open ${title(record)}`}
+                      aria-label={t().openRecord({ name: title(record) })}
                       onClick={() => props.onRecordClick?.(record)}
                     />
                   </Show>
@@ -185,7 +188,7 @@ export function RecordCardsView(props: {
           disabled={props.loadingMore}
         >
           {props.loadingMore ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-chevron-down" />}
-          Load more
+          {t().loadMore}
         </Button>
       </Show>
     </ScrollArea>

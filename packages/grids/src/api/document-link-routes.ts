@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { CreateDocumentLinkSchema } from "../contracts";
@@ -12,8 +12,10 @@ import {
   PublicDocumentLinkSchema,
   projectDocumentLinks,
 } from "./documents-api-shared";
+import { apiMessages } from "./messages";
 import { currentActorUserId } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 export const createDocumentLinkRoutes = () =>
   new Hono<AuthContext>()
@@ -29,9 +31,9 @@ export const createDocumentLinkRoutes = () =>
       }),
       async (c) => {
         const documentId = await resolvePublicIdParam(c, "documentId", "document");
-        if (!documentId) return c.json({ message: "Document not found" }, 404);
+        if (!documentId) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const document = await gridsService.document.getDocument(documentId);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return c.json({ items: await projectDocumentLinks(await gridsService.document.listDocumentLinks(document.id)) });
@@ -51,15 +53,16 @@ export const createDocumentLinkRoutes = () =>
       v("json", CreateDocumentLinkSchema),
       async (c) => {
         const documentId = await resolvePublicIdParam(c, "documentId", "document");
-        if (!documentId) return c.json({ message: "Document not found" }, 404);
+        if (!documentId) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const document = await gridsService.document.getDocument(documentId);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const created = await gridsService.document.createDocumentLink({
           document,
           input: c.req.valid("json"),
           actorId: currentActorUserId(c),
+          locale: getLocale(c),
           ...auditRequestContext(c),
         });
         if (!created.ok) return c.json({ message: created.error.message }, created.error.status);
@@ -85,21 +88,22 @@ export const createDocumentLinkRoutes = () =>
       }),
       async (c) => {
         const linkId = await resolvePublicIdParam(c, "linkId", "documentLink");
-        if (!linkId) return c.json({ message: "Document link not found" }, 404);
+        if (!linkId) return c.json({ message: apiMessages(c).documentLinkNotFound }, 404);
         const link = await gridsService.document.getDocumentLink(linkId);
-        if (!link) return c.json({ message: "Document link not found" }, 404);
+        if (!link) return c.json({ message: apiMessages(c).documentLinkNotFound }, 404);
         const document = await gridsService.document.getDocument(link.documentId);
-        if (!document) return c.json({ message: "Document not found" }, 404);
+        if (!document) return c.json({ message: apiMessages(c).documentNotFound }, 404);
         const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const userId = currentActorUserId(c);
         const canRevoke = link.createdBy === userId || gridsService.permission.hasAtLeast(gate.data, "write");
-        if (!canRevoke) return c.json({ message: "Only the creator or a document editor can revoke this link." }, 403);
+        if (!canRevoke) return c.json({ message: apiMessages(c).documentLinkRevokeDenied }, 403);
 
         const revoked = await gridsService.document.revokeDocumentLink({
           linkId: link.id,
           actorId: userId,
+          locale: getLocale(c),
           ...auditRequestContext(c),
         });
         if (!revoked.ok) return c.json({ message: revoked.error.message }, revoked.error.status);

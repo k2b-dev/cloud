@@ -7,7 +7,7 @@ import { gridsWorkflows } from "../../../workflows/module";
 
 const manifest = gridsWorkflows.manifest;
 
-const helpSource = await Bun.file(new URL("../../../help/documents/grids-workflows.help.md", import.meta.url)).text();
+const helpSource = await Bun.file(new URL("../../../help/documents/en/grids-workflows.help.md", import.meta.url)).text();
 const cliSkillReference = await Bun.file(new URL("../../../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 const workflowReferences = [
   ["help", helpSource],

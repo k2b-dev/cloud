@@ -13,6 +13,7 @@ import type {
 } from "../contracts";
 import { PulseQueryReferenceInventory } from "./PulseQueryReferenceInventory";
 import { defaultReferenceTab, isAvailableReferenceTab, type ReferenceTab, referenceTabs } from "./query-reference-tabs";
+import { usePulseMessages } from "./use-messages";
 
 type Props = {
   baseName: string;
@@ -42,6 +43,7 @@ const writeTabParam = (tab: ReferenceTab) => {
 };
 
 export default function PulseQueryReferenceWindow(props: Props) {
+  const t = usePulseMessages();
   const [activeTab, setActiveTab] = createSignal<ReferenceTab>(readInitialTab(props.includeDashboardDsl, props.initialTab));
   const activeHelpTopic = createMemo(() => {
     if (activeTab() === "overview") return "pulse-reference";
@@ -56,8 +58,15 @@ export default function PulseQueryReferenceWindow(props: Props) {
   };
 
   const renderReferenceNav = () => (
-    <AppWorkspace.SidebarSection title="Reference">
-      <For each={referenceTabs(props.includeDashboardDsl)}>
+    <AppWorkspace.SidebarSection title={t().reference}>
+      <For
+        each={referenceTabs(props.includeDashboardDsl, {
+          overview: t().overview,
+          query: t().queryDsl,
+          dashboard: t().dashboardDsl,
+          inventory: t().inventory,
+        })}
+      >
         {(tab) => (
           <AppWorkspace.SidebarItem icon={tab.icon} active={activeTab() === tab.value} onClick={() => switchTab(tab.value)}>
             {tab.label}
@@ -81,7 +90,7 @@ export default function PulseQueryReferenceWindow(props: Props) {
   return (
     <AppWorkspace class="h-screen">
       <AppWorkspace.Sidebar>
-        <AppWorkspace.SidebarMobileTrigger label="Pulse reference" />
+        <AppWorkspace.SidebarMobileTrigger label={t().pulseReference} />
         <AppWorkspace.SidebarMobile>
           <AppWorkspace.SidebarMobileBody scrollPreserveKey="pulse-reference-mobile">{renderReferenceNav()}</AppWorkspace.SidebarMobileBody>
         </AppWorkspace.SidebarMobile>

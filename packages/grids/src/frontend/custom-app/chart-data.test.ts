@@ -107,6 +107,15 @@ describe("formatCategoryKey", () => {
     expect(out).not.toBe("2025-03-15T00:00:00Z");
     expect(out).toMatch(/2025/);
   });
+
+  test("uses the requested locale and localized unknown-record fallback", () => {
+    expect(formatCategoryKey("2025-03-15T00:00:00Z", monthGroupBy, undefined, { locale: "de" })).toContain("Mär");
+    expect(
+      formatCategoryKey("12345678-1234-1234-1234-123456789abc", categoryGroupBy, undefined, {
+        unknownRecordLabel: "Unbekannter Datensatz",
+      }),
+    ).toBe("Unbekannter Datensatz");
+  });
 });
 
 // =============================================================================

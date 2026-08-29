@@ -1,6 +1,7 @@
 import type { TemplateVariable } from "@k2b/ui";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { EmailTemplateSampleDataSchema } from "../../../contracts";
+import { workflowMessages } from "./messages";
 
 export const DEFAULT_EMAIL_TEMPLATE_SAMPLE_DATA: Record<string, WorkflowJsonValue> = {
   link: {
@@ -11,6 +12,14 @@ export const DEFAULT_EMAIL_TEMPLATE_SAMPLE_DATA: Record<string, WorkflowJsonValu
     filename: "invoice-2026-001.pdf",
   },
 };
+
+export const createDefaultEmailTemplateSampleData = (locale = "en"): Record<string, WorkflowJsonValue> => ({
+  link: {
+    url: "https://cloud.example.org/documents/download/example",
+    expiresAt: locale.toLowerCase().startsWith("de") ? "31. Dez. 2026" : "31 Dec 2026",
+  },
+  document: { filename: "invoice-2026-001.pdf" },
+});
 
 export const EMAIL_TEMPLATE_SYSTEM_VARIABLES: TemplateVariable[] = [
   { name: "app.name", kind: "string" },
@@ -32,7 +41,12 @@ const EMAIL_TEMPLATE_SYSTEM_SAMPLE_VALUES: Record<string, string> = {
   "date.iso": "2026-07-07",
 };
 
-export const createEmailTemplateSystemSampleData = (): Record<string, string> => ({ ...EMAIL_TEMPLATE_SYSTEM_SAMPLE_VALUES });
+export const createEmailTemplateSystemSampleData = (locale = "en"): Record<string, string> => ({
+  ...EMAIL_TEMPLATE_SYSTEM_SAMPLE_VALUES,
+  "workflow.name": locale.toLowerCase().startsWith("de")
+    ? "Signiertes Dokument senden"
+    : EMAIL_TEMPLATE_SYSTEM_SAMPLE_VALUES["workflow.name"]!,
+});
 
 const variableKind = (value: unknown): TemplateVariable["kind"] => {
   if (Array.isArray(value)) return "array";
@@ -89,15 +103,16 @@ export const emailTemplatePreviewContext = (
 
 type ParsedEmailTemplateSampleData = { ok: true; data: Record<string, WorkflowJsonValue> } | { ok: false; error: string };
 
-export const parseEmailTemplateSampleData = (source: string): ParsedEmailTemplateSampleData => {
+export const parseEmailTemplateSampleData = (source: string, locale = "en"): ParsedEmailTemplateSampleData => {
+  const t = workflowMessages.resolve([locale]).t;
   try {
     const parsed = JSON.parse(source) as unknown;
     const result = EmailTemplateSampleDataSchema.safeParse(parsed);
     if (!result.success) {
-      return { ok: false, error: result.error.issues[0]?.message ?? "Sample data must be a JSON object." };
+      return { ok: false, error: result.error.issues[0]?.message ?? t.sampleDataObject };
     }
     return { ok: true, data: result.data };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Sample data must be valid JSON." };
+  } catch {
+    return { ok: false, error: t.sampleDataJson };
   }
 };

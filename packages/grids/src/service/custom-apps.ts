@@ -13,6 +13,7 @@ import {
   type CustomAppDiagnostic,
   parseStoredCustomAppDefinition,
 } from "../custom-apps/contracts";
+import { customAppDiagnostic } from "../custom-apps/diagnostics";
 import {
   type CustomAppFormSecurityField,
   customAppFormFieldHash,
@@ -31,6 +32,7 @@ import { isDslAggregateOnlyPlan } from "../query-dsl/resolver";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { scannerLauncherInputSources } from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
+import { customAppMessagesFor } from "./custom-app-messages";
 import { compileCustomAppQuery } from "./custom-app-query";
 import { customAppRecordRelationSnapshot } from "./custom-app-record-relations";
 import { listByTable as listFields, listByTables as listFieldsByTables } from "./fields";
@@ -140,11 +142,15 @@ const mapSummaryRow = (row: DbRow): CustomAppSummary => ({
       stableCustomAppStringify(parseJsonbRow(row.published_definition, {})),
 });
 
-const zodDiagnostics = (error: { issues: Array<{ path: PropertyKey[]; message: string }> }): CustomAppDiagnostic[] =>
-  error.issues.map((issue) => ({
-    path: issue.path.filter((part): part is string | number => typeof part === "string" || typeof part === "number"),
-    message: issue.message,
-  }));
+const zodDiagnostics = (error: { issues: Array<{ path: PropertyKey[]; message: string }> }, locale?: string): CustomAppDiagnostic[] =>
+  error.issues.map((issue) =>
+    customAppDiagnostic(
+      locale,
+      "schema.invalid",
+      issue.path.filter((part): part is string | number => typeof part === "string" || typeof part === "number"),
+      { detail: issue.message },
+    ),
+  );
 
 const blocksByType = <T extends CustomAppBlock["type"]>(definition: CustomAppDefinition, type: T) =>
   definition.pages.flatMap((page) =>
@@ -203,9 +209,9 @@ const representativeGlobalQueryContext = (
   "time.timeZone": "UTC",
 });
 
-export const compile = async (input: unknown, client: SqlClient = sql): Promise<CustomAppCompilation> => {
+export const compile = async (input: unknown, client: SqlClient = sql, locale?: string): Promise<CustomAppCompilation> => {
   const parsed = CustomAppDefinitionSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, diagnostics: zodDiagnostics(parsed.error) };
+  if (!parsed.success) return { ok: false, diagnostics: zodDiagnostics(parsed.error, locale) };
   const publicDefinition = parsed.data;
   const referencedRecordsSources = new Map(
     blocksByType(publicDefinition, "referenced_records").flatMap(({ page, block }) => {
@@ -216,7 +222,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
   const [base] = await client<Array<{ id: string; short_id: string; name: string }>>`
     SELECT id, short_id, name FROM grids.bases WHERE short_id = ${publicDefinition.baseId} AND deleted_at IS NULL
   `;
-  if (!base) return { ok: false, diagnostics: [{ path: ["baseId"], message: "Base not found" }] };
+  if (!base) return { ok: false, diagnostics: [customAppDiagnostic(locale, "base.missing", ["baseId"])] };
   const [existingApp] = await client<Array<{ id: string }>>`
     SELECT id FROM grids.custom_apps WHERE base_id = ${base.id}::uuid AND short_id = ${publicDefinition.id} AND deleted_at IS NULL
   `;
@@ -248,7 +254,8 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
   const diagnostics: CustomAppDiagnostic[] = [];
   const resolve = (kind: (typeof resourceRows)[number]["kind"], id: string, path: Array<string | number>): string => {
     const resolved = resources.get(`${kind}:${id}`);
-    if (!resolved) diagnostics.push({ path, message: `${kind[0]!.toUpperCase()}${kind.slice(1)} not found` });
+    if (!resolved)
+      diagnostics.push(customAppDiagnostic(locale, "resource.missing", path, { kind: `${kind[0]!.toUpperCase()}${kind.slice(1)}` }));
     return resolved ?? id;
   };
   const definition = structuredClone(publicDefinition);
@@ -333,23 +340,23 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
   const actionBlocks = blocksByType(definition, "actions");
   const scannerBlocks = blocksByType(definition, "scanner");
   if (recordsBlocks.length > 24) {
-    return { ok: false, diagnostics: [{ path: ["pages"], message: "A Grids App may contain at most 24 Records blocks" }] };
+    return { ok: false, diagnostics: [customAppDiagnostic(locale, "limit.records.total", ["pages"])] };
   }
   const crowdedRecordsPage = definition.pages.find((page) => recordsBlocks.filter((candidate) => candidate.page.id === page.id).length > 4);
   if (crowdedRecordsPage) {
     return {
       ok: false,
-      diagnostics: [{ path: ["pages", crowdedRecordsPage.id], message: "A Grids App page may contain at most 4 Records blocks" }],
+      diagnostics: [customAppDiagnostic(locale, "limit.records.page", ["pages", crowdedRecordsPage.id])],
     };
   }
   if (formBlocks.length + sidebarFormActions.length > 24) {
-    return { ok: false, diagnostics: [{ path: ["pages"], message: "A Grids App may contain at most 24 Form blocks" }] };
+    return { ok: false, diagnostics: [customAppDiagnostic(locale, "limit.forms", ["pages"])] };
   }
   if (insightBlocks.length > 24) {
-    return { ok: false, diagnostics: [{ path: ["pages"], message: "A Grids App may contain at most 24 Metrics and Chart blocks" }] };
+    return { ok: false, diagnostics: [customAppDiagnostic(locale, "limit.insights", ["pages"])] };
   }
   if (scannerBlocks.length > 24) {
-    return { ok: false, diagnostics: [{ path: ["pages"], message: "A Grids App may contain at most 24 Scanner blocks" }] };
+    return { ok: false, diagnostics: [customAppDiagnostic(locale, "limit.scanners", ["pages"])] };
   }
 
   const availability: CustomAppCapabilities["availability"] = [];
@@ -451,7 +458,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       ]),
     ];
     if (availabilitySources.length > 256) {
-      return { ok: false, diagnostics: [{ path: ["pages"], message: "A Grids App may contain at most 256 availability queries" }] };
+      return { ok: false, diagnostics: [customAppDiagnostic(locale, "limit.availability", ["pages"])] };
     }
     for (const source of availabilitySources) {
       const compiled = await compileCustomAppQuery({
@@ -474,12 +481,12 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
               "availableWhen",
             ];
       if (!compiled.ok) {
-        diagnostics.push({ path: targetPath, message: compiled.error });
+        diagnostics.push(customAppDiagnostic(locale, "query.invalid", targetPath, { detail: compiled.error }));
         continue;
       }
       const tableIds = collectDslPlanTableIds(compiled.data.plan, compiled.data.fieldsByTableId).sort();
       if (tableIds.length > 24) {
-        diagnostics.push({ path: targetPath, message: "Availability query may reference at most 24 tables" });
+        diagnostics.push(customAppDiagnostic(locale, "query.table_limit.availability", targetPath));
         continue;
       }
       availability.push({
@@ -498,10 +505,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
     for (const [pageIndex, page] of definition.pages.entries()) {
       for (const [parameterId, parameter] of Object.entries(page.parameters)) {
         if ((await resolveTableBaseId(parameter.tableId)) !== definition.baseId) {
-          diagnostics.push({
-            path: ["pages", pageIndex, "parameters", parameterId, "tableId"],
-            message: "Record parameter table is missing or belongs to another base",
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "record_parameter.table_invalid", ["pages", pageIndex, "parameters", parameterId, "tableId"]),
+          );
         }
       }
       if (!page.record) continue;
@@ -512,10 +518,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       const fieldIds = customAppPageRecordFieldIds(page);
       const editableFieldIds = [...new Set(recordBlocks.flatMap((block) => block.editableFieldIds))].sort();
       if ((await resolveTableBaseId(page.record.tableId)) !== definition.baseId) {
-        diagnostics.push({
-          path: ["pages", pageIndex, "record", "tableId"],
-          message: "Page record table is missing or belongs to another base",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "record_page.table_invalid", ["pages", pageIndex, "record", "tableId"]));
         continue;
       }
       let relationLabels: CustomAppCapabilities["records"][number]["relationLabels"] = [];
@@ -525,19 +528,15 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         const fieldsById = new Map(fields.map((field) => [field.id, field]));
         for (const fieldId of fieldIds) {
           if (!found.has(fieldId) && recordFieldIds.has(fieldId)) {
-            diagnostics.push({
-              path: ["pages", pageIndex, "record", "fieldIds"],
-              message: `Field ${fieldId} is missing or belongs to another table`,
-            });
+            diagnostics.push(customAppDiagnostic(locale, "field.missing", ["pages", pageIndex, "record", "fieldIds"], { fieldId }));
           }
         }
         for (const fieldId of editableFieldIds) {
           const field = fieldsById.get(fieldId);
           if (field && !isRecordWritableFieldType(field.type) && field.type !== "file") {
-            diagnostics.push({
-              path: ["pages", pageIndex, "record", "editableFieldIds"],
-              message: `Field ${fieldId} is not a writable record field`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "field.not_writable", ["pages", pageIndex, "record", "editableFieldIds"], { fieldId }),
+            );
           }
         }
         for (const [rowIndex, row] of page.rows.entries()) {
@@ -546,12 +545,14 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
               if (block.type !== "html") continue;
               const field = fieldsById.get(block.fieldId);
               if (!field || field.type !== "html_template") {
-                diagnostics.push({
-                  path: ["pages", pageIndex, "rows", rowIndex, "columns", columnIndex, "blocks", blockIndex, "fieldId"],
-                  message: field
-                    ? `Field ${block.fieldId} is not an HTML template field`
-                    : `HTML template field ${block.fieldId} is missing or belongs to another table`,
-                });
+                diagnostics.push(
+                  customAppDiagnostic(
+                    locale,
+                    field ? "html_field.type" : "html_field.missing",
+                    ["pages", pageIndex, "rows", rowIndex, "columns", columnIndex, "blocks", blockIndex, "fieldId"],
+                    { fieldId: block.fieldId },
+                  ),
+                );
               }
             }
           }
@@ -568,10 +569,11 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         const targetFieldsByTableId = new Map<string, Field[]>();
         for (const targetTableId of targetTableIds) {
           if ((await resolveTableBaseId(targetTableId)) !== definition.baseId) {
-            diagnostics.push({
-              path: ["pages", pageIndex, "record", "fieldIds"],
-              message: `Relation target table ${targetTableId} is missing or belongs to another base`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "relation_target.table_invalid", ["pages", pageIndex, "record", "fieldIds"], {
+                tableId: targetTableId,
+              }),
+            );
             continue;
           }
           targetFieldsByTableId.set(targetTableId, await resolveFields(targetTableId));
@@ -598,10 +600,11 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         for (const templateId of templateIds) {
           const template = templatesById.get(templateId);
           if (!template || template.table_id !== page.record.tableId) {
-            diagnostics.push({
-              path: ["pages", page.id, "blocks", block.id, "documents", "templateIds"],
-              message: `Document template ${templateId} is missing or belongs to another table`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "document_template.invalid", ["pages", page.id, "blocks", block.id, "documents", "templateIds"], {
+                templateId,
+              }),
+            );
           }
         }
         documents.push({ pageId: page.id, blockId: block.id, tableId: page.record.tableId, templateIds });
@@ -614,25 +617,25 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
     for (const { page, block } of recordsBlocks) {
       if (block.type === "referenced_records") {
         if (!page.record) {
-          diagnostics.push({ path: ["pages", page.id, "blocks", block.id, "type"], message: "Referenced records require a record page" });
+          diagnostics.push(
+            customAppDiagnostic(locale, "referenced_records.record_page_required", ["pages", page.id, "blocks", block.id, "type"]),
+          );
           continue;
         }
         const sourceFields = await resolveFields(block.sourceTableId);
         const relationField = sourceFields.find((field) => field.id === block.relationFieldId && !field.deletedAt);
         const relationConfig = relationField?.config as { targetTableId?: unknown } | undefined;
         if (relationField?.type !== "relation" || relationConfig?.targetTableId !== page.record.tableId) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "relationFieldId"],
-            message: "Referenced records require a live Relation field targeting this record page table",
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "referenced_records.relation_invalid", ["pages", page.id, "blocks", block.id, "relationFieldId"]),
+          );
           continue;
         }
         const sourceFieldIds = new Set(sourceFields.filter((field) => !field.deletedAt).map((field) => field.id));
         if (block.fieldIds.some((fieldId) => !sourceFieldIds.has(fieldId))) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "fieldIds"],
-            message: "Displayed fields must be live fields from the referenced records source table",
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "referenced_records.fields_invalid", ["pages", page.id, "blocks", block.id, "fieldIds"]),
+          );
           continue;
         }
       }
@@ -659,7 +662,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
               })
             : { kind: "gql" as const, query: block.source.query };
       if (!source) {
-        diagnostics.push({ path: ["blocks", block.id, "source", "viewId"], message: "View is missing or belongs to another base" });
+        diagnostics.push(customAppDiagnostic(locale, "view.invalid", ["blocks", block.id, "source", "viewId"]));
         continue;
       }
       const compiled = await compileCustomAppQuery({
@@ -670,7 +673,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         ...(source.kind === "view" ? { currentTableId: source.currentTableId } : {}),
       });
       if (!compiled.ok) {
-        diagnostics.push({ path: ["pages", page.id, "blocks", block.id, "source"], message: compiled.error });
+        diagnostics.push(
+          customAppDiagnostic(locale, "query.invalid", ["pages", page.id, "blocks", block.id, "source"], { detail: compiled.error }),
+        );
         continue;
       }
       const plan = compiled.data.plan;
@@ -678,18 +683,12 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         (plan.query.aggregations?.length ?? 0) + (plan.sqlAggregations?.length ?? 0) + (plan.formulaAggregations?.length ?? 0);
       const groupCount = (plan.query.groupBy?.length ?? 0) + (plan.sqlGroupBy?.length ?? 0);
       if (aggregationCount > 0 || groupCount > 0) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "source"],
-          message: "Records source must return ordinary records",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "records.aggregate_source", ["pages", page.id, "blocks", block.id, "source"]));
         continue;
       }
       const tableIds = collectDslPlanTableIds(plan, compiled.data.fieldsByTableId).sort();
       if (tableIds.length > 24) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "source"],
-          message: "Records source may reference at most 24 tables",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "query.table_limit.records", ["pages", page.id, "blocks", block.id, "source"]));
         continue;
       }
       const primaryTableId = plan.tableId;
@@ -701,10 +700,17 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         for (const [parameterId, binding] of Object.entries(block.rowNavigate.params)) {
           const targetTableId = targetPage.parameters[parameterId]?.tableId;
           if (binding.path === "id" && targetTableId !== primaryTableId) {
-            diagnostics.push({
-              path: ["pages", page.id, "blocks", block.id, "rowNavigate", "params", parameterId],
-              message: "Row record ids may only populate parameters for the source table",
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "navigation.record_table_mismatch", [
+                "pages",
+                page.id,
+                "blocks",
+                block.id,
+                "rowNavigate",
+                "params",
+                parameterId,
+              ]),
+            );
             continue;
           }
           if (binding.path !== "relation") continue;
@@ -716,10 +722,17 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
             config.targetTableId !== targetTableId ||
             (selectedFieldIds && !selectedFieldIds.includes(field.id))
           ) {
-            diagnostics.push({
-              path: ["pages", page.id, "blocks", block.id, "rowNavigate", "params", parameterId],
-              message: "Row relation navigation requires a selected single relation to the parameter table",
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "navigation.relation_invalid", [
+                "pages",
+                page.id,
+                "blocks",
+                block.id,
+                "rowNavigate",
+                "params",
+                parameterId,
+              ]),
+            );
           }
         }
       }
@@ -727,18 +740,12 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         const found = new Set(tableIds.flatMap((tableId) => (compiled.data.fieldsByTableId[tableId] ?? []).map((field) => field.id)));
         for (const fieldId of block.display.kind === "table" ? block.display.columnIds : []) {
           if (!found.has(fieldId))
-            diagnostics.push({
-              path: ["blocks", block.id, "display", "columnIds"],
-              message: `Field ${fieldId} is missing or belongs to another table`,
-            });
+            diagnostics.push(customAppDiagnostic(locale, "field.missing", ["blocks", block.id, "display", "columnIds"], { fieldId }));
         }
         const primaryFields = compiled.data.fieldsByTableId[source.currentTableId] ?? [];
         const viewDisplayConfig = block.display.kind === "cards" ? source.ui.displayConfig : undefined;
         if (block.display.kind === "cards" && viewDisplayConfig?.mode !== "cards") {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "display"],
-            message: "Cards display requires a saved View whose display is Cards",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "cards.view_required", ["pages", page.id, "blocks", block.id, "display"]));
         }
         const configuredCardFieldIds = viewDisplayConfig?.cards?.fieldIds ?? [];
         const resolvedCardFieldIds =
@@ -760,11 +767,13 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         for (const fieldId of displayFieldIds) {
           const field = primaryFieldsById.get(fieldId);
           if (!field || field.deletedAt) {
-            diagnostics.push({ path: ["pages", page.id, "blocks", block.id, "display"], message: `Card field ${fieldId} is unavailable` });
+            diagnostics.push(
+              customAppDiagnostic(locale, "cards.field_unavailable", ["pages", page.id, "blocks", block.id, "display"], { fieldId }),
+            );
           }
         }
         if (displayConfig?.cards?.imageFieldId && primaryFieldsById.get(displayConfig.cards.imageFieldId)?.type !== "file") {
-          diagnostics.push({ path: ["pages", page.id, "blocks", block.id, "display"], message: "Card cover must use a file field" });
+          diagnostics.push(customAppDiagnostic(locale, "cards.cover_file_required", ["pages", page.id, "blocks", block.id, "display"]));
         }
         const cardFields = displayFieldIds.flatMap((fieldId) => {
           const field = primaryFieldsById.get(fieldId);
@@ -797,18 +806,18 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
               : new Set((compiled.data.fieldsByTableId[primaryTableId] ?? []).filter((field) => !field.deletedAt).map((field) => field.id));
           for (const fieldId of block.display.columnIds) {
             if (!outputFieldIds.has(fieldId)) {
-              diagnostics.push({
-                path: ["pages", page.id, "blocks", block.id, "display", "columnIds"],
-                message: `Displayed field ${fieldId} is not selected by the Records query`,
-              });
+              diagnostics.push(
+                customAppDiagnostic(locale, "records.field_not_selected", ["pages", page.id, "blocks", block.id, "display", "columnIds"], {
+                  fieldId,
+                }),
+              );
             }
           }
         }
         if (block.type === "referenced_records" && primaryTableId !== block.sourceTableId) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "sourceTableId"],
-            message: "Referenced records query must use the configured source table",
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "referenced_records.source_mismatch", ["pages", page.id, "blocks", block.id, "sourceTableId"]),
+          );
           continue;
         }
         const relationLabels =
@@ -862,10 +871,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
             )
           : { kind: "gql" as const, query: block.source.query };
       if (!source) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "source", "viewId"],
-          message: "View is missing or belongs to another base",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "view.invalid", ["pages", page.id, "blocks", block.id, "source", "viewId"]));
         continue;
       }
       const compiled = await compileCustomAppQuery({
@@ -876,10 +882,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         ...(source.kind === "view" ? { currentTableId: source.currentTableId } : {}),
       });
       if (!compiled.ok) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "source"],
-          message: compiled.error,
-        });
+        diagnostics.push(
+          customAppDiagnostic(locale, "query.invalid", ["pages", page.id, "blocks", block.id, "source"], { detail: compiled.error }),
+        );
         continue;
       }
       const plan = compiled.data.plan;
@@ -888,34 +893,22 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       const groupCount = (plan.query.groupBy?.length ?? 0) + (plan.sqlGroupBy?.length ?? 0);
       if (block.type === "metrics") {
         if (!isDslAggregateOnlyPlan(plan)) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "source"],
-            message: "Metrics source must return ungrouped scalar aggregations",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "metrics.aggregate_required", ["pages", page.id, "blocks", block.id, "source"]));
           continue;
         }
         if (aggregationCount > 12) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "source"],
-            message: "Metrics source may return at most 12 aggregations",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "metrics.aggregation_limit", ["pages", page.id, "blocks", block.id, "source"]));
           continue;
         }
       } else {
         if (groupCount === 0 || aggregationCount < 1) {
-          diagnostics.push({
-            path: ["pages", page.id, "blocks", block.id, "source"],
-            message: "Chart source must group rows and include at least one aggregation",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "chart.group_required", ["pages", page.id, "blocks", block.id, "source"]));
           continue;
         }
       }
       const tableIds = collectDslPlanTableIds(plan, compiled.data.fieldsByTableId).sort();
       if (tableIds.length > 24) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "source"],
-          message: "Metrics and Chart sources may reference at most 24 tables",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "query.table_limit.insights", ["pages", page.id, "blocks", block.id, "source"]));
         continue;
       }
       insights.push({
@@ -960,10 +953,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       WHERE f.id = ${block.formId}::uuid AND f.deleted_at IS NULL
     `;
       if (!formRow || formRow.base_id !== definition.baseId || !formRow.is_active) {
-        diagnostics.push({
-          path: [...formPath, "formId"],
-          message: "Form is missing, inactive, or belongs to another base",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "form.invalid", [...formPath, "formId"]));
         continue;
       }
 
@@ -975,17 +965,11 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       const userInputFieldIdSet = new Set(userInputFieldIds);
       const fixedFieldIds = Object.keys(block.fixedValues).sort();
       if (userInputFieldIds.length > 100) {
-        diagnostics.push({
-          path: [...formPath, "formId"],
-          message: "A Grids App Form may expose at most 100 input fields",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "form.input_limit", [...formPath, "formId"]));
         continue;
       }
       if (fixedFieldIds.length > 30) {
-        diagnostics.push({
-          path: [...formPath, "fixedValues"],
-          message: "A Grids App Form may bind at most 30 fixed fields",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "form.fixed_limit", [...formPath, "fixedValues"]));
         continue;
       }
       const fieldIds = [...new Set([...userInputFieldIds, ...fixedFieldIds])];
@@ -1022,10 +1006,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       for (const fieldId of formFieldIds) {
         const field = fieldsById.get(fieldId);
         if (!field || field.deletedAt || !isRecordWritableFieldType(field.type)) {
-          diagnostics.push({
-            path: [...formPath, "formId"],
-            message: `Form field ${fieldId} is missing, deleted, unwritable, or belongs to another table`,
-          });
+          diagnostics.push(customAppDiagnostic(locale, "form.field_invalid", [...formPath, "formId"], { fieldId }));
         }
       }
       for (const entry of config.fields) {
@@ -1036,10 +1017,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
             ? (field.config as { targetTableId?: unknown }).targetTableId
             : null;
         if (typeof targetTableId !== "string" || (entry.inlineCreate.fields ?? []).length === 0) {
-          diagnostics.push({
-            path: [...formPath, "formId"],
-            message: `Inline-create field ${entry.fieldId} has no valid relation target or target fields`,
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "form.inline_create_config_invalid", [...formPath, "formId"], { fieldId: entry.fieldId }),
+          );
         }
       }
       const inlineTargetReferences = customAppFormInlineTargetReferences(config, capabilityFields);
@@ -1077,28 +1057,21 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
       for (const reference of inlineTargetReferences) {
         const field = inlineFieldsByKey.get(`${reference.tableId}\0${reference.fieldId}`);
         if (!field || field.deletedAt || !isRecordWritableFieldType(field.type) || field.type === "relation") {
-          diagnostics.push({
-            path: [...formPath, "formId"],
-            message: `Inline-create field ${reference.fieldId} is missing, deleted, unwritable, or belongs to another table`,
-          });
+          diagnostics.push(
+            customAppDiagnostic(locale, "form.inline_create_field_invalid", [...formPath, "formId"], { fieldId: reference.fieldId }),
+          );
         }
       }
       for (const [fieldId, value] of Object.entries(block.fixedValues)) {
         const field = fieldsById.get(fieldId);
         if (!userInputFieldIdSet.has(fieldId)) {
-          diagnostics.push({
-            path: [...formPath, "fixedValues", fieldId],
-            message: "A fixed value must target a user-input field in the referenced Form",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "form.fixed_target_invalid", [...formPath, "fixedValues", fieldId]));
           continue;
         }
         if (!field) continue;
         if (value.source === "AUTH") {
           if (field.type !== "principal") {
-            diagnostics.push({
-              path: [...formPath, "fixedValues", fieldId],
-              message: "The current user may only bind a People and groups field",
-            });
+            diagnostics.push(customAppDiagnostic(locale, "form.current_user_target_invalid", [...formPath, "fixedValues", fieldId]));
           }
           continue;
         }
@@ -1106,10 +1079,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
           const handler = getRecordWritableFieldType(field.type);
           const normalized = handler?.validate(value.value, field.config, field.required);
           if (!normalized?.ok || normalized.value === undefined) {
-            diagnostics.push({
-              path: [...formPath, "fixedValues", fieldId, "value"],
-              message: `Fixed value is invalid for Form field ${fieldId}${normalized && !normalized.ok ? `: ${normalized.error}` : ""}`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "form.fixed_value_invalid", [...formPath, "fixedValues", fieldId, "value"], { fieldId }),
+            );
           } else {
             value.value = normalized.value as typeof value.value;
           }
@@ -1117,15 +1089,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         }
         const fieldConfig = parseJsonbRow<{ targetTableId?: unknown }>(field?.config, {});
         if (field?.type !== "relation" || typeof fieldConfig.targetTableId !== "string") {
-          diagnostics.push({
-            path: [...formPath, "fixedValues", fieldId],
-            message: "Record sources may only bind compatible relation fields",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "form.record_relation_required", [...formPath, "fixedValues", fieldId]));
         } else if (!page || fieldConfig.targetTableId !== customAppBindingRecordTableId(value, page)) {
-          diagnostics.push({
-            path: [...formPath, "fixedValues", fieldId],
-            message: "Fixed relation field and record source must reference the same table",
-          });
+          diagnostics.push(customAppDiagnostic(locale, "form.record_relation_mismatch", [...formPath, "fixedValues", fieldId]));
         }
       }
 
@@ -1133,10 +1099,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         const targetPage = definition.pages.find((candidate) => candidate.id === block.onSuccessNavigate!.pageId)!;
         for (const [parameterId, value] of Object.entries(block.onSuccessNavigate.params)) {
           if (value.source === "RESULT" && targetPage.parameters[parameterId]?.tableId !== formRow.table_id) {
-            diagnostics.push({
-              path: [...formPath, "onSuccessNavigate", "params", parameterId],
-              message: "RESULT.recordId may only populate a record parameter for the Form table",
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "form.result_navigation_mismatch", [...formPath, "onSuccessNavigate", "params", parameterId]),
+            );
           }
         }
       }
@@ -1191,10 +1156,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         launcher.diagnostics.some((item) => item.severity === "error") ||
         launcher.config.kind !== "customApp"
       ) {
-        diagnostics.push({
-          path: [...actionPath, "launcherId"],
-          message: "Workflow launcher is missing, disabled, invalid, unsupported, or belongs to another base",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "workflow_launcher.invalid", [...actionPath, "launcherId"]));
         continue;
       }
       const workflow = await getWorkflow(launcher.workflowId, false, client);
@@ -1206,27 +1168,20 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         workflow.revision !== launcher.validatedRevision ||
         workflow.diagnostics.some((item) => item.severity === "error")
       ) {
-        diagnostics.push({
-          path: [...actionPath, "launcherId"],
-          message: "Workflow launcher does not reference a ready workflow revision",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "workflow_launcher.revision_invalid", [...actionPath, "launcherId"]));
         continue;
       }
       if (launcher.config.inputMode === "fixed" && Object.keys(action.inputs).length > 0) {
-        diagnostics.push({
-          path: [...actionPath, "inputs"],
-          message: "Fixed workflow launchers do not accept Grids App inputs",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "workflow_launcher.fixed_inputs", [...actionPath, "inputs"]));
         continue;
       }
       if (launcher.config.inputMode === "prompt") {
         const inputsByName = new Map(workflow.plan.inputs.map((input) => [input.name, input]));
         for (const inputName of Object.keys(action.inputs)) {
           if (!inputsByName.has(inputName)) {
-            diagnostics.push({
-              path: [...actionPath, "inputs", inputName],
-              message: `Unknown workflow input "${inputName}"`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "workflow_input.unknown", [...actionPath, "inputs", inputName], { name: inputName }),
+            );
           }
         }
         for (const input of workflow.plan.inputs) {
@@ -1234,30 +1189,29 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
           if (!value) {
             const message = workflowInputShapeError(input, undefined);
             if (message) {
-              diagnostics.push({
-                path: [...actionPath, "inputs", input.name],
-                message: `Workflow input "${input.name}" ${message}`,
-              });
+              diagnostics.push(
+                customAppDiagnostic(locale, "workflow_input.invalid", [...actionPath, "inputs", input.name], { name: input.name }),
+              );
             }
             continue;
           }
           if (value.source === "LITERAL") {
             const message = workflowInputShapeError(input, value.value);
             if (message) {
-              diagnostics.push({
-                path: [...actionPath, "inputs", input.name],
-                message: `Workflow input "${input.name}" ${message}`,
-              });
+              diagnostics.push(
+                customAppDiagnostic(locale, "workflow_input.invalid", [...actionPath, "inputs", input.name], { name: input.name }),
+              );
             }
             continue;
           }
           const sourceTableId = page ? customAppBindingRecordTableId(value, page, rowTableId) : null;
           const boundTableId = workflow.plan.bindings[`inputs.${input.name}.table`];
           if (input.type !== "record" || typeof boundTableId !== "string" || sourceTableId !== boundTableId) {
-            diagnostics.push({
-              path: [...actionPath, "inputs", input.name],
-              message: `Workflow input "${input.name}" must be a record input bound to the referenced table`,
-            });
+            diagnostics.push(
+              customAppDiagnostic(locale, "workflow_input.record_binding_invalid", [...actionPath, "inputs", input.name], {
+                name: input.name,
+              }),
+            );
           }
         }
       }
@@ -1282,10 +1236,7 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         launcher.diagnostics.some((item) => item.severity === "error") ||
         launcher.config.kind !== "scanner"
       ) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "launcherId"],
-          message: "Scanner launcher is missing, disabled, invalid, unsupported, or belongs to another base",
-        });
+        diagnostics.push(customAppDiagnostic(locale, "scanner_launcher.invalid", ["pages", page.id, "blocks", block.id, "launcherId"]));
         continue;
       }
       const workflow = await getWorkflow(launcher.workflowId, false, client);
@@ -1297,10 +1248,9 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         workflow.revision !== launcher.validatedRevision ||
         workflow.diagnostics.some((item) => item.severity === "error")
       ) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "launcherId"],
-          message: "Scanner launcher does not reference a ready workflow revision",
-        });
+        diagnostics.push(
+          customAppDiagnostic(locale, "scanner_launcher.revision_invalid", ["pages", page.id, "blocks", block.id, "launcherId"]),
+        );
         continue;
       }
       const sources = scannerLauncherInputSources(launcher.config);
@@ -1309,10 +1259,11 @@ export const compile = async (input: unknown, client: SqlClient = sql): Promise<
         return (source?.kind === "session" || source?.kind === "afterScan") && (input.type === "record" || input.type === "recordList");
       });
       if (promptRecordInput) {
-        diagnostics.push({
-          path: ["pages", page.id, "blocks", block.id, "launcherId"],
-          message: `Scanner Apps cannot prompt for record input "${promptRecordInput.name}"`,
-        });
+        diagnostics.push(
+          customAppDiagnostic(locale, "scanner_launcher.record_prompt", ["pages", page.id, "blocks", block.id, "launcherId"], {
+            name: promptRecordInput.name,
+          }),
+        );
         continue;
       }
       scannerLaunchers.push({
@@ -1419,14 +1370,14 @@ export const listSummariesByBase = async (baseId: string): Promise<CustomAppSumm
   return rows.map(mapSummaryRow);
 };
 
-const planCompilation = async (compilation: CustomAppCompilation, client: SqlClient = sql): Promise<CustomAppPlan> => {
+const planCompilation = async (compilation: CustomAppCompilation, client: SqlClient = sql, locale?: string): Promise<CustomAppPlan> => {
   if (!compilation.ok) return { valid: false, diagnostics: compilation.diagnostics, action: "invalid", changes: [] };
   const { definition, capabilities, bindings } = compilation.compiled;
   const existing = bindings.appId ? await get(bindings.appId, client) : null;
   if (!existing) return { valid: true, diagnostics: [], action: "create", changes: ["app"] };
   const diagnostics: CustomAppDiagnostic[] = [];
   if (existing.shortId !== definition.id || existing.baseId !== bindings.baseId)
-    diagnostics.push({ path: ["id"], message: "Grids App identity is immutable" });
+    diagnostics.push(customAppDiagnostic(locale, "identity.immutable", ["id"]));
   if (diagnostics.length > 0) return { valid: false, diagnostics, action: "invalid", changes: [] };
   const changes: string[] = [];
   if (stableCustomAppStringify(existing.draftDefinition) !== stableCustomAppStringify(definition)) changes.push("definition");
@@ -1434,7 +1385,8 @@ const planCompilation = async (compilation: CustomAppCompilation, client: SqlCli
   return { valid: true, diagnostics: [], action: changes.length === 0 ? "noop" : "update", changes };
 };
 
-export const plan = async (input: unknown): Promise<CustomAppPlan> => planCompilation(await compile(input));
+export const plan = async (input: unknown, locale?: string): Promise<CustomAppPlan> =>
+  planCompilation(await compile(input, sql, locale), sql, locale);
 
 export type CustomAppDraftSave = {
   app: CustomApp;
@@ -1442,16 +1394,10 @@ export type CustomAppDraftSave = {
   diagnostics: CustomAppDiagnostic[];
 };
 
-export const saveDraft = async (id: string, input: unknown): Promise<Result<CustomAppDraftSave>> => {
+export const saveDraft = async (id: string, input: unknown, locale?: string): Promise<Result<CustomAppDraftSave>> => {
+  const t = customAppMessagesFor(locale);
   const parsed = CustomAppDefinitionSchema.safeParse(input);
-  if (!parsed.success)
-    return fail(
-      err.badInput(
-        zodDiagnostics(parsed.error)
-          .map((item) => item.message)
-          .join("; "),
-      ),
-    );
+  if (!parsed.success) return fail(err.badInput(t.invalidDefinition));
   return sql.begin(async (tx): Promise<Result<CustomAppDraftSave>> => {
     const [locked] = await tx<DbRow[]>`
       SELECT app.*, base.short_id AS base_short_id
@@ -1460,11 +1406,10 @@ export const saveDraft = async (id: string, input: unknown): Promise<Result<Cust
       WHERE app.id = ${id}::uuid AND app.deleted_at IS NULL
       FOR UPDATE OF app
     `;
-    if (!locked) return fail(err.notFound("Grids App"));
+    if (!locked) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const existing = mapRow(locked);
-    if (parsed.data.id !== existing.shortId || parsed.data.baseId !== locked.base_short_id)
-      return fail(err.badInput("Grids App identity is immutable"));
-    const compilation = await compile(parsed.data, tx);
+    if (parsed.data.id !== existing.shortId || parsed.data.baseId !== locked.base_short_id) return fail(err.badInput(t.identityImmutable));
+    const compilation = await compile(parsed.data, tx, locale);
     if (!compilation.ok) {
       const [updated] = await tx<DbRow[]>`
         UPDATE grids.custom_apps
@@ -1473,7 +1418,7 @@ export const saveDraft = async (id: string, input: unknown): Promise<Result<Cust
         WHERE id = ${id}::uuid AND deleted_at IS NULL
         RETURNING *
       `;
-      if (!updated) return fail(err.notFound("Grids App"));
+      if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
       return ok({ app: mapRow(updated), valid: false, diagnostics: compilation.diagnostics });
     }
     const definition = parsed.data;
@@ -1486,20 +1431,21 @@ export const saveDraft = async (id: string, input: unknown): Promise<Result<Cust
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING *
     `;
-    if (!updated) return fail(err.notFound("Grids App"));
+    if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(updated);
     return ok({ app, valid: compilation.ok, diagnostics });
   });
 };
 
-export const restoreDraft = async (id: string, actorId: string | null = null): Promise<Result<CustomApp>> =>
-  sql.begin(async (tx): Promise<Result<CustomApp>> => {
+export const restoreDraft = async (id: string, actorId: string | null = null, locale?: string): Promise<Result<CustomApp>> => {
+  const t = customAppMessagesFor(locale);
+  return sql.begin(async (tx): Promise<Result<CustomApp>> => {
     const [locked] = await tx<DbRow[]>`SELECT * FROM grids.custom_apps WHERE id = ${id}::uuid AND deleted_at IS NULL FOR UPDATE`;
-    if (!locked) return fail(err.notFound("Grids App"));
-    if (!locked.published_definition || !locked.published_capabilities) return fail(err.badInput("Grids App has no live version"));
+    if (!locked) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
+    if (!locked.published_definition || !locked.published_capabilities) return fail(err.badInput(t.noLiveVersion));
     const publishedRaw = parseJsonbRow(locked.published_definition, {});
     const published = parseStoredCustomAppDefinition(publishedRaw, "published");
-    if (!published.definition) return fail(err.badInput(published.diagnostics.map((item) => item.message).join("; ")));
+    if (!published.definition) return fail(err.badInput(t.invalidLiveVersion));
     const publishedDefinition = published.definition;
     const [updated] = await tx<DbRow[]>`
       UPDATE grids.custom_apps
@@ -1508,7 +1454,7 @@ export const restoreDraft = async (id: string, actorId: string | null = null): P
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING *
     `;
-    if (!updated) return fail(err.notFound("Grids App"));
+    if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(updated);
     await logAudit(
       {
@@ -1521,12 +1467,19 @@ export const restoreDraft = async (id: string, actorId: string | null = null): P
     );
     return ok(app);
   });
+};
 
-export const createBlank = async (baseId: string, name: string, actorId: string | null = null): Promise<Result<CustomApp>> => {
+export const createBlank = async (
+  baseId: string,
+  name: string,
+  actorId: string | null = null,
+  locale?: string,
+): Promise<Result<CustomApp>> => {
+  const t = customAppMessagesFor(locale);
   const [base] = await sql<Array<{ short_id: string }>>`
     SELECT short_id FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL
   `;
-  if (!base) return fail(err.notFound("Base"));
+  if (!base) return fail({ ...err.notFound("Base"), message: t.baseNotFound });
   const definition: CustomAppDefinition = {
     schemaVersion: 5,
     kind: "grids.custom-app",
@@ -1537,7 +1490,7 @@ export const createBlank = async (baseId: string, name: string, actorId: string 
     pages: [
       {
         id: "home",
-        title: "Home",
+        title: t.home,
         navigation: { visible: true },
         parameters: {},
         rows: [
@@ -1549,17 +1502,18 @@ export const createBlank = async (baseId: string, name: string, actorId: string 
       },
     ],
   };
-  return apply(definition, actorId);
+  return apply(definition, actorId, locale);
 };
 
-export const apply = async (input: unknown, actorId: string | null = null): Promise<Result<CustomApp>> => {
+export const apply = async (input: unknown, actorId: string | null = null, locale?: string): Promise<Result<CustomApp>> => {
+  const t = customAppMessagesFor(locale);
   return sql.begin(async (tx): Promise<Result<CustomApp>> => {
-    const compilation = await compile(input, tx);
-    const planned = await planCompilation(compilation, tx);
+    const compilation = await compile(input, tx, locale);
+    const planned = await planCompilation(compilation, tx, locale);
     if (!planned.valid) {
-      return fail(err.badInput(planned.diagnostics.map((diagnostic) => `${diagnostic.path.join(".")}: ${diagnostic.message}`).join("; ")));
+      return fail(err.badInput(t.invalidDefinition));
     }
-    if (!compilation.ok) return fail(err.badInput(compilation.diagnostics.map((item) => item.message).join("; ")));
+    if (!compilation.ok) return fail(err.badInput(t.invalidDefinition));
     const { definition: parsed, capabilities, bindings } = compilation.compiled;
     if (planned.action === "noop") return ok((await get(bindings.appId!, tx))!);
     if (planned.action === "create") {
@@ -1568,7 +1522,7 @@ export const apply = async (input: unknown, actorId: string | null = null): Prom
         VALUES (${globalThis.crypto.randomUUID()}::uuid, ${parsed.id}, ${bindings.baseId}::uuid, ${parsed.name}, ${parsed.icon ?? null}, ${parsed}::jsonb, ${capabilities}::jsonb)
         RETURNING *
       `;
-      if (!row) throw err.internal("Failed to create Grids App");
+      if (!row) throw err.internal(t.createFailed);
       const app = mapRow(row);
       await logAudit(
         {
@@ -1582,7 +1536,7 @@ export const apply = async (input: unknown, actorId: string | null = null): Prom
       return ok(app);
     }
     const existing = bindings.appId ? await get(bindings.appId, tx) : null;
-    if (!existing) return fail(err.notFound("Grids App"));
+    if (!existing) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const definition = parsed;
     const [updated] = await tx<DbRow[]>`
       UPDATE grids.custom_apps
@@ -1591,7 +1545,7 @@ export const apply = async (input: unknown, actorId: string | null = null): Prom
       WHERE id = ${bindings.appId}::uuid AND deleted_at IS NULL
       RETURNING *
     `;
-    if (!updated) return fail(err.notFound("Grids App"));
+    if (!updated) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(updated);
     await logAudit(
       {
@@ -1606,14 +1560,15 @@ export const apply = async (input: unknown, actorId: string | null = null): Prom
   });
 };
 
-export const publish = async (id: string, actorId: string | null = null): Promise<Result<CustomApp>> =>
-  sql.begin(async (tx): Promise<Result<CustomApp>> => {
+export const publish = async (id: string, actorId: string | null = null, locale?: string): Promise<Result<CustomApp>> => {
+  const t = customAppMessagesFor(locale);
+  return sql.begin(async (tx): Promise<Result<CustomApp>> => {
     const [locked] = await tx<DbRow[]>`SELECT * FROM grids.custom_apps WHERE id = ${id}::uuid AND deleted_at IS NULL FOR UPDATE`;
-    if (!locked) return fail(err.notFound("Grids App"));
+    if (!locked) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const draft = mapRow(locked);
-    if (!draft.draftDefinition) return fail(err.badInput(draft.draftDiagnostics.map((item) => item.message).join("; ")));
-    const compilation = await compile(draft.draftDefinition, tx);
-    if (!compilation.ok) return fail(err.badInput(compilation.diagnostics.map((item) => item.message).join("; ")));
+    if (!draft.draftDefinition) return fail(err.badInput(t.invalidDraft));
+    const compilation = await compile(draft.draftDefinition, tx, locale);
+    if (!compilation.ok) return fail(err.badInput(t.invalidDraft));
     const [published] = await tx<DbRow[]>`
       UPDATE grids.custom_apps
       SET published_definition = draft_definition, published_capabilities = ${compilation.compiled.capabilities}::jsonb,
@@ -1621,7 +1576,7 @@ export const publish = async (id: string, actorId: string | null = null): Promis
       WHERE id = ${id}::uuid
       RETURNING *
     `;
-    if (!published) return fail(err.notFound("Grids App"));
+    if (!published) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(published);
     await logAudit(
       {
@@ -1634,11 +1589,13 @@ export const publish = async (id: string, actorId: string | null = null): Promis
     );
     return ok(app);
   });
+};
 
-export const unpublish = async (id: string, actorId: string | null = null): Promise<Result<CustomApp>> =>
-  sql.begin(async (tx): Promise<Result<CustomApp>> => {
+export const unpublish = async (id: string, actorId: string | null = null, locale?: string): Promise<Result<CustomApp>> => {
+  const t = customAppMessagesFor(locale);
+  return sql.begin(async (tx): Promise<Result<CustomApp>> => {
     const [locked] = await tx<DbRow[]>`SELECT * FROM grids.custom_apps WHERE id = ${id}::uuid AND deleted_at IS NULL FOR UPDATE`;
-    if (!locked) return fail(err.notFound("Grids App"));
+    if (!locked) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     if (!locked.published_definition) return ok(mapRow(locked));
     const [unpublished] = await tx<DbRow[]>`
       UPDATE grids.custom_apps
@@ -1646,7 +1603,7 @@ export const unpublish = async (id: string, actorId: string | null = null): Prom
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING *
     `;
-    if (!unpublished) return fail(err.notFound("Grids App"));
+    if (!unpublished) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     const app = mapRow(unpublished);
     await logAudit(
       {
@@ -1659,16 +1616,18 @@ export const unpublish = async (id: string, actorId: string | null = null): Prom
     );
     return ok(app);
   });
+};
 
-export const remove = async (id: string, actorId: string | null = null): Promise<Result<void>> =>
-  sql.begin(async (tx): Promise<Result<void>> => {
+export const remove = async (id: string, actorId: string | null = null, locale?: string): Promise<Result<void>> => {
+  const t = customAppMessagesFor(locale);
+  return sql.begin(async (tx): Promise<Result<void>> => {
     const [deleted] = await tx<Array<{ base_id: string; name: string; short_id: string }>>`
       UPDATE grids.custom_apps
       SET deleted_at = now(), published_definition = NULL, published_capabilities = NULL, published_at = NULL, updated_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
       RETURNING base_id, name, short_id
     `;
-    if (!deleted) return fail(err.notFound("Grids App"));
+    if (!deleted) return fail({ ...err.notFound("Grids App"), message: t.customAppNotFound });
     await logAudit(
       {
         baseId: deleted.base_id,
@@ -1680,3 +1639,4 @@ export const remove = async (id: string, actorId: string | null = null): Promise
     );
     return ok(undefined);
   });
+};

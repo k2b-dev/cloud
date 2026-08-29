@@ -8,6 +8,7 @@ import type { RecordQuery } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkspaceBulkLauncher as WorkspaceBulkLauncher } from "../workspace/workspace-public-state-model";
 import { bulkSelectionRunPayload, bulkWorkflowTargetLabel, pruneBulkSelection, sameBulkSelection } from "./bulk-selection";
+import { recordsViewMessages } from "./messages";
 
 type BulkWorkflowRunInput = {
   launcher: WorkspaceBulkLauncher;
@@ -23,6 +24,7 @@ type RecordsBulkControllerOptions = {
   items: Accessor<GridRecord[]>;
   query: Accessor<RecordQuery>;
   scopeKey: Accessor<string>;
+  locale?: Accessor<string>;
 };
 
 type CloseSelectionBlocker = { recordId: string; reason: string };
@@ -50,7 +52,9 @@ export const inspectCloseSelection = async (
   tableId: string,
   recordIds: readonly string[],
   signal?: AbortSignal,
+  locale = "en",
 ): Promise<{ mode: "direct" | "fourEyes" | null; policyRevision: number | null; blockers: CloseSelectionBlocker[] }> => {
+  const { t } = recordsViewMessages.resolve([locale]);
   const response = await fetch(`/api/grids/records/${encodeURIComponent(tableId)}/finalization/preview`, {
     method: "POST",
     credentials: "same-origin",
@@ -58,32 +62,32 @@ export const inspectCloseSelection = async (
     body: JSON.stringify({ recordIds }),
     signal,
   });
-  if (!response.ok) throw new Error(await errorMessage(response, "Could not preview Finalization."));
+  if (!response.ok) throw new Error(await errorMessage(response, t.previewFinalizationFailed));
   const { items } = CloseSelectionPreviewSchema.parse(await response.json());
   const failures: CloseSelectionBlocker[] = [];
   const policies = new Map<string, { mode: "direct" | "fourEyes"; policyRevision: number }>();
   for (const item of items) {
     if (!item.ok) failures.push({ recordId: item.recordId, reason: item.reason });
     else if (!item.enabled || !item.mode || !item.policyRevision) {
-      failures.push({ recordId: item.recordId, reason: "Finalization is not enabled for this Table." });
+      failures.push({ recordId: item.recordId, reason: t.finalizationNotEnabled });
     } else {
       policies.set(`${item.mode}:${item.policyRevision}`, { mode: item.mode, policyRevision: item.policyRevision });
-      if (item.finalized) failures.push({ recordId: item.recordId, reason: "Record is already finalized." });
-      else if (item.pendingRequest)
-        failures.push({ recordId: item.recordId, reason: "Record already has a pending Finalization request." });
+      if (item.finalized) failures.push({ recordId: item.recordId, reason: t.recordAlreadyFinalized });
+      else if (item.pendingRequest) failures.push({ recordId: item.recordId, reason: t.finalizationRequestPending });
       else if (item.missingFieldNames.length > 0) {
-        failures.push({ recordId: item.recordId, reason: `Complete: ${item.missingFieldNames.join(", ")}.` });
+        failures.push({ recordId: item.recordId, reason: t.completeFields({ names: item.missingFieldNames.join(", ") }) });
       }
     }
   }
-  if (policies.size > 1) failures.push({ recordId: "Selection", reason: "The Table Finalization policy changed during preview." });
+  if (policies.size > 1) failures.push({ recordId: t.selection, reason: t.finalizationPolicyChanged });
   const policy = policies.values().next().value;
   if (!policy && failures.length > 0) return { mode: null, policyRevision: null, blockers: failures };
-  if (!policy) throw new Error("The Finalization preview did not return any Record result.");
+  if (!policy) throw new Error(t.finalizationPreviewEmpty);
   return { ...policy, blockers: failures };
 };
 
 export const createRecordsBulkController = (options: RecordsBulkControllerOptions) => {
+  const t = () => recordsViewMessages.resolve([options.locale?.() ?? "en"]).t;
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set());
   const [queueing, setQueueing] = createSignal(false);
   let selectionGeneration = 0;
@@ -140,14 +144,14 @@ export const createRecordsBulkController = (options: RecordsBulkControllerOption
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not start workflow."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().startWorkflowFailed));
       const run = await response.json();
       return {
         ...run,
         submittedRecordIds: selectedRecordIds,
         launcherName: launcher.name,
         workflowId: launcher.workflowId,
-        targetLabel: bulkWorkflowTargetLabel(selectedRecordIds.length),
+        targetLabel: bulkWorkflowTargetLabel(selectedRecordIds.length, options.locale?.() ?? "en"),
       };
     },
     onSuccess: (run) => {
@@ -155,11 +159,11 @@ export const createRecordsBulkController = (options: RecordsBulkControllerOption
       const next = new Set(selectedIds());
       for (const id of run.submittedRecordIds) next.delete(id);
       if (!sameBulkSelection(next, selectedIds())) replaceSelection(next);
-      toast.success(`${run.launcherName} queued for ${run.targetLabel}.`, {
-        title: "Workflow queued",
+      toast.success(t().workflowQueued({ name: run.launcherName, target: run.targetLabel }), {
+        title: t().workflowQueuedTitle,
         duration: 10_000,
         action: {
-          label: "Open run",
+          label: t().openRun,
           href: `/app/grids/${encodeURIComponent(options.baseId)}/workflows/${encodeURIComponent(
             run.workflowId,
           )}?run=${encodeURIComponent(run.runId)}`,
@@ -185,64 +189,56 @@ export const createRecordsBulkController = (options: RecordsBulkControllerOption
       const closesSelection =
         launcher.config.kind === "bulk" && "profile" in launcher.config && launcher.config.profile === "closeSelection";
       if (selectedRecordIds.length === 0 && closesSelection) {
-        await prompts.error("Select at least one Record before running this action.", { title: "No Records selected" });
+        await prompts.error(t().selectRecordFirst, { title: t().noRecordsSelected });
         return;
       }
       if (closesSelection && selectedRecordIds.length > MAX_CLOSE_SELECTION_RECORDS) {
-        await prompts.error(
-          `Close selection supports at most ${MAX_CLOSE_SELECTION_RECORDS} Records at once. Select fewer Records and try again.`,
-          {
-            title: "Selection is too large",
-          },
-        );
+        await prompts.error(t().closeSelectionLimit({ count: MAX_CLOSE_SELECTION_RECORDS }), {
+          title: t().selectionTooLarge,
+        });
         return;
       }
       if (closesSelection) {
         previewAbort?.abort();
         previewAbort = new AbortController();
-        const preview = await inspectCloseSelection(options.tableId, selectedRecordIds, previewAbort.signal);
+        const preview = await inspectCloseSelection(options.tableId, selectedRecordIds, previewAbort.signal, options.locale?.() ?? "en");
         if (!unchanged()) {
-          if (!disposed) await prompts.error("The Record selection changed while it was being reviewed. Review it and try again.");
+          if (!disposed) await prompts.error(t().selectionChanged);
           return;
         }
         if (preview.blockers.length > 0) {
           const shown = preview.blockers.slice(0, 12);
           await prompts.error(
             `${shown.map((blocker) => `• ${blocker.recordId}: ${blocker.reason}`).join("\n")}${
-              preview.blockers.length > shown.length ? `\n• …and ${preview.blockers.length - shown.length} more` : ""
-            }\n\nNothing was changed. Fix the blockers or select fewer Records and try again.`,
-            { title: `${preview.blockers.length} Record${preview.blockers.length === 1 ? " is" : "s are"} not ready` },
+              preview.blockers.length > shown.length ? `\n• ${t().moreBlockers({ count: preview.blockers.length - shown.length })}` : ""
+            }\n\n${t().blockersUnchanged}`,
+            { title: t().recordsNotReady({ count: preview.blockers.length }) },
           );
           return;
         }
-        if (!preview.mode || !preview.policyRevision) throw new Error("The Finalization preview did not return an active policy.");
-        const action = preview.mode === "fourEyes" ? "Request Finalization" : "Finalize selected Records";
-        const consequence =
-          preview.mode === "fourEyes"
-            ? "Each exact Record will get a request bound to its current state. A different eligible person must approve it."
-            : "Each exact Record will be permanently locked when its workflow step runs.";
-        const confirmed = await prompts.confirm(
-          `${action} for these ${selectedRecordIds.length} selected Records?\n\n${consequence}\n\nNew or unselected Records are not included. Every Record is checked again during the run.`,
-          { title: action, icon: "ti ti-lock-check", confirmText: action },
-        );
+        if (!preview.mode || !preview.policyRevision) throw new Error(t().finalizationPreviewInactive);
+        const action = preview.mode === "fourEyes" ? t().requestFinalization : t().finalizeSelectedRecords;
+        const consequence = preview.mode === "fourEyes" ? t().requestFinalizationConsequence : t().finalizeConsequence;
+        const confirmed = await prompts.confirm(t().confirmFinalization({ action, count: selectedRecordIds.length, consequence }), {
+          title: action,
+          icon: "ti ti-lock-check",
+          confirmText: action,
+        });
         if (!confirmed) return;
         if (!unchanged()) {
           if (!disposed) {
-            await prompts.error("The Record selection changed while it was being reviewed. Review the current selection and try again.");
+            await prompts.error(t().selectionChangedCurrent);
           }
           return;
         }
         launcherInputs = { closeMode: preview.mode, closePolicyRevision: preview.policyRevision };
       }
       if (selectedRecordIds.length === 0) {
-        const confirmed = await prompts.confirm(
-          `Run "${launcher.name}" for every record matching the current query? The server resolves the complete result set and stops without running if more than 10,000 records match.`,
-          {
-            title: "Run for current query",
-            icon: "ti ti-list-check",
-            confirmText: "Run workflow",
-          },
-        );
+        const confirmed = await prompts.confirm(t().confirmQueryWorkflow({ name: launcher.name }), {
+          title: t().runForCurrentQuery,
+          icon: "ti ti-list-check",
+          confirmText: t().runWorkflow,
+        });
         if (!confirmed) return;
       }
       if (!unchanged()) return;
@@ -250,7 +246,7 @@ export const createRecordsBulkController = (options: RecordsBulkControllerOption
       submitted = true;
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        await prompts.error(error instanceof Error ? error.message : "Could not preview Finalization.", { title: "Nothing was queued" });
+        await prompts.error(error instanceof Error ? error.message : t().previewFinalizationFailed, { title: t().nothingQueued });
       }
     } finally {
       previewAbort = null;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PublicGridsWorkflowRunSchema, PublicWorkflowInvocationReceiptSchema } from "../../../api/workflow-public-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 
 const CorrectionDraftResultSchema = z.object({ kind: z.literal("record"), recordId: z.string(), tableId: z.string() });
 
@@ -37,7 +38,9 @@ export const createCorrectionDraft = async (params: {
   request?: Request;
   pollDelayMs?: number;
   timeoutMs?: number;
+  locale?: string;
 }): Promise<{ recordId: string; tableId: string }> => {
+  const { t } = recordMessages.resolve([params.locale ?? "en"]);
   const request = params.request ?? fetch;
   let response: Response;
   try {
@@ -56,16 +59,16 @@ export const createCorrectionDraft = async (params: {
     });
   } catch (error) {
     if (params.signal.aborted) throw error;
-    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not start linked-Draft workflow", true);
+    throw new CorrectionDraftInvocationError(t.linkedDraftStartFailed, true);
   }
   if (!response.ok) {
-    throw new CorrectionDraftInvocationError(await errorMessage(response, "Could not create linked Draft"), response.status >= 500);
+    throw new CorrectionDraftInvocationError(await errorMessage(response, t.linkedDraftCreateFailed), response.status >= 500);
   }
   let receipt: z.infer<typeof PublicWorkflowInvocationReceiptSchema>;
   try {
     receipt = PublicWorkflowInvocationReceiptSchema.parse(await response.json());
-  } catch (error) {
-    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow response", true);
+  } catch {
+    throw new CorrectionDraftInvocationError(t.linkedDraftResponseInvalid, true);
   }
   const deadline = Date.now() + (params.timeoutMs ?? 30_000);
   while (true) {
@@ -78,33 +81,30 @@ export const createCorrectionDraft = async (params: {
       });
     } catch (error) {
       if (params.signal.aborted) throw error;
-      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not refresh linked-Draft workflow", true);
+      throw new CorrectionDraftInvocationError(t.linkedDraftRefreshFailed, true);
     }
     if (!runResponse.ok) {
-      throw new CorrectionDraftInvocationError(await errorMessage(runResponse, "Could not refresh linked-Draft workflow"), true);
+      throw new CorrectionDraftInvocationError(await errorMessage(runResponse, t.linkedDraftRefreshFailed), true);
     }
     let run: z.infer<typeof PublicGridsWorkflowRunSchema>;
     try {
       run = PublicGridsWorkflowRunSchema.parse(await runResponse.json());
-    } catch (error) {
-      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow response", true);
+    } catch {
+      throw new CorrectionDraftInvocationError(t.linkedDraftResponseInvalid, true);
     }
     if (run.status === "succeeded") {
       try {
         const result = CorrectionDraftResultSchema.parse(run.result);
         return { recordId: result.recordId, tableId: result.tableId };
-      } catch (error) {
-        throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow result", false);
+      } catch {
+        throw new CorrectionDraftInvocationError(t.linkedDraftResultInvalid, false);
       }
     }
     if (run.status === "failed" || run.status === "canceled" || run.status === "needs_attention") {
-      throw new CorrectionDraftInvocationError(run.error?.message ?? "The linked-Draft workflow did not complete.", false);
+      throw new CorrectionDraftInvocationError(run.error?.message ?? t.linkedDraftDidNotComplete, false);
     }
     if (Date.now() >= deadline) {
-      throw new CorrectionDraftInvocationError(
-        `The linked-Draft workflow is still running. Open run ${receipt.runId} to follow progress.`,
-        true,
-      );
+      throw new CorrectionDraftInvocationError(t.linkedDraftStillRunning({ runId: receipt.runId }), true);
     }
     await delay(params.pollDelayMs ?? 750, params.signal);
   }

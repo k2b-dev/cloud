@@ -10,6 +10,7 @@ import type {
 } from "../retention-policy-contracts";
 import { RETENTION_PREVIEW_LIMIT } from "../retention-policy-contracts";
 import { logAudit } from "./audit";
+import { serviceMessagesFor } from "./messages";
 
 type Policy = { minimumDays: number; updatedAt: string };
 type RetentionFileContent = { filename: string; mimeType: string; bytes: Uint8Array };
@@ -272,12 +273,14 @@ export const listRecords = async (
   };
 };
 
-export const getFileContent = async (baseId: string, fileId: string): Promise<Result<RetentionFileContent>> => {
+export const getFileContent = async (baseId: string, fileId: string, locale?: string): Promise<Result<RetentionFileContent>> => {
   const [row] = await sql<Array<{ filename: string; mime_type: string; bytes: Uint8Array }>>`
     SELECT file.filename, file.mime_type, file.bytes
     FROM grids.file_retention_candidates candidate
     JOIN grids.files file ON file.id = candidate.file_id
     WHERE candidate.base_id = ${baseId}::uuid AND candidate.file_id = ${fileId}::uuid
   `;
-  return row ? ok({ filename: row.filename, mimeType: row.mime_type, bytes: row.bytes }) : fail(err.notFound("Retained File"));
+  return row
+    ? ok({ filename: row.filename, mimeType: row.mime_type, bytes: row.bytes })
+    : fail(err.notFound(serviceMessagesFor(locale).retainedFile));
 };

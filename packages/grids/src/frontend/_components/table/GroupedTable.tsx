@@ -1,10 +1,11 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DataTable, type DataTableColumn, IconButton, Placeholder, Tooltip } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { AggregationSpec, GroupBySpec } from "../../../contracts";
 import { FieldValue } from "./FieldValue";
 import { formatAggregationValue, formatGroupValue } from "./group-value-format";
+import { tableMessages } from "./messages";
 
 /**
  * Server-rendered shape of a group bucket. Mirrors the API contract
@@ -71,19 +72,21 @@ export const groupedAggregationColumnId = (spec: AggCol, index: number): string 
  * configure aggregations explicitly.
  */
 export default function GroupedTable(props: Props) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
 
   const groupHeader = (g: GroupByCol): string => {
     if (g.label?.trim()) return g.label.trim();
     const f = fieldsById.get(g.fieldId);
-    if (!f) return "missing field";
+    if (!f) return t().missingField;
     return g.granularity ? `${f.name} (${g.granularity})` : f.name;
   };
   const aggHeader = (a: AggCol): string => {
     if (a.label) return a.label;
-    if (a.fieldId === "*") return a.agg === "count" ? "# records" : a.agg;
+    if (a.fieldId === "*") return a.agg === "count" ? t().recordCount : a.agg;
     const f = fieldsById.get(a.fieldId);
-    const name = f ? f.name : "missing field";
+    const name = f ? f.name : t().missingField;
     return `${a.agg} ${name}`;
   };
 
@@ -105,14 +108,14 @@ export default function GroupedTable(props: Props) {
       ...props.groupBy.map((g, index) => ({
         id: groupedGroupColumnId(g, index),
         header: groupHeader(g),
-        subtitle: "group",
+        subtitle: t().groupedRecords,
         value: () => undefined,
         meta: { kind: "group", id: groupedGroupColumnId(g, index), spec: g, index } as GroupTableColumn,
       })),
       ...aggColsWithCount().map((a, index) => ({
         id: groupedAggregationColumnId(a, index),
         header: aggHeader(a),
-        subtitle: "aggregate",
+        subtitle: t().summary,
         value: (bucket: GroupBucket) => bucket.values[aggKeyOf(a)],
         cellClass: "tabular-nums",
         meta: { kind: "agg", id: groupedAggregationColumnId(a, index), spec: a, index } as GroupTableColumn,
@@ -129,18 +132,15 @@ export default function GroupedTable(props: Props) {
   const columnMeta = (col: DataTableColumn<GroupBucket>): GroupTableColumn => (col as GroupDataTableColumn).meta;
 
   return (
-    <Show
-      when={props.buckets.length > 0}
-      fallback={<Placeholder surface="paper" description={<>No groups. Adjust the filter or grouping configuration.</>} />}
-    >
+    <Show when={props.buckets.length > 0} fallback={<Placeholder surface="paper" description={<>{t().noGroups}</>} />}>
       <Show when={props.explode}>
         <div class="text-[11px] text-dimmed flex items-center gap-1.5 px-1">
           <i class="ti ti-info-circle" />
-          Buckets may overlap — a record with multiple linked targets contributes to each bucket. Counts reflect (record × link) pairs.
+          {t().overlappingGroups}
         </div>
       </Show>
       <DataTable
-        ariaLabel="Grouped records"
+        ariaLabel={t().groupedRecords}
         rows={props.buckets}
         columns={columns()}
         scrollPreserveKey={props.scrollPreserveKey}
@@ -160,9 +160,9 @@ export default function GroupedTable(props: Props) {
             <div class="flex min-w-0 items-start gap-2">
               <div class="min-w-0 flex-1">{render()}</div>
               <div class="flex shrink-0 items-center gap-0">
-                <Tooltip.Anchor content="Move column left">
+                <Tooltip.Anchor content={t().moveColumnLeft}>
                   <IconButton
-                    label="Move column left"
+                    label={t().moveColumnLeft}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {
@@ -174,9 +174,9 @@ export default function GroupedTable(props: Props) {
                     <i class="ti ti-chevron-left text-xs" />
                   </IconButton>
                 </Tooltip.Anchor>
-                <Tooltip.Anchor content="Move column right">
+                <Tooltip.Anchor content={t().moveColumnRight}>
                   <IconButton
-                    label="Move column right"
+                    label={t().moveColumnRight}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {
@@ -188,9 +188,9 @@ export default function GroupedTable(props: Props) {
                     <i class="ti ti-chevron-right text-xs" />
                   </IconButton>
                 </Tooltip.Anchor>
-                <Tooltip.Anchor content="Column settings">
+                <Tooltip.Anchor content={t().columnSettings}>
                   <IconButton
-                    label="Column settings"
+                    label={t().columnSettings}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {
@@ -214,6 +214,7 @@ export default function GroupedTable(props: Props) {
               spec: meta.spec,
               field: meta.spec.fieldId === "*" ? undefined : fieldsById.get(meta.spec.fieldId),
               dateConfig: props.dateConfig,
+              locale: locale(),
             });
           }
           const f = fieldsById.get(meta.spec.fieldId);
@@ -221,7 +222,7 @@ export default function GroupedTable(props: Props) {
           if (f && f.type === "relation" && typeof val === "string") {
             return <FieldValue field={f} value={val} baseId={props.baseId} relationLabels={props.relationLabels} mode="table" empty="—" />;
           }
-          return formatGroupValue({ value: val, spec: meta.spec, field: f, dateConfig: props.dateConfig });
+          return formatGroupValue({ value: val, spec: meta.spec, field: f, dateConfig: props.dateConfig, locale: locale() });
         }}
       />
       <Show when={props.hasMore}>
@@ -234,7 +235,7 @@ export default function GroupedTable(props: Props) {
           disabled={props.loadingMore}
         >
           {props.loadingMore ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-chevron-down" />}
-          Load more groups
+          {t().loadMoreGroups}
         </Button>
       </Show>
     </Show>

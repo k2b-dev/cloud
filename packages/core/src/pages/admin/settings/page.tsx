@@ -10,7 +10,7 @@ import {
   listAiCredentialProfileIds,
 } from "@valentinkolb/cloud/ai";
 import { AI_USAGE_RANGES, type AiUsageRange, type AiUsageReport, aiUsage } from "@valentinkolb/cloud/ai/admin";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
 import { settingsService } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
@@ -19,114 +19,117 @@ import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
 import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
+import { adminMessages } from "../messages";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
-const TABS = [
-  {
-    id: "general",
-    title: "General Settings",
-    description: "Branding, public links, schedules, and global defaults.",
-    icon: "ti ti-settings",
-    group: "app" as const,
-  },
-  {
-    id: "user",
-    title: "User Management Settings",
-    description: "Login, expiry, reminder, and self-service behavior.",
-    icon: "ti ti-users",
-    group: "user" as const,
-  },
-  {
-    id: "freeipa",
-    title: "FreeIPA Settings",
-    description: "FreeIPA connectivity, sync rules, and group mapping.",
-    icon: "ti ti-building-fortress",
-    group: "freeipa" as const,
-  },
-  {
-    id: "ai-general",
-    title: "AI General",
-    description: "Availability, system prompt, context handling, and web tools.",
-    icon: "ti ti-adjustments",
-    group: "ai" as const,
-  },
-  {
-    id: "ai-providers",
-    title: "AI Providers",
-    description: "Model profiles, provider credentials, and capabilities.",
-    icon: "ti ti-sparkles",
-    group: "ai" as const,
-  },
-  {
-    id: "ai-usage",
-    title: "AI Usage",
-    description: "Usage, cost signals, model performance, quality feedback, and background failures.",
-    icon: "ti ti-chart-histogram",
-    group: null,
-  },
-  {
-    id: "ai-jobs",
-    title: "AI Background Jobs",
-    description: "Model and schedule for background AI work like chat enrichment.",
-    icon: "ti ti-activity",
-    group: "ai" as const,
-  },
-  {
-    id: "ai-skills",
-    title: "AI Skills",
-    description: "Recover and manage access to shared Assistant Skills.",
-    icon: "ti ti-wand",
-    group: null,
-  },
-  {
-    id: "ai-projects",
-    title: "AI Projects",
-    description: "Recover and manage access to shared AI Projects.",
-    icon: "ti ti-folders",
-    group: null,
-  },
-  { id: "mail", title: "Mail Settings", description: "SMTP delivery and sender credentials.", icon: "ti ti-mail", group: "mail" as const },
-  {
-    id: "pdf-rendering",
-    title: "PDF Rendering Settings",
-    description: "Gotenberg connection, credentials, and render limits.",
-    icon: "ti ti-file-type-pdf",
-    group: "gotenberg" as const,
-  },
-  {
-    id: "email-templates",
-    title: "Email Template Settings",
-    description: "Transactional email bodies and available template variables.",
-    icon: "ti ti-template",
-    group: "mail" as const,
-  },
-  {
-    id: "security",
-    title: "Security Settings",
-    description: "Rate limits and access protection defaults.",
-    icon: "ti ti-shield-lock",
-    group: "security" as const,
-  },
-  {
-    id: "legal",
-    title: "Legal Settings",
-    description: "Terms of Service, Privacy Policy, and Imprint.",
-    icon: "ti ti-file-certificate",
-    group: null,
-  },
-] as const;
+const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
+  [
+    {
+      id: "general",
+      title: t.generalSettings,
+      description: t.generalSettingsDescription,
+      icon: "ti ti-settings",
+      group: "app" as const,
+    },
+    {
+      id: "user",
+      title: t.userManagementSettings,
+      description: t.userManagementSettingsDescription,
+      icon: "ti ti-users",
+      group: "user" as const,
+    },
+    {
+      id: "freeipa",
+      title: t.freeIpaSettings,
+      description: t.freeIpaSettingsDescription,
+      icon: "ti ti-building-fortress",
+      group: "freeipa" as const,
+    },
+    {
+      id: "ai-general",
+      title: t.aiGeneral,
+      description: t.aiGeneralDescription,
+      icon: "ti ti-adjustments",
+      group: "ai" as const,
+    },
+    {
+      id: "ai-providers",
+      title: t.aiProviders,
+      description: t.aiProvidersDescription,
+      icon: "ti ti-sparkles",
+      group: "ai" as const,
+    },
+    {
+      id: "ai-usage",
+      title: t.aiUsage,
+      description: t.aiUsageDescription,
+      icon: "ti ti-chart-histogram",
+      group: null,
+    },
+    {
+      id: "ai-jobs",
+      title: t.aiBackgroundJobs,
+      description: t.aiBackgroundJobsDescription,
+      icon: "ti ti-activity",
+      group: "ai" as const,
+    },
+    {
+      id: "ai-skills",
+      title: t.aiSkills,
+      description: t.aiSkillsDescription,
+      icon: "ti ti-wand",
+      group: null,
+    },
+    {
+      id: "ai-projects",
+      title: t.aiProjects,
+      description: t.aiProjectsDescription,
+      icon: "ti ti-folders",
+      group: null,
+    },
+    { id: "mail", title: t.mailSettings, description: t.mailSettingsDescription, icon: "ti ti-mail", group: "mail" as const },
+    {
+      id: "pdf-rendering",
+      title: t.pdfRenderingSettings,
+      description: t.pdfRenderingSettingsDescription,
+      icon: "ti ti-file-type-pdf",
+      group: "gotenberg" as const,
+    },
+    {
+      id: "email-templates",
+      title: t.emailTemplateSettings,
+      description: t.emailTemplateSettingsDescription,
+      icon: "ti ti-template",
+      group: "mail" as const,
+    },
+    {
+      id: "security",
+      title: t.securitySettings,
+      description: t.securitySettingsDescription,
+      icon: "ti ti-shield-lock",
+      group: "security" as const,
+    },
+    {
+      id: "legal",
+      title: t.legalSettings,
+      description: t.legalSettingsDescription,
+      icon: "ti ti-file-certificate",
+      group: null,
+    },
+  ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type TabId = ReturnType<typeof tabs>[number]["id"];
 
-const isTabId = (value: string | undefined): value is TabId => !!value && TABS.some((t) => t.id === value);
+const isTabId = (value: string | undefined, availableTabs: ReturnType<typeof tabs>): value is TabId =>
+  !!value && availableTabs.some((tab) => tab.id === value);
 
 /**
  * Pull the SettingFieldDef list for a given group from the global settings
  * registry. Returns entries with current values resolved (DB → env → default).
  */
-const buildEntries = async (group: string): Promise<SettingFieldDef[]> => {
-  const result = await settingsService.entry.list({ filter: { group } });
+const buildEntries = async (group: string, locale: string): Promise<SettingFieldDef[]> => {
+  const result = await settingsService.entry.list({ filter: { group }, locale });
   return result.items.map((item) => ({
     key: item.key,
     label: item.label,
@@ -169,11 +172,14 @@ const buildLegalInitial = (entries: SettingFieldDef[]): LegalInitial => {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const t = adminMessages.resolve([locale]).t;
+  const availableTabs = tabs(t);
   const rawTab = c.req.query("tab");
   // "ai" predates the split into the AI sidebar group — keep old links working.
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
-  const tabId: TabId = isTabId(legacyTab) ? legacyTab : "general";
-  const tab = TABS.find((t) => t.id === tabId)!;
+  const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";
+  const tab = availableTabs.find((item) => item.id === tabId)!;
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 
   const aiSection =
@@ -202,13 +208,13 @@ export default ssr<AuthContext>(async (c) => {
   const aiUsageRange: AiUsageRange = AI_USAGE_RANGES.some((range) => range === requestedRange) ? (requestedRange as AiUsageRange) : "30d";
 
   if (tab.group) {
-    entries = await buildEntries(tab.group);
+    entries = await buildEntries(tab.group, locale);
     if (tab.id === "mail") entries = entries.filter((entry) => entry.kind !== "template");
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
     if (tab.id === "ai-providers") aiCredentialProfileIds = await listAiCredentialProfileIds();
   } else if (tab.id === "legal") {
-    entries = await buildEntries("legal");
+    entries = await buildEntries("legal", locale);
     legalInitial = buildLegalInitial(entries);
   } else if (tab.id === "ai-skills") {
     const [skills, summary] = await Promise.all([

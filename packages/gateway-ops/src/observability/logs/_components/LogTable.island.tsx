@@ -1,8 +1,9 @@
 import { dates } from "@k2b/stdlib";
-import { Button, CopyButton, DataTable, type DataTableColumn, type LogTableEntry, Placeholder, prompts } from "@k2b/ui";
+import { Button, CopyButton, DataTable, type DataTableColumn, type LogTableEntry, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import LogFilterBar from "./LogFilterBar";
 import type { LogFilterState } from "./types";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   entries: LogTableEntry[];
@@ -33,6 +34,7 @@ function formatMetaInline(metadata: Record<string, unknown> | null): string {
 
 /** Structured metadata view for the detail dialog */
 function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   if (!props.metadata) return null;
 
   const entries = Object.entries(props.metadata);
@@ -47,7 +49,7 @@ function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
           <div class="relative bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
             <pre class="text-[11px] text-secondary whitespace-pre-wrap break-all max-h-64 overflow-y-auto pr-16">{jsonRaw}</pre>
             <div class="absolute top-2 right-2">
-              <CopyButton text={jsonRaw} label="Copy" />
+              <CopyButton text={jsonRaw} label={t.copy} />
             </div>
           </div>
         }
@@ -68,40 +70,42 @@ function MetadataDetail(props: { metadata: Record<string, unknown> | null }) {
         </div>
       </Show>
       <Button type="button" variant="ghost" size="xs" class="self-start" onClick={() => setShowRaw(!showRaw())}>
-        {showRaw() ? "View formatted" : "View raw"}
+        {showRaw() ? t.viewFormatted : t.viewRaw}
       </Button>
     </div>
   );
 }
 
 function showDetail(entry: LogTableEntry) {
+  const locale = document.documentElement.lang;
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const level = LEVEL[entry.level];
   void prompts.dialog(
     (close) => (
       <div class="flex flex-col gap-4">
         <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
-          <span class="text-dimmed">Level</span>
+          <span class="text-dimmed">{t.level}</span>
           <span class={`font-medium ${level?.color ?? "text-primary"}`}>{level?.label ?? entry.level}</span>
-          <span class="text-dimmed">Source</span>
+          <span class="text-dimmed">{t.source}</span>
           <span class="text-primary">{entry.source}</span>
-          <span class="text-dimmed">Time</span>
-          <span class="text-primary">{dates.formatDateTime(entry.createdAt)}</span>
+          <span class="text-dimmed">{t.time}</span>
+          <span class="text-primary">{dates.formatDateTime(entry.createdAt, { locale })}</span>
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[10px] uppercase tracking-wider text-dimmed">Message</span>
+          <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.message}</span>
           <p class="text-xs text-primary whitespace-pre-wrap break-all bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
             {entry.message}
           </p>
         </div>
         <Show when={entry.metadata}>
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] uppercase tracking-wider text-dimmed">Metadata</span>
+            <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.metadata}</span>
             <MetadataDetail metadata={entry.metadata} />
           </div>
         </Show>
         <div class="flex justify-end">
           <Button type="button" variant="secondary" size="sm" onClick={() => close()}>
-            Close
+            {t.close}
           </Button>
         </div>
       </div>
@@ -115,26 +119,26 @@ function showDetail(entry: LogTableEntry) {
 }
 
 export default function LogTable(props: Props) {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   const columns: DataTableColumn<LogTableEntry>[] = [
-    { id: "level", header: "Level", value: (entry) => entry.level },
-    { id: "source", header: "Source", value: (entry) => entry.source, cellClass: "whitespace-nowrap" },
-    { id: "message", header: "Message", value: (entry) => entry.message },
-    { id: "detail", header: "Detail", value: (entry) => formatMetaInline(entry.metadata), class: "hidden xl:table-cell" },
-    { id: "time", header: "Time", value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "level", header: t.level, value: (entry) => entry.level },
+    { id: "source", header: t.source, value: (entry) => entry.source, cellClass: "whitespace-nowrap" },
+    { id: "message", header: t.message, value: (entry) => entry.message },
+    { id: "detail", header: t.detail, value: (entry) => formatMetaInline(entry.metadata), class: "hidden xl:table-cell" },
+    { id: "time", header: t.time, value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
   ];
 
   return (
     <section class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)]">
       <div class="flex flex-col gap-2 px-3 py-2">
         <div>
-          <h2 class="text-xs font-semibold text-primary">Entries</h2>
-          <p class="text-[10px] text-dimmed">
-            {props.entries.length} of {props.total} log entries
-          </p>
+          <h2 class="text-xs font-semibold text-primary">{t.entries}</h2>
+          <p class="text-[10px] text-dimmed">{t.visibleLogEntries({ count: props.entries.length, total: props.total })}</p>
         </div>
         <LogFilterBar filter={props.filter} sources={props.sources} retentionDays={props.retentionDays} />
       </div>
-      <Show when={props.entries.length > 0} fallback={<Placeholder description={<>No log entries found.</>} />}>
+      <Show when={props.entries.length > 0} fallback={<Placeholder description={<>{t.noLogEntries}</>} />}>
         <DataTable
           rows={props.entries}
           columns={columns}
@@ -154,7 +158,7 @@ export default function LogTable(props: Props) {
             if (col.id === "source") return <span class="text-secondary">{row.source}</span>;
             if (col.id === "message") return <span title={row.message}>{row.message}</span>;
             if (col.id === "detail") return <span class="text-dimmed">{formatMetaInline(row.metadata) || "—"}</span>;
-            if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(row.createdAt)}</span>;
+            if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(row.createdAt, { locale: locale() })}</span>;
             return "";
           }}
         />

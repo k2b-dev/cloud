@@ -8,6 +8,7 @@ import {
   type CustomAppBlockDropSegment,
   customAppColumnRangeNeedsDropZone,
 } from "../_components/custom-apps/custom-app-builder-dnd";
+import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
 export type CustomAppBlockDragMeta = { blockId: string; label: string };
 export type CustomAppBlockDropMeta = {
@@ -44,20 +45,6 @@ type EditorProps = {
   addBlockControl: JSX.Element;
 };
 
-const blockLabel: Record<CustomAppBlock["type"], string> = {
-  actions: "Actions",
-  chart: "Chart",
-  comments: "Comments",
-  form: "Form",
-  html: "Rendered HTML",
-  markdown: "Markdown",
-  metrics: "Metrics",
-  record: "Record",
-  records: "Records",
-  referenced_records: "Referenced records",
-  scanner: "Scanner",
-};
-
 const blockOwnsHeading = (block: CustomAppBlock): boolean =>
   block.type === "comments" || block.type === "record" || block.type === "records" || block.type === "referenced_records";
 
@@ -78,6 +65,21 @@ export function CustomAppPageLayout(props: {
   showSidebar?: boolean;
   editor?: EditorProps;
 }) {
+  const messages = useCustomAppRuntimeMessages();
+  const blockLabel = (type: CustomAppBlock["type"]): string =>
+    ({
+      actions: messages().actions,
+      chart: messages().chart,
+      comments: messages().comments,
+      form: messages().form,
+      html: messages().renderedHtml,
+      markdown: messages().markdown,
+      metrics: messages().metrics,
+      record: messages().record,
+      records: messages().records,
+      referenced_records: messages().referencedRecords,
+      scanner: messages().scanner,
+    })[type];
   const navigation = () => props.definition.pages.map((page, index) => ({ page, index })).filter(({ page }) => page.navigation.visible);
   const activeBlockId = () => {
     const activeId = props.editor?.dnd.activeId();
@@ -115,10 +117,10 @@ export function CustomAppPageLayout(props: {
   const SidebarContent = () => (
     <>
       <Show when={props.hasSidebarActions}>
-        <AppWorkspace.SidebarSection title="Actions">{props.sidebarActions}</AppWorkspace.SidebarSection>
+        <AppWorkspace.SidebarSection title={messages().actions}>{props.sidebarActions}</AppWorkspace.SidebarSection>
       </Show>
       <Show when={navigation().length > 0}>
-        <AppWorkspace.SidebarSection title="Pages">
+        <AppWorkspace.SidebarSection title={messages().pages}>
           <PageItems />
         </AppWorkspace.SidebarSection>
       </Show>
@@ -168,7 +170,7 @@ export function CustomAppPageLayout(props: {
     <button
       type="button"
       class="custom-app-editor-control custom-app-block-control"
-      aria-label={`Select and move ${blockLabel[handleProps.block.type]}`}
+      aria-label={messages().selectAndMove({ block: blockLabel(handleProps.block.type) })}
       aria-pressed={props.editor?.selectedBlockId() === handleProps.block.id}
       data-custom-app-dnd-handle="block"
       onPointerDown={() => props.editor?.onSelectBlock(handleProps.block.id)}
@@ -177,7 +179,7 @@ export function CustomAppPageLayout(props: {
     >
       <span class="custom-app-drag-preview" data-dnd-preview>
         <i class="ti ti-grip-vertical" aria-hidden="true" />
-        {blockLabel[handleProps.block.type]}
+        {blockLabel(handleProps.block.type)}
       </span>
     </button>
   );
@@ -218,7 +220,7 @@ export function CustomAppPageLayout(props: {
                         <DropZone
                           id={customAppDropZoneId(row.id, "row-before")}
                           zone="row-before"
-                          label="in a full-width row above"
+                          label={messages().fullWidthAbove}
                           priority={2}
                           intent={rowIntent("before")}
                         />
@@ -227,7 +229,7 @@ export function CustomAppPageLayout(props: {
                         <DropZone
                           id={customAppDropZoneId(row.id, "row-after")}
                           zone="row-after"
-                          label="in a full-width row below"
+                          label={messages().fullWidthBelow}
                           priority={2}
                           intent={rowIntent("after")}
                         />
@@ -255,7 +257,7 @@ export function CustomAppPageLayout(props: {
                                   <DropZone
                                     id={customAppDropZoneId(column.id, "column-left")}
                                     zone="column-left"
-                                    label="left of this stack"
+                                    label={messages().leftOfStack}
                                     priority={1}
                                     betweenColumns={multiColumnRow && columnIndex() > 0}
                                     intent={columnRange("left")}
@@ -264,7 +266,7 @@ export function CustomAppPageLayout(props: {
                                     <DropZone
                                       id={customAppDropZoneId(column.id, "column-right")}
                                       zone="column-right"
-                                      label="right of this stack"
+                                      label={messages().rightOfStack}
                                       priority={1}
                                       intent={columnRange("right")}
                                     />
@@ -291,7 +293,7 @@ export function CustomAppPageLayout(props: {
                                             if (!controller) return;
                                             controller.draggable(element, () => ({
                                               id: customAppBlockDragId(block.id),
-                                              meta: { blockId: block.id, label: blockLabel[block.type] },
+                                              meta: { blockId: block.id, label: blockLabel(block.type) },
                                               focusable: false,
                                               keyboard: true,
                                               handleSelector: '[data-custom-app-dnd-handle="block"]',
@@ -310,7 +312,7 @@ export function CustomAppPageLayout(props: {
                                                 <DropZone
                                                   id={customAppDropZoneId(block.id, "before")}
                                                   zone="before"
-                                                  label={`before ${blockLabel[block.type]}`}
+                                                  label={messages().beforeBlock({ block: blockLabel(block.type) })}
                                                   priority={3}
                                                   intent={intent({ kind: "stack", targetBlockId: block.id, edge: "before" })}
                                                 />
@@ -319,7 +321,7 @@ export function CustomAppPageLayout(props: {
                                                 <DropZone
                                                   id={customAppDropZoneId(block.id, "after")}
                                                   zone="after"
-                                                  label={`after ${blockLabel[block.type]}`}
+                                                  label={messages().afterBlock({ block: blockLabel(block.type) })}
                                                   priority={3}
                                                   intent={intent({ kind: "stack", targetBlockId: block.id, edge: "after" })}
                                                 />
@@ -329,7 +331,7 @@ export function CustomAppPageLayout(props: {
                                                   <DropZone
                                                     id={customAppDropZoneId(block.id, "left")}
                                                     zone="left"
-                                                    label={`left of ${blockLabel[block.type]}`}
+                                                    label={messages().leftOfBlock({ block: blockLabel(block.type) })}
                                                     priority={3}
                                                     intent={intent({
                                                       kind: "beside",
@@ -341,7 +343,7 @@ export function CustomAppPageLayout(props: {
                                                   <DropZone
                                                     id={customAppDropZoneId(block.id, "right")}
                                                     zone="right"
-                                                    label={`right of ${blockLabel[block.type]}`}
+                                                    label={messages().rightOfBlock({ block: blockLabel(block.type) })}
                                                     priority={3}
                                                     intent={intent({
                                                       kind: "beside",
@@ -364,7 +366,10 @@ export function CustomAppPageLayout(props: {
                                             <DropZone
                                               id={pairLeftId}
                                               zone="pair-left"
-                                              label={`left of ${blockLabel[block.type]} and ${blockLabel[nextBlock()!.type]}`}
+                                              label={messages().leftOfBlocks({
+                                                first: blockLabel(block.type),
+                                                second: blockLabel(nextBlock()!.type),
+                                              })}
                                               priority={4}
                                               pair={{ side: "left", gridRow: `${blockIndex() + 1} / span 2` }}
                                               intent={intent({
@@ -377,7 +382,10 @@ export function CustomAppPageLayout(props: {
                                             <DropZone
                                               id={pairRightId}
                                               zone="pair-right"
-                                              label={`right of ${blockLabel[block.type]} and ${blockLabel[nextBlock()!.type]}`}
+                                              label={messages().rightOfBlocks({
+                                                first: blockLabel(block.type),
+                                                second: blockLabel(nextBlock()!.type),
+                                              })}
                                               priority={4}
                                               pair={{ side: "right", gridRow: `${blockIndex() + 1} / span 2` }}
                                               intent={intent({

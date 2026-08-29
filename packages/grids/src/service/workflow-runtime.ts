@@ -11,6 +11,8 @@
 import { err, fail, type Result } from "@k2b/stdlib";
 import { scheduler } from "@k2b/sync";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@valentinkolb/cloud/services";
+import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
+import { normalizeLocale } from "@valentinkolb/cloud/shared";
 import {
   createWorkflowBuiltinActionPorts,
   type WorkflowExecutionError,
@@ -59,6 +61,7 @@ import {
   startWorkflowRun,
 } from "./workflow-runs";
 import { latestWorkflowRuntimeEventCursor, liveWorkflowRuntimeEvents } from "./workflow-runtime-events";
+import { workflowServiceText } from "./workflow-service-messages";
 import {
   createGridsWorkflowValueResolver,
   createGridsWorkflowValueResolverPort,
@@ -255,8 +258,10 @@ const workflowTrace: WorkflowTracePort = {
 // ─── Requesting a run ────────────────────────────────────────────────────────
 
 export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Promise<Result<WorkflowInvocationReceipt>> => {
+  const locale = typeof input.context?.locale === "string" ? normalizeLocale(input.context.locale) : undefined;
+  const t = workflowServiceText(locale);
   const workflow = await getWorkflow(input.workflowId);
-  if (!workflow) return fail(err.notFound("workflow"));
+  if (!workflow) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
   const authorization = input.authorization ?? { kind: "workflow" };
   const claim = {
     baseId: workflow.baseId,
@@ -265,14 +270,14 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
     authorization,
     launcherId: input.launcherId,
   };
-  if (!(await canExecuteWorkflow(claim))) return fail(err.forbidden("Workflow actor cannot run this workflow."));
-  if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 200) return fail(err.badInput("invalid idempotency key"));
+  if (!(await canExecuteWorkflow(claim))) return fail(err.forbidden(t.actorCannotRun));
+  if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 200) return fail(err.badInput(t.invalidIdempotencyKey));
   if (input.expectedRevision !== undefined && input.expectedRevision !== workflow.revision) {
-    return fail(workflowConflict("Workflow changed since the caller loaded it."));
+    return fail(workflowConflict(t.workflowChangedCaller));
   }
-  if (input.mode === "execute" && !workflow.enabled) return fail(err.badInput("workflow is disabled"));
+  if (input.mode === "execute" && !workflow.enabled) return fail(err.badInput(t.workflowDisabled));
 
-  const context = input.context ?? {};
+  const context = { ...(input.context ?? {}), ...(locale ? { locale } : {}) };
   const requestFingerprint = await workflowInvocationFingerprint({
     workflowId: workflow.id,
     mode: input.mode,
@@ -338,10 +343,12 @@ const declaredWorkflowActions = createWorkflowActionPort(gridsWorkflows);
 const declaredWorkflowDryRunActions = createWorkflowDryRunPort(gridsWorkflows);
 const builtinWorkflowActions = createWorkflowBuiltinActionPorts({
   authorize: async (context): Promise<WorkflowExecutionError | undefined> => {
+    const locale = typeof context.invocation.context?.locale === "string" ? context.invocation.context.locale : undefined;
+    const t = workflowServiceText(locale);
     const scope = await getWorkflowRunScope(context.run.runId);
-    if (!scope) return { code: "NOT_FOUND", message: "Workflow run is no longer available.", retryable: false };
+    if (!scope) return { code: "NOT_FOUND", message: t.runUnavailable, retryable: false };
     if (await canExecuteWorkflow({ ...scope, workflowId: scope.workflow.id })) return undefined;
-    return { code: "FORBIDDEN", message: "Workflow actor cannot run this workflow.", retryable: false };
+    return { code: "FORBIDDEN", message: t.actorCannotRun, retryable: false };
   },
 });
 const workflowActions: WorkflowExecuteActionPort = {
@@ -354,7 +361,8 @@ const workflowDryRunActions: WorkflowDryRunActionPort = {
 const workflowValues = (claim: WorkflowRunClaim) =>
   createGridsWorkflowValueResolverPort(async () => {
     const scope = await getWorkflowRunScope(claim.runId);
-    if (!scope) throw workflowConflict("Workflow run is no longer available.");
+    const locale = typeof claim.context.locale === "string" ? claim.context.locale : undefined;
+    if (!scope) throw workflowConflict(workflowServiceText(locale).runUnavailable);
     return createGridsWorkflowValueResolver(scope.baseId, scope.principal, {
       resolveRecordAccess: (tableId) => resolveWorkflowRunRecordAccess(scope, tableId, "read"),
     });
@@ -520,6 +528,7 @@ const registerSchedule = async (workflowId: string): Promise<void> => {
         serviceAccountId: null,
       };
       const slot = new Date(ctx.slotTs).toISOString();
+      const locale = normalizeLocale(await settingsGet<string>("app.locale"));
       const result = await invokeGridsWorkflow({
         workflowId: current.id,
         mode: "execute",
@@ -529,6 +538,7 @@ const registerSchedule = async (workflowId: string): Promise<void> => {
         expectedRevision: current.revision,
         principal,
         occurredAt: slot,
+        context: { locale },
       });
       if (!result.ok) {
         if (workflowScheduleShouldRetry(result.error.status)) throw new Error(result.error.message);

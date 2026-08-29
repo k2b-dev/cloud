@@ -1,7 +1,8 @@
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { toPgUuidArray } from "@valentinkolb/cloud/services";
 import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SqlClient } from "./audit";
+import { workflowServiceText } from "./workflow-service-messages";
 
 export const lockWorkflowCatalogMutation = async (baseId: string, client: SqlClient): Promise<void> => {
   await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:workflow-catalog:${baseId}`}, 0))`;
@@ -11,6 +12,7 @@ export const assertWorkflowEmailTemplatesAvailable = async (
   baseId: string,
   plan: Pick<WorkflowBoundPlan, "bindings">,
   client: SqlClient,
+  locale?: string,
 ): Promise<Result<void>> => {
   const templateIds = [
     ...new Set(
@@ -28,7 +30,7 @@ export const assertWorkflowEmailTemplatesAvailable = async (
       AND deleted_at IS NULL
   `;
   if (Number(row?.count ?? 0) !== templateIds.length) {
-    return fail(err.badInput("A referenced email template is no longer available. Validate the workflow and save it again."));
+    return fail(err.badInput(workflowServiceText(locale).emailTemplateUnavailable));
   }
   return ok();
 };

@@ -10,6 +10,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, For } from "solid-js";
 import type { DslQueryContextKey } from "../../../query-dsl/parameters";
+import { useCustomAppBuilderMessages } from "./builder-messages";
 
 type CustomAppMarkdownFieldProps = {
   contextKeys: readonly DslQueryContextKey[];
@@ -21,7 +22,7 @@ type MarkdownCompletion = NonNullable<MarkdownEditorProps["completions"]>[number
 
 const contextLabel = (key: DslQueryContextKey): string => `@${key}`;
 
-const contextCompletion = (keys: readonly DslQueryContextKey[]): MarkdownCompletion => ({
+const contextCompletion = (keys: readonly DslQueryContextKey[], hint: string): MarkdownCompletion => ({
   trigger: "@",
   dropdown: true,
   knownLabels: keys.map(contextLabel),
@@ -29,12 +30,14 @@ const contextCompletion = (keys: readonly DslQueryContextKey[]): MarkdownComplet
     const normalized = query.toLowerCase();
     return keys
       .filter((key) => key.toLowerCase().startsWith(normalized))
-      .map((key) => ({ text: contextLabel(key), label: contextLabel(key), hint: "App context" }));
+      .map((key) => ({ text: contextLabel(key), label: contextLabel(key), hint }));
   },
 });
 
 export function CustomAppMarkdownField(props: CustomAppMarkdownFieldProps) {
-  const completions = createMemo(() => [contextCompletion(props.contextKeys)]);
+  const messages = useCustomAppBuilderMessages();
+  const text = messages().text;
+  const completions = createMemo(() => [contextCompletion(props.contextKeys, text({ value: "App context" }))]);
   const insertPlaceholder = (key: DslQueryContextKey, textarea?: HTMLTextAreaElement) => {
     const source = props.value();
     const start = textarea?.selectionStart ?? source.length;
@@ -50,7 +53,7 @@ export function CustomAppMarkdownField(props: CustomAppMarkdownFieldProps) {
     props.contextKeys.map((key) => ({
       icon: "ti ti-at",
       label: contextLabel(key),
-      description: key.startsWith("auth.") ? "Signed-in reader" : "App request context",
+      description: key.startsWith("auth.") ? text({ value: "Signed-in reader" }) : text({ value: "App request context" }),
       action: () => insertPlaceholder(key, textarea()),
     }));
 
@@ -60,17 +63,17 @@ export function CustomAppMarkdownField(props: CustomAppMarkdownFieldProps) {
       return (
         <PanelDialog>
           <PanelDialog.Header
-            title="Markdown content"
-            subtitle="The content edits the same automatically saved draft as the inspector."
+            title={text({ value: "Markdown content" })}
+            subtitle={text({ value: "The content edits the same automatically saved draft as the inspector." })}
             icon="ti ti-markdown"
             close={close}
-            closeLabel="Close Markdown editor"
+            closeLabel={text({ value: "Close Markdown editor" })}
           />
           <PanelDialog.Body scrollPreserveKey="custom-app-markdown-editor">
             <div class="flex min-h-0 flex-1 flex-col gap-3">
               <MarkdownEditor
-                label="Content"
-                description="Type @ or add a placeholder. Values are inserted safely when the published app renders."
+                label={text({ value: "Content" })}
+                description={text({ value: "Type @ or add a placeholder. Values are inserted safely when the published app renders." })}
                 value={props.value}
                 onValueChange={props.onValueChange}
                 completions={completions()}
@@ -81,21 +84,30 @@ export function CustomAppMarkdownField(props: CustomAppMarkdownFieldProps) {
                 }}
               />
               <div class="flex flex-wrap items-center gap-2">
-                <Dropdown.Root items={placeholderItems(() => textarea)} position="top-left" width="18rem" label="Add placeholder">
+                <Dropdown.Root
+                  items={placeholderItems(() => textarea)}
+                  position="top-left"
+                  width="18rem"
+                  label={text({ value: "Add placeholder" })}
+                >
                   <Dropdown.Trigger size="xs" variant="secondary">
-                    <i class="ti ti-at" aria-hidden="true" /> Add placeholder
+                    <i class="ti ti-at" aria-hidden="true" /> {text({ value: "Add placeholder" })}
                   </Dropdown.Trigger>
                 </Dropdown.Root>
-                <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Available Markdown placeholders">
+                <div
+                  class="flex flex-wrap items-center gap-1.5"
+                  role="group"
+                  aria-label={text({ value: "Available Markdown placeholders" })}
+                >
                   <For each={props.contextKeys}>{(key) => <StatusBadge tone="neutral" icon={null} label={contextLabel(key)} />}</For>
                 </div>
               </div>
             </div>
           </PanelDialog.Body>
           <PanelDialog.Footer>
-            <span class="mr-auto text-xs text-dimmed">Changes save automatically.</span>
+            <span class="mr-auto text-xs text-dimmed">{text({ value: "Changes save automatically." })}</span>
             <Button size="sm" onClick={() => close()}>
-              Done
+              {text({ value: "Done" })}
             </Button>
           </PanelDialog.Footer>
         </PanelDialog>
@@ -105,15 +117,15 @@ export function CustomAppMarkdownField(props: CustomAppMarkdownFieldProps) {
   return (
     <div class="flex flex-col gap-2">
       <MarkdownEditor
-        label="Content"
-        description="Type @ to insert App context. Values are inserted safely when the published app renders."
+        label={text({ value: "Content" })}
+        description={text({ value: "Type @ to insert App context. Values are inserted safely when the published app renders." })}
         value={props.value}
         onValueChange={props.onValueChange}
         completions={completions()}
         lines={6}
       />
       <Button size="xs" variant="secondary" class="self-start" onClick={() => void openLargeEditor()}>
-        <i class="ti ti-arrows-maximize" aria-hidden="true" /> Open large editor
+        <i class="ti ti-arrows-maximize" aria-hidden="true" /> {text({ value: "Open large editor" })}
       </Button>
     </div>
   );

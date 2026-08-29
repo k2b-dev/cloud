@@ -9,6 +9,7 @@ import {
   prompts,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowDiagnostic } from "@valentinkolb/cloud/workflows";
 import { createWorkflowYamlHighlighter } from "@valentinkolb/cloud/workflows/editor";
@@ -19,6 +20,7 @@ import { PublicGridsWorkflowSchema, PublicWorkflowValidateResponseSchema } from 
 import { WORKFLOW_REVISION_HEADER, type WorkflowAutocompleteResponse } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
+import { workflowMessages } from "./messages";
 import { buildBackendWorkflowCompletions } from "./workflow-autocomplete";
 import { automaticTriggerSummary, shouldConfirmAutomaticTriggers } from "./workflow-editor-activation";
 import {
@@ -64,8 +66,8 @@ type WorkflowEditorProps = {
 };
 
 class WorkflowConflictError extends Error {
-  constructor() {
-    super("This workflow changed while you were editing it.");
+  constructor(message: string) {
+    super(message);
     this.name = "WorkflowConflictError";
   }
 }
@@ -99,12 +101,14 @@ const defaultSource = (
 `;
 
 function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating: boolean }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const hasDiagnostics = () => props.diagnostics.length > 0;
   return (
     <NoticeCard tone={hasDiagnostics() ? "danger" : "success"} icon={false} role="status" aria-live="polite" aria-busy={props.validating}>
       <div class="flex items-center gap-2 font-medium">
         <i class={`ti ${props.validating ? "ti-loader-2 animate-spin" : hasDiagnostics() ? "ti-alert-triangle" : "ti-circle-check"}`} />
-        <span>{props.validating ? "Validating..." : hasDiagnostics() ? "Workflow YAML has diagnostics" : "Workflow YAML is valid"}</span>
+        <span>{props.validating ? t().validating : hasDiagnostics() ? t().yamlHasDiagnostics : t().yamlValid}</span>
       </div>
       <Show when={hasDiagnostics()}>
         <ul class="mt-2 space-y-1">
@@ -114,7 +118,7 @@ function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating
                 <Show when={diagnostic.location}>
                   {(location) => (
                     <span class="font-mono text-[11px] uppercase">
-                      Line {location().line} · Col {location().column}:{" "}
+                      {t().diagnosticLocation({ line: location().line, column: location().column })}{" "}
                     </span>
                   )}
                 </Show>
@@ -129,6 +133,8 @@ function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating
 }
 
 export function WorkflowEditor(props: WorkflowEditorProps) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const blankDraft = workflowEditorDraft(props.workflow, defaultSource(props.tables[0]));
   const initialDraft =
     !props.workflow && props.starter
@@ -168,7 +174,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       { param: { baseId: props.baseId }, json: request },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await errorMessage(response, "Could not load workflow suggestions."));
+    if (!response.ok) throw new Error(await errorMessage(response, t().loadSuggestionsFailed));
     return (await response.json()) as WorkflowAutocompleteResponse;
   };
 
@@ -184,7 +190,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     const abort = new AbortController();
     validationAbort = abort;
     if (!value.trim()) {
-      setDiagnostics([editorDiagnostic("Workflow source is required")]);
+      setDiagnostics([editorDiagnostic(t().sourceRequired)]);
       setValidating(false);
       return;
     }
@@ -194,7 +200,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       if (!abort.signal.aborted) setDiagnostics(response.diagnostics);
     } catch (error) {
       if (!abort.signal.aborted) {
-        setDiagnostics([editorDiagnostic(error instanceof Error ? error.message : "Could not validate workflow.")]);
+        setDiagnostics([editorDiagnostic(error instanceof Error ? error.message : t().validateFailed)]);
       }
     } finally {
       if (!abort.signal.aborted) setValidating(false);
@@ -227,11 +233,11 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
   const reloadWorkflow = async () => {
     if (!props.workflow) return;
     const response = await workflowEditorApi[":workflowId"].$get({ param: { workflowId: props.workflow.id } });
-    if (!response.ok) throw new Error(await errorMessage(response, "Could not reload workflow."));
+    if (!response.ok) throw new Error(await errorMessage(response, t().reloadFailed));
     const latest = PublicGridsWorkflowSchema.parse(await response.json());
     replaceDraft(workflowEditorDraft(latest, defaultSource(props.tables[0])), latest.plan);
     props.onChanged(latest);
-    toast.success("Loaded the latest workflow version");
+    toast.success(t().latestVersionLoaded);
   };
 
   const handleSaveError = async (error: Error) => {
@@ -239,19 +245,16 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       await prompts.error(error.message);
       return;
     }
-    const reload = await prompts.confirm(
-      "This workflow changed while you were editing it. Reload the latest version? Your unsaved changes will be replaced.",
-      {
-        title: "Workflow changed",
-        icon: "ti ti-refresh-alert",
-        confirmText: "Reload workflow",
-      },
-    );
+    const reload = await prompts.confirm(t().reloadChangedConfirm, {
+      title: t().workflowChanged,
+      icon: "ti ti-refresh-alert",
+      confirmText: t().reloadWorkflow,
+    });
     if (!reload) return;
     try {
       await reloadWorkflow();
     } catch (reloadError) {
-      await prompts.error(reloadError instanceof Error ? reloadError.message : "Could not reload workflow.");
+      await prompts.error(reloadError instanceof Error ? reloadError.message : t().reloadFailed);
     }
   };
 
@@ -259,8 +262,8 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     mutation: async (_, { abortSignal }) => {
       const draft = currentDraft();
       const payload = workflowEditorSavePayload(draft, cleanDraft, !props.workflow);
-      if (!draft.name.trim()) throw new Error("Name is required.");
-      if (Object.keys(payload).length === 0) throw new Error("No workflow changes to save.");
+      if (!draft.name.trim()) throw new Error(t().nameRequired);
+      if (Object.keys(payload).length === 0) throw new Error(t().noChanges);
       const res = props.workflow
         ? await workflowEditorApi[":workflowId"].$patch(
             { param: { workflowId: props.workflow.id }, json: payload },
@@ -270,15 +273,15 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             { param: { baseId: props.baseId }, json: payload },
             { init: { signal: abortSignal } },
           );
-      if (res.status === 409) throw new WorkflowConflictError();
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not save workflow."));
+      if (res.status === 409) throw new WorkflowConflictError(t().changedWhileEditing);
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveFailed));
       const saved = PublicGridsWorkflowSchema.parse(await res.json());
       if (props.beforeClose) await props.beforeClose(saved, { abortSignal });
       return saved;
     },
     onSuccess: (saved) => {
       if (disposed) return;
-      toast.success(`Saved "${saved.name}"`);
+      toast.success(t().savedNamed({ name: saved.name }));
       props.onChanged(saved);
       props.onClose();
     },
@@ -296,7 +299,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
         { param: { baseId: props.baseId }, json: { source } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not validate workflow triggers."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().validateTriggersFailed));
       const validation = PublicWorkflowValidateResponseSchema.parse(await response.json());
       if (!validation.ok) {
         if (!disposed) setDiagnostics(validation.diagnostics);
@@ -308,23 +311,20 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       if (disposed) return;
       setConfirmingTriggers(true);
       try {
-        const summary = automaticTriggerSummary(plan);
+        const summary = automaticTriggerSummary(plan, locale());
         const currentPlan = persistedPlan();
         const persistedWorkflow = currentPlan ? { enabled: persistedEnabled(), plan: currentPlan } : undefined;
         if (summary && shouldConfirmAutomaticTriggers(persistedWorkflow, plan, validatedEnabled)) {
-          const confirmed = await prompts.confirm(
-            `Saving this workflow activates these automatic triggers:\n\n${summary}\n\nFuture matching events or schedule slots can start runs.`,
-            {
-              title: "Activate automatic triggers?",
-              icon: "ti ti-bolt",
-              confirmText: "Activate triggers",
-            },
-          );
+          const confirmed = await prompts.confirm(t().activateTriggersConfirm({ summary }), {
+            title: t().activateTriggersTitle,
+            icon: "ti ti-bolt",
+            confirmText: t().activateTriggers,
+          });
           if (!confirmed || disposed) return;
         }
         if (disposed) return;
         if (source() !== validatedSource || enabled() !== validatedEnabled) {
-          await prompts.error("The workflow changed during validation. Review it and save again.");
+          await prompts.error(t().changedDuringValidation);
           return;
         }
         saveMut.mutate();
@@ -339,20 +339,20 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
 
   const deleteMut = mutations.create<{ deleted: boolean }, PublicWorkflow>({
     mutation: async (workflow, { abortSignal }) => {
-      const confirmed = await prompts.confirm(`Delete "${persistedName() || workflow.name}"?`, {
-        title: "Delete workflow",
+      const confirmed = await prompts.confirm(t().deleteNamedConfirm({ name: persistedName() || workflow.name }), {
+        title: t().deleteWorkflow,
         icon: "ti ti-trash",
-        confirmText: "Delete workflow",
+        confirmText: t().deleteWorkflow,
         variant: "danger",
       });
       if (!confirmed) return { deleted: false };
       const res = await workflowEditorApi[":workflowId"].$delete({ param: { workflowId: workflow.id } }, { init: { signal: abortSignal } });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not delete workflow."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().deleteFailed));
       return { deleted: true };
     },
     onSuccess: (result) => {
       if (!result.deleted) return;
-      toast.success("Workflow deleted");
+      toast.success(t().deleted);
       props.onChanged();
       props.onClose();
     },
@@ -395,26 +395,26 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.workflow ? `Manage workflow — ${persistedName()}` : "New workflow"}
-        subtitle="Metadata, status, and executable YAML."
+        title={props.workflow ? t().manageNamed({ name: persistedName() }) : t().newWorkflow}
+        subtitle={t().editorSubtitle}
         icon="ti ti-route"
         close={() => void closeIfClean()}
       />
       <PanelDialog.Body scrollPreserveKey={`grids-workflow-editor-${props.workflow?.id ?? "new"}`}>
         <div class="flex min-h-[34rem] flex-1 flex-col gap-2">
           <div class="grid shrink-0 gap-2 md:grid-cols-2">
-            <TextInput label="Name" value={name} onValueChange={setName} required icon="ti ti-route" placeholder="Workflow name" />
+            <TextInput label={t().name} value={name} onValueChange={setName} required icon="ti ti-route" placeholder={t().workflowName} />
             <TextInput
-              label="Description"
+              label={t().description}
               value={description}
               onValueChange={setDescription}
               icon="ti ti-align-left"
-              placeholder="Optional"
+              placeholder={t().optional}
             />
             <div class="md:col-span-2">
               <CheckboxCard
-                label="Enabled"
-                description="Enabled workflows can run from declared triggers and manual runs."
+                label={t().enabled}
+                description={t().enabledDescription}
                 icon="ti ti-player-play"
                 value={enabled}
                 onValueChange={setEnabled}
@@ -425,11 +425,11 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
           <section class="flex min-h-0 flex-1 flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
               <div>
-                <h3 class="detail-section-label mb-0">YAML source</h3>
-                <p class="text-xs text-dimmed">Defines inputs, triggers, and steps.</p>
+                <h3 class="detail-section-label mb-0">{t().yamlSource}</h3>
+                <p class="text-xs text-dimmed">{t().yamlDescription}</p>
               </div>
               <Button variant="secondary" size="sm" type="button" onClick={openWorkflowReferenceWindow}>
-                <i class="ti ti-external-link" /> Open reference
+                <i class="ti ti-external-link" /> {t().openReference}
               </Button>
             </div>
             <div class="min-h-[24rem] flex-1">
@@ -442,7 +442,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
                 fill
                 restoreExpansionOnBackspace={false}
                 placeholder={defaultSource(props.tables[0])}
-                aria-label="Workflow YAML source"
+                aria-label={t().yamlAria}
               />
             </div>
             <DiagnosticsPanel diagnostics={diagnostics()} validating={validating()} />
@@ -454,7 +454,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
           <Show when={props.workflow}>
             {(workflow) => (
               <Button variant="danger" size="sm" type="button" disabled={deleteMut.loading()} onClick={() => deleteMut.mutate(workflow())}>
-                <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} /> Delete workflow
+                <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} /> {t().deleteWorkflow}
               </Button>
             )}
           </Show>
@@ -467,10 +467,11 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
             disabled={triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()}
             onClick={() => void closeIfClean()}
           >
-            Cancel
+            {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" disabled={!canSave()} onClick={() => void saveWorkflow()}>
-            <i class={saveMut.loading() || confirmingTriggers() ? "ti ti-loader-2 animate-spin" : "ti ti-device-floppy"} /> Save workflow
+            <i class={saveMut.loading() || confirmingTriggers() ? "ti ti-loader-2 animate-spin" : "ti ti-device-floppy"} />{" "}
+            {t().saveWorkflow}
           </Button>
         </div>
       </PanelDialog.Footer>

@@ -1,14 +1,10 @@
-import { MultiSelectInput, Select } from "@k2b/ui";
+import { MultiSelectInput, Select, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import type { PrincipalReference } from "../../../field-types/principal";
+import { gridsFormMessages } from "./messages";
 
 type PrincipalOption = PrincipalReference & { label: string };
 type PrincipalChoice = { value: string; label: string; icon: string };
-
-const PRINCIPAL_GROUPS = [
-  { value: "user", label: "Users" },
-  { value: "group", label: "Groups" },
-] as const;
 
 const keyOf = (value: PrincipalReference) => `${value.type}:${value.id}`;
 
@@ -63,11 +59,17 @@ export default function PrincipalInput(props: {
   types?: Array<"user" | "group">;
   onChange: (value: PrincipalReference[] | null) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
+  const principalGroups = () => [
+    { value: "user", label: t().users },
+    { value: "group", label: t().groups },
+  ];
   const allowedTypes = props.types ?? ["user", "group"];
   const accepts = (reference: PrincipalReference) => allowedTypes.includes(reference.type);
   const initial = referenceArray(props.value).filter(accepts);
   const [knownOptions, setKnownOptions] = createSignal<PrincipalOption[]>(
-    initial.map((value) => ({ ...value, label: value.type === "user" ? "User" : "Group" })),
+    initial.map((value) => ({ ...value, label: value.type === "user" ? t().user : t().group })),
   );
 
   const mergeOptions = (options: PrincipalOption[]) => {
@@ -80,7 +82,7 @@ export default function PrincipalInput(props: {
 
   const fetchEntities = async (url: URL, signal: AbortSignal): Promise<PrincipalOption[]> => {
     const response = await fetch(url, { credentials: "same-origin", signal });
-    if (!response.ok) throw new Error("Failed to load users and groups");
+    if (!response.ok) throw new Error(t().loadPrincipalsFailed);
     const body = (await response.json()) as { items?: EntityItem[] };
     const options = (body.items ?? []).map(optionOf);
     mergeOptions(options);
@@ -106,7 +108,7 @@ export default function PrincipalInput(props: {
   const selectedOptions = () => {
     const options = new Map(knownOptions().map((option) => [keyOf(option), option]));
     return references().map((reference) =>
-      choiceOf(options.get(keyOf(reference)) ?? { ...reference, label: reference.type === "user" ? "User" : "Group" }),
+      choiceOf(options.get(keyOf(reference)) ?? { ...reference, label: reference.type === "user" ? t().user : t().group }),
     );
   };
   const loadOptions = async (query: string, signal: AbortSignal, group: string | null): Promise<PrincipalChoice[]> => {
@@ -139,11 +141,11 @@ export default function PrincipalInput(props: {
       onValueChange={commit}
       fetchData={loadOptions}
       selectedOptions={selectedOptions}
-      groups={allowedTypes.length > 1 ? PRINCIPAL_GROUPS : undefined}
-      groupsAriaLabel="Filter principals"
-      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Select groups" : "Select users and groups"}
-      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Search groups..." : "Search users and groups..."}
-      noResultsLabel={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "No groups found" : "No users or groups found"}
+      groups={allowedTypes.length > 1 ? principalGroups() : undefined}
+      groupsAriaLabel={t().filterPrincipals}
+      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? t().selectGroups : t().selectPrincipals}
+      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? t().searchGroups : t().searchPrincipals}
+      noResultsLabel={allowedTypes.length === 1 && allowedTypes[0] === "group" ? t().noGroups : t().noPrincipals}
       clearable
     />
   ) : (
@@ -158,10 +160,10 @@ export default function PrincipalInput(props: {
       onValueChange={(value) => commit(value ? [value] : [])}
       fetchData={loadOptions}
       selectedOption={selectedOptions()[0]}
-      groups={allowedTypes.length > 1 ? PRINCIPAL_GROUPS : undefined}
-      groupsAriaLabel="Filter principals"
-      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Select a group" : "Select a user or group"}
-      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Search groups..." : "Search users and groups..."}
+      groups={allowedTypes.length > 1 ? principalGroups() : undefined}
+      groupsAriaLabel={t().filterPrincipals}
+      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? t().selectGroup : t().selectPrincipal}
+      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? t().searchGroups : t().searchPrincipals}
       clearable
     />
   );

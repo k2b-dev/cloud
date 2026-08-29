@@ -18,6 +18,7 @@ import {
 import type { AiConversation, AiEnrichmentRun, AiEnrichmentStatus } from "@valentinkolb/cloud/ai";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type EditConversationResult = { action: "save"; conversation: AiConversation } | { action: "archive"; conversation: AiConversation };
 
@@ -29,12 +30,6 @@ type EditConversationFormProps = {
 };
 
 type EditConversationOptions = Pick<EditConversationFormProps, "archiveDisabled" | "archiveDisabledReason">;
-
-const RUN_STATUS_BADGES: Record<AiEnrichmentRun["status"], { label: string; tone: StatusTone }> = {
-  ok: { label: "ok", tone: "ok" },
-  failed: { label: "failed", tone: "error" },
-  skipped: { label: "skipped", tone: "neutral" },
-};
 
 const formatRunTime = (iso: string): string =>
   new Date(iso).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -50,6 +45,12 @@ const formatRunDuration = (durationMs: number | null): string => {
  * job (summary/keywords/title for search) plus a manual reindex trigger.
  */
 function SearchIndexSection(props: { conversationId: string }) {
+  const text = useAssistantText();
+  const runStatusBadges: Record<AiEnrichmentRun["status"], { label: string; tone: StatusTone }> = {
+    ok: { label: text("ok"), tone: "ok" },
+    failed: { label: text("failed"), tone: "error" },
+    skipped: { label: text("skipped"), tone: "neutral" },
+  };
   const [status, setStatus] = createSignal<AiEnrichmentStatus | null>(null);
   const [runs, setRuns] = createSignal<AiEnrichmentRun[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -103,24 +104,24 @@ function SearchIndexSection(props: { conversationId: string }) {
   onMount(() => void load.mutate(undefined));
 
   const columns: DataTableColumn<AiEnrichmentRun>[] = [
-    { id: "when", header: "When", value: (run) => formatRunTime(run.createdAt) },
-    { id: "status", header: "Status", value: "status" },
-    { id: "trigger", header: "Trigger", value: "trigger" },
-    { id: "model", header: "Model", value: (run) => run.modelProfileId ?? "–" },
-    { id: "duration", header: "Duration", value: (run) => formatRunDuration(run.durationMs), cellClass: "tabular-nums" },
+    { id: "when", header: text("When"), value: (run) => formatRunTime(run.createdAt) },
+    { id: "status", header: text("Status"), value: "status" },
+    { id: "trigger", header: text("Trigger"), value: "trigger" },
+    { id: "model", header: text("Model"), value: (run) => run.modelProfileId ?? "–" },
+    { id: "duration", header: text("Duration"), value: (run) => formatRunDuration(run.durationMs), cellClass: "tabular-nums" },
     {
       id: "result",
-      header: "Result",
+      header: text("Result"),
       value: (run) =>
         run.status === "failed" ? (run.error ?? "failed") : `${run.keywordsCount} keywords${run.titleUpdated ? " · title updated" : ""}`,
     },
   ];
 
   const statusLine = () => {
-    if (queuedAt()) return "Reindex queued — running in the background…";
+    if (queuedAt()) return text("Reindex queued — running in the background…");
     const current = status();
-    if (!current) return "Index state unavailable.";
-    if (!current.enrichedAt) return "Not indexed yet — the next background run will pick this chat up.";
+    if (!current) return text("Index state unavailable.");
+    if (!current.enrichedAt) return text("Not indexed yet — the next background run will pick this chat up.");
     const indexed = `Last indexed ${formatRunTime(current.enrichedAt)}`;
     return current.dirty ? `${indexed} · changes pending` : `${indexed} · up to date`;
   };
@@ -142,11 +143,11 @@ function SearchIndexSection(props: { conversationId: string }) {
           class="shrink-0"
           disabled={busy()}
           loading={reindex.loading()}
-          loadingLabel="Reindexing"
+          loadingLabel={text("Reindexing")}
           onClick={() => reindex.mutate(undefined)}
         >
           <i class="ti ti-refresh" aria-hidden="true" />
-          {queuedAt() ? "Queued" : "Reindex"}
+          {text(queuedAt() ? "Queued" : "Reindex")}
         </Button>
       </div>
 
@@ -165,10 +166,10 @@ function SearchIndexSection(props: { conversationId: string }) {
           getRowId={(run) => run.id}
           density="compact"
           class="max-h-48 overflow-auto rounded-md"
-          empty="No index runs yet."
+          empty={text("No index runs yet.")}
           renderCell={({ row, col, value, render }) => {
             if (col.id === "status") {
-              const badge = RUN_STATUS_BADGES[row.status];
+              const badge = runStatusBadges[row.status];
               return <StatusBadge label={badge.label} tone={badge.tone} variant="chip" />;
             }
             return render(value);
@@ -180,6 +181,8 @@ function SearchIndexSection(props: { conversationId: string }) {
 }
 
 function EditConversationForm(props: EditConversationFormProps) {
+  const text = useAssistantText();
+  const copy = useAssistantCopy();
   const [title, setTitle] = createSignal(props.conversation.title);
   const [description, setDescription] = createSignal(props.conversation.description);
   const [pinned, setPinned] = createSignal(Boolean(props.conversation.pinnedAt));
@@ -204,7 +207,7 @@ function EditConversationForm(props: EditConversationFormProps) {
         pinned: pinned(),
       }),
     onSuccess: (conversation) => {
-      toast.success("Chat saved");
+      toast.success(text("Chat saved"));
       props.close({ action: "save", conversation });
     },
     onError: (error) => prompts.error(error.message),
@@ -213,11 +216,11 @@ function EditConversationForm(props: EditConversationFormProps) {
   const archive = mutation.create<boolean, void>({
     mutation: async () => {
       if (props.archiveDisabled) return false;
-      const confirmed = await prompts.confirm(`Archive "${props.conversation.title}"?`, {
-        title: "Archive chat",
+      const confirmed = await prompts.confirm(copy().archiveChat({ title: props.conversation.title }), {
+        title: text("Archive chat"),
         icon: "ti ti-archive",
-        confirmText: "Archive",
-        cancelText: "Cancel",
+        confirmText: text("Archive"),
+        cancelText: text("Cancel"),
       });
       if (!confirmed) return false;
 
@@ -226,7 +229,7 @@ function EditConversationForm(props: EditConversationFormProps) {
     },
     onSuccess: (deleted) => {
       if (!deleted) return;
-      toast.success("Chat archived");
+      toast.success(text("Chat archived"));
       props.close({ action: "archive", conversation: props.conversation });
     },
     onError: (error) => prompts.error(error.message),
@@ -238,38 +241,38 @@ function EditConversationForm(props: EditConversationFormProps) {
 
   return (
     <div class="dialog-fixed-frame flex min-h-0 flex-col overflow-hidden">
-      <SettingsModal title="Chat Settings" onClose={() => void requestClose()} closeLabel="Close chat settings">
-        <SettingsModal.Group title="Chat">
-          <SettingsModal.Tab id="general" title="Chat Settings" icon="ti ti-id" description="Name, description, and list placement.">
-            <SettingsGroup title="Identity" description="Choose how this chat appears in navigation and search results.">
+      <SettingsModal title={text("Chat Settings")} onClose={() => void requestClose()} closeLabel={text("Close chat settings")}>
+        <SettingsModal.Group title={text("Chat")}>
+          <SettingsModal.Tab id="general" title={text("Chat Settings")} icon="ti ti-id" description={text("Name, description, and list placement.")}>
+            <SettingsGroup title={text("Identity")} description={text("Choose how this chat appears in navigation and search results.")}>
               <SettingsField
-                label="Name"
-                description="Shown in the chat list and header."
-                error={() => (!title().trim() ? "Name is required" : undefined)}
+                label={text("Name")}
+                description={text("Shown in the chat list and header.")}
+                error={() => (!title().trim() ? text("Name is required") : undefined)}
                 changed={() => title() !== initial.title}
               >
-                <TextInput aria-label="Name" value={title} onValueChange={setTitle} required maxLength={120} disabled={busy()} />
+                <TextInput aria-label={text("Name")} value={title} onValueChange={setTitle} required maxLength={120} disabled={busy()} />
               </SettingsField>
               <SettingsField
-                label="Description"
-                description="Optional context shown with this chat."
+                label={text("Description")}
+                description={text("Optional context shown with this chat.")}
                 error={() => undefined}
                 changed={() => description() !== initial.description}
               >
                 <TextInput
-                  aria-label="Description"
+                  aria-label={text("Description")}
                   value={description}
                   onValueChange={setDescription}
                   multiline
                   lines={3}
                   maxLength={500}
-                  placeholder="Optional context for this chat..."
+                  placeholder={text("Optional context for this chat...")}
                   disabled={busy()}
                 />
               </SettingsField>
               <CheckboxCard
-                label="Pin this chat"
-                description="Keep this chat at the top of your chat list."
+                label={text("Pin this chat")}
+                description={text("Keep this chat at the top of your chat list.")}
                 icon="ti ti-pin"
                 value={pinned}
                 onValueChange={setPinned}
@@ -288,36 +291,36 @@ function EditConversationForm(props: EditConversationFormProps) {
 
           <SettingsModal.Tab
             id="search"
-            title="Search"
+            title={text("Search")}
             icon="ti ti-list-search"
-            description="Review and refresh the generated summary and keywords used to find this chat."
+            description={text("Review and refresh the generated summary and keywords used to find this chat.")}
           >
-            <SettingsGroup title="Search index" description="Index status and recent enrichment runs for this chat.">
+            <SettingsGroup title={text("Search index")} description={text("Index status and recent enrichment runs for this chat.")}>
               <SearchIndexSection conversationId={props.conversation.id} />
             </SettingsGroup>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title="Lifecycle">
+        <SettingsModal.Group title={text("Lifecycle")}>
           <SettingsModal.Tab
             id="archive"
-            title="Archive"
+            title={text("Archive")}
             icon="ti ti-archive"
-            description="Remove this chat from active lists. You can restore it later from All Chats."
+            description={text("Remove this chat from active lists. You can restore it later from All Chats.")}
           >
-            <SettingsGroup title="Archive chat" description={props.archiveDisabledReason ?? "Move this chat out of your active lists."}>
+            <SettingsGroup title={text("Archive chat")} description={props.archiveDisabledReason ?? text("Move this chat out of your active lists.")}>
               <SettingsGroup.Action>
                 <Button
                   variant="secondary"
                   size="sm"
                   loading={archive.loading()}
-                  loadingLabel="Archiving chat"
+                  loadingLabel={text("Archiving chat")}
                   disabled={busy() || props.archiveDisabled}
                   title={props.archiveDisabledReason}
                   onClick={() => archive.mutate(undefined)}
                 >
                   <i class="ti ti-archive" aria-hidden="true" />
-                  Archive chat
+                  {text("Archive chat")}
                 </Button>
               </SettingsGroup.Action>
             </SettingsGroup>

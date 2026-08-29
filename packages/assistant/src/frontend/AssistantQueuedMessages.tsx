@@ -1,5 +1,6 @@
-import { Dropdown } from "@k2b/ui";
+import { Dropdown, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
+import { assistantMessages } from "./messages";
 
 export type AssistantQueuedMessage = {
   id: string;
@@ -14,9 +15,11 @@ export default function AssistantQueuedMessages(props: {
   onEdit: (message: AssistantQueuedMessage) => void;
   onDelete: (message: AssistantQueuedMessage) => void;
 }) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
   return (
     <Show when={props.messages.length > 0}>
-      <ol class="flex flex-col gap-2" aria-label="Queued messages" aria-live="polite">
+      <ol class="flex flex-col gap-2" aria-label={t().queuedMessages} aria-live="polite">
         <For each={props.messages}>
           {(message) => (
             <li
@@ -40,23 +43,23 @@ export default function AssistantQueuedMessages(props: {
                 disabled={props.sendingId === message.id}
                 onClick={() => props.onSendNow(message)}
               >
-                {props.sendingId === message.id ? "Sending…" : "Send now"}
+                {props.sendingId === message.id ? t().sending : t().sendNow}
               </button>
               <Dropdown.Root
                 position="bottom-left"
                 width="10rem"
-                label="Queued message actions"
+                label={t().queuedActions}
                 items={[
-                  { label: "Edit", icon: "ti ti-pencil", action: () => props.onEdit(message) },
-                  { label: "Delete", icon: "ti ti-trash", variant: "danger", action: () => props.onDelete(message) },
+                  { label: t().edit, icon: "ti ti-pencil", action: () => props.onEdit(message) },
+                  { label: t().delete, icon: "ti ti-trash", variant: "danger", action: () => props.onDelete(message) },
                 ]}
               >
                 <Dropdown.Trigger
                   appearance="plain"
                   class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--k2b-text-muted)] transition-colors hover:text-[var(--k2b-text)]"
                   iconOnly
-                  label="Queued message actions"
-                  title="Queued message actions"
+                  label={t().queuedActions}
+                  title={t().queuedActions}
                 >
                   <i class="ti ti-dots" aria-hidden="true" />
                 </Dropdown.Trigger>

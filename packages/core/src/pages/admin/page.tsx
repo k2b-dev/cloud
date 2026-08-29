@@ -1,54 +1,57 @@
 import { LinkCard } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
 import { AdminLayout, getLocalizedRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import { adminMessages } from "./messages";
 
-const PLATFORM_TASKS = [
-  {
-    href: "/admin/settings?tab=general",
-    title: "General settings",
-    description: "Branding, locale, home page, and instance behavior.",
-    icon: "ti ti-app-window",
-    color: "blue",
-  },
-  {
-    href: "/admin/settings?tab=security",
-    title: "Security",
-    description: "Authentication, sessions, and security policy.",
-    icon: "ti ti-shield-lock",
-    color: "emerald",
-  },
-  {
-    href: "/admin/settings?tab=mail",
-    title: "Mail",
-    description: "Delivery providers, sender defaults, and templates.",
-    icon: "ti ti-mail",
-    color: "orange",
-  },
-  {
-    href: "/admin/settings?tab=ai-providers",
-    title: "AI providers",
-    description: "Models, credentials, skills, and background work.",
-    icon: "ti ti-sparkles",
-    color: "violet",
-  },
-  {
-    href: "/admin/announcements",
-    title: "Announcements",
-    description: "Publish time-bound messages across the instance.",
-    icon: "ti ti-speakerphone",
-    color: "amber",
-  },
-  {
-    href: "/admin/settings?tab=legal",
-    title: "Legal",
-    description: "Imprint, privacy, terms, and public legal links.",
-    icon: "ti ti-file-text",
-    color: "zinc",
-  },
-] as const;
+const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
+  [
+    {
+      href: "/admin/settings?tab=general",
+      title: t.generalSettings,
+      description: t.generalSettingsDescription,
+      icon: "ti ti-app-window",
+      color: "blue",
+    },
+    {
+      href: "/admin/settings?tab=security",
+      title: t.security,
+      description: t.securityDescription,
+      icon: "ti ti-shield-lock",
+      color: "emerald",
+    },
+    {
+      href: "/admin/settings?tab=mail",
+      title: t.mail,
+      description: t.mailDescription,
+      icon: "ti ti-mail",
+      color: "orange",
+    },
+    {
+      href: "/admin/settings?tab=ai-providers",
+      title: t.aiProviders,
+      description: t.aiProvidersDescription,
+      icon: "ti ti-sparkles",
+      color: "violet",
+    },
+    {
+      href: "/admin/announcements",
+      title: t.announcements,
+      description: t.announcementsDescription,
+      icon: "ti ti-speakerphone",
+      color: "amber",
+    },
+    {
+      href: "/admin/settings?tab=legal",
+      title: t.legal,
+      description: t.legalDescription,
+      icon: "ti ti-file-text",
+      color: "zinc",
+    },
+  ] as const;
 
 export default ssr<AuthContext>(async (c) => {
+  const t = adminMessages.resolve([getLocale(c)]).t;
   const allApps = getLocalizedRuntimeContext(c).apps;
   const adminApps = allApps.filter((app) => !!app.adminHref && app.id !== "gateway-ops").sort((a, b) => a.name.localeCompare(b.name));
   const gatewayAdminAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/gateway", "core");
@@ -56,35 +59,35 @@ export default ssr<AuthContext>(async (c) => {
   const primaryDestination = observabilityAvailable
     ? {
         href: "/admin/observability",
-        eyebrow: "Operations",
-        title: "Investigate the system",
-        description: "Start with active signals, then drill into requests, jobs, workflows, logs, and data services.",
-        action: "Open observability",
+        eyebrow: t.operations,
+        title: t.investigateSystem,
+        description: t.investigateDescription,
+        action: t.openObservability,
         icon: "ti ti-stethoscope",
       }
     : {
         href: "/admin/settings?tab=general",
-        eyebrow: "Configuration",
-        title: "Configure the instance",
-        description: "Manage platform behavior, identity, access, integrations, and public information.",
-        action: "Open settings",
+        eyebrow: t.configuration,
+        title: t.configureInstance,
+        description: t.configureDescription,
+        action: t.openSettings,
         icon: "ti ti-settings",
       };
 
   return () => (
-    <AdminLayout c={c} title="Overview">
+    <AdminLayout c={c} title={t.overview}>
       <div class="app-rows mx-auto w-full max-w-6xl">
         <header class="flex flex-wrap items-end justify-between gap-3" style="view-transition-name: admin-overview-title">
           <div class="min-w-0">
-            <h1 class="text-base font-semibold text-primary">Administration</h1>
-            <p class="mt-1 text-xs text-dimmed">Operate the instance, manage access, and configure platform services.</p>
+            <h1 class="text-base font-semibold text-primary">{t.administration}</h1>
+            <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
           </div>
           <div class="flex flex-wrap gap-1 text-[10px] tabular-nums text-dimmed">
             <span class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1">
-              {allApps.length} registered services
+              {t.registeredServices({ count: allApps.length })}
             </span>
             <span class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1">
-              {adminApps.length} app admin areas
+              {t.appAdminAreas({ count: adminApps.length })}
             </span>
           </div>
         </header>
@@ -92,9 +95,9 @@ export default ssr<AuthContext>(async (c) => {
         <section aria-labelledby="admin-start-heading">
           <div class="mb-2">
             <h2 id="admin-start-heading" class="text-xs font-semibold text-primary">
-              Start here
+              {t.startHere}
             </h2>
-            <p class="text-[10px] text-dimmed">Choose the task you are trying to complete.</p>
+            <p class="text-[10px] text-dimmed">{t.chooseTask}</p>
           </div>
 
           <div class="grid gap-2 lg:grid-cols-3">
@@ -123,24 +126,24 @@ export default ssr<AuthContext>(async (c) => {
               {gatewayAdminAvailable ? (
                 <LinkCard
                   href="/admin/gateway/apps"
-                  title="Apps & routes"
-                  description="Review registered services and gateway ownership."
+                  title={t.appsAndRoutes}
+                  description={t.appsAndRoutesDescription}
                   icon="ti ti-route-scan"
                   color="cyan"
                 />
               ) : (
                 <LinkCard
                   href="/admin/announcements"
-                  title="Announcements"
-                  description="Publish time-bound messages across the instance."
+                  title={t.announcements}
+                  description={t.announcementsDescription}
                   icon="ti ti-speakerphone"
                   color="amber"
                 />
               )}
               <LinkCard
                 href="/admin/settings?tab=user"
-                title="People & access"
-                description="Manage accounts, roles, groups, and lifecycle."
+                title={t.peopleAndAccess}
+                description={t.peopleAndAccessDescription}
                 icon="ti ti-users"
                 color="blue"
               />
@@ -151,12 +154,12 @@ export default ssr<AuthContext>(async (c) => {
         <section aria-labelledby="platform-tasks-heading">
           <div class="mb-2">
             <h2 id="platform-tasks-heading" class="text-xs font-semibold text-primary">
-              Platform configuration
+              {t.platformConfiguration}
             </h2>
-            <p class="text-[10px] text-dimmed">Common instance-wide settings grouped by administrator intent.</p>
+            <p class="text-[10px] text-dimmed">{t.platformConfigurationDescription}</p>
           </div>
           <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {PLATFORM_TASKS.map((task) => (
+            {platformTasks(t).map((task) => (
               <LinkCard href={task.href} title={task.title} description={task.description} icon={task.icon} color={task.color} />
             ))}
           </div>
@@ -166,9 +169,9 @@ export default ssr<AuthContext>(async (c) => {
           <section aria-labelledby="app-admin-heading">
             <div class="mb-2">
               <h2 id="app-admin-heading" class="text-xs font-semibold text-primary">
-                App administration
+                {t.appAdministration}
               </h2>
-              <p class="text-[10px] text-dimmed">Settings and maintenance owned by individual applications.</p>
+              <p class="text-[10px] text-dimmed">{t.appAdministrationDescription}</p>
             </div>
             <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {adminApps.map((app) => (

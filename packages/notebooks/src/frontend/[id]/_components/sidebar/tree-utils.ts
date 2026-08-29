@@ -1,5 +1,23 @@
 import type { NoteTreeNode } from "./types";
 
+export type NoteTreeSort = "title" | "created" | "updated";
+
+const compareNotes = (mode: NoteTreeSort, left: NoteTreeNode, right: NoteTreeNode): number => {
+  if (mode !== "title") {
+    const leftDate = mode === "created" ? left.createdAt : left.updatedAt;
+    const rightDate = mode === "created" ? right.createdAt : right.updatedAt;
+    if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+  }
+
+  return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+};
+
+export function sortNoteTree(nodes: NoteTreeNode[], mode: NoteTreeSort): NoteTreeNode[] {
+  return [...nodes]
+    .sort((left, right) => compareNotes(mode, left, right))
+    .map((node) => ({ ...node, children: sortNoteTree(node.children, mode) }));
+}
+
 export function flattenTree(nodes: NoteTreeNode[], excludeId?: string): NoteTreeNode[] {
   const result: NoteTreeNode[] = [];
   const walk = (list: NoteTreeNode[]) => {

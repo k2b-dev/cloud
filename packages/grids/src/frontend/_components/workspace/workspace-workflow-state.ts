@@ -13,6 +13,7 @@ import {
 import { getWorkflowTriggerRuntimeState } from "../../../service/workflow-runtime";
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import { parseWorkflowUrlState } from "../workflows/workflow-url-state";
+import { resolveWorkspaceMessages } from "./messages";
 import { resolveBaseLevel } from "./workspace-state-access";
 import { buildViewer, okState } from "./workspace-state-helpers";
 import type { GridsWorkspaceState, WorkspaceCommon, WorkspaceWorkflowRunDetail } from "./workspace-state-model";
@@ -108,17 +109,18 @@ export const loadWorkflowState = async (
   requestedWorkflow: Workflow | null,
   activeWorkflowSlug?: string | null,
 ): Promise<GridsWorkspaceState> => {
+  const t = resolveWorkspaceMessages(common.params.locale);
   if (activeWorkflowSlug && !requestedWorkflow) {
-    return { kind: "notFound", title: "Not found", message: "Workflow not found" };
+    return { kind: "notFound", title: t.notFound, message: t.workflowNotFound };
   }
   const activeWorkflow = requestedWorkflow
     ? (common.catalog.workflows.find((workflow) => workflow.id === requestedWorkflow.id) ?? null)
     : null;
   if (activeWorkflowSlug && !activeWorkflow) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to this workflow" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noWorkflowAccess };
   }
   if (!common.canUseQueryWorkspace && common.catalog.workflows.length === 0) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to workflows" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noWorkflowsAccess };
   }
   if (!activeWorkflowSlug && common.catalog.workflows.length > 0) {
     const target = common.catalog.workflows[0]!;
@@ -156,6 +158,6 @@ export const loadWorkflowState = async (
       initialOverview: { filters, stats, runs, launchers, triggerState },
       initialSelectedRun,
     },
-    [...common.chrome.titleBase, { title: "Workflows" }, ...(activeWorkflow ? [{ title: activeWorkflow.name }] : [])],
+    [...common.chrome.titleBase, { title: t.workflows }, ...(activeWorkflow ? [{ title: activeWorkflow.name }] : [])],
   );
 };

@@ -48,6 +48,7 @@ type RecordsAdminControllerOptions = {
   canManageTable: boolean;
   canManageBase: boolean;
   dateConfig?: DateContext;
+  fieldCreatedDisplayFailed: string;
   refetch: () => void;
   setViewDisplayConfig: Setter<RecordDisplayConfig | null>;
 };
@@ -124,7 +125,7 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       json: { columns: [...options.tableColumns(), { fieldId: created.id }] },
     });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, "Field created, but table display was not updated"));
+      prompts.error(await errorMessage(res, options.fieldCreatedDisplayFailed));
       return;
     }
     options.setTableColumns((await res.json()).columns);

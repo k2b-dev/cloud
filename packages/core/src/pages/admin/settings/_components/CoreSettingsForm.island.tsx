@@ -48,6 +48,7 @@ import {
   TextInput,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
@@ -55,6 +56,9 @@ import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
+import { localizeSettingField } from "./setting-copy";
+import { settingsMessages } from "./messages";
+import { aiSettingsMessages } from "./ai-settings-messages";
 
 type SettingValueSource = "custom" | "env" | "default";
 
@@ -217,20 +221,51 @@ const AI_DATA_BOUNDARY_OPTIONS = [
   { id: "private", label: "Private endpoint", description: "Requests stay on infrastructure you control." },
 ] as const;
 
+const localizedProviderOptions = (t: ReturnType<typeof aiSettingsMessages.resolve>["t"]): typeof AI_PROVIDER_OPTIONS =>
+  AI_PROVIDER_OPTIONS.map((option) => ({
+    ...option,
+    description: {
+      openrouter: t.hostedGateway,
+      openai: t.hostedOpenAi,
+      anthropic: t.hostedAnthropic,
+      mistral: t.hostedMistral,
+      gemini: t.hostedGemini,
+      ollama: t.operatedOllama,
+      vllm: t.operatedVllm,
+      "openai-compatible": t.customCompatible,
+    }[option.id],
+  }));
+
+const localizedCapabilityOptions = (t: ReturnType<typeof aiSettingsMessages.resolve>["t"]) =>
+  [
+    { id: "streaming", label: t.streaming, description: t.streamingDescription },
+    { id: "tools", label: t.tools, description: t.toolsDescription },
+    { id: "vision", label: t.vision, description: t.visionDescription },
+  ] as const;
+
+const localizedBoundaryOptions = (t: ReturnType<typeof aiSettingsMessages.resolve>["t"]) =>
+  [
+    { id: "hosted", label: t.hostedProvider, description: t.hostedBoundaryDescription },
+    { id: "private", label: t.privateEndpoint, description: t.privateBoundaryDescription },
+  ] as const;
+
 export default function CoreSettingsForm(props: Props) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
+  const localizedEntries = createMemo(() => props.entries.map((entry) => localizeSettingField(entry, locale())));
   const [drafts, setDrafts] = createSignal<Record<string, unknown>>({});
   const [resetKeys, setResetKeys] = createSignal<Record<string, true>>({});
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
 
   const entryMap = createMemo(() => {
     const m: Record<string, SettingFieldDef> = {};
-    for (const e of props.entries) m[e.key] = e;
+    for (const e of localizedEntries()) m[e.key] = e;
     return m;
   });
 
   const initialMap = createMemo(() => {
     const m: Record<string, unknown> = {};
-    for (const e of props.entries) m[e.key] = e.value;
+    for (const e of localizedEntries()) m[e.key] = e.value;
     return m;
   });
 
@@ -288,9 +323,9 @@ export default function CoreSettingsForm(props: Props) {
   });
 
   const hasChanges = () => changedKeys().length > 0;
-  const isAiSettings = () => props.entries.some((entry) => entry.key === AI_PROFILE_SETTING_KEY);
+  const isAiSettings = () => localizedEntries().some((entry) => entry.key === AI_PROFILE_SETTING_KEY);
   const genericEntries = () =>
-    isAiSettings() ? props.entries.filter((entry) => !AI_SETTINGS_HANDLED_BY_PANEL.has(entry.key)) : props.entries;
+    isAiSettings() ? localizedEntries().filter((entry) => !AI_SETTINGS_HANDLED_BY_PANEL.has(entry.key)) : localizedEntries();
 
   const renderFieldRows = (entries: SettingFieldDef[]) =>
     entries.map((entry) => (
@@ -329,7 +364,7 @@ export default function CoreSettingsForm(props: Props) {
       });
 
       if (!response.ok) {
-        const { message, fields } = await readSettingsError(response, `Save failed (HTTP ${response.status})`);
+        const { message, fields } = await readSettingsError(response, t().saveFailed({ status: response.status }));
         setFieldErrors(fields);
         throw new Error(message);
       }
@@ -343,7 +378,7 @@ export default function CoreSettingsForm(props: Props) {
 
   const openTestEmailDialog = () => {
     void prompts.dialog<void>((close) => <TestEmailDialog close={close} />, {
-      title: "Send test email",
+      title: t().sendTestEmail,
       icon: "ti ti-mail-check",
     });
   };
@@ -356,7 +391,7 @@ export default function CoreSettingsForm(props: Props) {
         const message =
           body && typeof body === "object" && "message" in body && typeof body.message === "string"
             ? body.message
-            : `Failed to test PDF rendering (HTTP ${response.status})`;
+            : t().pdfTestFailed({ status: response.status });
         throw new Error(message);
       }
       return body as { bytes: number; contentType: string };
@@ -366,16 +401,16 @@ export default function CoreSettingsForm(props: Props) {
         (close) => (
           <div class="flex flex-col gap-4">
             <p class="text-sm text-secondary">
-              Gotenberg returned a {formatBytes(result.bytes)} {result.contentType} response.
+              {t().pdfResponse({ size: formatBytes(result.bytes, { locale: locale() }), type: result.contentType })}
             </p>
             <div class="flex justify-end">
               <Button type="button" size="sm" onClick={() => close()}>
-                Close
+                {t().close}
               </Button>
             </div>
           </div>
         ),
-        { title: "PDF renderer is reachable", icon: "ti ti-check" },
+        { title: t().pdfReachable, icon: "ti ti-check" },
       );
     },
     onError: (e) => prompts.error(e.message),
@@ -389,30 +424,26 @@ export default function CoreSettingsForm(props: Props) {
         const message =
           body && typeof body === "object" && "message" in body && typeof body.message === "string"
             ? body.message
-            : `Failed to test FreeIPA (HTTP ${response.status})`;
+            : t().freeIpaTestFailed({ status: response.status });
         throw new Error(message);
       }
     },
-    onSuccess: () => toast.success("FreeIPA is reachable and the service account is valid."),
+    onSuccess: () => toast.success(t().freeIpaReachable),
     onError: (e) => prompts.error(e.message),
   });
 
   const headerActions = () => (
     <>
       <Show when={props.showTestEmailAction}>
-        <Tooltip.Anchor
-          content={hasChanges() ? "Save pending changes before sending a test email" : "Send a test email with the saved SMTP settings"}
-        >
+        <Tooltip.Anchor content={hasChanges() ? t().testEmailPending : t().testEmailSaved}>
           <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={openTestEmailDialog} disabled={hasChanges()}>
-            <i class="ti ti-send" /> Test email
+            <i class="ti ti-send" /> {t().testEmail}
           </Button>
         </Tooltip.Anchor>
       </Show>
 
       <Show when={props.showTestPdfAction}>
-        <Tooltip.Anchor
-          content={hasChanges() ? "Save pending changes before testing Gotenberg" : "Render a test PDF with the saved settings"}
-        >
+        <Tooltip.Anchor content={hasChanges() ? t().testPdfPending : t().testPdfSaved}>
           <Button
             type="button"
             variant="secondary"
@@ -420,18 +451,16 @@ export default function CoreSettingsForm(props: Props) {
             class="justify-center"
             onClick={() => testPdf.mutate()}
             loading={testPdf.loading()}
-            loadingLabel="Testing renderer"
+            loadingLabel={t().testingRenderer}
             disabled={hasChanges()}
           >
-            <i class={testPdf.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-file-type-pdf"} /> Test renderer
+            <i class={testPdf.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-file-type-pdf"} /> {t().testRenderer}
           </Button>
         </Tooltip.Anchor>
       </Show>
 
       <Show when={props.showTestFreeIpaAction}>
-        <Tooltip.Anchor
-          content={hasChanges() ? "Save pending changes before testing FreeIPA" : "Test TLS, service account login, and ping"}
-        >
+        <Tooltip.Anchor content={hasChanges() ? t().testFreeIpaPending : t().testFreeIpaSaved}>
           <Button
             type="button"
             variant="secondary"
@@ -439,10 +468,10 @@ export default function CoreSettingsForm(props: Props) {
             class="justify-center"
             onClick={() => testFreeIpa.mutate()}
             loading={testFreeIpa.loading()}
-            loadingLabel="Testing connection"
+            loadingLabel={t().testingConnection}
             disabled={hasChanges()}
           >
-            <i class={testFreeIpa.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plug-connected"} /> Test connection
+            <i class={testFreeIpa.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plug-connected"} /> {t().testConnection}
           </Button>
         </Tooltip.Anchor>
       </Show>
@@ -450,7 +479,7 @@ export default function CoreSettingsForm(props: Props) {
   );
 
   const renderFieldSections = (entries: SettingFieldDef[]) =>
-    groupSettingEntries(entries).map((section) => (
+    groupSettingEntries(entries, t()).map((section) => (
       <SettingsSection title={section.title} subtitle={section.subtitle} icon={section.icon}>
         {renderFieldRows(section.entries)}
       </SettingsSection>
@@ -473,11 +502,7 @@ export default function CoreSettingsForm(props: Props) {
       }
     >
       <Show when={props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction}>
-        <NoticeCard
-          tone="info"
-          title="Tests use saved settings"
-          detail="Save or discard pending changes before running a connection or delivery test."
-        />
+        <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
       </Show>
 
       <Show
@@ -492,7 +517,7 @@ export default function CoreSettingsForm(props: Props) {
         }
       >
         <AiSettingsPanel
-          entries={props.entries}
+          entries={localizedEntries()}
           valueOf={valueOf}
           errorFor={(key) => fieldErrors()[key]}
           onChange={setDraft}
@@ -515,88 +540,90 @@ type SettingSectionGroup = {
   entries: SettingFieldDef[];
 };
 
-const SECTION_DEFS: Record<string, { title: string; subtitle: string; icon: string }> = {
+const sectionDefs = (
+  t: ReturnType<typeof settingsMessages.resolve>["t"],
+): Record<string, { title: string; subtitle: string; icon: string }> => ({
   "app.identity": {
-    title: "Identity",
-    subtitle: "Name, public URL, home path, contact details, and footer ownership.",
+    title: t.identity,
+    subtitle: t.identityDescription,
     icon: "ti ti-id",
   },
   "app.branding": {
-    title: "Branding",
-    subtitle: "Images shown in browser chrome and the Cloud shell.",
+    title: t.branding,
+    subtitle: t.brandingDescription,
     icon: "ti ti-photo",
   },
   "app.operations": {
-    title: "Operations",
-    subtitle: "Timezone and schedules used by automatic platform jobs.",
+    title: t.operations,
+    subtitle: t.operationsDescription,
     icon: "ti ti-calendar-time",
   },
   "user.login": {
-    title: "Login",
-    subtitle: "Session and account creation behavior.",
+    title: t.login,
+    subtitle: t.loginDescription,
     icon: "ti ti-login",
   },
   "user.expiry": {
-    title: "Account expiry",
-    subtitle: "Default lifetimes for IPA, local user, and local guest accounts.",
+    title: t.accountExpiry,
+    subtitle: t.accountExpiryDescription,
     icon: "ti ti-hourglass",
   },
   "user.reminders": {
-    title: "Reminders and retention",
-    subtitle: "Reminder timing plus cleanup retention for account lifecycle history.",
+    title: t.remindersRetention,
+    subtitle: t.remindersRetentionDescription,
     icon: "ti ti-bell",
   },
   "freeipa.connection": {
-    title: "Connection",
-    subtitle: "FreeIPA host and TLS trust configuration.",
+    title: t.connection,
+    subtitle: t.freeIpaConnectionDescription,
     icon: "ti ti-server",
   },
   "freeipa.service": {
-    title: "Service account",
-    subtitle: "Credentials used for internal FreeIPA operations.",
+    title: t.serviceAccount,
+    subtitle: t.serviceAccountDescription,
     icon: "ti ti-key",
   },
   "freeipa.groups": {
-    title: "Group mapping",
-    subtitle: "FreeIPA groups mapped to Cloud roles and sync scope.",
+    title: t.groupMapping,
+    subtitle: t.groupMappingDescription,
     icon: "ti ti-users-group",
   },
   "freeipa.sync": {
-    title: "Sync policy",
-    subtitle: "Account transition behavior and scheduled synchronization.",
+    title: t.syncPolicy,
+    subtitle: t.syncPolicyDescription,
     icon: "ti ti-refresh",
   },
   "mail.smtp": {
-    title: "SMTP delivery",
-    subtitle: "Sender identity and SMTP credentials for outgoing email.",
+    title: t.smtpDelivery,
+    subtitle: t.smtpDeliveryDescription,
     icon: "ti ti-mail",
   },
   "mail.templates": {
-    title: "Templates",
-    subtitle: "HTML bodies for transactional emails.",
+    title: t.templates,
+    subtitle: t.templatesDescription,
     icon: "ti ti-template",
   },
   "gotenberg.connection": {
-    title: "Connection",
-    subtitle: "Gotenberg endpoint and optional Basic Auth credentials.",
+    title: t.connection,
+    subtitle: t.gotenbergConnectionDescription,
     icon: "ti ti-server",
   },
   "gotenberg.limits": {
-    title: "Limits",
-    subtitle: "Timeout and size limits for PDF rendering.",
+    title: t.limits,
+    subtitle: t.limitsDescription,
     icon: "ti ti-gauge",
   },
   "security.rate-limits": {
-    title: "Rate limits",
-    subtitle: "Request throttling defaults for platform APIs.",
+    title: t.rateLimits,
+    subtitle: t.rateLimitsDescription,
     icon: "ti ti-shield-lock",
   },
   default: {
-    title: "Settings",
-    subtitle: "Registered runtime settings for this area.",
+    title: t.settings,
+    subtitle: t.runtimeSettingsDescription,
     icon: "ti ti-settings",
   },
-};
+});
 
 const sectionIdForEntry = (entry: SettingFieldDef): string => {
   if (entry.key === "app.logo" || entry.key === "app.favicon") return "app.branding";
@@ -631,42 +658,45 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
   return "default";
 };
 
-const groupSettingEntries = (entries: SettingFieldDef[]): SettingSectionGroup[] => {
+const groupSettingEntries = (entries: SettingFieldDef[], t: ReturnType<typeof settingsMessages.resolve>["t"]): SettingSectionGroup[] => {
+  const definitions = sectionDefs(t);
   const sections = new Map<string, SettingSectionGroup>();
   for (const entry of entries) {
     const id = sectionIdForEntry(entry);
-    const def = SECTION_DEFS[id] ?? SECTION_DEFS.default!;
+    const def = definitions[id] ?? definitions.default!;
     if (!sections.has(id)) sections.set(id, { id, ...def, entries: [] });
     sections.get(id)!.entries.push(entry);
   }
   return [...sections.values()];
 };
 
-const sourceLabel = (source: SettingValueSource) => {
-  if (source === "custom") return "Custom override";
-  if (source === "env") return "Environment fallback";
-  return "Code default";
+const sourceLabel = (source: SettingValueSource, t: ReturnType<typeof settingsMessages.resolve>["t"]) => {
+  if (source === "custom") return t.customOverride;
+  if (source === "env") return t.environmentFallback;
+  return t.codeDefault;
 };
 
-const formatSettingPreview = (entry: SettingFieldDef, value: unknown): string => {
-  if (entry.kind === "secret") return entry.resetValueSource === "env" ? "Environment fallback (hidden)" : "Empty secret";
-  if (entry.kind === "boolean") return value ? "Enabled" : "Disabled";
-  if (entry.kind === "image") return typeof value === "string" && value ? "Image configured" : "No image";
-  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "Empty list";
-  if (value === "" || value === null || value === undefined) return "Empty";
+const formatSettingPreview = (entry: SettingFieldDef, value: unknown, t: ReturnType<typeof settingsMessages.resolve>["t"]): string => {
+  if (entry.kind === "secret") return entry.resetValueSource === "env" ? t.environmentFallbackHidden : t.emptySecret;
+  if (entry.kind === "boolean") return value ? t.enabled : t.disabled;
+  if (entry.kind === "image") return typeof value === "string" && value ? t.imageConfigured : t.noImage;
+  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : t.emptyList;
+  if (value === "" || value === null || value === undefined) return t.empty;
 
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (!text) return "Empty";
+  if (!text) return t.empty;
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 };
 
 function TestEmailDialog(props: { close: () => void }) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   const [recipient, setRecipient] = createSignal("");
 
   const send = mutations.create<void, void>({
     mutation: async () => {
       const email = recipient().trim();
-      if (!email) throw new Error("Enter a recipient email address.");
+      if (!email) throw new Error(t().recipientRequired);
 
       const response = await coreClient.admin.core.settings["test-email"].$post({ json: { recipient: email } });
       if (!response.ok) {
@@ -674,7 +704,7 @@ function TestEmailDialog(props: { close: () => void }) {
         const message =
           body && typeof body === "object" && "message" in body && typeof body.message === "string"
             ? body.message
-            : `Failed to send test email (HTTP ${response.status})`;
+            : t().testEmailFailed({ status: response.status });
         throw new Error(message);
       }
     },
@@ -683,15 +713,15 @@ function TestEmailDialog(props: { close: () => void }) {
       void prompts.dialog<void>(
         (close) => (
           <div class="flex flex-col gap-4">
-            <p class="text-sm text-secondary">The test email was handed to the configured SMTP server.</p>
+            <p class="text-sm text-secondary">{t().testEmailDelivered}</p>
             <div class="flex justify-end">
               <Button type="button" size="sm" onClick={() => close()}>
-                Close
+                {t().close}
               </Button>
             </div>
           </div>
         ),
-        { title: "Test email sent", icon: "ti ti-check" },
+        { title: t().testEmailSent, icon: "ti ti-check" },
       );
     },
     onError: (e) => prompts.error(e.message),
@@ -706,8 +736,8 @@ function TestEmailDialog(props: { close: () => void }) {
       }}
     >
       <TextInput
-        label="Recipient email"
-        description="The test message is sent only to this address."
+        label={t().recipientEmail}
+        description={t().recipientEmailDescription}
         type="email"
         required
         value={recipient}
@@ -717,10 +747,10 @@ function TestEmailDialog(props: { close: () => void }) {
 
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={send.loading()}>
-          Cancel
+          {t().cancel}
         </Button>
-        <Button type="submit" size="sm" loading={send.loading()} loadingLabel="Sending">
-          <i class={send.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} /> Send
+        <Button type="submit" size="sm" loading={send.loading()} loadingLabel={t().sending}>
+          <i class={send.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} /> {t().send}
         </Button>
       </div>
     </form>
@@ -728,8 +758,6 @@ function TestEmailDialog(props: { close: () => void }) {
 }
 
 const providerOption = (provider: AiProviderId) => AI_PROVIDER_OPTIONS.find((option) => option.id === provider) ?? AI_PROVIDER_OPTIONS[0]!;
-const dataBoundaryOption = (boundary: AiDataBoundary) =>
-  AI_DATA_BOUNDARY_OPTIONS.find((option) => option.id === boundary) ?? AI_DATA_BOUNDARY_OPTIONS[0]!;
 const defaultDataBoundary = (provider: AiProviderId): AiDataBoundary =>
   provider === "ollama" || provider === "vllm" || provider === "openai-compatible" ? "private" : "hosted";
 const providerRequiresProfileKey = (provider: AiProviderId): boolean =>
@@ -808,7 +836,10 @@ const normalizeAiProfile = (value: unknown): AiModelProfileDraft | null => {
   };
 };
 
-const parseAiProfiles = (rawJson: unknown): { profiles: AiModelProfileDraft[]; error?: string } => {
+const parseAiProfiles = (
+  rawJson: unknown,
+  t: ReturnType<typeof aiSettingsMessages.resolve>["t"],
+): { profiles: AiModelProfileDraft[]; error?: string } => {
   const raw = asString(rawJson).trim();
   if (!raw) return { profiles: [] };
 
@@ -816,14 +847,14 @@ const parseAiProfiles = (rawJson: unknown): { profiles: AiModelProfileDraft[]; e
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    return { profiles: [], error: error instanceof Error ? error.message : "Model profiles must be valid JSON." };
+    return { profiles: [], error: error instanceof Error ? error.message : t.profilesValidJson };
   }
 
-  if (!Array.isArray(parsed)) return { profiles: [], error: "Model profiles must be a JSON array." };
+  if (!Array.isArray(parsed)) return { profiles: [], error: t.profilesJsonArray };
 
   const profiles = parsed.map(normalizeAiProfile);
   if (profiles.some((profile) => !profile)) {
-    return { profiles: [], error: "Every model profile needs at least id, provider, and model." };
+    return { profiles: [], error: t.profileFieldsRequired };
   }
 
   return { profiles: profiles as AiModelProfileDraft[] };
@@ -846,45 +877,47 @@ const formatAiDuration = (ms: number | null): string => {
   return `${Math.round(ms / 60_000)}m`;
 };
 
-const formatAiDate = (value: string | null): string => (value ? new Date(value).toLocaleString() : "-");
+const formatAiDate = (value: string | null, locale: string): string => (value ? new Date(value).toLocaleString(locale) : "-");
 
 const formatAiPercent = (value: number): string => `${value.toFixed(value >= 10 ? 0 : 1)}%`;
 
 function AiEnrichmentOverviewPanel(props: { overview: AiEnrichmentOverview; showJobsLink?: boolean }) {
+  const locale = useLocale();
+  const t = () => aiSettingsMessages.resolve([locale()]).t;
   const statusClass = (status: string) => (status === "ok" ? "badge-success" : status === "failed" ? "badge-danger" : "badge-neutral");
   return (
     <div class="flex flex-col gap-2">
       <StatGrid columns={4} size="sm" surface="muted">
         <StatCell
-          label="Dirty chats"
+          label={t().dirtyChats}
           value={props.overview.dirtyConversations}
-          sub={`Oldest ${formatAiDate(props.overview.oldestDirtyAt)}`}
+          sub={t().oldest({ date: formatAiDate(props.overview.oldestDirtyAt, locale()) })}
         />
         <StatCell
-          label="Failed chats"
+          label={t().failedChats}
           value={props.overview.failedConversations}
-          sub={`${props.overview.totalConversations} active total`}
+          sub={t().activeTotal({ count: props.overview.totalConversations })}
         />
         <StatCell
-          label="Error rate 24h"
+          label={t().errorRate24h}
           value={formatAiPercent(props.overview.errorRate24h)}
-          sub={`${props.overview.failedRuns24h} / ${props.overview.totalRuns24h} failed`}
+          sub={t().failedRatio({ failed: props.overview.failedRuns24h, total: props.overview.totalRuns24h })}
           accent={props.overview.failedRuns24h > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
         />
         <StatCell
-          label="Avg runtime"
+          label={t().averageRuntime}
           value={formatAiDuration(props.overview.avgDurationMs)}
-          sub={`Last run ${formatAiDate(props.overview.lastRunAt)}`}
+          sub={t().lastRun({ date: formatAiDate(props.overview.lastRunAt, locale()) })}
         />
       </StatGrid>
 
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-xs text-dimmed">Runtime traces live on the generic jobs page; a manual run enriches up to 25 dirty chats.</p>
+        <p class="text-xs text-dimmed">{t().enrichmentTraceHint}</p>
         <div class="flex items-center gap-2">
           <RunEnrichmentButton />
           <Show when={props.showJobsLink}>
             <ButtonLink href="/admin/observability/jobs?search=ai%3Achat" variant="ai" size="sm">
-              <i class="ti ti-external-link" /> Open jobs
+              <i class="ti ti-external-link" /> {t().openJobs}
             </ButtonLink>
           </Show>
         </div>
@@ -898,7 +931,7 @@ function AiEnrichmentOverviewPanel(props: { overview: AiEnrichmentOverview; show
               <span class="min-w-0">
                 <span class="block truncate text-primary">{run.conversationTitle || run.conversationId}</span>
                 <span class="block truncate text-[11px] text-dimmed">
-                  {run.trigger} · {formatAiDate(run.createdAt)}
+                  {run.trigger} · {formatAiDate(run.createdAt, locale())}
                 </span>
               </span>
               <span class="whitespace-nowrap text-[11px] text-dimmed">{formatAiDuration(run.durationMs)}</span>
@@ -911,6 +944,8 @@ function AiEnrichmentOverviewPanel(props: { overview: AiEnrichmentOverview; show
 }
 
 function RunEnrichmentButton() {
+  const locale = useLocale();
+  const t = () => aiSettingsMessages.resolve([locale()]).t;
   const [running, setRunning] = createSignal(false);
   const run = async () => {
     setRunning(true);
@@ -921,25 +956,21 @@ function RunEnrichmentButton() {
         message?: string;
         summary?: { scanned: number; enriched: number; failed: number };
       } | null;
-      if (!response.ok || !body?.ok) throw new Error(body?.message ?? "AI enrichment run failed");
+      if (!response.ok || !body?.ok) throw new Error(body?.message ?? t().enrichmentFailed);
       const summary = body.summary;
-      toast.success(
-        summary
-          ? `Enrichment done: ${summary.enriched} enriched, ${summary.failed} failed (${summary.scanned} scanned).`
-          : "Enrichment done.",
-      );
+      toast.success(summary ? t().enrichmentSummary(summary) : t().enrichmentDone);
       // The overview numbers are server-rendered — reload to reflect the run.
       window.location.reload();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "AI enrichment run failed");
+      toast.error(error instanceof Error ? error.message : t().enrichmentFailed);
     } finally {
       setRunning(false);
     }
   };
   return (
-    <Button type="button" variant="secondary" size="sm" loading={running()} loadingLabel="Running" onClick={() => void run()}>
+    <Button type="button" variant="secondary" size="sm" loading={running()} loadingLabel={t().running} onClick={() => void run()}>
       <i class={running() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} aria-hidden="true" />
-      Run now
+      {t().runNow}
     </Button>
   );
 }
@@ -954,10 +985,13 @@ function AiSettingsPanel(props: {
   section: "general" | "providers" | "jobs";
   showJobsLink?: boolean;
 }) {
+  const locale = useLocale();
+  const t = () => aiSettingsMessages.resolve([locale()]).t;
+  const modelGroupLabels = () => ({ hosted: t().hosted, private: t().private, vision: t().vision, tools: t().tools });
   const entry = (key: string) => props.entries.find((item) => item.key === key);
   // Secret values are redacted server-side; valueSource tells whether a stored/env key exists.
   const firecrawlKeyConfigured = () => (entry(AI_FIRECRAWL_API_KEY_SETTING_KEY)?.valueSource ?? "default") !== "default";
-  const profilesState = createMemo(() => parseAiProfiles(props.valueOf(AI_PROFILE_SETTING_KEY)));
+  const profilesState = createMemo(() => parseAiProfiles(props.valueOf(AI_PROFILE_SETTING_KEY), t()));
   // A key typed in this session counts as configured before the save lands.
   const hasCredential = (profile: AiModelProfileDraft) =>
     Boolean(profile.apiKey?.trim()) || props.credentialProfileIds.includes(profile.id);
@@ -1000,11 +1034,11 @@ function AiSettingsPanel(props: {
   };
 
   const removeProfile = async (profile: AiModelProfileDraft) => {
-    const confirmed = await prompts.confirm(`Remove AI model profile "${profile.label}"?`, {
-      title: "Remove AI profile",
+    const confirmed = await prompts.confirm(t().removeProfileConfirm({ label: profile.label }), {
+      title: t().removeAiProfile,
       icon: "ti ti-trash",
       variant: "danger",
-      confirmText: "Remove",
+      confirmText: t().remove,
     });
     if (!confirmed) return;
 
@@ -1021,7 +1055,7 @@ function AiSettingsPanel(props: {
         const [error, setError] = createSignal<string | undefined>();
 
         const submit = () => {
-          const parsed = parseAiProfiles(draft());
+          const parsed = parseAiProfiles(draft(), t());
           if (parsed.error) {
             setError(parsed.error);
             return;
@@ -1040,8 +1074,8 @@ function AiSettingsPanel(props: {
             <TextInput
               multiline
               lines={12}
-              label="Model profiles JSON"
-              description="Use this only for bulk import or hand-editing advanced profile fields."
+              label={t().modelProfilesJson}
+              description={t().modelProfilesJsonDescription}
               value={draft}
               onValueChange={setDraft}
               error={error}
@@ -1049,20 +1083,20 @@ function AiSettingsPanel(props: {
             />
             <div class="flex justify-end gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button type="submit" size="sm">
-                <i class="ti ti-upload" /> Import
+                <i class="ti ti-upload" /> {t().import}
               </Button>
             </div>
           </form>
         );
       },
-      { title: "Import model profiles", icon: "ti ti-file-import", size: "wide" },
+      { title: t().importProfiles, icon: "ti ti-file-import", size: "wide" },
     );
 
     if (typeof result !== "string") return;
-    const parsed = parseAiProfiles(result);
+    const parsed = parseAiProfiles(result, t());
     if (parsed.error) {
       prompts.error(parsed.error);
       return;
@@ -1089,33 +1123,36 @@ function AiSettingsPanel(props: {
   return (
     <div class="flex flex-col gap-2">
       <Show when={props.section === "general"}>
-        <SettingsSection title="Cloud AI" subtitle="Global switch, default model, and workspace-wide instructions." icon="ti ti-sparkles">
+        <SettingsSection title={t().cloudAi} subtitle={t().cloudAiDescription} icon="ti ti-sparkles">
           <div class="flex flex-col gap-2">
             <Switch
-              label={props.valueOf(AI_ENABLED_SETTING_KEY) ? "AI enabled" : "AI disabled"}
+              label={props.valueOf(AI_ENABLED_SETTING_KEY) ? t().aiEnabled : t().aiDisabled}
               value={() => Boolean(props.valueOf(AI_ENABLED_SETTING_KEY))}
               onValueChange={(value) => props.onChange(AI_ENABLED_SETTING_KEY, value)}
             />
-            <p class="text-xs text-dimmed">Controls whether Cloud AI features are available to apps and users.</p>
+            <p class="text-xs text-dimmed">{t().aiAvailability}</p>
           </div>
 
           <Select
-            label="Default model"
-            description="Used when an app asks for the platform default model."
+            label={t().defaultModel}
+            description={t().defaultModelDescription}
             value={() => defaultModelId()}
             onValueChange={(value) => value !== null && setDefaultModel(value)}
             options={profiles()
               .filter((profile) => profile.enabled || profile.id === defaultModelId())
               .map((profile) => ({
                 id: profile.id,
-                label: profile.enabled ? profile.label : `${profile.label} (disabled)`,
+                label: profile.enabled ? profile.label : `${profile.label} (${t().disabledSuffix})`,
                 description: `${providerOption(profile.provider).label} · ${profile.model}`,
                 icon: "ti ti-sparkles",
                 groups: aiModelChoiceGroups(profile),
               }))}
-            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled || profile.id === defaultModelId()))}
-            groupsAriaLabel="Filter models"
-            placeholder={profiles().length > 0 ? "Choose default model" : "Add a provider first"}
+            groups={aiModelGroupFiltersFor(
+              profiles().filter((profile) => profile.enabled || profile.id === defaultModelId()),
+              modelGroupLabels(),
+            )}
+            groupsAriaLabel={t().filterModels}
+            placeholder={profiles().length > 0 ? t().chooseDefaultModel : t().addProviderFirst}
             icon="ti ti-sparkles"
             disabled={profiles().length === 0}
             error={() => props.errorFor(AI_DEFAULT_MODEL_SETTING_KEY)}
@@ -1123,10 +1160,8 @@ function AiSettingsPanel(props: {
 
           <div class="flex flex-col gap-1.5">
             <div>
-              <p class="text-sm font-medium text-primary">Global instructions</p>
-              <p class="text-xs text-dimmed">
-                Liquid template appended after the platform prompt in every Cloud AI conversation. Type {"{{"} for variable completions.
-              </p>
+              <p class="text-sm font-medium text-primary">{t().globalInstructions}</p>
+              <p class="text-xs text-dimmed">{t().globalInstructionsDescription}</p>
             </div>
             <TemplateEditor
               value={() => asString(props.valueOf(AI_GLOBAL_INSTRUCTIONS_SETTING_KEY))}
@@ -1141,13 +1176,10 @@ function AiSettingsPanel(props: {
           <details class="group">
             <summary class="flex cursor-pointer select-none items-center gap-1.5 text-xs font-medium text-secondary hover:text-primary">
               <i class="ti ti-chevron-right transition-transform group-open:rotate-90" aria-hidden="true" />
-              Show the built-in platform prompt
+              {t().showPlatformPrompt}
             </summary>
             <div class="mt-2 flex flex-col gap-1.5">
-              <p class="text-xs text-dimmed">
-                Every conversation starts with this Liquid template, rendered per turn with the current user, chat, time, available tools,
-                and memory state. Your global instructions are appended directly after it.
-              </p>
+              <p class="text-xs text-dimmed">{t().platformPromptDescription}</p>
               <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
                 {AI_PLATFORM_PROMPT_TEMPLATE}
               </pre>
@@ -1155,14 +1187,14 @@ function AiSettingsPanel(props: {
           </details>
         </SettingsSection>
 
-        <SettingsSection title="Context" subtitle="Limits for model context assembled during conversations." icon="ti ti-package">
+        <SettingsSection title={t().context} subtitle={t().contextDescription} icon="ti ti-package">
           <Select
-            label="Vision tool model"
-            description="Used by view_image when the chat model needs help inspecting a stored image. Direct vision models still receive newly attached images themselves."
+            label={t().visionModel}
+            description={t().visionModelDescription}
             value={() => asString(props.valueOf(AI_VISION_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_VISION_MODEL_SETTING_KEY, value ?? "")}
             options={[
-              { id: "", label: "Disable view_image fallback", icon: "ti ti-photo-off" },
+              { id: "", label: t().disableVisionFallback, icon: "ti ti-photo-off" },
               ...profiles()
                 .filter((profile) => profile.enabled && profile.capabilities.includes("vision"))
                 .map((profile) => ({
@@ -1173,14 +1205,17 @@ function AiSettingsPanel(props: {
                   groups: aiModelChoiceGroups(profile),
                 })),
             ]}
-            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled && profile.capabilities.includes("vision")))}
-            groupsAriaLabel="Filter vision models"
+            groups={aiModelGroupFiltersFor(
+              profiles().filter((profile) => profile.enabled && profile.capabilities.includes("vision")),
+              modelGroupLabels(),
+            )}
+            groupsAriaLabel={t().filterVisionModels}
             icon="ti ti-photo-spark"
             error={() => props.errorFor(AI_VISION_MODEL_SETTING_KEY)}
           />
           <NumberInput
-            label="Tool result ceiling"
-            description="Maximum characters allowed for one tool result. The runtime automatically uses less for models with smaller context windows."
+            label={t().toolResultCeiling}
+            description={t().toolResultCeilingDescription}
             value={maxToolResultChars}
             onValueChange={(value) => props.onChange(AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY, value ?? 2000000)}
             min={500}
@@ -1192,18 +1227,14 @@ function AiSettingsPanel(props: {
       </Show>
 
       <Show when={props.section === "jobs"}>
-        <SettingsSection
-          title="Background jobs"
-          subtitle="One model, task guidance, and schedules for chat enrichment, personalization learning, and compaction."
-          icon="ti ti-clock-bolt"
-        >
+        <SettingsSection title={t().backgroundJobs} subtitle={t().backgroundJobsDescription} icon="ti ti-clock-bolt">
           <Select
-            label="Background model"
-            description="Model used for background AI jobs. Falls back to the default model when unset."
+            label={t().backgroundModel}
+            description={t().backgroundModelDescription}
             value={() => asString(props.valueOf(AI_BACKGROUND_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_BACKGROUND_MODEL_SETTING_KEY, value ?? "")}
             options={[
-              { id: "", label: "Use default model", icon: "ti ti-sparkles" },
+              { id: "", label: t().useDefaultModel, icon: "ti ti-sparkles" },
               ...profiles()
                 .filter((profile) => profile.enabled)
                 .map((profile) => ({
@@ -1214,19 +1245,22 @@ function AiSettingsPanel(props: {
                   groups: aiModelChoiceGroups(profile),
                 })),
             ]}
-            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled))}
-            groupsAriaLabel="Filter background models"
+            groups={aiModelGroupFiltersFor(
+              profiles().filter((profile) => profile.enabled),
+              modelGroupLabels(),
+            )}
+            groupsAriaLabel={t().filterBackgroundModels}
             icon="ti ti-clock-bolt"
             error={() => props.errorFor(AI_BACKGROUND_MODEL_SETTING_KEY)}
           />
 
           <Select
-            label="Workflow model"
-            description="Model used for AI workflow actions. Falls back to the background model when unset."
+            label={t().workflowModel}
+            description={t().workflowModelDescription}
             value={() => asString(props.valueOf(AI_WORKFLOW_MODEL_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_WORKFLOW_MODEL_SETTING_KEY, value ?? "")}
             options={[
-              { id: "", label: "Use background model", icon: "ti ti-sparkles" },
+              { id: "", label: t().useBackgroundModel, icon: "ti ti-sparkles" },
               ...profiles()
                 .filter((profile) => profile.enabled)
                 .map((profile) => ({
@@ -1237,15 +1271,18 @@ function AiSettingsPanel(props: {
                   groups: aiModelChoiceGroups(profile),
                 })),
             ]}
-            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled))}
-            groupsAriaLabel="Filter workflow models"
+            groups={aiModelGroupFiltersFor(
+              profiles().filter((profile) => profile.enabled),
+              modelGroupLabels(),
+            )}
+            groupsAriaLabel={t().filterWorkflowModels}
             icon="ti ti-route"
             error={() => props.errorFor(AI_WORKFLOW_MODEL_SETTING_KEY)}
           />
 
           <TextInput
-            label="Chat enrichment schedule"
-            description="Cron for the job that summarizes changed chats and refreshes keywords and titles for search."
+            label={t().chatEnrichmentSchedule}
+            description={t().chatEnrichmentScheduleDescription}
             value={() => asString(props.valueOf(AI_ENRICH_CRON_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_ENRICH_CRON_SETTING_KEY, value)}
             placeholder="*/10 * * * *"
@@ -1257,8 +1294,8 @@ function AiSettingsPanel(props: {
             variant="ai"
             multiline
             lines={4}
-            label="Chat enrichment instructions"
-            description="Optional organization guidance added between Cloud's fixed task and fixed output contract."
+            label={t().chatEnrichmentInstructions}
+            description={t().chatEnrichmentInstructionsDescription}
             value={() => asString(props.valueOf(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY, value)}
             placeholder={entry(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY)?.placeholder}
@@ -1266,8 +1303,8 @@ function AiSettingsPanel(props: {
           />
 
           <TextInput
-            label="Personalization learning schedule"
-            description="Cron for checking newly completed private-chat turns for useful personalization."
+            label={t().personalizationSchedule}
+            description={t().personalizationScheduleDescription}
             value={() => asString(props.valueOf(AI_MEMORY_LEARNING_CRON_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_CRON_SETTING_KEY, value)}
             placeholder="*/10 * * * *"
@@ -1276,8 +1313,8 @@ function AiSettingsPanel(props: {
           />
 
           <NumberInput
-            label="Monthly personalization budget"
-            description="Maximum accounted background-personalization tokens per user and calendar month. Processing resumes automatically next month."
+            label={t().monthlyBudget}
+            description={t().monthlyBudgetDescription}
             value={() => Number(props.valueOf(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY) ?? 100000)}
             onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY, value ?? 100000)}
             min={10000}
@@ -1290,8 +1327,8 @@ function AiSettingsPanel(props: {
             variant="ai"
             multiline
             lines={4}
-            label="Personalization learning instructions"
-            description="Optional organization guidance added without weakening Cloud's fixed privacy and output contract."
+            label={t().personalizationInstructions}
+            description={t().personalizationInstructionsDescription}
             value={() => asString(props.valueOf(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY, value)}
             placeholder={entry(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY)?.placeholder}
@@ -1302,8 +1339,8 @@ function AiSettingsPanel(props: {
             variant="ai"
             multiline
             lines={4}
-            label="Compaction instructions"
-            description="Optional organization guidance added without replacing Cloud's structured handoff and completeness contract."
+            label={t().compactionInstructions}
+            description={t().compactionInstructionsDescription}
             value={() => asString(props.valueOf(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY, value)}
             placeholder={entry(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY)?.placeholder}
@@ -1317,22 +1354,14 @@ function AiSettingsPanel(props: {
       </Show>
 
       <Show when={props.section === "general"}>
-        <SettingsSection title="Web tools" subtitle="Firecrawl-backed search and page extraction for AI tools." icon="ti ti-world-search">
+        <SettingsSection title={t().webTools} subtitle={t().webToolsDescription} icon="ti ti-world-search">
           <TextInput
             variant="ai"
-            label="Firecrawl API key"
-            description={
-              firecrawlKeyConfigured()
-                ? "A key is configured (stored encrypted, never sent to the browser). Leave empty to keep it; type a new key to replace it."
-                : "Enables the default web_search and web_extract tools. The key is stored encrypted and never sent to the browser after save."
-            }
+            label={t().firecrawlKey}
+            description={firecrawlKeyConfigured() ? t().firecrawlConfigured : t().firecrawlDescription}
             value={() => asString(props.valueOf(AI_FIRECRAWL_API_KEY_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_FIRECRAWL_API_KEY_SETTING_KEY, value)}
-            placeholder={
-              firecrawlKeyConfigured()
-                ? "Leave empty to keep current key"
-                : (entry(AI_FIRECRAWL_API_KEY_SETTING_KEY)?.placeholder ?? "fc-...")
-            }
+            placeholder={firecrawlKeyConfigured() ? t().keepCurrentKey : (entry(AI_FIRECRAWL_API_KEY_SETTING_KEY)?.placeholder ?? "fc-...")}
             password
             error={() => props.errorFor(AI_FIRECRAWL_API_KEY_SETTING_KEY)}
           />
@@ -1341,18 +1370,18 @@ function AiSettingsPanel(props: {
 
       <Show when={props.section === "providers"}>
         <DataTable.Panel>
-          <DataTable.Header title="Model profiles" subtitle="Models, credentials, capabilities, and endpoint policy.">
+          <DataTable.Header title={t().modelProfiles} subtitle={t().modelProfilesDescription}>
             <div class="flex flex-wrap items-center justify-end gap-2">
-              <Tooltip.Anchor content="API keys are never exported">
+              <Tooltip.Anchor content={t().keysNeverExported}>
                 <Button type="button" variant="secondary" size="sm" onClick={exportJson}>
-                  <i class="ti ti-file-export" /> Export JSON
+                  <i class="ti ti-file-export" /> {t().exportJson}
                 </Button>
               </Tooltip.Anchor>
               <Button type="button" variant="secondary" size="sm" onClick={() => void importJson()}>
-                <i class="ti ti-file-import" /> Import JSON
+                <i class="ti ti-file-import" /> {t().importJson}
               </Button>
               <Button type="button" variant="ai" size="sm" onClick={() => void addProvider()}>
-                <i class="ti ti-plus" /> Add provider
+                <i class="ti ti-plus" /> {t().addProvider}
               </Button>
             </div>
           </DataTable.Header>
@@ -1362,8 +1391,8 @@ function AiSettingsPanel(props: {
               <NoticeCard
                 class="m-3"
                 tone={profilesState().error ? "danger" : "info"}
-                title={profilesState().error ? "Model profiles need attention" : "No providers configured"}
-                detail={profilesState().error ?? "Add a hosted or private model profile before Cloud AI can start conversations."}
+                title={profilesState().error ? t().profilesNeedAttention : t().noProviders}
+                detail={profilesState().error ?? t().noProvidersDescription}
               />
             }
           >
@@ -1398,12 +1427,12 @@ const AI_PROMPT_TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
   { name: "time" },
 ];
 
-const AI_PROFILE_COLUMNS: readonly DataTableColumn<AiModelProfileDraft>[] = [
-  { id: "provider", header: "Provider", cellClass: "min-w-64" },
-  { id: "status", header: "Status", cellClass: "min-w-40" },
-  { id: "endpoint", header: "Endpoint", cellClass: "min-w-56" },
-  { id: "policy", header: "Policy", cellClass: "min-w-64" },
-  { id: "actions", header: "Actions", align: "right", cellClass: "w-px" },
+const aiProfileColumns = (t: ReturnType<typeof aiSettingsMessages.resolve>["t"]): readonly DataTableColumn<AiModelProfileDraft>[] => [
+  { id: "provider", header: t.provider, cellClass: "min-w-64" },
+  { id: "status", header: t.status, cellClass: "min-w-40" },
+  { id: "endpoint", header: t.endpoint, cellClass: "min-w-56" },
+  { id: "policy", header: t.policy, cellClass: "min-w-64" },
+  { id: "actions", header: t.actions, align: "right", cellClass: "w-px" },
 ];
 
 function AiProfilesTable(props: {
@@ -1415,11 +1444,13 @@ function AiProfilesTable(props: {
   onDuplicate: (profile: AiModelProfileDraft) => void;
   onRemove: (profile: AiModelProfileDraft) => void;
 }) {
+  const locale = useLocale();
+  const t = () => aiSettingsMessages.resolve([locale()]).t;
   return (
     <DataTable
-      ariaLabel="AI providers"
+      ariaLabel={t().aiProviders}
       rows={props.profiles}
-      columns={AI_PROFILE_COLUMNS}
+      columns={aiProfileColumns(t())}
       getRowId={(profile) => profile.id}
       density="compact"
       verticalAlign="top"
@@ -1453,11 +1484,11 @@ function AiProfilesTable(props: {
           return (
             <div class="flex flex-wrap gap-1">
               <Show when={profile.id === props.defaultModelId}>
-                <StatusBadge tone="running" label="Default" icon={null} />
+                <StatusBadge tone="running" label={t().default} icon={null} />
               </Show>
-              <StatusBadge tone={profile.enabled ? "ok" : "neutral"} label={profile.enabled ? "Enabled" : "Disabled"} icon={null} />
+              <StatusBadge tone={profile.enabled ? "ok" : "neutral"} label={profile.enabled ? t().enabled : t().disabled} icon={null} />
               <Show when={props.hasCredential(profile)}>
-                <StatusBadge tone="running" label="Key configured" icon={null} />
+                <StatusBadge tone="running" label={t().keyConfigured} icon={null} />
               </Show>
             </div>
           );
@@ -1466,15 +1497,15 @@ function AiProfilesTable(props: {
           return (
             <dl class="grid min-w-0 gap-1 text-[10px]">
               <div class="min-w-0">
-                <dt class="text-dimmed">Profile ID</dt>
+                <dt class="text-dimmed">{t().profileId}</dt>
                 <dd class="m-0 truncate text-primary" title={profile.id}>
                   <code>{profile.id}</code>
                 </dd>
               </div>
-              <Show when={profile.baseURL} fallback={<span class="text-dimmed">Provider default</span>}>
+              <Show when={profile.baseURL} fallback={<span class="text-dimmed">{t().providerDefault}</span>}>
                 {(baseURL) => (
                   <div class="min-w-0">
-                    <dt class="text-dimmed">Base URL</dt>
+                    <dt class="text-dimmed">{t().baseUrl}</dt>
                     <dd class="m-0 truncate text-primary" title={baseURL()}>
                       {baseURL()}
                     </dd>
@@ -1485,12 +1516,13 @@ function AiProfilesTable(props: {
           );
         }
         if (col.id === "policy") {
-          const boundary = dataBoundaryOption(profile.dataBoundary);
+          const boundary =
+            localizedBoundaryOptions(t()).find((option) => option.id === profile.dataBoundary) ?? localizedBoundaryOptions(t())[0];
           return (
             <div class="flex flex-wrap gap-1">
               <StatusBadge tone="neutral" label={boundary.label} icon={null} />
               {profile.capabilities.map((capability) => (
-                <StatusBadge tone="neutral" label={`supports ${capability}`} icon={null} />
+                <StatusBadge tone="neutral" label={t().supports({ capability })} icon={null} />
               ))}
             </div>
           );
@@ -1499,9 +1531,9 @@ function AiProfilesTable(props: {
           const isDefault = profile.id === props.defaultModelId;
           return (
             <div class="flex items-center justify-end gap-1">
-              <Tooltip.Anchor content={isDefault ? "Default provider" : "Set as default"}>
+              <Tooltip.Anchor content={isDefault ? t().defaultProvider : t().setDefault}>
                 <IconButton
-                  label={isDefault ? "Default provider" : "Set as default"}
+                  label={isDefault ? t().defaultProvider : t().setDefault}
                   size="sm"
                   disabled={isDefault || !profile.enabled}
                   onClick={() => props.onSetDefault(profile.id)}
@@ -1509,18 +1541,18 @@ function AiProfilesTable(props: {
                   <i class="ti ti-star" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Edit profile">
-                <IconButton label="Edit profile" size="sm" onClick={() => props.onEdit(profile)}>
+              <Tooltip.Anchor content={t().editProfile}>
+                <IconButton label={t().editProfile} size="sm" onClick={() => props.onEdit(profile)}>
                   <i class="ti ti-pencil" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Duplicate profile">
-                <IconButton label="Duplicate profile" size="sm" onClick={() => props.onDuplicate(profile)}>
+              <Tooltip.Anchor content={t().duplicateProfile}>
+                <IconButton label={t().duplicateProfile} size="sm" onClick={() => props.onDuplicate(profile)}>
                   <i class="ti ti-copy" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Remove profile">
-                <IconButton label="Remove profile" size="sm" class="text-danger" onClick={() => props.onRemove(profile)}>
+              <Tooltip.Anchor content={t().removeProfile}>
+                <IconButton label={t().removeProfile} size="sm" class="text-danger" onClick={() => props.onRemove(profile)}>
                   <i class="ti ti-trash" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
@@ -1543,6 +1575,8 @@ async function openAiProfileDialog(input: {
   const initialProviderOption = providerOption(initialProvider);
 
   return dialogCore.open<AiModelProfileDraft>((close) => {
+    const locale = useLocale();
+    const t = () => aiSettingsMessages.resolve([locale()]).t;
     const [provider, setProvider] = createSignal<AiProviderId>(initialProvider);
     const [label, setLabel] = createSignal(input.profile?.label ?? initialProviderOption.label);
     const [id, setId] = createSignal(input.profile?.id ?? uniqueProfileId(initialProviderOption.label, input.profiles));
@@ -1589,29 +1623,27 @@ async function openAiProfileDialog(input: {
       const nextBaseURL = baseURL().trim();
 
       if (!/^[a-z0-9][a-z0-9._-]*$/.test(nextId)) {
-        setFormError(
-          "Profile ID must start with a lowercase letter or number and may contain lowercase letters, numbers, dots, underscores, and dashes.",
-        );
+        setFormError(t().invalidProfileId);
         return;
       }
       if (input.profiles.some((profile) => profile.id === nextId && profile.id !== input.profile?.id)) {
-        setFormError(`Profile ID "${nextId}" already exists.`);
+        setFormError(t().duplicateProfileId({ id: nextId }));
         return;
       }
       if (!nextLabel) {
-        setFormError("Enter a provider name.");
+        setFormError(t().providerNameRequired);
         return;
       }
       if (!nextModel) {
-        setFormError("Enter a model name.");
+        setFormError(t().modelNameRequired);
         return;
       }
       if (isCustomCompatible() && !nextBaseURL) {
-        setFormError("Custom OpenAI-compatible providers need a base URL.");
+        setFormError(t().customBaseUrlRequired);
         return;
       }
       if (providerRequiresProfileKey(provider()) && !apiKey().trim() && !hasExistingCredential()) {
-        setFormError(`Enter an API key for ${currentProvider().label}.`);
+        setFormError(t().apiKeyRequired({ provider: currentProvider().label }));
         return;
       }
 
@@ -1664,31 +1696,27 @@ async function openAiProfileDialog(input: {
       >
         <PanelDialog>
           <PanelDialog.Header
-            title={input.profile ? "Edit provider" : "Add provider"}
-            subtitle="Configure one model profile and its provider-bound credentials."
+            title={input.profile ? t().editProvider : t().addProvider}
+            subtitle={t().configureProfile}
             icon="ti ti-sparkles"
             close={() => close(undefined)}
           />
           <PanelDialog.Body>
-            <PanelDialog.Section
-              title="Provider"
-              subtitle="Provider type, user-visible label, stable id, and endpoint configuration."
-              icon="ti ti-sparkles"
-            >
+            <PanelDialog.Section title={t().provider} subtitle={t().providerSectionDescription} icon="ti ti-sparkles">
               <CheckboxCard
-                label="Profile enabled"
-                description="Disabled profiles stay configured but cannot be selected by apps or users."
+                label={t().profileEnabled}
+                description={t().profileEnabledDescription}
                 icon="ti ti-power"
                 value={enabled}
                 onValueChange={setEnabled}
               />
 
               <Select
-                label="Provider"
-                description="Provider type used to create the Nessi model adapter."
+                label={t().provider}
+                description={t().providerDescription}
                 value={() => provider()}
                 onValueChange={(value) => value !== null && chooseProvider(value)}
-                options={AI_PROVIDER_OPTIONS.map((option) => ({
+                options={localizedProviderOptions(t()).map((option) => ({
                   id: option.id,
                   label: option.label,
                   description: option.description,
@@ -1699,15 +1727,15 @@ async function openAiProfileDialog(input: {
 
               <div class="grid gap-3 sm:grid-cols-2">
                 <TextInput
-                  label="Name"
-                  description="User-visible model label shown in model pickers and chat UI."
+                  label={t().name}
+                  description={t().nameDescription}
                   value={label}
                   onValueChange={setLabel}
                   placeholder={currentProvider().label}
                 />
                 <TextInput
-                  label="Profile ID"
-                  description="Stable internal id."
+                  label={t().profileId}
+                  description={t().stableIdDescription}
                   value={id}
                   onValueChange={setId}
                   placeholder="openrouter-fast"
@@ -1716,8 +1744,8 @@ async function openAiProfileDialog(input: {
               </div>
 
               <TextInput
-                label="Model"
-                description="Provider model identifier sent to the AI adapter."
+                label={t().model}
+                description={t().modelDescription}
                 value={model}
                 onValueChange={setModel}
                 placeholder={currentProvider().defaultModel}
@@ -1725,17 +1753,17 @@ async function openAiProfileDialog(input: {
               />
 
               <TextInput
-                label="Base URL"
-                description="Optional endpoint override for private or OpenAI-compatible providers."
+                label={t().baseUrl}
+                description={t().baseUrlDescription}
                 value={baseURL}
                 onValueChange={setBaseURL}
-                placeholder={currentProvider().defaultBaseURL ?? "Optional provider override"}
+                placeholder={currentProvider().defaultBaseURL ?? t().optionalProviderOverride}
                 type="url"
               />
 
               <ImageInput
-                label="Logo"
-                description="Optional small logo shown in the provider card and the model picker."
+                label={t().logo}
+                description={t().logoDescription}
                 variant="small"
                 value={image}
                 onValueChange={setImage}
@@ -1744,80 +1772,68 @@ async function openAiProfileDialog(input: {
             </PanelDialog.Section>
 
             <Show when={showApiKey()}>
-              <PanelDialog.Section
-                title="Credentials"
-                subtitle="The key is stored only on this provider profile, not as a global provider setting."
-                icon="ti ti-key"
-              >
+              <PanelDialog.Section title={t().credentials} subtitle={t().credentialsDescription} icon="ti ti-key">
                 <TextInput
                   label={`${currentProvider().label} API key`}
-                  description={
-                    hasExistingCredential()
-                      ? "A key is stored for this profile. Leave empty to keep it."
-                      : "Stored server-side for this profile and used only when this profile is selected."
-                  }
+                  description={hasExistingCredential() ? t().storedKeyDescription : t().newKeyDescription}
                   password
                   value={apiKey}
                   onValueChange={setApiKey}
-                  placeholder={hasExistingCredential() ? "Leave empty to keep current key" : "Provider API key"}
+                  placeholder={hasExistingCredential() ? t().keepCurrentKey : t().providerApiKey}
                 />
               </PanelDialog.Section>
             </Show>
 
-            <PanelDialog.Section
-              title="Policy"
-              subtitle="Processing boundary and runtime capabilities used by app policies."
-              icon="ti ti-shield"
-            >
+            <PanelDialog.Section title={t().policy} subtitle={t().policyDescription} icon="ti ti-shield">
               <NumberInput
-                label="Context window"
-                description="Optional max token context window. Leave empty to use the provider default."
+                label={t().contextWindow}
+                description={t().contextWindowDescription}
                 value={contextWindow}
                 onValueChange={setContextWindow}
                 min={1}
                 clearable
                 showSteppers={false}
-                placeholder="Provider default"
+                placeholder={t().providerDefault}
               />
 
               <NumberInput
-                label="Loaded tool limit"
-                description="Maximum deferred tools retained per conversation. Empty or 0 means unlimited."
+                label={t().loadedToolLimit}
+                description={t().loadedToolLimitDescription}
                 value={maxLoadedTools}
                 onValueChange={setMaxLoadedTools}
                 min={0}
                 clearable
                 showSteppers={false}
-                placeholder="Unlimited"
+                placeholder={t().unlimited}
               />
 
               <NumberInput
-                label="Tool round limit"
-                description="Maximum tool-using model rounds per chat before one final answer without tools. Empty or 0 means unlimited."
+                label={t().toolRoundLimit}
+                description={t().toolRoundLimitDescription}
                 value={maxToolRounds}
                 onValueChange={setMaxToolRounds}
                 min={0}
                 clearable
                 showSteppers={false}
-                placeholder="Unlimited"
+                placeholder={t().unlimited}
               />
 
               <Select
-                label="Data boundary"
-                description="Whether requests leave the workspace or stay on controlled infrastructure."
+                label={t().dataBoundary}
+                description={t().dataBoundaryDescription}
                 value={() => dataBoundary()}
                 onValueChange={(value) => value !== null && setDataBoundary(value as AiDataBoundary)}
-                options={[...AI_DATA_BOUNDARY_OPTIONS]}
+                options={[...localizedBoundaryOptions(t())]}
                 icon="ti ti-shield"
               />
 
               <MultiSelectInput
-                label="Capabilities"
-                description="Capabilities describe runtime features apps can require."
+                label={t().capabilities}
+                description={t().capabilitiesDescription}
                 value={capabilities}
                 onValueChange={setCapabilities}
-                options={AI_MODEL_CAPABILITY_OPTIONS.map((option) => ({ ...option, icon: "ti ti-bolt" }))}
-                placeholder="Choose capabilities"
+                options={localizedCapabilityOptions(t()).map((option) => ({ ...option, icon: "ti ti-bolt" }))}
+                placeholder={t().chooseCapabilities}
                 icon="ti ti-bolt"
                 clearable
               />
@@ -1829,10 +1845,10 @@ async function openAiProfileDialog(input: {
             </div>
             <div class="flex items-center gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button type="submit" variant="ai" size="sm">
-                <i class="ti ti-check" /> Apply changes
+                <i class="ti ti-check" /> {t().applyChanges}
               </Button>
             </div>
           </PanelDialog.Footer>
@@ -1852,6 +1868,8 @@ function FieldRow(props: {
   onChange: (value: unknown) => void;
   onUseDefault: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   const e = () => props.entry;
 
   return (
@@ -1862,7 +1880,7 @@ function FieldRow(props: {
             <h3 class="text-sm font-medium text-primary">{e().label}</h3>
             <code class="text-[10px] text-dimmed">{e().key}</code>
             <Show when={props.changed()}>
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title="Unsaved change" />
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title={t().unsavedChange} />
             </Show>
             <span
               class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
@@ -1871,31 +1889,31 @@ function FieldRow(props: {
                   : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
               }`}
             >
-              {sourceLabel(e().valueSource)}
+              {sourceLabel(e().valueSource, t())}
             </span>
             <Show when={props.resetPending()}>
               <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                Default staged
+                {t().defaultStaged}
               </span>
             </Show>
           </div>
           <p class="mt-1 text-xs text-dimmed">{e().description}</p>
           <p class="mt-1 text-[11px] text-dimmed">
-            Use default will apply on Save: <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue)}</span>
-            <span class="text-dimmed"> ({sourceLabel(e().resetValueSource).toLowerCase()})</span>
+            {t().useDefaultPreview} <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue, t())}</span>
+            <span class="text-dimmed"> ({sourceLabel(e().resetValueSource, t()).toLowerCase()})</span>
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-1">
-          <Tooltip.Anchor content="Stage the default value. Save applies it; Discard cancels it.">
+          <Tooltip.Anchor content={t().defaultStageHint}>
             <Button
               type="button"
               variant="secondary"
               size="sm"
               onClick={props.onUseDefault}
               disabled={!props.canUseDefault()}
-              aria-label={`Use default for ${e().label}`}
+              aria-label={t().useDefaultFor({ label: e().label })}
             >
-              <i class="ti ti-arrow-back-up" /> Use default
+              <i class="ti ti-arrow-back-up" /> {t().useDefault}
             </Button>
           </Tooltip.Anchor>
         </div>
@@ -1955,10 +1973,12 @@ function ImageSettingInput(props: { value: () => unknown; error: () => string | 
 }
 
 function BooleanSettingInput(props: { value: () => unknown; error: () => string | undefined; onChange: (value: unknown) => void }) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-1">
       <Switch
-        label={props.value() ? "Enabled" : "Disabled"}
+        label={props.value() ? t().enabled : t().disabled}
         value={() => Boolean(props.value())}
         onValueChange={(v) => props.onChange(v)}
       />
@@ -2116,6 +2136,8 @@ const inferTemplateVariableKind = (name: string): TemplateVariableKind => {
 };
 
 function TemplateSettingInput(props: FieldInputProps) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   const currentValue = () => (typeof props.value() === "string" ? (props.value() as string) : "");
   const variables = () => props.entry.templateVars ?? [];
   const templateVariables = (): TemplateVariable[] => variables().map((name) => ({ name, kind: inferTemplateVariableKind(name) }));
@@ -2140,9 +2162,7 @@ function TemplateSettingInput(props: FieldInputProps) {
               <p class="mt-1 text-sm text-secondary">{props.entry.description}</p>
             </div>
 
-            <p class="text-xs text-dimmed">
-              Type {"{{"} for values, {"{%"} for Liquid logic, or {"<"} for HTML snippets. Use sample data to change preview values.
-            </p>
+            <p class="text-xs text-dimmed">{t().templateHelp}</p>
 
             <div class="h-[min(62vh,46rem)] min-h-[34rem] min-w-0 overflow-hidden rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">
               <Panes
@@ -2169,13 +2189,13 @@ function TemplateSettingInput(props: FieldInputProps) {
                   },
                   {
                     id: "preview",
-                    title: "Preview",
+                    title: t().preview,
                     icon: "ti ti-eye",
                     render: () => <TemplatePreview html={renderedPreview()} />,
                   },
                   {
                     id: "sample-data",
-                    title: "Sample data",
+                    title: t().sampleData,
                     icon: "ti ti-database",
                     render: () => (
                       <TemplateSampleData variables={templateVariables()} values={sampleData()} onValueChange={setSampleValue} />
@@ -2187,10 +2207,10 @@ function TemplateSettingInput(props: FieldInputProps) {
 
             <div class="flex justify-end gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button type="button" size="sm" onClick={() => close(draft())}>
-                <i class="ti ti-check" /> Save
+                <i class="ti ti-check" /> {t().save}
               </Button>
             </div>
           </div>
@@ -2206,21 +2226,21 @@ function TemplateSettingInput(props: FieldInputProps) {
     <div class="flex flex-col gap-2">
       <div class="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div class="min-w-0">
-          <p class="text-xs font-medium text-primary">HTML body template</p>
+          <p class="text-xs font-medium text-primary">{t().htmlBodyTemplate}</p>
           <p class="mt-1 truncate text-xs text-dimmed">{props.entry.description}</p>
         </div>
         <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={() => void openEditor()}>
-          <i class="ti ti-pencil" /> Edit template
+          <i class="ti ti-pencil" /> {t().editTemplate}
         </Button>
       </div>
 
       <details class="group rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-medium text-secondary">
           <i class="ti ti-eye text-dimmed" />
-          Preview
+          {t().preview}
           <i class="ti ti-chevron-down ml-auto text-dimmed transition-transform group-open:rotate-180" />
         </summary>
-        <iframe class="h-56 w-full bg-white" sandbox="" srcdoc={preview()} title={`${props.entry.label} preview`} />
+        <iframe class="h-56 w-full bg-white" sandbox="" srcdoc={preview()} title={t().templatePreview({ label: props.entry.label })} />
       </details>
 
       <FieldError error={props.error} />
@@ -2229,6 +2249,8 @@ function TemplateSettingInput(props: FieldInputProps) {
 }
 
 function DefaultTextSettingInput(props: FieldInputProps) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   // Secrets are server-side redacted (see settings/app.ts redactSecretValue).
   // The input always starts empty; admin types a new value to change, leaves
   // empty to keep the current stored secret.
@@ -2237,7 +2259,7 @@ function DefaultTextSettingInput(props: FieldInputProps) {
     <TextInput
       value={() => (typeof props.value() === "string" ? (props.value() as string) : String(props.value() ?? ""))}
       onValueChange={(v) => props.onChange(v)}
-      placeholder={isSecret ? "Leave empty to keep current value" : (props.entry.placeholder ?? props.entry.label)}
+      placeholder={isSecret ? t().leaveSecretEmpty : (props.entry.placeholder ?? props.entry.label)}
       type={props.entry.kind === "email" ? "email" : props.entry.kind === "url" ? "url" : "text"}
       password={isSecret}
       error={props.error}

@@ -4,8 +4,8 @@ type AggregationField = { id: string; type: string; deletedAt: string | null };
 
 const SUM_TYPES = new Set(["number", "duration"]);
 
-export const defaultTableAggregations = (fields: AggregationField[]): AggregationSpec[] => [
-  { fieldId: "*", agg: "count", label: "records" },
+export const defaultTableAggregations = (fields: AggregationField[], recordsLabel = "records"): AggregationSpec[] => [
+  { fieldId: "*", agg: "count", label: recordsLabel },
   ...fields
     .filter((f) => !f.deletedAt)
     .flatMap((f): AggregationSpec[] => {

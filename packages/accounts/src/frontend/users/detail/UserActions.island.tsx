@@ -1,5 +1,6 @@
-import { Button, Dropdown, type DropdownItem } from "@k2b/ui";
+import { Dropdown, type DropdownItem } from "@k2b/ui";
 import type { User } from "@/contracts";
+import { useAccountsMessages } from "../../messages";
 import { createUserActions } from "./user-actions/use-user-actions";
 
 type UserActionsProps = {
@@ -9,18 +10,19 @@ type UserActionsProps = {
 };
 
 export default function UserActions(props: UserActionsProps) {
+  const messages = useAccountsMessages();
   const actions = createUserActions(props);
   const accessItems: Extract<DropdownItem, { items: unknown }>["items"] = [
     ...(actions.isIpaUser && props.freeIpaEnabled
       ? [
           {
             icon: "ti ti-home-move",
-            label: "Make Local",
+            label: messages().makeLocal,
             action: actions.handleMakeLocal,
           },
           {
             icon: "ti ti-lock-open",
-            label: "Reset Password",
+            label: messages().resetPassword,
             action: actions.handleResetPassword,
             variant: "danger" as const,
           },
@@ -32,14 +34,14 @@ export default function UserActions(props: UserActionsProps) {
             ? [
                 {
                   icon: "ti ti-key",
-                  label: "Login Token",
+                  label: messages().loginToken,
                   action: actions.handleCreateLoginToken,
                 },
               ]
             : []),
           {
             icon: actions.isGuestProfile ? "ti ti-user-up" : "ti ti-user-down",
-            label: actions.isGuestProfile ? "Promote" : "Demote",
+            label: actions.isGuestProfile ? messages().promote : messages().demote,
             action: () => actions.handleSetProfile(actions.isGuestProfile ? "user" : "guest"),
           },
           ...(actions.isGuestProfile
@@ -47,7 +49,7 @@ export default function UserActions(props: UserActionsProps) {
             : [
                 {
                   icon: actions.isLocalAdmin ? "ti ti-shield-x" : "ti ti-shield-check",
-                  label: actions.isLocalAdmin ? "Revoke Admin" : "Grant Admin",
+                  label: actions.isLocalAdmin ? messages().revokeAdmin : messages().grantAdmin,
                   action: () => actions.handleSetAdmin(!actions.isLocalAdmin),
                 },
               ]),
@@ -57,7 +59,7 @@ export default function UserActions(props: UserActionsProps) {
       ? [
           {
             icon: "ti ti-building-fortress",
-            label: "Create FreeIPA",
+            label: messages().createFreeIpa,
             action: actions.handleCreateIpa,
           },
         ]
@@ -66,47 +68,47 @@ export default function UserActions(props: UserActionsProps) {
 
   const menuElements: DropdownItem[] = [
     {
-      sectionLabel: "Audit",
+      sectionLabel: messages().auditLog,
       items: [
         {
           icon: "ti ti-clipboard-list",
-          label: "Actions by user",
+          label: messages().actionsByUser,
           href: actions.auditByUserHref,
         },
         {
           icon: "ti ti-user-search",
-          label: "Actions on user",
+          label: messages().actionsOnUser,
           href: actions.auditOnUserHref,
         },
       ],
     },
     {
-      sectionLabel: "Account",
+      sectionLabel: messages().account,
       items: [
         {
           icon: "ti ti-camera",
-          label: "Change Avatar",
+          label: messages().changeAvatar,
           action: actions.handleChangeAvatar,
         },
         ...(actions.canMutateUser
           ? [
               {
                 icon: "ti ti-pencil",
-                label: "Edit",
+                label: messages().edit,
                 action: actions.handleEdit,
               },
             ]
           : []),
         {
           icon: "ti ti-send",
-          label: "Notify",
+          label: messages().notify,
           action: actions.handleNotify,
         },
         ...(actions.canSetExpiry
           ? [
               {
                 icon: "ti ti-calendar",
-                label: "Set Expiry",
+                label: messages().setExpiry,
                 action: actions.handleSetExpiry,
               },
             ]
@@ -116,7 +118,7 @@ export default function UserActions(props: UserActionsProps) {
     ...(accessItems.length
       ? [
           {
-            sectionLabel: "Access",
+            sectionLabel: messages().access,
             items: accessItems,
           },
         ]
@@ -124,11 +126,11 @@ export default function UserActions(props: UserActionsProps) {
     ...(actions.canMutateUser
       ? [
           {
-            sectionLabel: "Danger zone",
+            sectionLabel: messages().dangerZone,
             items: [
               {
                 icon: "ti ti-trash",
-                label: "Delete",
+                label: messages().delete,
                 action: actions.handleDestroy,
                 variant: "danger" as const,
               },
@@ -140,9 +142,9 @@ export default function UserActions(props: UserActionsProps) {
 
   return (
     <Dropdown.Root position="bottom-left" width="14rem" items={menuElements}>
-      <Dropdown.Trigger size="sm" variant="subtle" aria-label="User actions">
+      <Dropdown.Trigger size="sm" variant="subtle" aria-label={messages().userActions}>
         <i class="ti ti-dots-vertical text-sm" />
-        Actions
+        {messages().actions}
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

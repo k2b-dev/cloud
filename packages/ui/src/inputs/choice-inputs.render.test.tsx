@@ -394,6 +394,32 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).not.toContain('<i class="ti ti-check" aria-hidden="true"></i><span>Comfortable');
   });
 
+  test("renders an icon-only select chip as a labelled radio-menu trigger", () => {
+    const html = renderToString(() =>
+      createComponent(SelectChip, {
+        value: "updated",
+        onValueChange: () => {},
+        "aria-label": "Sort notes",
+        icon: "ti ti-arrows-sort",
+        iconOnly: true,
+        size: "xs" as const,
+        options: [
+          { value: "title", label: "Name" },
+          { value: "updated", label: "Last updated" },
+        ],
+      }),
+    );
+
+    expect(html).toContain("k2b-icon-button");
+    expect(html).toContain('data-size="xs"');
+    expect(html).toContain('aria-label="Sort notes"');
+    expect(html).toContain('title="Sort notes"');
+    expect(html).toContain("ti ti-arrows-sort");
+    expect(html).toContain('role="menuitemradio"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).not.toContain("ti ti-chevron-down");
+  });
+
   test("renders compact rich options without consumer-owned menu rows", () => {
     const html = renderToString(() =>
       createComponent(SelectChip, {

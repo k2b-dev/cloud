@@ -21,42 +21,46 @@ import {
   sameSettingValue,
   TextInput,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import type { SettingValueSource } from "@valentinkolb/cloud/contracts";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
+import { settingsMessages } from "./messages";
 
 type LegalKind = "terms" | "privacy" | "imprint";
 type LegalMode = "local" | "external";
 
-const KINDS: ReadonlyArray<{ id: LegalKind; label: string; description: string; icon: string; path: string }> = [
+const kinds = (
+  t: ReturnType<typeof settingsMessages.resolve>["t"],
+): ReadonlyArray<{ id: LegalKind; label: string; description: string; icon: string; path: string }> => [
   {
     id: "terms",
-    label: "Terms of Service",
-    description: "Public page at /legal/terms.",
+    label: t.terms,
+    description: t.termsDescription,
     icon: "ti ti-file-text",
     path: "/legal/terms",
   },
   {
     id: "privacy",
-    label: "Privacy Policy",
-    description: "Public page at /legal/privacy.",
+    label: t.privacy,
+    description: t.privacyDescription,
     icon: "ti ti-shield-lock",
     path: "/legal/privacy",
   },
   {
     id: "imprint",
-    label: "Imprint",
-    description: "Public page at /impressum (legally required by §5 TMG).",
+    label: t.imprint,
+    description: t.imprintDescription,
     icon: "ti ti-info-circle",
     path: "/impressum",
   },
 ];
 
-const MODE_OPTIONS = [
-  { id: "local", value: "local", label: "Local content (markdown)" },
-  { id: "external", value: "external", label: "External URL (redirect)" },
+const modeOptions = (t: ReturnType<typeof settingsMessages.resolve>["t"]) => [
+  { id: "local", value: "local", label: t.localContent },
+  { id: "external", value: "external", label: t.externalUrl },
 ];
 
 export type LegalInitial = {
@@ -80,6 +84,8 @@ type Props = {
 };
 
 export default function LegalSettingsForm(props: Props) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   const [draft, setDraft] = createSignal<LegalInitial>({ ...props.initial });
   const [resetKeys, setResetKeys] = createSignal<Record<string, true>>({});
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
@@ -156,7 +162,7 @@ export default function LegalSettingsForm(props: Props) {
       }
       const response = await coreClient.admin.core.settings.$put({ json: resets.length > 0 ? { updates, resets } : updates });
       if (!response.ok) {
-        const { message, fields } = await readSettingsError(response, `Save failed (HTTP ${response.status})`);
+        const { message, fields } = await readSettingsError(response, t().saveFailed({ status: response.status }));
         setFieldErrors(fields);
         throw new Error(message);
       }
@@ -188,7 +194,7 @@ export default function LegalSettingsForm(props: Props) {
         />
       }
     >
-      {KINDS.map((kind) => {
+      {kinds(t()).map((kind) => {
         const modeKey = `legal.${kind.id}.mode` as const;
         const contentKey = `legal.${kind.id}.content` as const;
         const urlKey = `legal.${kind.id}.url` as const;
@@ -201,13 +207,13 @@ export default function LegalSettingsForm(props: Props) {
             icon={kind.icon}
             actions={
               <ButtonLink href={kind.path} target="_blank" variant="secondary" size="sm" rel="noreferrer">
-                <i class="ti ti-external-link" /> Open
+                <i class="ti ti-external-link" /> {t().open}
               </ButtonLink>
             }
           >
             <LegalField
-              label="Source"
-              description="Choose between editing markdown directly or redirecting to an external URL."
+              label={t().source}
+              description={t().sourceDescription}
               entry={entryMap()[modeKey]}
               error={() => fieldErrors()[modeKey]}
               changed={() => isChanged(modeKey)}
@@ -218,14 +224,14 @@ export default function LegalSettingsForm(props: Props) {
               <Select
                 value={() => currentMode()}
                 onValueChange={(value) => value !== null && update(modeKey, value as LegalMode)}
-                options={MODE_OPTIONS}
+                options={modeOptions(t())}
               />
             </LegalField>
 
             <Show when={currentMode() === "local"}>
               <LegalField
-                label="Content"
-                description="Markdown. Supports headings, lists, links, and code blocks."
+                label={t().content}
+                description={t().contentDescription}
                 entry={entryMap()[contentKey]}
                 error={() => fieldErrors()[contentKey]}
                 changed={() => isChanged(contentKey)}
@@ -245,7 +251,7 @@ export default function LegalSettingsForm(props: Props) {
             <Show when={currentMode() === "external"}>
               <LegalField
                 label="URL"
-                description="The /legal/* request will 302-redirect here."
+                description={t().urlDescription}
                 entry={entryMap()[urlKey]}
                 error={() => fieldErrors()[urlKey]}
                 changed={() => isChanged(urlKey)}
@@ -268,15 +274,15 @@ export default function LegalSettingsForm(props: Props) {
   );
 }
 
-const legalSourceLabel = (source: SettingValueSource) => {
-  if (source === "custom") return "Custom override";
-  if (source === "env") return "Environment fallback";
-  return "Code default";
+const legalSourceLabel = (source: SettingValueSource, t: ReturnType<typeof settingsMessages.resolve>["t"]) => {
+  if (source === "custom") return t.customOverride;
+  if (source === "env") return t.environmentFallback;
+  return t.codeDefault;
 };
 
-const legalResetPreview = (entry: SettingFieldDef | undefined) => {
+const legalResetPreview = (entry: SettingFieldDef | undefined, empty: string) => {
   const value = entry?.resetValue;
-  if (value === "" || value === null || value === undefined) return "Empty";
+  if (value === "" || value === null || value === undefined) return empty;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 };
@@ -292,6 +298,8 @@ function LegalField(props: {
   onUseDefault: () => void;
   children: JSX.Element;
 }) {
+  const locale = useLocale();
+  const t = () => settingsMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2 rounded-lg px-3 py-2" classList={{ "bg-amber-50/50 dark:bg-amber-950/20": props.changed() }}>
       <div class="flex items-start justify-between gap-3">
@@ -309,14 +317,14 @@ function LegalField(props: {
                         : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
                     }`}
                   >
-                    {legalSourceLabel(entry().valueSource)}
+                    {legalSourceLabel(entry().valueSource, t())}
                   </span>
                 </>
               )}
             </Show>
             <Show when={props.resetPending()}>
               <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                Default staged
+                {t().defaultStaged}
               </span>
             </Show>
           </div>
@@ -324,13 +332,13 @@ function LegalField(props: {
           <Show when={props.entry}>
             {(entry) => (
               <p class="mt-1 text-[11px] text-dimmed">
-                Use default will apply on Save: <span class="font-medium text-secondary">{legalResetPreview(entry())}</span>
-                <span class="text-dimmed"> ({legalSourceLabel(entry().resetValueSource).toLowerCase()})</span>
+                {t().useDefaultPreview} <span class="font-medium text-secondary">{legalResetPreview(entry(), t().empty)}</span>
+                <span class="text-dimmed"> ({legalSourceLabel(entry().resetValueSource, t()).toLowerCase()})</span>
               </p>
             )}
           </Show>
         </div>
-        <Tooltip.Anchor content="Stage the default value. Save applies it; Discard cancels it.">
+        <Tooltip.Anchor content={t().defaultStageHint}>
           <Button
             type="button"
             variant="secondary"
@@ -339,7 +347,7 @@ function LegalField(props: {
             onClick={props.onUseDefault}
             disabled={!props.canUseDefault()}
           >
-            <i class="ti ti-arrow-back-up" /> Use default
+            <i class="ti ti-arrow-back-up" /> {t().useDefault}
           </Button>
         </Tooltip.Anchor>
       </div>

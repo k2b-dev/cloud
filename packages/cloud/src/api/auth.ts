@@ -4,7 +4,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { env } from "../config";
 import { ChangeExpiredPasswordSchema } from "../contracts";
-import { type AuthContext, auth, jsonResponse, rateLimit, respond, v } from "../server";
+import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v } from "../server";
 import { accounts, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
 
@@ -183,7 +183,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       async (c) => {
         const { email, redirectTo } = c.req.valid("json");
 
-        const requestResult = await authFlows.magicLink.request({ email, redirectTo }, notificationSender);
+        const requestResult = await authFlows.magicLink.request({ email, redirectTo, locale: getLocale(c) }, notificationSender);
         if (!requestResult.ok) {
           return c.json({ message: requestResult.message }, requestResult.status);
         }
@@ -244,7 +244,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       async (c) => {
         const { email, redirectTo } = c.req.valid("json");
 
-        const result = await authFlows.passwordReset.request({ email, redirectTo }, notificationSender);
+        const result = await authFlows.passwordReset.request({ email, redirectTo, locale: getLocale(c) }, notificationSender);
         return c.json({ message: result.message });
       },
     )

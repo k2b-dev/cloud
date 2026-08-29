@@ -11,6 +11,7 @@ import type {
 import { logAudit, type SqlClient } from "./audit";
 import { renderLiquidPlainText, renderLiquidText, validateLiquidRoots, validateLiquidTemplate } from "./documents";
 import { parseJsonbRow } from "./jsonb";
+import { serviceMessagesFor } from "./messages";
 import { insertWithShortId } from "./short-id";
 import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 
@@ -36,19 +37,20 @@ const mapEmailTemplate = (row: DbRow): EmailTemplate => ({
   updatedAt: (row.updated_at as Date).toISOString(),
 });
 
-const validateEmailLiquid = (source: string, label: string): Result<void> => {
-  const syntax = validateLiquidTemplate(source);
+const validateEmailLiquid = (source: string, label: string, locale?: string): Result<void> => {
+  const syntax = validateLiquidTemplate(source, locale);
   if (!syntax.ok) return syntax;
-  return validateLiquidRoots(source, EMAIL_TEMPLATE_ROOTS, label);
+  return validateLiquidRoots(source, EMAIL_TEMPLATE_ROOTS, label, locale);
 };
 
-export const validateEmailTemplateWrite = (input: { subject?: string | null; html?: string | null }): Result<void> => {
+export const validateEmailTemplateWrite = (input: { subject?: string | null; html?: string | null }, locale?: string): Result<void> => {
+  const t = serviceMessagesFor(locale);
   if (input.subject !== undefined && input.subject !== null) {
-    const valid = validateEmailLiquid(input.subject, "email subject");
+    const valid = validateEmailLiquid(input.subject, t.emailSubjectLabel, locale);
     if (!valid.ok) return valid;
   }
   if (input.html !== undefined && input.html !== null) {
-    const valid = validateEmailLiquid(input.html, "email HTML");
+    const valid = validateEmailLiquid(input.html, t.emailHtmlLabel, locale);
     if (!valid.ok) return valid;
   }
   return ok();
@@ -57,10 +59,11 @@ export const validateEmailTemplateWrite = (input: { subject?: string | null; htm
 export const renderEmailTemplate = async (
   template: Pick<EmailTemplate, "subject" | "html">,
   data: Record<string, unknown>,
+  locale?: string,
 ): Promise<Result<{ subject: string; html: string }>> => {
-  const subject = await renderLiquidPlainText(template.subject, data, 1_000);
+  const subject = await renderLiquidPlainText(template.subject, data, 1_000, locale);
   if (!subject.ok) return subject;
-  const html = await renderLiquidText(template.html, data, 300_000);
+  const html = await renderLiquidText(template.html, data, 300_000, locale);
   if (!html.ok) return html;
   return ok({ subject: subject.data.trim(), html: html.data });
 };
@@ -152,8 +155,13 @@ export const getByShortId = async (shortId: string): Promise<EmailTemplate | nul
   return row ? mapEmailTemplate(row) : null;
 };
 
-export const create = async (baseId: string, input: CreateEmailTemplateInput, actorId: string | null): Promise<Result<EmailTemplate>> => {
-  const valid = validateEmailTemplateWrite(input);
+export const create = async (
+  baseId: string,
+  input: CreateEmailTemplateInput,
+  actorId: string | null,
+  locale?: string,
+): Promise<Result<EmailTemplate>> => {
+  const valid = validateEmailTemplateWrite(input, locale);
   if (!valid.ok) return valid;
   try {
     const created = await sql.begin(async (tx): Promise<EmailTemplate> => {
@@ -177,7 +185,7 @@ export const create = async (baseId: string, input: CreateEmailTemplateInput, ac
           )
           RETURNING *
         `;
-        if (!inserted) throw err.internal("email template insert failed");
+        if (!inserted) throw err.internal(serviceMessagesFor(locale).emailInsertFailed);
         return inserted;
       }, "idx_grids_email_templates_short_id");
       const mapped = mapEmailTemplate(row);
@@ -194,7 +202,8 @@ export const create = async (baseId: string, input: CreateEmailTemplateInput, ac
     });
     return ok(created);
   } catch (error) {
-    if (isUniqueViolation(error, "idx_grids_email_templates_short_id")) return fail(err.conflict("Email template short id already exists"));
+    if (isUniqueViolation(error, "idx_grids_email_templates_short_id"))
+      return fail(err.conflict(serviceMessagesFor(locale).emailTemplateIdConflict));
     throw error;
   }
 };
@@ -203,10 +212,11 @@ export const update = async (
   templateId: string,
   input: UpdateEmailTemplateInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<EmailTemplate>> => {
   const existing = await get(templateId);
-  if (!existing) return fail(err.notFound("Email template"));
-  const valid = validateEmailTemplateWrite(input);
+  if (!existing) return fail(err.notFound(serviceMessagesFor(locale).emailTemplate));
+  const valid = validateEmailTemplateWrite(input, locale);
   if (!valid.ok) return valid;
   const [row] = await sql<DbRow[]>`
     UPDATE grids.email_templates
@@ -222,7 +232,7 @@ export const update = async (
     WHERE id = ${templateId}::uuid AND deleted_at IS NULL
     RETURNING *
   `;
-  if (!row) return fail(err.notFound("Email template"));
+  if (!row) return fail(err.notFound(serviceMessagesFor(locale).emailTemplate));
   const updated = mapEmailTemplate(row);
   await logAudit({
     baseId: updated.baseId,
@@ -238,9 +248,9 @@ export const update = async (
   return ok(updated);
 };
 
-export const remove = async (templateId: string, actorId: string | null): Promise<Result<void>> => {
+export const remove = async (templateId: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
   const existing = await get(templateId);
-  if (!existing) return fail(err.notFound("Email template"));
+  if (!existing) return fail(err.notFound(serviceMessagesFor(locale).emailTemplate));
   return sql.begin(async (tx) => {
     await lockWorkflowCatalogMutation(existing.baseId, tx);
     const dependencies = (await listDependenciesForBase(existing.baseId, tx))[templateId] ?? [];
@@ -248,9 +258,10 @@ export const remove = async (templateId: string, actorId: string | null): Promis
       return fail({
         code: "CONFLICT",
         status: 409,
-        message: `Email template is used by ${
-          dependencies.length === 1 ? `workflow "${dependencies[0]!.workflowName}"` : `${dependencies.length} workflows`
-        }.`,
+        message: serviceMessagesFor(locale).emailTemplateDependency({
+          count: dependencies.length,
+          workflow: dependencies[0]?.workflowName,
+        }),
       });
     }
     const updated = await tx`
@@ -258,7 +269,7 @@ export const remove = async (templateId: string, actorId: string | null): Promis
       SET deleted_at = now(), enabled = FALSE, updated_by = ${actorId}::uuid, updated_at = now()
       WHERE id = ${templateId}::uuid AND deleted_at IS NULL
     `;
-    if (updated.count === 0) return fail(err.notFound("Email template"));
+    if (updated.count === 0) return fail(err.notFound(serviceMessagesFor(locale).emailTemplate));
     await logAudit(
       {
         baseId: existing.baseId,

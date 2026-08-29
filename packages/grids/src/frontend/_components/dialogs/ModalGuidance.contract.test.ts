@@ -6,13 +6,15 @@ describe("Grids settings dialog guidance", () => {
   test("explains table integrity features in user language", async () => {
     const audit = await source("./AuditPolicyDialog.tsx");
     const history = await source("./HistoryProtectionDialog.tsx");
+    const messages = await source("./messages.ts");
 
-    expect(audit).toContain('title="Ask for a reason before important changes"');
+    expect(audit).toContain("title={t().askReason}");
+    expect(messages).toContain('askReason: "Ask for a reason before important changes"');
     expect(audit).not.toContain("operation metadata");
     expect(audit).not.toContain("rejected by the backend");
-    expect(history).toContain('title="Keep a history, then lock finished records"');
-    expect(history).toContain('"Durable history is on"');
-    expect(history).toContain('title="Finalization is on"');
+    expect(history).toContain("title={t().historyIntro}");
+    expect(messages).toContain('historyOn: "Durable history is on"');
+    expect(history).toContain("title={t().finalizationOn}");
     expect(history.match(/class="w-full"/g)).toHaveLength(2);
     expect(history).not.toContain("append-only");
   });
@@ -21,11 +23,15 @@ describe("Grids settings dialog guidance", () => {
     const tableSettings = await source("./TableAdminDialogs.tsx");
     const fieldEditor = await source("../fields/FieldEditorDialog.tsx");
     const fieldConfig = await source("../fields/field-config-editor.tsx");
+    const dialogMessages = await source("./messages.ts");
+    const fieldMessages = await source("../fields/messages.ts");
 
-    expect(tableSettings).toContain('title="Choose what this field stores"');
-    expect(fieldEditor).toContain("title={`About ${typeLabel} fields`}");
-    expect(fieldEditor).toContain('title="Number series"');
-    expect(fieldConfig).toContain('title="Each record gets its own number"');
+    expect(tableSettings).toContain("title={t.chooseFieldStorage}");
+    expect(dialogMessages).toContain('chooseFieldStorage: "Choose what this field stores"');
+    expect(fieldEditor).toContain("title={t().aboutFields({ type: typeLabel() })}");
+    expect(fieldEditor).toContain("title={t().numberSeries}");
+    expect(fieldConfig).toContain("title={t().uniqueNumber}");
+    expect(fieldMessages).toContain('uniqueNumber: "Each record gets its own number"');
     expect(fieldConfig).not.toContain("increase atomically");
   });
 
@@ -36,13 +42,16 @@ describe("Grids settings dialog guidance", () => {
     const recordAudit = await source("../records/RecordAuditDialog.tsx");
     const recordDocuments = await source("../records/RecordDocumentsSection.tsx");
     const documentGenerate = await source("../documents/DocumentGenerateDialog.tsx");
+    const messages = await source("./messages.ts");
 
-    expect(viewSettings).toContain('title="Control what this view shows"');
-    expect(viewSettings).toContain("does not change the records themselves");
-    expect(computedColumn).toContain('title="Show a value calculated for this view"');
-    expect(combinedTable).toContain("choose the source field whose value should appear");
-    expect(recordAudit).toContain('title="Why this is required"');
-    expect(documentGenerate).toContain('title="The generated Document stays unchanged"');
+    expect(viewSettings).toContain("title={t().controlView}");
+    expect(messages).toContain('controlView: "Control what this view shows"');
+    expect(messages).toContain("records remain unchanged");
+    expect(computedColumn).toContain("title={t().computedTitle}");
+    expect(combinedTable).toContain("subtitle={t().fieldMappingsDetail}");
+    expect(messages).toContain("choose the source field whose value should appear");
+    expect(recordAudit).toContain("title={t().whyRequired}");
+    expect(documentGenerate).toContain("title={t().immutableGeneratedDocument}");
     expect(recordDocuments).not.toContain("recursive record snapshot");
   });
 });

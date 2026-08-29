@@ -373,13 +373,7 @@ export default ssr<AuthContext>(async (c) => {
             <Placeholder
               surface="paper"
               variant="panel"
-              description={
-                <>
-                  {t.emptyBefore}
-                  <em>{t.emptyAction}</em>
-                  {t.emptyAfter}
-                </>
-              }
+              description={t.emptyDescription}
             />
           ) : (
             <div class={`dashboard-briefing-grid ${contextWidgets.length > 0 ? "has-context" : ""}`}>

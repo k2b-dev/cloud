@@ -10,6 +10,7 @@ import { RecordCardsView } from "../_components/records-view/RecordCardsView";
 import { FieldValue } from "../_components/table/FieldValue";
 import { customAppCardFileUrl } from "./records-card-url";
 import { customAppRecordsResultColumns } from "./records-table-model";
+import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { invokeCustomAppWorkflow } from "./workflow-action-client";
 
 type QuerySuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
@@ -40,20 +41,10 @@ const displayValue = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-const resultFromResponse = async (response: Response): Promise<CustomAppRecordsSuccess> => {
-  const body = (await response.json().catch(() => null)) as
-    | CustomAppRecordsSuccess
-    | DslQueryPreviewResponse
-    | { message?: unknown }
-    | null;
+const resultFromResponse = async (response: Response, fallback: string): Promise<CustomAppRecordsSuccess> => {
+  const body = (await response.json().catch(() => null)) as CustomAppRecordsSuccess | DslQueryPreviewResponse | null;
   if (!response.ok || !body || !("ok" in body) || !body.ok) {
-    const message =
-      body && "diagnostics" in body && Array.isArray(body.diagnostics)
-        ? body.diagnostics[0]?.message
-        : body && "message" in body && typeof body.message === "string"
-          ? body.message
-          : "Records could not be loaded.";
-    throw new Error(message);
+    throw new Error(fallback);
   }
   return body as CustomAppRecordsSuccess;
 };
@@ -72,6 +63,7 @@ export default function RecordsTable(props: {
   rowActions?: CustomAppRenderedRowAction[];
   preview?: boolean;
 }) {
+  const messages = useCustomAppRuntimeMessages();
   const [result, setResult] = createSignal(props.result);
   const [query, setQuery] = createSignal("");
   const [appliedQuery, setAppliedQuery] = createSignal("");
@@ -103,14 +95,14 @@ export default function RecordsTable(props: {
         headers: { Accept: "application/json" },
         signal: controller.signal,
       });
-      const next = await resultFromResponse(response);
+      const next = await resultFromResponse(response, messages().recordsLoadFailed);
       if (controller.signal.aborted) return;
       setResult(next);
       setAppliedQuery(nextQuery);
       setCursor(nextCursor);
       setHistory(nextHistory);
     } catch (cause) {
-      if (!controller.signal.aborted) toast.error(cause instanceof Error ? cause.message : "Records could not be loaded.");
+      if (!controller.signal.aborted) toast.error(cause instanceof Error ? cause.message : messages().recordsLoadFailed);
     } finally {
       if (requestController === controller) requestController = null;
       if (!controller.signal.aborted) setLoading(false);
@@ -190,7 +182,7 @@ export default function RecordsTable(props: {
       class: ["text", "longtext", "relation"].includes(column.type) ? "min-w-48" : "min-w-32",
     }));
     if ((props.rowActions?.length ?? 0) > 0) {
-      value.push({ id: "__actions", header: "Actions", subtitle: "", value: (row) => row.recordId, class: "min-w-28" });
+      value.push({ id: "__actions", header: messages().actions, subtitle: "", value: (row) => row.recordId, class: "min-w-28" });
     }
     return value;
   });
@@ -208,6 +200,13 @@ export default function RecordsTable(props: {
         endpoint: action.endpoint,
         body: { rowId, search: appliedQuery() || undefined, cursor: cursor() || undefined },
         signal: controller.signal,
+        messages: {
+          startFailed: messages().workflowStartFailed,
+          statusUnavailable: messages().workflowStatusUnavailable,
+          completed: messages().workflowCompleted,
+          failed: messages().workflowFailed,
+          stillRunning: messages().workflowStillRunning,
+        },
       });
       if (outcome.kind === "success") {
         toast.success(outcome.message);
@@ -215,7 +214,7 @@ export default function RecordsTable(props: {
       } else if (outcome.kind === "error") toast.error(outcome.message);
       else toast(outcome.message);
     } catch (cause) {
-      if (!controller?.signal.aborted) toast.error(cause instanceof Error ? cause.message : "The workflow could not be started.");
+      if (!controller?.signal.aborted) toast.error(cause instanceof Error ? cause.message : messages().workflowStartFailed);
     } finally {
       if (workflowController === controller) workflowController = null;
       setPendingKey(null);
@@ -230,8 +229,8 @@ export default function RecordsTable(props: {
           <Show when={props.searchable}>
             <TextInput
               type="search"
-              aria-label={`Search ${props.title}`}
-              placeholder={`Search ${props.title.toLowerCase()}...`}
+              aria-label={messages().searchTitle({ title: props.title })}
+              placeholder={messages().searchTitlePlaceholder({ title: props.title })}
               icon="ti ti-search"
               activeIcon="ti ti-search"
               value={query}
@@ -252,8 +251,8 @@ export default function RecordsTable(props: {
                 state="error"
                 variant="compact"
                 align="left"
-                title="Records unavailable"
-                description="The selected fields are not part of this view result."
+                title={messages().recordsUnavailable}
+                description={messages().fieldsMissingFromView}
               />
             }
           >
@@ -276,7 +275,7 @@ export default function RecordsTable(props: {
                     }
                   : undefined
               }
-              empty={<span>{appliedQuery() ? `No records match “${appliedQuery()}”.` : props.emptyText}</span>}
+              empty={<span>{appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}</span>}
               renderCell={({ row, col, value }) => {
                 if (col.id === "__actions") {
                   if (!row.recordId) return null;
@@ -367,7 +366,7 @@ export default function RecordsTable(props: {
             tableId={cardRecords()[0]?.tableId ?? ""}
             dateConfig={props.dateConfig}
             relationLabels={cards().relationLabels}
-            emptyText={appliedQuery() ? `No records match “${appliedQuery()}”.` : props.emptyText}
+            emptyText={appliedQuery() ? messages().noRecordsMatch({ query: appliedQuery() }) : props.emptyText}
             onRecordClick={
               props.rowNavigate
                 ? (record) => {
@@ -436,7 +435,7 @@ export default function RecordsTable(props: {
                   void loadPage(history().at(-1) ?? null, appliedQuery(), nextHistory);
                 }}
               >
-                Previous
+                {messages().previous}
               </Button>
               <Button
                 size="sm"
@@ -444,7 +443,7 @@ export default function RecordsTable(props: {
                 disabled={loading() || !result().page?.nextCursor}
                 onClick={() => void loadPage(result().page?.nextCursor ?? null, appliedQuery(), [...history(), cursor()])}
               >
-                Next
+                {messages().next}
               </Button>
             </div>
           </div>

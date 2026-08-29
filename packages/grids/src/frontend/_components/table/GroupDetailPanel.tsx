@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, timed } from "@k2b/stdlib/solid";
-import { IconButton, Placeholder, TextInput, Tooltip } from "@k2b/ui";
+import { IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord, PublicTableQueryResult } from "../../../api/public-dto";
 import type { AggregationSpec, FilterTree, GroupBySpec, RecordQuery } from "../../../contracts";
@@ -8,21 +8,9 @@ import { fetchTableQuery } from "../records-view/fetcher";
 import { formatFieldValueText } from "./field-value-format";
 import type { GroupBucket } from "./GroupedTable";
 import { formatAggregationValue, formatGroupValue } from "./group-value-format";
+import { tableMessages } from "./messages";
 
 const PAGE_SIZE = 30;
-
-const AGG_LABELS: Record<string, string> = {
-  count: "records",
-  countEmpty: "empty",
-  countUnique: "unique",
-  sum: "sum",
-  avg: "avg",
-  min: "min",
-  max: "max",
-  median: "median",
-  earliest: "earliest",
-  latest: "latest",
-};
 
 type Props = {
   tableId: string;
@@ -49,6 +37,8 @@ type FilterLeaf = {
 };
 
 export default function GroupDetailPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   const [q, setQ] = createSignal("");
   const [items, setItems] = createSignal<GridRecord[]>([]);
   const [nextCursor, setNextCursor] = createSignal<string | null>(null);
@@ -122,14 +112,27 @@ export default function GroupDetailPanel(props: Props) {
 
   const aggLabel = (agg: AggregationSpec) => {
     if (agg.label?.trim()) return agg.label;
-    if (agg.fieldId === "*") return AGG_LABELS[agg.agg] ?? agg.agg;
+    const fallback =
+      {
+        count: t().records,
+        countEmpty: t().empty,
+        countUnique: t().unique,
+        sum: t().sum,
+        avg: t().average,
+        min: t().minimum,
+        max: t().maximum,
+        median: t().median,
+        earliest: t().earliest,
+        latest: t().latest,
+      }[agg.agg] ?? agg.agg;
+    if (agg.fieldId === "*") return fallback;
     const field = fieldsById().get(agg.fieldId);
-    return `${AGG_LABELS[agg.agg] ?? agg.agg} ${field?.name ?? "missing field"}`;
+    return `${fallback} ${field?.name ?? t().missingField}`;
   };
 
   const groupLabel = (spec: GroupBySpec, index: number) => {
     const field = fieldsById().get(spec.fieldId);
-    const name = field ? field.name : "missing field";
+    const name = field ? field.name : t().missingField;
     return spec.granularity ? `${name} (${spec.granularity})` : name;
   };
   const groupIcon = (spec: GroupBySpec) => {
@@ -139,18 +142,25 @@ export default function GroupDetailPanel(props: Props) {
   const groupValue = (spec: GroupBySpec, index: number) => {
     const field = fieldsById().get(spec.fieldId);
     const raw = props.bucket.keys[index];
-    return formatGroupValue({ value: raw, spec, field, relationLabels: props.relationLabels, dateConfig: props.dateConfig });
+    return formatGroupValue({
+      value: raw,
+      spec,
+      field,
+      relationLabels: props.relationLabels,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+    });
   };
-  const groupTitle = () => props.groupBy.map((spec, index) => groupValue(spec, index)).join(" · ") || "Ungrouped records";
+  const groupTitle = () => props.groupBy.map((spec, index) => groupValue(spec, index)).join(" · ") || t().ungroupedRecords;
 
   const renderRecordLine = (record: GridRecord) => {
     const fields = presentableFields();
-    if (fields.length === 0) return "Untitled record";
+    if (fields.length === 0) return t().untitledRecord;
     return (
       fields
         .map((field) => renderRecordValue(record, field))
         .filter((part) => part.length > 0)
-        .join(" · ") || "Untitled record"
+        .join(" · ") || t().untitledRecord
     );
   };
 
@@ -163,9 +173,9 @@ export default function GroupDetailPanel(props: Props) {
     <div class="flex h-full min-h-0 flex-col">
       <header class="detail-header">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-semibold text-secondary">Group details</span>
-          <Tooltip.Anchor content="Close details">
-            <IconButton variant="ghost" size="sm" type="button" label="Close group detail panel" onClick={() => props.onClose()}>
+          <span class="text-xs font-semibold text-secondary">{t().groupDetails}</span>
+          <Tooltip.Anchor content={t().closeDetails}>
+            <IconButton variant="ghost" size="sm" type="button" label={t().closeGroupPanel} onClick={() => props.onClose()}>
               <i class="ti ti-x" />
             </IconButton>
           </Tooltip.Anchor>
@@ -194,7 +204,7 @@ export default function GroupDetailPanel(props: Props) {
 
       <div class="detail-stack" data-scroll-preserve={`grids-group-detail-${props.tableId}-${bucketKey()}`}>
         <section class="detail-section">
-          <h3 class="detail-section-label">Summary</h3>
+          <h3 class="detail-section-label">{t().summary}</h3>
           <div class="grid grid-cols-2 gap-x-4 gap-y-3">
             <For each={aggSpecsWithCount()}>
               {(agg) => (
@@ -209,6 +219,7 @@ export default function GroupDetailPanel(props: Props) {
                       spec: agg,
                       field: agg.fieldId === "*" ? undefined : fieldsById().get(agg.fieldId),
                       dateConfig: props.dateConfig,
+                      locale: locale(),
                     })}
                   </div>
                 </div>
@@ -218,11 +229,11 @@ export default function GroupDetailPanel(props: Props) {
         </section>
 
         <section class="detail-section flex min-h-[18rem] flex-col gap-3">
-          <h3 class="detail-section-label mb-0">Records</h3>
+          <h3 class="detail-section-label mb-0">{t().records}</h3>
           <TextInput
-            aria-label="Search group records"
+            aria-label={t().searchGroupRecords}
             icon="ti ti-search"
-            placeholder="Search in group..."
+            placeholder={t().searchGroupPlaceholder}
             value={q}
             onValueChange={(next) => {
               setQ(next);
@@ -243,7 +254,7 @@ export default function GroupDetailPanel(props: Props) {
                   state={fetchMut.error() ? "error" : fetchMut.loading() ? "loading" : "empty"}
                   align="left"
                   class="py-3"
-                  title={fetchMut.error() ? "Could not load records" : fetchMut.loading() ? "Loading records" : "No records in this group"}
+                  title={fetchMut.error() ? t().loadRecordsFailed : fetchMut.loading() ? t().loadingRecords : t().noRecordsGroup}
                   description={fetchMut.error()?.message}
                 />
               }
@@ -264,7 +275,7 @@ export default function GroupDetailPanel(props: Props) {
             </Show>
             <div ref={sentinel} class="h-1" />
             <Show when={fetchMut.loading() && items().length > 0}>
-              <div class="py-2 text-center text-xs text-dimmed">Loading more...</div>
+              <div class="py-2 text-center text-xs text-dimmed">{t().loadingMore}</div>
             </Show>
           </div>
         </section>
@@ -274,7 +285,14 @@ export default function GroupDetailPanel(props: Props) {
 
   function renderRecordValue(record: GridRecord, field: Field): string {
     const value = record.data[field.id];
-    return formatFieldValueText({ field, value, record, relationLabels: props.relationLabels, dateConfig: props.dateConfig });
+    return formatFieldValueText({
+      field,
+      value,
+      record,
+      relationLabels: props.relationLabels,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+    });
   }
 }
 

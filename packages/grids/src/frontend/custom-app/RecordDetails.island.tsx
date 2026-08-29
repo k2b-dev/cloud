@@ -12,6 +12,7 @@ import RecordFileField from "../_components/records/RecordFileField";
 import { formatRecordRelativeTime } from "../_components/records/RecordHistorySection";
 import { openRecordUpsertDialog } from "../_components/records/RecordUpsertDialog";
 import { FieldValue } from "../_components/table/FieldValue";
+import { useCustomAppRuntimeMessages } from "./runtime-messages";
 
 type RecordBlock = Extract<CustomAppBlock, { type: "record" }>;
 type CustomAppDocument = PublicDocument & { downloadUrl: string };
@@ -35,6 +36,7 @@ export default function RecordDetails(props: {
   documents: CustomAppDocument[];
   dateConfig: DateContext;
 }) {
+  const messages = useCustomAppRuntimeMessages();
   const [record, setRecord] = createSignal(props.record);
   const [relationLabels, setRelationLabels] = createSignal(props.relationLabels);
   const [saving, setSaving] = createSignal(false);
@@ -83,13 +85,13 @@ export default function RecordDetails(props: {
         headers: { "content-type": "application/json", "If-Match": String(current.version) },
         body: JSON.stringify({ values, audit }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "Failed to update record"));
+      if (!response.ok) throw new Error(await responseMessage(response, messages().updateRecordFailed));
       const updated = (await response.json()) as GridRecord & { relationLabels?: Record<string, string> };
       setRecord(updated);
       const updatedLabels = updated.relationLabels;
       if (updatedLabels) setRelationLabels((current) => ({ ...current, ...updatedLabels }));
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Failed to update record");
+      prompts.error(error instanceof Error ? error.message : messages().updateRecordFailed);
     } finally {
       setSaving(false);
     }
@@ -101,7 +103,7 @@ export default function RecordDetails(props: {
     try {
       await downloadPdfResponse(await fetch(document.downloadUrl, { headers: { Accept: "application/pdf" } }), document.filename);
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Failed to download document");
+      prompts.error(error instanceof Error ? error.message : messages().downloadDocumentFailed);
     } finally {
       setDownloadingId(null);
     }
@@ -117,7 +119,7 @@ export default function RecordDetails(props: {
           <Show when={props.updateEndpoint && editableFields.length > 0 && !record().finalizedAt}>
             <Button variant="secondary" size="sm" disabled={saving()} onClick={() => void edit()}>
               <i class="ti ti-pencil" aria-hidden="true" />
-              Edit
+              {messages().edit}
             </Button>
           </Show>
         }
@@ -153,10 +155,10 @@ export default function RecordDetails(props: {
       />
       <Show when={props.block.documents}>
         <section class="flex min-w-0 flex-col gap-3" aria-labelledby={`${props.block.id}-documents`}>
-          <PanelHeader title={<span id={`${props.block.id}-documents`}>Documents</span>} as="h3" size="md" />
+          <PanelHeader title={<span id={`${props.block.id}-documents`}>{messages().documents}</span>} as="h3" size="md" />
           <Show
             when={props.documents.length > 0}
-            fallback={<Placeholder align="left" class="px-0 py-1" description="No generated documents yet." />}
+            fallback={<Placeholder align="left" class="px-0 py-1" description={messages().noDocuments} />}
           >
             <DescriptionList
               layout="rows"
@@ -179,9 +181,9 @@ export default function RecordDetails(props: {
                   <IconButton
                     size="xs"
                     variant="ghost"
-                    label={`Download ${document.filename}`}
+                    label={messages().downloadFile({ filename: document.filename })}
                     loading={downloadingId() === document.id}
-                    loadingLabel={`Downloading ${document.filename}`}
+                    loadingLabel={messages().downloadingFile({ filename: document.filename })}
                     disabled={Boolean(downloadingId())}
                     onClick={() => void download(document)}
                   >

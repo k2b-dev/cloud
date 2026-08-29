@@ -19,6 +19,7 @@ import {
   TextInput,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { renderLiquidTemplate } from "@valentinkolb/cloud/shared";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
@@ -33,13 +34,14 @@ import {
 } from "../../../api/public-email-template-contracts";
 import { errorMessage } from "../utils/api-helpers";
 import {
+  createDefaultEmailTemplateSampleData,
   createEmailTemplateSystemSampleData,
-  DEFAULT_EMAIL_TEMPLATE_SAMPLE_DATA,
   EMAIL_TEMPLATE_SYSTEM_VARIABLES,
   emailTemplatePreviewContext,
   emailTemplateVariables,
   parseEmailTemplateSampleData,
 } from "./email-template-preview-data";
+import { workflowMessages } from "./messages";
 import { workflowEmailTemplateDraft, workflowEmailTemplateDraftDirty } from "./workflow-email-template-draft";
 
 const emailTemplateManagerApi = apiClient["email-templates"] as unknown as {
@@ -54,17 +56,10 @@ const emailTemplateManagerApi = apiClient["email-templates"] as unknown as {
 };
 
 const DEFAULT_EMAIL_SUBJECT = "{{ workflow.name }}";
-const DEFAULT_EMAIL_HTML = `<p>Hello,</p>
-<p>A Grids workflow created an update for you.</p>
-{% if data.link.url != blank %}
-  <p><a href="{{ data.link.url }}">Open document</a></p>
-{% endif %}
-<p>{{ business.legalName | default: app.name }}</p>`;
-
 const escapePreviewText = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-const buildEmailPreviewHtml = (content: string, appName: string) => `
+const buildEmailPreviewHtml = (content: string, appName: string, footer: string) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -82,7 +77,7 @@ const buildEmailPreviewHtml = (content: string, appName: string) => `
           <div style="font-size:14px;line-height:1.6;color:#27272a;">${content}</div>
         </td></tr>
         <tr><td style="background:#fafafa;padding:16px 24px;border-radius:0 0 12px 12px;border:1px solid #e4e4e7;border-top:none;">
-          <p style="margin:0;font-size:11px;color:#a1a1aa;text-align:center;">This message was sent automatically. Please do not reply to this email.</p>
+          <p style="margin:0;font-size:11px;color:#a1a1aa;text-align:center;">${escapePreviewText(footer)}</p>
         </td></tr>
       </table>
     </td></tr>
@@ -95,24 +90,33 @@ const renderEmailTemplatePreview = (
   template: string,
   sampleData: Record<string, WorkflowJsonValue>,
   systemSampleData: Record<string, string>,
+  locale: string,
 ): string => {
+  const t = workflowMessages.resolve([locale]).t;
   try {
     return buildEmailPreviewHtml(
       renderLiquidTemplate(template, emailTemplatePreviewContext(sampleData, systemSampleData)),
       systemSampleData["app.name"] ?? "Cloud",
+      t.automaticEmailFooter,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Template preview failed";
-    return buildEmailPreviewHtml(`<p style="color:#b91c1c;">${escapePreviewText(message)}</p>`, systemSampleData["app.name"] ?? "Cloud");
+    const message = error instanceof Error ? error.message : t.templatePreviewFailed;
+    return buildEmailPreviewHtml(
+      `<p style="color:#b91c1c;">${escapePreviewText(message)}</p>`,
+      systemSampleData["app.name"] ?? "Cloud",
+      t.automaticEmailFooter,
+    );
   }
 };
 
 function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemplate; onSaved: () => void; onClose: () => void }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const cleanDraft = workflowEmailTemplateDraft(
     props.template,
     DEFAULT_EMAIL_SUBJECT,
-    DEFAULT_EMAIL_HTML,
-    DEFAULT_EMAIL_TEMPLATE_SAMPLE_DATA,
+    t().defaultEmailHtml,
+    createDefaultEmailTemplateSampleData(locale()),
   );
   const [name, setName] = createSignal(cleanDraft.name);
   const [description, setDescription] = createSignal(cleanDraft.description);
@@ -122,8 +126,8 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
   const [layout, setLayout] = createSignal(createTemplateEditorPanesLayout());
   const cleanSampleDataSource = JSON.stringify(cleanDraft.sampleData, null, 2);
   const [sampleDataSource, setSampleDataSource] = createSignal(cleanSampleDataSource);
-  const [systemSampleData, setSystemSampleData] = createSignal<Record<string, string>>(createEmailTemplateSystemSampleData());
-  const parsedSampleData = createMemo(() => parseEmailTemplateSampleData(sampleDataSource()));
+  const [systemSampleData, setSystemSampleData] = createSignal<Record<string, string>>(createEmailTemplateSystemSampleData(locale()));
+  const parsedSampleData = createMemo(() => parseEmailTemplateSampleData(sampleDataSource(), locale()));
   const sampleData = createMemo(() => {
     const parsed = parsedSampleData();
     return parsed.ok ? parsed.data : cleanDraft.sampleData;
@@ -135,9 +139,10 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
       return buildEmailPreviewHtml(
         `<p style="color:#b91c1c;">${escapePreviewText(parsed.error)}</p>`,
         systemSampleData()["app.name"] ?? "Cloud",
+        t().automaticEmailFooter,
       );
     }
-    return renderEmailTemplatePreview(html(), parsed.data, systemSampleData());
+    return renderEmailTemplatePreview(html(), parsed.data, systemSampleData(), locale());
   });
   const setSystemSampleValue = (name: string, value: string) => setSystemSampleData((current) => ({ ...current, [name]: value }));
   const dirty = () =>
@@ -160,9 +165,9 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
         sampleData: sampleData(),
         enabled: enabled(),
       };
-      if (!payload.name) throw new Error("Name is required.");
-      if (!payload.subject) throw new Error("Subject is required.");
-      if (!payload.html) throw new Error("HTML is required.");
+      if (!payload.name) throw new Error(t().nameRequired);
+      if (!payload.subject) throw new Error(t().subjectRequired);
+      if (!payload.html) throw new Error(t().htmlRequired);
       const res = props.template
         ? await apiClient["email-templates"][":templateId"].$patch(
             { param: { templateId: props.template.id }, json: payload },
@@ -172,11 +177,11 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
             { param: { baseId: props.baseId }, json: payload },
             { init: { signal: abortSignal } },
           );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not save email template."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveEmailTemplateFailed));
       return PublicEmailTemplateSchema.parse(await res.json());
     },
     onSuccess: (saved) => {
-      toast.success(`Saved "${saved.name}"`);
+      toast.success(t().savedNamed({ name: saved.name }));
       props.onSaved();
       props.onClose();
     },
@@ -189,24 +194,24 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.template ? `Email template — ${props.template.name}` : "New email template"}
-        subtitle="Reusable Liquid email for workflow sendEmail steps."
+        title={props.template ? t().emailTemplateNamed({ name: props.template.name }) : t().newEmailTemplate}
+        subtitle={t().emailTemplateSubtitle}
         icon="ti ti-mail"
         close={() => void closeIfClean()}
       />
       <PanelDialog.Body scrollPreserveKey={`grids-email-template-editor-${props.template?.id ?? "new"}`}>
         <div class="flex min-h-[42rem] flex-1 flex-col gap-2">
           <div class="grid shrink-0 gap-2 md:grid-cols-2">
-            <TextInput label="Name" value={name} onValueChange={setName} required icon="ti ti-mail" placeholder="Invoice email" />
+            <TextInput label={t().name} value={name} onValueChange={setName} required icon="ti ti-mail" placeholder={t().invoiceEmail} />
             <TextInput
-              label="Description"
+              label={t().description}
               value={description}
               onValueChange={setDescription}
               icon="ti ti-align-left"
-              placeholder="Optional"
+              placeholder={t().optional}
             />
             <TextInput
-              label="Subject"
+              label={t().subject}
               value={subject}
               onValueChange={setSubject}
               required
@@ -216,17 +221,15 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
             />
             <div class="md:col-span-2">
               <CheckboxCard
-                label="Enabled"
-                description="Enabled email templates can be used by workflow sendEmail steps."
+                label={t().enabled}
+                description={t().enabledEmailDescription}
                 icon="ti ti-mail-check"
                 value={enabled}
                 onValueChange={setEnabled}
               />
             </div>
           </div>
-          <p class="shrink-0 text-xs text-dimmed">
-            Type {"{{"} for values, {"{%"} for Liquid logic, or {"<"} for HTML snippets. Use sample data to change preview values.
-          </p>
+          <p class="shrink-0 text-xs text-dimmed">{t().templateTypingHint}</p>
           <div class="min-h-[30rem] min-w-0 flex-1 overflow-hidden">
             <Panes
               layout={layout()}
@@ -252,19 +255,19 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
                 },
                 {
                   id: "preview",
-                  title: "Preview",
+                  title: t().preview,
                   icon: "ti ti-eye",
                   render: () => <TemplatePreview html={renderedPreview()} />,
                 },
                 {
                   id: "sample-data",
-                  title: "Sample data",
+                  title: t().sampleData,
                   icon: "ti ti-database",
                   render: () => (
                     <div class="flex h-full min-h-0 flex-col gap-2 overflow-auto">
                       <TextInput
-                        label="Workflow data"
-                        description="JSON available under data in the subject and HTML preview."
+                        label={t().workflowData}
+                        description={t().workflowDataDescription}
                         value={sampleDataSource}
                         onValueChange={setSampleDataSource}
                         error={() => {
@@ -295,10 +298,10 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
         <div />
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={() => void closeIfClean()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" disabled={!canSave()} onClick={() => saveMut.mutate()}>
-            <i class={saveMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-device-floppy"} /> Save email template
+            <i class={saveMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-device-floppy"} /> {t().saveEmailTemplate}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -307,6 +310,8 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
 }
 
 export function EmailTemplateManager(props: { baseId: string; onChanged: () => void; onClose: () => void }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const [templates, setTemplates] = createSignal<PublicEmailTemplate[]>([]);
   const [dependencies, setDependencies] = createSignal<PublicEmailTemplateDependencyMap>({});
   const loadMut = mutations.create<void, void>({
@@ -318,8 +323,8 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
           { init: { signal: abortSignal } },
         ),
       ]);
-      if (!templatesRes.ok) throw new Error(await errorMessage(templatesRes, "Could not load email templates."));
-      if (!dependenciesRes.ok) throw new Error(await errorMessage(dependenciesRes, "Could not load email template usage."));
+      if (!templatesRes.ok) throw new Error(await errorMessage(templatesRes, t().loadEmailTemplatesFailed));
+      if (!dependenciesRes.ok) throw new Error(await errorMessage(dependenciesRes, t().loadEmailUsageFailed));
       setTemplates(PublicEmailTemplateListSchema.parse(await templatesRes.json()));
       setDependencies(PublicEmailTemplateDependencyMapSchema.parse(await dependenciesRes.json()));
     },
@@ -331,13 +336,13 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
       const usedBy = dependencies()[template.id] ?? [];
       if (usedBy.length > 0) {
         throw new Error(
-          `This template is used by ${usedBy.length === 1 ? `workflow "${usedBy[0]!.workflowName}"` : `${usedBy.length} workflows`}. Edit those workflows before deleting it.`,
+          usedBy.length === 1 ? t().templateUsedByOne({ name: usedBy[0]!.workflowName }) : t().templateUsedByMany({ count: usedBy.length }),
         );
       }
-      const confirmed = await prompts.confirm(`Delete "${template.name}"?`, {
-        title: "Delete email template",
+      const confirmed = await prompts.confirm(t().deleteNamedConfirm({ name: template.name }), {
+        title: t().deleteEmailTemplate,
         icon: "ti ti-trash",
-        confirmText: "Delete template",
+        confirmText: t().deleteTemplate,
         variant: "danger",
       });
       if (!confirmed) return { deleted: false };
@@ -345,12 +350,12 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
         { param: { templateId: template.id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not delete email template."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().deleteEmailTemplateFailed));
       return { deleted: true };
     },
     onSuccess: (result) => {
       if (!result.deleted) return;
-      toast.success("Email template deleted");
+      toast.success(t().emailTemplateDeleted);
       props.onChanged();
       loadMut.mutate();
     },
@@ -379,12 +384,12 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Email templates"
-        subtitle="Reusable Liquid emails for workflow sendEmail steps."
+        title={t().emailTemplates}
+        subtitle={t().emailTemplateSubtitle}
         icon="ti ti-mail"
         actions={
           <Button variant="primary" size="sm" type="button" onClick={() => void openEditor()}>
-            <i class="ti ti-plus" /> Add email template
+            <i class="ti ti-plus" /> {t().addEmailTemplate}
           </Button>
         }
         close={props.onClose}
@@ -399,11 +404,7 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
                 align="left"
                 class="py-8"
                 title={
-                  loadMut.error()
-                    ? "Could not load email templates"
-                    : loadMut.loading()
-                      ? "Loading email templates"
-                      : "No email templates yet"
+                  loadMut.error() ? t().couldNotLoadEmailTemplates : loadMut.loading() ? t().loadingEmailTemplates : t().noEmailTemplates
                 }
                 description={loadMut.error()?.message}
               />
@@ -417,7 +418,7 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
                 <button type="button" class="min-w-0 text-left" onClick={() => void openEditor(template)}>
                   <span class="flex min-w-0 items-center gap-2">
                     <span class="truncate text-sm font-semibold text-primary">{template.name}</span>
-                    <StatusBadge tone={template.enabled ? "ok" : "neutral"} label={template.enabled ? "enabled" : "disabled"} />
+                    <StatusBadge tone={template.enabled ? "ok" : "neutral"} label={template.enabled ? t().enabled : t().disabled} />
                   </span>
                   <span class="mt-0.5 block truncate text-xs text-dimmed">{template.subject}</span>
                   <Show when={template.description}>
@@ -425,29 +426,29 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
                   </Show>
                   <Show when={(dependencies()[template.id] ?? []).length > 0}>
                     <span class="mt-1 block truncate text-xs text-secondary">
-                      Used by {(dependencies()[template.id] ?? []).map((dependency) => dependency.workflowName).join(", ")}
+                      {t().usedBy({ names: (dependencies()[template.id] ?? []).map((dependency) => dependency.workflowName).join(", ") })}
                     </span>
                   </Show>
                 </button>
                 <div class="flex items-center gap-1">
-                  <Tooltip.Anchor content="Edit email template">
+                  <Tooltip.Anchor content={t().editEmailTemplate}>
                     <IconButton
                       variant="ghost"
                       size="sm"
                       type="button"
-                      label="Edit email template"
+                      label={t().editEmailTemplate}
                       onClick={() => void openEditor(template)}
                     >
                       <i class="ti ti-pencil" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Delete email template">
+                  <Tooltip.Anchor content={t().deleteEmailTemplate}>
                     <IconButton
                       variant="ghost"
                       size="sm"
                       type="button"
                       class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                      label="Delete email template"
+                      label={t().deleteEmailTemplate}
                       disabled={deleteMut.loading() || (dependencies()[template.id] ?? []).length > 0}
                       onClick={() => deleteMut.mutate(template)}
                     >
@@ -463,7 +464,7 @@ export function EmailTemplateManager(props: { baseId: string; onChanged: () => v
       <PanelDialog.Footer>
         <div />
         <Button variant="secondary" size="sm" type="button" onClick={props.onClose}>
-          Close
+          {t().close}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>

@@ -585,6 +585,8 @@ describe("document render routes", () => {
       },
       enrichedData,
       "preview.html",
+      undefined,
+      "en",
     ]);
   });
 
@@ -618,6 +620,8 @@ describe("document render routes", () => {
       },
       enrichedData,
       "preview.html",
+      undefined,
+      "en",
     ]);
   });
 
@@ -665,7 +669,7 @@ describe("document render routes", () => {
     const response = await app().request(path(`/templates/${templatePublicId}/preview-pdf`), postJson(recordBody));
 
     await expectPdf(response, `inline; filename="Invoice July.pdf"; filename*=UTF-8''Invoice%20July.pdf`);
-    expect(previewPdfInputs[0]).toEqual([template, enrichedData, `${templatePublicId}-preview.html`]);
+    expect(previewPdfInputs[0]).toEqual([template, enrichedData, `${templatePublicId}-preview.html`, undefined, "en"]);
   });
 
   test("requires base admin for a disabled saved PDF preview", async () => {

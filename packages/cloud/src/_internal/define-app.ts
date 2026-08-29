@@ -261,7 +261,7 @@ export const defineApp = <
   // returns SETTINGS.map(d => d.key)). Without this registration, app-declared
   // settings would be type-known but runtime-unknown.
   if (opts.settings) {
-    registerSettings(toLegacySettingDefs(opts.settings as Record<string, unknown>));
+    registerSettings(toLegacySettingDefs(opts.settings as Record<string, unknown>, opts.presentation?.baseLocale ?? "en"));
   }
 
   // ── 1. SSR config ─────────────────────────────────────────────────────

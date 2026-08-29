@@ -1,6 +1,6 @@
 import { dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Avatar, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
+import { Avatar, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactNote } from "../../service";
@@ -8,6 +8,7 @@ import { readErrorMessage } from "./api";
 import { createContactQuerySource, parseContactQuerySource } from "./contact-query-source";
 import { listenForContactsLiveInvalidation } from "./contacts-live";
 import { CONTACT_NOTE_COMPOSE_EVENT } from "./context";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   bookId: string;
@@ -23,6 +24,8 @@ type Props = {
  * that the panel presents it as immutable chronological context.
  */
 export default function ContactNotesSection(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const perPage = props.initialNotesPage?.perPage ?? 30;
   const emptyPage: Paginated<ContactNote> = { items: [], page: 1, perPage, total: 0, hasNext: false };
   const [composerOpen, setComposerOpen] = createSignal(false);
@@ -45,7 +48,7 @@ export default function ContactNotesSection(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load notes"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().loadNotesFailed));
       return res.json();
     },
     getNextCursor: (page) => (page.hasNext ? page.page + 1 : null),
@@ -93,7 +96,7 @@ export default function ContactNotesSection(props: Props) {
   type WriteTarget = { bookId: string; contactId: string };
   const reconcile = (target: WriteTarget) => {
     if (source() !== createContactQuerySource(target)) return;
-    void notesQuery.invalidate().catch(() => toast.error("The comment was saved, but the comments list could not be reloaded."));
+    void notesQuery.invalidate().catch(() => toast.error(t().commentSavedReloadFailed));
   };
 
   const createMutation = mutations.create<{ target: WriteTarget; note: ContactNote }, WriteTarget & { content: string }>({
@@ -105,14 +108,14 @@ export default function ContactNotesSection(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to add note"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().addNoteFailed));
       return { target, note: await res.json() };
     },
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setComposerOpen(false);
       }
-      toast.success("Comment added");
+      toast.success(t().commentAdded);
       reconcile(target);
     },
     onError: (err) => prompts.error(err.message),
@@ -131,14 +134,14 @@ export default function ContactNotesSection(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update note"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().updateNoteFailed));
       return { target, note: await res.json() };
     },
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setEditingId(null);
       }
-      toast.success("Comment updated");
+      toast.success(t().commentUpdated);
       reconcile(target);
     },
     onError: (err) => prompts.error(err.message),
@@ -156,11 +159,11 @@ export default function ContactNotesSection(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to delete note"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().deleteNoteFailed));
       return target;
     },
     onSuccess: (target) => {
-      toast.success("Comment deleted");
+      toast.success(t().commentDeleted);
       reconcile(target);
     },
     onError: (err) => prompts.error(err.message),
@@ -171,11 +174,12 @@ export default function ContactNotesSection(props: Props) {
     const target = { bookId: props.bookId, contactId: props.contactId, noteId: note.id };
     setDeleteConfirming(true);
     try {
-      const confirmed = await prompts.confirm("Delete this comment? This cannot be undone.", {
-        title: "Delete comment",
+      const confirmed = await prompts.confirm(t().deleteCommentConfirm, {
+        title: t().deleteComment,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
+        cancelText: t().cancel,
       });
       if (!confirmed || disposed) return;
       await deleteMutation.mutate(target);
@@ -202,13 +206,13 @@ export default function ContactNotesSection(props: Props) {
   return (
     <Discussion
       ref={sectionRoot}
-      label="Comments"
+      label={t().comments}
       icon="ti ti-message"
       count={notesPage().total}
       actions={
         props.canWrite && !composerOpen() ? (
           <Button variant="ghost" size="xs" onClick={() => setComposerOpen(true)}>
-            <i class="ti ti-plus" aria-hidden="true" /> Add comment
+            <i class="ti ti-plus" aria-hidden="true" /> {t().addComment}
           </Button>
         ) : undefined
       }
@@ -216,10 +220,10 @@ export default function ContactNotesSection(props: Props) {
     >
       <Show when={props.canWrite && composerOpen()}>
         <Discussion.Composer
-          label="Add comment"
-          placeholder="Write a comment in markdown…"
-          submitLabel="Post comment"
-          cancelLabel="Cancel"
+          label={t().addComment}
+          placeholder={t().commentPlaceholder}
+          submitLabel={t().postComment}
+          cancelLabel={t().cancel}
           onCancel={() => setComposerOpen(false)}
           lines={5}
           onSubmit={async (content) => {
@@ -231,12 +235,12 @@ export default function ContactNotesSection(props: Props) {
 
       <Discussion.List
         loading={(notesQuery.loading() || notesQuery.refreshing()) && notesPage().items.length === 0}
-        loadingLabel="Loading comments"
+        loadingLabel={t().loadingComments}
         error={notesQuery.error()?.message}
         onRetry={() => notesQuery.refresh()}
         hasMore={notesPage().hasNext}
         loadingMore={notesQuery.loadingMore()}
-        loadMoreLabel="Load earlier comments"
+        loadMoreLabel={t().loadEarlierComments}
         onLoadMore={() => notesQuery.loadMore()}
       >
         <For each={notesPage().items}>
@@ -263,25 +267,27 @@ export default function ContactNotesSection(props: Props) {
                     {dates.formatDateTimeRelative(note.createdAt)}
                   </time>
                 }
-                meta={note.updatedAt !== note.createdAt ? <span title={dates.formatDateTime(note.updatedAt)}>edited</span> : undefined}
+                meta={
+                  note.updatedAt !== note.createdAt ? <span title={dates.formatDateTime(note.updatedAt)}>{t().edited}</span> : undefined
+                }
                 actions={
                   props.canWrite && !isEditing() && (note.canEdit || note.canDelete) ? (
                     <>
                       <Show when={note.canEdit && isOwn()}>
-                        <Tooltip.Anchor content="Edit comment">
-                          <IconButton variant="ghost" size="xs" onClick={() => startEdit(note)} label="Edit comment">
+                        <Tooltip.Anchor content={t().editComment}>
+                          <IconButton variant="ghost" size="xs" onClick={() => startEdit(note)} label={t().editComment}>
                             <i class="ti ti-pencil" aria-hidden="true" />
                           </IconButton>
                         </Tooltip.Anchor>
                       </Show>
                       <Show when={note.canDelete && isOwn()}>
-                        <Tooltip.Anchor content="Delete comment">
+                        <Tooltip.Anchor content={t().deleteComment}>
                           <IconButton
                             variant="ghost"
                             size="xs"
                             onClick={() => void deleteNote(note)}
                             disabled={deleteConfirming() || deleteMutation.loading()}
-                            label="Delete comment"
+                            label={t().deleteComment}
                           >
                             <i class="ti ti-trash" aria-hidden="true" />
                           </IconButton>
@@ -293,10 +299,10 @@ export default function ContactNotesSection(props: Props) {
               >
                 <Show when={isEditing()} fallback={<MarkdownView markdown={note.content} headingScale="compact" />}>
                   <Discussion.Composer
-                    label="Edit comment"
+                    label={t().editComment}
                     initialValue={note.content}
-                    submitLabel="Save comment"
-                    cancelLabel="Cancel"
+                    submitLabel={t().saveComment}
+                    cancelLabel={t().cancel}
                     onCancel={cancelEdit}
                     lines={3}
                     onSubmit={async (content) => {

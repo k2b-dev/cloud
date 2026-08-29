@@ -1,6 +1,7 @@
-import { Panes, type PanesLayout, PdfPreview, TemplateEditor, type TemplateVariable } from "@k2b/ui";
+import { Panes, type PanesLayout, PdfPreview, TemplateEditor, type TemplateVariable, useLocale } from "@k2b/ui";
 import { type Accessor, createSignal } from "solid-js";
 import type { DocumentPreviewResponse } from "../../../contracts";
+import { documentMessages } from "../documents/messages";
 import { DocumentDataTree, RenderedDocumentSource } from "./DocumentTemplatePreviewData";
 
 type TemplateSnippet = {
@@ -43,35 +44,37 @@ const createPanesLayout = (): PanesLayout => ({
 });
 
 export function DocumentTemplateEditorPanes(props: Props) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
   const [layout, setLayout] = createSignal(createPanesLayout());
   const snippets: TemplateSnippet[] = [
     {
       id: "body",
-      title: () => (props.rendererKind() === "html" ? "HTML body" : "Renderer input"),
+      title: () => (props.rendererKind() === "html" ? t().htmlBody : t().rendererInput),
       icon: "ti ti-braces",
       value: props.body,
       onInput: props.setBody,
-      placeholder: "Write the template input for the selected renderer...",
+      placeholder: t().bodyPlaceholder,
     },
     {
       id: "header",
-      title: "Header",
+      title: t().header,
       icon: "ti ti-layout-navbar",
       value: props.header,
       onInput: props.setHeader,
-      placeholder: "Optional Gotenberg header HTML...",
+      placeholder: t().headerPlaceholder,
     },
     {
       id: "footer",
-      title: "Footer",
+      title: t().footer,
       icon: "ti ti-layout-bottombar",
       value: props.footer,
       onInput: props.setFooter,
-      placeholder: "Optional Gotenberg footer HTML...",
+      placeholder: t().footerPlaceholder,
     },
     {
       id: "css",
-      title: "Page CSS",
+      title: t().pageCss,
       icon: "ti ti-braces",
       value: props.css,
       onInput: props.setCss,
@@ -97,20 +100,16 @@ export function DocumentTemplateEditorPanes(props: Props) {
     })),
     {
       id: "preview",
-      title: "Preview",
+      title: t().preview,
       icon: "ti ti-file-type-pdf",
       render: () => (
         <section class="flex h-full min-h-0 flex-col overflow-hidden">
           <PdfPreview
-            title="Gotenberg PDF preview"
+            title={t().gotenbergPreview}
             class="min-h-0 flex-1"
-            buttonLabel="Render preview"
-            emptyText="Choose a record and render a PDF preview from the unsaved draft."
-            disabled={() =>
-              !props.source().trim() ||
-              !props.body().trim() ||
-              !props.previewRecordId().trim()
-            }
+            buttonLabel={t().renderPreview}
+            emptyText={t().unsavedPreview}
+            disabled={() => !props.source().trim() || !props.body().trim() || !props.previewRecordId().trim()}
             request={props.previewPdf}
           />
         </section>
@@ -118,7 +117,7 @@ export function DocumentTemplateEditorPanes(props: Props) {
     },
     {
       id: "data",
-      title: "Data",
+      title: t().dataPane,
       icon: "ti ti-list-tree",
       render: () => (
         <section class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -132,7 +131,7 @@ export function DocumentTemplateEditorPanes(props: Props) {
     },
     {
       id: "source",
-      title: "Source",
+      title: t().source,
       icon: "ti ti-code",
       render: () => (
         <section class="flex h-full min-h-0 flex-col overflow-hidden">

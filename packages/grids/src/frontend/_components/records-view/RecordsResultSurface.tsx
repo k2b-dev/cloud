@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, Placeholder } from "@k2b/ui";
+import { Button, Placeholder, useLocale } from "@k2b/ui";
 import { type ComponentProps, Match, Switch } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { AggregationSpec, ColumnSpec, GroupBySpec, RecordDisplayConfig } from "../../../contracts";
 import type { GridFilePreview } from "../../../service";
 import DatabaseTable from "../table/DatabaseTable";
 import GroupedTable, { type GroupBucket } from "../table/GroupedTable";
+import { recordsViewMessages } from "./messages";
 import type { CardSize, RecordsState } from "./query-url";
 import { RecordCalendarView } from "./RecordCalendarView";
 import { RecordCardsView } from "./RecordCardsView";
@@ -64,6 +65,8 @@ type Props = {
 const groupBucketKey = (bucket: GroupBucket | null): string | null => (bucket ? JSON.stringify(bucket.keys) : null);
 
 export default function RecordsResultSurface(props: Props) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   const fieldsByTable = () => ({ ...props.fieldsByTable, [props.tableId]: props.fields });
   const hasMore = () => !props.trashMode && Boolean(props.nextCursor);
   const loadingMore = () => props.loading && Boolean(props.cursor);
@@ -103,13 +106,13 @@ export default function RecordsResultSurface(props: Props) {
           <Placeholder
             variant="panel"
             icon="ti ti-search"
-            title="No matching records"
-            description="Clear the current search and filters to see all available records."
+            title={t().noMatchingRecords}
+            description={t().noMatchingDescription}
             class="flex-1"
             action={
               <Button variant="secondary" size="sm" type="button" onClick={props.onClearResultNarrowing}>
                 <i class="ti ti-filter-off" aria-hidden="true" />
-                Clear search and filters
+                {t().clearSearchFilters}
               </Button>
             }
           />

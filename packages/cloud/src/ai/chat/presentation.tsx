@@ -1,4 +1,4 @@
-import { Chat, type ChatTimelineItem } from "@k2b/ui";
+import { Chat, type ChatTimelineItem, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, isRenderableTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -77,6 +77,7 @@ const storedItems = (
   messages: readonly AiStoredMessage[],
   actions: AiChatActions,
   disclosureState: AiToolDisclosureState,
+  locale: string,
 ): ChatTimelineItem[] =>
   buildAiMessageTimeline([...messages]).map((item): ChatTimelineItem => {
     if (item.type === "user") {
@@ -133,7 +134,7 @@ const storedItems = (
 
     if (item.type === "summary") {
       const count = item.entry.meta?.compactedCount;
-      const date = new Date(item.entry.createdAt).toLocaleDateString();
+      const date = new Date(item.entry.createdAt).toLocaleDateString(locale);
       return {
         kind: "activity",
         id: item.id,
@@ -235,8 +236,9 @@ export type AiChatTimelineSource = {
  */
 export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<readonly ChatTimelineItem[]> {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const disclosureState = createAiToolDisclosureState();
-  const stored = createMemo(() => storedItems(source.messages(), actions, disclosureState));
+  const stored = createMemo(() => storedItems(source.messages(), actions, disclosureState, locale()));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, disclosureState));
   return createMemo(() => [...stored(), ...active()]);
 }

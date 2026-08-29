@@ -1,7 +1,8 @@
-import { NoticeCard, Button, CheckboxCard, PanelDialog, Select, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, CheckboxCard, PanelDialog, Select, TextInput, useLocale } from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { CreateOAuthClient, OAuthClient, OAuthScope, UpdateOAuthClient } from "@/contracts";
+import { oauthMessages } from "../messages";
 
 type AccessChoice = "user" | "everybody" | "specific";
 
@@ -34,48 +35,6 @@ type OAuthClientDialogProps =
       onSubmit: (data: UpdateOAuthClient) => Promise<void>;
     };
 
-const accessChoiceOptions = [
-  {
-    id: "user",
-    label: "Full Users Only",
-    description: "Only full user accounts can use this client.",
-    icon: "ti ti-user",
-  },
-  {
-    id: "everybody",
-    label: "Everybody",
-    description: "Full users and guests can use this client.",
-    icon: "ti ti-users",
-  },
-  {
-    id: "specific",
-    label: "Specific users and groups",
-    description: "Only selected users and recursive group members can use this client.",
-    icon: "ti ti-user-check",
-  },
-];
-
-const scopeOptions = [
-  { id: "openid", label: "OpenID", description: "Identify the signed-in account.", icon: "ti ti-fingerprint" },
-  { id: "profile", label: "Profile", description: "Name and display name claims.", icon: "ti ti-id-badge-2" },
-  { id: "email", label: "Email", description: "Email address claim.", icon: "ti ti-mail" },
-  { id: "groups", label: "Groups", description: "Recursive group membership claim.", icon: "ti ti-users-group" },
-  {
-    id: "offline_access",
-    label: "Offline access",
-    description: "Rotate a refresh token after the browser session ends.",
-    icon: "ti ti-refresh",
-  },
-  { id: "read", label: "Read", description: "Read Cloud data allowed for the account.", icon: "ti ti-eye" },
-  { id: "write", label: "Write", description: "Change Cloud data allowed for the account.", icon: "ti ti-pencil" },
-  {
-    id: "admin",
-    label: "Admin",
-    description: "Use APIs that explicitly accept the privileged admin scope.",
-    icon: "ti ti-shield-lock",
-  },
-] as const satisfies readonly { id: OAuthScope; label: string; description: string; icon: string }[];
-
 const accessChoiceFromClient = (client?: OAuthClient): AccessChoice => {
   if (client?.accessMode === "specific") return "specific";
   return client?.allowedProfiles.includes("guest") ? "everybody" : "user";
@@ -100,6 +59,24 @@ const selectedGroupsFromClient = (client?: OAuthClient): SelectedGroup[] =>
 const removeById = <T extends { id: string }>(id: string, values: T[]) => values.filter((item) => item.id !== id);
 
 export default function OAuthClientDialog(props: OAuthClientDialogProps) {
+  const locale = useLocale();
+  const t = () => oauthMessages.resolve([locale()]).t;
+  const accessChoiceOptions = (): { id: AccessChoice; label: string; description: string; icon: string }[] => [
+    { id: "user", label: t().fullUsersOnly, description: t().fullUsersOnlyDescription, icon: "ti ti-user" },
+    { id: "everybody", label: t().everybody, description: t().everybodyDescription, icon: "ti ti-users" },
+    { id: "specific", label: t().specific, description: t().specificDescription, icon: "ti ti-user-check" },
+  ];
+  const scopeOptions = () =>
+    [
+      { id: "openid", label: "OpenID", description: t().scopeOpenId, icon: "ti ti-fingerprint" },
+      { id: "profile", label: t().profileScopeLabel, description: t().scopeProfile, icon: "ti ti-id-badge-2" },
+      { id: "email", label: t().emailScopeLabel, description: t().scopeEmail, icon: "ti ti-mail" },
+      { id: "groups", label: t().groupsScopeLabel, description: t().scopeGroups, icon: "ti ti-users-group" },
+      { id: "offline_access", label: t().offlineAccess, description: t().scopeOffline, icon: "ti ti-refresh" },
+      { id: "read", label: t().read, description: t().scopeRead, icon: "ti ti-eye" },
+      { id: "write", label: t().write, description: t().scopeWrite, icon: "ti ti-pencil" },
+      { id: "admin", label: t().admin, description: t().scopeAdmin, icon: "ti ti-shield-lock" },
+    ] as const satisfies readonly { id: OAuthScope; label: string; description: string; icon: string }[];
   const client = () => (props.mode === "edit" ? props.client : undefined);
   const [name, setName] = createSignal(client()?.name ?? "");
   const [description, setDescription] = createSignal(client()?.description ?? "");
@@ -111,7 +88,7 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
   const [users, setUsers] = createSignal<SelectedUser[]>(selectedUsersFromClient(client()));
   const [groups, setGroups] = createSignal<SelectedGroup[]>(selectedGroupsFromClient(client()));
 
-  const selectedLabel = () => accessChoiceOptions.find((option) => option.id === accessChoice())?.label;
+  const selectedLabel = () => accessChoiceOptions().find((option) => option.id === accessChoice())?.label;
   const hasSpecificSelection = () => users().length > 0 || groups().length > 0;
   const canSubmit = () =>
     (props.mode === "edit" || name().trim().length > 0) &&
@@ -202,15 +179,15 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.mode === "create" ? "New OAuth Client" : `Edit: ${props.client.name}`}
-        subtitle="Configure OAuth/OIDC login access for this client."
+        title={props.mode === "create" ? t().newClient : t().editClient({ name: props.client.name })}
+        subtitle={t().dialogSubtitle}
         icon={props.mode === "create" ? "ti ti-plus" : "ti ti-pencil"}
         close={props.close}
       />
 
       <PanelDialog.Body>
         <div class="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
-          <PanelDialog.Section title="Client" subtitle="Application metadata and redirect endpoints." icon="ti ti-key">
+          <PanelDialog.Section title={t().client} subtitle={t().applicationMetadata} icon="ti ti-key">
             <Show
               when={props.mode === "create"}
               fallback={
@@ -219,18 +196,25 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
                 </NoticeCard>
               }
             >
-              <TextInput label="Name" placeholder="My Application" icon="ti ti-tag" value={name} onValueChange={setName} required />
+              <TextInput
+                label={t().name}
+                placeholder={t().namePlaceholder}
+                icon="ti ti-tag"
+                value={name}
+                onValueChange={setName}
+                required
+              />
             </Show>
             <TextInput
-              label="Description"
-              placeholder="Optional description for this client"
+              label={t().description}
+              placeholder={t().descriptionPlaceholder}
               icon="ti ti-file-description"
               value={description}
               onValueChange={setDescription}
             />
             <TextInput
-              label="Redirect URI"
-              description="Callback URL used by the OAuth client."
+              label={t().redirectUri}
+              description={t().redirectUriDescription}
               placeholder="https://myapp.example.com/callback"
               icon="ti ti-link"
               value={redirectUri}
@@ -238,8 +222,8 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
               required
             />
             <TextInput
-              label="Logout URI"
-              description="Optional post-logout redirect URL."
+              label={t().logoutUri}
+              description={t().logoutUriDescription}
               placeholder="https://myapp.example.com/logout-callback"
               icon="ti ti-logout"
               value={logoutUri}
@@ -247,8 +231,8 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
             />
             <Show when={props.mode === "create"}>
               <CheckboxCard
-                label="Public client"
-                description="Browser apps without backend. PKCE is required."
+                label={t().publicClient}
+                description={t().publicClientDescription}
                 icon="ti ti-world"
                 variant="input"
                 value={isPublic}
@@ -258,29 +242,29 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
           </PanelDialog.Section>
 
           <aside class="flex min-w-0 flex-col gap-3">
-            <PanelDialog.Section title="Access" subtitle="Choose who can sign in with this client." icon="ti ti-user-check">
+            <PanelDialog.Section title={t().access} subtitle={t().chooseAccess} icon="ti ti-user-check">
               <Select
-                label="Who can use this client?"
+                label={t().whoCanUse}
                 value={accessChoice}
                 onValueChange={(value) => {
                   if (value === "user" || value === "everybody" || value === "specific") setAccessChoice(value);
                 }}
                 selectedLabel={selectedLabel}
-                options={accessChoiceOptions}
+                options={accessChoiceOptions()}
                 required
               />
 
               <Show when={accessChoice() === "specific"}>
                 <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
                   <i class="ti ti-info-circle mt-0.5 shrink-0" />
-                  <span>Selected groups include users from nested child groups recursively.</span>
+                  <span>{t().nestedGroups}</span>
                 </NoticeCard>
                 <EntitySearch
                   includeUsers
                   includeGroups
                   excludeUserIds={users().map((user) => user.id)}
                   excludeGroupIds={groups().map((group) => group.id)}
-                  placeholder="Search users or groups..."
+                  placeholder={t().searchUsersGroups}
                   resultsHeightClass="h-56"
                   onSelect={addEntity}
                 />
@@ -288,8 +272,8 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
               </Show>
             </PanelDialog.Section>
 
-            <PanelDialog.Section title="Scopes" subtitle="Claims this client can request." icon="ti ti-checklist">
-              <For each={scopeOptions}>
+            <PanelDialog.Section title={t().scopes} subtitle={t().claimsClientCanRequest} icon="ti ti-checklist">
+              <For each={scopeOptions()}>
                 {(scope) => (
                   <ScopeToggle
                     label={scope.label}
@@ -307,15 +291,15 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
 
       <PanelDialog.Footer>
         <div class="min-w-0 text-xs text-dimmed">
-          <Show when={accessChoice() !== "specific" || hasSpecificSelection()} fallback="Select at least one user or group.">
+          <Show when={accessChoice() !== "specific" || hasSpecificSelection()} fallback={t().selectPrincipal}>
             {accessChoice() === "specific"
-              ? `${users().length} users and ${groups().length} groups selected.`
-              : "Profile-based access is active."}
+              ? t().selectionCount({ users: users().length, groups: groups().length })
+              : t().profileAccessActive}
           </Show>
         </div>
         <div class="ml-auto flex flex-wrap justify-end gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={props.loading()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button
             type="button"
@@ -323,10 +307,10 @@ export default function OAuthClientDialog(props: OAuthClientDialogProps) {
             onClick={() => void submit()}
             disabled={!canSubmit()}
             loading={props.loading()}
-            loadingLabel="Saving..."
+            loadingLabel={t().saving}
           >
             <i class="ti ti-device-floppy" />
-            <span>{props.mode === "create" ? "Create" : "Save"}</span>
+            <span>{props.mode === "create" ? t().create : t().save}</span>
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -359,12 +343,11 @@ function SelectedAccessList(props: {
   setUsers: (fn: (current: SelectedUser[]) => SelectedUser[]) => void;
   setGroups: (fn: (current: SelectedGroup[]) => SelectedGroup[]) => void;
 }) {
+  const locale = useLocale();
+  const t = () => oauthMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2">
-      <Show
-        when={props.users.length > 0 || props.groups.length > 0}
-        fallback={<p class="text-xs text-dimmed">No users or groups selected yet.</p>}
-      >
+      <Show when={props.users.length > 0 || props.groups.length > 0} fallback={<p class="text-xs text-dimmed">{t().noPrincipals}</p>}>
         <For each={props.users}>
           {(user) => (
             <Button

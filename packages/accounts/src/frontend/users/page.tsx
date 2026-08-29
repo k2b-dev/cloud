@@ -1,6 +1,6 @@
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -9,11 +9,13 @@ import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { getManagementBadge, getPrimaryAccountBadge } from "../lib/account-badges";
 import { buildUserDetailUrl, buildUsersPageBaseUrl, buildUsersUrl, parseUsersListState } from "../lib/url-state";
+import { accountsMessages } from "../messages";
 import CreateUserForm from "./new/CreateUserForm.island";
 import UsersFilters from "./UsersFilters.island";
 
 /** Admin users list page - nav sidebar + full-page list. */
 export default ssr<AuthContext>(async (c) => {
+  const { t } = accountsMessages.resolve([getLocale(c)]);
   const perPage = 100;
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
@@ -42,21 +44,19 @@ export default ssr<AuthContext>(async (c) => {
   });
   type UserRow = (typeof usersPage.items)[number];
   const columns: DataTableColumn<UserRow>[] = [
-    { id: "user", header: "User", value: (entry) => entry.displayName || entry.mail || entry.uid },
-    { id: "email", header: "Email", value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
-    { id: "managedBy", header: "Managed by", value: (entry) => getManagementBadge(entry).label },
-    { id: "access", header: "Access", value: (entry) => getPrimaryAccountBadge(entry).label },
+    { id: "user", header: t.user, value: (entry) => entry.displayName || entry.mail || entry.uid },
+    { id: "email", header: t.email, value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
+    { id: "managedBy", header: t.managedBy, value: (entry) => (entry.provider === "ipa" ? "FreeIPA" : t.local) },
+    { id: "access", header: t.access, value: (entry) => (entry.profile === "user" ? t.fullAccount : t.guestAccount) },
   ];
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Users" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.users }]}>
       <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-users">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-users-title">
-            <h1 class="text-base font-semibold text-primary">Users</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {usersPage.total} {listState.search ? "results" : "users"}
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.users}</h1>
+            <p class="mt-1 text-xs text-dimmed">{listState.search ? t.resultCount({ count: usersPage.total }) : t.userCount({ count: usersPage.total })}</p>
           </div>
 
           <div style="view-transition-name: accounts-users-search">
@@ -78,7 +78,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           {usersPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>No users found.</>} />
+            <Placeholder surface="paper" description={<>{t.usersEmpty}</>} />
           ) : (
             <div class="paper overflow-hidden" style="view-transition-name: accounts-users-table">
               <DataTable
@@ -115,7 +115,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="block" tabindex={-1}>
                         <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${managementBadge.className}`}>
-                          {managementBadge.label}
+                          {entry.provider === "ipa" ? "FreeIPA" : t.local}
                         </span>
                       </a>
                     );
@@ -124,7 +124,9 @@ export default ssr<AuthContext>(async (c) => {
                     const primaryBadge = getPrimaryAccountBadge(entry);
                     return (
                       <a href={href} class="block" tabindex={-1}>
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>{primaryBadge.label}</span>
+                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>
+                          {entry.profile === "user" ? t.fullAccount : t.guestAccount}
+                        </span>
                       </a>
                     );
                   }

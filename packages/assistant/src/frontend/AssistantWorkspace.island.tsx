@@ -1,6 +1,6 @@
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Chat, openSpotlightSearch, prompts } from "@k2b/ui";
+import { AppWorkspace, Button, Chat, openSpotlightSearch, prompts, useLocale } from "@k2b/ui";
 import type {
   AiConversation,
   AiConversationPage,
@@ -60,6 +60,7 @@ import {
   assistantProjectIdFromHref,
 } from "./assistant-navigation";
 import { submitAssistantProjectMessage } from "./assistant-project-chat";
+import { assistantMessages } from "./messages";
 
 type Status = {
   ok: boolean;
@@ -103,6 +104,8 @@ type ProjectViewState = {
 };
 
 export default function AssistantWorkspace(props: Props) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
   const isSelectable = (modelId: string | null | undefined): modelId is string =>
     Boolean(modelId && props.models.some((model) => model.id === modelId));
 
@@ -113,7 +116,7 @@ export default function AssistantWorkspace(props: Props) {
       setLiveError(null);
       liveConnection?.markApplied(cursor);
     },
-    onFailed: () => setLiveError("Live updates could not be refreshed. Retrying…"),
+    onFailed: () => setLiveError(t().liveRetry),
   });
   liveConnection = createAiLiveConnection({
     initialCursor: props.initialLiveCursor,
@@ -394,7 +397,7 @@ export default function AssistantWorkspace(props: Props) {
   const openAndFocusConversation = async (conversationId: string) => {
     const requestId = ++navigationRequest;
     const result = await chat.openConversation(conversationId);
-    if (result === "failed") throw new Error("Failed to open conversation");
+    if (result === "failed") throw new Error(t().openConversationFailed);
     if (result === "stale" || requestId !== navigationRequest) return false;
     setProjectView(null);
     if (chat.activeConversationId() === conversationId) focusComposer();
@@ -402,7 +405,7 @@ export default function AssistantWorkspace(props: Props) {
   };
   const openProject = async (projectId: string) => {
     const project = projects().find((item) => item.id === projectId);
-    if (!project) throw new Error("Project not found");
+    if (!project) throw new Error(t().projectNotFound);
     const requestId = ++navigationRequest;
     const [page, context] = await Promise.all([
       assistantApi.listConversationsPage({ projectId, page: 1, perPage: 20 }),
@@ -558,8 +561,8 @@ export default function AssistantWorkspace(props: Props) {
     const draft = composerDraft(conversationId).trim();
     if (
       draft &&
-      !(await prompts.confirm("Replace the current draft with this queued message?", {
-        title: "Edit queued message",
+      !(await prompts.confirm(t().replaceDraft, {
+        title: t().editQueued,
       }))
     ) {
       return;
@@ -595,18 +598,18 @@ export default function AssistantWorkspace(props: Props) {
 
   const chooseEmptyChatProject = async () => {
     const selected = await openSpotlightSearch<{ projectId: string | null }>({
-      title: "Choose a Project",
+      title: t().chooseProjectTitle,
       icon: "ti ti-folder-open",
-      placeholder: "Search Projects…",
+      placeholder: t().searchProjects,
       minQueryLength: 0,
-      noResultsText: "No matching Projects.",
+      noResultsText: t().noMatchingProjects,
       resolve: ({ query }) => {
         const normalized = query.trim().toLocaleLowerCase();
         return [
           {
             value: { projectId: null },
-            label: "No Project",
-            desc: "Keep this chat separate",
+            label: t().noProject,
+            desc: t().separateChat,
             icon: "ti ti-message-circle",
           },
           ...projects()
@@ -614,7 +617,7 @@ export default function AssistantWorkspace(props: Props) {
             .map((project) => ({
               value: { projectId: project.id },
               label: project.name,
-              desc: project.description || "Use shared Project context",
+              desc: project.description || t().sharedProjectContext,
               icon: project.icon || "ti ti-folder",
             })),
         ];
@@ -642,7 +645,7 @@ export default function AssistantWorkspace(props: Props) {
         }),
       ]);
     } catch (error) {
-      chat.setError(error instanceof Error ? error.message : "Failed to choose Project.");
+      chat.setError(error instanceof Error ? error.message : t().chooseProjectFailed);
     } finally {
       setChoosingProject(false);
     }
@@ -661,7 +664,7 @@ export default function AssistantWorkspace(props: Props) {
     });
     const attachmentErrors = [...result.errors];
     if (result.discarded > 0) {
-      attachmentErrors.push(`${result.discarded} attachment${result.discarded === 1 ? "" : "s"} discarded because the limit was reached.`);
+      attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
     }
     if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
     if (result.attachments.length === 0) return;
@@ -675,7 +678,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const requireComposerAttachmentsAvailable = (sessionKey: string) => {
     if (!composerAttachmentsBlocked(sessionKey)) return true;
-    chat.setError("Attachments can be added after the current response finishes.");
+    chat.setError(t().attachmentsAfterResponse);
     return false;
   };
 
@@ -683,21 +686,21 @@ export default function AssistantWorkspace(props: Props) {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
     const current = composerAttachmentsFor(sessionKey);
     if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError("This Cloud resource is already attached.");
+      chat.setError(t().resourceAlreadyAttached);
       return;
     }
     if (current.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(`A message can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items.`);
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
     const resource = await resolveAssistantCloudResource(ref);
     const latest = composerAttachmentsFor(sessionKey);
     if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError("This Cloud resource is already attached.");
+      chat.setError(t().resourceAlreadyAttached);
       return;
     }
     if (latest.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(`A message can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items.`);
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
     setComposerAttachmentsFor(sessionKey, [
@@ -719,17 +722,17 @@ export default function AssistantWorkspace(props: Props) {
       text = await attachment.file.text();
     } else if (attachment.kind === "stored-file") {
       const conversationId = chat.activeConversationId();
-      if (!conversationId) throw new Error("Open the chat before showing this text attachment.");
+      if (!conversationId) throw new Error(t().openChatBeforeAttachment);
       const query = new URLSearchParams({ path: attachment.path });
       const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
-      if (!response.ok) throw new Error("The text attachment could not be loaded.");
+      if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
       text = await response.text();
     } else {
       return;
     }
     const currentText = composerDraft(sessionKey);
     const nextText = currentText ? `${currentText}\n\n${text}` : text;
-    if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error("The text is too long to show in the message field.");
+    if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
     setComposerDraft(sessionKey, nextText);
     setComposerAttachmentsFor(
       sessionKey,
@@ -747,7 +750,7 @@ export default function AssistantWorkspace(props: Props) {
       event.preventDefault();
       if (!requireComposerAttachmentsAvailable(sessionKey)) return;
       void addResolvedComposerResource(sessionKey, ref).catch((error) =>
-        chat.setError(error instanceof Error ? error.message : "The Cloud resource could not be attached."),
+        chat.setError(error instanceof Error ? error.message : t().attachResourceFailed),
       );
       return;
     }
@@ -761,19 +764,19 @@ export default function AssistantWorkspace(props: Props) {
   const pasteComposerResource = async (sessionKey: string) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
     const ref = await cloudResourceClipboard.read(props.cloudUrl);
-    if (!ref) throw new Error("The clipboard does not contain a resource from this Cloud installation.");
+    if (!ref) throw new Error(t().clipboardNoResource);
     await addResolvedComposerResource(sessionKey, ref);
   };
 
   const addComposerResource = async (sessionKey: string) => {
     if (!requireComposerAttachmentsAvailable(sessionKey)) return;
     if (composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(`A message can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items.`);
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
       return;
     }
     const existing = composerAttachmentsFor(sessionKey).filter((item) => item.kind === "resource");
     const selected = await openCloudResourcePicker({
-      title: "Attach Cloud resource",
+      title: t().attachResource,
       excludeRefs: existing.map((item) => item.ref),
       requireReader: true,
     });
@@ -819,7 +822,7 @@ export default function AssistantWorkspace(props: Props) {
             onSelect: (files) => addComposerFiles(sessionKey(), files),
             accept: aiComposerFileAccept,
             disabled: !projectComposer() && chat.running(),
-            label: "Attach files",
+            label: t().attachFiles,
           }}
           models={aiChatModelOptions(props.models)}
           selectedModelId={selectedModelId()}
@@ -841,13 +844,13 @@ export default function AssistantWorkspace(props: Props) {
           placeholder={
             props.status.enabled
               ? projectComposer()
-                ? `Start a new chat in ${composerProps.projectName ?? "this Project"}`
+                ? t().startProjectChat({ project: composerProps.projectName ?? t().thisProject })
                 : chat.runStatus() === "stopping"
-                  ? "Stopping response"
+                  ? t().stopping
                   : chat.running()
-                    ? "Queue another message"
-                    : "Ask Assistant anything"
-              : "AI is not configured"
+                    ? t().queueMessage
+                    : t().askAnything
+              : t().aiNotConfigured
           }
           error={projectComposer() ? (chat.error() ?? undefined) : undefined}
           onSubmit={(input) =>
@@ -866,18 +869,18 @@ export default function AssistantWorkspace(props: Props) {
                 }
               : undefined
           }
-          onError={(error) => chat.setError(error instanceof Error ? error.message : "Chat action failed.")}
+          onError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
           menuActions={[
             {
               id: "attach-resource",
-              label: "Attach Cloud resource",
+              label: t().attachResource,
               icon: "ti ti-cloud-plus",
               disabled: composerAttachmentsBlocked(sessionKey()),
               onSelect: () => addComposerResource(sessionKey()),
             },
             {
               id: "paste-resource",
-              label: "Paste Cloud resource",
+              label: t().pasteResource,
               icon: "ti ti-clipboard-plus",
               disabled: composerAttachmentsBlocked(sessionKey()),
               onSelect: () => pasteComposerResource(sessionKey()),
@@ -886,18 +889,18 @@ export default function AssistantWorkspace(props: Props) {
               ? [
                   {
                     id: "search-chat",
-                    label: "Search this chat",
+                    label: t().searchThisChat,
                     icon: "ti ti-search",
                     onSelect: async () => {
                       const conversation = activeConversation();
                       if (!conversation) return;
-                      const message = await openAssistantChatMessageSearch(conversation.id);
+                      const message = await openAssistantChatMessageSearch(conversation.id, locale());
                       if (message) await revealMessage(message);
                     },
                   },
                   {
                     id: "compact-context",
-                    label: "Compact context",
+                    label: t().compactContext,
                     icon: "ti ti-package",
                     disabled: chat.running(),
                     onSelect: async () => {
@@ -965,7 +968,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const composerNotice = createMemo(() =>
     chat.streamStatus() === "reconnecting"
-      ? { message: "Reconnecting…", reconnecting: true }
+      ? { message: t().reconnecting, reconnecting: true }
       : chat.error() || liveError()
         ? { message: chat.error() ?? liveError()!, reconnecting: false }
         : null,
@@ -1000,10 +1003,10 @@ export default function AssistantWorkspace(props: Props) {
         hasMore={chat.hasMoreHistory()}
         loadingOlder={chat.loadingOlder()}
         onLoadOlder={chat.loadOlderMessages}
-        emptyTitle={props.status.enabled ? "Start a conversation" : "AI is disabled"}
+        emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
         viewportRef={setTimelineViewport}
         contentRef={setTimelineContent}
-        onActionError={(error) => chat.setError(error instanceof Error ? error.message : "Chat action failed.")}
+        onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
         navigation={
           <AiChatTurnNavigator
             entries={chat.timeline()}
@@ -1057,15 +1060,15 @@ export default function AssistantWorkspace(props: Props) {
                               actions={{
                                 actionDisabled: () => chat.runStatus() === "stopping",
                                 onApproval: async (request, input) => {
-                                  if (!(await chat.respondToApproval(request, input))) throw new Error("Could not submit approval.");
+                                  if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                 },
                                 onFrontendToolResult: async (request, result) => {
                                   if (!(await chat.submitFrontendToolResult(request, result)))
-                                    throw new Error("Could not submit tool response.");
+                                    throw new Error(t().submitToolFailed);
                                 },
                                 onForkMessage: async (entry, input) => {
                                   const conversation = await chat.forkMessage(entry.id, input);
-                                  if (!conversation) throw new Error("Could not fork conversation.");
+                                  if (!conversation) throw new Error(t().forkFailed);
                                   if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
                                 },
                                 onRetryMessage: async (entry, input) => {
@@ -1073,16 +1076,16 @@ export default function AssistantWorkspace(props: Props) {
                                     ...input,
                                     modelProfileId: selectedModelId() || undefined,
                                   });
-                                  if (!retried) throw new Error(chat.error() ?? "Could not retry message.");
+                                  if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
                                 },
                                 onMessageFeedback: async (entry, feedback) => {
                                   const saved = feedback
                                     ? await chat.setMessageFeedback(entry.id, feedback)
                                     : await chat.clearMessageFeedback(entry.id);
-                                  if (!saved) throw new Error(chat.error() ?? "Could not save message feedback.");
+                                  if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
                                 },
                                 onRetrySteer: async (block) => {
-                                  if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? "Could not retry steer message.");
+                                  if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retrySteerFailed);
                                 },
                                 onOpenFile: (path) => void openFiles(path),
                                 fileUrl: chat.fileContentUrl,

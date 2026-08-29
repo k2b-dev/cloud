@@ -1,15 +1,14 @@
 import { timing } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
 import { query } from "@k2b/stdlib/solid";
-import { MarkdownView } from "@k2b/ui";
+import { MarkdownView, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type PublicOpening, type PublicSection, type PublicStatus, PublicStatusSchema } from "../../../contracts";
+import { venueMessages } from "../../../messages";
 import PublicFeedbackForm from "../../_components/PublicFeedbackForm.island";
 import { PublicRefreshNotice, type RefreshDiagnostics } from "../../public-refresh-notice";
 import { type VenuePublicDisplayHeight, venuePublicRefreshBackoffMs } from "../../public-runtime";
-
-const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const sectionText = (section: PublicSection, key: string): string => {
   const value = section.content[key];
@@ -19,8 +18,8 @@ const sectionText = (section: PublicSection, key: string): string => {
 const groupedOpeningHours = (
   rules: Array<{ weekday: number; startTime: string; endTime: string; note: string | null }>,
 ): Array<{ weekday: number; windows: string }> =>
-  weekdays
-    .map((_, weekday) => {
+  Array.from({ length: 7 }, (_, weekday) => weekday)
+    .map((weekday) => {
       const windows = rules
         .filter((rule) => rule.weekday === weekday)
         .map((rule) => `${rule.startTime}-${rule.endTime}${rule.note ? ` (${rule.note})` : ""}`);
@@ -29,6 +28,8 @@ const groupedOpeningHours = (
     .filter((entry) => entry.windows);
 
 function PublicSectionView(props: { section: PublicSection }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const section = props.section;
   if (section.kind === "markdown") {
     return (
@@ -55,7 +56,7 @@ function PublicSectionView(props: { section: PublicSection }) {
                 <div class="flex items-start justify-between gap-3">
                   {image ? <img src={image} alt="" class="h-16 w-16 shrink-0 rounded-xl object-cover" /> : null}
                   <div class="min-w-0 flex-1">
-                    <p class="font-medium text-zinc-950">{String(item.name ?? "Item")}</p>
+                    <p class="font-medium text-zinc-950">{String(item.name ?? t().item)}</p>
                     {item.description ? <p class="mt-1 text-sm text-zinc-600">{String(item.description)}</p> : null}
                     {item.info || item.allergens ? <p class="mt-1 text-xs text-zinc-500">({String(item.info ?? item.allergens)})</p> : null}
                   </div>
@@ -106,13 +107,13 @@ function PublicSectionView(props: { section: PublicSection }) {
   );
 }
 
-const formatOpeningDate = (opening: PublicOpening, timezone: string): string =>
-  new Intl.DateTimeFormat("en", { timeZone: timezone, weekday: "short", day: "2-digit", month: "short" }).format(
+const formatOpeningDate = (opening: PublicOpening, timezone: string, locale: string): string =>
+  new Intl.DateTimeFormat(locale, { timeZone: timezone, weekday: "short", day: "2-digit", month: "short" }).format(
     new Date(opening.startsAt),
   );
 
-const formatOpeningTime = (opening: PublicOpening, timezone: string): string => {
-  const formatter = new Intl.DateTimeFormat("en", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const formatOpeningTime = (opening: PublicOpening, timezone: string, locale: string): string => {
+  const formatter = new Intl.DateTimeFormat(locale, { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   return `${formatter.format(new Date(opening.startsAt))}-${formatter.format(new Date(opening.endsAt))}`;
 };
 
@@ -143,6 +144,8 @@ function VenueIdentity(props: { status: PublicStatus; compact?: boolean }) {
 }
 
 function StatusCard(props: { status: PublicStatus; display?: boolean }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const status = () => props.status;
   return (
     <section
@@ -151,30 +154,34 @@ function StatusCard(props: { status: PublicStatus; display?: boolean }) {
       }`}
       style={status().open ? { "background-color": status().venue.accentColor } : undefined}
     >
-      <p class="text-sm font-medium uppercase opacity-75">Current status</p>
-      <p class={`${props.display ? "mt-3 text-6xl" : "mt-2 text-4xl"} font-semibold`}>{status().open ? "Open" : "Closed"}</p>
+      <p class="text-sm font-medium uppercase opacity-75">{t().currentStatus}</p>
+      <p class={`${props.display ? "mt-3 text-6xl" : "mt-2 text-4xl"} font-semibold`}>{status().open ? t().open : t().closed}</p>
       <p class="mt-3 text-sm opacity-85">
-        {status().activeWindowLabel ? `Open ${status().activeWindowLabel}` : `Today's hours: ${status().todayLabel}`}
+        {status().activeWindowLabel
+          ? t().openWindow({ window: status().activeWindowLabel! })
+          : t().todaysHours({ hours: status().todayLabel })}
       </p>
-      {status().spontaneousOpen && (
-        <p class="mt-3 rounded-xl bg-white/15 px-3 py-2 text-sm text-white/90">Staffing makes this venue additionally open right now.</p>
-      )}
+      {status().spontaneousOpen && <p class="mt-3 rounded-xl bg-white/15 px-3 py-2 text-sm text-white/90">{t().spontaneousOpen}</p>}
     </section>
   );
 }
 
 function RegularHours(props: { status: PublicStatus; display?: boolean }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const entries = () => groupedOpeningHours(props.status.openingRules);
+  const weekday = (value: number) =>
+    new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + value)));
   return (
     <Show when={props.status.venue.openMode !== "staffed" && entries().length > 0}>
       <section
         class={`${props.display ? "min-h-0 overflow-hidden rounded-2xl bg-white/95 p-5" : "rounded-2xl bg-white/90 p-5 shadow-sm ring-1 ring-black/5"}`}
       >
-        <h2 class="mb-3 text-base font-semibold text-zinc-950">Regular opening hours</h2>
+        <h2 class="mb-3 text-base font-semibold text-zinc-950">{t().regularHours}</h2>
         <div class="flex flex-col gap-2">
           {entries().map((entry) => (
             <div class="flex items-start justify-between gap-3 text-sm">
-              <span class="font-medium text-zinc-800">{weekdays[entry.weekday]}</span>
+              <span class="font-medium text-zinc-800">{weekday(entry.weekday)}</span>
               <span class="text-right text-zinc-600">{entry.windows}</span>
             </div>
           ))}
@@ -185,27 +192,31 @@ function RegularHours(props: { status: PublicStatus; display?: boolean }) {
 }
 
 function UpcomingOpenings(props: { status: PublicStatus; display?: boolean }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const openings = () => (props.display ? props.status.upcomingOpenings.slice(0, 5) : props.status.upcomingOpenings);
   return (
     <Show when={props.display || openings().length > 0}>
       <section
         class={`${props.display ? "min-h-0 overflow-hidden rounded-2xl bg-white/95 p-5" : "rounded-2xl bg-white/90 p-5 shadow-sm ring-1 ring-black/5"}`}
       >
-        <h2 class="mb-3 text-base font-semibold text-zinc-950">Upcoming staffed openings</h2>
+        <h2 class="mb-3 text-base font-semibold text-zinc-950">{t().upcomingStaffedOpenings}</h2>
         {openings().length > 0 ? (
           <div class="flex flex-col gap-3">
             {openings().map((opening) => (
               <div class="flex items-center justify-between gap-4">
                 <div class="min-w-0">
                   <p class="truncate text-sm font-medium text-zinc-900">{opening.title}</p>
-                  <p class="text-xs text-zinc-500">{formatOpeningDate(opening, props.status.venue.timezone)}</p>
+                  <p class="text-xs text-zinc-500">{formatOpeningDate(opening, props.status.venue.timezone, locale())}</p>
                 </div>
-                <span class="shrink-0 text-sm font-medium text-zinc-700">{formatOpeningTime(opening, props.status.venue.timezone)}</span>
+                <span class="shrink-0 text-sm font-medium text-zinc-700">
+                  {formatOpeningTime(opening, props.status.venue.timezone, locale())}
+                </span>
               </div>
             ))}
           </div>
         ) : (
-          <p class="text-sm leading-relaxed text-zinc-600">No additional staffed opening is confirmed yet.</p>
+          <p class="text-sm leading-relaxed text-zinc-600">{t().noStaffedOpening}</p>
         )}
       </section>
     </Show>
@@ -213,6 +224,8 @@ function UpcomingOpenings(props: { status: PublicStatus; display?: boolean }) {
 }
 
 function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } & RefreshDiagnostics) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const status = () => props.status;
   const hasRegularHours = () => status().venue.openMode !== "staffed" && groupedOpeningHours(status().openingRules).length > 0;
   const hasStaffedOpenings = () => status().venue.openMode !== "regular";
@@ -250,8 +263,8 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
                 >
                   <div class="size-36 shrink-0 [&_svg]:block [&_svg]:size-full" innerHTML={props.feedbackQr} />
                   <div class="min-w-0">
-                    <p class="text-lg font-semibold">Share feedback</p>
-                    <p class="mt-1 text-sm leading-relaxed text-zinc-600">Scan to leave an anonymous rating on your phone.</p>
+                    <p class="text-lg font-semibold">{t().shareFeedback}</p>
+                    <p class="mt-1 text-sm leading-relaxed text-zinc-600">{t().scanFeedback}</p>
                   </div>
                 </section>
               ) : null}
@@ -264,6 +277,8 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
 }
 
 function ScrollablePage(props: { status: PublicStatus } & RefreshDiagnostics) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const status = () => props.status;
   return (
     <main
@@ -283,9 +298,11 @@ function ScrollablePage(props: { status: PublicStatus } & RefreshDiagnostics) {
           <div class="grid gap-3 sm:grid-cols-[1.2fr_1fr]">
             <StatusCard status={status()} />
             <section class="rounded-3xl bg-white/95 p-6 text-zinc-950 shadow-xl">
-              <p class="text-sm font-medium uppercase text-zinc-500">Today</p>
+              <p class="text-sm font-medium uppercase text-zinc-500">{t().today}</p>
               <p class="mt-2 text-2xl font-semibold">{status().todayLabel}</p>
-              {status().nextOpeningLabel && <p class="mt-3 text-sm text-zinc-600">Next opening: {status().nextOpeningLabel}</p>}
+              {status().nextOpeningLabel && (
+                <p class="mt-3 text-sm text-zinc-600">{t().nextOpening({ value: status().nextOpeningLabel! })}</p>
+              )}
             </section>
           </div>
         </div>
@@ -308,6 +325,8 @@ function ScrollablePage(props: { status: PublicStatus } & RefreshDiagnostics) {
 }
 
 function UnavailablePage(props: RefreshDiagnostics) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   return (
     <main
       class="min-h-screen bg-zinc-950 text-white"
@@ -318,23 +337,25 @@ function UnavailablePage(props: RefreshDiagnostics) {
       <PublicRefreshNotice {...props} />
       <div class="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center p-6 text-center">
         <i class="ti ti-building-store-off mb-4 text-5xl text-zinc-500" />
-        <h1 class="text-2xl font-semibold">Venue not available</h1>
-        <p class="mt-2 text-sm text-zinc-400">This public page is disabled or does not exist.</p>
+        <h1 class="text-2xl font-semibold">{t().publicUnavailable}</h1>
+        <p class="mt-2 text-sm text-zinc-400">{t().publicUnavailableDescription}</p>
       </div>
     </main>
   );
 }
 
-const readResponseError = async (response: Response): Promise<string> => {
+const readResponseError = async (response: Response, fallback: string): Promise<string> => {
   const body: unknown = await response.json().catch(() => null);
-  return body && typeof body === "object" && "message" in body && typeof body.message === "string"
-    ? body.message
-    : "Could not refresh venue";
+  return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
 const PUBLIC_REFRESH_REQUEST_TIMEOUT_MS = 10_000;
 
-const fetchPublicStatus = async (venueId: string, parentSignal: AbortSignal): Promise<PublicStatus | null> => {
+const fetchPublicStatus = async (
+  venueId: string,
+  parentSignal: AbortSignal,
+  messages: { refreshVenueFailed: string; refreshVenueTimedOut: string },
+): Promise<PublicStatus | null> => {
   const request = new AbortController();
   let timedOut = false;
   const abort = () => request.abort();
@@ -351,10 +372,10 @@ const fetchPublicStatus = async (venueId: string, parentSignal: AbortSignal): Pr
       { init: { cache: "no-store", signal: request.signal } },
     );
     if (response.status === 404) return null;
-    if (!response.ok) throw new Error(await readResponseError(response));
+    if (!response.ok) throw new Error(await readResponseError(response, messages.refreshVenueFailed));
     return PublicStatusSchema.parse(await response.json());
   } catch (error) {
-    if (timedOut) throw new Error("Venue refresh timed out");
+    if (timedOut) throw new Error(messages.refreshVenueTimedOut);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -371,6 +392,8 @@ type PublicVenuePageProps = {
 };
 
 export default function PublicVenuePage(props: PublicVenuePageProps) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const [refreshedAt, setRefreshedAt] = createSignal<string | null>(null);
   const [visible, setVisible] = createSignal(true);
   let disposed = false;
@@ -382,7 +405,7 @@ export default function PublicVenuePage(props: PublicVenuePageProps) {
     source: () => props.venueId,
     initial: { source: props.venueId, data: props.initialStatus },
     enabled: () => props.refresh && visible(),
-    load: (venueId, { abortSignal }) => fetchPublicStatus(venueId, abortSignal),
+    load: (venueId, { abortSignal }) => fetchPublicStatus(venueId, abortSignal, t()),
   });
 
   const nextDelay = () => Math.max(1_000, Math.min(60_000, timing.jitter(venuePublicRefreshBackoffMs(failures), 350)));

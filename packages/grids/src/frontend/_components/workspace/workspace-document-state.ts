@@ -2,6 +2,7 @@ import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contrac
 import type { DocumentTemplate } from "../../../contracts";
 import type { Table } from "../../../service";
 import { gridsService } from "../../../service";
+import { resolveWorkspaceMessages } from "./messages";
 import { resolveBaseLevel } from "./workspace-state-access";
 import { okState } from "./workspace-state-helpers";
 import type { GridsWorkspaceState, OkWorkspaceState, WorkspaceCommon } from "./workspace-state-model";
@@ -11,9 +12,10 @@ export const loadDocumentTemplateState = async (
   table: Table,
   template: DocumentTemplate,
 ): Promise<OkWorkspaceState | Extract<GridsWorkspaceState, { kind: "accessDenied" }>> => {
+  const t = resolveWorkspaceMessages(common.params.locale);
   const level = await resolveBaseLevel(common.params.user, common.base.id);
   if (!gridsService.permission.hasAtLeast(level, "read")) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to this document template" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noDocumentTemplateAccess };
   }
   const canWriteTemplate = gridsService.permission.hasAtLeast(level, "write");
   const canManageTemplate = gridsService.permission.hasAtLeast(level, "admin");
@@ -49,6 +51,6 @@ export const loadDocumentTemplateState = async (
         nextCursor: initialBrowserPage.nextCursor,
       },
     },
-    [...common.chrome.titleBase, { title: "Documents" }, { title: template.name }],
+    [...common.chrome.titleBase, { title: t.documents }, { title: template.name }],
   );
 };

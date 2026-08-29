@@ -9,6 +9,7 @@ import {
   panelDialogWorkspaceOptions,
   prompts,
   Select,
+  useLocale,
 } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
@@ -18,6 +19,7 @@ import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import { closeSelectionWorkflowStarter, correctionDraftWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
+import { type SidebarMessages, sidebarMessages } from "./messages";
 
 type StarterChoice =
   | { kind: "blank" }
@@ -45,7 +47,9 @@ function WorkflowStarterDialog(props: {
   tables: Table[];
   fieldsByTable: Record<string, Field[]>;
   close: (choice?: StarterChoice) => void;
+  t: SidebarMessages;
 }) {
+  const t = props.t;
   const storedTables = () => props.tables.filter((table) => table.kind === "stored");
   const [tableId, setTableId] = createSignal(storedTables()[0]?.id ?? "");
   const tableFields = () => props.fieldsByTable[tableId()] ?? [];
@@ -72,24 +76,17 @@ function WorkflowStarterDialog(props: {
   };
   return (
     <PanelDialog>
-      <PanelDialog.Header
-        title="New workflow"
-        subtitle="Start blank or install a guided Record action."
-        icon="ti ti-route"
-        close={() => props.close()}
-      />
+      <PanelDialog.Header title={t.newWorkflow} subtitle={t.newWorkflowSubtitle} icon="ti ti-route" close={() => props.close()} />
       <PanelDialog.Body>
         <div class="flex flex-col gap-4">
           <section class="paper flex flex-col gap-3 p-4">
             <div>
-              <h3 class="font-semibold">Close selected Records</h3>
-              <p class="text-sm text-dimmed">
-                Adds a Table action for an exact selection. Direct mode finalizes; Four-eyes mode submits requests for another person.
-              </p>
+              <h3 class="font-semibold">{t.closeSelectedRecords}</h3>
+              <p class="text-sm text-dimmed">{t.closeSelectedRecordsDescription}</p>
             </div>
             <Select
-              label="Table"
-              description="Durable History and Finalization must be enabled for this stored Table."
+              label={t.table}
+              description={t.durableHistoryRequired}
               options={storedTables().map((table) => ({ id: table.id, label: table.name }))}
               value={tableId}
               onValueChange={chooseTable}
@@ -97,7 +94,7 @@ function WorkflowStarterDialog(props: {
             />
             <Show when={storedTables().length === 0}>
               <NoticeCard tone="warning" icon="ti ti-alert-triangle">
-                This Base has no stored Table.
+                {t.noStoredTable}
               </NoticeCard>
             </Show>
             <div class="flex justify-end">
@@ -107,31 +104,29 @@ function WorkflowStarterDialog(props: {
                 disabled={!tableId()}
                 onClick={() => props.close({ kind: "closeSelection", tableId: tableId() })}
               >
-                <i class="ti ti-list-check" /> Use starter
+                <i class="ti ti-list-check" /> {t.useStarter}
               </Button>
             </div>
           </section>
           <section class="paper flex flex-col gap-3 p-4">
             <div>
-              <h3 class="font-semibold">Create linked follow-up Draft</h3>
-              <p class="text-sm text-dimmed">
-                Adds a finalized-Record action for a correction or cancellation without changing the original.
-              </p>
+              <h3 class="font-semibold">{t.createCorrectionDraft}</h3>
+              <p class="text-sm text-dimmed">{t.createCorrectionDraftDescription}</p>
             </div>
             <Select
-              label="Action"
-              description="Controls how the action is named. Your selected type value remains the stored business meaning."
+              label={t.action}
+              description={t.actionDescription}
               options={[
                 {
                   id: "correction",
-                  label: "Correction",
-                  description: "Create a linked Draft for revised values.",
+                  label: t.correction,
+                  description: t.correctionDescription,
                   icon: "ti ti-file-pencil",
                 },
                 {
                   id: "cancellation",
-                  label: "Cancellation",
-                  description: "Create a linked Draft for a cancellation you complete yourself.",
+                  label: t.cancellation,
+                  description: t.cancellationDescription,
                   icon: "ti ti-file-off",
                 },
               ]}
@@ -143,20 +138,19 @@ function WorkflowStarterDialog(props: {
             />
             <Show when={correctionIntent() === "cancellation"}>
               <NoticeCard tone="info" icon="ti ti-info-circle">
-                Grids creates and links the Draft. It does not calculate amounts, taxes, or counter-bookings, and it does not generate a
-                Document.
+                {t.cancellationNotice}
               </NoticeCard>
             </Show>
             <Select
-              label="Table"
+              label={t.table}
               options={storedTables().map((table) => ({ id: table.id, label: table.name }))}
               value={tableId}
               onValueChange={chooseTable}
               required
             />
             <Select
-              label="Type field"
-              description="Choose an existing single-select field."
+              label={t.typeField}
+              description={t.typeFieldDescription}
               options={typeFields().map((field) => ({ id: field.id, label: field.name }))}
               value={typeFieldId}
               onValueChange={(value) => {
@@ -167,23 +161,23 @@ function WorkflowStarterDialog(props: {
               required
             />
             <Select
-              label={correctionIntent() === "cancellation" ? "Cancellation value" : "Correction value"}
+              label={correctionIntent() === "cancellation" ? t.cancellationValue : t.correctionValue}
               options={typeValues()}
               value={typeValue}
               onValueChange={(value) => setTypeValue(value ?? "")}
               required
             />
             <Select
-              label="Original Record field"
-              description="Choose an existing single relation back to this Table."
+              label={t.originalRecordField}
+              description={t.originalRecordFieldDescription}
               options={relationFields().map((field) => ({ id: field.id, label: field.name }))}
               value={originalFieldId}
               onValueChange={(value) => setOriginalFieldId(value ?? "")}
               required
             />
             <MultiSelectInput
-              label="Fields to carry over"
-              description="Optional. Choose up to 100 stored values. Unique fields, generated IDs, Files, other relations, calculated fields, and Documents are not copied."
+              label={t.carryOverFields}
+              description={t.carryOverDescription}
               options={copyFields().map((field) => ({
                 id: field.id,
                 label: field.name,
@@ -193,18 +187,18 @@ function WorkflowStarterDialog(props: {
               value={copyFieldIds}
               onValueChange={(fieldIds) => {
                 if (fieldIds.length > MAX_CORRECTION_PREFILL_FIELDS) {
-                  void prompts.error(`Choose at most ${MAX_CORRECTION_PREFILL_FIELDS} fields to carry over.`);
+                  void prompts.error(t.carryOverLimit({ count: MAX_CORRECTION_PREFILL_FIELDS }));
                   return;
                 }
                 setCopyFieldIds(fieldIds);
               }}
-              placeholder="Choose fields"
+              placeholder={t.chooseFields}
               icon="ti ti-copy"
               clearable
             />
             <Show when={tableId() && (typeFields().length === 0 || relationFields().length === 0)}>
               <NoticeCard tone="warning" icon="ti ti-alert-triangle">
-                This Table needs a single-select type and a single self-relation before this starter can be installed.
+                {t.starterRequirements}
               </NoticeCard>
             </Show>
             <div class="flex justify-end">
@@ -224,17 +218,17 @@ function WorkflowStarterDialog(props: {
                   })
                 }
               >
-                <i class={correctionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-delta"} /> Use starter
+                <i class={correctionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-delta"} /> {t.useStarter}
               </Button>
             </div>
           </section>
           <section class="paper flex items-center justify-between gap-4 p-4">
             <div>
-              <h3 class="font-semibold">Blank workflow</h3>
-              <p class="text-sm text-dimmed">Write the inputs, triggers, and steps yourself.</p>
+              <h3 class="font-semibold">{t.blankWorkflow}</h3>
+              <p class="text-sm text-dimmed">{t.blankWorkflowDescription}</p>
             </div>
             <Button variant="secondary" type="button" onClick={() => props.close({ kind: "blank" })}>
-              Start blank
+              {t.startBlank}
             </Button>
           </section>
         </div>
@@ -254,6 +248,8 @@ type LauncherApi = {
 const launcherApi = apiClient.workflows as unknown as LauncherApi;
 
 export default function CreateWorkflowButton(props: { baseId: string; tables: Table[]; fieldsByTable: Record<string, Field[]> }) {
+  const locale = useLocale();
+  const { t } = sidebarMessages.resolve([locale()]);
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -269,43 +265,37 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
         { init: { signal } },
       );
       if (response.ok) return;
-      await prompts.error(
-        `The workflow was saved, but its Records action could not be added. Open Run options to finish setup.\n\n${await errorMessage(
-          response,
-          "Could not add the Records action.",
-        )}`,
-        { title: "Workflow saved" },
-      );
+      await prompts.error(t.launcherSetupFailed({ error: await errorMessage(response, t.launcherFailed) }), { title: t.workflowSaved });
     } catch (error) {
       if (signal.aborted) throw error;
-      await prompts.error(
-        `The workflow was saved, but its Records action could not be added. Open Run options to finish setup.\n\n${
-          error instanceof Error ? error.message : "Could not add the Records action."
-        }`,
-        { title: "Workflow saved" },
-      );
+      await prompts.error(t.launcherSetupFailed({ error: error instanceof Error ? error.message : t.launcherFailed }), {
+        title: t.workflowSaved,
+      });
     }
   };
 
   const openEditor = async () => {
     const choice = await dialogCore.open<StarterChoice | undefined>(
-      (close) => <WorkflowStarterDialog tables={props.tables} fieldsByTable={props.fieldsByTable} close={close} />,
+      (close) => <WorkflowStarterDialog tables={props.tables} fieldsByTable={props.fieldsByTable} close={close} t={t} />,
       { ...panelDialogWorkspaceOptions, cancelBehavior: "ignore" },
     );
     if (!choice) return;
     const table = "tableId" in choice ? props.tables.find((candidate) => candidate.id === choice.tableId) : undefined;
     const starter =
       choice.kind === "closeSelection" && table
-        ? closeSelectionWorkflowStarter(table)
+        ? closeSelectionWorkflowStarter(table, locale())
         : choice.kind === "correctionDraft" && table
-          ? correctionDraftWorkflowStarter({
-              table,
-              intent: choice.intent,
-              typeField: { id: choice.typeFieldId },
-              typeValue: choice.typeValue,
-              originalField: { id: choice.originalFieldId },
-              copyFields: choice.copyFieldIds.map((id) => ({ id })),
-            })
+          ? correctionDraftWorkflowStarter(
+              {
+                table,
+                intent: choice.intent,
+                typeField: { id: choice.typeFieldId },
+                typeValue: choice.typeValue,
+                originalField: { id: choice.originalFieldId },
+                copyFields: choice.copyFieldIds.map((id) => ({ id })),
+              },
+              locale(),
+            )
           : undefined;
     await dialogCore.open<void>(
       (close) => (
@@ -328,7 +318,7 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
   return (
     <AppWorkspace.SidebarItem tone="success" onClick={() => void openEditor()}>
       <AppWorkspace.SidebarItemIcon icon="ti ti-plus" />
-      <AppWorkspace.SidebarItemLabel>New workflow</AppWorkspace.SidebarItemLabel>
+      <AppWorkspace.SidebarItemLabel>{t.newWorkflow}</AppWorkspace.SidebarItemLabel>
     </AppWorkspace.SidebarItem>
   );
 }

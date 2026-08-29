@@ -1,4 +1,6 @@
 import { sql } from "bun";
+import { formatDurationMs, formatNumber, formatPercent } from "@valentinkolb/cloud/shared";
+import { gatewayOpsMessages } from "../../messages";
 
 export type DiagnosticWarning = {
   area: "postgres" | "redis";
@@ -169,7 +171,7 @@ const toNumber = (value: unknown): number => {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const emptyPostgres = (message: string): PostgresDiagnostics => ({
+const emptyPostgres = (message: string, locale: string): PostgresDiagnostics => ({
   available: false,
   error: message,
   schemas: 0,
@@ -196,13 +198,13 @@ const emptyPostgres = (message: string): PostgresDiagnostics => ({
     {
       area: "postgres",
       tone: "red",
-      title: "Postgres diagnostics unavailable",
+      title: gatewayOpsMessages.resolve([locale]).t.postgresDiagnosticsUnavailable,
       detail: message,
     },
   ],
 });
 
-const emptyRedis = (message: string): RedisDiagnostics => ({
+const emptyRedis = (message: string, locale: string): RedisDiagnostics => ({
   available: false,
   error: message,
   dbSize: 0,
@@ -215,7 +217,7 @@ const emptyRedis = (message: string): RedisDiagnostics => ({
     {
       area: "redis",
       tone: "red",
-      title: "Redis diagnostics unavailable",
+      title: gatewayOpsMessages.resolve([locale]).t.redisDiagnosticsUnavailable,
       detail: message,
     },
   ],
@@ -230,7 +232,8 @@ const tableWarnings = (table: Omit<PostgresTableDiagnostic, "warnings">): string
   return warnings;
 };
 
-const collectPostgres = async (): Promise<PostgresDiagnostics> => {
+const collectPostgres = async (locale: string): Promise<PostgresDiagnostics> => {
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const [overview, tableRows, extensionRows] = await Promise.all([
     sql<
       {
@@ -374,24 +377,24 @@ const collectPostgres = async (): Promise<PostgresDiagnostics> => {
     warnings.push({
       area: "postgres",
       tone: connectionShare >= 0.95 ? "red" : "amber",
-      title: "Postgres connection pressure",
-      detail: `${runtime.connections} of ${runtime.maxConnections} connections are in use.`,
+      title: t.postgresConnectionPressure,
+      detail: t.connectionsInUse({ used: formatNumber(runtime.connections, { locale }), total: formatNumber(runtime.maxConnections, { locale }) }),
     });
   }
   if (runtime.waitingLocks > 0) {
     warnings.push({
       area: "postgres",
       tone: runtime.oldestWaitingQuerySeconds >= 30 ? "red" : "amber",
-      title: "Queries waiting on locks",
-      detail: `${runtime.waitingLocks} connection${runtime.waitingLocks === 1 ? " is" : "s are"} waiting; the oldest waiting query has run for ${Math.round(runtime.oldestWaitingQuerySeconds)}s.`,
+      title: t.queriesWaitingLocks,
+      detail: t.waitingLockDetail({ count: formatNumber(runtime.waitingLocks, { locale }), duration: formatDurationMs(runtime.oldestWaitingQuerySeconds * 1000, { locale }) }),
     });
   }
   if (runtime.idleInTransaction > 0 && runtime.oldestIdleTransactionSeconds >= 60) {
     warnings.push({
       area: "postgres",
       tone: "amber",
-      title: "Long-lived transactions",
-      detail: `${runtime.idleInTransaction} connection${runtime.idleInTransaction === 1 ? " is" : "s are"} idle in transaction; oldest is ${Math.round(runtime.oldestIdleTransactionSeconds)}s.`,
+      title: t.longLivedTransactions,
+      detail: t.idleTransactionDetail({ count: formatNumber(runtime.idleInTransaction, { locale }), duration: formatDurationMs(runtime.oldestIdleTransactionSeconds * 1000, { locale }) }),
     });
   }
   const largeTables = tables.filter((table) => table.totalBytes >= LARGE_TABLE_BYTES).length;
@@ -401,24 +404,24 @@ const collectPostgres = async (): Promise<PostgresDiagnostics> => {
     warnings.push({
       area: "postgres",
       tone: "amber",
-      title: "Large Postgres tables",
-      detail: `${largeTables} table${largeTables === 1 ? "" : "s"} exceed 100 MB.`,
+      title: t.largePostgresTables,
+      detail: t.largeTablesDetail({ count: formatNumber(largeTables, { locale }) }),
     });
   }
   if (staleAnalyze > 0) {
     warnings.push({
       area: "postgres",
       tone: "amber",
-      title: "Missing analyze timestamps",
-      detail: `${staleAnalyze} table${staleAnalyze === 1 ? "" : "s"} with estimated rows have no analyze timestamp.`,
+      title: t.missingAnalyzeTimestamps,
+      detail: t.missingAnalyzeDetail({ count: formatNumber(staleAnalyze, { locale }) }),
     });
   }
   if (deadRows > 0) {
     warnings.push({
       area: "postgres",
       tone: "amber",
-      title: "Dead row pressure",
-      detail: `${deadRows} table${deadRows === 1 ? "" : "s"} have dead rows above 20% of estimated live rows.`,
+      title: t.deadRowPressure,
+      detail: t.deadRowDetail({ count: formatNumber(deadRows, { locale }) }),
     });
   }
 
@@ -490,7 +493,8 @@ const parseRedisInfo = (raw: string): Map<string, string> => {
   return values;
 };
 
-const collectRedis = async (): Promise<RedisDiagnostics> => {
+const collectRedis = async (locale: string): Promise<RedisDiagnostics> => {
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const redis = Bun.redis;
   const [dbSizeRaw, keyspaceInfoRaw, runtimeInfoRaw] = await Promise.all([
     redis.send("DBSIZE", []),
@@ -553,24 +557,24 @@ const collectRedis = async (): Promise<RedisDiagnostics> => {
     warnings.push({
       area: "redis",
       tone: "amber",
-      title: "Redis keys without expiry",
-      detail: `${nonExpiring.toLocaleString("de-DE")} of ${knownKeys.toLocaleString("de-DE")} keys have no expiry in INFO keyspace.`,
+      title: t.redisKeysWithoutExpiry,
+      detail: t.redisNoExpiryDetail({ count: formatNumber(nonExpiring, { locale }), total: formatNumber(knownKeys, { locale }) }),
     });
   }
   if (dominantPrefix) {
     warnings.push({
       area: "redis",
       tone: "amber",
-      title: "Dominant Redis prefix",
-      detail: `${dominantPrefix.prefix} represents ${(dominantPrefix.share * 100).toFixed(1)}% of the sampled keys.`,
+      title: t.dominantRedisPrefix,
+      detail: t.dominantPrefixDetail({ prefix: dominantPrefix.prefix, share: formatPercent(dominantPrefix.share, { locale }) }),
     });
   }
   if (!scanComplete && dbSize > sampledKeys.length) {
     warnings.push({
       area: "redis",
       tone: "amber",
-      title: "Redis prefix data is sampled",
-      detail: `${sampledKeys.length.toLocaleString("de-DE")} of ${dbSize.toLocaleString("de-DE")} keys were sampled.`,
+      title: t.redisPrefixSampled,
+      detail: t.sampledKeysDetail({ count: formatNumber(sampledKeys.length, { locale }), total: formatNumber(dbSize, { locale }) }),
     });
   }
 
@@ -587,13 +591,13 @@ const collectRedis = async (): Promise<RedisDiagnostics> => {
   };
 };
 
-export const getPostgresDiagnostics = async (): Promise<PostgresDiagnostics> =>
-  collectPostgres().catch((error) => emptyPostgres(errorMessage(error)));
+export const getPostgresDiagnostics = async (locale = "en"): Promise<PostgresDiagnostics> =>
+  collectPostgres(locale).catch((error) => emptyPostgres(errorMessage(error), locale));
 
-export const getRedisDiagnostics = async (): Promise<RedisDiagnostics> => collectRedis().catch((error) => emptyRedis(errorMessage(error)));
+export const getRedisDiagnostics = async (locale = "en"): Promise<RedisDiagnostics> => collectRedis(locale).catch((error) => emptyRedis(errorMessage(error), locale));
 
-export const getDataDiagnostics = async (): Promise<DataDiagnostics> => {
-  const [postgres, redis] = await Promise.all([getPostgresDiagnostics(), getRedisDiagnostics()]);
+export const getDataDiagnostics = async (locale = "en"): Promise<DataDiagnostics> => {
+  const [postgres, redis] = await Promise.all([getPostgresDiagnostics(locale), getRedisDiagnostics(locale)]);
   return { postgres, redis };
 };
 

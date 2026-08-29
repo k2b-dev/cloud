@@ -775,5 +775,261 @@ body { width: 85mm; height: 55mm; margin: 0; padding: 6mm; font-family: Inter, A
   },
 ];
 
-export const documentTemplateStarterById = (id: string): DocumentTemplateStarter | undefined =>
-  DOCUMENT_TEMPLATE_STARTERS.find((starter) => starter.id === id);
+type StarterLocalizedMetadata = Pick<DocumentTemplateStarter, "name" | "description" | "category" | "bestFor" | "expectedData" | "page"> & {
+  uses?: string[];
+};
+
+const GERMAN_STARTER_METADATA: Record<string, StarterLocalizedMetadata> = {
+  invoice: {
+    name: "Rechnung",
+    description: "Professionelle Rechnungsvorlage mit Absender, Empfänger, Positionstabelle, Zahlungsbedingungen und Summenblock.",
+    category: "Geschäftlich",
+    bestFor: "Kundenrechnungen und Abrechnungsdatensätze.",
+    expectedData:
+      "Eine Zeile pro Rechnungsposition. Erwartete Aliasse: invoice_number, invoice_date, recipient_name, recipient_email, invoice_item, invoice_quantity, invoice_unit_price und invoice_line_total.",
+    page: "A4 Hochformat",
+  },
+  "loan-agreement": {
+    name: "Leihvertrag",
+    description: "Geschäftsfertiger Leihvertrag mit Parteien, Gegenstandsliste, Bedingungen und Unterschriftsfeldern.",
+    category: "Vertrag",
+    bestFor: "Geräteleihen, Übergaben an Entleiher und unterzeichnete interne Vereinbarungen.",
+    expectedData: "Ein Leihdatensatz sowie ausgewählte Angaben zu Entleiher, Zeitraum und Gegenständen.",
+    page: "A4 Hochformat",
+  },
+  label: {
+    name: "Etikett",
+    description: "Betriebliches Etikett im Format 90 mm × 54 mm mit druckfertigem Code-128-Barcode.",
+    category: "Etikett",
+    bestFor: "Inventaretiketten, Regaletiketten und kompakte betriebliche Kennzeichnungen.",
+    expectedData: "Ein ausgewählter Datensatz; die erste ausgewählte Spalte wird als Barcodewert verwendet.",
+    page: "90 mm × 54 mm",
+    uses: ["Code-128-Barcode"],
+  },
+  "qr-label": {
+    name: "QR-Etikett",
+    description: "Etikett im Format 90 mm × 54 mm mit großem QR-Code für Links, Inventar oder kompakte Datensatzdaten.",
+    category: "Etikett",
+    bestFor: "Inventarkennzeichnungen, Links, kompakte Kennungen und Scan-Workflows.",
+    expectedData: "Ein ausgewählter Datensatz; die erste ausgewählte Spalte wird als QR-Wert verwendet.",
+    page: "90 mm × 54 mm",
+    uses: ["QR-Code"],
+  },
+  overview: {
+    name: "Übersichtsbericht",
+    description: "Mehrseitiger Geschäftsbericht über mehrere Datensätze.",
+    category: "Bericht",
+    bestFor: "Druckbare Listen, Exporte und interne Statusberichte.",
+    expectedData: "Standardmäßig bis zu 100 Zeilen aus der Quelltabelle.",
+    page: "A4 Hochformat",
+  },
+  "record-detail": {
+    name: "Datensatzdetails",
+    description: "Geschäftliches Detailblatt für einen Datensatz mit optionalem Bildkopf und vollbreiter Detailtabelle.",
+    category: "Datensatz",
+    bestFor: "Datensatzdossiers, Inventarblätter und Detailseiten für Kunden oder Konten.",
+    expectedData: "Ein ausgewählter Datensatz; Bilddateifelder erscheinen als primaryImage/images.",
+    page: "A4 Hochformat",
+    uses: ["Datensatzbilder"],
+  },
+  "delivery-note": {
+    name: "Lieferschein",
+    description: "Lieferschein mit Absender, Empfänger, Lieferangaben und Positionstabelle.",
+    category: "Logistik",
+    bestFor: "Sendungen, Übergaben und Lieferbestätigungen.",
+    expectedData: "Ein Lieferdatensatz sowie ausgewählte Liefer- und Positionsfelder.",
+    page: "A4 Hochformat",
+  },
+  quote: {
+    name: "Angebot",
+    description: "Angebotsvorlage mit Kundenblock, Positionen, Gültigkeit und Geschäftsbedingungen.",
+    category: "Geschäftlich",
+    bestFor: "Angebote, Kostenschätzungen und geschäftliche Vorschläge.",
+    expectedData: "Ein Angebotsdatensatz sowie ausgewählte Positionsfelder.",
+    page: "A4 Hochformat",
+  },
+  "packing-list": {
+    name: "Packliste",
+    description: "Betriebliche Packliste mit echten gedruckten Kontrollkästchen und für mehrere Seiten geeigneten Zeilen.",
+    category: "Betrieb",
+    bestFor: "Kommissionierung, Verpackung, Vorbereitung und physische Checklisten.",
+    expectedData: "Mehrere Zeilen aus der Quelltabelle.",
+    page: "A4 Hochformat",
+    uses: ["gedruckte Kontrollkästchen"],
+  },
+  certificate: {
+    name: "Bescheinigung",
+    description: "Formelle Bescheinigung oder Bestätigung für einen ausgewählten Datensatz.",
+    category: "Formell",
+    bestFor: "Bestätigungen, Bescheinigungen und unterzeichnete Nachweise.",
+    expectedData: "Ein ausgewählter Datensatz.",
+    page: "A4 Hochformat",
+  },
+  checklist: {
+    name: "Checkliste",
+    description: "Druckbare Checkliste mit echten Kontrollkästchen und Detailzeilen.",
+    category: "Betrieb",
+    bestFor: "Manuelle Prüfung, Einrichtung, Inspektion und wiederkehrende betriebliche Aufgaben.",
+    expectedData: "Mehrere Zeilen aus der Quelltabelle.",
+    page: "A4 Hochformat",
+    uses: ["gedruckte Kontrollkästchen"],
+  },
+  badge: {
+    name: "Namensschild",
+    description: "Schlichtes professionelles Namensschild ohne interne Kennungen.",
+    category: "Namensschild",
+    bestFor: "Namensschilder, Veranstaltungsausweise und einfache Identitätskarten.",
+    expectedData: "Ein ausgewählter Datensatz.",
+    page: "85 mm × 55 mm",
+  },
+};
+
+const GERMAN_DOCUMENT_COPY: ReadonlyArray<readonly [string, string]> = [
+  ["Services and goods according to the itemized statement below.", "Leistungen und Waren gemäß der nachfolgenden Aufstellung."],
+  ["Prepared for signature", "Zur Unterschrift vorbereitet"],
+  ["Borrower initials", "Kürzel des Entleihers"],
+  ["Report overview", "Berichtsübersicht"],
+  ["Logistics", "Logistik"],
+  ["Document Services", "Dokumentenservice"],
+  ["Page ", "Seite "],
+  ["Recipient not provided", "Empfänger nicht angegeben"],
+  ["Issue date not provided", "Ausgabedatum nicht angegeben"],
+  ["Commercial document", "Geschäftsdokument"],
+  ["Invoice reference", "Rechnungsreferenz"],
+  ["Payment terms", "Zahlungsbedingungen"],
+  ["Due on receipt", "Sofort fällig"],
+  ["Description", "Beschreibung"],
+  ["Quantity", "Menge"],
+  ["Unit price", "Einzelpreis"],
+  ["Line total", "Positionssumme"],
+  ["No invoice items were returned by the template query.", "Die Vorlagenabfrage hat keine Rechnungspositionen zurückgegeben."],
+  ["Subtotal", "Zwischensumme"],
+  ["Total due", "Gesamtbetrag"],
+  ["Payment instructions", "Zahlungshinweise"],
+  [
+    "Please transfer the total amount{% if business.iban %} to the bank account stated in the footer{% endif %} and include the invoice number as payment reference.",
+    "Bitte überweisen Sie den Gesamtbetrag{% if business.iban %} auf das im Fußbereich angegebene Bankkonto{% endif %} und geben Sie die Rechnungsnummer als Verwendungszweck an.",
+  ],
+  [
+    "This invoice was generated from approved operational records. Please quote the invoice number on all payment references and correspondence.",
+    "Diese Rechnung wurde aus freigegebenen Betriebsdaten erzeugt. Geben Sie die Rechnungsnummer bei Zahlungen und im Schriftverkehr an.",
+  ],
+  ["Notes", "Hinweise"],
+  ["Currency", "Währung"],
+  ["Invoice", "Rechnung"],
+  ["Borrower organization", "Organisation des Entleihers"],
+  ["Borrower name", "Name des Entleihers"],
+  ["Internal loan document", "Internes Leihdokument"],
+  ["Return required", "Rückgabe erforderlich"],
+  ["Equipment loan agreement", "Geräteleihvertrag"],
+  ["Agreement", "Vereinbarung"],
+  ["Loan ref.", "Leihreferenz"],
+  ["Lender", "Verleiher"],
+  ["Represented by authorized staff.", "Vertreten durch autorisierte Mitarbeitende."],
+  ["Borrower", "Entleiher"],
+  ["Identification checked before handover.", "Identität vor der Übergabe geprüft."],
+  ["Loan starts", "Leihbeginn"],
+  ["Return due", "Rückgabe fällig"],
+  ["Return condition", "Rückgabezustand"],
+  ["To be agreed", "Noch zu vereinbaren"],
+  ["As issued", "Wie ausgegeben"],
+  ["Loaned equipment", "Ausgeliehene Gegenstände"],
+  ["1. Handover and responsibility", "1. Übergabe und Verantwortung"],
+  [
+    "The borrower confirms receipt of the listed equipment in the condition documented at handover. The borrower is responsible for careful handling, secure storage, and timely return.",
+    "Der Entleiher bestätigt den Erhalt der aufgeführten Gegenstände in dem bei der Übergabe dokumentierten Zustand. Er ist für sorgfältige Behandlung, sichere Aufbewahrung und fristgerechte Rückgabe verantwortlich.",
+  ],
+  ["2. Condition checklist", "2. Zustandsprüfung"],
+  ["Equipment complete", "Gegenstände vollständig"],
+  ["Accessories included", "Zubehör enthalten"],
+  ["Visible damage documented", "Sichtbare Schäden dokumentiert"],
+  ["Return date explained", "Rückgabedatum erläutert"],
+  ["3. Loss, damage, and late return", "3. Verlust, Beschädigung und verspätete Rückgabe"],
+  [
+    "Loss, damage, missing accessories, or late return may be charged according to replacement value, repair cost, or the applicable internal policy.",
+    "Verlust, Beschädigung, fehlendes Zubehör oder verspätete Rückgabe können nach Wiederbeschaffungswert, Reparaturkosten oder der geltenden internen Regelung berechnet werden.",
+  ],
+  ["Internal notes / handover initials", "Interne Hinweise / Kürzel bei Übergabe"],
+  ["Place, date, lender signature", "Ort, Datum, Unterschrift des Verleihers"],
+  ["Borrower initials", "Kürzel des Entleihers"],
+  ["Place, date, borrower signature", "Ort, Datum, Unterschrift des Entleihers"],
+  ["Scan for the selected record value.", "Scannen, um den Wert des ausgewählten Datensatzes aufzurufen."],
+  ["Current GQL source", "Aktuelle GQL-Quelle"],
+  ["Scope", "Umfang"],
+  ["Rows", "Zeilen"],
+  ["Report", "Bericht"],
+  ["Record detail", "Datensatzdetails"],
+  ["Source:", "Quelle:"],
+  ["Delivery note", "Lieferschein"],
+  ["Delivery no.", "Liefernummer"],
+  ["Carrier", "Transport"],
+  ["Internal delivery", "Interne Lieferung"],
+  ["Ship from", "Versand von"],
+  ["Ship to", "Lieferung an"],
+  ["Recipient", "Empfänger"],
+  ["Delivery address", "Lieferadresse"],
+  ["Contact person", "Kontaktperson"],
+  ["Delivered items", "Gelieferte Positionen"],
+  ["Delivered by", "Übergeben von"],
+  ["Received by", "Empfangen von"],
+  ["Commercial offer", "Geschäftliches Angebot"],
+  ["Quote no.", "Angebotsnummer"],
+  ["Valid until", "Gültig bis"],
+  ["30 days", "30 Tage"],
+  ["Supplier", "Anbieter"],
+  ["Customer Company", "Kundenunternehmen"],
+  ["Customer address", "Kundenadresse"],
+  ["Procurement contact", "Einkaufskontakt"],
+  ["Customer", "Kunde"],
+  ["Offer positions", "Angebotspositionen"],
+  ["Terms", "Bedingungen"],
+  [
+    "Prices are net prices unless stated otherwise. Delivery, payment, and availability are subject to written confirmation.",
+    "Sofern nicht anders angegeben, verstehen sich alle Preise netto. Lieferung, Zahlung und Verfügbarkeit bedürfen der schriftlichen Bestätigung.",
+  ],
+  ["Quote", "Angebot"],
+  ["Warehouse", "Lager"],
+  ["Packing list", "Packliste"],
+  ["Prepared by", "Vorbereitet von"],
+  ["Operations", "Betrieb"],
+  ["Packed", "Verpackt"],
+  ["Certificate", "Bescheinigung"],
+  ["This document confirms the following record information.", "Dieses Dokument bestätigt die folgenden Datensatzangaben."],
+  ["Place, date", "Ort, Datum"],
+  ["Authorized signature", "Autorisierte Unterschrift"],
+  ["Checklist", "Checkliste"],
+  ["Owner", "Verantwortlich"],
+  ["Items", "Einträge"],
+  ["Done", "Erledigt"],
+  ["Task", "Aufgabe"],
+  ["Details", "Details"],
+  ["Item", "Eintrag"],
+];
+
+const germanRenderer = (renderer: HtmlDocumentTemplateRenderer): HtmlDocumentTemplateRenderer => {
+  const translate = (value: string | undefined): string | undefined => {
+    if (value === undefined) return undefined;
+    return GERMAN_DOCUMENT_COPY.reduce((copy, [english, german]) => copy.replaceAll(english, german), value);
+  };
+  return { ...renderer, body: translate(renderer.body)!, header: translate(renderer.header), footer: translate(renderer.footer) };
+};
+
+const isGermanLocale = (locale?: string): boolean => {
+  try {
+    return new Intl.Locale(locale ?? "en").language === "de";
+  } catch {
+    return false;
+  }
+};
+
+export const getDocumentTemplateStarters = (locale?: string): DocumentTemplateStarter[] => {
+  if (!isGermanLocale(locale)) return DOCUMENT_TEMPLATE_STARTERS;
+  return DOCUMENT_TEMPLATE_STARTERS.map((starter) => ({
+    ...starter,
+    ...GERMAN_STARTER_METADATA[starter.id],
+    renderer: germanRenderer(starter.renderer),
+  }));
+};
+
+export const documentTemplateStarterById = (id: string, locale?: string): DocumentTemplateStarter | undefined =>
+  getDocumentTemplateStarters(locale).find((starter) => starter.id === id);

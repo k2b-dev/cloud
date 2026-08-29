@@ -1,5 +1,5 @@
 import { NotFoundState } from "@k2b/ui";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -11,14 +11,17 @@ import GridsWorkspace from "../_components/workspace/GridsWorkspace";
 import { projectPublicWorkspaceState } from "../_components/workspace/workspace-public-state";
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
 import { serializeWorkspaceState } from "../_components/workspace/workspace-state-serialization";
+import { resolveGridsMessages } from "../messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = resolveGridsMessages(locale);
   const user = currentActorUser(c);
   if (!user) {
     return () => (
       <Layout c={c} title={[{ title: "Grids", href: "/app/grids" }]}>
         <div class="paper p-8 max-w-md mx-auto mt-16 text-center text-dimmed">
-          <i class="ti ti-lock text-sm" /> Sign in to open Grids.
+          <i class="ti ti-lock text-sm" /> {t.signInToOpenGrids}
         </div>
       </Layout>
     );
@@ -40,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
         activeCustomAppSlug: c.req.param("customAppId") ?? null,
         initialDocumentViewMode: parseDocumentViewMode(c.req.header("Cookie")),
         dateConfig: await getDateConfig(c),
+        locale,
       });
       return {
         loadedState,
@@ -59,7 +63,7 @@ export default ssr<AuthContext>(async (c) => {
           icon="ti ti-alert-triangle"
           title={loadedState.title}
           description={loadedState.message}
-          action={{ label: "Back to base", href: `/app/grids/${baseShortId}`, icon: "ti ti-arrow-left" }}
+          action={{ label: t.backToBase, href: `/app/grids/${baseShortId}`, icon: "ti ti-arrow-left" }}
         />
       </Layout>
     );
@@ -76,8 +80,8 @@ export default ssr<AuthContext>(async (c) => {
           code={denied ? undefined : "404"}
           icon={denied ? "ti ti-lock" : undefined}
           title={loadedState.message}
-          description={denied ? "Ask a base admin for access, or pick another base." : "This base may have been deleted or renamed."}
-          action={{ label: "All bases", href: "/app/grids", icon: "ti ti-table" }}
+          description={denied ? t.askBaseAdminForAccess : t.baseUnavailable}
+          action={{ label: t.allBases, href: "/app/grids", icon: "ti ti-table" }}
         />
       </Layout>
     );

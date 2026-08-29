@@ -8,11 +8,14 @@ type ReferenceTabItem = {
 
 export const defaultReferenceTab = (includeDashboardDsl: boolean): ReferenceTab => (includeDashboardDsl ? "dashboard" : "overview");
 
-export const referenceTabs = (includeDashboardDsl: boolean): ReferenceTabItem[] => [
-  { value: "overview", label: "Overview", icon: "ti ti-home" },
-  { value: "query", label: "Query DSL", icon: "ti ti-code" },
-  ...(includeDashboardDsl ? [{ value: "dashboard" as const, label: "Dashboard DSL", icon: "ti ti-layout-dashboard" }] : []),
-  { value: "inventory", label: "Inventory", icon: "ti ti-database-search" },
+export const referenceTabs = (
+  includeDashboardDsl: boolean,
+  labels = { overview: "Overview", query: "Query DSL", dashboard: "Dashboard DSL", inventory: "Inventory" },
+): ReferenceTabItem[] => [
+  { value: "overview", label: labels.overview, icon: "ti ti-home" },
+  { value: "query", label: labels.query, icon: "ti ti-code" },
+  ...(includeDashboardDsl ? [{ value: "dashboard" as const, label: labels.dashboard, icon: "ti ti-layout-dashboard" }] : []),
+  { value: "inventory", label: labels.inventory, icon: "ti ti-database-search" },
 ];
 
 const availableReferenceTabs = (includeDashboardDsl: boolean): Set<string> =>

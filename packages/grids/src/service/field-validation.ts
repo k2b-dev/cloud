@@ -3,19 +3,21 @@ import { sql } from "bun";
 import { getFieldType, getRecordWritableFieldType } from "../field-types";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
+import { getGridsCrudMessages } from "./crud-messages";
 import type { Field } from "./types";
 
-export const validateFieldConfig = (type: string, config: Record<string, unknown>): Result<unknown> => {
+export const validateFieldConfig = (type: string, config: Record<string, unknown>, locale?: string): Result<unknown> => {
+  const messages = getGridsCrudMessages(locale);
   const fieldType = getFieldType(type);
-  if (!fieldType) return fail(err.badInput(`unknown field type "${type}"`));
+  if (!fieldType) return fail(err.badInput(messages.unknownFieldType({ type })));
   const parsed = fieldType.configSchema.safeParse(config);
   if (!parsed.success) {
     // Surface the first issue's message so users see WHY the config was
     // rejected (e.g. "decimal places cannot exceed precision") instead of a
     // generic "invalid config".
     const firstIssue = parsed.error.issues[0];
-    const detail = firstIssue?.message ?? "invalid config";
-    return fail(err.badInput(`invalid config for type "${type}": ${detail}`));
+    const detail = firstIssue?.message ?? messages.invalidFieldConfigDetail;
+    return fail(err.badInput(messages.invalidFieldConfig({ type, detail })));
   }
   return ok(parsed.data);
 };
@@ -33,16 +35,17 @@ export const materializeFieldDefault = (field: Field, options: { dateConfig?: Da
   return includeTime ? now.toISOString() : dates.formatDateKey(now, options.dateConfig);
 };
 
-export const validateDefaultValue = (type: string, config: Record<string, unknown>, value: unknown): Result<unknown> => {
+export const validateDefaultValue = (type: string, config: Record<string, unknown>, value: unknown, locale?: string): Result<unknown> => {
+  const messages = getGridsCrudMessages(locale);
   if (value === undefined || value === null) return ok(null);
   if (type === "date" && isDateNowDefault(value)) return ok(value);
   if (typeof value === "object" && value !== null && "kind" in value) {
-    return fail(err.badInput("invalid default"));
+    return fail(err.badInput(messages.invalidDefault));
   }
   const fieldType = getRecordWritableFieldType(type);
-  if (!fieldType) return fail(err.badInput(`field type "${type}" does not support defaults`));
+  if (!fieldType) return fail(err.badInput(messages.defaultUnsupported({ type })));
   const v = fieldType.validate(value, config, false);
-  if (!v.ok) return fail(err.badInput(`invalid default: ${v.error}`));
+  if (!v.ok) return fail(err.badInput(messages.invalidDefaultDetail({ detail: v.error })));
   return ok(v.value);
 };
 
@@ -62,7 +65,9 @@ export const validateLinkOrComputedConfig = async (
   type: string,
   config: Record<string, unknown>,
   sourceTableId: string,
+  locale?: string,
 ): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   if (type === "formula") {
     const expression = (config as { expression?: unknown }).expression;
     if (typeof expression !== "string" || !expression.trim()) return ok();
@@ -79,7 +84,7 @@ export const validateLinkOrComputedConfig = async (
         .flatMap((field) => [field.id, normalizeRefKey(field.short_id), normalizeRefKey(field.name)]),
     );
     if ([...collectFieldRefs(parsed.ast)].some((ref) => htmlRefs.has(ref) || htmlRefs.has(normalizeRefKey(ref)))) {
-      return fail(err.badInput("Formula fields cannot reference HTML template fields"));
+      return fail(err.badInput(messages.formulaHtmlReference));
     }
     return ok();
   }
@@ -89,7 +94,7 @@ export const validateLinkOrComputedConfig = async (
   const [sourceTable] = await sql<{ base_id: string }[]>`
     SELECT base_id::text AS base_id FROM grids.tables WHERE id = ${sourceTableId}::uuid AND deleted_at IS NULL
   `;
-  if (!sourceTable) return fail(err.badInput("source table not found"));
+  if (!sourceTable) return fail(err.badInput(messages.sourceTableNotFound));
   const baseId = sourceTable.base_id;
 
   if (type === "relation") {
@@ -100,9 +105,9 @@ export const validateLinkOrComputedConfig = async (
       SELECT base_id::text AS base_id FROM grids.tables
       WHERE id = ${cfg.targetTableId}::uuid AND deleted_at IS NULL
     `;
-    if (!target) return fail(err.badInput("relation target table not found"));
+    if (!target) return fail(err.badInput(messages.relationTargetNotFound));
     if (target.base_id !== baseId) {
-      return fail(err.badInput("relation target must be in the same base as the source"));
+      return fail(err.badInput(messages.relationTargetDifferentBase));
     }
     return ok();
   }
@@ -115,27 +120,27 @@ export const validateLinkOrComputedConfig = async (
     SELECT table_id::text AS table_id, type, config
     FROM grids.fields WHERE id = ${cfg.relationFieldId}::uuid AND deleted_at IS NULL
   `;
-  if (!relField) return fail(err.badInput("relationFieldId not found"));
+  if (!relField) return fail(err.badInput(messages.relationFieldNotFound));
   if (relField.type !== "relation") {
-    return fail(err.badInput("relationFieldId must point to a relation field"));
+    return fail(err.badInput(messages.relationFieldWrongType));
   }
   if (relField.table_id !== sourceTableId) {
-    return fail(err.badInput("relationFieldId must be on the same table as this lookup/rollup"));
+    return fail(err.badInput(messages.relationFieldWrongTable));
   }
   const relTargetTableId = (relField.config as { targetTableId?: string } | null)?.targetTableId;
   if (!relTargetTableId) {
-    return fail(err.badInput("the chosen relation has no target table configured yet"));
+    return fail(err.badInput(messages.relationTargetMissing));
   }
   const [targetField] = await sql<{ table_id: string; type: string }[]>`
     SELECT table_id::text AS table_id, type FROM grids.fields
     WHERE id = ${cfg.targetFieldId}::uuid AND deleted_at IS NULL
   `;
-  if (!targetField) return fail(err.badInput("targetFieldId not found"));
+  if (!targetField) return fail(err.badInput(messages.targetFieldNotFound));
   if (targetField.table_id !== relTargetTableId) {
-    return fail(err.badInput("targetFieldId must belong to the relation's target table"));
+    return fail(err.badInput(messages.targetFieldWrongTable));
   }
   if (targetField.type === "html_template") {
-    return fail(err.badInput("HTML template fields cannot be lookup or rollup targets"));
+    return fail(err.badInput(messages.htmlLookupTargetUnsupported));
   }
   return ok();
 };

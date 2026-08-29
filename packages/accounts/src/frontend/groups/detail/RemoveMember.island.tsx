@@ -2,6 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { useAccountsMessages } from "../../messages";
 
 type RemoveMemberProps = {
   /** Group ID */
@@ -17,6 +18,7 @@ type RemoveMemberProps = {
 };
 
 export default function RemoveMember(props: RemoveMemberProps) {
+  const messages = useAccountsMessages();
   const mutation = mutations.create<void, void>({
     mutation: async () => {
       const endpoint =
@@ -27,7 +29,7 @@ export default function RemoveMember(props: RemoveMemberProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to remove.");
+        throw new Error(data.message ?? messages().removeFailed);
       }
     },
     onSuccess: () => {
@@ -39,19 +41,23 @@ export default function RemoveMember(props: RemoveMemberProps) {
   });
 
   const handleClick = async () => {
-    const roleLabel = props.membershipRole === "members" ? "member" : "manager";
-    const confirmed = await prompts.confirm(`Remove "${props.label}" as ${roleLabel} of this group?`, {
-      title: `Remove ${roleLabel}`,
-      icon: "ti ti-user-minus",
-      confirmText: "Remove",
-      cancelText: "Cancel",
-      variant: "danger",
-    });
+    const confirmed = await prompts.confirm(
+      props.membershipRole === "members"
+        ? messages().removeMemberConfirm({ name: props.label })
+        : messages().removeManagerConfirm({ name: props.label }),
+      {
+        title: props.membershipRole === "members" ? messages().removeMember : messages().removeManager,
+        icon: "ti ti-user-minus",
+        confirmText: messages().remove,
+        cancelText: messages().cancel,
+        variant: "danger",
+      },
+    );
 
     if (confirmed) {
       await mutation.mutate();
     }
   };
 
-  return <RemoveButton ariaLabel={`Remove ${props.label}`} onClick={handleClick} loading={mutation.loading()} />;
+  return <RemoveButton ariaLabel={messages().removeLabel({ name: props.label })} onClick={handleClick} loading={mutation.loading()} />;
 }

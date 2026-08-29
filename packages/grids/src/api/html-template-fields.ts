@@ -1,12 +1,14 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getDateConfig, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getDateConfig, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { gridsService } from "../service";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
+import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const BodySchema = z.object({
   template: z.string().max(50_000),
@@ -16,7 +18,13 @@ const BodySchema = z.object({
 
 const ResponseSchema = z.object({
   ok: z.boolean(),
-  diagnostics: z.array(z.object({ severity: z.enum(["error", "info"]), message: z.string() })),
+  diagnostics: z.array(
+    z.object({
+      code: z.enum(["html.invalid_config", "html.empty", "html.field_not_found", "html.render_failed"]),
+      severity: z.enum(["error", "info"]),
+      message: z.string(),
+    }),
+  ),
   rows: z.array(z.object({ recordId: z.string().length(6), html: z.string() })),
 });
 
@@ -37,12 +45,13 @@ const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).post(
   async (c) => {
     const tableId = internalIdParam(c, "tableId")!;
     const table = await gridsService.table.get(tableId);
-    if (!table) return c.json({ message: "Table not found" }, 404);
+    if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
     const gate = await gateAt(c, { baseId: table.baseId }, "admin");
     if (!gate.ok) return respond(c, () => Promise.resolve(gate));
     const body = c.req.valid("json");
     const field = await gridsService.field.getByShortId(body.currentFieldId);
-    if (!field || field.tableId !== tableId || field.type !== "html_template") return c.json({ message: "Field not found" }, 404);
+    if (!field || field.tableId !== tableId || field.type !== "html_template")
+      return c.json({ message: apiMessages(c).fieldNotFound }, 404);
     const result = await gridsService.htmlTemplatePreview.check({
       tableId,
       fieldId: field.id,

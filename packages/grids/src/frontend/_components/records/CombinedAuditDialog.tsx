@@ -1,22 +1,14 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, DatePicker, dialogCore, PanelDialog, Placeholder, panelDialogWideOptions, Select } from "@k2b/ui";
+import { Button, DatePicker, dialogCore, PanelDialog, Placeholder, panelDialogWideOptions, Select, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicCombinedAuditPage as CombinedAuditPage } from "../../../api/public-audit";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 import { RecordHistoryList } from "./RecordHistorySection";
 import RecordPicker from "./RecordPicker";
-
-const ACTION_OPTIONS = [
-  { id: "", label: "All record actions" },
-  { id: "created", label: "Created" },
-  { id: "updated", label: "Updated" },
-  { id: "deleted", label: "Deleted" },
-  { id: "restored", label: "Restored" },
-  { id: "imported", label: "Imported" },
-];
 
 export const combinedAuditDateStart = (value: string, dateConfig?: DateContext) =>
   value ? dates.parseCalendarDate(value, dateConfig).toISOString() : undefined;
@@ -48,6 +40,16 @@ type Props = {
 };
 
 function CombinedAuditDialog(props: Props) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
+  const actionOptions = () => [
+    { id: "", label: t().allActions },
+    { id: "created", label: t().created },
+    { id: "updated", label: t().updated },
+    { id: "deleted", label: t().deleted },
+    { id: "restored", label: t().restored },
+    { id: "imported", label: t().imported },
+  ];
   const [items, setItems] = createSignal<CombinedAuditPage["items"]>([]);
   const [sources, setSources] = createSignal<CombinedAuditPage["sources"]>([]);
   const [cursor, setCursor] = createSignal<string | null>(null);
@@ -80,7 +82,7 @@ function CombinedAuditDialog(props: Props) {
           init: { signal: abortSignal },
         },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load Combined audit"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().auditLoadFailed));
       return (await response.json()) as CombinedAuditPage;
     },
     onSuccess: (page, context) => {
@@ -127,40 +129,40 @@ function CombinedAuditDialog(props: Props) {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Audit trail" subtitle={props.tableName} icon="ti ti-history" close={props.close} />
+      <PanelDialog.Header title={t().auditTrail} subtitle={props.tableName} icon="ti ti-history" close={props.close} />
       <PanelDialog.Body scrollPreserveKey={`grids-combined-audit-${props.tableId}`}>
         <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           <RecordPicker
             tableId={props.tableId}
             value={recordId}
             onChange={setRecordId}
-            label="Record"
-            placeholder="All records"
+            label={t().record}
+            placeholder={t().allRecords}
             clearable
             includeDeleted
           />
           <Select
-            label="Source"
+            label={t().source}
             value={sourceRef}
             onValueChange={setSourceRef}
             options={[
-              { id: "", label: "All published sources" },
+              { id: "", label: t().allSources },
               ...sources().map((source) => ({
                 id: source.ref,
                 label: `${source.baseName} · ${source.tableName}`,
               })),
             ]}
           />
-          <Select label="Action" value={action} onValueChange={setAction} options={ACTION_OPTIONS} />
+          <Select label={t().action} value={action} onValueChange={setAction} options={actionOptions()} />
           <DatePicker
-            label="From"
+            label={t().from}
             dateConfig={props.dateConfig}
             value={() => from() || null}
             onValueChange={(value) => setFrom(value ?? "")}
             clearable
           />
           <DatePicker
-            label="Through"
+            label={t().through}
             dateConfig={props.dateConfig}
             value={() => through() || null}
             onValueChange={(value) => setThrough(value ?? "")}
@@ -170,39 +172,35 @@ function CombinedAuditDialog(props: Props) {
         <div class="mt-2 flex items-center gap-2">
           <Button variant="primary" size="sm" type="button" onClick={applyFilters} disabled={loadMut.loading()}>
             <i class={`ti ${loadMut.loading() ? "ti-loader-2 animate-spin" : "ti-filter"}`} aria-hidden="true" />
-            Apply
+            {t().apply}
           </Button>
           <Button variant="ghost" size="sm" type="button" onClick={clearFilters} disabled={loadMut.loading()}>
-            Clear
+            {t().clear}
           </Button>
           <span class="ml-auto text-xs text-dimmed" aria-live="polite">
-            {loadMut.loading() && !loaded() ? "Loading history..." : `${items().length} events loaded`}
+            {loadMut.loading() && !loaded() ? t().loadingHistory : t().eventsLoaded({ count: items().length })}
           </span>
         </div>
 
-        <PanelDialog.Section
-          title="Published record history"
-          subtitle="Only fields and audit answers published by the active Combined mapping are shown."
-          icon="ti ti-list-details"
-        >
+        <PanelDialog.Section title={t().publishedHistory} subtitle={t().publishedHistorySubtitle} icon="ti ti-list-details">
           <Show
             when={loaded()}
             fallback={
               <Show
                 when={loadMut.error()}
-                fallback={<Placeholder state="loading" align="left" description="Loading published record history..." />}
+                fallback={<Placeholder state="loading" align="left" description={t().loadingPublishedHistory} />}
               >
                 {(error) => (
                   <Placeholder
                     state="error"
                     surface="paper"
                     align="left"
-                    title="Could not load audit trail"
+                    title={t().auditLoadFailed}
                     description={error().message}
                     action={
                       <Button variant="secondary" size="sm" type="button" onClick={() => loadMut.retry()}>
                         <i class="ti ti-refresh" aria-hidden="true" />
-                        Retry
+                        {t().retry}
                       </Button>
                     }
                   />
@@ -216,12 +214,12 @@ function CombinedAuditDialog(props: Props) {
                   state="error"
                   surface="paper"
                   align="left"
-                  title="Could not load older events"
+                  title={t().olderEventsFailed}
                   description={error().message}
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => loadMut.retry()}>
                       <i class="ti ti-refresh" aria-hidden="true" />
-                      Retry
+                      {t().retry}
                     </Button>
                   }
                 />
@@ -238,7 +236,7 @@ function CombinedAuditDialog(props: Props) {
                 onClick={() => load(true)}
               >
                 <i class={`ti ${loadMut.loading() ? "ti-loader-2 animate-spin" : "ti-chevron-down"}`} aria-hidden="true" />
-                Load older events
+                {t().loadOlderEvents}
               </Button>
             </Show>
           </Show>
@@ -247,7 +245,7 @@ function CombinedAuditDialog(props: Props) {
       <PanelDialog.Footer>
         <span />
         <Button variant="ghost" size="sm" type="button" onClick={props.close}>
-          Done
+          {t().done}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>

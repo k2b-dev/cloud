@@ -1,18 +1,20 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, prompts, useLocale } from "@k2b/ui";
-import { createMemo, Show } from "solid-js";
+import { AppWorkspace, Button, prompts, SelectChip, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, Show } from "solid-js";
 import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
+import { writeSettings } from "../settings/NotebookSettingsStore";
 import CreateNoteButton from "./CreateNoteButton";
 import NotebookNavigator from "./NotebookNavigator";
 import NoteTree from "./NoteTree";
 import TagsButton from "./TagsButton";
+import { type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NotebookContext, NoteTreeNode } from "./types";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   ctx: NotebookContext;
@@ -51,6 +53,17 @@ export default function NotebookSidebar(props: Props) {
   } = useNotebookWorkspaceState(props.ctx);
   const canWrite = props.ctx.permission === "write" || props.ctx.permission === "admin";
   const navigatorMode = () => props.ctx.settings.sidebarMode === "navigator";
+  const [treeSort, setTreeSort] = createSignal<NoteTreeSort>(props.ctx.settings.treeSort);
+  const sortedTree = createMemo(() => sortNoteTree(noteTree(), treeSort()));
+  const treeSortOptions = () => [
+    { value: "title" as const, label: t().nameSort },
+    { value: "updated" as const, label: t().updatedSort },
+    { value: "created" as const, label: t().createdSort },
+  ];
+  const changeTreeSort = (value: NoteTreeSort) => {
+    setTreeSort(value);
+    writeSettings(notebook().id, { treeSort: value });
+  };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id);
   const hasTags = () => tags().length > 0;
   const allNotebooksHref = "/app/notebooks";
@@ -87,7 +100,7 @@ export default function NotebookSidebar(props: Props) {
 
   const renderTreeView = () => (
     <NoteTree
-      tree={noteTree()}
+      tree={sortedTree()}
       notebookId={notebook().id}
       notebookName={notebook().name}
       selectedNoteId={selectedNoteId()}
@@ -167,6 +180,13 @@ export default function NotebookSidebar(props: Props) {
             dateConfig={props.ctx.dateConfig}
             viewTransitionName={vt("settings-mobile")}
           />
+          <SelectChip
+            aria-label={t().sortNotes}
+            value={treeSort()}
+            onValueChange={changeTreeSort}
+            icon="ti ti-arrows-sort"
+            options={treeSortOptions()}
+          />
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey={`notebooks-mobile-sidebar-${notebook().id}`}>
           {renderTreeView()}
@@ -219,7 +239,21 @@ export default function NotebookSidebar(props: Props) {
               </div>
 
               <AppWorkspace.SidebarBody scrollPreserveKey={`notebooks-simple-sidebar-${notebook().id}`}>
-                <AppWorkspace.SidebarSection title={t().notes} class="min-h-0 flex-1">
+                <AppWorkspace.SidebarSection
+                  title={t().notes}
+                  class="min-h-0 flex-1"
+                  actions={
+                    <SelectChip
+                      aria-label={t().sortNotes}
+                      value={treeSort()}
+                      onValueChange={changeTreeSort}
+                      icon="ti ti-arrows-sort"
+                      iconOnly
+                      size="xs"
+                      options={treeSortOptions()}
+                    />
+                  }
+                >
                   {renderTreeView()}
                 </AppWorkspace.SidebarSection>
               </AppWorkspace.SidebarBody>

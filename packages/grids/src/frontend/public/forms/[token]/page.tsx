@@ -1,3 +1,4 @@
+import { LocaleProvider } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { toPublicForm } from "../../../../api/form-api-shared";
@@ -6,6 +7,7 @@ import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";
 import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island";
 import PublicTimezoneCookie from "../../../_components/forms/PublicTimezoneCookie.island";
+import { resolveGridsMessages } from "../../../messages";
 
 /**
  * Public form rendering page. Anonymous, no auth required.
@@ -23,6 +25,8 @@ import PublicTimezoneCookie from "../../../_components/forms/PublicTimezoneCooki
  */
 export default ssr<AuthContext>(async (c) => {
   const token = c.req.param("token")!;
+  const locale = getLocale(c);
+  const { t } = resolveGridsMessages(locale);
 
   // Theme: anonymous users have no cookies normally, but if they do
   // (returning logged-in user opening a public form) honour it.
@@ -30,18 +34,20 @@ export default ssr<AuthContext>(async (c) => {
   const themeMatch = cookie.match(/theme=([^;]+)/);
   c.get("page").theme = themeMatch?.[1] === "dark" ? "dark" : "light";
 
-  const legalLinks = await listLegalLinks(getLocale(c));
+  const legalLinks = await listLegalLinks(locale);
 
   const form = await gridsService.form.getByPublicToken(token);
   if (!form || !form.isActive) {
-    c.get("page").title = "Form not found";
+    c.get("page").title = t.formNotFound;
     return () => (
-      <PublicShell legalLinks={legalLinks}>
-        <div class="paper p-8 text-center text-sm text-dimmed">
-          <i class="ti ti-alert-circle text-base mb-2 block" />
-          This form is no longer available.
-        </div>
-      </PublicShell>
+      <LocaleProvider locale={locale}>
+        <PublicShell legalLinks={legalLinks}>
+          <div class="paper p-8 text-center text-sm text-dimmed">
+            <i class="ti ti-alert-circle text-base mb-2 block" />
+            {t.formUnavailable}
+          </div>
+        </PublicShell>
+      </LocaleProvider>
     );
   }
 
@@ -84,15 +90,17 @@ export default ssr<AuthContext>(async (c) => {
   const safeForm = await toPublicForm(form);
 
   return () => (
-    <PublicShell legalLinks={legalLinks}>
-      <PublicFormSubmit
-        publicToken={token}
-        form={safeForm}
-        fields={fields}
-        inlineTargetFields={inlineTargetFields}
-        dateConfig={dateConfig}
-      />
-    </PublicShell>
+    <LocaleProvider locale={locale}>
+      <PublicShell legalLinks={legalLinks}>
+        <PublicFormSubmit
+          publicToken={token}
+          form={safeForm}
+          fields={fields}
+          inlineTargetFields={inlineTargetFields}
+          dateConfig={dateConfig}
+        />
+      </PublicShell>
+    </LocaleProvider>
   );
 });
 

@@ -1,4 +1,5 @@
 import { createMemo, type JSX, Show } from "solid-js";
+import type { ButtonSize } from "../actions/Button";
 import { Dropdown, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
@@ -18,6 +19,8 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
   value: MaybeAccessor<T>;
   options: SelectChipOption<T>[];
   icon?: string;
+  iconOnly?: boolean;
+  size?: ButtonSize;
   placeholder?: string;
   position?: DropdownPosition;
   menuWidth?: string;
@@ -29,6 +32,7 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
   const meta = createFieldMeta(props.id);
   const value = () => resolveMaybeAccessor(props.value)!;
   const selected = () => props.options.find((option) => option.value === value());
+  const triggerLabel = () => props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption);
   const items = createMemo<DropdownItem[]>(() =>
     props.options.map((option) => ({
       action: () => commitFieldValue(props, option.value),
@@ -57,15 +61,18 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
         position={props.position ?? "bottom-right"}
         /* Cloud opens this menu at `w-40`. */
         width={props.menuWidth ?? "10rem"}
-        label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption)}
+        label={triggerLabel()}
         items={items()}
       >
         <Dropdown.Trigger
-          appearance="plain"
+          appearance={props.iconOnly ? "button" : "plain"}
           id={meta.controlId}
-          class="k2b-select-chip"
+          class={props.iconOnly ? undefined : "k2b-select-chip"}
           disabled={props.disabled}
-          label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption)}
+          iconOnly={props.iconOnly}
+          label={triggerLabel()}
+          size={props.iconOnly ? props.size : undefined}
+          title={props.iconOnly ? triggerLabel() : undefined}
           {...fieldControlAria(meta, props)}
         >
           <Show
@@ -74,8 +81,10 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
           >
             {(image) => <img src={image()} alt="" />}
           </Show>
-          <span>{selected()?.label ?? props.placeholder ?? ""}</span>
-          <i class="ti ti-chevron-down" aria-hidden="true" />
+          <Show when={!props.iconOnly}>
+            <span>{selected()?.label ?? props.placeholder ?? ""}</span>
+            <i class="ti ti-chevron-down" aria-hidden="true" />
+          </Show>
         </Dropdown.Trigger>
       </Dropdown.Root>
       <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value()} />}</Show>

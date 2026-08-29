@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
-import { scheduler } from "@k2b/sync";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
+import { scheduler } from "@k2b/sync";
 import { logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { listByTable as listFields } from "./fields";
-import { notifyRecordEventOutbox } from "./record-event-outbox";
 import type { AuthorizedRecordAccess } from "./record-access";
+import { notifyRecordEventOutbox } from "./record-event-outbox";
 import { recordUniqueConflict } from "./record-unique-conflicts";
 import { createInTransaction, updateInTransaction } from "./record-write";
 import type { ExpansionViewer } from "./relations";
@@ -65,23 +66,27 @@ export const restExternalRecordOperationScope = (
 const identityScope = (identity: ExternalRecordIdentity): string =>
   JSON.stringify([identity.provider, identity.providerAccount, identity.resourceKind, identity.externalId]);
 
-const operationConflict = (kind: ConflictKind) =>
-  kind === "capability"
-    ? { code: "IDEMPOTENCY_CONFLICT" as const, message: "Idempotency-Key was already used with different input", status: 409 as const }
-    : err.conflict("This idempotency key was already used for a different external Record request.");
+const operationConflict = (kind: ConflictKind, locale?: string) => {
+  const messages = getGridsCrudMessages(locale);
+  return kind === "capability"
+    ? { code: "IDEMPOTENCY_CONFLICT" as const, message: messages.capabilityIdempotencyConflict, status: 409 as const }
+    : err.conflict(messages.idempotencyConflict);
+};
 
-const validateOperation = (input: { operationScope: string; operationKey: string; requestHash: string }): Result<void> => {
+const validateOperation = (input: { operationScope: string; operationKey: string; requestHash: string; locale?: string }): Result<void> => {
+  const messages = getGridsCrudMessages(input.locale);
   if (!input.operationScope || input.operationScope.length > 1_000 || input.operationScope.includes("\0")) {
-    return fail(err.badInput("operationScope is invalid"));
+    return fail(err.badInput(messages.operationScopeInvalid));
   }
   if (!input.operationKey || input.operationKey.length > 200 || input.operationKey.includes("\0")) {
-    return fail(err.badInput("operationKey must contain between 1 and 200 characters"));
+    return fail(err.badInput(messages.operationKeyInvalid));
   }
-  if (!/^[a-f0-9]{64}$/.test(input.requestHash)) return fail(err.badInput("requestHash is invalid"));
+  if (!/^[a-f0-9]{64}$/.test(input.requestHash)) return fail(err.badInput(messages.requestHashInvalid));
   return ok();
 };
 
-const validateIdentity = (identity: ExternalRecordIdentity): Result<void> => {
+const validateIdentity = (identity: ExternalRecordIdentity, locale?: string): Result<void> => {
+  const messages = getGridsCrudMessages(locale);
   const parts: Array<[string, string, number]> = [
     ["provider", identity.provider, 100],
     ["providerAccount", identity.providerAccount, 200],
@@ -90,7 +95,7 @@ const validateIdentity = (identity: ExternalRecordIdentity): Result<void> => {
   ];
   for (const [name, value, maxLength] of parts) {
     if (!value || value.length > maxLength || value.trim() !== value || value.includes("\0")) {
-      return fail(err.badInput(`${name} must contain between 1 and ${maxLength} characters without surrounding whitespace or NUL`));
+      return fail(err.badInput(messages.boundedText({ name, max: maxLength })));
     }
   }
   return ok();
@@ -106,11 +111,7 @@ const lockAdmission = async (
   await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:external-record:${identityScope(identity)}`}, 0))`;
 };
 
-const storedOutcome = async (
-  client: SqlClient,
-  operationScopeHash: string,
-  operationKeyHash: string,
-): Promise<StoredOutcome | null> => {
+const storedOutcome = async (client: SqlClient, operationScopeHash: string, operationKeyHash: string): Promise<StoredOutcome | null> => {
   const [stored] = await client<StoredOutcome[]>`
     SELECT operation.request_hash, record.short_id AS record_short_id,
            operation.result_version, operation.created, operation.changed
@@ -137,12 +138,15 @@ export const replay = async (input: {
   operationKey: string;
   requestHash: string;
   conflictKind?: ConflictKind;
+  locale?: string;
 }): Promise<Result<ExternalRecordPutResult | null>> => {
   const valid = validateOperation(input);
   if (!valid.ok) return valid;
   const stored = await storedOutcome(sql, sha256(input.operationScope), sha256(input.operationKey));
   if (!stored) return ok(null);
-  return stored.request_hash === input.requestHash ? ok(toReplay(stored)) : fail(operationConflict(input.conflictKind ?? "standard"));
+  return stored.request_hash === input.requestHash
+    ? ok(toReplay(stored))
+    : fail(operationConflict(input.conflictKind ?? "standard", input.locale));
 };
 
 export const put = async (input: {
@@ -159,10 +163,12 @@ export const put = async (input: {
   dateConfig?: DateContext;
   viewer?: ExpansionViewer;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<ExternalRecordPutResult>> => {
+  const messages = getGridsCrudMessages(input.locale);
   const validOperation = validateOperation(input);
   if (!validOperation.ok) return validOperation;
-  const validIdentity = validateIdentity(input.identity);
+  const validIdentity = validateIdentity(input.identity, input.locale);
   if (!validIdentity.ok) return validIdentity;
   const operationScopeHash = sha256(input.operationScope);
   const operationKeyHash = sha256(input.operationKey);
@@ -173,7 +179,7 @@ export const put = async (input: {
       if (stored) {
         return stored.request_hash === input.requestHash
           ? ok({ ...toReplay(stored), outboxId: null })
-          : fail(operationConflict(input.conflictKind ?? "standard"));
+          : fail(operationConflict(input.conflictKind ?? "standard", input.locale));
       }
 
       const [binding] = await tx<Array<{ id: string; table_id: string; record_id: string; deleted_at: string | null }>>`
@@ -188,10 +194,10 @@ export const put = async (input: {
 
       if (binding) {
         if (binding.table_id !== input.tableId || binding.deleted_at) {
-          return fail(err.conflict("This external identity is bound to a Record that is no longer available."));
+          return fail(err.conflict(messages.externalRecordUnavailable));
         }
         if (input.ifVersion === undefined) {
-          return fail(err.conflict("This external identity already exists; supply its current Record version to update it."));
+          return fail(err.conflict(messages.externalIdentityNeedsVersion));
         }
         const updated = await updateInTransaction(
           tx,
@@ -206,6 +212,7 @@ export const put = async (input: {
             viewer: input.viewer,
             audit: input.audit,
             recordAccess: input.recordAccess,
+            locale: input.locale,
           },
         );
         if (!updated.ok) return updated;
@@ -230,12 +237,13 @@ export const put = async (input: {
       }
 
       if (input.ifVersion !== undefined) {
-        return fail(err.conflict("This external identity does not exist at the expected Record version."));
+        return fail(err.conflict(messages.externalIdentityVersionMissing));
       }
       const created = await createInTransaction(tx, input.tableId, input.values, input.actorId, "direct", {
         dateConfig: input.dateConfig,
         viewer: input.viewer,
         recordAccess: input.recordAccess,
+        locale: input.locale,
       });
       if (!created.ok) return created;
       const [newBinding] = await tx<Array<{ id: string }>>`
@@ -267,7 +275,7 @@ export const put = async (input: {
       });
     })
     .catch(async (error: unknown) => {
-      const conflict = recordUniqueConflict<InternalPutResult>(error, await listFields(input.tableId));
+      const conflict = recordUniqueConflict<InternalPutResult>(error, await listFields(input.tableId), input.locale);
       if (conflict) return conflict;
       throw error;
     });

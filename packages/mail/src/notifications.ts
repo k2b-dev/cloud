@@ -1,4 +1,5 @@
 import { job, scheduler } from "@k2b/sync";
+import { i18n } from "@k2b/stdlib";
 import { type BoundNotificationMap, notification } from "@valentinkolb/cloud";
 import {
   coreSettings,
@@ -24,6 +25,15 @@ const RUNTIME_DISPATCH_RESERVATION_SECONDS = 15 * 60;
 const STALE_CLAIM_SECONDS = 10 * 60;
 
 const log = logger("mail:collaboration-notifications");
+const presentation = (label: string, description: string) => ({ baseLocale: "en", translations: { de: { label, description } } });
+const notificationMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { reminderTitle: "Mail reminder", reminderFallback: "A conversation reminder is due." },
+    de: { reminderTitle: "Mail-Erinnerung", reminderFallback: "Eine Erinnerung für eine Unterhaltung ist fällig." },
+  },
+});
+const text = (locale: string) => notificationMessages.resolve([locale]).t;
 
 const publicResourceId = z.string().regex(SHORT_ID_REGEX);
 const notificationData = z.object({
@@ -43,11 +53,12 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Mail reminders",
     description: "A notification when one of your conversation reminders is due.",
+    presentation: presentation("Mail-Erinnerungen", "Benachrichtigung, wenn eine Erinnerung für eine Unterhaltung fällig ist."),
     delivery: { recommended: ["browser"] },
     data: notificationData,
-    render: ({ mailboxId, sourceId, subject }) => ({
-      title: "Mail reminder",
-      body: subject || "A conversation reminder is due.",
+    render: ({ mailboxId, sourceId, subject }, { locale }) => ({
+      title: text(locale).reminderTitle,
+      body: subject || text(locale).reminderFallback,
       targetHref: mailNotificationTargetHref({ mailboxId, kind: "reminder", sourceId }),
     }),
   }),
@@ -55,6 +66,7 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Mail workflow notifications",
     description: "An internal notification sent by a Mail workflow.",
+    presentation: presentation("Mail-Workflow-Benachrichtigungen", "Interne Benachrichtigungen, die ein Mail-Workflow sendet."),
     delivery: { recommended: ["browser"] },
     data: workflowNotificationData,
     render: ({ mailboxId, title, body }) => ({ title, body, targetHref: `/app/mail/${mailboxId}` }),
@@ -82,6 +94,7 @@ export type MailNotificationSendInput = {
   sourceId: string;
   subject: string;
   idempotencyKey: string;
+  locale?: string;
 };
 
 type MailNotificationSender = (input: MailNotificationSendInput) => Promise<void>;
@@ -118,6 +131,7 @@ const defaultSender =
       recipient: { userId: input.recipientUserId },
       data,
       idempotencyKey: input.idempotencyKey,
+      locale: input.locale ?? (await coreSettings.get<string>("app.locale")),
     });
   };
 

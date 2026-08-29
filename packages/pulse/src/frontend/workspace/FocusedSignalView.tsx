@@ -1,6 +1,7 @@
 import { Button, DataTable, TextInput, type DataTableColumn } from "@k2b/ui";
 import { createMemo, Show, type Accessor, type JSX, type Setter } from "solid-js";
 import type { PulseCurrentState, PulseMetricSeries, PulseMetricSummary, PulseRecordedEvent } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import { FocusedEventDetail, FocusedMetricSeriesDetail, FocusedStateDetail } from "./FocusedSignalDetails";
 import { plural, stateRowId, type PulseDateContext } from "./helpers";
 import type { WorkspaceView } from "./types";
@@ -62,28 +63,36 @@ const focusedSubtitle = (kind: FocusedSignalKind, props: FocusedSignalViewProps,
   return `${kind} · ${rowsLabel}`;
 };
 
-const FocusedSignalHeader = (props: FocusedSignalViewProps & { kind: Accessor<FocusedSignalKind>; rowsLabel: Accessor<string> }) => (
+const FocusedSignalHeader = (props: FocusedSignalViewProps & { kind: Accessor<FocusedSignalKind>; rowsLabel: Accessor<string> }) => {
+  const t = usePulseMessages();
+  const title = () => (props.kind() === "metric" ? t().metric : props.kind() === "state" ? t().state : t().event);
+  return (
   <header class="flex shrink-0 flex-wrap items-center gap-3">
     <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 app-accent-text dark:bg-zinc-900">
       <i class={`ti ${focusedSignalIcon(props.kind())} text-base`} />
     </span>
     <div class="min-w-0 flex-1">
-      <p class="text-label text-[11px]">{focusedSignalTitle(props.kind())}</p>
+      <p class="text-label text-[11px]">{title()}</p>
       <h1 class="mt-0.5 truncate text-lg font-semibold leading-6 text-primary">{props.signalId()}</h1>
       <p class="mt-0.5 truncate text-xs text-dimmed">{focusedSubtitle(props.kind(), props, props.rowsLabel())}</p>
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <Button type="button" variant="secondary" size="sm" onClick={() => void props.loadRows()}>
-        <i class={`ti ${props.loadingMore() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} /> Reload
+        <i class={`ti ${props.loadingMore() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} /> {t().reload}
       </Button>
       <Button type="button" variant="secondary" size="sm" onClick={props.onOpenQuery}>
-        <i class="ti ti-code" /> Open query
+        <i class="ti ti-code" /> {t().openQuery}
       </Button>
     </div>
   </header>
-);
+  );
+};
 
-const FocusedSignalSearch = (props: FocusedSignalViewProps & { kind: Accessor<FocusedSignalKind>; rowsLabel: Accessor<string> }) => (
+const FocusedSignalSearch = (props: FocusedSignalViewProps & { kind: Accessor<FocusedSignalKind>; rowsLabel: Accessor<string> }) => {
+  const t = usePulseMessages();
+  const placeholder = () =>
+    props.kind() === "metric" ? t().searchVariants : props.kind() === "state" ? t().searchStateVariants : t().searchEventsPlaceholder;
+  return (
   <div class="flex shrink-0 flex-wrap items-center gap-2">
     <div class="min-w-64 flex-1">
       <TextInput
@@ -91,7 +100,7 @@ const FocusedSignalSearch = (props: FocusedSignalViewProps & { kind: Accessor<Fo
         icon="ti ti-search"
         value={props.search}
         onValueChange={(value) => props.setSearch(value)}
-        placeholder={focusedSearchPlaceholder(props.kind())}
+        placeholder={placeholder()}
         clearable
       />
     </div>
@@ -100,9 +109,12 @@ const FocusedSignalSearch = (props: FocusedSignalViewProps & { kind: Accessor<Fo
       {props.rowsLabel()}
     </span>
   </div>
-);
+  );
+};
 
-const FocusedMetricTable = (props: FocusedSignalViewProps) => (
+const FocusedMetricTable = (props: FocusedSignalViewProps) => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.metricSeries()}
     columns={props.metricSeriesColumns}
@@ -112,16 +124,19 @@ const FocusedMetricTable = (props: FocusedSignalViewProps) => (
     density="compact"
     fillHeight
     class="min-h-0 flex-1 overflow-auto"
-    empty="No variants found."
+    empty={t().noVariantsFound}
     hasMore={props.hasMore()}
     loadingMore={props.loadingMore()}
     onLoadMore={() => void props.loadRows({ append: true })}
     scrollPreserveKey={`pulse-focused-metric-${props.signalId()}`}
     renderCell={({ row, col, render }) => props.renderMetricSeriesCell(row, col, render)}
   />
-);
+  );
+};
 
-const FocusedStateTable = (props: FocusedSignalViewProps & { selectedStateRowId: Accessor<string | null> }) => (
+const FocusedStateTable = (props: FocusedSignalViewProps & { selectedStateRowId: Accessor<string | null> }) => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.states()}
     columns={props.stateColumns}
@@ -131,16 +146,19 @@ const FocusedStateTable = (props: FocusedSignalViewProps & { selectedStateRowId:
     density="compact"
     fillHeight
     class="min-h-0 flex-1 overflow-auto"
-    empty="No state variants found."
+    empty={t().noStateVariantsFound}
     hasMore={props.hasMore()}
     loadingMore={props.loadingMore()}
     onLoadMore={() => void props.loadRows({ append: true })}
     scrollPreserveKey={`pulse-focused-state-${props.signalId()}`}
     renderCell={({ row, col, render }) => props.renderStateCell(row, col, render)}
   />
-);
+  );
+};
 
-const FocusedEventTable = (props: FocusedSignalViewProps) => (
+const FocusedEventTable = (props: FocusedSignalViewProps) => {
+  const t = usePulseMessages();
+  return (
   <DataTable
     rows={props.events()}
     columns={props.eventColumns}
@@ -150,14 +168,15 @@ const FocusedEventTable = (props: FocusedSignalViewProps) => (
     density="compact"
     fillHeight
     class="min-h-0 flex-1 overflow-auto"
-    empty="No events found."
+    empty={t().noEventsFound}
     hasMore={props.hasMore()}
     loadingMore={props.loadingMore()}
     onLoadMore={() => void props.loadRows({ append: true })}
     scrollPreserveKey={`pulse-focused-event-${props.signalId()}`}
     renderCell={({ row, col, render }) => props.renderEventCell(row, col, render)}
   />
-);
+  );
+};
 
 const FocusedSignalTable = (
   props: FocusedSignalViewProps & { kind: Accessor<FocusedSignalKind>; selectedStateRowId: Accessor<string | null> },
@@ -251,8 +270,11 @@ const FocusedSignalRows = (
 );
 
 export default function FocusedSignalView(props: FocusedSignalViewProps) {
+  const t = usePulseMessages();
   const kind = createMemo(() => focusedSignalKind(props.view()));
-  const rowsLabel = createMemo(() => focusedRowsLabel(kind(), props));
+  const rowsLabel = createMemo(() =>
+    kind() === "event" ? t().eventCount({ count: props.events().length }) : t().variantCount({ count: kind() === "metric" ? props.metricSeries().length : props.states().length }),
+  );
   const selectedStateRowId = createMemo(() => {
     const state = props.selectedState();
     return state ? stateRowId(state) : null;

@@ -30,7 +30,7 @@ export default ssr<AuthContext>(async (c) => {
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     webauthn.listForUser({ userId: user.id }),
     audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 5 } }),
-    notifications.user.preferences.list(user.id),
+    notifications.user.preferences.list(user.id, locale),
   ]);
   const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");

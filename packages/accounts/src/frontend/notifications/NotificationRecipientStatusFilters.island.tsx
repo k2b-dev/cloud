@@ -1,22 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { useAccountsMessages } from "../messages";
 
 type Props = {
   batchId: string;
   status: string;
 };
-
-const STATUS_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "pending", label: "Pending", icon: "ti ti-clock" },
-      { value: "sending", label: "Sending", icon: "ti ti-loader-2" },
-      { value: "sent", label: "Sent", icon: "ti ti-check" },
-      { value: "skipped", label: "Skipped", icon: "ti ti-ban" },
-      { value: "error", label: "Error", icon: "ti ti-alert-triangle" },
-    ],
-  },
-];
 
 const buildUrl = (batchId: string, status: string) => {
   const query = new URLSearchParams();
@@ -26,12 +15,24 @@ const buildUrl = (batchId: string, status: string) => {
 };
 
 export default function NotificationRecipientStatusFilters(props: Props) {
+  const messages = useAccountsMessages();
+  const options = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "pending", label: messages().pending, icon: "ti ti-clock" },
+        { value: "sending", label: messages().sending, icon: "ti ti-loader-2" },
+        { value: "sent", label: messages().sent, icon: "ti ti-check" },
+        { value: "skipped", label: messages().skipped, icon: "ti ti-ban" },
+        { value: "error", label: messages().error, icon: "ti ti-alert-triangle" },
+      ],
+    },
+  ];
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label="Recipient status"
+        label={messages().recipientStatus}
         icon="ti ti-circle-check"
-        options={STATUS_OPTIONS}
+        options={options()}
         value={props.status ? [props.status] : []}
         onValueChange={(value) => navigateTo(buildUrl(props.batchId, value[0] ?? ""))}
         isActive={props.status.length > 0}

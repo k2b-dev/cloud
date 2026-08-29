@@ -1,10 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, timed } from "@k2b/stdlib/solid";
-import { AppOverview, Pagination, prompts, TextInput } from "@k2b/ui";
+import { AppOverview, Pagination, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { overviewMessages } from "./messages";
 
 type TemplateSummary = {
   id: string;
@@ -34,6 +35,7 @@ const setQueryParam = (value: string, page: number) => {
 };
 
 export default function BasesOverview(props: Props) {
+  const { t } = overviewMessages.resolve([useLocale()()]);
   const [query, setQuery] = createSignal(props.initialQuery);
   const [bases, setBases] = createSignal<PublicBase[]>(props.bases);
   const [total, setTotal] = createSignal(props.total);
@@ -62,7 +64,7 @@ export default function BasesOverview(props: Props) {
       },
       { init: { signal: abortCtl.signal } },
     );
-    if (!res.ok) throw new Error(await errorMessage(res, "Failed to load bases"));
+    if (!res.ok) throw new Error(await errorMessage(res, t.loadBasesFailed));
     const body = await res.json();
     setBases(body.items);
     setTotal(body.total);
@@ -78,13 +80,13 @@ export default function BasesOverview(props: Props) {
   const createBaseMutation = mutations.create<PublicBase | null, void>({
     mutation: async () => {
       const result = await prompts.form({
-        title: "New base",
+        title: t.newBase,
         icon: "ti ti-database-plus",
         fields: {
-          name: { type: "text", label: "Name", required: true, placeholder: "e.g. CRM, Inventory" },
-          description: { type: "text", label: "Description", multiline: true, placeholder: "Optional" },
+          name: { type: "text", label: t.name, required: true, placeholder: t.baseNameExample },
+          description: { type: "text", label: t.description, multiline: true, placeholder: t.optional },
         },
-        confirmText: "Create",
+        confirmText: t.create,
       });
       if (!result) return null;
       const res = await apiClient.bases.$post({
@@ -93,7 +95,7 @@ export default function BasesOverview(props: Props) {
           description: String(result.description ?? "").trim() || null,
         },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to create base"));
+      if (!res.ok) throw new Error(await errorMessage(res, t.createBaseFailed));
       return res.json();
     },
     onSuccess: (base) => {
@@ -105,23 +107,23 @@ export default function BasesOverview(props: Props) {
   const createFromTemplateMutation = mutations.create<PublicBase | null, TemplateSummary>({
     mutation: async (template) => {
       const result = await prompts.form({
-        title: `Create ${template.name}`,
+        title: t.createTemplate({ name: template.name }),
         icon: template.icon,
         fields: {
           name: {
             type: "text",
-            label: "Name",
-            description: "You can rename the base without changing its included setup.",
+            label: t.name,
+            description: t.renameTemplateDescription,
             placeholder: template.name,
           },
           withSampleData: {
             type: "boolean",
-            label: "Include sample data",
-            description: "Recommended. Adds realistic records so the App, views, and workflow are ready to explore.",
+            label: t.includeSampleData,
+            description: t.includeSampleDataDescription,
             default: true,
           },
         },
-        confirmText: "Create base",
+        confirmText: t.createBase,
       });
       if (!result) return null;
       const res = await apiClient.templates[":templateId"].$post({
@@ -131,7 +133,7 @@ export default function BasesOverview(props: Props) {
           withSampleData: Boolean(result.withSampleData),
         },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to create base from template"));
+      if (!res.ok) throw new Error(await errorMessage(res, t.createFromTemplateFailed));
       return res.json();
     },
     onSuccess: (base) => {
@@ -163,21 +165,21 @@ export default function BasesOverview(props: Props) {
     query().trim()
       ? `${total()} match${total() === 1 ? "" : "es"}`
       : total() === 0
-        ? "Create a base to start storing records, views, forms, and Apps."
+        ? t.createBaseFirst
         : `${bases().length} of ${total()} base${total() === 1 ? "" : "s"} shown`,
   );
 
   return (
-    <AppOverview title="Grids" subtitle="Structured bases for records, views, forms, and Apps." icon="ti ti-table">
+    <AppOverview title="Grids" subtitle={t.subtitle} icon="ti ti-table">
       <AppOverview.Main
-        title="Your bases"
+        title={t.yourBases}
         description={overviewDescription()}
         toolbar={
           <TextInput
             name="grids-base-search"
             type="search"
-            aria-label="Search bases"
-            placeholder="Search bases..."
+            aria-label={t.searchBases}
+            placeholder={t.searchBasesPlaceholder}
             icon="ti ti-search"
             activeIcon="ti ti-search"
             value={query}
@@ -195,14 +197,9 @@ export default function BasesOverview(props: Props) {
           when={bases().length > 0}
           fallback={
             query().trim() ? (
-              <AppOverview.EmptyState title="No matching bases" description="Try a different search term." icon="ti ti-search" />
+              <AppOverview.EmptyState title={t.noMatchingBases} description={t.tryDifferentSearch} icon="ti ti-search" />
             ) : (
-              <AppOverview.EmptyState
-                title="No bases yet"
-                description="Start from a template if you want a complete working setup, or create a blank base for a custom schema."
-                icon="ti ti-database-plus"
-                class="min-h-72"
-              />
+              <AppOverview.EmptyState title={t.noBases} description={t.noBasesDescription} icon="ti ti-database-plus" class="min-h-72" />
             )
           }
         >
@@ -224,7 +221,7 @@ export default function BasesOverview(props: Props) {
                     >
                       {base.name}
                     </span>
-                    <p class="text-xs text-dimmed truncate">{base.description || "No description"}</p>
+                    <p class="text-xs text-dimmed truncate">{base.description || t.noDescription}</p>
                   </div>
                   <i class="ti ti-chevron-right text-dimmed" />
                 </a>
@@ -235,7 +232,7 @@ export default function BasesOverview(props: Props) {
         </Show>
       </AppOverview.Main>
 
-      <AppOverview.Aside title="Create" description="Start structured, or build from scratch.">
+      <AppOverview.Aside title={t.createAside} description={t.createAsideDescription}>
         <div class="grid grid-cols-1 gap-2">
           <For each={props.templates}>
             {(template) => (
@@ -244,7 +241,7 @@ export default function BasesOverview(props: Props) {
                 class="paper p-4 text-left flex items-start gap-3 hover:paper-highlighted transition-all"
                 onClick={() => createFromTemplate(template)}
                 disabled={isCreating()}
-                aria-label={`Create ${template.name} base`}
+                aria-label={t.createTemplateBase({ name: template.name })}
                 aria-busy={creatingTemplateId() === template.id}
               >
                 <span class="w-9 h-9 thumbnail bg-[var(--ui-surface-raised)] flex items-center justify-center shrink-0">
@@ -281,8 +278,8 @@ export default function BasesOverview(props: Props) {
               <i class={`ti ${createBaseMutation.loading() ? "ti-loader-2 animate-spin" : "ti-plus"} text-lg`} />
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">Blank base</span>
-              <span class="block text-xs text-dimmed leading-snug">Create an empty base and design the schema yourself.</span>
+              <span class="block text-sm font-semibold text-primary">{t.blankBase}</span>
+              <span class="block text-xs text-dimmed leading-snug">{t.blankBaseDescription}</span>
             </span>
           </button>
         </div>

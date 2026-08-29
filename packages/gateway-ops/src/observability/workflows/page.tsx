@@ -7,8 +7,8 @@
  * explicit decision about an ambiguous external effect.
  */
 
-import { ButtonLink, IconButtonLink, NoticeCard, Pagination, Placeholder, RangePicker, StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { ButtonLink, IconButtonLink, NoticeCard, Pagination, Placeholder, RangePicker, StatCell, StatGrid, useLocale } from "@k2b/ui";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatDateTime, formatDurationMs, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import {
@@ -29,8 +29,9 @@ import { WorkflowEffectsView, WorkflowEventsView, WorkflowFamiliesView, Workflow
 import WorkflowRunDetailView from "./_components/WorkflowRunDetail";
 import WorkflowsFilterBar from "./_components/WorkflowsFilterBar.island";
 import { FINDINGS_PER_PAGE, RUN_STATES, RUNS_PER_PAGE, type WorkflowView, windowStart, workflowsFilter } from "./filters";
-import { LAG_WARN_MS, RUN_LABEL } from "./presentation";
+import { LAG_WARN_MS } from "./presentation";
 import { buildWorkflowTimelineRows } from "./timeline";
+import { gatewayOpsMessages } from "../../messages";
 
 type WorkflowTotals = {
   runs: number;
@@ -60,56 +61,60 @@ const totalsFor = (health: WorkflowAppHealth[]): WorkflowTotals =>
     { runs: 0, failed: 0, attention: 0, active: 0, queued: 0, stranded: 0, undispatched: 0, worstLagMs: 0, oldestQueuedMs: 0 },
   );
 
-const WorkflowStats = (props: { totals: WorkflowTotals; window: string }) => (
-  <StatGrid columns={6}>
-    <StatCell label="Runs" value={formatNumber(props.totals.runs)} sub={`last ${props.window}`} />
+const WorkflowStats = (props: { totals: WorkflowTotals; window: string }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  return <StatGrid columns={6}>
+    <StatCell label={t.runs} value={formatNumber(props.totals.runs, { locale: locale() })} sub={t.lastWindow({ window: props.window })} />
     <StatCell
-      label="In flight"
-      value={formatNumber(props.totals.active)}
+      label={t.inFlight}
+      value={formatNumber(props.totals.active, { locale: locale() })}
       sub={
         props.totals.queued === 0
-          ? "running or waiting"
-          : `${formatNumber(props.totals.queued)} queued · oldest ${formatDurationMs(props.totals.oldestQueuedMs)}`
+          ? t.runningOrWaiting
+          : t.queuedOldest({ count: formatNumber(props.totals.queued, { locale: locale() }), duration: formatDurationMs(props.totals.oldestQueuedMs, { locale: locale() }) })
       }
       valueClass={props.totals.oldestQueuedMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
     />
     <StatCell
-      label="Failed"
-      value={formatNumber(props.totals.failed)}
+      label={t.failed}
+      value={formatNumber(props.totals.failed, { locale: locale() })}
       valueClass={props.totals.failed > 0 ? "text-red-600 dark:text-red-400" : undefined}
     />
     <StatCell
-      label="Needs attention"
-      value={formatNumber(props.totals.attention)}
-      sub="a human has to decide"
+      label={t.needsAttentionLabel}
+      value={formatNumber(props.totals.attention, { locale: locale() })}
+      sub={t.humanDecisionRequired}
       valueClass={props.totals.attention > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
     />
     <StatCell
-      label="Worst start lag"
-      value={props.totals.worstLagMs > 0 ? formatDurationMs(props.totals.worstLagMs) : "—"}
-      sub="cause to first attempt"
+      label={t.worstStartLag}
+      value={props.totals.worstLagMs > 0 ? formatDurationMs(props.totals.worstLagMs, { locale: locale() }) : "—"}
+      sub={t.causeToFirstAttempt}
       valueClass={props.totals.worstLagMs > LAG_WARN_MS ? "text-amber-600 dark:text-amber-400" : undefined}
     />
     <StatCell
-      label="Open findings"
-      value={formatNumber(props.totals.stranded + props.totals.undispatched)}
-      sub={`${formatNumber(props.totals.stranded)} effects · ${formatNumber(props.totals.undispatched)} events`}
+      label={t.openFindings}
+      value={formatNumber(props.totals.stranded + props.totals.undispatched, { locale: locale() })}
+      sub={t.findingsSummary({ effects: formatNumber(props.totals.stranded, { locale: locale() }), events: formatNumber(props.totals.undispatched, { locale: locale() }) })}
       valueClass={props.totals.stranded + props.totals.undispatched > 0 ? "text-amber-600 dark:text-amber-400" : undefined}
     />
-  </StatGrid>
-);
+  </StatGrid>;
+};
 
-const FindingNotices = (props: { totals: WorkflowTotals; effectsHref: string; eventsHref: string }) => (
-  <>
+const FindingNotices = (props: { totals: WorkflowTotals; effectsHref: string; eventsHref: string }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  return <>
     {props.totals.stranded > 0 ? (
       <NoticeCard
         tone="warning"
-        title={`${formatNumber(props.totals.stranded)} external effect${props.totals.stranded === 1 ? "" : "s"} require evidence`}
+        title={t.effectsRequireEvidence({ count: formatNumber(props.totals.stranded, { locale: locale() }) })}
         detail={
           <span>
-            A replay will not repeat an unsettled effect.{" "}
+            {t.effectReplayWarning}{" "}
             <a class="font-medium hover:underline" href={props.effectsHref}>
-              Review the effects queue
+              {t.reviewEffectsQueue}
             </a>
             .
           </span>
@@ -119,22 +124,25 @@ const FindingNotices = (props: { totals: WorkflowTotals; effectsHref: string; ev
     {props.totals.undispatched > 0 ? (
       <NoticeCard
         tone="warning"
-        title={`${formatNumber(props.totals.undispatched)} event${props.totals.undispatched === 1 ? "" : "s"} did not become a run`}
+        title={t.eventsWithoutRun({ count: formatNumber(props.totals.undispatched, { locale: locale() }) })}
         detail={
           <span>
-            These are unmatched, retrying or dead-lettered occurrences.{" "}
+            {t.unmatchedEventsWarning}{" "}
             <a class="font-medium hover:underline" href={props.eventsHref}>
-              Review the events queue
+              {t.reviewEventsQueue}
             </a>
             .
           </span>
         }
       />
     ) : null}
-  </>
-);
+  </>;
+};
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
+  const { t } = gatewayOpsMessages.resolve([locale]);
   const state = workflowsFilter.parse(new URL(c.req.url));
   const since = windowStart(state.window);
   const offset = (state.page - 1) * (state.view === "runs" ? RUNS_PER_PAGE : FINDINGS_PER_PAGE);
@@ -198,6 +206,15 @@ export default ssr<AuthContext>(async (c) => {
   const totals = totalsFor(state.app ? health.filter((entry) => entry.appId === state.app) : health);
   const nowMs = Date.now();
   const timelineWindow = { fromMs: since.getTime(), toMs: nowMs };
+  const runStateLabels = {
+    queued: t.queued,
+    running: t.running,
+    waiting: t.waiting,
+    succeeded: t.succeeded,
+    failed: t.failed,
+    needs_attention: t.needsAttentionLabel,
+    canceled: t.canceled,
+  } as const;
   const timelineRows = buildWorkflowTimelineRows(timelineResult.runs, timelineWindow).map((row) => ({
     label: row.label,
     href: workflowsFilter.build(state, { workflow: row.workflowId, run: "", parent: "", page: 1 }),
@@ -206,12 +223,12 @@ export default ssr<AuthContext>(async (c) => {
       const activeMs = nowMs - (run.startedAt ?? run.createdAt).getTime();
       const timing =
         run.state === "queued"
-          ? `queued ${formatDurationMs(nowMs - run.createdAt.getTime())}`
+          ? t.queuedDuration({ duration: formatDurationMs(nowMs - run.createdAt.getTime(), { locale }) })
           : run.durationMs !== null
-            ? formatDurationMs(run.durationMs)
+            ? formatDurationMs(run.durationMs, { locale })
             : run.startedAt
-              ? `active ${formatDurationMs(activeMs)}`
-              : "not started";
+              ? t.activeDuration({ duration: formatDurationMs(activeMs, { locale }) })
+              : t.notStarted;
       return {
         ...interval,
         label: timing,
@@ -223,11 +240,11 @@ export default ssr<AuthContext>(async (c) => {
         }),
         tooltip: [
           run.workflowName,
-          RUN_LABEL[run.state],
-          run.eventType ?? "direct invocation",
-          formatDateTime(run.createdAt),
+          runStateLabels[run.state],
+          run.eventType ?? t.directInvocation,
+          formatDateTime(run.createdAt, dateConfig),
           timing,
-          run.attempt === 0 ? "not attempted" : `attempt ${run.attempt}`,
+          run.attempt === 0 ? t.notAttempted : t.attemptNumber({ count: run.attempt }),
         ].join(" · "),
       };
     }),
@@ -250,9 +267,9 @@ export default ssr<AuthContext>(async (c) => {
 
   const viewOptions = (
     [
-      ["runs", "Workflows"],
-      ["effects", `Effects${totals.stranded ? ` (${formatNumber(totals.stranded)})` : ""}`],
-      ["events", `Events${totals.undispatched ? ` (${formatNumber(totals.undispatched)})` : ""}`],
+      ["runs", t.workflows],
+      ["effects", `${t.effects}${totals.stranded ? ` (${formatNumber(totals.stranded, { locale })})` : ""}`],
+      ["events", `${t.workflowEvents}${totals.undispatched ? ` (${formatNumber(totals.undispatched, { locale })})` : ""}`],
     ] as const
   ).map(([view, label]) => ({
     value: view,
@@ -280,15 +297,15 @@ export default ssr<AuthContext>(async (c) => {
     />
   );
   const allWorkflowsHref = workflowsFilter.build(state, { workflow: "", run: "", parent: "", page: 1 });
-  const title = selectedWorkflow?.name ?? detail?.workflowName ?? "Workflows";
+  const title = selectedWorkflow?.name ?? detail?.workflowName ?? t.workflows;
 
   return () => (
-    <AdminLayout c={c} title="Workflows">
+    <AdminLayout c={c} title={t.workflows}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-workflows-title">
           <div class="flex items-center gap-2">
             {state.workflow || state.parent ? (
-              <IconButtonLink href={allWorkflowsHref} label="Back to all workflows" size="sm">
+              <IconButtonLink href={allWorkflowsHref} label={t.backToWorkflows} size="sm">
                 <i class="ti ti-arrow-left" />
               </IconButtonLink>
             ) : null}
@@ -296,8 +313,8 @@ export default ssr<AuthContext>(async (c) => {
               <h1 class="truncate text-base font-semibold text-primary">{title}</h1>
               <p class="mt-1 text-xs text-dimmed">
                 {selectedWorkflow
-                  ? `Runs for this workflow in the last ${state.window}.`
-                  : "Cross-app workflow health, runtime history, and operator findings."}
+                  ? t.workflowRunsDescription({ window: state.window })
+                  : t.workflowsDescription}
               </p>
             </div>
           </div>
@@ -305,10 +322,10 @@ export default ssr<AuthContext>(async (c) => {
 
         <WorkflowStats totals={totals} window={state.window} />
         <div class="flex flex-wrap items-center justify-between gap-2">
-          <RangePicker label={null} ariaLabel="Workflow observability view" options={viewOptions} value={state.view} />
+          <RangePicker label={null} ariaLabel={t.workflowView} options={viewOptions} value={state.view} />
           <ButtonLink variant="ghost" size="sm" href={workflowsFilter.build(state)}>
             <i class="ti ti-refresh" />
-            Refresh
+            {t.refresh}
           </ButtonLink>
         </div>
 
@@ -322,19 +339,15 @@ export default ssr<AuthContext>(async (c) => {
 
         {!detail && state.view === "runs" && !state.parent ? (
           <section class="paper p-3">
-            <h2 class="text-xs font-semibold text-primary">Run timeline</h2>
-            <p class="text-[10px] text-dimmed">
-              One lane per workflow, busiest first. Completed runs use their execution time; queued and active runs extend to now. Drag to
-              pan; use Ctrl/⌘ + wheel or the controls to zoom.
-            </p>
+            <h2 class="text-xs font-semibold text-primary">{t.runTimeline}</h2>
+            <p class="text-[10px] text-dimmed">{t.workflowTimelineDescription}</p>
             {timelineResult.total > timelineResult.runs.length ? (
               <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-                Showing the latest {formatNumber(timelineResult.runs.length)} of {formatNumber(timelineResult.total)} matching runs. The
-                timeline reflects this loaded sample.
+                {t.timelineSample({ count: formatNumber(timelineResult.runs.length, { locale }), total: formatNumber(timelineResult.total, { locale }) })}
               </p>
             ) : null}
             {timelineRows.length === 0 ? (
-              <Placeholder variant="compact" description="No workflow runs recorded in this window." />
+              <Placeholder variant="compact" description={t.noWorkflowRunsWindow} />
             ) : (
               <ObservabilityChart
                 kind="stateTimeline"
@@ -342,13 +355,13 @@ export default ssr<AuthContext>(async (c) => {
                 rows={timelineRows}
                 domain={[timelineWindow.fromMs, timelineWindow.toMs]}
                 states={[
-                  { state: "queued", label: "Queued", color: "#71717a" },
-                  { state: "running", label: "Running", color: "#3b82f6" },
-                  { state: "waiting", label: "Waiting", color: "#8b5cf6" },
-                  { state: "succeeded", label: "Succeeded", color: "#10b981" },
-                  { state: "failed", label: "Failed", color: "#ef4444" },
-                  { state: "needs_attention", label: "Needs attention", color: "#f59e0b" },
-                  { state: "canceled", label: "Canceled", color: "#a1a1aa" },
+                  { state: "queued", label: t.queued, color: "#71717a" },
+                  { state: "running", label: t.running, color: "#3b82f6" },
+                  { state: "waiting", label: t.waiting, color: "#8b5cf6" },
+                  { state: "succeeded", label: t.succeeded, color: "#10b981" },
+                  { state: "failed", label: t.failed, color: "#ef4444" },
+                  { state: "needs_attention", label: t.needsAttentionLabel, color: "#f59e0b" },
+                  { state: "canceled", label: t.canceled, color: "#a1a1aa" },
                 ]}
                 xFormat="timeline"
                 legend
@@ -361,10 +374,10 @@ export default ssr<AuthContext>(async (c) => {
         {state.run && !detail ? (
           <NoticeCard
             tone="danger"
-            title="Workflow run not found"
+            title={t.workflowRunNotFound}
             detail={
               <a class="font-medium hover:underline" href={workflowsFilter.build(state, { run: "" })}>
-                Return to {state.view}
+                {t.returnToView({ view: state.view })}
               </a>
             }
           />
@@ -373,10 +386,10 @@ export default ssr<AuthContext>(async (c) => {
         ) : state.workflow && !selectedWorkflow ? (
           <NoticeCard
             tone="danger"
-            title="Workflow not found"
+            title={t.workflowNotFound}
             detail={
               <a class="font-medium hover:underline" href={allWorkflowsHref}>
-                Return to all workflows
+                {t.returnToWorkflows}
               </a>
             }
           />

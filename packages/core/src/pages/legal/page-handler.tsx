@@ -12,21 +12,18 @@ import { MarkdownView, Placeholder } from "@k2b/ui";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { markdown } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { ssr } from "../../config";
+import { corePageMessages } from "../messages";
 
 type LegalKind = "terms" | "privacy" | "imprint";
 
 type LegalMode = "local" | "external";
 
-const TITLE_BY_KIND: Record<LegalKind, string> = {
-  terms: "Terms of Service",
-  privacy: "Privacy Policy",
-  imprint: "Imprint",
-};
-
 export const makeLegalPage = (kind: LegalKind) =>
   ssr(async (c) => {
-    const title = TITLE_BY_KIND[kind];
+    const t = corePageMessages.resolve([getLocale(c)]).t;
+    const title = { terms: t.terms, privacy: t.privacy, imprint: t.imprint }[kind];
     const [rawMode, url, content] = await Promise.all([
       coreSettings.get<string>(`legal.${kind}.mode`),
       coreSettings.get<string>(`legal.${kind}.url`),
@@ -53,7 +50,7 @@ export const makeLegalPage = (kind: LegalKind) =>
               surface="paper"
               description={
                 <>
-                  {title} not configured. An administrator can set this in{" "}
+                  {t.legalNotConfigured({ title })}{" "}
                   <a href="/admin/settings?tab=legal" class="underline">
                     /admin/settings
                   </a>

@@ -1,6 +1,6 @@
 import { ButtonLink } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -12,12 +12,12 @@ import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import { getProviderBadge } from "../../lib/account-badges";
 import { buildGroupsUrl, GROUPS_CONTEXT_QUERY_KEYS, parseGroupsListState } from "../../lib/url-state";
+import { accountsMessages } from "../../messages";
 import GroupActions from "./GroupActions.island";
 import {
   buildGroupDetailPageBaseUrl,
   createGroupDetailHrefBuilder,
   GROUP_DETAIL_TAB_META,
-  getGroupsBackLabel,
   getVisibleGroupDetailTabs,
   parseGroupDetailTab,
 } from "./group-detail-url";
@@ -26,6 +26,7 @@ import MemberOfTab from "./MemberOfTab";
 import MembersTab from "./MembersTab";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = accountsMessages.resolve([getLocale(c)]);
   const groupId = c.req.param("id");
   const user = expectUserBackedActor(c);
   const accountsActor = toAccountsActor(user);
@@ -46,24 +47,24 @@ export default ssr<AuthContext>(async (c) => {
   const groupsListHref = buildGroupsUrl(listState, {
     defaultScope,
   });
-  const groupsBackLabel = getGroupsBackLabel(listState.scope);
+  const groupsBackLabel = listState.scope === "managed" ? t.managedGroups : listState.scope === "member" ? t.myGroups : t.allGroups;
   const renderGroupNotFound = () => () => (
     <Layout
       c={c}
       fullWidth
       title={[
-        { title: "Start", href: "/" },
-        { title: "Accounts", href: "/app/accounts" },
-        { title: "Groups", href: "/app/accounts/groups" },
-        { title: "Not Found" },
+        { title: t.start, href: "/" },
+        { title: t.accounts, href: "/app/accounts" },
+        { title: t.groups, href: "/app/accounts/groups" },
+        { title: t.notFound },
       ]}
     >
       <div class="flex-1 flex items-center justify-center">
         <div class="text-center text-dimmed flex flex-col items-center gap-2">
           <i class="ti ti-alert-circle text-4xl" />
-          <p class="text-sm">Group not found.</p>
+          <p class="text-sm">{t.groupNotFound}</p>
           <a href={groupsListHref} class="text-xs hover:text-primary">
-            Back to Groups
+            {t.backToGroups}
           </a>
         </div>
       </div>
@@ -203,54 +204,54 @@ export default ssr<AuthContext>(async (c) => {
 
   const facts: Array<{ label: string; value: JSX.Element }> = [
     {
-      label: "Provider",
-      value: <span>{group.provider === "ipa" ? "FreeIPA" : "Local"}</span>,
+      label: t.provider,
+      value: <span>{group.provider === "ipa" ? "FreeIPA" : t.local}</span>,
     },
     {
-      label: "Description",
-      value: group.description ? <span>{group.description}</span> : <span class="italic text-dimmed">No description</span>,
+      label: t.description,
+      value: group.description ? <span>{group.description}</span> : <span class="italic text-dimmed">{t.noDescription}</span>,
     },
     {
-      label: "Group type",
-      value: <span>{group.gidnumber ? "POSIX group" : "Standard group"}</span>,
+      label: t.groupType,
+      value: <span>{group.gidnumber ? t.posixGroup : t.standardGroup}</span>,
     },
     {
-      label: "GID",
-      value: group.gidnumber ? <span class="font-mono">{group.gidnumber}</span> : <span class="italic text-dimmed">Not set</span>,
+      label: t.gid,
+      value: group.gidnumber ? <span class="font-mono">{group.gidnumber}</span> : <span class="italic text-dimmed">{t.notSet}</span>,
     },
     {
-      label: "Parent groups",
+      label: t.parentGroups,
       value: <span>{parentGroupIds.length}</span>,
     },
     {
-      label: "Managed groups",
+      label: t.managedGroups,
       value: <span>{managedGroupIds.length}</span>,
     },
     {
-      label: "Access",
-      value: <span>{canManage ? "Can manage members" : "Read-only"}</span>,
+      label: t.access,
+      value: <span>{canManage ? t.canManageMembers : t.readOnly}</span>,
     },
     {
-      label: "Mutations",
-      value: <span>{canMutateGroup ? "Available" : "Unavailable while FreeIPA is disabled"}</span>,
+      label: t.mutations,
+      value: <span>{canMutateGroup ? t.available : t.unavailableWithoutIpa}</span>,
     },
   ];
 
   const activeCountText =
     tab === "members"
-      ? `${membersPagination.total} ${search ? "matching " : ""}member${membersPagination.total === 1 ? "" : "s"}`
+      ? t.memberCount({ count: membersPagination.total, matching: Boolean(search) })
       : tab === "managers"
-        ? `${managersPagination.total} ${search ? "matching " : ""}manager${managersPagination.total === 1 ? "" : "s"}`
-        : `${memberOfPagination.total} ${search ? "matching " : ""}parent group${memberOfPagination.total === 1 ? "" : "s"}`;
+        ? t.managerCount({ count: managersPagination.total, matching: Boolean(search) })
+        : t.parentGroupCount({ count: memberOfPagination.total, matching: Boolean(search) });
 
   return () => (
     <Layout
       c={c}
       fullWidth
       title={[
-        { title: "Start", href: "/" },
-        { title: "Accounts", href: "/app/accounts" },
-        { title: "Groups", href: "/app/accounts/groups" },
+        { title: t.start, href: "/" },
+        { title: t.accounts, href: "/app/accounts" },
+        { title: t.groups, href: "/app/accounts/groups" },
         { title: group.name },
       ]}
     >
@@ -273,7 +274,9 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex items-center gap-2 flex-wrap">
                 <h1 class="text-xl font-semibold tracking-tight text-primary">{group.name}</h1>
                 {providerBadge && (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>{providerBadge.label}</span>
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
+                    {group.provider === "ipa" ? "FreeIPA" : t.local}
+                  </span>
                 )}
                 {group.gidnumber && (
                   <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
@@ -282,7 +285,7 @@ export default ssr<AuthContext>(async (c) => {
                 )}
               </div>
               <p class="mt-1 truncate text-xs text-dimmed">
-                {group.description || "No description"}
+                {group.description || t.noDescription}
                 {group.gidnumber ? ` · GID ${group.gidnumber}` : ""}
               </p>
             </div>
@@ -300,15 +303,11 @@ export default ssr<AuthContext>(async (c) => {
 
           <AccountsFactGrid facts={facts} columns={4} viewTransitionName="accounts-group-facts" />
 
-          {canManageMutations && !isAdmin && <p class="text-xs text-dimmed">You can manage members and managers here.</p>}
-          {!canMutateGroup && (
-            <p class="text-xs text-amber-700 dark:text-amber-300">
-              FreeIPA is currently disabled. This group stays visible, but directory-backed mutations are unavailable.
-            </p>
-          )}
+          {canManageMutations && !isAdmin && <p class="text-xs text-dimmed">{t.canManageHere}</p>}
+          {!canMutateGroup && <p class="text-xs text-amber-700 dark:text-amber-300">{t.ipaDisabledMutations}</p>}
 
           <div class="flex flex-wrap items-start justify-between gap-2" style="view-transition-name: accounts-group-tabs">
-            <nav class="flex flex-wrap items-center gap-1" aria-label="Group detail sections">
+            <nav class="flex flex-wrap items-center gap-1" aria-label={t.groupDetailSections}>
               {getVisibleGroupDetailTabs(isAdmin).map((entryTab) => (
                 <ButtonLink
                   href={buildDetailHref(groupId, {
@@ -324,7 +323,7 @@ export default ssr<AuthContext>(async (c) => {
                   aria-selected={tab === entryTab}
                 >
                   <i class={`${GROUP_DETAIL_TAB_META[entryTab].icon} text-sm`} />
-                  <span>{GROUP_DETAIL_TAB_META[entryTab].label}</span>
+                  <span>{entryTab === "members" ? t.members : entryTab === "managers" ? t.managers : t.memberOf}</span>
                 </ButtonLink>
               ))}
             </nav>

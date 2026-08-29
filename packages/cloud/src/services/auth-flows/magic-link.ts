@@ -36,7 +36,7 @@ const claimIpaHintCooldown = async (email: string): Promise<boolean> => {
 };
 
 const sendIpaEmailLoginHint = async (
-  params: { email: string; redirectTo?: string },
+  params: { email: string; redirectTo?: string; locale?: string },
   notificationSender: AuthNotificationSender,
 ): Promise<void> => {
   const appUrl = await getAppUrl();
@@ -44,12 +44,12 @@ const sendIpaEmailLoginHint = async (
     method: "ipa",
     redirectTo: params.redirectTo,
   });
-  const result = await notificationSender.sendIpaLoginHint({ email: params.email, loginUrl });
+  const result = await notificationSender.sendIpaLoginHint({ email: params.email, loginUrl, locale: params.locale });
   if (result.status === "error") log.error("FreeIPA login hint delivery failed", { notificationId: result.id });
 };
 
 export const request = async (
-  params: { email: string; redirectTo?: string },
+  params: { email: string; redirectTo?: string; locale?: string },
   notificationSender: AuthNotificationSender,
 ): Promise<{ ok: true } | { ok: false; status: 400; message: string }> => {
   const email = normalizeEmail(params.email);
@@ -60,7 +60,7 @@ export const request = async (
 
   if (hasIpaUser) {
     if (await claimIpaHintCooldown(email)) {
-      void sendIpaEmailLoginHint({ email, redirectTo: params.redirectTo }, notificationSender).catch((error) => {
+      void sendIpaEmailLoginHint({ email, redirectTo: params.redirectTo, locale: params.locale }, notificationSender).catch((error) => {
         log.warn("Failed to send FreeIPA email-login hint", {
           email,
           error: error instanceof Error ? error.message : String(error),
@@ -79,7 +79,7 @@ export const request = async (
   const magicLink = createAuthLoginUrl(appUrl, { token, redirectTo: params.redirectTo });
 
   try {
-    const result = await notificationSender.sendMagicLink({ email, token, magicLink });
+    const result = await notificationSender.sendMagicLink({ email, token, magicLink, locale: params.locale });
     if (result.status === "error") log.error("Magic link delivery failed", { notificationId: result.id });
   } catch (error) {
     // Keep the response generic to prevent account enumeration. The durable

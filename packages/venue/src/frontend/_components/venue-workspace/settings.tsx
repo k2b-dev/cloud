@@ -21,6 +21,7 @@ import {
   SettingsPanelFooter,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@valentinkolb/cloud/contracts";
@@ -37,19 +38,21 @@ import type {
   VenueDashboard,
   VenueInput,
 } from "../../../contracts";
+import { venueMessages } from "../../../messages";
 import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked, venueSettingsCanAdmin } from "../../settings-contract";
-import { weekdays } from "./constants";
 import { openVenuePublicDisplayDialog } from "./public-display";
 import { ClosedDayDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
 import { bannerTransform, readError, sortOpeningRules, sortOverrides, sortShiftTemplates } from "./utils";
 
 export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   let disposed = false;
   let confirming = false;
   const remove = mutation.create<void, { venueId: string }>({
     mutation: async ({ venueId }, { abortSignal }) => {
       const res = await apiClient.venues[":id"].$delete({ param: { id: venueId } }, { init: { signal: abortSignal } });
-      if (!res.ok) throw new Error(await readError(res, "Failed to delete venue."));
+      if (!res.ok) throw new Error(await readError(res, t().deleteVenueFailed));
     },
     onSuccess: () => navigateTo("/app/venue"),
     onError: (err) => prompts.error(err.message),
@@ -60,11 +63,11 @@ export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending
     props.onPendingChange(true);
     try {
       const intent = { venueId: props.venue.id, venueName: props.venue.name };
-      const confirmed = await prompts.confirm(`Delete "${intent.venueName}" and all venue data? This cannot be undone.`, {
-        title: "Delete venue",
+      const confirmed = await prompts.confirm(t().deleteVenueQuestion({ name: intent.venueName }), {
+        title: t().deleteVenue,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
       });
       if (disposed || !confirmed) return;
       await remove.mutate({ venueId: intent.venueId });
@@ -85,12 +88,12 @@ export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending
       {remove.loading() ? (
         <>
           <i class="ti ti-loader-2 animate-spin" />
-          Deleting
+          {t().deleting}
         </>
       ) : (
         <>
           <i class="ti ti-trash" />
-          Delete venue
+          {t().deleteVenue}
         </>
       )}
     </Button>
@@ -104,6 +107,10 @@ export function SettingsDialog(props: {
   icalToken: string;
   close: (changed: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
+  const weekday = (value: number) =>
+    new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + value)));
   const venue = props.dashboard.venue;
   const initialContext = {
     venue,
@@ -121,7 +128,7 @@ export function SettingsDialog(props: {
         { param: { id: venueId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readError(response, "Failed to refresh venue settings."));
+      if (!response.ok) throw new Error(await readError(response, t().refreshSettingsFailed));
       return await response.json();
     },
   });
@@ -153,7 +160,7 @@ export function SettingsDialog(props: {
   const [activeTab, setActiveTab] = createSignal("general");
   const requestControllers = new Set<AbortController>();
   const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    if (writePending() || reconciling()) throw new Error("Wait for the current settings change to finish.");
+    if (writePending() || reconciling()) throw new Error(t().waitForSettings);
     setWritePending(true);
     setRequestCount((count) => count + 1);
     const controller = new AbortController();
@@ -161,7 +168,7 @@ export function SettingsDialog(props: {
     try {
       const result = await request(controller.signal);
       if (disposed) {
-        const error = new Error("The settings dialog was closed.");
+        const error = new Error(t().settingsClosed);
         error.name = "AbortError";
         throw error;
       }
@@ -181,7 +188,7 @@ export function SettingsDialog(props: {
     } catch {
       if (disposed) return;
       setReconciliationFailed(true);
-      prompts.error("The change was saved, but settings could not be refreshed. Retry the settings read before making another change.");
+      prompts.error(t().savedSettingsRefreshFailed);
     }
   };
   const retrySettingsRead = async () => {
@@ -294,7 +301,7 @@ export function SettingsDialog(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to save venue."));
+      if (!res.ok) throw new Error(await readError(res, t().saveVenueFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -305,7 +312,7 @@ export function SettingsDialog(props: {
       await save.mutate(venueInput());
       if (disposed || save.error()) return;
       setWorkspaceChanged(true);
-      toast.success("Venue saved");
+      toast.success(t().venueSaved);
       props.close(true);
     } finally {
       setWritePending(false);
@@ -318,7 +325,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to add opening hours."));
+      if (!res.ok) throw new Error(await readError(res, t().addOpeningFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -326,7 +333,7 @@ export function SettingsDialog(props: {
     await runPromptedAction(
       () => dialogCore.open<OpeningRuleInput | null>((close) => <OpeningRuleDialog close={close} />, panelDialogOptions),
       async (input) => {
-        if (input) await runReconciledMutation(createOpening, input, "Opening hours added");
+        if (input) await runReconciledMutation(createOpening, input, t().openingAdded);
       },
     );
   };
@@ -337,7 +344,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to update opening hours."));
+      if (!res.ok) throw new Error(await readError(res, t().updateOpeningFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -350,7 +357,7 @@ export function SettingsDialog(props: {
           panelDialogOptions,
         ),
       async (input) => {
-        if (input) await runReconciledMutation(editOpening, { id: target.id, input }, "Opening hours updated");
+        if (input) await runReconciledMutation(editOpening, { id: target.id, input }, t().openingUpdated);
       },
     );
   };
@@ -361,21 +368,21 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to delete opening hours."));
+      if (!res.ok) throw new Error(await readError(res, t().deleteOpeningFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
   const confirmDeleteOpening = async (rule: OpeningRule) => {
-    const target = { id: rule.id, label: `${weekdays[rule.weekday]} ${rule.startTime}-${rule.endTime}` };
+    const target = { id: rule.id, label: `${weekday(rule.weekday)} ${rule.startTime}-${rule.endTime}` };
     await runPromptedAction(
       () =>
-        prompts.confirm(`Delete opening hours for ${target.label}?`, {
-          title: "Delete opening hours",
+        prompts.confirm(t().deleteOpeningQuestion({ label: target.label }), {
+          title: t().deleteOpening,
           variant: "danger",
-          confirmText: "Delete",
+          confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteOpening, target.id, "Opening hours deleted");
+        if (confirmed) await runReconciledMutation(deleteOpening, target.id, t().openingDeleted);
       },
     );
   };
@@ -386,7 +393,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to add closed day."));
+      if (!res.ok) throw new Error(await readError(res, t().addClosedDayFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -395,7 +402,7 @@ export function SettingsDialog(props: {
     await runPromptedAction(
       () => dialogCore.open<DateOverrideInput | null>((close) => <ClosedDayDialog close={close} timeZone={timezone} />, panelDialogOptions),
       async (input) => {
-        if (input) await runReconciledMutation(addHoliday, input, "Closed day added");
+        if (input) await runReconciledMutation(addHoliday, input, t().closedDayAdded);
       },
     );
   };
@@ -406,7 +413,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to update closed day."));
+      if (!res.ok) throw new Error(await readError(res, t().updateClosedDayFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -419,7 +426,7 @@ export function SettingsDialog(props: {
           panelDialogOptions,
         ),
       async (input) => {
-        if (input) await runReconciledMutation(editHoliday, { id: target.id, input }, "Closed day updated");
+        if (input) await runReconciledMutation(editHoliday, { id: target.id, input }, t().closedDayUpdated);
       },
     );
   };
@@ -430,7 +437,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to delete closed day."));
+      if (!res.ok) throw new Error(await readError(res, t().deleteClosedDayFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -438,13 +445,13 @@ export function SettingsDialog(props: {
     const target = { id: entry.id, date: entry.date };
     await runPromptedAction(
       () =>
-        prompts.confirm(`Delete closed day "${target.date}"?`, {
-          title: "Delete closed day",
+        prompts.confirm(t().deleteClosedDayQuestion({ date: target.date }), {
+          title: t().deleteClosedDay,
           variant: "danger",
-          confirmText: "Delete",
+          confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteHoliday, target.id, "Closed day deleted");
+        if (confirmed) await runReconciledMutation(deleteHoliday, target.id, t().closedDayDeleted);
       },
     );
   };
@@ -455,7 +462,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to add shift."));
+      if (!res.ok) throw new Error(await readError(res, t().addShiftFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -463,7 +470,7 @@ export function SettingsDialog(props: {
     await runPromptedAction(
       () => dialogCore.open<ShiftTemplateInput | null>((close) => <ShiftTemplateDialog close={close} />, panelDialogOptions),
       async (input) => {
-        if (input) await runReconciledMutation(createShift, input, "Shift added");
+        if (input) await runReconciledMutation(createShift, input, t().shiftAdded);
       },
     );
   };
@@ -474,7 +481,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to update shift."));
+      if (!res.ok) throw new Error(await readError(res, t().updateShiftFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -487,7 +494,7 @@ export function SettingsDialog(props: {
           panelDialogOptions,
         ),
       async (input) => {
-        if (input) await runReconciledMutation(editShift, { id: target.id, input }, "Shift updated");
+        if (input) await runReconciledMutation(editShift, { id: target.id, input }, t().shiftUpdated);
       },
     );
   };
@@ -498,7 +505,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to delete shift."));
+      if (!res.ok) throw new Error(await readError(res, t().deleteShiftFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -506,13 +513,13 @@ export function SettingsDialog(props: {
     const target = { id: shift.id, title: shift.title };
     await runPromptedAction(
       () =>
-        prompts.confirm(`Delete shift "${target.title}"?`, {
-          title: "Delete shift",
+        prompts.confirm(t().deleteShiftQuestion({ title: target.title }), {
+          title: t().deleteShift,
           variant: "danger",
-          confirmText: "Delete",
+          confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteShift, target.id, "Shift deleted");
+        if (confirmed) await runReconciledMutation(deleteShift, target.id, t().shiftDeleted);
       },
     );
   };
@@ -557,9 +564,9 @@ export function SettingsDialog(props: {
   };
   const SettingsReadError = () => (
     <Show when={settingsQuery.error()}>
-      <NoticeCard tone="danger" title="Venue settings could not be refreshed" detail="The last confirmed data is still shown.">
+      <NoticeCard tone="danger" title={t().settingsRefreshTitle} detail={t().lastConfirmedData}>
         <Button type="button" variant="secondary" size="sm" disabled={settingsQuery.refreshing()} onClick={() => void retrySettingsRead()}>
-          Retry
+          {t().retry}
         </Button>
       </NoticeCard>
     </Show>
@@ -584,7 +591,7 @@ export function SettingsDialog(props: {
   return (
     <div class="flex h-[86vh] min-h-0 flex-col overflow-hidden">
       <SettingsModal
-        title="Venue settings"
+        title={t().venueSettings}
         subtitle={currentVenue().name}
         icon={icon()}
         activeTab={activeTab()}
@@ -592,22 +599,22 @@ export function SettingsDialog(props: {
           if (!settingsOperationBusy()) setActiveTab(tab);
         }}
         onClose={requestClose}
-        closeLabel="Close settings"
+        closeLabel={t().closeSettings}
       >
-        <SettingsModal.Group title="Venue">
-          <SettingsModal.Tab id="general" title="General" icon="ti ti-id" description="Identity, public branding, and feedback.">
+        <SettingsModal.Group title={t().venueGroup}>
+          <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <SettingsReadError />
             <fieldset disabled={!settingsHydrated() || settingsWriteBlocked()} class="grid gap-6">
-              <SettingsGroup title="Identity" description="Describe this venue wherever it appears in Cloud.">
+              <SettingsGroup title={t().identity} description={t().identityDescription}>
                 <div class="grid gap-4 md:grid-cols-2">
                   <SettingsField
-                    label="Name"
-                    description="Shown in the app and on the public page."
-                    error={() => (!name().trim() ? "Name is required" : undefined)}
+                    label={t().name}
+                    description={t().nameDescription}
+                    error={() => (!name().trim() ? t().nameRequired : undefined)}
                     changed={() => name() !== currentVenue().name}
                   >
                     <TextInput
-                      aria-label="Name"
+                      aria-label={t().name}
                       value={name}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -617,13 +624,13 @@ export function SettingsDialog(props: {
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Slug"
-                    description="Used in the public page URL."
-                    error={() => (!slug().trim() ? "Slug is required" : undefined)}
+                    label={t().slug}
+                    description={t().slugDescription}
+                    error={() => (!slug().trim() ? t().slugRequired : undefined)}
                     changed={() => slug() !== currentVenue().slug}
                   >
                     <TextInput
-                      aria-label="Slug"
+                      aria-label={t().slug}
                       value={slug}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -634,13 +641,13 @@ export function SettingsDialog(props: {
                   </SettingsField>
                 </div>
                 <SettingsField
-                  label="Description"
-                  description="Short public summary shown below the venue name."
+                  label={t().description}
+                  description={t().publicDescriptionDescription}
                   error={() => undefined}
                   changed={() => description() !== (currentVenue().description ?? "")}
                 >
                   <TextInput
-                    aria-label="Description"
+                    aria-label={t().description}
                     value={description}
                     onValueChange={(value) => {
                       setGeneralDirty(true);
@@ -652,16 +659,16 @@ export function SettingsDialog(props: {
                 </SettingsField>
               </SettingsGroup>
 
-              <SettingsGroup title="Public branding" description="Choose the visual identity used on the public venue page.">
+              <SettingsGroup title={t().publicBranding} description={t().publicBrandingDescription}>
                 <div class="grid gap-4 md:grid-cols-2">
                   <SettingsField
-                    label="Icon"
-                    description="Used as the fallback logo and venue symbol."
+                    label={t().icon}
+                    description={t().iconDescription}
                     error={() => undefined}
                     changed={() => icon() !== (currentVenue().icon || "ti ti-building-carousel")}
                   >
                     <IconInput
-                      aria-label="Icon"
+                      aria-label={t().icon}
                       value={icon}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -671,13 +678,13 @@ export function SettingsDialog(props: {
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Theme color"
-                    description="Used for public page accents."
+                    label={t().themeColor}
+                    description={t().themeColorDescription}
                     error={() => undefined}
                     changed={() => accentColor() !== currentVenue().accentColor}
                   >
                     <ColorInput
-                      aria-label="Theme color"
+                      aria-label={t().themeColor}
                       value={accentColor}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -686,13 +693,13 @@ export function SettingsDialog(props: {
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Logo"
-                    description="Optional image shown next to the venue name."
+                    label={t().logo}
+                    description={t().logoDescription}
                     error={() => undefined}
                     changed={() => logo() !== currentVenue().logoBase64}
                   >
                     <ImageInput
-                      aria-label="Logo"
+                      aria-label={t().logo}
                       value={logo}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -702,13 +709,13 @@ export function SettingsDialog(props: {
                     />
                   </SettingsField>
                   <SettingsField
-                    label="Banner image"
-                    description="Optional wide image for the public page header."
+                    label={t().bannerImage}
+                    description={t().bannerDescription}
                     error={() => undefined}
                     changed={() => banner() !== currentVenue().bannerBase64}
                   >
                     <ImageInput
-                      aria-label="Banner image"
+                      aria-label={t().bannerImage}
                       value={banner}
                       onValueChange={(value) => {
                         setGeneralDirty(true);
@@ -721,10 +728,10 @@ export function SettingsDialog(props: {
                 </div>
               </SettingsGroup>
 
-              <SettingsGroup title="Visitor feedback" description="Control whether the public page accepts anonymous ratings and comments.">
+              <SettingsGroup title={t().visitorFeedback} description={t().visitorFeedbackDescription}>
                 <CheckboxCard
-                  label="Feedback activated"
-                  description="Allow visitors to leave anonymous ratings and comments on the public page."
+                  label={t().feedbackActivated}
+                  description={t().feedbackActivatedDescription}
                   icon="ti ti-message-star"
                   value={feedbackEnabled}
                   onValueChange={(value) => {
@@ -747,24 +754,24 @@ export function SettingsDialog(props: {
         </SettingsModal.Group>
 
         {venueSettingsCanAdmin(settings()) && (
-          <SettingsModal.Group title="Sharing">
-            <SettingsModal.Tab id="access" title="Access" icon="ti ti-shield" description="Permission changes save immediately.">
+          <SettingsModal.Group title={t().sharing}>
+            <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
               <SettingsReadError />
               <Show
                 when={!settingsQuery.refreshing() && !settingsQuery.error()}
-                fallback={<Placeholder align="left" description={<>Refresh venue settings before changing access or API keys.</>} />}
+                fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}
               >
                 <div class="grid gap-6">
-                  <SettingsGroup title="People and groups" description="Grant read, staff, or admin access to this venue.">
+                  <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
                     <Show keyed when={settings().accessEntries}>
                       {(entries) => (
                         <PermissionEditor
                           initialEntries={entries.filter((entry) => entry.principal.type !== "service_account")}
                           canEdit
                           allowedLevels={[
-                            { level: "read", label: "Read" },
-                            { level: "write", label: "Staff" },
-                            { level: "admin", label: "Admin" },
+                            { level: "read", label: t().read },
+                            { level: "write", label: t().staff },
+                            { level: "admin", label: t().admin },
                           ]}
                           grantAccess={async (principal: Principal, permission: Exclude<PermissionLevel, "none">): Promise<AccessEntry> => {
                             const entry = await runRequest(async (abortSignal) => {
@@ -775,10 +782,10 @@ export function SettingsDialog(props: {
                                 },
                                 { init: { signal: abortSignal } },
                               );
-                              if (!response.ok) throw new Error(await readError(response, "Failed to grant access."));
+                              if (!response.ok) throw new Error(await readError(response, t().grantAccessFailed));
                               return response.json();
                             });
-                            await finishSettingsChange("Access granted");
+                            await finishSettingsChange(t().accessGranted);
                             return entry;
                           }}
                           updateAccess={async (accessId, permission) => {
@@ -790,9 +797,9 @@ export function SettingsDialog(props: {
                                 },
                                 { init: { signal: abortSignal } },
                               );
-                              if (!response.ok) throw new Error(await readError(response, "Failed to update access."));
+                              if (!response.ok) throw new Error(await readError(response, t().updateAccessFailed));
                             });
-                            await finishSettingsChange("Access updated");
+                            await finishSettingsChange(t().accessUpdated);
                           }}
                           revokeAccess={async (accessId) => {
                             await runRequest(async (abortSignal) => {
@@ -800,21 +807,18 @@ export function SettingsDialog(props: {
                                 { param: { id: venue.id, accessId } },
                                 { init: { signal: abortSignal } },
                               );
-                              if (!response.ok) throw new Error(await readError(response, "Failed to revoke access."));
+                              if (!response.ok) throw new Error(await readError(response, t().revokeAccessFailed));
                             });
-                            await finishSettingsChange("Access revoked");
+                            await finishSettingsChange(t().accessRevoked);
                           }}
                         />
                       )}
                     </Show>
                   </SettingsGroup>
-                  <SettingsGroup
-                    title="Integration access"
-                    description="Create resource-bound credentials for services that need this venue."
-                  >
+                  <SettingsGroup title={t().integrationAccess} description={t().integrationAccessDescription}>
                     <ResourceApiKeys
-                      title="API keys"
-                      description="Resource-bound keys for integrations that need access to this venue."
+                      title={t().apiKeys}
+                      description={t().apiKeysDescription}
                       initialKeys={settings().apiKeys}
                       createKey={async (input) => {
                         const created = await runRequest(async (abortSignal) => {
@@ -825,10 +829,10 @@ export function SettingsDialog(props: {
                             },
                             { init: { signal: abortSignal } },
                           );
-                          if (!response.ok) throw new Error(await readError(response, "Failed to create API key."));
+                          if (!response.ok) throw new Error(await readError(response, t().createApiKeyFailed));
                           return (await response.json()) as { credential: ResourceApiKey; token: string };
                         });
-                        await finishSettingsChange("API key created");
+                        await finishSettingsChange(t().apiKeyCreated);
                         return created;
                       }}
                       revokeKey={async (credentialId) => {
@@ -839,9 +843,9 @@ export function SettingsDialog(props: {
                             },
                             { init: { signal: abortSignal } },
                           );
-                          if (!response.ok) throw new Error(await readError(response, "Failed to revoke API key."));
+                          if (!response.ok) throw new Error(await readError(response, t().revokeApiKeyFailed));
                         });
-                        await finishSettingsChange("API key revoked");
+                        await finishSettingsChange(t().apiKeyRevoked);
                       }}
                     />
                   </SettingsGroup>
@@ -851,17 +855,12 @@ export function SettingsDialog(props: {
           </SettingsModal.Group>
         )}
 
-        <SettingsModal.Group title="Operations">
-          <SettingsModal.Tab
-            id="schedule"
-            title="Schedule"
-            icon="ti ti-calendar-time"
-            description="Regular hours, closed days, and staffing targets."
-          >
+        <SettingsModal.Group title={t().operations}>
+          <SettingsModal.Tab id="schedule" title={t().schedule} icon="ti ti-calendar-time" description={t().operationsDescription}>
             <SettingsReadError />
             <div class="grid gap-6">
               <Show when={venueSettingsCanAdmin(settings())}>
-                <SettingsGroup title="Public opening logic" description="Choose which schedule determines the public open status.">
+                <SettingsGroup title={t().publicOpeningLogic} description={t().publicOpeningLogicDescription}>
                   <SegmentedControl<Venue["openMode"]>
                     value={openMode}
                     onValueChange={(value) => {
@@ -869,44 +868,40 @@ export function SettingsDialog(props: {
                       setOpenMode(value);
                     }}
                     options={[
-                      { value: "regular", label: "Regular", icon: "ti ti-clock" },
-                      { value: "staffed", label: "Staffed", icon: "ti ti-users" },
-                      { value: "combined", label: "Both", icon: "ti ti-arrows-join" },
+                      { value: "regular", label: t().regular, icon: "ti ti-clock" },
+                      { value: "staffed", label: t().staffedMode, icon: "ti ti-users" },
+                      { value: "combined", label: t().both, icon: "ti ti-arrows-join" },
                     ]}
                   />
                 </SettingsGroup>
               </Show>
 
-              <SettingsCollection
-                title="Regular hours"
-                description="Weekly opening windows shown on the public page."
-                empty="No regular hours yet."
-              >
+              <SettingsCollection title={t().regularHours} description={t().regularHoursDescription} empty={t().noRegularHours}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
                     <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateOpening()}>
-                      <i class={createOpening.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> New hours
+                      <i class={createOpening.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newHours}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>
                 <For each={openingRules()}>
                   {(rule) => (
                     <SettingsCollection.Item
-                      title={weekdays[rule.weekday]}
+                      title={weekday(rule.weekday)}
                       description={`${rule.startTime}-${rule.endTime}${rule.note ? ` · ${rule.note}` : ""}`}
                       icon={<i class="ti ti-clock" aria-hidden="true" />}
                     >
                       <Show when={venueSettingsCanAdmin(settings())}>
                         <SettingsCollection.Item.Actions>
                           <ScheduleActionButton
-                            label="Edit opening hours"
+                            label={t().editOpening}
                             icon="ti ti-pencil"
                             tone="edit"
                             loading={scheduleBusy()}
                             onClick={() => void openEditOpening(rule)}
                           />
                           <ScheduleActionButton
-                            label="Delete opening hours"
+                            label={t().deleteOpening}
                             icon="ti ti-trash"
                             tone="delete"
                             loading={scheduleBusy()}
@@ -919,15 +914,11 @@ export function SettingsDialog(props: {
                 </For>
               </SettingsCollection>
 
-              <SettingsCollection
-                title="Closed days"
-                description="Date-specific exceptions to the regular schedule."
-                empty="No closed days yet."
-              >
+              <SettingsCollection title={t().closedDays} description={t().closedDaysDescription} empty={t().noClosedDays}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
                     <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openAddHoliday()}>
-                      <i class={addHoliday.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> New closed day
+                      <i class={addHoliday.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newClosedDay}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>
@@ -941,14 +932,14 @@ export function SettingsDialog(props: {
                       <Show when={venueSettingsCanAdmin(settings())}>
                         <SettingsCollection.Item.Actions>
                           <ScheduleActionButton
-                            label="Edit closed day"
+                            label={t().editClosedDay}
                             icon="ti ti-pencil"
                             tone="edit"
                             loading={scheduleBusy()}
                             onClick={() => void openEditHoliday(entry)}
                           />
                           <ScheduleActionButton
-                            label="Delete closed day"
+                            label={t().deleteClosedDay}
                             icon="ti ti-trash"
                             tone="delete"
                             loading={scheduleBusy()}
@@ -961,15 +952,11 @@ export function SettingsDialog(props: {
                 </For>
               </SettingsCollection>
 
-              <SettingsCollection
-                title="Shifts"
-                description="Recurring staffing windows and opening targets."
-                empty="No shifts configured yet."
-              >
+              <SettingsCollection title={t().shifts} description={t().shiftsDescription} empty={t().noShifts}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
                     <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateShift()}>
-                      <i class={createShift.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> New shift
+                      <i class={createShift.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newShift}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>
@@ -977,20 +964,20 @@ export function SettingsDialog(props: {
                   {(shift) => (
                     <SettingsCollection.Item
                       title={shift.title}
-                      description={`${weekdays[shift.weekday]} · ${shift.startTime}-${shift.endTime} · target ${shift.minPeople}${shift.maxPeople ? `-${shift.maxPeople}` : "+"}`}
+                      description={`${weekday(shift.weekday)} · ${shift.startTime}-${shift.endTime} · ${t().target({ min: shift.minPeople, max: shift.maxPeople })}`}
                       icon={<i class="ti ti-users" aria-hidden="true" />}
                     >
                       <Show when={venueSettingsCanAdmin(settings())}>
                         <SettingsCollection.Item.Actions>
                           <ScheduleActionButton
-                            label="Edit shift"
+                            label={t().editShift}
                             icon="ti ti-pencil"
                             tone="edit"
                             loading={scheduleBusy()}
                             onClick={() => void openEditShift(shift)}
                           />
                           <ScheduleActionButton
-                            label="Delete shift"
+                            label={t().deleteShift}
                             icon="ti ti-trash"
                             tone="delete"
                             loading={scheduleBusy()}
@@ -1016,14 +1003,19 @@ export function SettingsDialog(props: {
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title="Connections">
-          <SettingsModal.Tab id="links" title="Links" icon="ti ti-link" description="Public page and personal calendar subscription.">
-            <SettingsGroup title="Venue links" description="Open the public display or subscribe to the personal calendar feed.">
+        <SettingsModal.Group title={t().connections}>
+          <SettingsModal.Tab id="links" title={t().links} icon="ti ti-link" description={t().linksDescription}>
+            <SettingsGroup title={t().venueLinks} description={t().venueLinksDescription}>
               <SettingsGroup.Action>
                 <div class="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" size="sm" onClick={() => openVenuePublicDisplayDialog(currentVenue().id)}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openVenuePublicDisplayDialog(currentVenue().id, locale())}
+                  >
                     <i class="ti ti-device-tv" />
-                    Public page
+                    {t().publicPage}
                   </Button>
                   <ButtonLink variant="secondary" size="sm" href={`/api/venue/calendar/${props.icalToken}.ics`}>
                     <i class="ti ti-calendar-down" />
@@ -1036,18 +1028,15 @@ export function SettingsDialog(props: {
         </SettingsModal.Group>
 
         {venueSettingsCanAdmin(settings()) && (
-          <SettingsModal.Group title="Lifecycle">
+          <SettingsModal.Group title={t().lifecycle}>
             <SettingsModal.Tab
               id="danger"
-              title="Danger zone"
+              title={t().dangerZone}
               icon="ti ti-alert-triangle"
-              description="Permanently delete this venue and all of its data."
+              description={t().dangerZoneDescription}
               tone="danger"
             >
-              <SettingsGroup
-                title="Delete venue"
-                description="Remove opening hours, shifts, public content, feedback, access, and API keys."
-              >
+              <SettingsGroup title={t().deleteVenue} description={t().deleteVenueDescription}>
                 <SettingsGroup.Action>
                   <VenueDangerZone venue={currentVenue()} onPendingChange={setDangerPending} />
                 </SettingsGroup.Action>

@@ -2,12 +2,20 @@ import type { Context, ValidationTargets } from "hono";
 import { validator as honoValidator } from "hono-openapi";
 import type { ZodType } from "zod";
 
+export type ValidatorError = Readonly<{
+  code: string;
+  message: string;
+}>;
+
+export type ValidatorErrorResolver = (context: Context) => ValidatorError;
+
 /**
  * Zod validator middleware with pretty error messages and OpenAPI support.
  * Uses hono-openapi validator for automatic OpenAPI schema generation.
  *
  * @param target - Where to validate: "json", "query", "param", "header", "cookie", or "form"
  * @param schema - Zod schema to validate against
+ * @param resolveError - Optional request-scoped application error resolver
  * @returns Hono middleware that validates request data and returns 400 on failure
  *
  * @example
@@ -18,9 +26,15 @@ import type { ZodType } from "zod";
  * });
  * ```
  */
-export const validator = <Target extends keyof ValidationTargets, T extends ZodType>(target: Target, schema: T) =>
+export const validator = <Target extends keyof ValidationTargets, T extends ZodType>(
+  target: Target,
+  schema: T,
+  resolveError?: ValidatorErrorResolver,
+) =>
   honoValidator(target, schema, (result, c: Context) => {
     if (!result.success) {
+      if (resolveError) return c.json(resolveError(c), 400);
+
       // Standard Schema returns issues array on failure
       const errorMessage = result.error
         ?.map((issue) => {

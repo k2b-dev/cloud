@@ -1,8 +1,10 @@
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
+import { formatNumber } from "@valentinkolb/cloud/shared";
 import { Hono } from "hono";
 import { loggingService } from "./service";
+import { gatewayOpsMessages } from "../../messages";
 
 /**
  * Widget endpoints for the dashboard.
@@ -21,6 +23,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/errors", as
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
   const user = actor?.kind === "user" ? actor.user : actor?.delegatedUser;
   if (!user || !hasRole(user, "admin")) return c.body(null, 403);
+  const locale = getLocale(c);
+  const { t } = gatewayOpsMessages.resolve([locale]);
 
   const summary = await loggingService.stats.summary();
   const blocks: WidgetBlock[] = [
@@ -28,27 +32,27 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/errors", as
       kind: "stat",
       // Stat grows to fill remaining vertical space; pills sit at the bottom.
       grow: true,
-      value: summary.errors24h.toLocaleString(),
-      label: "Errors · last 24h",
-      sub: summary.errors24h > 0 ? "needs review" : "all quiet",
+      value: formatNumber(summary.errors24h, { locale }),
+      label: t.errorsLast24h,
+      sub: summary.errors24h > 0 ? t.needsReview : t.allQuiet,
       valueClass: summary.errors24h > 0 ? "text-red-500" : undefined,
       accent: summary.errors24h > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" },
     },
     {
       kind: "pills",
       pills: [
-        { label: "warn", value: summary.warnings24h, tone: summary.warnings24h > 0 ? "amber" : "zinc" },
-        { label: "vol", value: summary.total24h.toLocaleString() },
-        { label: "src", value: summary.sources, tone: "blue" },
+        { label: t.warningsShort, value: formatNumber(summary.warnings24h, { locale }), tone: summary.warnings24h > 0 ? "amber" : "zinc" },
+        { label: t.volumeShort, value: formatNumber(summary.total24h, { locale }) },
+        { label: t.sourcesShort, value: formatNumber(summary.sources, { locale }), tone: "blue" },
       ],
     },
   ];
 
   const body: WidgetResponse = {
-    title: "Logs",
+    title: t.logs,
     icon: "ti ti-list-tree",
     href: "/admin/observability/logs",
-    meta: "last 24h",
+    meta: t.last24h,
     blocks,
   };
   return c.json(body);

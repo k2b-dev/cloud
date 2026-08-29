@@ -7,6 +7,7 @@ import {
   isStructuredDataValue,
   Placeholder,
   StructuredDataPreview,
+  useLocale,
 } from "@k2b/ui";
 import type {
   CapabilityPage,
@@ -18,6 +19,7 @@ import type {
 import { For, Show } from "solid-js";
 import type { SelectedCapability } from "../catalog";
 import { resolveCapabilityDataPresentation } from "../result-presentation";
+import { capabilityUiMessages } from "./messages";
 
 const linkIcon = (link: CapabilitySemanticLink): string => {
   if (link.rel === "edit") return "ti ti-pencil";
@@ -27,13 +29,14 @@ const linkIcon = (link: CapabilitySemanticLink): string => {
   return "ti ti-arrow-up-right";
 };
 
-const linkLabel = (link: CapabilitySemanticLink): string => {
+const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
+  const t = capabilityUiMessages.resolve([locale]).t;
   if (link.title) return link.title;
-  if (link.rel === "edit") return "Edit";
-  if (link.rel === "download") return "Download";
-  if (link.rel === "preview") return "Preview";
-  if (link.rel === "status") return "View status";
-  return "Open";
+  if (link.rel === "edit") return t.edit;
+  if (link.rel === "download") return t.download;
+  if (link.rel === "preview") return t.preview;
+  if (link.rel === "status") return t.viewStatus;
+  return t.open;
 };
 
 const primaryLink = (item: CloudResourceView): CapabilitySemanticLink =>
@@ -43,6 +46,7 @@ const primaryLink = (item: CloudResourceView): CapabilitySemanticLink =>
   item.links[0]!;
 
 function SearchResultRow(props: { item: CloudResourceView }) {
+  const locale = useLocale();
   const primary = primaryLink(props.item);
   const secondaryLinks = props.item.links.filter((link) => link !== primary);
 
@@ -62,7 +66,7 @@ function SearchResultRow(props: { item: CloudResourceView }) {
               {(preview) => <p class="mt-0.5 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-secondary">{preview()}</p>}
             </Show>
           </div>
-          <IconButtonLink href={primary.href} class="shrink-0" size="sm" label={`${linkLabel(primary)} ${props.item.title}`}>
+          <IconButtonLink href={primary.href} class="shrink-0" size="sm" label={`${linkLabel(primary, locale())} ${props.item.title}`}>
             <i class={linkIcon(primary)} aria-hidden="true" />
           </IconButtonLink>
         </div>
@@ -94,7 +98,7 @@ function SearchResultRow(props: { item: CloudResourceView }) {
             {(link) => (
               <a href={link.href} class="inline-flex items-center gap-1 text-secondary transition-colors hover:app-accent-text">
                 <i class={linkIcon(link)} aria-hidden="true" />
-                {linkLabel(link)}
+                {linkLabel(link, locale())}
               </a>
             )}
           </For>
@@ -105,13 +109,13 @@ function SearchResultRow(props: { item: CloudResourceView }) {
 }
 
 function UniversalSearchResults(props: { items: UniversalSearchData }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-3">
       <div class="flex items-baseline justify-between gap-3">
-        <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">Results</h3>
-        <span class="text-xs tabular-nums text-dimmed">
-          {props.items.length} {props.items.length === 1 ? "resource" : "resources"}
-        </span>
+        <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().results}</h3>
+        <span class="text-xs tabular-nums text-dimmed">{t().resourceCount({ count: props.items.length })}</span>
       </div>
 
       <Show
@@ -119,8 +123,8 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
         fallback={
           <Placeholder
             icon="ti ti-search-off"
-            title="No results"
-            description="The query completed successfully but found no matching resources."
+            title={t().noResults}
+            description={t().noResultsDescription}
           />
         }
       >
@@ -129,7 +133,7 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
         </ul>
       </Show>
 
-      <Disclosure summary="Raw result data" icon="ti ti-braces">
+      <Disclosure summary={t().rawResult} icon="ti ti-braces">
         <StructuredDataPreview data={props.items} defaultMode="raw" />
       </Disclosure>
     </div>
@@ -137,9 +141,11 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
 }
 
 function ResourceReferences(props: { refs: CloudResourceRef[] }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2">
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">Resource references</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().refs}</h3>
       <DescriptionList
         layout="rows"
         size="sm"
@@ -159,33 +165,37 @@ function ResourceReferences(props: { refs: CloudResourceRef[] }) {
 }
 
 function PageSummary(props: { page: CapabilityPage }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex items-start gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2.5">
       <i class={`ti ${props.page.hasMore ? "ti-list-details" : "ti-check"} mt-0.5 text-dimmed`} aria-hidden="true" />
       <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-secondary">{props.page.hasMore ? "More results are available" : "This is the final page"}</p>
+        <p class="text-xs font-medium text-secondary">{props.page.hasMore ? t().moreResults : t().finalPage}</p>
         <Show when={props.page.hasMore ? props.page.nextCursor : undefined}>
-          {(cursor) => <code class="mt-0.5 block truncate text-[10px] text-dimmed">Cursor: {cursor()}</code>}
+          {(cursor) => <code class="mt-0.5 block truncate text-[10px] text-dimmed">{t().cursor}: {cursor()}</code>}
         </Show>
       </div>
       <Show when={props.page.hasMore ? props.page.nextCursor : undefined}>
-        {(cursor) => <CopyButton text={cursor()} label="Copy cursor" />}
+        {(cursor) => <CopyButton text={cursor()} label={t().copyCursor} />}
       </Show>
     </div>
   );
 }
 
 function SemanticLinks(props: { links: CapabilitySemanticLink[] }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2">
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">Links</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().links}</h3>
       <div class="flex flex-col gap-1">
         <For each={props.links}>
           {(link) => (
             <DetailPanel.Action
               href={link.href}
               leading={<i class={linkIcon(link)} aria-hidden="true" />}
-              title={linkLabel(link)}
+              title={linkLabel(link, locale())}
               description={link.href}
               trailing={<i class="ti ti-arrow-up-right" aria-hidden="true" />}
             />
@@ -203,6 +213,8 @@ export default function CapabilityResultView(props: {
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
 }) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   const presentation = () => resolveCapabilityDataPresentation(props.selection, props.data);
   const searchItems = () => {
     const resolved = presentation();
@@ -215,9 +227,9 @@ export default function CapabilityResultView(props: {
         when={searchItems()}
         fallback={
           <StructuredDataPreview
-            title="Data"
-            data={isStructuredDataValue(props.data) ? props.data : { error: "Capability data is not valid JSON." }}
-            empty="The capability returned no data."
+            title={t().data}
+            data={isStructuredDataValue(props.data) ? props.data : { error: t().invalidData }}
+            empty={t().noData}
           />
         }
       >

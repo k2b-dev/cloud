@@ -10,6 +10,7 @@ import { type FederatedRevisionScope, verifyRevisionScope } from "./federated-ta
 import { listByTable as listFields } from "./fields";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { createHtmlTemplateRenderBudget, type HtmlTemplateRenderBudget } from "./html-template-fields";
+import { serviceMessagesFor } from "./messages";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 import { projectPublicIds } from "./public-resources";
 import type { AuthorizedRecordAccess } from "./record-access";
@@ -31,11 +32,11 @@ const EXPORT_CURSOR_SIGNING_KEY = "grids-internal-export-cursor";
 type ExportPage = { items: GridRecord[]; done: boolean; revisionScope?: FederatedRevisionScope };
 type ExportPageReader = () => Promise<Result<ExportPage>>;
 
-export const validateHtmlTemplateExportLimit = (fields: readonly Field[], query: RecordQuery): Result<void> => {
+export const validateHtmlTemplateExportLimit = (fields: readonly Field[], query: RecordQuery, locale?: string): Result<void> => {
   if (!fields.some((field) => field.type === "html_template")) return ok();
   return query.limit !== undefined && query.limit <= HTML_TEMPLATE_EXPORT_MAX_RECORDS
     ? ok()
-    : fail(err.badInput(`HTML template fields require an explicit export limit of at most ${HTML_TEMPLATE_EXPORT_MAX_RECORDS} records`));
+    : fail(err.badInput(serviceMessagesFor(locale).htmlExportLimit({ count: HTML_TEMPLATE_EXPORT_MAX_RECORDS })));
 };
 
 const createStoredPageReader = (params: {
@@ -86,11 +87,12 @@ const createFederatedPageReader = async (params: {
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<ExportPageReader>> => {
   const converted = simpleQueryToGqlSource({ tableId: params.tableId, query: params.query });
-  if (!converted.ok) return fail(err.badInput(converted.reason));
+  if (!converted.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
   const parsed = parseGridsQueryDsl(converted.source);
-  if (!parsed.ok) return fail(err.badInput(parsed.diagnostics.map((diagnostic) => diagnostic.message).join("; ")));
+  if (!parsed.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
   const context = await buildTrustedGqlResolverContext({
     baseId: params.baseId,
     currentTableId: params.tableId,
@@ -98,7 +100,7 @@ const createFederatedPageReader = async (params: {
     purpose: "saved-view-render",
   });
   const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
-  if (!resolved.ok) return fail(err.badInput(resolved.diagnostics.map((diagnostic) => diagnostic.message).join("; ")));
+  if (!resolved.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
   const cursorFingerprint = `${EXPORT_CURSOR_FINGERPRINT}:${params.tableId}`;
   let cursor: DslResultCursor | null = null;
   let finished = false;
@@ -106,8 +108,8 @@ const createFederatedPageReader = async (params: {
   return ok(async () => {
     if (finished) return ok({ items: [], done: true });
     if (expectedRevisionScope) {
-      const current = await verifyRevisionScope(expectedRevisionScope);
-      if (!current.ok) return fail(err.conflict("combined table publication changed during export; restart the export"));
+      const current = await verifyRevisionScope(expectedRevisionScope, params.locale);
+      if (!current.ok) return fail(err.conflict(serviceMessagesFor(params.locale).publicationChangedExport));
     }
     let pageRevisionScope: FederatedRevisionScope = [];
     const preview = await previewDslQuery(resolved.plan, {
@@ -128,11 +130,11 @@ const createFederatedPageReader = async (params: {
     });
     if (!preview.ok) return fail(preview.error);
     expectedRevisionScope ??= pageRevisionScope;
-    if (preview.data.mode !== "rows") return fail(err.badInput("grouped exports are not supported"));
+    if (preview.data.mode !== "rows") return fail(err.badInput(serviceMessagesFor(params.locale).groupedExportUnsupported));
     const recordIds = preview.data.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
     const recordPublicIds = await projectPublicIds("record", recordIds);
     if (recordIds.some((recordId) => !recordPublicIds.has(recordId))) {
-      return fail(err.internal("Combined table export contains a record without a public ID"));
+      return fail(err.internal(serviceMessagesFor(params.locale).combinedExportMissingId));
     }
     const items = preview.data.rows.flatMap((row): GridRecord[] => {
       if (!row.recordId || !row.recordMeta) return [];
@@ -162,9 +164,10 @@ const createExportPageReader = async (params: {
   recordAccess?: AuthorizedRecordAccess;
   htmlTemplateFieldIds: string[];
   htmlTemplateRenderBudget: HtmlTemplateRenderBudget;
+  locale?: string;
 }): Promise<Result<ExportPageReader>> => {
   const table = await getTable(params.tableId);
-  if (!table) return fail(err.notFound("Table"));
+  if (!table) return fail(err.notFound(serviceMessagesFor(params.locale).table));
   if (table.kind === "federated") return createFederatedPageReader({ ...params, baseId: table.baseId });
   return ok(createStoredPageReader(params));
 };
@@ -260,6 +263,7 @@ const pickColumns = async (params: {
   query: RecordQuery;
   viewer?: ExpansionViewer;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<{ columns: ExportColumn[]; selected: Array<{ field: Field; spec?: ExportFieldSpec }> }>> => {
   const byId = new Map(params.fields.map((f) => [f.id, f]));
   const requested = params.specs?.length
@@ -275,7 +279,7 @@ const pickColumns = async (params: {
         .map((field) => ({ field, spec: undefined }));
 
   const missing = rawSelected.find((entry) => !entry.field || entry.field.deletedAt);
-  if (missing) return fail(err.badInput("unknown export field"));
+  if (missing) return fail(err.badInput(serviceMessagesFor(params.locale).unknownExportField));
 
   const columns: ExportColumn[] = [];
   const selected: Array<{ field: Field; spec?: ExportFieldSpec }> = [];
@@ -291,7 +295,7 @@ const pickColumns = async (params: {
     }
 
     const targetTableId = (entry.field.config as { targetTableId?: string }).targetTableId;
-    if (!targetTableId) return fail(err.badInput(`relation field "${entry.field.name}" has no target table`));
+    if (!targetTableId) return fail(err.badInput(serviceMessagesFor(params.locale).relationMissingTarget({ field: entry.field.name })));
     if (!(await canReadTargetTable(targetTableId, params.viewer))) {
       columns.push({ kind: "field", field: entry.field, label, relation: { mode: "ids" } });
       continue;
@@ -315,9 +319,9 @@ const pickColumns = async (params: {
     };
     for (const id of ids) {
       const targetField = targetById.get(id);
-      if (!targetField) return fail(err.badInput("unknown relation export field"));
+      if (!targetField) return fail(err.badInput(serviceMessagesFor(params.locale).unknownRelationExportField));
       if (targetField.type === "html_template") {
-        return fail(err.badInput("HTML template fields cannot be expanded through relation exports"));
+        return fail(err.badInput(serviceMessagesFor(params.locale).htmlRelationExportUnsupported));
       }
       columns.push({
         kind: "relationField",
@@ -389,10 +393,16 @@ const buildRelationContext = async (params: {
   return { labels, expanded, publicIds };
 };
 
-const relationValue = (params: { record: GridRecord; field: Field; mode: "ids" | "labels"; ctx: RelationContext }): string => {
+const relationValue = (params: {
+  record: GridRecord;
+  field: Field;
+  mode: "ids" | "labels";
+  ctx: RelationContext;
+  locale?: string;
+}): string => {
   const ids = relationIds(params.record.data[params.field.id]);
   if (params.mode === "ids") return ids.map((id) => params.ctx.publicIds.get(id)!).join(", ");
-  return ids.map((id) => params.ctx.labels[id] ?? "Unknown record").join("; ");
+  return ids.map((id) => params.ctx.labels[id] ?? serviceMessagesFor(params.locale).unknownRecord).join("; ");
 };
 
 const relationTargetValue = (params: {
@@ -424,6 +434,7 @@ const jsonValue = (params: {
   options: ExportFormatOptions;
   publicFieldIds: ReadonlyMap<string, string>;
   relationFieldIds: ReadonlySet<string>;
+  locale?: string;
 }): unknown => {
   if (params.field.type !== "relation") {
     if (params.field.type === "longtext" && params.options.markdown === "html") {
@@ -433,7 +444,7 @@ const jsonValue = (params: {
   }
   const ids = relationIds(params.record.data[params.field.id]);
   const mode = params.relation?.mode ?? "ids";
-  if (mode === "labels") return ids.map((id) => params.ctx.labels[id] ?? "Unknown record");
+  if (mode === "labels") return ids.map((id) => params.ctx.labels[id] ?? serviceMessagesFor(params.locale).unknownRecord);
   if (mode !== "fields") return ids.map((id) => params.ctx.publicIds.get(id)!);
   const wanted = params.relation?.fieldIds ?? [];
   return ids.map((id) => {
@@ -460,10 +471,11 @@ export const exportRecords = async (params: {
   /** Optional viewer gates relation-field expansion across target tables. */
   viewer?: ExpansionViewer;
   recordAccess?: AuthorizedRecordAccess;
+  locale?: string;
 }): Promise<Result<ExportResult>> => {
   const fields = await listFields(params.tableId);
   const tablePublicId = (await projectPublicIds("table", [params.tableId])).get(params.tableId);
-  if (!tablePublicId) return fail(err.internal("Export table has no public ID"));
+  if (!tablePublicId) return fail(err.internal(serviceMessagesFor(params.locale).exportTableMissingId));
   const query = params.query ?? {};
   const picked = await pickColumns({
     tableId: params.tableId,
@@ -471,11 +483,13 @@ export const exportRecords = async (params: {
     specs: params.fields,
     query,
     viewer: params.viewer,
+    locale: params.locale,
   });
   if (!picked.ok) return fail(picked.error);
   const htmlLimit = validateHtmlTemplateExportLimit(
     picked.data.selected.map(({ field }) => field),
     query,
+    params.locale,
   );
   if (!htmlLimit.ok) return htmlLimit;
   const publicFieldIds = new Map<string, string>();
@@ -496,6 +510,7 @@ export const exportRecords = async (params: {
     recordAccess: params.recordAccess,
     htmlTemplateFieldIds: picked.data.selected.filter(({ field }) => field.type === "html_template").map(({ field }) => field.id),
     htmlTemplateRenderBudget: createHtmlTemplateRenderBudget(),
+    locale: params.locale,
   });
   if (!pageReader.ok) return fail(pageReader.error);
   const options: ExportFormatOptions = { markdown: params.markdown ?? "raw", dateConfig: params.dateConfig };
@@ -541,8 +556,8 @@ export const exportRecords = async (params: {
         viewer: params.viewer,
       });
       if (page.data.revisionScope) {
-        const current = await verifyRevisionScope(page.data.revisionScope);
-        if (!current.ok) throw new Error("combined table publication changed during export; restart the export");
+        const current = await verifyRevisionScope(page.data.revisionScope, params.locale);
+        if (!current.ok) throw new Error(serviceMessagesFor(params.locale).publicationChangedExport);
       }
       for (const record of page.data.items) {
         if (params.format === "json") {
@@ -556,6 +571,7 @@ export const exportRecords = async (params: {
               options,
               publicFieldIds,
               relationFieldIds,
+              locale: params.locale,
             });
           }
           yield encoder.encode(`${firstJsonRecord ? "" : ","}${JSON.stringify(out)}`);
@@ -579,6 +595,7 @@ export const exportRecords = async (params: {
                   field: column.field,
                   mode: column.relation?.mode === "labels" ? "labels" : "ids",
                   ctx,
+                  locale: params.locale,
                 });
               }
               return formatCellForExport(record.data[column.field.id], column.field, options);

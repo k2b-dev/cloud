@@ -32,6 +32,26 @@ describe("GQL public ID boundary", () => {
     });
   });
 
+  test("localizes public scope errors for regional German locales", async () => {
+    const missingTable = await fromPublicGqlScope(
+      baseId,
+      { currentTableId: "TABL01" },
+      { getTableByShortId: async () => null, locale: "de-CH" },
+    );
+    expect(!missingTable.ok && missingTable.error.message).toBe("Tabelle nicht gefunden");
+
+    const unknownField = await fromPublicGqlScope(
+      baseId,
+      { currentTableId: "TABL01", filePreviewFieldIds: ["FILD01"] },
+      {
+        getTableByShortId: async () => ({ id: tableId, baseId }) as never,
+        listFields: async () => [] as never,
+        locale: "de-CH",
+      },
+    );
+    expect(!unknownField.ok && unknownField.error.message).toBe("Unbekannte Feld-ID");
+  });
+
   test("projects row, column, and relation resource ids", async () => {
     const response: DslQueryPreviewResponse = {
       ok: true,

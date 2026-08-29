@@ -12,6 +12,7 @@ import {
   DocRows,
   DocSection,
   Tag,
+  useLocale,
 } from "@k2b/ui";
 import type { HelpDocumentManifest } from "@valentinkolb/cloud/shared";
 import { createMemo, For, type JSX, Show } from "solid-js";
@@ -21,6 +22,7 @@ import { GQL_EXAMPLES } from "../../../help/gql-examples";
 import { formatIdentifierRef } from "../../../ref-syntax";
 import { fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
 import GridsEmbeddedHelp from "./GridsEmbeddedHelp.island";
+import { type QueryMessages, queryMessages } from "./messages";
 
 const TAB_ALIASES = {
   overview: "basics",
@@ -105,16 +107,16 @@ type DataTypeRow = {
   watch: JSX.Element;
 };
 
-const REFERENCE_TABS: Array<{ value: GqlReferenceTab; label: string; icon: string; description: string }> = [
-  { value: "basics", label: "Grids basics", icon: "ti-layout-grid", description: "Overview and workflow" },
-  { value: "datatypes", label: "Data & datatypes", icon: "ti-table", description: "Tables, fields, views, forms" },
-  { value: "tables", label: "Tables & views", icon: "ti-database", description: "Available data in this base" },
-  { value: "formulas", label: "Formulas", icon: "ti-function", description: "Fields, computed columns, predicates" },
-  { value: "gql", label: "GQL reference", icon: "ti-code", description: "Syntax, clauses, limits" },
-  { value: "examples", label: "GQL examples", icon: "ti-copy", description: "Copyable query patterns" },
-  { value: "how-it-works", label: "How GQL works", icon: "ti-shield-check", description: "Resolution, permissions, limits" },
-  { value: "templates", label: "Templates & PDFs", icon: "ti-file-type-pdf", description: "Documents, Liquid, snapshots" },
-  { value: "workflows", label: "Workflows", icon: "ti-route", description: "Inputs, triggers, steps, and runs" },
+const referenceTabs = (t: QueryMessages): Array<{ value: GqlReferenceTab; label: string; icon: string; description: string }> => [
+  { value: "basics", label: t.basicsTab, icon: "ti-layout-grid", description: t.basicsTabDescription },
+  { value: "datatypes", label: t.datatypesTab, icon: "ti-table", description: t.datatypesTabDescription },
+  { value: "tables", label: t.tablesTab, icon: "ti-database", description: t.tablesTabDescription },
+  { value: "formulas", label: t.formulasTab, icon: "ti-function", description: t.formulasTabDescription },
+  { value: "gql", label: t.gqlTab, icon: "ti-code", description: t.gqlTabDescription },
+  { value: "examples", label: t.examplesTab, icon: "ti-copy", description: t.examplesTabDescription },
+  { value: "how-it-works", label: t.howItWorksTab, icon: "ti-shield-check", description: t.howItWorksTabDescription },
+  { value: "templates", label: t.templatesTab, icon: "ti-file-type-pdf", description: t.templatesTabDescription },
+  { value: "workflows", label: t.workflowsTab, icon: "ti-route", description: t.workflowsTabDescription },
 ];
 
 const functionCategory = (name: string, returnType: string): string => {
@@ -172,115 +174,116 @@ const FormulaSnippet = (props: { code: string; title?: string }) => <DocCode tit
 const assistantFileHref = (baseId: string, file: "SKILL.md" | "context.md") =>
   `/api/grids/gql/by-base/${encodeURIComponent(baseId)}/assistant/${file}`;
 
-const GqlAssistantFiles = (props: { baseId: string }) => (
-  <Doc>
-    <DocSection title="AI assistant files">
-      <div class="paper flex flex-wrap items-center justify-between gap-3 p-4">
-        <div class="min-w-0">
-          <h3 class="font-semibold text-primary">Download assistant context</h3>
-          <p class="mt-1 text-sm text-dimmed">Use the skill once, then pair it with this base's permission-filtered schema context.</p>
+const GqlAssistantFiles = (props: { baseId: string }) => {
+  const { t } = queryMessages.resolve([useLocale()()]);
+  return (
+    <Doc>
+      <DocSection title={t.assistantFiles}>
+        <div class="paper flex flex-wrap items-center justify-between gap-3 p-4">
+          <div class="min-w-0">
+            <h3 class="font-semibold text-primary">{t.downloadAssistantContext}</h3>
+            <p class="mt-1 text-sm text-dimmed">{t.assistantContextDescription}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <ButtonLink variant="secondary" size="sm" href={assistantFileHref(props.baseId, "SKILL.md")} download="SKILL.md">
+              <i class="ti ti-download" /> SKILL.md
+            </ButtonLink>
+            <ButtonLink variant="secondary" size="sm" href={assistantFileHref(props.baseId, "context.md")} download="context.md">
+              <i class="ti ti-download" /> context.md
+            </ButtonLink>
+          </div>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <ButtonLink variant="secondary" size="sm" href={assistantFileHref(props.baseId, "SKILL.md")} download="SKILL.md">
-            <i class="ti ti-download" /> SKILL.md
-          </ButtonLink>
-          <ButtonLink variant="secondary" size="sm" href={assistantFileHref(props.baseId, "context.md")} download="context.md">
-            <i class="ti ti-download" /> context.md
-          </ButtonLink>
-        </div>
-      </div>
-    </DocSection>
-  </Doc>
-);
+      </DocSection>
+    </Doc>
+  );
+};
 
-const plural = (count: number, singular: string, pluralLabel = `${singular}s`) => `${count} ${count === 1 ? singular : pluralLabel}`;
-
-const functionColumns: DataTableColumn<FunctionRow>[] = [
-  { id: "category", header: "Group", value: (row) => row.category },
-  { id: "signature", header: "Function", value: (row) => row.signature, cellClass: "font-mono text-xs min-w-48" },
-  { id: "description", header: "What it does", value: (row) => row.description, cellClass: "min-w-72" },
-  { id: "returnType", header: "Returns", value: (row) => row.returnType },
+const functionColumns = (t: QueryMessages): DataTableColumn<FunctionRow>[] => [
+  { id: "category", header: t.group, value: (row) => row.category },
+  { id: "signature", header: t.function, value: (row) => row.signature, cellClass: "font-mono text-xs min-w-48" },
+  { id: "description", header: t.whatItDoes, value: (row) => row.description, cellClass: "min-w-72" },
+  { id: "returnType", header: t.returns, value: (row) => row.returnType },
   { id: "copy", header: "", value: (row) => row.name, cellClass: "w-12 text-right" },
 ];
 
-const dataTypeRows: DataTypeRow[] = [
+const dataTypeRows = (t: QueryMessages): DataTypeRow[] => [
   {
-    type: "Text",
+    type: t.dataTypeLabel({ type: "Text" }),
     icon: "ti-typography",
-    use: "Short names, titles, codes, email addresses, URLs, and labels.",
-    watch: "Use regex templates or validation when the value must follow a format.",
+    use: t.dataTypeUse({ type: "Text" }),
+    watch: t.dataTypeWatch({ type: "Text" }),
   },
   {
-    type: "Long text",
+    type: t.dataTypeLabel({ type: "Long text" }),
     icon: "ti-align-left",
-    use: "Notes, instructions, descriptions, and Markdown content.",
-    watch: "Do not use long text as the record label; it makes relations and detail headers hard to scan.",
+    use: t.dataTypeUse({ type: "Long text" }),
+    watch: t.dataTypeWatch({ type: "Long text" }),
   },
   {
-    type: "Number / percent",
+    type: t.dataTypeLabel({ type: "Number / percent" }),
     icon: "ti-decimal",
-    use: "Counts, money, measurements, percentages, progress, and calculations.",
-    watch: "Number fields use decimal-safe arithmetic. Percent fields use 0–100 by default and can be configured for a 0–1 fraction scale.",
+    use: t.dataTypeUse({ type: "Number / percent" }),
+    watch: t.dataTypeWatch({ type: "Number / percent" }),
   },
   {
-    type: "Boolean",
+    type: t.dataTypeLabel({ type: "Boolean" }),
     icon: "ti-toggle-left",
-    use: "Yes/no facts such as approved, active, returned, or billable.",
-    watch: "An optional boolean can also be empty. Use a required field when the process needs an explicit yes or no.",
+    use: t.dataTypeUse({ type: "Boolean" }),
+    watch: t.dataTypeWatch({ type: "Boolean" }),
   },
   {
-    type: "Date / date-time",
+    type: t.dataTypeLabel({ type: "Date / date-time" }),
     icon: "ti-calendar",
-    use: "Due dates, event dates, publication dates, timestamps, and calendar views.",
-    watch: "Use date for whole days. Use date-time only when the exact moment matters.",
+    use: t.dataTypeUse({ type: "Date / date-time" }),
+    watch: t.dataTypeWatch({ type: "Date / date-time" }),
   },
   {
-    type: "Duration",
+    type: t.dataTypeLabel({ type: "Duration" }),
     icon: "ti-clock-hour-4",
-    use: "Elapsed time such as call length, work duration, or response time.",
-    watch: "Durations are stored as seconds and accept seconds, MM:SS, or HH:MM:SS input.",
+    use: t.dataTypeUse({ type: "Duration" }),
+    watch: t.dataTypeWatch({ type: "Duration" }),
   },
   {
-    type: "Select",
+    type: t.dataTypeLabel({ type: "Select" }),
     icon: "ti-tags",
-    use: "Known option lists such as status, priority, type, condition, or category labels.",
-    watch: "Use relations instead when options need their own fields, permissions, forms, or history.",
+    use: t.dataTypeUse({ type: "Select" }),
+    watch: t.dataTypeWatch({ type: "Select" }),
   },
   {
     type: "JSON",
     icon: "ti-braces",
-    use: "Structured data that does not need separate Grids fields.",
-    watch: "Use normal fields when people need to search, filter, explain, or validate individual properties.",
+    use: t.dataTypeUse({ type: "JSON" }),
+    watch: t.dataTypeWatch({ type: "JSON" }),
   },
   {
-    type: "Relation",
+    type: t.dataTypeLabel({ type: "Relation" }),
     icon: "ti-link",
-    use: "Links between records: order to customer, item to location, loan to kit.",
-    watch: "Set a good record label in the target table. Self-relations are useful for parent-child structures.",
+    use: t.dataTypeUse({ type: "Relation" }),
+    watch: t.dataTypeWatch({ type: "Relation" }),
   },
   {
-    type: "Lookup / rollup",
+    type: t.dataTypeLabel({ type: "Lookup / rollup" }),
     icon: "ti-corner-down-right",
-    use: "Display or summarize values through a relation without copying the source field.",
-    watch: "Formatting is configured on the lookup/rollup field; it does not blindly inherit source formatting.",
+    use: t.dataTypeUse({ type: "Lookup / rollup" }),
+    watch: t.dataTypeWatch({ type: "Lookup / rollup" }),
   },
   {
-    type: "Formula",
+    type: t.dataTypeLabel({ type: "Formula" }),
     icon: "ti-function",
-    use: "Computed values that should recalculate from other fields when a record is read.",
-    watch: "Formula errors render as an error value. Use IFERROR for expected empty or divide-by-zero cases.",
+    use: t.dataTypeUse({ type: "Formula" }),
+    watch: t.dataTypeWatch({ type: "Formula" }),
   },
   {
-    type: "ID / system fields",
+    type: t.dataTypeLabel({ type: "ID / system fields" }),
     icon: "ti-id",
-    use: "Generated identifiers plus created/updated timestamps and actors.",
-    watch: "System fields are managed by Grids. Add a visible ID only when people or external systems need to refer to it.",
+    use: t.dataTypeUse({ type: "ID / system fields" }),
+    watch: t.dataTypeWatch({ type: "ID / system fields" }),
   },
   {
-    type: "File",
+    type: t.dataTypeLabel({ type: "File" }),
     icon: "ti-paperclip",
-    use: "Attachments, images, documents, and files that belong to a record.",
-    watch: "Put searchable metadata in normal fields; file bytes are not the filter model.",
+    use: t.dataTypeUse({ type: "File" }),
+    watch: t.dataTypeWatch({ type: "File" }),
   },
 ];
 
@@ -293,9 +296,10 @@ const referenceSourceHref = (baseId: string, source: SourceRow) =>
   `/app/grids/${encodeURIComponent(baseId)}/reference/tables/${encodeURIComponent(source.publicId)}`;
 
 function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; baseName: string }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const items = (
-    <AppWorkspace.SidebarSection title="Reference">
-      <For each={REFERENCE_TABS}>
+    <AppWorkspace.SidebarSection title={t.reference}>
+      <For each={referenceTabs(t)}>
         {(tab) => (
           <AppWorkspace.SidebarItem
             href={referenceTabHref(props.baseId, tab.value)}
@@ -313,7 +317,7 @@ function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; b
 
   return (
     <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label="Grids reference" />
+      <AppWorkspace.SidebarMobileTrigger label={t.gridsReference} />
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="grids-query-reference-mobile">{items}</AppWorkspace.SidebarMobileBody>
       </AppWorkspace.SidebarMobile>
@@ -325,43 +329,41 @@ function ReferenceSidebar(props: { activeTab: GqlReferenceTab; baseId: string; b
 }
 
 function DataTypesTab() {
+  const { t } = queryMessages.resolve([useLocale()()]);
   return (
     <Doc>
-      <DocLead>
-        Datatypes are the foundation of a Grids base. They decide validation, display, search, filtering, formulas, relation labels, App
-        blocks, and what a form can collect.
-      </DocLead>
+      <DocLead>{t.datatypesLead}</DocLead>
 
-      <DocSection title="Data model layers">
+      <DocSection title={t.dataModelLayers}>
         <DocRows
           items={[
             {
-              title: "Tables",
+              title: t.tableKind,
               icon: "ti-table",
-              text: "Use a table when records have their own lifecycle, permissions, forms, Apps, or relations.",
+              text: t.dataLayerText({ layer: "Tables" }),
             },
             {
-              title: "Fields",
+              title: t.fields,
               icon: "ti-columns",
-              text: "Use a field when the value is one property of the same record. Keep names short and add descriptions for forms and detail panels.",
+              text: t.dataLayerText({ layer: "Fields" }),
             },
             {
-              title: "Relations",
+              title: t.relations,
               icon: "ti-link",
-              text: "Use relations when a value points to another record. This keeps names, metadata, permissions, and history in one source table.",
+              text: t.dataLayerText({ layer: "Relations" }),
             },
             {
-              title: "Views",
+              title: t.view,
               icon: "ti-filter",
-              text: "Use views to save how records should be queried and displayed. A view never duplicates the records it shows.",
+              text: t.dataLayerText({ layer: "Views" }),
             },
           ]}
         />
       </DocSection>
 
-      <DocSection title="Datatype reference">
+      <DocSection title={t.datatypeReference}>
         <div class="grid gap-3 xl:grid-cols-2">
-          <For each={dataTypeRows}>
+          <For each={dataTypeRows(t)}>
             {(row) => (
               <article class="paper p-4">
                 <div class="flex items-center gap-2 font-semibold text-primary">
@@ -370,11 +372,11 @@ function DataTypesTab() {
                 </div>
                 <dl class="mt-3 space-y-3 text-sm leading-relaxed">
                   <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">Use when</dt>
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t.useWhen}</dt>
                     <dd class="mt-1 text-primary">{row.use}</dd>
                   </div>
                   <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">Watch for</dt>
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t.watchFor}</dt>
                     <dd class="mt-1 text-primary">{row.watch}</dd>
                   </div>
                 </dl>
@@ -384,37 +386,35 @@ function DataTypesTab() {
         </div>
       </DocSection>
 
-      <DocSection title="Views and display modes">
+      <DocSection title={t.viewsDisplayModes}>
         <DocRows
           items={[
             {
-              title: "Table",
+              title: t.tableKind,
               icon: "ti-table",
-              text: "Best for dense editing, scanning many columns, and operational work.",
+              text: t.displayModeText({ mode: "Table" }),
             },
             {
-              title: "Cards",
+              title: t.cards,
               icon: "ti-layout-cards",
-              text: "Best when a few fields, a title, and optional image should be read at a glance.",
+              text: t.displayModeText({ mode: "Cards" }),
             },
             {
-              title: "Calendar",
+              title: t.calendar,
               icon: "ti-calendar-event",
-              text: "Best when one date or date-time field places each record on a calendar.",
+              text: t.displayModeText({ mode: "Calendar" }),
             },
           ]}
         />
       </DocSection>
 
-      <DocNote title="Keep fields useful">
-        Prefer a few clear fields over many vague ones. Required, unique, default, index, and display-format settings should explain real
-        behavior users will rely on.
-      </DocNote>
+      <DocNote title={t.keepFieldsUseful}>{t.keepFieldsUsefulText}</DocNote>
     </Doc>
   );
 }
 
 function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fieldRows: FieldRow[]; inspectedSourceId?: string }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const inspectedSource = createMemo(() =>
     props.inspectedSourceId
       ? props.sourceRows.find((source) => source.publicId === props.inspectedSourceId || source.id.endsWith(`:${props.inspectedSourceId}`))
@@ -437,25 +437,25 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
   const fieldColumns: DataTableColumn<FieldRow>[] = [
     {
       id: "field",
-      header: "Field",
+      header: t.field,
       value: (field) => field.name,
       class: "w-[30%]",
       cellClass: "min-w-56",
     },
-    { id: "type", header: "Type", value: (field) => field.typeLabel, class: "w-[14%]", cellClass: "text-dimmed" },
+    { id: "type", header: t.type, value: (field) => field.typeLabel, class: "w-[14%]", cellClass: "text-dimmed" },
     {
       id: "description",
-      header: "Description",
+      header: t.description,
       value: fieldReason,
       class: "w-[40%]",
       cellClass: "min-w-72 leading-relaxed text-dimmed",
     },
-    { id: "use", header: "Use as", value: (field) => field.ref, class: "w-[16%]", align: "right" },
+    { id: "use", header: t.useAs, value: (field) => field.ref, class: "w-[16%]", align: "right" },
   ];
 
   const SourceRef = (source: SourceRow) => (
     <div class="inline-flex min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs">
-      <span class="shrink-0 text-dimmed">use:</span>
+      <span class="shrink-0 text-dimmed">{t.usePrefix}</span>
       <code class="truncate font-mono text-primary">{refSourceLabel(source)}</code>
     </div>
   );
@@ -469,16 +469,13 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
 
   return (
     <Doc>
-      <DocLead>
-        Tables and views are the data sources GQL can read. Start from the source you understand, then inspect its fields before writing
-        filters, formulas, joins, or grouped reports.
-      </DocLead>
+      <DocLead>{t.sourceLead}</DocLead>
 
       <Show
         when={inspectedSource()}
         fallback={
           <>
-            <DocSection title="Sources">
+            <DocSection title={t.sources}>
               <div class="space-y-3">
                 <For each={tableSources()}>
                   {(table) => (
@@ -490,9 +487,9 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
                               <i class="ti ti-table text-dimmed" />
                               <span class="truncate">{table.name}</span>
                             </h3>
-                            <Tag size="sm">Table</Tag>
+                            <Tag size="sm">{t.tableKind}</Tag>
                             <span class="text-xs text-dimmed">
-                              {plural(table.recordCount, "record")} · {plural(table.fieldCount, "field")}
+                              {t.recordsCount({ count: table.recordCount })} · {t.fieldsCount({ count: table.fieldCount })}
                             </span>
                           </div>
                           <Show when={table.description}>
@@ -503,7 +500,7 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
                           {SourceRef(table)}
                           <CopyButton text={refSourceLabel(table)} variant="secondary" size="sm" />
                           <ButtonLink variant="secondary" size="sm" href={referenceSourceHref(props.baseId, table)}>
-                            <i class="ti ti-eye" /> Inspect
+                            <i class="ti ti-eye" /> {t.inspect}
                           </ButtonLink>
                         </div>
                       </div>
@@ -526,15 +523,15 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
                                       <i class="ti ti-table-spark text-dimmed" />
                                       <span class="truncate">{view.name}</span>
                                     </span>
-                                    <Tag size="sm">View</Tag>
-                                    <span class="text-xs text-dimmed">of {view.parent}</span>
+                                    <Tag size="sm">{t.view}</Tag>
+                                    <span class="text-xs text-dimmed">{t.sourceParent({ parent: view.parent ?? t.aTable })}</span>
                                   </div>
                                 </div>
                                 <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
                                   {SourceRef(view)}
                                   <CopyButton text={refSourceLabel(view)} class="h-8 w-8" />
                                   <ButtonLink variant="ghost" size="sm" href={referenceSourceHref(props.baseId, view)}>
-                                    Inspect
+                                    {t.inspect}
                                   </ButtonLink>
                                 </div>
                               </div>
@@ -557,16 +554,15 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
                 <div class="flex flex-wrap items-start justify-between gap-4">
                   <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-center gap-2">
-                      <Tag size="sm">{source().kind === "view" ? "View" : "Table"}</Tag>
+                      <Tag size="sm">{source().kind === "view" ? t.view : t.tableKind}</Tag>
                       <span class="text-sm text-dimmed">
-                        {source().kind === "view" ? `of ${source().parent ?? "a table"}` : "Base source"}
+                        {source().kind === "view" ? t.sourceParent({ parent: source().parent ?? t.aTable }) : t.baseSource}
                       </span>
                       <span class="text-sm text-dimmed">
-                        {plural(source().recordCount, source().kind === "view" ? "base record" : "record")} ·{" "}
-                        {plural(source().fieldCount, "field")}
+                        {t.recordsCount({ count: source().recordCount })} · {t.fieldsCount({ count: source().fieldCount })}
                       </span>
                     </div>
-                    <p class="mt-2 max-w-3xl text-sm leading-relaxed text-dimmed">{source().description || "No description yet."}</p>
+                    <p class="mt-2 max-w-3xl text-sm leading-relaxed text-dimmed">{source().description || t.noDescription}</p>
                   </div>
                   <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
                     {SourceRef(source())}
@@ -576,9 +572,9 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
               </div>
             </DocSection>
 
-            <DocSection title="Fields">
+            <DocSection title={t.fields}>
               <DataTable
-                ariaLabel={`${source().name} fields`}
+                ariaLabel={t.sourceFieldsAria({ source: source().name })}
                 rows={inspectedFields()}
                 columns={fieldColumns}
                 getRowId={(field) => field.id}
@@ -610,9 +606,9 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
               />
             </DocSection>
 
-            <DocNote title="Back to all sources">
+            <DocNote title={t.backAllSources}>
               <a class="link" href={referenceTabHref(props.baseId, "tables")}>
-                Show all tables and views
+                {t.showAllSources}
               </a>
             </DocNote>
           </>
@@ -623,96 +619,96 @@ function AvailableDataTab(props: { baseId: string; sourceRows: SourceRow[]; fiel
 }
 
 function FormulasTab(props: { functionRows: FunctionRow[] }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   return (
     <Doc>
       <DocLead>
-        Formulas calculate values from fields in one record. They are used in formula table fields, in-place computed columns, formula
-        previews, and query predicates such as <DocInlineCode>where Status = 'Open'</DocInlineCode>.
+        {t.formulaLead} <DocInlineCode>where Status = 'Open'</DocInlineCode>
       </DocLead>
 
-      <DocSection title="Where formulas are used">
+      <DocSection title={t.formulaUsage}>
         <DocRows
           items={[
             {
-              title: "Formula fields",
+              title: t.formulaUsageTitle({ item: "field" }),
               icon: "ti-table",
-              text: "A saved table field. It recalculates whenever a record is read and can be shown in tables, cards, detail panels, views, and Apps.",
+              text: t.formulaUsageText({ item: "field" }),
             },
             {
-              title: "Computed columns",
+              title: t.formulaUsageTitle({ item: "column" }),
               icon: "ti-calculator",
-              text: "A temporary view/table column for analysis. It does not change the table schema and can be saved in URL-backed view state.",
+              text: t.formulaUsageText({ item: "column" }),
             },
             {
-              title: "Query predicates",
+              title: t.formulaUsageTitle({ item: "predicate" }),
               icon: "ti-filter",
-              text: "A condition inside GQL. The predicate filters rows on the server.",
+              text: t.formulaUsageText({ item: "predicate" }),
             },
             {
-              title: "Query output",
+              title: t.formulaUsageTitle({ item: "output" }),
               icon: "ti-code-plus",
-              text: "A computed result column written as formula(expression) as alias in GQL.",
+              text: t.formulaUsageText({ item: "output" }),
             },
           ]}
         />
       </DocSection>
 
-      <DocSection title="Formula basics">
+      <DocSection title={t.formulaBasics}>
         <DocRows
           items={[
             {
-              title: "Fields",
+              title: t.formulaBasicsTitle({ item: "fields" }),
               icon: "ti-columns",
               text: (
                 <>
-                  Reference fields by name. Quote names with spaces: <DocInlineCode>"Unit price"</DocInlineCode>.
+                  {t.formulaFieldsPrefix} <DocInlineCode>"Unit price"</DocInlineCode>
                 </>
               ),
             },
             {
-              title: "Text values",
+              title: t.formulaBasicsTitle({ item: "text" }),
               icon: "ti-quote",
               text: (
                 <>
-                  Use single quotes for text values: <DocInlineCode>'Open'</DocInlineCode>. Double quotes mean a field name, not a value.
+                  {t.formulaTextPrefix} <DocInlineCode>'Open'</DocInlineCode>. {t.formulaTextSuffix}
                 </>
               ),
             },
             {
-              title: "Empty values",
+              title: t.formulaBasicsTitle({ item: "empty" }),
               icon: "ti-circle-dashed",
-              text: "Empty input stays empty unless the formula decides otherwise. Use IFEMPTY for a fallback.",
+              text: t.formulaBasicsText({ item: "empty" }),
             },
             {
-              title: "Errors",
+              title: t.formulaBasicsTitle({ item: "errors" }),
               icon: "ti-alert-triangle",
-              text: "Formula errors render as an error value. Use IFERROR for expected edge cases such as division by zero.",
+              text: t.formulaBasicsText({ item: "errors" }),
             },
             {
-              title: "Decimal math",
+              title: t.formulaBasicsTitle({ item: "decimal" }),
               icon: "ti-decimal",
-              text: "Number and decimal calculations use decimal-safe arithmetic when exact values are involved.",
+              text: t.formulaBasicsText({ item: "decimal" }),
             },
           ]}
         />
       </DocSection>
 
-      <DocSection title="Common formulas">
+      <DocSection title={t.commonFormulas}>
         <div class="grid gap-3 xl:grid-cols-2">
-          <FormulaSnippet title="Total" code="price * quantity" />
-          <FormulaSnippet title="Gross amount" code='"Unit price" * quantity * 1.19' />
-          <FormulaSnippet title="Fallback text" code="IFEMPTY(notes, 'No notes')" />
-          <FormulaSnippet title="Conditional label" code="IF(inStock, 'Available', 'Out of stock')" />
-          <FormulaSnippet title="Days until due" code="DATEDIFF(TODAY(), dueDate, 'days')" />
-          <FormulaSnippet title="Safe division" code="IFERROR(total / quantity, 0)" />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "total" })} code="price * quantity" />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "gross" })} code='"Unit price" * quantity * 1.19' />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "fallback" })} code="IFEMPTY(notes, 'No notes')" />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "conditional" })} code="IF(inStock, 'Available', 'Out of stock')" />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "due" })} code="DATEDIFF(TODAY(), dueDate, 'days')" />
+          <FormulaSnippet title={t.formulaSnippetTitle({ item: "division" })} code="IFERROR(total / quantity, 0)" />
         </div>
       </DocSection>
 
-      <DocSection title="Full function reference">
+      <DocSection title={t.fullFunctionReference}>
         <DataTable
-          ariaLabel="GQL function reference"
+          ariaLabel={t.gqlFunctionReference}
           rows={props.functionRows}
-          columns={functionColumns}
+          columns={functionColumns(t)}
           getRowId={(row) => row.name}
           density="compact"
           class="paper max-h-[36rem] overflow-auto"
@@ -720,15 +716,17 @@ function FormulasTab(props: { functionRows: FunctionRow[] }) {
         />
       </DocSection>
 
-      <DocNote title="SQL-looking values" variant="warning">
-        <DocInlineCode>status = "open"</DocInlineCode> compares the field <DocInlineCode>status</DocInlineCode> with a field named{" "}
-        <DocInlineCode>open</DocInlineCode>. Write <DocInlineCode>status = 'open'</DocInlineCode> for a text value.
+      <DocNote title={t.sqlLookingValues} variant="warning">
+        <DocInlineCode>status = "open"</DocInlineCode> {t.sqlLookingPrefix} <DocInlineCode>status</DocInlineCode> {t.sqlLookingMiddle}{" "}
+        <DocInlineCode>open</DocInlineCode>. {t.sqlLookingSuffix} <DocInlineCode>status = 'open'</DocInlineCode>
       </DocNote>
     </Doc>
   );
 }
 
 export default function QueryReferenceWindow(props: Props) {
+  const locale = useLocale();
+  const { t } = queryMessages.resolve([locale()]);
   const activeTab = () => props.defaultTab ?? "basics";
 
   const sourceRows = createMemo<SourceRow[]>(() => {
@@ -753,7 +751,7 @@ export default function QueryReferenceWindow(props: Props) {
         name: view.name,
         parent: table.name,
         ref: formatIdentifierRef(view.name),
-        description: "Saved view",
+        description: t.savedView,
         fieldCount: props.fieldsByTable[table.id]?.length ?? 0,
         recordCount: props.recordCountsByTable[table.id] ?? 0,
         search: [view.name, formatIdentifierRef(view.name), table.name, "view"].join(" "),
@@ -771,7 +769,7 @@ export default function QueryReferenceWindow(props: Props) {
         name: field.name,
         ref: formatIdentifierRef(field.name),
         type: field.type,
-        typeLabel: fieldTypeLabel(field.type),
+        typeLabel: fieldTypeLabel(field.type, locale()),
         description: field.description ?? "",
         search: [table.name, field.name, formatIdentifierRef(field.name), field.type, field.description ?? ""].join(" "),
       })),
@@ -781,13 +779,16 @@ export default function QueryReferenceWindow(props: Props) {
   const functionRows = createMemo<FunctionRow[]>(() =>
     GRID_FORMULA_FUNCTIONS.map((fn) => {
       const category = functionCategory(fn.name, fn.returnType);
+      const categoryLabel = t.functionCategoryLabel({ category });
+      const description = t.functionDescription({ description: fn.description });
+      const returnType = t.functionReturnType({ type: fn.returnType });
       return {
         name: fn.name,
-        category,
+        category: categoryLabel,
         signature: fn.signature,
-        description: fn.description,
-        returnType: fn.returnType,
-        search: [category, fn.name, fn.signature, fn.description, fn.returnType].join(" "),
+        description,
+        returnType,
+        search: [categoryLabel, fn.name, fn.signature, description, returnType].join(" "),
       };
     }),
   );
@@ -828,8 +829,8 @@ export default function QueryReferenceWindow(props: Props) {
         return (
           <div class="flex min-h-0 flex-1 flex-col overflow-auto">
             <Doc>
-              <DocSection title="For this base">
-                <DocCode title="Generated from the first table" code={catalogExample()} language="text" copy />
+              <DocSection title={t.forThisBase}>
+                <DocCode title={t.generatedFirstTable} code={catalogExample()} language="text" copy />
               </DocSection>
             </Doc>
             <GridsEmbeddedHelp documents={props.documents.filter((document) => document.id === "grids-gql")} initialTopic="grids-gql" />

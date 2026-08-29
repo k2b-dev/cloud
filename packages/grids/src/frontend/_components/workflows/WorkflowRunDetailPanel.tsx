@@ -1,5 +1,16 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, dialogCore, IconButton, Placeholder, panelDialogWorkspaceOptions, prompts, StatusBadge, Tooltip, toast } from "@k2b/ui";
+import {
+  Button,
+  dialogCore,
+  IconButton,
+  Placeholder,
+  panelDialogWorkspaceOptions,
+  prompts,
+  StatusBadge,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
@@ -14,6 +25,7 @@ import type {
   PublicWorkflowStepRun,
   PublicWorkspaceWorkflowRunDetail,
 } from "../workspace/workspace-public-state-model";
+import { workflowMessages } from "./messages";
 import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
 import {
   WorkflowRunDocumentsSection,
@@ -25,6 +37,7 @@ import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import {
   formatWorkflowRunDate as formatDate,
   isTerminalWorkflowRunStatus,
+  workflowRunStatusLabel,
   workflowRunStatusTone,
   workflowStepOutcomeSummary,
 } from "./workflow-display";
@@ -84,6 +97,8 @@ export function WorkflowRunDetailPanel(props: {
   onSelectRun: (runId: string) => void;
   onClose: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const [run, setRun] = createSignal<PublicWorkflowRun | null>(props.initialDetail?.run ?? null);
   const [inputLabels, setInputLabels] = createSignal(props.initialDetail?.inputLabels ?? {});
   const [steps, setSteps] = createSignal<PublicWorkflowStepRun[]>(props.initialDetail?.steps ?? []);
@@ -106,7 +121,7 @@ export function WorkflowRunDetailPanel(props: {
     if (!current?.workflowId) return null;
     return {
       id: current.workflowId,
-      name: provenance()?.workflowName ?? "Deleted workflow",
+      name: provenance()?.workflowName ?? t().deletedWorkflow,
       revision: current.workflowRevision,
     };
   });
@@ -123,8 +138,8 @@ export function WorkflowRunDetailPanel(props: {
     if (run()?.status !== "waiting") return null;
     return (
       steps()
-        .map((step) => workflowStepOutcomeSummary(step.outcome))
-        .find((summary) => summary?.startsWith("Waiting")) ?? "Waiting"
+        .map((step) => workflowStepOutcomeSummary(step.outcome, locale()))
+        .find((summary) => summary?.startsWith(t().waiting)) ?? t().waiting
     );
   });
   const inputRows = createMemo(() => {
@@ -136,7 +151,7 @@ export function WorkflowRunDetailPanel(props: {
       const table = typeof tableId === "string" ? props.tables.find((candidate) => candidate.id === tableId) : null;
       const formatValue = (value: unknown) => JSON.stringify(value) ?? String(value);
       const formatRecordId = (recordId: unknown) =>
-        typeof recordId === "string" ? `${table?.name ?? "Record"} ${recordId.slice(0, 8)}` : formatValue(recordId);
+        typeof recordId === "string" ? `${table?.name ?? t().record} ${recordId.slice(0, 8)}` : formatValue(recordId);
       const display =
         definition?.type === "record"
           ? typeof value === "string"
@@ -173,7 +188,7 @@ export function WorkflowRunDetailPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load more generated documents."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().loadMoreGeneratedDocumentsFailed));
       return response.json();
     },
     onSuccess: (page, request) => {
@@ -195,7 +210,7 @@ export function WorkflowRunDetailPanel(props: {
     onBefore: (runId) => ({ runId }),
     mutation: async (runId, { abortSignal }) => {
       const response = await workflowRunDetailApi.$get({ query: { runId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load workflow run."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().loadRunFailed));
       return response.json() as Promise<PublicWorkspaceWorkflowRunDetail>;
     },
     onSuccess: (detail, context) => {
@@ -293,6 +308,7 @@ export function WorkflowRunDetailPanel(props: {
     const events = workflowId
       ? createWorkflowRunEventsProvider({
           workflowId,
+          locale: locale(),
           onReady: () => {
             streamReady = true;
             refreshSelectedRun();
@@ -344,7 +360,7 @@ export function WorkflowRunDetailPanel(props: {
       const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Could not download document.");
+      prompts.error(error instanceof Error ? error.message : t().downloadDocumentFailed);
     } finally {
       setDownloadingDocumentId(null);
     }
@@ -356,12 +372,12 @@ export function WorkflowRunDetailPanel(props: {
         { param: { runId: props.runId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not cancel workflow run."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().cancelRunFailed));
       return response.json();
     },
     onSuccess: (canceled) => {
       setRun(canceled);
-      toast.success("Workflow run canceled");
+      toast.success(t().runCanceled);
       refresh(canceled.id);
     },
     onError: (error) => prompts.error(error.message),
@@ -370,7 +386,7 @@ export function WorkflowRunDetailPanel(props: {
   const rerunMut = mutations.create<{ runId: string }, { inputs: Record<string, WorkflowJsonValue>; mode: "execute" | "dryRun" }>({
     mutation: async ({ inputs, mode }, { abortSignal }) => {
       const workflow = activeWorkflow();
-      if (!workflow) throw new Error("The workflow definition is no longer available.");
+      if (!workflow) throw new Error(t().workflowDefinitionUnavailable);
       const response = await workflowRunLifecycleApi[":workflowId"].invoke.manual.$post(
         {
           param: { workflowId: workflow.id },
@@ -383,21 +399,21 @@ export function WorkflowRunDetailPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not start another workflow run."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().rerunFailed));
       return response.json();
     },
     onSuccess: (receipt) => {
-      toast.success("New workflow run started");
+      toast.success(t().newRunStarted);
       props.onSelectRun(receipt.runId);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const cancelRun = async () => {
-    const confirmed = await prompts.confirm("Cancel this workflow run? Completed external effects cannot be undone.", {
-      title: "Cancel workflow run",
+    const confirmed = await prompts.confirm(t().cancelRunConfirm, {
+      title: t().cancelWorkflowRun,
       icon: "ti ti-player-stop",
-      confirmText: "Cancel run",
+      confirmText: t().cancelRun,
       variant: "danger",
     });
     if (confirmed) cancelMut.mutate();
@@ -440,7 +456,7 @@ export function WorkflowRunDetailPanel(props: {
       const res = await requestWorkflowDocumentsDownload(props.runId);
       await downloadPdfResponse(res, `workflow-run-${props.runId.slice(0, 8)}.pdf`);
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Could not download generated documents.");
+      prompts.error(error instanceof Error ? error.message : t().downloadGeneratedDocumentsFailed);
     } finally {
       setDownloadingAll(false);
     }
@@ -455,43 +471,48 @@ export function WorkflowRunDetailPanel(props: {
           </span>
           <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <h2 class="truncate text-sm font-semibold text-primary">Workflow run</h2>
+              <h2 class="truncate text-sm font-semibold text-primary">{t().workflowRun}</h2>
               <span aria-live="polite" aria-atomic="true">
                 <Show when={run()}>
-                  {(current) => <StatusBadge tone={workflowRunStatusTone(current().status)} label={current().status} />}
+                  {(current) => (
+                    <StatusBadge
+                      tone={workflowRunStatusTone(current().status)}
+                      label={workflowRunStatusLabel(current().status, locale())}
+                    />
+                  )}
                 </Show>
               </span>
             </div>
-            <p class="mt-0.5 text-xs text-dimmed">{run() ? formatDate(run()!.createdAt) : "Loading..."}</p>
+            <p class="mt-0.5 text-xs text-dimmed">{run() ? formatDate(run()!.createdAt, locale()) : t().loading}</p>
           </div>
-          <Tooltip.Anchor content="Refresh run details">
+          <Tooltip.Anchor content={t().refreshRunDetails}>
             <IconButton
               variant="ghost"
               size="sm"
               type="button"
               onClick={() => refresh()}
               disabled={loadMut.loading()}
-              label="Refresh run details"
+              label={t().refreshRunDetails}
             >
               <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
             </IconButton>
           </Tooltip.Anchor>
           <Show when={run() && canWrite()}>
-            <Tooltip.Anchor content="Run again with these inputs">
+            <Tooltip.Anchor content={t().rerunWithInputs}>
               <IconButton
                 variant="ghost"
                 size="sm"
                 type="button"
                 onClick={() => void runAgain()}
                 disabled={rerunMut.loading()}
-                label="Run again"
+                label={t().runAgain}
               >
                 <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} />
               </IconButton>
             </Tooltip.Anchor>
           </Show>
           <Show when={run() && !isTerminalWorkflowRunStatus(run()!.status) && canWrite()}>
-            <Tooltip.Anchor content="Cancel workflow run">
+            <Tooltip.Anchor content={t().cancelWorkflowRun}>
               <IconButton
                 variant="ghost"
                 size="sm"
@@ -499,14 +520,14 @@ export function WorkflowRunDetailPanel(props: {
                 class="text-red-600 dark:text-red-400"
                 onClick={() => void cancelRun()}
                 disabled={cancelMut.loading()}
-                label="Cancel workflow run"
+                label={t().cancelWorkflowRun}
               >
                 <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} />
               </IconButton>
             </Tooltip.Anchor>
           </Show>
-          <Tooltip.Anchor content="Close run details">
-            <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label="Close run details">
+          <Tooltip.Anchor content={t().closeRunDetails}>
+            <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
               <i class="ti ti-x" />
             </IconButton>
           </Tooltip.Anchor>
@@ -515,16 +536,16 @@ export function WorkflowRunDetailPanel(props: {
 
       <div class="detail-stack" data-scroll-preserve={`grids-workflow-run-detail-${props.runId}`}>
         <Show when={!run()}>
-          <Show when={loadMut.error()} fallback={<Placeholder state="loading" surface="paper" title="Loading workflow run" />}>
+          <Show when={loadMut.error()} fallback={<Placeholder state="loading" surface="paper" title={t().loadingRun} />}>
             {(error) => (
               <Placeholder
                 state="error"
                 surface="paper"
-                title="Could not load workflow run"
+                title={t().couldNotLoadRun}
                 description={error().message}
                 action={
                   <Button variant="secondary" size="sm" type="button" onClick={() => refresh()}>
-                    <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                    <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                   </Button>
                 }
               />
@@ -537,12 +558,12 @@ export function WorkflowRunDetailPanel(props: {
               state="error"
               surface="paper"
               align="left"
-              title="Could not refresh workflow run"
+              title={t().couldNotRefreshRun}
               description={error().message}
               class="shrink-0 py-2"
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => refresh()}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                 </Button>
               }
             />

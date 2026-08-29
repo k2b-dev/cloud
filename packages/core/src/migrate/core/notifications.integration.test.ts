@@ -80,12 +80,19 @@ suite("notification migration", () => {
         ) AS trigger_exists
       `;
       expect(guards).toEqual({ payload_constraint_validated: true, target_constraint_validated: true, trigger_exists: true });
-      const [indexes] = await sql<{ delivery_created: boolean; event_definition_created: boolean }[]>`
+      const [indexes] = await sql<{ delivery_created: boolean; event_definition_created: boolean; definition_presentation: boolean }[]>`
         SELECT
           to_regclass('notifications.idx_notification_deliveries_created') IS NOT NULL AS delivery_created,
-          to_regclass('notifications.idx_notification_events_definition_created') IS NOT NULL AS event_definition_created
+          to_regclass('notifications.idx_notification_events_definition_created') IS NOT NULL AS event_definition_created,
+          EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'notifications'
+              AND table_name = 'definitions'
+              AND column_name = 'presentation'
+              AND data_type = 'jsonb'
+          ) AS definition_presentation
       `;
-      expect(indexes).toEqual({ delivery_created: true, event_definition_created: true });
+      expect(indexes).toEqual({ delivery_created: true, event_definition_created: true, definition_presentation: true });
     } finally {
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
       await sql`DELETE FROM notifications.definitions WHERE id = ${definitionId}`;

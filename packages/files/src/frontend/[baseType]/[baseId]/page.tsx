@@ -1,6 +1,6 @@
 import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { Context } from "hono";
 import type { DirectoryListing, FileBaseInfo, FileInfo } from "@/contracts";
@@ -14,15 +14,23 @@ import FileSettings, { parseFileSettings } from "../../_components/FileSettings.
 import FilesUnavailable from "../../_components/FilesUnavailable";
 import FileToolbar from "../../_components/FileToolbar.island";
 import { filePageBaseUrl, filePageUrl } from "../../url";
+import { filesMessages } from "../../messages";
 
 /**
  * Build breadcrumbs for file navigation.
  * Shows: Files / BaseName / ... / Parent / Current (if path is deep)
  */
-function buildBreadcrumbs(baseType: string, baseId: string, baseName: string, path: string): { title: string; href?: string }[] {
+function buildBreadcrumbs(
+  baseType: string,
+  baseId: string,
+  baseName: string,
+  path: string,
+  start: string,
+  files: string,
+): { title: string; href?: string }[] {
   const crumbs: { title: string; href?: string }[] = [
-    { title: "Start", href: "/" },
-    { title: "Files", href: "/app/files" },
+    { title: start, href: "/" },
+    { title: files, href: "/app/files" },
     {
       title: baseName,
       href: filePageBaseUrl(baseType, baseId),
@@ -91,6 +99,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
     path?: string;
   },
 ) => {
+  const { t } = filesMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const baseType = config?.baseType ?? (c.req.param("baseType") as "home" | "group");
   const baseId = config?.baseId ?? c.req.param("baseId")!;
@@ -122,8 +131,8 @@ export const renderFilesBasePage = async <E extends AuthContext>(
   const baseResult = await filesService.base.get({ baseType, baseId });
   if (!baseResult.ok) {
     return () => (
-      <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Files" }, { title: "Not Found" }]} fullWidth>
-        <FilesUnavailable title="File storage not found" description={baseResult.error} icon="ti ti-folder-off" />
+      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files }, { title: t.notFound }]} fullWidth>
+        <FilesUnavailable title={t.storageNotFound} description={t.storageNotFoundDescription} icon="ti ti-folder-off" />
       </Layout>
     );
   }
@@ -135,8 +144,8 @@ export const renderFilesBasePage = async <E extends AuthContext>(
   });
   if (!accessResult.ok) {
     return () => (
-      <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Files" }, { title: "Access Denied" }]} fullWidth>
-        <FilesUnavailable title="File storage unavailable" description={accessResult.error} icon="ti ti-lock" />
+      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files }, { title: t.accessDenied }]} fullWidth>
+        <FilesUnavailable title={t.storageUnavailable} description={t.storageUnavailableDescription} icon="ti ti-lock" />
       </Layout>
     );
   }
@@ -158,7 +167,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
 
   if (!infoResult.ok) {
     return () => (
-      <Layout c={c} title={buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path)} fullWidth>
+      <Layout c={c} title={buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path, t.start, t.files)} fullWidth>
         <AppWorkspace>
           <BaseSidebar
             bases={basesInfo}
@@ -171,8 +180,8 @@ export const renderFilesBasePage = async <E extends AuthContext>(
               <Placeholder
                 state="error"
                 variant="panel"
-                title="Folder unavailable"
-                description={infoResult.error}
+                title={t.folderUnavailable}
+                description={t.folderUnavailableDescription}
                 icon="ti ti-folder-off"
                 class="h-full"
               />
@@ -233,7 +242,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
   const pathSegments = path.split("/").filter(Boolean);
   const parentPath = pathSegments.length > 0 ? "/" + pathSegments.slice(0, -1).join("/") : null;
 
-  const breadcrumbs = buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path);
+  const breadcrumbs = buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path, t.start, t.files);
   const listScrollKey = `files-list-${baseType}-${encodeURIComponent(baseId)}-${encodeURIComponent(path || "/")}`;
 
   return () => (

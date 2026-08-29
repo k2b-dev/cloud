@@ -12,6 +12,7 @@ import RecordsTable from "../../custom-app/RecordsTable.island";
 import { formatCustomAppValue } from "../../custom-app/value-format";
 import FormSubmit from "../forms/PublicFormSubmit.island";
 import { errorMessage } from "../utils/api-helpers";
+import { useCustomAppBuilderMessages } from "./builder-messages";
 import type { CustomAppCatalog } from "./custom-app-catalog";
 
 type SourceBlock = Extract<CustomAppBlock, { type: "records" | "metrics" | "chart" }>;
@@ -55,6 +56,8 @@ function SourcePreview(props: {
   initialResult?: DslQueryPreviewResponse;
   onPreviewResult?: (blockId: string, result: DslQueryPreviewResponse) => void;
 }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = messages().text;
   const initialSource = JSON.stringify([props.baseId, props.block.source]);
   const source = () => JSON.stringify([props.baseId, props.block.source]);
   const [preview] = createResource(
@@ -82,11 +85,24 @@ function SourcePreview(props: {
   return (
     <Show
       when={!preview.loading}
-      fallback={<Placeholder state="loading" align="left" title="Loading preview" description="Running this block's data source." />}
+      fallback={
+        <Placeholder
+          state="loading"
+          align="left"
+          title={text({ value: "Loading preview" })}
+          description={text({ value: "Running this block's data source." })}
+        />
+      }
     >
       <Show
         when={preview()}
-        fallback={<Placeholder align="left" title="Records unavailable" description="The preview could not be loaded." />}
+        fallback={
+          <Placeholder
+            align="left"
+            title={text({ value: "Records unavailable" })}
+            description={text({ value: "The preview could not be loaded." })}
+          />
+        }
       >
         {(result) => {
           const resolved = result();
@@ -94,14 +110,14 @@ function SourcePreview(props: {
             return (
               <Placeholder
                 align="left"
-                title="Data unavailable"
-                description={resolved.diagnostics[0]?.message ?? "The data source could not be previewed."}
+                title={text({ value: "Data unavailable" })}
+                description={resolved.diagnostics[0]?.message ?? text({ value: "The data source could not be previewed." })}
               />
             );
           return props.block.type === "records" ? (
             <RecordsTable
-              title={props.block.title ?? "Records"}
-              emptyText={props.block.emptyText ?? "No records found."}
+              title={props.block.title ?? text({ value: "Records" })}
+              emptyText={props.block.emptyText ?? text({ value: "No records found." })}
               baseId={props.baseId}
               dateConfig={props.dateConfig}
               appId={props.appId}
@@ -148,7 +164,11 @@ function SourcePreview(props: {
               dateConfig={props.dateConfig}
             />
           ) : (
-            <Placeholder align="left" title="Chart preview unavailable" description="Date formatting context is missing." />
+            <Placeholder
+              align="left"
+              title={text({ value: "Chart preview unavailable" })}
+              description={text({ value: "Date formatting context is missing." })}
+            />
           );
         }}
       </Show>
@@ -166,6 +186,8 @@ export default function CustomAppBlockPreview(props: {
   initialResult?: DslQueryPreviewResponse;
   onPreviewResult?: (blockId: string, result: DslQueryPreviewResponse) => void;
 }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = messages().text;
   const form = createMemo(() => {
     const block = props.block;
     if (block.type !== "form") return null;
@@ -193,8 +215,8 @@ export default function CustomAppBlockPreview(props: {
           state="empty"
           variant="compact"
           align="left"
-          title="Empty Markdown block"
-          description="Select this block to add text or context placeholders."
+          title={text({ value: "Empty Markdown block" })}
+          description={text({ value: "Select this block to add text or context placeholders." })}
         />
       }
     >
@@ -205,8 +227,8 @@ export default function CustomAppBlockPreview(props: {
       state="empty"
       variant="compact"
       align="left"
-      title={props.block.title ?? "Referenced records"}
-      description="This block is loaded from the current record when the published app page opens."
+      title={props.block.title ?? text({ value: "Referenced records" })}
+      description={text({ value: "This block is loaded from the current record when the published app page opens." })}
     />
   ) : props.block.type === "records" || props.block.type === "metrics" || props.block.type === "chart" ? (
     <SourcePreview
@@ -219,7 +241,16 @@ export default function CustomAppBlockPreview(props: {
       onPreviewResult={props.onPreviewResult}
     />
   ) : props.block.type === "form" ? (
-    <Show when={form()} fallback={<Placeholder align="left" title="Form unavailable" description="Choose an active Form in this Base." />}>
+    <Show
+      when={form()}
+      fallback={
+        <Placeholder
+          align="left"
+          title={text({ value: "Form unavailable" })}
+          description={text({ value: "Choose an active Form in this Base." })}
+        />
+      }
+    >
       {(selected) => (
         <FormSubmit
           preview
@@ -247,21 +278,21 @@ export default function CustomAppBlockPreview(props: {
     <Placeholder
       align="left"
       icon="ti ti-scan"
-      title={props.block.title ? undefined : "Scanner"}
-      description="Signed-in readers can scan codes here. Open the published app to use the camera."
+      title={props.block.title ? undefined : text({ value: "Scanner" })}
+      description={text({ value: "Signed-in readers can scan codes here. Open the published app to use the camera." })}
     />
   ) : props.block.type === "html" ? (
     <Placeholder
       align="left"
       icon="ti ti-code"
-      title={props.block.title ? undefined : "Rendered HTML"}
-      description="The selected HTML template renders here for the record in the published app."
+      title={props.block.title ? undefined : text({ value: "Rendered HTML" })}
+      description={text({ value: "The selected HTML template renders here for the record in the published app." })}
     />
   ) : (
     <Placeholder
       align="left"
       title={`${props.block.type[0]?.toUpperCase()}${props.block.type.slice(1)}`}
-      description="Preview data is unavailable for the current page context."
+      description={text({ value: "Preview data is unavailable for the current page context." })}
     />
   );
 }

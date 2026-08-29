@@ -1095,7 +1095,7 @@ export type CustomAppRowValueBinding = z.infer<typeof CustomAppRowValueBindingSc
 export type CustomAppRowAction = z.infer<typeof CustomAppRowActionSchema>;
 export type CustomAppSidebarAction = z.infer<typeof CustomAppSidebarActionSchema>;
 
-export type CustomAppDiagnostic = { path: Array<string | number>; message: string };
+export type CustomAppDiagnostic = { path: Array<string | number>; message: string; code?: string };
 
 export const parseStoredCustomAppDefinition = (raw: unknown, version: "draft" | "published") => {
   const parsed = CustomAppDefinitionSchema.safeParse(raw);

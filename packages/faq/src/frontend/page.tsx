@@ -1,11 +1,13 @@
 import { MarkdownView, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getUserBackedActor } from "@valentinkolb/cloud/server";
+import { getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import { faqService } from "../service";
+import { faqMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = faqMessages.resolve([getLocale(c)]);
   const user = getUserBackedActor(c);
 
   const audience = !user ? "anonymous" : user.profile === "guest" ? "guest" : "user";
@@ -13,7 +15,7 @@ export default ssr<AuthContext>(async (c) => {
   const entries = (await faqService.entry.list({ filter: { audience } })).items;
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "FAQ" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "FAQ" }]}>
       <div class="max-w-2xl mx-auto flex flex-col gap-4">
         <h1 class="text-xl font-bold text-primary" style="view-transition-name: page-header">
           FAQ
@@ -34,7 +36,7 @@ export default ssr<AuthContext>(async (c) => {
             ))}
           </div>
         ) : (
-          <Placeholder surface="paper" description={<>No FAQ entries available.</>} />
+          <Placeholder surface="paper" description={<>{t.noEntries}</>} />
         )}
       </div>
     </Layout>

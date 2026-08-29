@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import type { FieldDependent } from "../service/field-dependents";
 import { type PublicResourceType, projectPublicIds, resolvePublicIds } from "../service/public-resources";
+import { apiMessages } from "./messages";
 import { currentActorUserId, gateAt } from "./permissions";
 import {
   fromPublicFieldWrite,
@@ -18,6 +19,7 @@ import {
   toPublicFields,
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 const PublicFieldDependentSchema = z.object({
   type: z.enum(["view", "form", "formula", "lookup", "rollup", "relation_display", "audit_policy", "federation_mapping"]),
@@ -79,7 +81,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const fields = await gridsService.field.listByTable(tableId);
@@ -106,16 +108,17 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const { fieldIds } = c.req.valid("json");
       const resolved = await resolvePublicIds("field", fieldIds);
-      if (resolved.size !== new Set(fieldIds).size) return c.json({ message: "Field not found" }, 404);
+      if (resolved.size !== new Set(fieldIds).size) return c.json({ message: apiMessages(c).fieldNotFound }, 404);
       const result = await gridsService.field.reorder(
         tableId,
         fieldIds.map((id) => resolved.get(id)!),
         currentActorUserId(c),
+        getLocale(c),
       );
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
       return c.body(null, 204);
@@ -140,13 +143,13 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const body = c.req.valid("json");
       const internal = await fromPublicFieldWrite(body.type, body);
       if (!internal.ok) return respond(c, () => Promise.resolve(internal));
-      const result = await gridsService.field.create({ tableId, ...internal.data }, currentActorUserId(c));
+      const result = await gridsService.field.create({ tableId, ...internal.data }, currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(await toPublicField(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
     },
   )
@@ -166,9 +169,9 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const fieldId = internalIdParam(c, "fieldId")!;
       const field = await gridsService.field.get(fieldId);
-      if (!field) return c.json({ message: "Field not found" }, 404);
+      if (!field) return c.json({ message: apiMessages(c).fieldNotFound }, 404);
       const table = await gridsService.table.get(field.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const deps = await gridsService.fieldDependents.get(fieldId);
@@ -194,14 +197,14 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const fieldId = internalIdParam(c, "fieldId")!;
       const field = await gridsService.field.get(fieldId);
-      if (!field) return c.json({ message: "Field not found" }, 404);
+      if (!field) return c.json({ message: apiMessages(c).fieldNotFound }, 404);
       const table = await gridsService.table.get(field.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const internal = await fromPublicFieldWrite(field.type, c.req.valid("json"));
       if (!internal.ok) return respond(c, () => Promise.resolve(internal));
-      const result = await gridsService.field.update(fieldId, internal.data, currentActorUserId(c));
+      const result = await gridsService.field.update(fieldId, internal.data, currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(await toPublicField(result.data)) : c.json({ message: result.error.message }, result.error.status);
     },
   )
@@ -222,9 +225,9 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const fieldId = internalIdParam(c, "fieldId")!;
       const field = await gridsService.field.get(fieldId);
-      if (!field) return c.json({ message: "Field not found" }, 404);
+      if (!field) return c.json({ message: apiMessages(c).fieldNotFound }, 404);
       const table = await gridsService.table.get(field.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
@@ -232,13 +235,13 @@ const app = new Hono<AuthContext>()
       if (gridsService.fieldDependents.hasBlocking(deps)) {
         return c.json(
           {
-            message: "Field has blocking dependents — remove them before deleting",
+            message: apiMessages(c).fieldHasDependents,
             dependents: await toPublicFieldDependents(deps.filter((d) => d.blocking)),
           },
           409,
         );
       }
-      const result = await gridsService.field.softDelete(fieldId, currentActorUserId(c));
+      const result = await gridsService.field.softDelete(fieldId, currentActorUserId(c), getLocale(c));
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
       return c.body(null, 204);
     },
@@ -263,12 +266,12 @@ const app = new Hono<AuthContext>()
       // `field.get` intentionally returns soft-deleted fields while still
       // enforcing the live parent table/base invariant.
       const field = await gridsService.field.get(fieldId);
-      if (!field) return c.json({ message: "Field not found" }, 404);
+      if (!field) return c.json({ message: apiMessages(c).fieldNotFound }, 404);
       const table = await gridsService.table.get(field.tableId);
-      if (!table) return c.json({ message: "Table not found" }, 404);
+      if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.field.restore(fieldId, currentActorUserId(c));
+      const result = await gridsService.field.restore(fieldId, currentActorUserId(c), getLocale(c));
       return result.ok ? c.json(await toPublicField(result.data)) : c.json({ message: result.error.message }, result.error.status);
     },
   );

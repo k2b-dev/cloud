@@ -39,18 +39,22 @@ export const responseErrorMessage = async (response: Response, fallback: string)
 const isHealthWebhook = (value: unknown): value is HealthWebhook =>
   Boolean(value && typeof value === "object" && "id" in value && typeof value.id === "string");
 
-export const readHealthWebhookResponse = async (response: Response): Promise<HealthWebhook> => {
+export const readHealthWebhookResponse = async (response: Response, fallback = "Unexpected webhook response."): Promise<HealthWebhook> => {
   const body = await response.json();
   if (isHealthWebhook(body)) return body;
-  throw new Error("Unexpected webhook response.");
+  throw new Error(fallback);
 };
 
-export const createHealthWebhookQueries = () => {
+export const createHealthWebhookQueries = (messages = {
+  loadWebhooks: "Failed to load health webhooks",
+  loadSettings: "Failed to load gateway settings",
+  loadHealth: "Failed to load gateway health",
+}) => {
   const webhooks = query.create<string, HealthWebhook[]>({
     source: () => "health-webhooks",
     load: async (_source, { abortSignal }) => {
       const response = await apiClient.health.webhooks.$get({}, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to load health webhooks"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, messages.loadWebhooks));
       return response.json();
     },
   });
@@ -59,7 +63,7 @@ export const createHealthWebhookQueries = () => {
     source: () => "gateway-settings",
     load: async (_source, { abortSignal }) => {
       const response = await apiClient.settings.$get({}, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to load gateway settings"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, messages.loadSettings));
       return response.json();
     },
   });
@@ -68,7 +72,7 @@ export const createHealthWebhookQueries = () => {
     source: () => "gateway-health",
     load: async (_source, { abortSignal }) => {
       const response = await apiClient.health.$get({}, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await responseErrorMessage(response, "Failed to load gateway health"));
+      if (!response.ok) throw new Error(await responseErrorMessage(response, messages.loadHealth));
       return response.json();
     },
   });

@@ -13,6 +13,7 @@ import {
   StatusBadge,
   TextInput,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
@@ -33,6 +34,7 @@ import {
 } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow, PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
+import { workflowMessages } from "./messages";
 import { WorkflowInputFields } from "./WorkflowInputFields";
 import { customAppLauncherConfigForSave, missingLauncherRequiredInputs } from "./workflow-launcher-draft";
 import {
@@ -63,29 +65,35 @@ const workflowLauncherApi = apiClient.workflows as unknown as WorkflowLauncherAp
 
 type LauncherDraft = CreateGridsWorkflowLauncherInput;
 
-const launcherKindOptions = [
-  { id: "scanner", label: "Scanner" },
-  { id: "bulk", label: "Bulk selection" },
-  { id: "record", label: "Record action" },
-  { id: "customApp", label: "App action" },
-];
+const launcherKindOptions = (locale: string) => {
+  const t = workflowMessages.resolve([locale]).t;
+  return [
+    { id: "scanner", label: t.scanner },
+    { id: "bulk", label: t.bulkSelection },
+    { id: "record", label: t.recordAction },
+    { id: "customApp", label: t.appAction },
+  ];
+};
 
-const launcherKindLabel = (kind: GridsWorkflowLauncherKind) => launcherKindOptions.find((option) => option.id === kind)?.label ?? kind;
+const launcherKindLabel = (kind: GridsWorkflowLauncherKind, locale: string) =>
+  launcherKindOptions(locale).find((option) => option.id === kind)?.label ?? kind;
 
-const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher): string => {
+const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher, locale: string): string => {
+  const t = workflowMessages.resolve([locale]).t;
   if (launcher.config.kind === "scanner") {
     const sources = Object.values(scannerLauncherInputSources(launcher.config));
-    return `${sources.filter((source) => source.kind === "session").length} before · ${
-      sources.filter((source) => source.kind === "afterScan").length
-    } after each scan`;
+    return t.scannerInputsSummary({
+      before: sources.filter((source) => source.kind === "session").length,
+      after: sources.filter((source) => source.kind === "afterScan").length,
+    });
   }
   if (launcher.config.kind === "bulk") {
-    return "profile" in launcher.config ? "Exact Close selection" : `Supplies ${launcher.config.input}`;
+    return "profile" in launcher.config ? t.exactCloseSelection : t.suppliesInput({ input: launcher.config.input });
   }
   if (launcher.config.kind === "record") {
-    return correctionDraftIntent(launcher.config) === "cancellation" ? "Create cancellation Draft" : "Create correction Draft";
+    return correctionDraftIntent(launcher.config) === "cancellation" ? t.createCancellationDraft : t.createCorrectionDraft;
   }
-  return launcher.config.inputMode === "prompt" ? "Asks for input when run" : "Uses fixed input values";
+  return launcher.config.inputMode === "prompt" ? t.asksForInput : t.usesFixedValues;
 };
 
 const defaultDraft = (workflow: PublicWorkflow): LauncherDraft => {
@@ -121,6 +129,8 @@ function LauncherEditor(props: {
   launcher?: PublicWorkflowLauncher;
   close: (draft?: LauncherDraft) => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const initial = props.launcher ?? defaultDraft(props.workflow);
   const [name, setName] = createSignal(initial.name);
   const [enabled, setEnabled] = createSignal(initial.enabled ?? true);
@@ -184,11 +194,11 @@ function LauncherEditor(props: {
     kind() === "record" ? isCanonicalCorrectionDraftPlan(props.workflow.plan, input()) : false,
   );
   const missingRequiredInputs = createMemo(() => missingLauncherRequiredInputs(props.workflow.plan.inputs, kind(), input()));
-  const customAppValidation = createMemo(() => buildWorkflowRunInput(props.workflow.plan.inputs, customAppBindings()));
+  const customAppValidation = createMemo(() => buildWorkflowRunInput(props.workflow.plan.inputs, customAppBindings(), locale()));
   const fixedScannerInputs = createMemo(() =>
     props.workflow.plan.inputs.filter((candidate) => scannerSources()[candidate.name] === "fixed"),
   );
-  const scannerFixedValidation = createMemo(() => buildWorkflowRunInput(fixedScannerInputs(), scannerFixedDraft()));
+  const scannerFixedValidation = createMemo(() => buildWorkflowRunInput(fixedScannerInputs(), scannerFixedDraft(), locale()));
   const scannerScanCount = createMemo(
     () => Object.values(scannerSources()).filter((source) => source === "scanRecord" || source === "scanText").length,
   );
@@ -274,18 +284,18 @@ function LauncherEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.launcher ? "Edit run option" : "Add run option"}
+        title={props.launcher ? t().editRunOption : t().addRunOption}
         subtitle={props.workflow.name}
         icon="ti ti-rocket"
         close={() => props.close()}
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-3">
-          <TextInput label="Name" required value={name} onValueChange={setName} icon="ti ti-letter-case" />
+          <TextInput label={t().name} required value={name} onValueChange={setName} icon="ti ti-letter-case" />
           <Select
-            label="Surface"
+            label={t().surface}
             required
-            options={launcherKindOptions}
+            options={launcherKindOptions(locale())}
             value={() => kind()}
             onValueChange={(value) => {
               const next = value as GridsWorkflowLauncherKind;
@@ -301,8 +311,8 @@ function LauncherEditor(props: {
           />
           <Show when={kind() === "bulk" || kind() === "record"}>
             <Select
-              label={kind() === "record" ? "Record input" : "Record-list input"}
-              description="The run option supplies this workflow input."
+              label={kind() === "record" ? t().recordInput : t().recordListInput}
+              description={t().suppliesWorkflowInput}
               required
               options={inputOptions()}
               value={input}
@@ -310,24 +320,24 @@ function LauncherEditor(props: {
             />
             <Show when={closeSelectionProfile()}>
               <NoticeCard tone="info" icon="ti ti-list-check">
-                This run option closes only the exact Records a person selects and confirms.
+                {t().closeExactRecords}
               </NoticeCard>
             </Show>
             <Show when={correctionDraftProfile()}>
               <Select
-                label="Action"
-                description="Defined by the workflow so the wording and stored follow-up type cannot disagree."
+                label={t().action}
+                description={t().actionDefinedByWorkflow}
                 options={[
                   {
                     id: "correction",
-                    label: "Correction",
-                    description: "Create a linked Draft for revised values.",
+                    label: t().correction,
+                    description: t().correctionDescription,
                     icon: "ti ti-file-pencil",
                   },
                   {
                     id: "cancellation",
-                    label: "Cancellation",
-                    description: "Create a linked Draft for a cancellation completed by the user.",
+                    label: t().cancellation,
+                    description: t().cancellationDescription,
                     icon: "ti ti-file-off",
                   },
                 ]}
@@ -336,35 +346,31 @@ function LauncherEditor(props: {
                 required
               />
               <NoticeCard tone="info" icon={recordIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"}>
-                This action creates one {recordIntent()} Draft from the finalized Record a person opens. Grids does not calculate amounts,
-                taxes, or counter-bookings, and it does not generate a Document.
+                {t().correctionDraftNotice({ intent: recordIntent() === "cancellation" ? t().cancellation : t().correction })}
               </NoticeCard>
             </Show>
             <Show when={!closeSelectionProfile() && !correctionDraftProfile() && missingRequiredInputs().length > 0}>
               <NoticeCard tone="danger" icon={false} role="alert">
-                This surface cannot supply the required {missingRequiredInputs().length === 1 ? "input" : "inputs"}:{" "}
-                {missingRequiredInputs().join(", ")}. Use a App run option or make the inputs optional.
+                {t().surfaceMissingInputs({ names: missingRequiredInputs().join(", ") })}
               </NoticeCard>
             </Show>
           </Show>
           <Show when={kind() === "scanner"}>
             <div class="flex flex-col gap-3">
-              <p class="text-sm text-dimmed">
-                Choose where each workflow input comes from. Input names are workflow-defined and have no special meaning.
-              </p>
+              <p class="text-sm text-dimmed">{t().scannerInputSources}</p>
               <For each={props.workflow.plan.inputs}>
                 {(candidate) => (
                   <Select
                     label={workflowInputLabel(candidate)}
-                    description={`${candidate.type}${workflowInputRequired(candidate) ? " · required" : ""}`}
+                    description={`${candidate.type}${workflowInputRequired(candidate) ? ` · ${t().required}` : ""}`}
                     required={workflowInputRequired(candidate)}
                     options={[
-                      { id: "unused", label: "Not supplied" },
-                      ...(candidate.type === "record" ? [{ id: "scanRecord", label: "Scanned record" }] : []),
-                      ...(candidate.type === "text" ? [{ id: "scanText", label: "Scanned text" }] : []),
-                      { id: "session", label: "Ask before scanning" },
-                      { id: "afterScan", label: "Ask after every scan" },
-                      { id: "fixed", label: "Fixed value" },
+                      { id: "unused", label: t().notSupplied },
+                      ...(candidate.type === "record" ? [{ id: "scanRecord", label: t().scannedRecord }] : []),
+                      ...(candidate.type === "text" ? [{ id: "scanText", label: t().scannedText }] : []),
+                      { id: "session", label: t().askBeforeScanning },
+                      { id: "afterScan", label: t().askAfterEveryScan },
+                      { id: "fixed", label: t().fixedValue },
                     ]}
                     value={() => scannerSources()[candidate.name] ?? "unused"}
                     onValueChange={(value) =>
@@ -375,13 +381,12 @@ function LauncherEditor(props: {
               </For>
               <Show when={scannerScanCount() !== 1}>
                 <NoticeCard tone="danger" icon={false} role="alert">
-                  Choose exactly one workflow input as the scanned value.
+                  {t().chooseOneScannedValue}
                 </NoticeCard>
               </Show>
               <Show when={missingScannerInputs().length > 0}>
                 <NoticeCard tone="danger" icon={false} role="alert">
-                  Choose a source for the required {missingScannerInputs().length === 1 ? "input" : "inputs"}:{" "}
-                  {missingScannerInputs().join(", ")}.
+                  {t().chooseRequiredSources({ names: missingScannerInputs().join(", ") })}
                 </NoticeCard>
               </Show>
               <Show when={fixedScannerInputs().length > 0}>
@@ -402,12 +407,12 @@ function LauncherEditor(props: {
           </Show>
           <Show when={kind() === "customApp"}>
             <Select
-              label="Inputs"
-              description="Use fixed values for a one-click action, or ask the user when the button runs."
+              label={t().inputs}
+              description={t().inputsDescription}
               required
               options={[
-                { id: "fixed", label: "Fixed values" },
-                { id: "prompt", label: "Ask when run" },
+                { id: "fixed", label: t().fixedValues },
+                { id: "prompt", label: t().askWhenRun },
               ]}
               value={customAppInputMode}
               onValueChange={(value) => setCustomAppInputMode(value as "fixed" | "prompt")}
@@ -419,30 +424,30 @@ function LauncherEditor(props: {
                 draft={customAppBindings}
                 onValueChange={setCustomAppBinding}
                 errors={customAppErrors}
-                emptyText="This workflow does not need input."
+                emptyText={t().noInputNeeded}
               />
               <Show when={!customAppValidation().ok}>
                 <NoticeCard tone="danger" icon={false} role="alert">
-                  Provide valid fixed values for every required workflow input.
+                  {t().validFixedValuesRequired}
                 </NoticeCard>
               </Show>
             </Show>
           </Show>
           <Show when={kind() === "scanner" && Object.values(scannerSources()).includes("scanRecord")}>
             <Select
-              label="Resolve scanned values by"
+              label={t().resolveScannedBy}
               required
               options={[
-                { id: "scanCode", label: "Generated scan code" },
-                { id: "field", label: "Unique field" },
+                { id: "scanCode", label: t().generatedScanCode },
+                { id: "field", label: t().uniqueField },
               ]}
               value={resolveBy}
               onValueChange={(value) => setResolveBy(value as "scanCode" | "field")}
             />
             <Show when={resolveBy() === "field"}>
               <TextInput
-                label="Unique field"
-                description="Use a field name, short ID, or UUID from the bound table."
+                label={t().uniqueField}
+                description={t().uniqueFieldDescription}
                 required
                 value={field}
                 onValueChange={setField}
@@ -450,22 +455,17 @@ function LauncherEditor(props: {
               />
             </Show>
           </Show>
-          <CheckboxCard
-            label="Enabled"
-            description="Enabled run options are available on their scanner, table, or App surface."
-            value={enabled}
-            onValueChange={setEnabled}
-          />
+          <CheckboxCard label={t().enabled} description={t().enabledRunOptionDescription} value={enabled} onValueChange={setEnabled} />
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span />
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={() => props.close()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" disabled={!valid()} onClick={submit}>
-            <i class="ti ti-check" /> {props.launcher ? "Save run option" : "Add run option"}
+            <i class="ti ti-check" /> {props.launcher ? t().saveRunOption : t().addRunOption}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -485,6 +485,8 @@ export function WorkflowLauncherManager(props: {
   onChanged: () => void;
   onClose: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   let disposed = false;
   const [launchers, setLaunchers] = createSignal<PublicWorkflowLauncher[]>([]);
   const [loaded, setLoaded] = createSignal(false);
@@ -496,7 +498,7 @@ export function WorkflowLauncherManager(props: {
         { param: { workflowId: props.workflow.id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not load run options."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().loadRunOptionsFailed));
       const items = PublicGridsWorkflowLauncherListSchema.parse(await res.json()).items;
       if (!disposed) setLaunchers(items);
     },
@@ -516,7 +518,7 @@ export function WorkflowLauncherManager(props: {
             { param: { workflowId: props.workflow.id }, json: draft },
             { init: { signal: abortSignal } },
           );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not save run option."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().saveRunOptionFailed));
       return PublicGridsWorkflowLauncherSchema.parse(await res.json());
     },
     onSuccess: () => {
@@ -531,17 +533,17 @@ export function WorkflowLauncherManager(props: {
 
   const removeMut = mutations.create<boolean, PublicWorkflowLauncher>({
     mutation: async (launcher, { abortSignal }) => {
-      const confirmed = await prompts.confirm(`Delete run option "${launcher.name}"?`, {
-        title: "Delete run option?",
+      const confirmed = await prompts.confirm(t().deleteRunOptionConfirm({ name: launcher.name }), {
+        title: t().deleteRunOption,
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
       });
       if (!confirmed) return false;
       const res = await workflowLauncherApi.launchers[":launcherId"].$delete(
         { param: { launcherId: launcher.id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not delete run option."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().deleteRunOptionFailed));
       return true;
     },
     onSuccess: (deleted) => {
@@ -576,13 +578,13 @@ export function WorkflowLauncherManager(props: {
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Run options" subtitle={props.workflow.name} icon="ti ti-rocket" close={close} />
+      <PanelDialog.Header title={t().runOptions} subtitle={props.workflow.name} icon="ti ti-rocket" close={close} />
       <PanelDialog.Body>
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
-            <p class="text-sm text-dimmed">Make this workflow available as a scanner, Record action, bulk action, or App action.</p>
+            <p class="text-sm text-dimmed">{t().runOptionsDescription}</p>
             <Button variant="primary" size="sm" type="button" disabled={mutationsBlocked()} onClick={() => void edit()}>
-              <i class="ti ti-plus" /> Add run option
+              <i class="ti ti-plus" /> {t().addRunOption}
             </Button>
           </div>
           <Show
@@ -592,18 +594,18 @@ export function WorkflowLauncherManager(props: {
                 state="error"
                 surface="paper"
                 align="left"
-                title="Could not load run options"
+                title={t().couldNotLoadRunOptions}
                 description={loadMut.error()?.message}
                 action={
                   <Button variant="secondary" size="sm" type="button" disabled={loadMut.loading()} onClick={() => loadMut.retry()}>
-                    <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                    <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                   </Button>
                 }
               />
             }
           >
-            <Show when={loaded()} fallback={<Placeholder state="loading" align="left" description="Loading run options..." />}>
-              <For each={launchers()} fallback={<Placeholder align="left" description={<>No run options configured.</>} />}>
+            <Show when={loaded()} fallback={<Placeholder state="loading" align="left" description={t().loadingRunOptions} />}>
+              <For each={launchers()} fallback={<Placeholder align="left" description={<>{t().noRunOptions}</>} />}>
                 {(launcher) => {
                   const stale = () => launcher.validatedRevision !== props.workflow.revision;
                   const invalid = () => launcher.diagnostics.some((diagnostic) => diagnostic.severity === "error");
@@ -619,41 +621,39 @@ export function WorkflowLauncherManager(props: {
                           <span class="truncate text-sm font-medium text-primary">{launcher.name}</span>
                           <StatusBadge
                             tone={launcher.enabled && !stale() && !invalid() ? "ok" : "neutral"}
-                            label={launcher.enabled && !stale() && !invalid() ? "available" : "unavailable"}
+                            label={launcher.enabled && !stale() && !invalid() ? t().available : t().unavailable}
                           />
                         </span>
                         <span class="mt-0.5 block text-xs text-dimmed">
-                          {launcherKindLabel(launcher.config.kind)} · {launcherConfigurationSummary(launcher)}
+                          {launcherKindLabel(launcher.config.kind, locale())} · {launcherConfigurationSummary(launcher, locale())}
                         </span>
                         <Show when={stale()}>
-                          <span class="mt-1 block text-xs text-amber-700 dark:text-amber-300">
-                            Workflow changed. Review and save this run option before enabling it.
-                          </span>
+                          <span class="mt-1 block text-xs text-amber-700 dark:text-amber-300">{t().staleRunOption}</span>
                         </Show>
                         <For each={launcher.diagnostics}>
                           {(diagnostic) => <span class="mt-1 block text-xs text-red-600 dark:text-red-400">{diagnostic.message}</span>}
                         </For>
                       </span>
-                      <Tooltip.Anchor content="Edit run option">
+                      <Tooltip.Anchor content={t().editRunOption}>
                         <IconButton
                           variant="ghost"
                           size="sm"
                           type="button"
                           disabled={mutationsBlocked()}
-                          label={`Edit ${launcher.name}`}
+                          label={t().editNamed({ name: launcher.name })}
                           onClick={() => void edit(launcher)}
                         >
                           <i class="ti ti-pencil" />
                         </IconButton>
                       </Tooltip.Anchor>
-                      <Tooltip.Anchor content="Delete run option">
+                      <Tooltip.Anchor content={t().deleteRunOption}>
                         <IconButton
                           variant="ghost"
                           size="sm"
                           type="button"
                           class="text-red-600 dark:text-red-400"
                           disabled={mutationsBlocked()}
-                          label={`Delete ${launcher.name}`}
+                          label={t().deleteNamed({ name: launcher.name })}
                           onClick={() => removeMut.mutate(launcher)}
                         >
                           <i class="ti ti-trash" />
@@ -670,7 +670,7 @@ export function WorkflowLauncherManager(props: {
       <PanelDialog.Footer>
         <span />
         <Button variant="secondary" size="sm" type="button" disabled={writing()} onClick={close}>
-          Done
+          {t().done}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>

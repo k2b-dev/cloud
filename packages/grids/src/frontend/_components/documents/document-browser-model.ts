@@ -1,4 +1,5 @@
 import type { GridsDocumentViewMode } from "../sidebar/GridsSettingsStore";
+import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentViewMode = GridsDocumentViewMode | "custom";
@@ -54,17 +55,22 @@ export const documentCountLabel = (
   folders: PublicDocumentFolder[],
   documents: PublicDocument[],
   hasMore: boolean,
+  locale = "en",
 ): string => {
+  const t = documentMessages.resolve([locale]).t;
+  const format = new Intl.NumberFormat(locale);
   if (mode === "folders" && folders.length > 0) {
-    return `${folders.reduce((sum, folder) => sum + folder.count, 0)} documents`;
+    const count = folders.reduce((sum, folder) => sum + folder.count, 0);
+    return t.documentCount({ count, formatted: format.format(count) });
   }
-  return `${documents.length}${hasMore ? "+" : ""} documents`;
+  return t.countDocuments({ formatted: format.format(documents.length), more: hasMore });
 };
 
-export const documentBrowserEmptyText = (search: string, mode: DocumentBrowserMode, folderPath: string[]): string => {
-  if (search.trim()) return "No documents match this search.";
-  if (mode === "folders" && folderPath.length > 0) return "This folder is empty.";
-  return "No generated documents yet.";
+export const documentBrowserEmptyText = (search: string, mode: DocumentBrowserMode, folderPath: string[], locale = "en"): string => {
+  const t = documentMessages.resolve([locale]).t;
+  if (search.trim()) return t.noMatchingDocuments;
+  if (mode === "folders" && folderPath.length > 0) return t.emptyFolder;
+  return t.noGeneratedDocuments;
 };
 
 export const documentActionState = (canWrite: boolean, busyDocumentId: string | null, documentId: string) => ({

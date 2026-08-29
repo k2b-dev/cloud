@@ -1,10 +1,11 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, CopyButton, DatePicker, prompts } from "@k2b/ui";
+import { Button, CopyButton, DatePicker, NoticeCard, prompts } from "@k2b/ui";
 import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
+import { useAccountsMessages } from "../../../messages";
 import { openCredentialDialog } from "./credential-dialog";
 
 type UserActionsProps = {
@@ -24,7 +25,14 @@ const toSafeParagraphHtml = (value: string): string =>
     .map((line) => `<p>${escapeHtml(line)}</p>`)
     .join("");
 
-const confirmProviderSwitch = (config: { title: string; icon: string; confirmText: string; description: string; details: string[] }) =>
+const confirmProviderSwitch = (config: {
+  title: string;
+  icon: string;
+  confirmText: string;
+  cancelText: string;
+  description: string;
+  details: string[];
+}) =>
   prompts.confirm(
     <div class="flex flex-col gap-2">
       <p>{config.description}</p>
@@ -38,11 +46,12 @@ const confirmProviderSwitch = (config: { title: string; icon: string; confirmTex
       title: config.title,
       icon: config.icon,
       confirmText: config.confirmText,
-      cancelText: "Cancel",
+      cancelText: config.cancelText,
     },
   );
 
 export function createUserActions(props: UserActionsProps) {
+  const messages = useAccountsMessages();
   const editMutation = mutations.create<
     void,
     {
@@ -62,7 +71,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to update user.");
+        throw new Error(data.message ?? messages().updateUserFailed);
       }
     },
     onSuccess: () => refreshCurrentPath(),
@@ -76,7 +85,7 @@ export function createUserActions(props: UserActionsProps) {
     });
     if (!res.ok) {
       const data = await res.json();
-      throw new Error(data.message ?? "Failed to update avatar.");
+      throw new Error(data.message ?? messages().updateAvatarFailed);
     }
     refreshCurrentPath();
   };
@@ -87,7 +96,7 @@ export function createUserActions(props: UserActionsProps) {
     });
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.message ?? "Failed to remove avatar.");
+      throw new Error(data.message ?? messages().removeAvatarFailed);
     }
     refreshCurrentPath();
   };
@@ -99,21 +108,22 @@ export function createUserActions(props: UserActionsProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to reset password.");
+        throw new Error(data.message ?? messages().resetPasswordFailed);
       }
       return await res.json();
     },
     onSuccess: (data) =>
       openCredentialDialog({
-        title: "Temporary password created",
+        title: messages().temporaryPasswordCreated,
         icon: "ti ti-lock-open",
         intro: (
           <>
-            <p>A new temporary password has been generated for this FreeIPA account.</p>
-            <p>The user will be required to set a new password on the next login.</p>
+            <p>{messages().temporaryPasswordIntro}</p>
+            <p>{messages().temporaryPasswordNextLogin}</p>
           </>
         ),
-        fields: [{ label: "Temporary password", value: data.password, copyLabel: "Copy password", tone: "primary" }],
+        fields: [{ label: messages().temporaryPassword, value: data.password, copyLabel: messages().copyPassword, tone: "primary" }],
+        doneLabel: messages().done,
       }),
     onError: (err) => prompts.error(err.message),
   });
@@ -125,7 +135,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to delete user.");
+        throw new Error(data.message ?? messages().deleteUserFailed);
       }
       return data;
     },
@@ -141,7 +151,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to set expiry.");
+        throw new Error(data.message ?? messages().setExpiryFailed);
       }
       return data;
     },
@@ -160,7 +170,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to update local profile.");
+        throw new Error(data.message ?? messages().updateProfileFailed);
       }
       return data;
     },
@@ -176,7 +186,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to update local admin access.");
+        throw new Error(data.message ?? messages().updateAdminFailed);
       }
       return data;
     },
@@ -192,7 +202,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to create IPA account.");
+        throw new Error(data.message ?? messages().createIpaFailed);
       }
       return data;
     },
@@ -208,7 +218,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to switch provider to local.");
+        throw new Error(data.message ?? messages().makeLocalFailed);
       }
       return data;
     },
@@ -223,24 +233,25 @@ export function createUserActions(props: UserActionsProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to create login token.");
+        throw new Error(data.message ?? messages().createLoginTokenFailed);
       }
       return await res.json();
     },
     onSuccess: (data) =>
       openCredentialDialog({
-        title: "Login token created",
+        title: messages().loginTokenCreated,
         icon: "ti ti-key",
         intro: (
           <>
-            <p>No email was sent. This one-time login token stays valid for about {Math.ceil(data.expiresInSeconds / 60)} minutes.</p>
-            <p>You can either share the raw token or use the direct login link below.</p>
+            <p>{messages().loginTokenIntro({ minutes: Math.ceil(data.expiresInSeconds / 60) })}</p>
+            <p>{messages().loginTokenShare}</p>
           </>
         ),
         fields: [
-          { label: "Login token", value: data.token, copyLabel: "Copy token", tone: "primary" },
-          { label: "Direct login link", value: data.magicLink, copyLabel: "Copy link" },
+          { label: messages().loginToken, value: data.token, copyLabel: messages().copyToken, tone: "primary" },
+          { label: messages().directLoginLink, value: data.magicLink, copyLabel: messages().copyLink },
         ],
+        doneLabel: messages().done,
       }),
     onError: (err) => prompts.error(err.message),
   });
@@ -256,7 +267,7 @@ export function createUserActions(props: UserActionsProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to send notification.");
+        throw new Error(data.message ?? messages().notifyFailed);
       }
       return data;
     },
@@ -265,16 +276,13 @@ export function createUserActions(props: UserActionsProps) {
   });
 
   const handleResetPassword = async () => {
-    const confirmed = await prompts.confirm(
-      `This will generate a temporary password for "${props.user.uid}". The user will need to set a new password on next login.`,
-      {
-        title: "Reset Password",
-        icon: "ti ti-lock-open",
-        confirmText: "Reset",
-        cancelText: "Cancel",
-        variant: "danger",
-      },
-    );
+    const confirmed = await prompts.confirm(messages().resetPasswordConfirm({ uid: props.user.uid }), {
+      title: messages().resetPassword,
+      icon: "ti ti-lock-open",
+      confirmText: messages().reset,
+      cancelText: messages().cancel,
+      variant: "danger",
+    });
     if (confirmed) {
       await resetPasswordMutation.mutate();
     }
@@ -282,30 +290,30 @@ export function createUserActions(props: UserActionsProps) {
 
   const handleEdit = async () => {
     const result = await prompts.form({
-      title: "Edit User",
+      title: messages().editUser,
       icon: "ti ti-pencil",
-      confirmText: "Save",
+      confirmText: messages().save,
       fields: {
         givenname: {
           type: "text" as const,
-          label: "First Name",
-          placeholder: "First name...",
+          label: messages().firstName,
+          placeholder: messages().firstName,
           icon: "ti ti-user",
           required: true,
           default: props.user.givenname,
         },
         sn: {
           type: "text" as const,
-          label: "Last Name",
-          placeholder: "Last name...",
+          label: messages().lastName,
+          placeholder: messages().lastName,
           icon: "ti ti-user",
           required: true,
           default: props.user.sn,
         },
         displayName: {
           type: "text" as const,
-          label: "Display Name",
-          placeholder: "Display name...",
+          label: messages().displayName,
+          placeholder: messages().displayName,
           icon: "ti ti-id-badge-2",
           required: true,
           default: props.user.displayName,
@@ -316,8 +324,7 @@ export function createUserActions(props: UserActionsProps) {
                 type: "info" as const,
                 content: () => (
                   <NoticeCard tone="warning" icon={false}>
-                    The email address is the primary sync key between FreeIPA and the local database. Changing it may affect account
-                    linking.
+                    {messages().emailSyncWarning}
                   </NoticeCard>
                 ),
               },
@@ -325,8 +332,8 @@ export function createUserActions(props: UserActionsProps) {
           : {}),
         mail: {
           type: "text" as const,
-          label: "Email",
-          placeholder: "Email address...",
+          label: messages().email,
+          placeholder: messages().email,
           icon: "ti ti-mail",
           default: props.user.mail ?? "",
         },
@@ -334,10 +341,10 @@ export function createUserActions(props: UserActionsProps) {
           ? {
               phone: {
                 type: "text" as const,
-                label: "Phone",
-                placeholder: "Phone number...",
+                label: messages().phone,
+                placeholder: messages().phonePlaceholder,
                 icon: "ti ti-phone",
-                description: "Visible to all account holders.",
+                description: messages().visibleToAccounts,
                 default: props.user.ipa?.phone ?? "",
               },
             }
@@ -360,8 +367,8 @@ export function createUserActions(props: UserActionsProps) {
       username: props.user.displayName || props.user.uid,
       userId: props.user.id,
       avatarHash: props.user.avatarHash,
-      subtitle: `Update ${props.user.uid}'s profile picture.`,
-      visibilityText: "This profile picture is visible to all account holders.",
+      subtitle: messages().avatarSubtitle({ uid: props.user.uid }),
+      visibilityText: messages().avatarVisibility,
       onSave: saveAvatar,
       onRemove: props.user.avatarHash ? removeAvatar : undefined,
     });
@@ -386,8 +393,8 @@ export function createUserActions(props: UserActionsProps) {
         return (
           <div class="flex flex-col gap-4">
             <DatePicker
-              label="Expiry Date"
-              description="Leave empty and click 'Remove Expiry' to make the account never expire."
+              label={messages().expiryDate}
+              description={messages().expiryDescription}
               value={() => expiryDate() || null}
               onValueChange={(value) => setExpiryDate(value ?? "")}
               clearable
@@ -398,51 +405,48 @@ export function createUserActions(props: UserActionsProps) {
                 size="sm"
                 variant="secondary"
                 onClick={async () => {
-                  const confirmed = await prompts.confirm(
-                    "This will allow the account to remain active indefinitely without an expiration date.",
-                    {
-                      title: "Set to Never Expire?",
-                      icon: "ti ti-infinity",
-                      confirmText: "Never Expire",
-                      cancelText: "Cancel",
-                    },
-                  );
+                  const confirmed = await prompts.confirm(messages().neverExpireDescription, {
+                    title: messages().neverExpireQuestion,
+                    icon: "ti ti-infinity",
+                    confirmText: messages().neverExpire,
+                    cancelText: messages().cancel,
+                  });
                   if (confirmed) {
                     handleSubmit(null);
                   }
                 }}
                 disabled={setExpiryMutation.loading()}
               >
-                Never Expire
+                {messages().neverExpire}
               </Button>
               <Button size="sm" onClick={() => handleSubmit(expiryDate() || null)} disabled={setExpiryMutation.loading() || !expiryDate()}>
-                {setExpiryMutation.loading() ? "Saving..." : "Set Expiry"}
+                {setExpiryMutation.loading() ? messages().saving : messages().setExpiry}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Set Account Expiry", icon: "ti ti-calendar" },
+      { title: messages().setAccountExpiry, icon: "ti ti-calendar" },
     );
   };
 
   const handleNotify = async () => {
     const result = await prompts.form({
-      title: `Notify ${props.user.displayName || props.user.uid}`,
+      title: messages().notifyUser({ name: props.user.displayName || props.user.uid }),
       icon: "ti ti-send",
-      confirmText: "Send",
+      confirmText: messages().send,
       fields: {
         subject: {
           type: "text" as const,
-          label: "Subject",
-          placeholder: "Notification subject...",
+          label: messages().subject,
+          placeholder: messages().notificationSubjectPlaceholder,
           icon: "ti ti-mail",
           required: true,
         },
         content: {
           type: "text" as const,
-          label: "Message",
-          placeholder: "Write your message here...",
+          label: messages().message,
+          placeholder: messages().notificationMessagePlaceholder,
           multiline: true,
           required: true,
         },
@@ -458,17 +462,13 @@ export function createUserActions(props: UserActionsProps) {
   };
 
   const handleSetProfile = async (profile: "user" | "guest") => {
-    const confirmed = await prompts.confirm(
-      profile === "guest"
-        ? "This converts the local account to the guest profile. Guest expiry starts to apply, limited-access behavior is used, and any local admin access is removed."
-        : "This converts the local account to the user profile. Guest expiry is removed and full local account behavior is used.",
-      {
-        title: profile === "guest" ? `Set "${props.user.uid}" to Guest?` : `Set "${props.user.uid}" to Full Account?`,
-        icon: profile === "guest" ? "ti ti-user-down" : "ti ti-user-up",
-        confirmText: profile === "guest" ? "Set Guest Account" : "Set Full Account",
-        cancelText: "Cancel",
-      },
-    );
+    const confirmed = await prompts.confirm(profile === "guest" ? messages().guestProfileDescription : messages().fullProfileDescription, {
+      title:
+        profile === "guest" ? messages().setGuestQuestion({ uid: props.user.uid }) : messages().setFullQuestion({ uid: props.user.uid }),
+      icon: profile === "guest" ? "ti ti-user-down" : "ti ti-user-up",
+      confirmText: profile === "guest" ? messages().setGuestAccount : messages().setFullAccount,
+      cancelText: messages().cancel,
+    });
     if (confirmed) {
       await setProfileMutation.mutate(profile);
     }
@@ -476,14 +476,12 @@ export function createUserActions(props: UserActionsProps) {
 
   const handleSetAdmin = async (admin: boolean) => {
     const confirmed = await prompts.confirm(
-      admin
-        ? `Grant local admin access to "${props.user.uid}"? This only applies while the account is managed locally.`
-        : `Revoke local admin access from "${props.user.uid}"?`,
+      admin ? messages().grantLocalAdminConfirm({ uid: props.user.uid }) : messages().revokeLocalAdminConfirm({ uid: props.user.uid }),
       {
-        title: admin ? "Grant Local Admin" : "Revoke Local Admin",
+        title: admin ? messages().grantLocalAdmin : messages().revokeLocalAdmin,
         icon: admin ? "ti ti-shield-check" : "ti ti-shield-x",
-        confirmText: admin ? "Grant Admin" : "Revoke Admin",
-        cancelText: "Cancel",
+        confirmText: admin ? messages().grantAdmin : messages().revokeAdmin,
+        cancelText: messages().cancel,
       },
     );
     if (confirmed) {
@@ -493,16 +491,12 @@ export function createUserActions(props: UserActionsProps) {
 
   const handleCreateIpa = async () => {
     const confirmed = await confirmProviderSwitch({
-      title: `Switch "${props.user.uid}" to FreeIPA?`,
+      title: messages().switchToIpaQuestion({ uid: props.user.uid }),
       icon: "ti ti-brand-open-source",
-      confirmText: "Create FreeIPA Account",
-      description: "This creates a matching FreeIPA account for this local account and switches its provider to IPA.",
-      details: [
-        "The account keeps its current UID and email.",
-        "The local account remains the same database identity.",
-        "Local group relations stay local.",
-        "Future IPA group memberships and guest/user profile are derived from IPA group sync.",
-      ],
+      confirmText: messages().createFreeIpaAccount,
+      cancelText: messages().cancel,
+      description: messages().switchToIpaDescription,
+      details: [messages().keepsUidEmail, messages().keepsDatabaseIdentity, messages().localGroupsStayLocal, messages().ipaGroupsDerived],
     });
     if (confirmed) {
       await createIpaMutation.mutate();
@@ -511,15 +505,16 @@ export function createUserActions(props: UserActionsProps) {
 
   const handleMakeLocal = async () => {
     const confirmed = await confirmProviderSwitch({
-      title: `Switch "${props.user.uid}" to Local?`,
+      title: messages().switchToLocalQuestion({ uid: props.user.uid }),
       icon: "ti ti-home-move",
-      confirmText: "Make Local",
-      description: "This removes the matching FreeIPA account and switches the local identity row to local account management.",
+      confirmText: messages().makeLocal,
+      cancelText: messages().cancel,
+      description: messages().switchToLocalDescription,
       details: [
-        "The database identity stays the same.",
-        "Local group relations stay untouched.",
-        "IPA-backed groups and manager assignments are removed.",
-        "The current full/guest profile is preserved.",
+        messages().keepsDatabaseIdentity,
+        messages().localGroupsUntouched,
+        messages().ipaRelationsRemoved,
+        messages().profilePreserved,
       ],
     });
     if (confirmed) {
@@ -528,15 +523,12 @@ export function createUserActions(props: UserActionsProps) {
   };
 
   const handleCreateLoginToken = async () => {
-    const confirmed = await prompts.confirm(
-      `Create a one-time local login token for "${props.user.mail ?? props.user.uid}"? No email will be sent.`,
-      {
-        title: "Create Login Token",
-        icon: "ti ti-key",
-        confirmText: "Create Token",
-        cancelText: "Cancel",
-      },
-    );
+    const confirmed = await prompts.confirm(messages().createLoginTokenConfirm({ identity: props.user.mail ?? props.user.uid }), {
+      title: messages().createLoginToken,
+      icon: "ti ti-key",
+      confirmText: messages().createToken,
+      cancelText: messages().cancel,
+    });
 
     if (confirmed) {
       await createLoginTokenMutation.mutate();
@@ -548,20 +540,18 @@ export function createUserActions(props: UserActionsProps) {
 
     const confirmed = await prompts.confirm(
       <div class="flex flex-col gap-2">
-        <p>
-          This will <strong>permanently delete</strong> the user:
-        </p>
+        <p>{messages().permanentDeleteIntro}</p>
         <ul class="list-disc list-inside text-sm text-dimmed">
-          {isIpaUser && <li>Remove from FreeIPA</li>}
-          <li>Delete from local database</li>
-          <li>This action cannot be undone!</li>
+          {isIpaUser && <li>{messages().removeFromIpa}</li>}
+          <li>{messages().deleteFromDatabase}</li>
+          <li>{messages().cannotUndo}</li>
         </ul>
       </div>,
       {
-        title: `Delete "${props.user.uid}"?`,
+        title: messages().deleteUserQuestion({ uid: props.user.uid }),
         icon: "ti ti-trash",
-        confirmText: "Delete",
-        cancelText: "Cancel",
+        confirmText: messages().delete,
+        cancelText: messages().cancel,
         variant: "danger",
       },
     );
@@ -579,14 +569,14 @@ export function createUserActions(props: UserActionsProps) {
       (close) => (
         <div class="flex flex-col gap-4">
           <NoticeCard tone="success" icon={false}>
-            User permanently deleted.
+            {messages().userDeletedBody}
           </NoticeCard>
 
           {isIpaUser && (
             <div class="flex flex-col gap-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-medium">Only needed if your team manages NFS home directories manually:</span>
-                <CopyButton text={nfsCommand} label="Copy" />
+                <span class="text-xs font-medium">{messages().nfsFollowUpDescription}</span>
+                <CopyButton text={nfsCommand} label={messages().copy} />
               </div>
               <pre class="rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-mono overflow-x-auto whitespace-pre">
                 {nfsCommand}
@@ -602,12 +592,12 @@ export function createUserActions(props: UserActionsProps) {
                 navigateTo(props.listHref);
               }}
             >
-              Back to Users
+              {messages().backToUsers}
             </Button>
           </div>
         </div>
       ),
-      { title: "User Deleted", icon: "ti ti-check" },
+      { title: messages().userDeleted, icon: "ti ti-check" },
     );
   };
 

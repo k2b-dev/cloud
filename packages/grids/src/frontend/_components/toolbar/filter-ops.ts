@@ -1,4 +1,5 @@
 import type { PublicField as Field } from "../../../api/public-dto";
+import { toolbarMessages } from "./messages";
 
 export type FilterOp = {
   /** Op identifier sent to the API. */
@@ -120,6 +121,73 @@ export const opsForType = (type: string): FilterOp[] => {
     default:
       return [];
   }
+};
+
+/** Locale-aware presentation of the stable filter operation contract. */
+export const localizedOpsForType = (type: string, locale: string): FilterOp[] => {
+  const t = toolbarMessages.resolve([locale]).t;
+  const labels: Record<string, [string, string?]> = {
+    equals: [t.is, t.exactText],
+    notEquals: [t.isNot, t.differentText],
+    contains: [t.contains, t.includesText],
+    notContains: [t.doesNotContain, t.excludesText],
+    startsWith: [t.startsWith, t.beginsText],
+    endsWith: [t.endsWith, t.endsText],
+    regex: [t.regex, t.regexDescription],
+    "!=": [t.notEqual],
+    "<": [t.lessThan],
+    "<=": [t.lessThanEqual],
+    ">": [t.greaterThan],
+    ">=": [t.greaterThanEqual],
+    before: [t.before, t.earlierDate],
+    after: [t.after, t.laterDate],
+    today: [t.today, t.fallsToday],
+    thisWeek: [t.thisWeek, t.fallsThisWeek],
+    thisMonth: [t.thisMonth, t.fallsThisMonth],
+    lastNDays: [t.lastNDays, t.withinLastDays],
+    is: [t.is, t.selectedOption],
+    isNot: [t.isNot, t.otherOption],
+    isAnyOf: [t.oneOf, t.anyOptionMatches],
+    isNoneOf: [t.noneOf, t.noOptionMatches],
+    notContainsAny: [t.doesNotContain, t.excludesIdentities],
+  };
+  return opsForType(type).map((op) => {
+    if (op.id === "=") {
+      if (type === "number" || type === "percent" || type === "duration") return { ...op, label: t.equals };
+      if (type === "date") return { ...op, label: t.is, description: t.sameDate };
+      return { ...op, label: t.is, description: t.trueOrFalse };
+    }
+    if (op.id === "between") {
+      return { ...op, label: t.between, description: type === "date" ? t.insideDateRange : t.insideValueRange };
+    }
+    if (op.id === "isEmpty") {
+      const description =
+        type === "select"
+          ? t.noSelectedOption
+          : type === "relation"
+            ? t.noLinkedRecord
+            : type === "principal"
+              ? t.noAssignedIdentity
+              : t.noStoredValue;
+      return { ...op, label: t.empty, description };
+    }
+    if (op.id === "isNotEmpty") {
+      const description =
+        type === "select"
+          ? t.hasSelectedOption
+          : type === "relation"
+            ? t.hasLinkedRecord
+            : type === "principal"
+              ? t.hasAssignedIdentity
+              : t.hasStoredValue;
+      return { ...op, label: t.notEmpty, description };
+    }
+    if (op.id === "containsAny") {
+      return { ...op, label: t.contains, description: type === "relation" ? t.linksSelectedRecord : t.includesIdentity };
+    }
+    const localized = labels[op.id];
+    return localized ? { ...op, label: localized[0], description: localized[1] } : op;
+  });
 };
 
 /**

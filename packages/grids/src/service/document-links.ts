@@ -2,9 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
-import type { CreateDocumentLinkInput, DocumentLink, DocumentLinkTtl, Document } from "../contracts";
+import type { CreateDocumentLinkInput, Document, DocumentLink, DocumentLinkTtl } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { type DocumentDbRow, hydrateDocuments, mapDocumentLink } from "./document-mappers";
+import { documentServiceText } from "./document-messages";
 import { insertWithShortIdForDb } from "./short-id";
 
 const DOCUMENT_LINK_TOKEN_PREFIX = "gdl_";
@@ -90,7 +91,9 @@ export const createDocumentLink = async (params: {
   ip?: string | null;
   userAgent?: string | null;
   client?: SqlClient;
+  locale?: string;
 }): Promise<Result<{ link: DocumentLink; token: string }>> => {
+  const t = documentServiceText(params.locale);
   const token = generateDocumentLinkToken();
   const expiresAt = documentLinkExpiresAt(params.input.expiresIn);
   const comment = normalizeDocumentLinkComment(params.input.comment);
@@ -116,7 +119,7 @@ export const createDocumentLink = async (params: {
       if (!created) throw new Error("insert returned no row");
       return created;
     });
-    if (!row) return fail(err.internal("Could not create document link"));
+    if (!row) return fail(err.internal(t.linkCreateFailed));
     const link = mapDocumentLink(row);
     await logAudit(
       {
@@ -146,7 +149,9 @@ export const revokeDocumentLink = async (params: {
   actorId: string | null;
   ip?: string | null;
   userAgent?: string | null;
+  locale?: string;
 }): Promise<Result<DocumentLink>> => {
+  const t = documentServiceText(params.locale);
   return sql.begin(async (tx) => {
     const [row] = await tx<DocumentDbRow[]>`
       UPDATE grids.document_links
@@ -158,7 +163,7 @@ export const revokeDocumentLink = async (params: {
       const [existing] = await tx<DocumentDbRow[]>`
         SELECT * FROM grids.document_links WHERE id = ${params.linkId}::uuid
       `;
-      return existing ? ok(mapDocumentLink(existing)) : fail(err.notFound("Document link"));
+      return existing ? ok(mapDocumentLink(existing)) : fail(err.notFound(t.documentLinkNotFound));
     }
     const link = mapDocumentLink(row);
     await logAudit(
@@ -182,9 +187,13 @@ export const revokeDocumentLink = async (params: {
   });
 };
 
-export const resolveDocumentLinkDownload = async (token: string): Promise<Result<{ link: DocumentLink; document: Document }>> => {
+export const resolveDocumentLinkDownload = async (
+  token: string,
+  locale?: string,
+): Promise<Result<{ link: DocumentLink; document: Document }>> => {
+  const t = documentServiceText(locale);
   const normalizedToken = normalizeDocumentLinkToken(token);
-  if (!normalizedToken) return fail(err.notFound("Document link"));
+  if (!normalizedToken) return fail(err.notFound(t.documentLinkNotFound));
 
   const [row] = await sql<DocumentDbRow[]>`
     SELECT *
@@ -193,20 +202,22 @@ export const resolveDocumentLinkDownload = async (token: string): Promise<Result
       AND revoked_at IS NULL
       AND expires_at > now()
   `;
-  if (!row) return fail(err.notFound("Document link"));
+  if (!row) return fail(err.notFound(t.documentLinkNotFound));
   const link = mapDocumentLink(row);
   const [documentRow] = await sql<DocumentDbRow[]>`
     SELECT * FROM grids.documents WHERE id = ${link.documentId}::uuid
   `;
-  if (!documentRow) return fail(err.notFound("Document"));
+  if (!documentRow) return fail(err.notFound(t.documentNotFound));
   const [document] = await hydrateDocuments([documentRow]);
-  return document ? ok({ link, document }) : fail(err.internal("Document artifacts are missing"));
+  return document ? ok({ link, document }) : fail(err.internal(t.artifactsMissing));
 };
 
 export const recordDocumentLinkAccess = async (
   linkId: string,
   audit: { ip?: string | null; userAgent?: string | null } = {},
+  locale?: string,
 ): Promise<Result<DocumentLink>> => {
+  const t = documentServiceText(locale);
   return sql.begin(async (tx) => {
     const [row] = await tx<DocumentDbRow[]>`
       UPDATE grids.document_links
@@ -216,7 +227,7 @@ export const recordDocumentLinkAccess = async (
         AND expires_at > now()
       RETURNING *
     `;
-    if (!row) return fail(err.notFound("Document link"));
+    if (!row) return fail(err.notFound(t.documentLinkNotFound));
     const link = mapDocumentLink(row);
 
     await logAudit(

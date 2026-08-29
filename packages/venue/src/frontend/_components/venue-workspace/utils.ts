@@ -6,7 +6,7 @@ import type { FeedbackBucket } from "./types";
 
 const MAX_BANNER_LONGEST_SIDE = 1600;
 
-export const timeZoneDateConfig = (timeZone: string) => ({ timeZone, weekStartsOn: 1 as const });
+export const timeZoneDateConfig = (timeZone: string, locale?: string) => ({ timeZone, locale, weekStartsOn: 1 as const });
 export const defaultShiftRange = (): DateRangeValue => ({
   start: new Date(Date.now() + 60 * 60_000).toISOString(),
   end: new Date(Date.now() + 3 * 60 * 60_000).toISOString(),
@@ -21,11 +21,11 @@ export const readError = async (res: Response, fallback: string): Promise<string
 export const canWrite = (venue: Venue): boolean => venue.permission === "write" || venue.permission === "admin";
 export const canAdmin = (venue: Venue): boolean => venue.permission === "admin";
 export const isSlotActive = (slot: UpcomingSlot): boolean => new Date(slot.endsAt) >= new Date();
-export const fmt = (iso: string) =>
-  new Date(iso).toLocaleString("en", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-export const fmtTime = (iso: string, timeZone: string) =>
-  new Date(iso).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", timeZone });
-export const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("en", { day: "2-digit", month: "short" });
+export const fmt = (iso: string, locale?: string) =>
+  new Date(iso).toLocaleString(locale, { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+export const fmtTime = (iso: string, timeZone: string, locale?: string) =>
+  new Date(iso).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone });
+export const fmtDate = (iso: string, locale?: string) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "short" });
 export const dateKey = (date: Date): string => date.toISOString().slice(0, 10);
 export const withinLastDays = (isoOrDateKey: string, days: number): boolean => {
   const date = isoOrDateKey.length === 10 ? new Date(isoOrDateKey + "T12:00:00Z") : new Date(isoOrDateKey);

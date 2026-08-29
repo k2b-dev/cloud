@@ -1,8 +1,9 @@
-import { MultiSelectInput, NoticeCard, Select } from "@k2b/ui";
+import { MultiSelectInput, NoticeCard, Select, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { RecordDisplayConfig, RecordDisplayMode } from "../../../contracts";
 import { fieldOption, fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
+import { gridsDialogMessages } from "./messages";
 
 const MODE_OPTIONS = [
   {
@@ -36,12 +37,20 @@ export function RecordDisplayConfigEditor(props: {
   onChange: (value: RecordDisplayConfig) => void;
   fields: () => Field[];
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
+  const modeOptions = () =>
+    MODE_OPTIONS.map((option) => ({
+      ...option,
+      label: option.id === "table" ? t().table : option.id === "cards" ? t().cards : t().calendar,
+      description: option.id === "table" ? t().tableDescription : option.id === "cards" ? t().cardsDescription : t().calendarDescription,
+    }));
   const display = () => withDefaults(props.value());
   const liveFields = () => props.fields().filter((field) => !field.deletedAt);
   const cardFieldOptions = () =>
     liveFields()
       .filter((field) => field.type !== "file")
-      .map((field) => fieldOption(field, "Shown on card"));
+      .map((field) => fieldOption(field, t().cardFieldDescription, locale()));
   const cardSelectedOptions = () => {
     const byId = new Map(cardFieldOptions().map((option) => [option.id, option]));
     return (display().cards?.fieldIds ?? []).flatMap((id) => {
@@ -55,7 +64,7 @@ export function RecordDisplayConfigEditor(props: {
       .map((field) => ({
         id: field.id,
         label: field.name,
-        description: "First image file becomes the card cover.",
+        description: t().firstImageCover,
         icon: fieldTypeIcon(field.type, field.icon),
       }));
   const imageFieldLabel = () => {
@@ -68,7 +77,7 @@ export function RecordDisplayConfigEditor(props: {
       .map((field) => ({
         id: field.id,
         label: field.name,
-        description: `${fieldTypeLabel(field.type)} · used as event date`,
+        description: `${fieldTypeLabel(field.type, locale())} · ${t().eventDate}`,
         icon: fieldTypeIcon(field.type, field.icon),
       }));
   const dateFieldLabel = () => {
@@ -91,19 +100,19 @@ export function RecordDisplayConfigEditor(props: {
   return (
     <div class="flex flex-col gap-4">
       <Select
-        label="Display"
-        description="Choose how this table or view is shown."
+        label={t().display}
+        description={t().displayDescription}
         value={() => display().mode}
         onValueChange={(mode) => changeMode(mode as RecordDisplayMode)}
-        options={MODE_OPTIONS}
+        options={modeOptions()}
       />
 
       <Show when={display().mode === "cards"}>
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Select
-            label="Cover image"
-            description="Optional image shown at the top of each card."
-            placeholder={imageFieldOptions().length > 0 ? "No cover image" : "No file fields"}
+            label={t().coverImage}
+            description={t().coverImageDescription}
+            placeholder={imageFieldOptions().length > 0 ? t().noCoverImage : t().noFileFields}
             value={() => display().cards?.imageFieldId ?? ""}
             onValueChange={(imageFieldId) => patchCards({ imageFieldId: imageFieldId || null })}
             selectedLabel={imageFieldLabel}
@@ -112,9 +121,9 @@ export function RecordDisplayConfigEditor(props: {
             disabled={imageFieldOptions().length === 0}
           />
           <MultiSelectInput
-            label="Card fields"
-            description="Pick only the fields people need at a glance."
-            placeholder="Choose fields"
+            label={t().cardFields}
+            description={t().cardFieldsDescription}
+            placeholder={t().chooseFields}
             icon="ti ti-layout-list"
             value={() => display().cards?.fieldIds ?? []}
             onValueChange={(fieldIds) => patchCards({ fieldIds })}
@@ -123,14 +132,14 @@ export function RecordDisplayConfigEditor(props: {
             clearable
           />
         </div>
-        <p class="text-xs text-dimmed">Cards still use the same GQL source and permissions.</p>
+        <p class="text-xs text-dimmed">{t().cardsPermissions}</p>
       </Show>
 
       <Show when={display().mode === "calendar"}>
         <Select
-          label="Date field"
-          description="Records are placed in the calendar by this date."
-          placeholder={dateFieldOptions().length > 0 ? "Choose date field" : "No date fields"}
+          label={t().dateField}
+          description={t().dateFieldDescription}
+          placeholder={dateFieldOptions().length > 0 ? t().chooseDateField : t().noDateFields}
           value={() => display().calendar?.dateFieldId ?? ""}
           onValueChange={(dateFieldId) => patchCalendar({ dateFieldId: dateFieldId || null })}
           selectedLabel={dateFieldLabel}
@@ -140,7 +149,7 @@ export function RecordDisplayConfigEditor(props: {
         />
         <Show when={dateFieldOptions().length === 0}>
           <NoticeCard tone="warning" icon={false}>
-            Add a date field before using calendar display.
+            {t().addDateField}
           </NoticeCard>
         </Show>
       </Show>

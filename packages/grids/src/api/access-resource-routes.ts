@@ -1,5 +1,5 @@
 import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -14,7 +14,9 @@ import {
   validateAccessPermission,
 } from "../service/access";
 import { type PublicResourceType, resolvePublicId } from "../service/public-resources";
+import { apiMessages, type GridsApiMessages } from "./messages";
 import { currentAccessSubject, currentActorUserId, currentCredentialPermission, currentResourceBoundBaseId, gateAt } from "./permissions";
+import { v } from "./validator";
 
 const AccessListSchema = z.array(AccessEntrySchema);
 const CreatedAccessSchema = z.object({ accessId: z.string().uuid() });
@@ -25,6 +27,7 @@ type AccessRouteConfig = {
   path: string;
   param: string;
   label: string;
+  notFound: (messages: GridsApiMessages) => string;
   resolveBaseId: (resourceId: string) => Promise<string | null>;
   list: (resourceId: string) => ReturnType<typeof listBaseAccess>;
 };
@@ -54,6 +57,7 @@ const CONFIGS = {
     path: "/by-base/:baseId",
     param: "baseId",
     label: "Base",
+    notFound: (messages) => messages.baseNotFound,
     resolveBaseId: async (baseId) => baseId,
     list: listBaseAccess,
   },
@@ -63,6 +67,7 @@ const CONFIGS = {
     path: "/by-custom-app/:customAppId",
     param: "customAppId",
     label: "Grids App",
+    notFound: (messages) => messages.gridsAppNotFound,
     resolveBaseId: async (customAppId) =>
       (await resolveResourceBinding("customApp", customAppId, { includeDeleted: false }))?.baseId ?? null,
     list: listCustomAppAccess,
@@ -78,9 +83,9 @@ const resolveResourceId = async (c: Context<AuthContext>, config: AccessRouteCon
 
 const listResource = async (c: Context<AuthContext>, config: AccessRouteConfig, deps: AccessRouteDeps) => {
   const id = await resolveResourceId(c, config, deps);
-  if (!id) return c.json({ message: `${config.label} not found` }, 404);
+  if (!id) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
   const baseId = await config.resolveBaseId(id);
-  if (!baseId) return c.json({ message: `${config.label} not found` }, 404);
+  if (!baseId) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
   const gate = await deps.gate(c, { baseId }, "admin");
   if (!gate.ok) return respond(c, () => Promise.resolve(gate));
   return c.json(await config.list(id));
@@ -93,10 +98,10 @@ const grantResource = async (
   deps: AccessRouteDeps,
 ) => {
   const id = await resolveResourceId(c, config, deps);
-  if (!id) return c.json({ message: `${config.label} not found` }, 404);
+  if (!id) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
   const baseId = await config.resolveBaseId(id);
-  if (!baseId) return c.json({ message: `${config.label} not found` }, 404);
-  const validationError = validateAccessPermission(config.resourceType, body.permission);
+  if (!baseId) return c.json({ message: config.notFound(apiMessages(c)) }, 404);
+  const validationError = validateAccessPermission(config.resourceType, body.permission, getLocale(c));
   if (validationError) return c.json({ message: validationError }, 400);
   const gate = await deps.gate(c, { baseId }, "admin");
   if (!gate.ok) return respond(c, () => Promise.resolve(gate));
@@ -108,6 +113,7 @@ const grantResource = async (
         resourceId: id,
         actorId: deps.actorId(c),
         authorization: deps.authorization(c),
+        locale: getLocale(c),
         ...body,
       }),
     201,

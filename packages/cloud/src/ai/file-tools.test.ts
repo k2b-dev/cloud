@@ -324,6 +324,8 @@ describe("AI calculate tool", () => {
     expect(evaluateAiDate("2026-01-31 + 1 month")).toBe("2026-02-28");
     expect(evaluateAiDate("2024-02-29 + 1 year")).toBe("2025-02-28");
     expect(evaluateAiDate("2026-03-01 - 2 weeks")).toBe("2026-02-15");
+    expect(evaluateAiDate("today", "America/Los_Angeles", new Date("2026-03-01T01:00:00Z"))).toBe("2026-02-28");
+    expect(evaluateAiDate("today", "Europe/Copenhagen", new Date("2026-03-01T01:00:00Z"))).toBe("2026-03-01");
     expect(() => evaluateAiDate("03/01/2026 + 1 day")).toThrow("ISO date");
   });
 });

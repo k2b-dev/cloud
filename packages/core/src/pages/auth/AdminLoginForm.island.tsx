@@ -1,9 +1,12 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
+import { authMessages } from "./messages";
 
 export default function AdminLoginForm(props: { redirectTo?: string }) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [token, setToken] = createSignal("");
 
   const mutation = mutations.create({
@@ -13,7 +16,7 @@ export default function AdminLoginForm(props: { redirectTo?: string }) {
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(data?.message ?? `Login failed (${res.status})`);
+        throw new Error(data?.message ?? t().loginFailed({ status: res.status }));
       }
     },
     onSuccess: () => {
@@ -30,9 +33,9 @@ export default function AdminLoginForm(props: { redirectTo?: string }) {
       class="flex flex-col gap-4"
     >
       <TextInput
-        label="Admin token"
-        description="Use the emergency token configured for this instance."
-        placeholder="Admin token"
+        label={t().adminToken}
+        description={t().adminTokenDescription}
+        placeholder={t().adminToken}
         icon="ti ti-key"
         password
         value={token}
@@ -46,9 +49,9 @@ export default function AdminLoginForm(props: { redirectTo?: string }) {
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel="Signing in">
+      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().signingIn}>
         {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-shield" />}
-        Sign in with admin token
+        {t().signInWithAdminToken}
       </Button>
     </form>
   );

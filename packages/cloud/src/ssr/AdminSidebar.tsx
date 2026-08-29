@@ -1,7 +1,8 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import { activeAdminHref } from "./admin-active-link";
 import { type AdminLink, buildAdminGroups } from "./admin-navigation";
 import type { RuntimeContext } from "./runtime";
+import { platformMessages } from "./platform-messages";
 
 const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof buildAdminGroups> }) => {
   const activeHref = activeAdminHref(
@@ -25,21 +26,23 @@ const AdminNavigation = (props: { currentPath: string; groups: ReturnType<typeof
 };
 
 export default function AdminSidebar({ currentPath, apps }: { currentPath: string; apps: readonly RuntimeContext["apps"][number][] }) {
-  const groups = buildAdminGroups(apps);
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  const groups = () => buildAdminGroups(apps, locale());
 
   return (
     <AppWorkspace.Sidebar resizable={false}>
-      <AppWorkspace.SidebarMobileTrigger label="Admin" />
+      <AppWorkspace.SidebarMobileTrigger label={t().admin} />
 
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="admin-sidebar-mobile">
-          <AdminNavigation currentPath={currentPath} groups={groups} />
+          <AdminNavigation currentPath={currentPath} groups={groups()} />
         </AppWorkspace.SidebarMobileBody>
       </AppWorkspace.SidebarMobile>
 
       <AppWorkspace.SidebarDesktop>
         <AppWorkspace.SidebarBody scrollPreserveKey="admin-sidebar">
-          <AdminNavigation currentPath={currentPath} groups={groups} />
+          <AdminNavigation currentPath={currentPath} groups={groups()} />
         </AppWorkspace.SidebarBody>
       </AppWorkspace.SidebarDesktop>
     </AppWorkspace.Sidebar>

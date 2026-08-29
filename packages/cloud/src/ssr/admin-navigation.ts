@@ -1,34 +1,34 @@
 import { normalizeRedirectTo } from "../shared";
+import { platformMessages } from "./platform-messages";
 import type { RuntimeContext } from "./runtime";
 
 export type AdminLink = { href: string; icon: string; label: string };
 export type AdminGroup = { label: string; links: AdminLink[] };
-
-const settingsLinks: AdminLink[] = [
-  { href: "/admin/settings?tab=general", icon: "ti-app-window", label: "General" },
-  { href: "/admin/settings?tab=user", icon: "ti-users", label: "User Management" },
-  { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
-  { href: "/admin/settings?tab=mail", icon: "ti-mail", label: "Mail" },
-  { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: "PDF Rendering" },
-  { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: "Email Templates" },
-  { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: "Security" },
-  { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: "Legal" },
-];
-
-const aiLinks: AdminLink[] = [
-  { href: "/admin/settings?tab=ai-general", icon: "ti-adjustments", label: "General" },
-  { href: "/admin/settings?tab=ai-providers", icon: "ti-sparkles", label: "Providers" },
-  { href: "/admin/settings?tab=ai-skills", icon: "ti-wand", label: "Skills" },
-  { href: "/admin/settings?tab=ai-projects", icon: "ti-folders", label: "Projects" },
-  { href: "/admin/settings?tab=ai-jobs", icon: "ti-activity", label: "Background Jobs" },
-];
 
 const normalizeAdminHref = (href: string | undefined): string | undefined => {
   const normalized = normalizeRedirectTo(href);
   return normalized === "/admin" || normalized?.startsWith("/admin/") ? normalized : undefined;
 };
 
-export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]): AdminGroup[] => {
+export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][], locale = "en"): AdminGroup[] => {
+  const t = platformMessages.resolve([locale]).t;
+  const settingsLinks: AdminLink[] = [
+    { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
+    { href: "/admin/settings?tab=user", icon: "ti-users", label: t.userManagement },
+    { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
+    { href: "/admin/settings?tab=mail", icon: "ti-mail", label: "Mail" },
+    { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
+    { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
+    { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
+    { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },
+  ];
+  const aiLinks: AdminLink[] = [
+    { href: "/admin/settings?tab=ai-general", icon: "ti-adjustments", label: t.general },
+    { href: "/admin/settings?tab=ai-providers", icon: "ti-sparkles", label: t.providers },
+    { href: "/admin/settings?tab=ai-skills", icon: "ti-wand", label: t.skills },
+    { href: "/admin/settings?tab=ai-projects", icon: "ti-folders", label: t.projects },
+    { href: "/admin/settings?tab=ai-jobs", icon: "ti-activity", label: t.backgroundJobs },
+  ];
   const contributedApps = apps
     .map((app) => ({
       app,
@@ -55,15 +55,15 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
 
   return [
     {
-      label: "General",
+      label: t.general,
       links: [
-        { href: "/admin", icon: "ti-dashboard", label: "Overview" },
-        { href: "/admin/announcements", icon: "ti-speakerphone", label: "Announcements" },
+        { href: "/admin", icon: "ti-dashboard", label: t.overview },
+        { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
       ],
     },
     ...contributedApps.flatMap(({ groups }) => groups),
-    { label: "AI", links: aiLinks },
-    { label: "Settings", links: settingsLinks },
-    ...(appLinks.length > 0 ? [{ label: "App Admin", links: appLinks }] : []),
+    { label: t.ai, links: aiLinks },
+    { label: t.settings, links: settingsLinks },
+    ...(appLinks.length > 0 ? [{ label: t.appAdmin, links: appLinks }] : []),
   ];
 };

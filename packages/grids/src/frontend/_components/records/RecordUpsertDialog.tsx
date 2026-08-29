@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, dialogCore, PanelDialog, panelDialogOptions } from "@k2b/ui";
+import { Button, dialogCore, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import { initialFieldInputValue, isRecordInputField, sanitizeFieldValues } from "../fields/field-render";
 import { FieldInput, type UserInputEntry } from "../forms/form-fields";
+import { recordMessages } from "./messages";
 
 /**
  * Shared create/edit dialog for grids records.
@@ -47,6 +48,8 @@ type OpenArgs = {
 export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, unknown> | null> => {
   return dialogCore
     .open<Record<string, unknown> | null>((close) => {
+      const locale = useLocale();
+      const t = () => recordMessages.resolve([locale()]).t;
       // Each editable field gets its own signal. Storing them in an
       // object keyed by field id keeps the gather-on-submit step
       // trivial: just walk the fields array and read the signal.
@@ -143,11 +146,11 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
       const title =
         args.mode === "create"
           ? tableName
-            ? `New record · ${tableName}`
-            : "New record"
+            ? t().titled({ action: t().newRecord, table: tableName })
+            : t().newRecord
           : tableName
-            ? `Edit record · ${tableName}`
-            : "Edit record";
+            ? t().titled({ action: t().editRecord, table: tableName })
+            : t().editRecord;
       const icon = args.mode === "create" ? "ti ti-row-insert-bottom" : "ti ti-pencil";
 
       return (
@@ -155,7 +158,7 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
           <PanelDialog>
             <PanelDialog.Header title={title} icon={icon} close={() => close(null)} />
             <PanelDialog.Body>
-              <Show when={editableFields.length > 0} fallback={<p class="text-sm text-dimmed">This table has no editable fields.</p>}>
+              <Show when={editableFields.length > 0} fallback={<p class="text-sm text-dimmed">{t().noEditableFields}</p>}>
                 <For each={editableFields}>{(f) => renderField(f)}</For>
               </Show>
             </PanelDialog.Body>
@@ -163,10 +166,10 @@ export const openRecordUpsertDialog = (args: OpenArgs): Promise<Record<string, u
               <span />
               <div class="flex items-center gap-2">
                 <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
-                  Cancel
+                  {t().cancel}
                 </Button>
                 <Button variant="primary" size="sm" type="submit" disabled={editableFields.length === 0 || submitting()}>
-                  {args.mode === "create" ? "Create" : "Save"}
+                  {args.mode === "create" ? t().create : t().save}
                 </Button>
               </div>
             </PanelDialog.Footer>

@@ -70,4 +70,12 @@ describe("capability invocation responses", () => {
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error.code).toBe("RESPONSE_TOO_LARGE");
   });
+
+  test("localizes framework-owned failures without translating stable codes", async () => {
+    const outcome = await readCapabilityOutcome(new Response("<html>bad gateway</html>", { status: 502 }), 4, "de-CH");
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_APP_RESPONSE", message: "Die Capability-Anfrage ist mit HTTP 502 fehlgeschlagen." },
+    });
+  });
 });

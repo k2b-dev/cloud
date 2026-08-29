@@ -2,6 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { PreservationHold, PreservationHoldInput } from "../preservation-hold-contracts";
 import { logAudit, type SqlClient } from "./audit";
+import { serviceMessagesFor } from "./messages";
 import { newShortId } from "./short-id";
 
 type HoldRow = {
@@ -88,12 +89,14 @@ export const create = async (
   baseId: string,
   input: PreservationHoldInput & { scope: { type: "base" } | { type: "table"; tableId: string } },
   actor: { id: string | null; displayName: string | null },
+  locale?: string,
 ): Promise<Result<PreservationHold>> =>
   sql.begin(async (tx) => {
+    const t = serviceMessagesFor(locale);
     const [base] = await tx<Array<{ id: string }>>`
       SELECT id FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL FOR UPDATE
     `;
-    if (!base) return fail(err.notFound("Base not found"));
+    if (!base) return fail(err.notFound(t.preservationBaseMissing));
     let tableScope: { id: string; shortId: string; name: string } | null = null;
     if (input.scope.type === "table") {
       const [table] = await tx<Array<{ id: string; short_id: string; name: string }>>`
@@ -101,7 +104,7 @@ export const create = async (
         WHERE id = ${input.scope.tableId}::uuid AND base_id = ${baseId}::uuid AND deleted_at IS NULL
         FOR SHARE
       `;
-      if (!table) return fail(err.notFound("Table not found"));
+      if (!table) return fail(err.notFound(t.preservationTableMissing));
       tableScope = { id: table.id, shortId: table.short_id, name: table.name };
     }
     const shortId = newShortId();
@@ -139,16 +142,18 @@ export const release = async (
   holdPublicId: string,
   input: PreservationHoldInput,
   actor: { id: string | null; displayName: string | null },
+  locale?: string,
 ): Promise<Result<PreservationHold>> =>
   sql.begin(async (tx) => {
+    const t = serviceMessagesFor(locale);
     await tx`SELECT id FROM grids.bases WHERE id = ${baseId}::uuid FOR UPDATE`;
     const [current] = await tx<Array<{ released_at: Date | string | null }>>`
       SELECT released_at FROM grids.preservation_holds
       WHERE base_id = ${baseId}::uuid AND short_id = ${holdPublicId}
       FOR UPDATE
     `;
-    if (!current) return fail(err.notFound("Preservation hold not found"));
-    if (current.released_at !== null) return fail(err.conflict("Preservation hold is already released"));
+    if (!current) return fail(err.notFound(t.holdMissing));
+    if (current.released_at !== null) return fail(err.conflict(t.holdReleased));
     const [row] = await tx<HoldRow[]>`
       UPDATE grids.preservation_holds hold
       SET release_reason = ${input.reason}, released_by = ${actor.id}::uuid,
@@ -177,14 +182,19 @@ export const release = async (
 export type PreservationDestructionTarget = { type: "base"; baseId: string } | { type: "table"; baseId: string; tableId: string };
 
 /** Call inside the same transaction that would destroy evidence in this exact scope. */
-export const admitDestruction = async (target: PreservationDestructionTarget, client: SqlClient): Promise<Result<void>> => {
+export const admitDestruction = async (
+  target: PreservationDestructionTarget,
+  client: SqlClient,
+  locale?: string,
+): Promise<Result<void>> => {
+  const t = serviceMessagesFor(locale);
   await client`SELECT id FROM grids.bases WHERE id = ${target.baseId}::uuid FOR UPDATE`;
   let tableId: string | null = null;
   if (target.type === "table") {
     const [table] = await client<Array<{ base_id: string }>>`
       SELECT base_id FROM grids.tables WHERE id = ${target.tableId}::uuid FOR SHARE
     `;
-    if (!table || table.base_id !== target.baseId) return fail(err.notFound("Table not found in Base"));
+    if (!table || table.base_id !== target.baseId) return fail(err.notFound(t.tableNotInBase));
     tableId = target.tableId;
   }
   const [hold] = await client<Array<{ short_id: string }>>`
@@ -193,5 +203,5 @@ export const admitDestruction = async (target: PreservationDestructionTarget, cl
       AND (${target.type} = 'base' OR scope_type = 'base' OR table_id = ${tableId}::uuid)
     ORDER BY created_at, id LIMIT 1
   `;
-  return hold ? fail(err.conflict(`Controlled destruction is blocked by active preservation hold ${hold.short_id}`)) : ok(undefined);
+  return hold ? fail(err.conflict(t.destructionBlocked({ id: hold.short_id }))) : ok(undefined);
 };

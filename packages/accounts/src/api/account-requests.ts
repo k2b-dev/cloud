@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -151,6 +151,7 @@ const app = new Hono<AuthContext>()
           reason,
           actor: toAccountsActor(user),
           notificationSender,
+          locale: getLocale(c),
         });
         if (!result.ok) return result;
         return ok({ message: "Request denied" });

@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
   const rawStatus = c.req.query("status");
   const status =
     rawStatus && historyStatuses.has(rawStatus as NotificationDeliveryStatus) ? (rawStatus as NotificationDeliveryStatus) : undefined;
-  const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status });
+  const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status, locale });
   const registeredApps = getLocalizedRuntimeContext(c).apps;
   const appNames = new Map(registeredApps.map((app) => [app.id, app.name]));
   const baseUrl = status ? `/me/notifications/history?status=${encodeURIComponent(status)}&page=` : "/me/notifications/history?page=";

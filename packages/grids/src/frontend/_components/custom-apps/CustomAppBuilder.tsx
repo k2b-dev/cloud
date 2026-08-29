@@ -43,6 +43,7 @@ import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import type { PublicCustomApp } from "../workspace/workspace-public-state-model";
+import { type CustomAppBuilderText, useCustomAppBuilderMessages } from "./builder-messages";
 import CustomAppBlockPreview from "./CustomAppBlockPreview";
 import { CustomAppAvailabilitySection, CustomAppGqlField } from "./CustomAppGqlField";
 import { CustomAppMarkdownField } from "./CustomAppMarkdownField";
@@ -147,18 +148,18 @@ const fieldsForView = (view: View, fieldsByTable: CustomAppCatalog["fieldsByTabl
   return (visible.length > 0 ? visible : tableFields).slice(0, 30);
 };
 
-const blockMeta: Record<CustomAppBlock["type"], { icon: string; label: string }> = {
-  actions: { icon: "ti ti-bolt", label: "Actions" },
-  chart: { icon: "ti ti-chart-bar", label: "Chart" },
-  comments: { icon: "ti ti-messages", label: "Comments" },
-  form: { icon: "ti ti-forms", label: "Form" },
-  html: { icon: "ti ti-code", label: "Rendered HTML" },
-  markdown: { icon: "ti ti-markdown", label: "Markdown" },
-  metrics: { icon: "ti ti-chart-dots", label: "Metrics" },
-  record: { icon: "ti ti-id", label: "Record" },
-  records: { icon: "ti ti-table", label: "Records" },
-  referenced_records: { icon: "ti ti-table-share", label: "Referenced records" },
-  scanner: { icon: "ti ti-scan", label: "Scanner" },
+const blockMeta: Record<CustomAppBlock["type"], { icon: string }> = {
+  actions: { icon: "ti ti-bolt" },
+  chart: { icon: "ti ti-chart-bar" },
+  comments: { icon: "ti ti-messages" },
+  form: { icon: "ti ti-forms" },
+  html: { icon: "ti ti-code" },
+  markdown: { icon: "ti ti-markdown" },
+  metrics: { icon: "ti ti-chart-dots" },
+  record: { icon: "ti ti-id" },
+  records: { icon: "ti ti-table" },
+  referenced_records: { icon: "ti ti-table-share" },
+  scanner: { icon: "ti ti-scan" },
 };
 
 export const isCustomAppBlockSourceDiagnostic = (diagnostic: CustomAppDiagnostic, blockId: string): boolean =>
@@ -167,7 +168,7 @@ export const isCustomAppBlockSourceDiagnostic = (diagnostic: CustomAppDiagnostic
 export const isCustomAppAvailabilityDiagnostic = (diagnostic: CustomAppDiagnostic, targetId: string): boolean =>
   diagnostic.path.includes(targetId) && diagnostic.path.includes("availableWhen");
 
-export const blankCustomAppDefinition = (app: PublicCustomApp): CustomAppDefinition => ({
+export const blankCustomAppDefinition = (app: PublicCustomApp, homeTitle = "Home"): CustomAppDefinition => ({
   schemaVersion: 5,
   kind: "grids.custom-app",
   id: app.id,
@@ -178,7 +179,7 @@ export const blankCustomAppDefinition = (app: PublicCustomApp): CustomAppDefinit
   pages: [
     {
       id: "home",
-      title: "Home",
+      title: homeTitle,
       navigation: { visible: true },
       parameters: {},
       rows: [
@@ -192,11 +193,13 @@ export const blankCustomAppDefinition = (app: PublicCustomApp): CustomAppDefinit
 });
 
 function PageParameterIdInput(props: { id: string; existingIds: readonly string[]; onRename: (id: string) => void }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
   const [value, setValue] = createSignal(props.id);
   const error = createMemo(() => {
     const next = value().trim();
-    if (!/^[a-z][a-z0-9_]{0,79}$/.test(next)) return "Use lowercase letters, numbers, and underscores.";
-    if (next !== props.id && props.existingIds.includes(next)) return "This parameter ID is already used.";
+    if (!/^[a-z][a-z0-9_]{0,79}$/.test(next)) return text("Use lowercase letters, numbers, and underscores.");
+    if (next !== props.id && props.existingIds.includes(next)) return text("This parameter ID is already used.");
     return undefined;
   });
   createEffect(() => setValue(props.id));
@@ -206,8 +209,8 @@ function PageParameterIdInput(props: { id: string; existingIds: readonly string[
   };
   return (
     <TextInput
-      label="Parameter ID"
-      description={`Used as @params.${props.id} in GQL and Markdown, and as part of page links.`}
+      label={text("Parameter ID")}
+      description={messages().parameterUsage({ id: props.id })}
       value={value}
       onValueChange={setValue}
       error={error}
@@ -218,11 +221,13 @@ function PageParameterIdInput(props: { id: string; existingIds: readonly string[
 }
 
 function PageIdInput(props: { id: string; existingIds: readonly string[]; onRename: (id: string) => void }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
   const [value, setValue] = createSignal(props.id);
   const error = createMemo(() => {
     const next = value().trim();
-    if (!/^[a-z][a-z0-9-]{0,79}$/.test(next)) return "Use lowercase letters, numbers, and hyphens.";
-    if (next !== props.id && props.existingIds.includes(next)) return "This Page ID is already used.";
+    if (!/^[a-z][a-z0-9-]{0,79}$/.test(next)) return text("Use lowercase letters, numbers, and hyphens.");
+    if (next !== props.id && props.existingIds.includes(next)) return text("This Page ID is already used.");
     return undefined;
   });
   createEffect(() => setValue(props.id));
@@ -232,8 +237,8 @@ function PageIdInput(props: { id: string; existingIds: readonly string[]; onRena
   };
   return (
     <TextInput
-      label="Page ID"
-      description="Used in page URLs. Existing links change; references inside this app update automatically."
+      label={text("Page ID")}
+      description={messages().pageIdDescription}
       value={value}
       onValueChange={setValue}
       error={error}
@@ -249,22 +254,26 @@ function WorkflowPrerequisiteGuidance(props: {
   rowTableName?: string | null;
   onOpen: () => void;
 }) {
-  const subject = () => (props.kind === "row" ? "Row actions" : "Workflow actions");
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
+  const subject = () => (props.kind === "row" ? text("Row actions") : text("Workflow actions"));
   return (
     <InlineGuidance tone="danger">
       {props.hasWorkflows
-        ? `${subject()} need an enabled App run option. Open a workflow and add or enable one.`
+        ? messages().workflowRequirement({ subject: subject() })
         : props.kind === "row" && props.rowTableName
-          ? `${subject()} need a workflow with a ${props.rowTableName} record input and an App run option.`
-          : `${subject()} need a workflow with an App run option.`}{" "}
+          ? messages().workflowRecordRequirement({ subject: subject(), table: props.rowTableName })
+          : messages().workflowBasicRequirement({ subject: subject() })}{" "}
       <Button variant="text" size="xs" onClick={props.onOpen}>
-        {props.hasWorkflows ? "Open workflows" : "Create workflow"}
+        {props.hasWorkflows ? text("Open workflows") : text("Create workflow")}
       </Button>
     </InlineGuidance>
   );
 }
 
 function JsonValueInput(props: { label: string; value: WorkflowJsonValue; onValueChange: (value: WorkflowJsonValue) => void }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
   const serialize = () => JSON.stringify(props.value, null, 2) ?? "null";
   const [value, setValue] = createSignal(serialize());
   const [error, setError] = createSignal<string>();
@@ -274,13 +283,13 @@ function JsonValueInput(props: { label: string; value: WorkflowJsonValue; onValu
       props.onValueChange(JSON.parse(value()) as WorkflowJsonValue);
       setError(undefined);
     } catch {
-      setError("Enter valid JSON before leaving this field.");
+      setError(text("Enter valid JSON before leaving this field."));
     }
   };
   return (
     <TextInput
       label={props.label}
-      description="JSON supports text, numbers, booleans, arrays, objects, and null."
+      description={text("JSON supports text, numbers, booleans, arrays, objects, and null.")}
       value={value}
       onValueChange={setValue}
       onBlur={commit}
@@ -296,48 +305,44 @@ function CustomAppLifecycleActions(props: {
   beforeDelete?: () => Promise<void>;
   onUnpublished: (app: PublicCustomApp) => void;
 }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
   const unpublishMutation = mutations.create<PublicCustomApp | null, void>({
     mutation: async (_, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        `Unpublish "${props.app.name}"? Its public URL will stop working immediately. The draft and access grants are preserved.`,
-        {
-          title: "Unpublish app",
-          icon: "ti ti-world-off",
-          confirmText: "Unpublish",
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(messages().unpublishConfirm({ name: props.app.name }), {
+        title: text("Unpublish app"),
+        icon: "ti ti-world-off",
+        confirmText: text("Unpublish"),
+        variant: "danger",
+      });
       if (!confirmed) return null;
       const response = await apiClient.apps[":appId"].unpublish.$post(
         { param: { appId: props.app.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not unpublish the App."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not unpublish the App.")));
       return (await response.json()) as PublicCustomApp;
     },
     onSuccess: (unpublished) => {
       if (!unpublished) return;
       props.onUnpublished(unpublished);
-      prompts.success("App unpublished. The draft is unchanged.");
+      prompts.success(text("App unpublished. The draft is unchanged."));
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const deleteMutation = mutations.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        `Delete "${props.app.name}"? The app and its live URL will be removed. Base tables and records are not affected. This cannot be undone in the UI.`,
-        {
-          title: "Delete app",
-          icon: "ti ti-trash",
-          confirmText: "Delete app",
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(messages().deleteConfirm({ name: props.app.name }), {
+        title: text("Delete app"),
+        icon: "ti ti-trash",
+        confirmText: text("Delete app"),
+        variant: "danger",
+      });
       if (!confirmed) return false;
       await props.beforeDelete?.();
       const response = await apiClient.apps[":appId"].$delete({ param: { appId: props.app.id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not delete the App."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not delete the App.")));
       return true;
     },
     onSuccess: (deleted) => {
@@ -357,7 +362,7 @@ function CustomAppLifecycleActions(props: {
           disabled={deleteMutation.loading()}
           onClick={() => unpublishMutation.mutate(undefined)}
         >
-          <i class="ti ti-world-off" aria-hidden="true" /> Unpublish app
+          <i class="ti ti-world-off" aria-hidden="true" /> {text("Unpublish app")}
         </Button>
       </Show>
       <Button
@@ -367,30 +372,32 @@ function CustomAppLifecycleActions(props: {
         disabled={unpublishMutation.loading()}
         onClick={() => deleteMutation.mutate(undefined)}
       >
-        <i class="ti ti-trash" aria-hidden="true" /> Delete app
+        <i class="ti ti-trash" aria-hidden="true" /> {text("Delete app")}
       </Button>
     </div>
   );
 }
 
 function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
   const replaceMutation = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
       const confirmed = await prompts.confirm(
-        "Replace the incompatible draft with a new blank schema v5 definition? This cannot be undone.",
+        text("Replace the incompatible draft with a new blank schema v5 definition? This cannot be undone."),
         {
-          title: "Replace incompatible draft",
+          title: text("Replace incompatible draft"),
           icon: "ti ti-file-plus",
-          confirmText: "Replace draft",
+          confirmText: text("Replace draft"),
           variant: "danger",
         },
       );
       if (!confirmed) return;
       const response = await apiClient.apps[":appId"].draft.$put(
-        { param: { appId: props.app.id }, json: { definition: blankCustomAppDefinition(props.app) } },
+        { param: { appId: props.app.id }, json: { definition: blankCustomAppDefinition(props.app, text("Home")) } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not replace the incompatible draft."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not replace the incompatible draft.")));
       window.location.reload();
     },
     onError: (error) => prompts.error(error.message),
@@ -398,7 +405,7 @@ function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) 
   const restoreMutation = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
       const response = await apiClient.apps[":appId"].restore.$post({ param: { appId: props.app.id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not restore the live version."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not restore the live version.")));
       window.location.reload();
     },
     onError: (error) => prompts.error(error.message),
@@ -409,8 +416,10 @@ function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) 
       <div class="mx-auto flex w-full max-w-2xl flex-col gap-4">
         <NoticeCard
           tone="danger"
-          title="This draft cannot be opened"
-          detail="This editor only accepts App schema v5. The incompatible draft cannot run or publish until you restore the live version or replace it."
+          title={text("This draft cannot be opened")}
+          detail={text(
+            "This editor only accepts App schema v5. The incompatible draft cannot run or publish until you restore the live version or replace it.",
+          )}
           role="alert"
         >
           <ul class="list-disc space-y-1 pl-4 text-sm">
@@ -425,7 +434,7 @@ function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) 
               disabled={replaceMutation.loading()}
               onClick={() => restoreMutation.mutate(undefined)}
             >
-              <i class="ti ti-restore" aria-hidden="true" /> Restore live version
+              <i class="ti ti-restore" aria-hidden="true" /> {text("Restore live version")}
             </Button>
           </Show>
           <Button
@@ -434,13 +443,13 @@ function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) 
             disabled={restoreMutation.loading()}
             onClick={() => replaceMutation.mutate(undefined)}
           >
-            <i class="ti ti-file-plus" aria-hidden="true" /> Replace with blank schema v5 draft
+            <i class="ti ti-file-plus" aria-hidden="true" /> {text("Replace with blank schema v5 draft")}
           </Button>
         </div>
         <NoticeCard
           tone="warning"
-          title="App lifecycle"
-          detail="You can still take the live app offline or delete it without replacing the incompatible draft."
+          title={text("App lifecycle")}
+          detail={text("You can still take the live app offline or delete it without replacing the incompatible draft.")}
         >
           <CustomAppLifecycleActions app={props.app} baseId={props.baseId} onUnpublished={() => window.location.reload()} />
         </NoticeCard>
@@ -449,11 +458,11 @@ function InvalidCustomAppDraft(props: { app: PublicCustomApp; baseId: string }) 
   );
 }
 
-const newPage = (definition: CustomAppDefinition): CustomAppPage => {
-  const pageNumber = definition.pages.length + 1;
+const newPage = (definition: CustomAppDefinition, title: string): CustomAppPage => {
+  const _pageNumber = definition.pages.length + 1;
   return {
     id: localId("page"),
-    title: `Page ${pageNumber}`,
+    title,
     navigation: { visible: true },
     parameters: {},
     rows: [
@@ -486,6 +495,26 @@ export default function CustomAppBuilder(props: CustomAppBuilderProps) {
 }
 
 function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefinition: CustomAppDefinition }) {
+  const messages = useCustomAppBuilderMessages();
+  const text = (value: CustomAppBuilderText) => messages().text({ value });
+  const blockLabel = (type: CustomAppBlock["type"]): string =>
+    text(
+      (
+        {
+          actions: "Actions",
+          chart: "Chart",
+          comments: "Comments",
+          form: "Form",
+          html: "Rendered HTML",
+          markdown: "Markdown",
+          metrics: "Metrics",
+          record: "Record",
+          records: "Records",
+          referenced_records: "Referenced records",
+          scanner: "Scanner",
+        } as const
+      )[type],
+    );
   const [app, setApp] = createSignal(props.app);
   const draft = createCustomAppBuilderState(props.initialDefinition);
   const [diagnostics, setDiagnostics] = createSignal<CustomAppDiagnostic[]>([]);
@@ -493,7 +522,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     props.app.draftValid === false ? "invalid" : "idle",
   );
   const [saveError, setSaveError] = createSignal<string | null>(
-    props.app.draftValid === false ? "The saved draft must be fixed before it can be published." : null,
+    props.app.draftValid === false ? text("The saved draft must be fixed before it can be published.") : null,
   );
   const [selectedPageId, setSelectedPageId] = createSignal(props.initialDefinition.startPageId);
   const [selectedBlockId, setSelectedBlockId] = createSignal<string | null>(null);
@@ -609,7 +638,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     viewResources().map(({ view, fields }) => ({
       value: view.id,
       label: view.name,
-      description: tablesById().get(view.tableId)?.name ?? "Saved view",
+      description: tablesById().get(view.tableId)?.name ?? text("Saved view"),
       icon: view.icon ?? "ti ti-table",
       disabled: fields.length === 0,
     })),
@@ -633,7 +662,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     workflowLaunchers().map((launcher) => ({
       value: launcher.id,
       label: launcher.config.label || launcher.name,
-      description: workflowsById().get(launcher.workflowId)?.name ?? "App run option",
+      description: workflowsById().get(launcher.workflowId)?.name ?? text("App run option"),
       icon: "ti ti-player-play",
     })),
   );
@@ -646,7 +675,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     scannerLaunchers().map((launcher) => ({
       value: launcher.id,
       label: launcher.name,
-      description: workflowsById().get(launcher.workflowId)?.name ?? "Scanner workflow",
+      description: workflowsById().get(launcher.workflowId)?.name ?? text("Scanner workflow"),
       icon: "ti ti-scan",
     })),
   );
@@ -654,7 +683,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     forms().map((form) => ({
       value: form.id,
       label: form.name,
-      description: tablesById().get(form.tableId)?.name ?? "Active form",
+      description: tablesById().get(form.tableId)?.name ?? text("Active form"),
       icon: "ti ti-forms",
     })),
   );
@@ -758,7 +787,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     (selectedReferencedSource()?.relations ?? []).map((field) => ({
       id: field.id,
       label: field.name,
-      description: "Relation to this page record",
+      description: text("Relation to this page record"),
       icon: field.icon ?? "ti ti-link",
     })),
   );
@@ -1078,7 +1107,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       actions: [
         {
           id: localId("action"),
-          label: "Open start page",
+          label: text("Open start page"),
           kind: "navigate",
           pageId: draft.draft().startPageId,
           history: "push",
@@ -1093,96 +1122,126 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   const addBlockSections = createMemo<readonly AddBlockSection[]>(() => [
     {
       id: "content",
-      label: "Content",
+      label: text("Content"),
       options: [
-        { icon: "ti ti-markdown", label: "Markdown", description: "Add formatted text and context placeholders.", action: addTextBlock },
+        {
+          icon: "ti ti-markdown",
+          label: text("Markdown"),
+          description: text("Add formatted text and context placeholders."),
+          action: addTextBlock,
+        },
         readyViews().length > 0 || starterGqlSources().records
-          ? { icon: "ti ti-table", label: "Records", description: "Show records from a saved view or GQL query.", action: addRecordsBlock }
-          : { icon: "ti ti-table", label: "Records", description: "Create a table with fields first.", disabled: true },
+          ? {
+              icon: "ti ti-table",
+              label: text("Records"),
+              description: text("Show records from a saved view or GQL query."),
+              action: addRecordsBlock,
+            }
+          : { icon: "ti ti-table", label: text("Records"), description: text("Create a table with fields first."), disabled: true },
         forms().length > 0
-          ? { icon: "ti ti-forms", label: "Form", description: "Embed an active Form.", action: addFormBlock }
-          : { icon: "ti ti-forms", label: "Form", description: "Create and activate a Form first.", disabled: true },
+          ? { icon: "ti ti-forms", label: text("Form"), description: text("Embed an active Form."), action: addFormBlock }
+          : { icon: "ti ti-forms", label: text("Form"), description: text("Create and activate a Form first."), disabled: true },
       ],
     },
     {
       id: "record-page",
-      label: "Record page",
+      label: text("Record page"),
       options: [
         pageRecordCandidate() && pageRecordFields().length > 0
-          ? { icon: "ti ti-id", label: "Record", description: "Show fields for the record in this page URL.", action: addRecordBlock }
+          ? {
+              icon: "ti ti-id",
+              label: text("Record"),
+              description: text("Show fields for the record in this page URL."),
+              action: addRecordBlock,
+            }
           : {
               icon: "ti ti-id",
-              label: "Record",
+              label: text("Record"),
               description:
                 selectedPage().id === draft.draft().startPageId
                   ? draft.draft().pages.length === 1
-                    ? "Create another page and make it the start page first."
-                    : "Make another page the start page first."
+                    ? text("Create another page and make it the start page first.")
+                    : text("Make another page the start page first.")
                   : Object.keys(selectedPage().parameters).length > 1
-                    ? "A Record block needs exactly one record parameter."
-                    : "Add a table with visible fields first.",
+                    ? text("A Record block needs exactly one record parameter.")
+                    : text("Add a table with visible fields first."),
               disabled: true,
             },
         pageRecordCandidate() && addableHtmlFields().length > 0
           ? {
               icon: "ti ti-code",
-              label: "Rendered HTML",
-              description: "Show one HTML template field for the record in this page URL.",
+              label: text("Rendered HTML"),
+              description: text("Show one HTML template field for the record in this page URL."),
               action: addHtmlBlock,
             }
           : {
               icon: "ti ti-code",
-              label: "Rendered HTML",
-              description: "Add an HTML template field to the record table first.",
+              label: text("Rendered HTML"),
+              description: text("Add an HTML template field to the record table first."),
               disabled: true,
             },
         selectedPage().record && referencedRecordsCandidates().length > 0
           ? {
               icon: "ti ti-table-share",
-              label: "Referenced records",
-              description: "Show records whose Relation points to this page record.",
+              label: text("Referenced records"),
+              description: text("Show records whose Relation points to this page record."),
               action: addReferencedRecordsBlock,
             }
           : {
               icon: "ti ti-table-share",
-              label: "Referenced records",
+              label: text("Referenced records"),
               description: selectedPage().record
-                ? "Add a Relation from another table to this record table first."
-                : "This block is available on an existing Record page.",
+                ? text("Add a Relation from another table to this record table first.")
+                : text("This block is available on an existing Record page."),
               disabled: true,
             },
         selectedPage().record
-          ? { icon: "ti ti-messages", label: "Comments", description: "Show comments for the page record.", action: addCommentsBlock }
-          : { icon: "ti ti-messages", label: "Comments", description: "Add a Record block first.", disabled: true },
+          ? {
+              icon: "ti ti-messages",
+              label: text("Comments"),
+              description: text("Show comments for the page record."),
+              action: addCommentsBlock,
+            }
+          : { icon: "ti ti-messages", label: text("Comments"), description: text("Add a Record block first."), disabled: true },
       ],
     },
     {
       id: "insights-and-actions",
-      label: "Insights and actions",
+      label: text("Insights and actions"),
       options: [
         starterGqlSources().metrics || readyViews().length > 0
-          ? { icon: "ti ti-chart-dots", label: "Metrics", description: "Summarize data with aggregate GQL.", action: addMetricsBlock }
-          : { icon: "ti ti-chart-dots", label: "Metrics", description: "Create a table with fields first.", disabled: true },
+          ? {
+              icon: "ti ti-chart-dots",
+              label: text("Metrics"),
+              description: text("Summarize data with aggregate GQL."),
+              action: addMetricsBlock,
+            }
+          : { icon: "ti ti-chart-dots", label: text("Metrics"), description: text("Create a table with fields first."), disabled: true },
         starterGqlSources().chart || readyViews().length > 0
           ? {
               icon: "ti ti-chart-bar",
-              label: "Chart",
-              description: "Visualize grouped data from GQL or a saved view.",
+              label: text("Chart"),
+              description: text("Visualize grouped data from GQL or a saved view."),
               action: addChartBlock,
             }
-          : { icon: "ti ti-chart-bar", label: "Chart", description: "Add a groupable field or grouped saved view first.", disabled: true },
-        { icon: "ti ti-bolt", label: "Actions", description: "Open another page or run a workflow.", action: addActionsBlock },
+          : {
+              icon: "ti ti-chart-bar",
+              label: text("Chart"),
+              description: text("Add a groupable field or grouped saved view first."),
+              disabled: true,
+            },
+        { icon: "ti ti-bolt", label: text("Actions"), description: text("Open another page or run a workflow."), action: addActionsBlock },
         scannerLaunchers().length > 0
           ? {
               icon: "ti ti-scan",
-              label: "Scanner",
-              description: "Scan QR codes or barcodes and run a workflow.",
+              label: text("Scanner"),
+              description: text("Scan QR codes or barcodes and run a workflow."),
               action: addScannerBlock,
             }
           : {
               icon: "ti ti-scan",
-              label: "Scanner",
-              description: "Create and enable a Scanner run option first.",
+              label: text("Scanner"),
+              description: text("Create and enable a Scanner run option first."),
               disabled: true,
             },
       ],
@@ -1192,9 +1251,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header title="Choose block type" icon="ti ti-plus" close={() => close()} />
+          <PanelDialog.Header title={text("Choose block type")} icon="ti ti-plus" close={() => close()} />
           <PanelDialog.Body>
-            <p class="text-sm text-secondary">Choose what this page should show. You can configure it after adding it.</p>
+            <p class="text-sm text-secondary">{text("Choose what this page should show. You can configure it after adding it.")}</p>
             <div class="flex flex-col gap-5">
               <For each={addBlockSections()}>
                 {(section) => (
@@ -1260,10 +1319,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     isSameIntent: sameCustomAppBlockDropIntent,
     onDragStart: ({ active }) => selectBlock(active.meta.blockId),
     announcements: {
-      dragStart: (active) => `Picked up ${active.meta.label} block.`,
-      dragOver: (active, over) => (over ? `Move ${active.meta.label} ${over.meta.label}.` : `${active.meta.label} has no drop target.`),
-      drop: (active, over) => (over ? `Moved ${active.meta.label} ${over.meta.label}.` : `${active.meta.label} was not moved.`),
-      cancel: (active) => `Cancelled moving ${active.meta.label}.`,
+      dragStart: (active) => messages().pickedUpBlock({ label: active.meta.label }),
+      dragOver: (active, over) =>
+        over
+          ? messages().moveBlock({ active: active.meta.label, target: over.meta.label })
+          : messages().noDropTarget({ label: active.meta.label }),
+      drop: (active, over) =>
+        over
+          ? messages().movedBlock({ active: active.meta.label, target: over.meta.label })
+          : messages().blockNotMoved({ label: active.meta.label }),
+      cancel: (active) => messages().cancelledMoving({ label: active.meta.label }),
     },
     onDrop: ({ active, over, intent }) => {
       if (!over || !intent) return;
@@ -1301,12 +1366,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       );
     const confirmed = await prompts.confirm(
       removingLastRecord
-        ? "Remove the last record content block? Comments blocks on this page will also be removed."
-        : `Remove "${selected.block.title || blockMeta[selected.block.type].label}" from this page?`,
+        ? text("Remove the last record content block? Comments blocks on this page will also be removed.")
+        : messages().removeBlockConfirm({ name: selected.block.title || blockLabel(selected.block.type) }),
       {
-        title: "Remove block",
+        title: text("Remove block"),
         icon: "ti ti-trash",
-        confirmText: "Remove",
+        confirmText: text("Remove"),
         variant: "danger",
       },
     );
@@ -1338,20 +1403,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       setSaveError(null);
       try {
         const response: Response = await apiClient.apps[":appId"].draft.$put({ param: { appId: app().id }, json: { definition } });
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not save the App draft."));
+        if (!response.ok) throw new Error(await errorMessage(response, text("Could not save the App draft.")));
         const saved: PublicCustomAppDraftSave = await response.json();
         if (!saved.app.draftDefinition) {
-          throw new Error(saved.app.draftDiagnostics[0]?.message ?? "The saved draft is not a valid schema v5 definition.");
+          throw new Error(saved.app.draftDiagnostics[0]?.message ?? text("The saved draft is not a valid schema v5 definition."));
         }
         setApp(saved.app);
         setDiagnostics(saved.diagnostics);
         draft.markSaved(saved.app.draftDefinition);
         setSaveState(saved.valid ? "saved" : "invalid");
-        setSaveError(saved.valid ? null : "The draft was saved, but it must be fixed before it can be published.");
+        setSaveError(saved.valid ? null : text("The draft was saved, but it must be fixed before it can be published."));
         if (draft.version() !== version) saveQueued = true;
       } catch (error) {
         setSaveState("error");
-        setSaveError(error instanceof Error ? error.message : "Could not save the App draft.");
+        setSaveError(error instanceof Error ? error.message : text("Could not save the App draft."));
         successful = false;
         break;
       }
@@ -1387,7 +1452,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
 
   const openWorkflowConfiguration = async (workflowId?: string) => {
     if (!(await flushAutosave())) {
-      await prompts.error("Save the current App draft before leaving the builder.");
+      await prompts.error(text("Save the current App draft before leaving the builder."));
       return;
     }
     const workflow = (workflowId ? workflowsById().get(workflowId) : null) ?? props.catalog.workflows[0];
@@ -1421,25 +1486,25 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
 
   const publishMutation = mutations.create<PublicCustomApp, void>({
     mutation: async (_, { abortSignal }) => {
-      if (!(await flushAutosave())) throw new Error("The latest changes could not be saved.");
+      if (!(await flushAutosave())) throw new Error(text("The latest changes could not be saved."));
       const response = await apiClient.apps[":appId"].publish.$post({ param: { appId: app().id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not publish the App."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not publish the App.")));
       return (await response.json()) as PublicCustomApp;
     },
     onSuccess: (published) => {
       if (!published.draftDefinition) {
-        prompts.error(published.draftDiagnostics[0]?.message ?? "The published draft is not a valid schema v5 definition.");
+        prompts.error(published.draftDiagnostics[0]?.message ?? text("The published draft is not a valid schema v5 definition."));
         return;
       }
       setApp(published);
       draft.markSaved(published.draftDefinition);
-      prompts.success("App published.");
+      prompts.success(text("App published."));
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const addPage = () => {
-    const page = newPage(draft.draft());
+    const page = newPage(draft.draft(), messages().pageNumber({ number: draft.draft().pages.length + 1 }));
     setDefinition((definition) => ({ ...definition, pages: [...definition.pages, page] }));
     selectPage(page.id);
   };
@@ -1450,7 +1515,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       setDefinition((definition) => ({ ...definition, startPageId: existing.id }));
       return;
     }
-    const page = { ...newPage(draft.draft()), title: "Home" };
+    const page = { ...newPage(draft.draft(), text("Home")), title: text("Home") };
     setDefinition((definition) => ({ ...definition, startPageId: page.id, pages: [...definition.pages, page] }));
   };
 
@@ -1461,7 +1526,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     const fields = selectedSourceRecordFields();
     if (!tableId || !sourceBlock || !table || fields.length === 0) return;
 
-    const page = newPage(draft.draft());
+    const page = newPage(draft.draft(), messages().pageNumber({ number: draft.draft().pages.length + 1 }));
     const recordBlock: Extract<CustomAppBlock, { type: "record" }> = {
       id: localId("record"),
       type: "record",
@@ -1470,7 +1535,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     };
     const recordPage: CustomAppPage = {
       ...page,
-      title: `${table.name} details`,
+      title: messages().recordPageTitle({ table: table.name }),
       navigation: { ...page.navigation, visible: false },
       parameters: { record_id: { type: "record", tableId, required: true } },
       record: { tableId, id: { source: "PARAMS", path: "record_id" } },
@@ -1587,11 +1652,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       return;
     }
     const confirmed = await prompts.confirm(
-      "Remove this record parameter? Its Record, Rendered HTML, and Comments blocks will also be removed.",
+      text("Remove this record parameter? Its Record, Rendered HTML, and Comments blocks will also be removed."),
       {
-        title: "Remove record parameter",
+        title: text("Remove record parameter"),
         icon: "ti ti-unlink",
-        confirmText: "Remove parameter",
+        confirmText: text("Remove parameter"),
         variant: "danger",
       },
     );
@@ -1616,7 +1681,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     const page = draft.draft().pages.find((candidate) => Object.keys(candidate.parameters).length === 0) ?? draft.draft().pages[0]!;
     const action: CustomAppAction = {
       id: localId("action"),
-      label: `Open ${page.title}`,
+      label: messages().openPage({ page: page.title }),
       kind: "navigate",
       pageId: page.id,
       history: "push",
@@ -1722,10 +1787,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     const count =
       selected.owner === "actions" ? (selectedActionsBlock()?.actions.length ?? 0) : (selectedRecordsLikeBlock()?.rowActions?.length ?? 0);
     if (selected.owner === "actions" && count <= 1) return;
-    const confirmed = await prompts.confirm(`Remove "${selected.action.label}"?`, {
-      title: "Remove action",
+    const confirmed = await prompts.confirm(messages().removeActionConfirm({ label: selected.action.label }), {
+      title: text("Remove action"),
       icon: "ti ti-trash",
-      confirmText: "Remove",
+      confirmText: text("Remove"),
       variant: "danger",
     });
     if (!confirmed) return;
@@ -1744,10 +1809,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     const definition = draft.draft();
     if (definition.pages.length === 1) return;
     const page = selectedPage();
-    const confirmed = await prompts.confirm(`Remove "${page.title}" from this app?`, {
-      title: "Remove page",
+    const confirmed = await prompts.confirm(messages().removePageConfirm({ title: page.title }), {
+      title: text("Remove page"),
       icon: "ti ti-trash",
-      confirmText: "Remove",
+      confirmText: text("Remove"),
       variant: "danger",
     });
     if (!confirmed) return;
@@ -1768,12 +1833,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       if (activeSave) await activeSave;
       saveQueued = false;
       const response = await apiClient.apps[":appId"].restore.$post({ param: { appId: app().id } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not restore the live version."));
+      if (!response.ok) throw new Error(await errorMessage(response, text("Could not restore the live version.")));
       return (await response.json()) as PublicCustomApp;
     },
     onSuccess: (restored) => {
       if (!restored.draftDefinition) {
-        prompts.error(restored.draftDiagnostics[0]?.message ?? "The live version is not a valid schema v5 definition.");
+        prompts.error(restored.draftDiagnostics[0]?.message ?? text("The live version is not a valid schema v5 definition."));
         return;
       }
       saveQueued = false;
@@ -1783,18 +1848,18 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       setSaveError(null);
       setSaveState("saved");
       selectPage(restored.draftDefinition.startPageId);
-      prompts.success("Draft restored to the live version.");
+      prompts.success(text("Draft restored to the live version."));
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const confirmRestoreLiveVersion = async () => {
     const confirmed = await prompts.confirm(
-      "Discard every autosaved draft change and replace it with the current live version? This cannot be undone.",
+      text("Discard every autosaved draft change and replace it with the current live version? This cannot be undone."),
       {
-        title: "Restore live version",
+        title: text("Restore live version"),
         icon: "ti ti-restore",
-        confirmText: "Discard draft changes",
+        confirmText: text("Discard draft changes"),
         variant: "danger",
       },
     );
@@ -1806,7 +1871,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       <AppWorkspace.Main class="p-0" mobilePane="main" scroll={false}>
         <AppWorkspace.MainPane
           id="custom-app-pages"
-          label="App pages"
+          label={text("App pages")}
           surface="navigation"
           defaultSize={280}
           minSize={220}
@@ -1814,14 +1879,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           class="flex min-h-0 flex-col"
           scroll={false}
         >
-          <Toolbar label="App pages" class="p-2" wrap>
+          <Toolbar label={text("App pages")} class="p-2" wrap>
             <Toolbar.Group>
-              <strong class="px-1 text-sm">Pages</strong>
+              <strong class="px-1 text-sm">{text("Pages")}</strong>
             </Toolbar.Group>
             <Toolbar.Spacer />
             <Show when={app().publishedAt}>
               <Toolbar.Group>
-                <ButtonLink href={`/apps/${app().id}`} target="_blank" rel="noreferrer" size="xs" aria-label="Open live app">
+                <ButtonLink href={`/apps/${app().id}`} target="_blank" rel="noreferrer" size="xs" aria-label={text("Open live app")}>
                   <i class="ti ti-external-link" aria-hidden="true" />
                 </ButtonLink>
               </Toolbar.Group>
@@ -1836,13 +1901,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     <AppWorkspace.SidebarItemLabel>{page.title}</AppWorkspace.SidebarItemLabel>
                     {draft.draft().startPageId === page.id && (
                       <AppWorkspace.SidebarItemMeta>
-                        <span class="text-[9px] uppercase tracking-wider text-dimmed">start</span>
+                        <span class="text-[9px] uppercase tracking-wider text-dimmed">{text("start")}</span>
                       </AppWorkspace.SidebarItemMeta>
                     )}
                     <Show when={props.editMode}>
                       <AppWorkspace.SidebarItemAction
                         icon="ti ti-settings"
-                        label={`Settings for ${page.title}`}
+                        label={messages().settingsFor({ label: page.title })}
                         onSelect={() => selectPage(page.id)}
                       />
                     </Show>
@@ -1854,10 +1919,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   tone="success"
                   onClick={addPage}
                   disabled={draft.draft().pages.length >= 12}
-                  title={draft.draft().pages.length >= 12 ? "Apps support up to 12 pages." : "Add a page"}
+                  title={draft.draft().pages.length >= 12 ? text("Apps support up to 12 pages.") : text("Add a page")}
                 >
                   <AppWorkspace.SidebarItemIcon icon="ti ti-plus" />
-                  <AppWorkspace.SidebarItemLabel>New page</AppWorkspace.SidebarItemLabel>
+                  <AppWorkspace.SidebarItemLabel>{text("New page")}</AppWorkspace.SidebarItemLabel>
                   <Show when={draft.draft().pages.length >= 12}>
                     <AppWorkspace.SidebarItemMeta>12 / 12</AppWorkspace.SidebarItemMeta>
                   </Show>
@@ -1865,7 +1930,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
               </Show>
             </AppWorkspace.SidebarSection>
             <Show when={sidebarActions().length > 0 || props.editMode}>
-              <AppWorkspace.SidebarSection title="Actions">
+              <AppWorkspace.SidebarSection title={text("Actions")}>
                 <For each={sidebarActions()}>
                   {(action) => (
                     <AppWorkspace.SidebarItem
@@ -1881,11 +1946,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       }
                     >
                       <AppWorkspace.SidebarItemLabel>{action.label}</AppWorkspace.SidebarItemLabel>
-                      <AppWorkspace.SidebarItemMeta>Form</AppWorkspace.SidebarItemMeta>
+                      <AppWorkspace.SidebarItemMeta>{text("Form")}</AppWorkspace.SidebarItemMeta>
                       <Show when={props.editMode}>
                         <AppWorkspace.SidebarItemAction
                           icon="ti ti-settings"
-                          label={`Settings for ${action.label}`}
+                          label={messages().settingsFor({ label: action.label })}
                           onSelect={() => {
                             setInspectorMode("app");
                             setInspectorOpen(true);
@@ -1902,14 +1967,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     disabled={forms().length === 0 || sidebarActions().length >= 12}
                     title={
                       forms().length === 0
-                        ? "Create an active Form first."
+                        ? text("Create an active Form first.")
                         : sidebarActions().length >= 12
-                          ? "Apps support up to 12 global actions."
-                          : "Add a global Form action"
+                          ? text("Apps support up to 12 global actions.")
+                          : text("Add a global Form action")
                     }
                   >
                     <AppWorkspace.SidebarItemIcon icon="ti ti-plus" />
-                    <AppWorkspace.SidebarItemLabel>New action</AppWorkspace.SidebarItemLabel>
+                    <AppWorkspace.SidebarItemLabel>{text("New action")}</AppWorkspace.SidebarItemLabel>
                     <Show when={sidebarActions().length >= 12}>
                       <AppWorkspace.SidebarItemMeta>12 / 12</AppWorkspace.SidebarItemMeta>
                     </Show>
@@ -1927,11 +1992,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             <AppWorkspace.SidebarFooter class="p-2">
               <NoticeCard
                 tone={saveState() === "error" || saveState() === "invalid" ? "danger" : "warning"}
-                title={app().publishedAt ? "Changes are in a draft" : "This app is a draft"}
+                title={app().publishedAt ? text("Changes are in a draft") : text("This app is a draft")}
                 detail={
                   saveState() === "saving"
-                    ? "Saving changes automatically…"
-                    : (saveError() ?? "Changes are saved automatically. Publish the draft when it is ready for everyone.")
+                    ? text("Saving changes automatically…")
+                    : (saveError() ?? text("Changes are saved automatically. Publish the draft when it is ready for everyone."))
                 }
               >
                 <div class="flex flex-wrap gap-2">
@@ -1943,7 +2008,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       disabled={publishMutation.loading()}
                       onClick={() => void confirmRestoreLiveVersion()}
                     >
-                      Restore live version
+                      {text("Restore live version")}
                     </Button>
                   </Show>
                   <Button
@@ -1952,7 +2017,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     disabled={restoreMutation.loading() || saveState() === "invalid" || saveState() === "error"}
                     onClick={() => publishMutation.mutate(undefined)}
                   >
-                    Publish changes
+                    {text("Publish changes")}
                   </Button>
                 </div>
               </NoticeCard>
@@ -1960,7 +2025,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           </Show>
         </AppWorkspace.MainPane>
 
-        <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-base" aria-label="App canvas">
+        <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-base" aria-label={text("App canvas")}>
           <div class="min-h-0 flex-1 overflow-auto bg-[var(--ui-surface)]">
             <CustomAppPageLayout
               definition={draft.draft()}
@@ -1977,7 +2042,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       addBlockControl: (
                         <div class="flex justify-center">
                           <Button size="md" variant="success" onClick={() => void openBlockPicker()}>
-                            <i class="ti ti-plus" aria-hidden="true" /> Add block
+                            <i class="ti ti-plus" aria-hidden="true" /> {text("Add block")}
                           </Button>
                         </div>
                       ),
@@ -2023,24 +2088,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             }
             title={
               inspectorMode() === "action"
-                ? (selectedAction()?.action.label ?? "Action")
+                ? (selectedAction()?.action.label ?? text("Action"))
                 : inspectorMode() === "block"
-                  ? selectedBlock()?.block.title || blockMeta[selectedBlock()?.block.type ?? "markdown"].label
+                  ? selectedBlock()?.block.title || blockLabel(selectedBlock()?.block.type ?? "markdown")
                   : inspectorMode() === "app"
-                    ? "App settings"
+                    ? text("App settings")
                     : selectedPage().title
             }
             subtitle={
               inspectorMode() === "action"
-                ? "Action settings"
+                ? text("Action settings")
                 : inspectorMode() === "block"
-                  ? "Content block"
+                  ? text("Content block")
                   : inspectorMode() === "app"
                     ? draft.draft().name
-                    : "Page settings"
+                    : text("Page settings")
             }
             actions={
-              <IconButton size="sm" label="Close inspector" onClick={() => setInspectorOpen(false)}>
+              <IconButton size="sm" label={text("Close inspector")} onClick={() => setInspectorOpen(false)}>
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             }
@@ -2050,24 +2115,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           >
             <Show when={panelDiagnostics().length > 0}>
               <NoticeCard tone="danger" icon={false} role="alert">
-                <p class="font-medium">This draft needs attention</p>
+                <p class="font-medium">{text("This draft needs attention")}</p>
                 <ul class="mt-2 list-disc space-y-1 pl-4 text-sm">
                   <For each={panelDiagnostics()}>{(diagnostic) => <li>{diagnostic.message}</li>}</For>
                 </ul>
               </NoticeCard>
             </Show>
             <Show when={inspectorMode() === "app"}>
-              <DetailPanel.Group label="App settings">
-                <DetailPanel.Section title="Identity" icon="ti ti-app-window" tone="accent">
+              <DetailPanel.Group label={text("App settings")}>
+                <DetailPanel.Section title={text("Identity")} icon="ti ti-app-window" tone="accent">
                   <div class="flex flex-col gap-3">
                     <TextInput
-                      label="Name"
+                      label={text("Name")}
                       value={() => draft.draft().name}
                       onValueChange={(name) => setDefinition((definition) => ({ ...definition, name }))}
                       required
                     />
                     <IconInput
-                      label="Icon"
+                      label={text("Icon")}
                       value={() => iconInputValue(draft.draft().icon)}
                       onValueChange={(value) => setDefinition((definition) => ({ ...definition, icon: iconSlug(value) }))}
                       clearable
@@ -2075,16 +2140,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   </div>
                 </DetailPanel.Section>
                 <DetailPanel.Section
-                  title="App sidebar"
+                  title={text("App sidebar")}
                   icon="ti ti-layout-sidebar-left"
-                  description="Add app-wide Forms. They do not receive page, route, record, or row values."
+                  description={text("Add app-wide Forms. They do not receive page, route, record, or row values.")}
                   collapsible
                   defaultOpen={sidebarActions().length > 0}
                 >
                   <div class="flex flex-col gap-4">
                     <InlineGuidance>
-                      Pages appear automatically. These launchers stay available while readers move through the app; availability can use
-                      auth, app, Base, and time context.
+                      {text(
+                        "Pages appear automatically. These launchers stay available while readers move through the app; availability can use auth, app, Base, and time context.",
+                      )}
                     </InlineGuidance>
                     <For each={sidebarActions()}>
                       {(sidebarAction) => {
@@ -2094,24 +2160,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <div class="flex flex-col gap-3">
                               <div class="flex items-center gap-2">
                                 <strong class="min-w-0 flex-1 truncate text-sm">{sidebarAction.label}</strong>
-                                <StatusBadge tone="neutral" label="Form" variant="text" />
+                                <StatusBadge tone="neutral" label={text("Form")} variant="text" />
                                 <IconButton
                                   size="sm"
-                                  label={`Remove ${sidebarAction.label}`}
+                                  label={messages().removeNamed({ label: sidebarAction.label })}
                                   onClick={() => removeSidebarAction(sidebarAction.id)}
                                 >
                                   <i class="ti ti-trash" aria-hidden="true" />
                                 </IconButton>
                               </div>
                               <TextInput
-                                label="Label"
+                                label={text("Label")}
                                 value={() => sidebarAction.label}
                                 onValueChange={(label) => updateSidebarAction(sidebarAction.id, (action) => ({ ...action, label }))}
                                 required
                               />
                               <div class="grid gap-3 sm:grid-cols-2">
                                 <IconInput
-                                  label="Icon"
+                                  label={text("Icon")}
                                   value={() => iconInputValue(sidebarAction.icon)}
                                   onValueChange={(value) =>
                                     updateSidebarAction(sidebarAction.id, (action) => ({ ...action, icon: iconSlug(value) }))
@@ -2119,12 +2185,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                   clearable
                                 />
                                 <Select
-                                  label="Tone"
+                                  label={text("Tone")}
                                   value={() => sidebarAction.tone}
                                   options={[
-                                    { id: "default", label: "Default" },
-                                    { id: "success", label: "Positive" },
-                                    { id: "danger", label: "Danger" },
+                                    { id: "default", label: text("Default") },
+                                    { id: "success", label: text("Positive") },
+                                    { id: "danger", label: text("Danger") },
                                   ]}
                                   onValueChange={(tone) =>
                                     (tone === "default" || tone === "success" || tone === "danger") &&
@@ -2134,7 +2200,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               </div>
                               <Show when={sidebarAction.kind === "form"}>
                                 <Select
-                                  label="Form"
+                                  label={text("Form")}
                                   searchable
                                   value={() => (sidebarAction.kind === "form" ? sidebarAction.formId : null)}
                                   options={formOptions()}
@@ -2159,14 +2225,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       <div class="flex flex-col gap-2">
                                         <Select
                                           label={binding.label}
-                                          description="Hide this input and inject one trusted value on the server."
-                                          placeholder="Ask in Form"
+                                          description={text("Hide this input and inject one trusted value on the server.")}
+                                          placeholder={text("Ask in Form")}
                                           clearable
                                           value={() => current()?.source ?? null}
                                           options={[
-                                            { id: "LITERAL", label: "Fixed value" },
+                                            { id: "LITERAL", label: text("Fixed value") },
                                             ...(binding.field.type === "principal"
-                                              ? [{ id: "AUTH", label: "Current signed-in user" }]
+                                              ? [{ id: "AUTH", label: text("Current signed-in user") }]
                                               : []),
                                           ]}
                                           onValueChange={(source) =>
@@ -2184,7 +2250,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                         <Show when={literal()}>
                                           {(value) => (
                                             <JsonValueInput
-                                              label={`${binding.label} value`}
+                                              label={messages().valueFor({ label: binding.label })}
                                               value={value().value}
                                               onValueChange={(next) =>
                                                 updateSidebarAction(sidebarAction.id, (action) =>
@@ -2207,9 +2273,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                   }}
                                 </For>
                                 <Select
-                                  label="After submission"
-                                  description="Optionally open a record page for the newly created record."
-                                  placeholder="Stay on the current page"
+                                  label={text("After submission")}
+                                  description={text("Optionally open a record page for the newly created record.")}
+                                  placeholder={text("Stay on the current page")}
                                   clearable
                                   value={() => (sidebarAction.kind === "form" ? (sidebarAction.onSuccessNavigate?.pageId ?? null) : null)}
                                   options={draft
@@ -2269,30 +2335,30 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         disabled={forms().length === 0 || sidebarActions().length >= 12}
                         onClick={addSidebarForm}
                       >
-                        <i class="ti ti-plus" aria-hidden="true" /> Add Form
+                        <i class="ti ti-plus" aria-hidden="true" /> {text("Add Form")}
                       </Button>
                     </div>
                   </div>
                 </DetailPanel.Section>
                 <DetailPanel.Section
-                  title="Access"
+                  title={text("Access")}
                   icon="ti ti-shield"
-                  description="Who can open the published app. This is separate from availability rules."
+                  description={text("Who can open the published app. This is separate from availability rules.")}
                   collapsible
                   defaultOpen={false}
                 >
                   <div class="flex flex-col gap-3">
                     <InlineGuidance>
-                      App grants are independent from Base access. Public allows anonymous visitors to open the published app.
+                      {text("App grants are independent from Base access. Public allows anonymous visitors to open the published app.")}
                     </InlineGuidance>
                     <ScopedPermissionEditor scope={{ type: "customApp", id: app().id }} canEdit />
                   </div>
                 </DetailPanel.Section>
                 <DetailPanel.Section
-                  title="Danger zone"
+                  title={text("Danger zone")}
                   icon="ti ti-trash"
                   tone="danger"
-                  description="Take the live app offline or permanently remove it. Base data is not deleted."
+                  description={text("Take the live app offline or permanently remove it. Base data is not deleted.")}
                   collapsible
                   defaultOpen={false}
                 >
@@ -2302,20 +2368,25 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             </Show>
 
             <Show when={inspectorMode() === "page"}>
-              <DetailPanel.Summary title="Page">
+              <DetailPanel.Summary title={text("Page")}>
                 <div class="flex flex-col gap-3">
-                  <TextInput label="Title" value={() => selectedPage().title} onValueChange={(title) => patchPage({ title })} required />
+                  <TextInput
+                    label={text("Title")}
+                    value={() => selectedPage().title}
+                    onValueChange={(title) => patchPage({ title })}
+                    required
+                  />
                   <IconInput
-                    label="Navigation icon"
+                    label={text("Navigation icon")}
                     value={() => iconInputValue(selectedPage().navigation.icon)}
                     onValueChange={(value) => patchPage({ navigation: { ...selectedPage().navigation, icon: iconSlug(value) } })}
                     clearable
                   />
                   <Switch
-                    label="Show in app navigation"
+                    label={text("Show in app navigation")}
                     description={
                       Object.keys(selectedPage().parameters).length > 0
-                        ? "Pages with required parameters are route-only and cannot appear in navigation."
+                        ? text("Pages with required parameters are route-only and cannot appear in navigation.")
                         : undefined
                     }
                     value={() => selectedPage().navigation.visible}
@@ -2329,7 +2400,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         when={Object.keys(selectedPage().parameters).length === 0}
                         fallback={
                           <InlineGuidance tone="warning">
-                            This page requires a record, so it cannot be the start page. Remove its route parameters first.
+                            {text("This page requires a record, so it cannot be the start page. Remove its route parameters first.")}
                           </InlineGuidance>
                         }
                       >
@@ -2338,12 +2409,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           variant="secondary"
                           onClick={() => setDefinition((definition) => ({ ...definition, startPageId: selectedPage().id }))}
                         >
-                          Set as start page
+                          {text("Set as start page")}
                         </Button>
                       </Show>
                     }
                   >
-                    <StatusBadge tone="ok" label="Start page" variant="text" />
+                    <StatusBadge tone="ok" label={text("Start page")} variant="text" />
                   </Show>
                   <PageIdInput
                     id={selectedPage().id}
@@ -2352,14 +2423,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   />
                 </div>
               </DetailPanel.Summary>
-              <DetailPanel.Group label="Page behavior">
+              <DetailPanel.Group label={text("Page behavior")}>
                 <DetailPanel.Section
-                  title="Route parameters"
+                  title={text("Route parameters")}
                   icon="ti ti-route"
                   description={
                     selectedPage().id === draft.draft().startPageId
-                      ? "Start pages open without a record. Make another page the start page before adding a required record."
-                      : "Required record IDs supplied by links, rows, Forms, or actions."
+                      ? text("Start pages open without a record. Make another page the start page before adding a required record.")
+                      : text("Required record IDs supplied by links, rows, Forms, or actions.")
                   }
                   meta={`${Object.keys(selectedPage().parameters).length}`}
                   collapsible
@@ -2371,10 +2442,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         const usage = () => customAppPageParameterUsage(draft.draft(), selectedPage().id, parameterId);
                         const isPageRecord = () => selectedPage().record?.id.path === parameterId;
                         const blockingUsage = () => usage().filter((entry) => entry !== "page record");
+                        const blockingUsageLabels = () => blockingUsage().map(text).join(", ");
                         return (
                           <div class="flex flex-col gap-3">
                             <Show when={isPageRecord()}>
-                              <StatusBadge tone="ok" icon={null} label="Used by record-page blocks" />
+                              <StatusBadge tone="ok" icon={null} label={text("Used by record-page blocks")} />
                             </Show>
                             <PageParameterIdInput
                               id={parameterId}
@@ -2382,8 +2454,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               onRename={(next) => renamePageParameter(parameterId, next)}
                             />
                             <Select
-                              label="Record table"
-                              description="The route value must be a record ID from this table."
+                              label={text("Record table")}
+                              description={text("The route value must be a record ID from this table.")}
                               searchable
                               value={() => parameter.tableId}
                               options={tableOptions()}
@@ -2394,14 +2466,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               variant="ghost"
                               class="self-start"
                               disabled={blockingUsage().length > 0}
-                              title={blockingUsage().length > 0 ? `Used by ${blockingUsage().join(", ")}` : undefined}
+                              title={blockingUsage().length > 0 ? messages().usedBy({ labels: blockingUsageLabels() }) : undefined}
                               onClick={() => void removePageParameter(parameterId)}
                             >
-                              <i class="ti ti-x" aria-hidden="true" /> Remove record parameter
+                              <i class="ti ti-x" aria-hidden="true" /> {text("Remove record parameter")}
                             </Button>
                             <Show when={blockingUsage().length > 0}>
                               <InlineGuidance tone="warning">
-                                This parameter is still used by {blockingUsage().join(", ")}. Remove those references before deleting it.
+                                {messages().parameterStillUsed({ labels: blockingUsageLabels() })}
                               </InlineGuidance>
                             </Show>
                           </div>
@@ -2415,24 +2487,26 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       disabled={props.catalog.tables.length === 0 || selectedPage().id === draft.draft().startPageId}
                       title={
                         props.catalog.tables.length === 0
-                          ? "Create a table first."
+                          ? text("Create a table first.")
                           : selectedPage().id === draft.draft().startPageId
-                            ? "Make another page the start page first."
+                            ? text("Make another page the start page first.")
                             : undefined
                       }
                     >
-                      <i class="ti ti-plus" aria-hidden="true" /> Add record parameter
+                      <i class="ti ti-plus" aria-hidden="true" /> {text("Add record parameter")}
                     </Button>
                     <Show when={props.catalog.tables.length === 0}>
                       <InlineGuidance tone="danger">
-                        A record parameter needs a table. Create one from the left sidebar first.
+                        {text("A record parameter needs a table. Create one from the left sidebar first.")}
                       </InlineGuidance>
                     </Show>
                     <Show when={props.catalog.tables.length > 0 && selectedPage().id === draft.draft().startPageId}>
                       <InlineGuidance tone="warning">
-                        Start pages open without a required record.{" "}
+                        {text("Start pages open without a required record.")}{" "}
                         <Button variant="text" size="xs" onClick={moveStartPageAwayFromSelected}>
-                          {alternateStartPage() ? `Make “${alternateStartPage()!.title}” the start page` : "Create a new start page"}
+                          {alternateStartPage()
+                            ? messages().makeStartPage({ title: alternateStartPage()!.title })
+                            : text("Create a new start page")}
                         </Button>
                       </InlineGuidance>
                     </Show>
@@ -2447,8 +2521,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   error={() => diagnosticFor(selectedPage().id, "availableWhen")}
                 />
               </DetailPanel.Group>
-              <DetailPanel.Group label="Page management">
-                <DetailPanel.Section title="Page order" icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
+              <DetailPanel.Group label={text("Page management")}>
+                <DetailPanel.Section title={text("Page order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
                   <div class="flex flex-wrap gap-2">
                     <Button
                       size="sm"
@@ -2456,7 +2530,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       disabled={draft.draft().pages[0]?.id === selectedPage().id}
                       onClick={() => moveSelectedPage(-1)}
                     >
-                      <i class="ti ti-arrow-up" aria-hidden="true" /> Move up
+                      <i class="ti ti-arrow-up" aria-hidden="true" /> {text("Move up")}
                     </Button>
                     <Button
                       size="sm"
@@ -2464,22 +2538,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       disabled={draft.draft().pages.at(-1)?.id === selectedPage().id}
                       onClick={() => moveSelectedPage(1)}
                     >
-                      <i class="ti ti-arrow-down" aria-hidden="true" /> Move down
+                      <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
                     </Button>
                   </div>
                 </DetailPanel.Section>
                 <DetailPanel.Section
-                  title="Danger zone"
+                  title={text("Danger zone")}
                   icon="ti ti-trash"
                   tone="danger"
                   description={
-                    draft.draft().pages.length === 1 ? "Every app needs at least one page." : "Permanently remove this page from the draft."
+                    draft.draft().pages.length === 1
+                      ? text("Every app needs at least one page.")
+                      : text("Permanently remove this page from the draft.")
                   }
                   collapsible
                   defaultOpen={false}
                 >
                   <Button size="sm" variant="danger" disabled={draft.draft().pages.length === 1} onClick={() => void removePage()}>
-                    <i class="ti ti-trash" aria-hidden="true" /> Remove page
+                    <i class="ti ti-trash" aria-hidden="true" /> {text("Remove page")}
                   </Button>
                 </DetailPanel.Section>
               </DetailPanel.Group>
@@ -2488,10 +2564,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             <Show when={inspectorMode() === "block" && selectedBlock()}>
               {(selected) => (
                 <>
-                  <DetailPanel.Summary title="Block">
+                  <DetailPanel.Summary title={text("Block")}>
                     <div class="flex flex-col gap-4">
                       <TextInput
-                        label="Title"
+                        label={text("Title")}
                         value={() => selected().block.title ?? ""}
                         onValueChange={(title) =>
                           updateSelectedBlock((block) => ({ ...block, title: title || undefined }) as CustomAppBlock)
@@ -2512,7 +2588,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </Show>
                       <Show when={selected().block.type === "html"}>
                         <Select
-                          label="HTML template field"
+                          label={text("HTML template field")}
                           searchable
                           value={() => {
                             const block = selected().block;
@@ -2521,7 +2597,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           options={pageHtmlFields().map((field) => ({
                             id: field.id,
                             label: field.name,
-                            description: "HTML template",
+                            description: text("HTML template"),
                             icon: field.icon ?? "ti ti-code",
                           }))}
                           error={() => diagnosticFor(selected().block.id, "fieldId")}
@@ -2530,15 +2606,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                         />
                         <Select
-                          label="Height"
+                          label={text("Height")}
                           value={() => {
                             const block = selected().block;
                             return block.type === "html" ? block.height : null;
                           }}
                           options={[
-                            { id: "compact", label: "Compact" },
-                            { id: "normal", label: "Normal" },
-                            { id: "large", label: "Large" },
+                            { id: "compact", label: text("Compact") },
+                            { id: "normal", label: text("Normal") },
+                            { id: "large", label: text("Large") },
                           ]}
                           onValueChange={(height) =>
                             (height === "compact" || height === "normal" || height === "large") &&
@@ -2548,11 +2624,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </Show>
                     </div>
                   </DetailPanel.Summary>
-                  <DetailPanel.Group label="Block behavior">
+                  <DetailPanel.Group label={text("Block behavior")}>
                     <CustomAppAvailabilitySection
                       baseId={draft.draft().baseId}
                       contextKeys={contextKeys()}
-                      targetLabel={selected().block.title || blockMeta[selected().block.type].label}
+                      targetLabel={selected().block.title || blockLabel(selected().block.type)}
                       value={() => selected().block.availableWhen?.query ?? ""}
                       onValueChange={(query) =>
                         updateSelectedBlock(
@@ -2569,14 +2645,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       }
                     >
                       <DetailPanel.Section
-                        title="Empty state"
+                        title={text("Empty state")}
                         icon="ti ti-placeholder"
-                        description="Message shown when this block has no content."
+                        description={text("Message shown when this block has no content.")}
                         collapsible
                         defaultOpen={false}
                       >
                         <TextInput
-                          label="Message"
+                          label={text("Message")}
                           value={() => {
                             const block = selected().block;
                             return block.type === "records" || block.type === "referenced_records" || block.type === "record"
@@ -2596,9 +2672,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </Show>
                     <Show when={selected().block.type === "actions"}>
                       <DetailPanel.Section
-                        title="Actions"
+                        title={text("Actions")}
                         icon="ti ti-bolt"
-                        description="Open another page or run an available App workflow."
+                        description={text("Open another page or run an available App workflow.")}
                         collapsible
                         defaultOpen
                       >
@@ -2609,8 +2685,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 title={action.label}
                                 description={
                                   action.kind === "workflow"
-                                    ? "Run workflow"
-                                    : `Open ${draft.draft().pages.find((page) => page.id === action.pageId)?.title ?? "page"}`
+                                    ? text("Run workflow")
+                                    : messages().openPage({
+                                        page: draft.draft().pages.find((page) => page.id === action.pageId)?.title ?? text("Page"),
+                                      })
                                 }
                                 leading={
                                   <i
@@ -2632,10 +2710,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               onClick={addNavigateAction}
                               disabled={(selectedActionsBlock()?.actions.length ?? 0) >= 12}
                               title={
-                                (selectedActionsBlock()?.actions.length ?? 0) >= 12 ? "Actions blocks support up to 12 actions." : undefined
+                                (selectedActionsBlock()?.actions.length ?? 0) >= 12
+                                  ? text("Actions blocks support up to 12 actions.")
+                                  : undefined
                               }
                             >
-                              <i class="ti ti-link-plus" aria-hidden="true" /> Add navigation
+                              <i class="ti ti-link-plus" aria-hidden="true" /> {text("Add navigation")}
                             </Button>
                             <Button
                               size="sm"
@@ -2644,13 +2724,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               disabled={workflowLaunchers().length === 0 || (selectedActionsBlock()?.actions.length ?? 0) >= 12}
                               title={
                                 workflowLaunchers().length === 0
-                                  ? "Add an enabled App run option first."
+                                  ? text("Add an enabled App run option first.")
                                   : (selectedActionsBlock()?.actions.length ?? 0) >= 12
-                                    ? "Actions blocks support up to 12 actions."
+                                    ? text("Actions blocks support up to 12 actions.")
                                     : undefined
                               }
                             >
-                              <i class="ti ti-player-play" aria-hidden="true" /> Add workflow
+                              <i class="ti ti-player-play" aria-hidden="true" /> {text("Add workflow")}
                             </Button>
                           </div>
                           <Show
@@ -2665,25 +2745,25 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               </Show>
                             }
                           >
-                            <InlineGuidance>This Actions block already has the maximum of 12 actions.</InlineGuidance>
+                            <InlineGuidance>{text("This Actions block already has the maximum of 12 actions.")}</InlineGuidance>
                           </Show>
                         </div>
                       </DetailPanel.Section>
                     </Show>
                   </DetailPanel.Group>
                   <Show when={selected().block.type === "referenced_records"}>
-                    <DetailPanel.Group label="Referenced records settings">
+                    <DetailPanel.Group label={text("Referenced records settings")}>
                       <DetailPanel.Section
-                        title="Relation source"
+                        title={text("Relation source")}
                         icon="ti ti-table-share"
-                        description="Pin the source table, its Relation to this page record, and the displayed fields."
+                        description={text("Pin the source table, its Relation to this page record, and the displayed fields.")}
                         collapsible
                         defaultOpen
                       >
                         <div class="flex flex-col gap-4">
                           <Select
-                            label="Source table"
-                            description="Only tables with a Relation to this Record page are available."
+                            label={text("Source table")}
+                            description={text("Only tables with a Relation to this Record page are available.")}
                             searchable
                             value={() => selectedReferencedRecordsBlock()?.sourceTableId ?? null}
                             options={referencedSourceOptions()}
@@ -2705,8 +2785,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }}
                           />
                           <Select
-                            label="Relation field"
-                            description="Rows are included when this Relation contains the current record."
+                            label={text("Relation field")}
+                            description={text("Rows are included when this Relation contains the current record.")}
                             value={() => selectedReferencedRecordsBlock()?.relationFieldId ?? null}
                             options={referencedRelationOptions()}
                             error={() => diagnosticFor(selected().block.id, "relationFieldId")}
@@ -2716,22 +2796,22 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <MultiSelectInput
-                            label="Fields"
-                            description="Choose the exact fields exposed by this block."
-                            placeholder="Choose fields"
+                            label={text("Fields")}
+                            description={text("Choose the exact fields exposed by this block.")}
+                            placeholder={text("Choose fields")}
                             searchable
                             value={() => selectedReferencedRecordsBlock()?.fieldIds ?? []}
                             selectedOptions={() => {
                               const options = new Map(referencedFieldOptions().map((option) => [option.id, option]));
                               return (selectedReferencedRecordsBlock()?.fieldIds ?? []).map(
-                                (fieldId) => options.get(fieldId) ?? { id: fieldId, label: "Unavailable field" },
+                                (fieldId) => options.get(fieldId) ?? { id: fieldId, label: text("Unavailable field") },
                               );
                             }}
                             options={referencedFieldOptions()}
                             error={() => {
                               const block = selectedReferencedRecordsBlock();
                               if (!block) return undefined;
-                              if (block.fieldIds.length === 0) return "Choose at least one field.";
+                              if (block.fieldIds.length === 0) return text("Choose at least one field.");
                               return diagnosticFor(block.id, "fieldIds");
                             }}
                             onValueChange={(fieldIds) =>
@@ -2741,11 +2821,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <Select
-                            label="Display"
+                            label={text("Display")}
                             value={() => selectedReferencedRecordsBlock()?.display.kind ?? "table"}
                             options={[
-                              { id: "table", label: "Table", icon: "ti ti-table" },
-                              { id: "cards", label: "Cards", icon: "ti ti-layout-grid" },
+                              { id: "table", label: text("Table"), icon: "ti ti-table" },
+                              { id: "cards", label: text("Cards"), icon: "ti ti-layout-grid" },
                             ]}
                             onValueChange={(kind) =>
                               (kind === "table" || kind === "cards") &&
@@ -2755,15 +2835,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <Switch
-                            label="Search"
-                            description="Let readers search the displayed fields."
+                            label={text("Search")}
+                            description={text("Let readers search the displayed fields.")}
                             value={() => selectedReferencedRecordsBlock()?.searchable ?? true}
                             onValueChange={(searchable) =>
                               updateSelectedBlock((block) => (block.type === "referenced_records" ? { ...block, searchable } : block))
                             }
                           />
                           <NumberInput
-                            label="Rows per page"
+                            label={text("Rows per page")}
                             min={5}
                             max={100}
                             step={5}
@@ -2776,9 +2856,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </div>
                       </DetailPanel.Section>
                       <DetailPanel.Section
-                        title="Row actions"
+                        title={text("Row actions")}
                         icon="ti ti-click"
-                        description="Signed-in app readers can run workflows for selected rows."
+                        description={text("Signed-in app readers can run workflows for selected rows.")}
                         collapsible
                         defaultOpen={(selectedReferencedRecordsBlock()?.rowActions?.length ?? 0) > 0}
                       >
@@ -2787,7 +2867,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             {(action) => (
                               <DetailPanel.Action
                                 title={action.label}
-                                description="Run workflow for this row"
+                                description={text("Run workflow for this row")}
                                 leading={<i class={action.icon ? `ti ti-${action.icon}` : "ti ti-player-play"} aria-hidden="true" />}
                                 trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                                 onClick={() => selectAction(action.id)}
@@ -2800,7 +2880,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             onClick={addRowWorkflowAction}
                             disabled={workflowLaunchers().length === 0 || (selectedReferencedRecordsBlock()?.rowActions?.length ?? 0) >= 6}
                           >
-                            <i class="ti ti-player-play" aria-hidden="true" /> Add row action
+                            <i class="ti ti-player-play" aria-hidden="true" /> {text("Add row action")}
                           </Button>
                         </div>
                       </DetailPanel.Section>
@@ -2809,17 +2889,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   <Show
                     when={selected().block.type === "records" || selected().block.type === "metrics" || selected().block.type === "chart"}
                   >
-                    <DetailPanel.Group label="Data settings">
+                    <DetailPanel.Group label={text("Data settings")}>
                       <DetailPanel.Section
-                        title="Data source"
+                        title={text("Data source")}
                         icon="ti ti-database-search"
-                        description="Choose the published data this block can read."
+                        description={text("Choose the published data this block can read.")}
                         collapsible
                         defaultOpen
                       >
                         <div class="flex flex-col gap-4">
                           <Select
-                            label="Data source"
+                            label={text("Data source")}
                             value={() => {
                               const block = selected().block;
                               return block.type === "records" || block.type === "metrics" || block.type === "chart"
@@ -2829,15 +2909,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             options={[
                               {
                                 id: "view",
-                                label: "Saved view",
+                                label: text("Saved view"),
                                 icon: "ti ti-table",
                                 description:
                                   readyViews().length > 0
-                                    ? "Choose visually configured data."
-                                    : "No saved view with visible fields is available.",
+                                    ? text("Choose visually configured data.")
+                                    : text("No saved view with visible fields is available."),
                                 disabled: readyViews().length === 0,
                               },
-                              { id: "gql", label: "GQL query", icon: "ti ti-code", description: "Write an advanced bounded query." },
+                              {
+                                id: "gql",
+                                label: text("GQL query"),
+                                icon: "ti ti-code",
+                                description: text("Write an advanced bounded query."),
+                              },
                             ]}
                             onValueChange={(kind) => {
                               if (kind !== "view" && kind !== "gql") return;
@@ -2875,9 +2960,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <CustomAppGqlField
                               baseId={draft.draft().baseId}
                               contextKeys={contextKeys()}
-                              label="GQL"
-                              dialogTitle={`${selected().block.title || blockMeta[selected().block.type].label} data source`}
-                              description="Use implicit @auth, @params, @page, @app, @base, and @time context."
+                              label={text("GQL")}
+                              dialogTitle={`${selected().block.title || blockLabel(selected().block.type)} data source`}
+                              description={text("Use implicit @auth, @params, @page, @app, @base, and @time context.")}
                               error={() => {
                                 const block = selected().block;
                                 return block.type === "records" || block.type === "metrics" || block.type === "chart"
@@ -2909,7 +2994,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           >
                             <Select
-                              label="Saved view"
+                              label={text("Saved view")}
                               searchable
                               value={() => {
                                 const block = selected().block;
@@ -2932,28 +3017,28 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                       <Show when={selected().block.type === "records"}>
                         <DetailPanel.Section
-                          title="Records table"
+                          title={text("Records table")}
                           icon="ti ti-table"
                           description={
                             selectedRecordsBlock()?.source.kind === "view"
-                              ? "Choose visible columns and optional row navigation."
-                              : "GQL selects the visible columns. Optionally make each row open a record page."
+                              ? text("Choose visible columns and optional row navigation.")
+                              : text("GQL selects the visible columns. Optionally make each row open a record page.")
                           }
                           collapsible
                           defaultOpen
                         >
                           <div class="flex flex-col gap-4">
                             <Switch
-                              label="Search"
-                              description="Let readers search the displayed result fields. Filtering runs securely in PostgreSQL."
+                              label={text("Search")}
+                              description={text("Let readers search the displayed result fields. Filtering runs securely in PostgreSQL.")}
                               value={() => selectedRecordsBlock()?.searchable ?? true}
                               onValueChange={(searchable) =>
                                 updateSelectedBlock((block) => (block.type === "records" ? { ...block, searchable } : block))
                               }
                             />
                             <NumberInput
-                              label="Rows per page"
-                              description="Readers can move through additional pages. A GQL limit still caps the whole result."
+                              label={text("Rows per page")}
+                              description={text("Readers can move through additional pages. A GQL limit still caps the whole result.")}
                               min={5}
                               max={100}
                               step={5}
@@ -2965,9 +3050,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             />
                             <Show when={selectedSourceBlock()?.type === "records" && selectedSourceBlock()?.source.kind === "view"}>
                               <Select
-                                label="Saved view"
-                                description="Only views you can use in this Base are listed."
-                                placeholder="Choose a saved view"
+                                label={text("Saved view")}
+                                description={text("Only views you can use in this Base are listed.")}
+                                placeholder={text("Choose a saved view")}
                                 searchable
                                 value={() => {
                                   const block = selected().block;
@@ -2976,13 +3061,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 selectedLabel={() => {
                                   const block = selected().block;
                                   if (block.type !== "records" || block.source.kind !== "view") return undefined;
-                                  return viewsById().has(block.source.viewId) ? undefined : "Unavailable view";
+                                  return viewsById().has(block.source.viewId) ? undefined : text("Unavailable view");
                                 }}
                                 error={() => {
                                   const block = selected().block;
                                   if (block.type !== "records") return undefined;
-                                  if (block.source.kind !== "view") return "Choose a saved view to configure this block visually.";
-                                  if (!viewsById().has(block.source.viewId)) return "This saved view is no longer available.";
+                                  if (block.source.kind !== "view") return text("Choose a saved view to configure this block visually.");
+                                  if (!viewsById().has(block.source.viewId)) return text("This saved view is no longer available.");
                                   return diagnosticFor(block.id, "source");
                                 }}
                                 options={viewOptions()}
@@ -3007,17 +3092,19 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               />
                               <Show when={selectedRecordsView()}>
                                 <Select
-                                  label="Display"
-                                  description="Table uses App-selected columns. Cards reuse the saved View's existing Cards configuration."
+                                  label={text("Display")}
+                                  description={text(
+                                    "Table uses App-selected columns. Cards reuse the saved View's existing Cards configuration.",
+                                  )}
                                   value={() => {
                                     const block = selected().block;
                                     return block.type === "records" ? block.display.kind : "table";
                                   }}
                                   options={[
-                                    { id: "table", label: "Table", icon: "ti ti-table" },
+                                    { id: "table", label: text("Table"), icon: "ti ti-table" },
                                     {
                                       id: "cards",
-                                      label: "Cards from saved View",
+                                      label: text("Cards from saved View"),
                                       icon: "ti ti-layout-grid",
                                       disabled: selectedRecordsView()?.ui.displayConfig?.mode !== "cards",
                                     },
@@ -3040,9 +3127,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 />
                                 <Show when={selectedRecordsUsesTable()}>
                                   <MultiSelectInput
-                                    label="Columns"
-                                    description="Choose up to 30 fields shown by the Records table."
-                                    placeholder="Choose columns"
+                                    label={text("Columns")}
+                                    description={text("Choose up to 30 fields shown by the Records table.")}
+                                    placeholder={text("Choose columns")}
                                     searchable
                                     clearable
                                     value={() => {
@@ -3054,17 +3141,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       if (block.type !== "records" || block.display.kind !== "table") return [];
                                       const options = new Map(selectedRecordsFieldOptions().map((option) => [option.id, option]));
                                       return block.display.columnIds.map(
-                                        (fieldId) => options.get(fieldId) ?? { id: fieldId, label: "Unavailable field" },
+                                        (fieldId) => options.get(fieldId) ?? { id: fieldId, label: text("Unavailable field") },
                                       );
                                     }}
                                     options={selectedRecordsFieldOptions()}
                                     error={() => {
                                       const block = selected().block;
                                       if (block.type !== "records" || block.display.kind !== "table") return undefined;
-                                      if (block.display.columnIds.length === 0) return "Choose at least one column.";
+                                      if (block.display.columnIds.length === 0) return text("Choose at least one column.");
                                       const available = new Set(selectedRecordsFields().map((field) => field.id));
                                       if (block.display.columnIds.some((fieldId) => !available.has(fieldId))) {
-                                        return "Replace or remove unavailable fields.";
+                                        return text("Replace or remove unavailable fields.");
                                       }
                                       return diagnosticFor(block.id, "columnIds");
                                     }}
@@ -3085,15 +3172,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 <InlineGuidance tone={selectedSourceTableId() ? "info" : "warning"}>
                                   <Show
                                     when={selectedSourceTableId()}
-                                    fallback="Use a valid row query or saved view before configuring row navigation."
+                                    fallback={text("Use a valid row query or saved view before configuring row navigation.")}
                                   >
-                                    Rows need a record page for {tablesById().get(selectedSourceTableId()!)?.name ?? "this table"}.{" "}
+                                    {messages().rowsNeedRecordPage({
+                                      table: tablesById().get(selectedSourceTableId()!)?.name ?? text("this table"),
+                                    })}{" "}
                                     <Show
                                       when={selectedSourceRecordFields().length > 0}
-                                      fallback="Add at least one field to the table before creating its record page."
+                                      fallback={text("Add at least one field to the table before creating its record page.")}
                                     >
                                       <Button variant="text" size="xs" onClick={addRecordPageForSelectedSource}>
-                                        Create and connect record page
+                                        {text("Create and connect record page")}
                                       </Button>
                                     </Show>
                                   </Show>
@@ -3101,9 +3190,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               }
                             >
                               <Select
-                                label="Open row on page"
-                                description="Optional. Compatible record pages receive the selected row ID."
-                                placeholder="Do nothing"
+                                label={text("Open row on page")}
+                                description={text("Optional. Compatible record pages receive the selected row ID.")}
+                                placeholder={text("Do nothing")}
                                 clearable
                                 value={() => selectedRecordsBlock()?.rowNavigate?.pageId ?? null}
                                 options={recordsNavigationPageOptions()}
@@ -3132,11 +3221,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               />
                               <Show when={selectedRecordsBlock()?.rowNavigate}>
                                 <Select
-                                  label="Navigation history"
+                                  label={text("Navigation history")}
                                   value={() => selectedRecordsBlock()?.rowNavigate?.history ?? "push"}
                                   options={[
-                                    { id: "push", label: "Add to history" },
-                                    { id: "replace", label: "Replace current page" },
+                                    { id: "push", label: text("Add to history") },
+                                    { id: "replace", label: text("Replace current page") },
                                   ]}
                                   onValueChange={(history) =>
                                     (history === "push" || history === "replace") &&
@@ -3152,9 +3241,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </div>
                         </DetailPanel.Section>
                         <DetailPanel.Section
-                          title="Row actions"
+                          title={text("Row actions")}
                           icon="ti ti-click"
-                          description="Signed-in app readers can run workflows for selected table rows or cards."
+                          description={text("Signed-in app readers can run workflows for selected table rows or cards.")}
                           collapsible
                           defaultOpen={(selectedRecordsBlock()?.rowActions?.length ?? 0) > 0}
                         >
@@ -3163,7 +3252,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               {(action) => (
                                 <DetailPanel.Action
                                   title={action.label}
-                                  description="Run workflow for this row"
+                                  description={text("Run workflow for this row")}
                                   leading={<i class={action.icon ? `ti ti-${action.icon}` : "ti ti-player-play"} aria-hidden="true" />}
                                   trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                                   onClick={() => selectAction(action.id)}
@@ -3177,13 +3266,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               disabled={workflowLaunchers().length === 0 || (selectedRecordsBlock()?.rowActions?.length ?? 0) >= 6}
                               title={
                                 workflowLaunchers().length === 0
-                                  ? "Add an enabled App run option first."
+                                  ? text("Add an enabled App run option first.")
                                   : (selectedRecordsBlock()?.rowActions?.length ?? 0) >= 6
-                                    ? "Records blocks support up to 6 row actions."
+                                    ? text("Records blocks support up to 6 row actions.")
                                     : undefined
                               }
                             >
-                              <i class="ti ti-player-play" aria-hidden="true" /> Add row action
+                              <i class="ti ti-player-play" aria-hidden="true" /> {text("Add row action")}
                             </Button>
                             <Show
                               when={(selectedRecordsBlock()?.rowActions?.length ?? 0) >= 6}
@@ -3200,7 +3289,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 </Show>
                               }
                             >
-                              <InlineGuidance>This Records block already has the maximum of 6 row actions.</InlineGuidance>
+                              <InlineGuidance>{text("This Records block already has the maximum of 6 row actions.")}</InlineGuidance>
                             </Show>
                           </div>
                         </DetailPanel.Section>
@@ -3208,12 +3297,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "form"}>
-                    <DetailPanel.Group label="Form settings">
-                      <DetailPanel.Section title="Form" icon="ti ti-forms" description="Choose the active Form rendered by this block.">
+                    <DetailPanel.Group label={text("Form settings")}>
+                      <DetailPanel.Section
+                        title={text("Form")}
+                        icon="ti ti-forms"
+                        description={text("Choose the active Form rendered by this block.")}
+                      >
                         <Select
-                          label="Form"
-                          description="Only active forms you can use in this Base are listed."
-                          placeholder="Choose an active form"
+                          label={text("Form")}
+                          description={text("Only active forms you can use in this Base are listed.")}
+                          placeholder={text("Choose an active form")}
                           searchable
                           value={() => {
                             const block = selected().block;
@@ -3221,12 +3314,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }}
                           selectedLabel={() => {
                             const block = selected().block;
-                            return block.type === "form" && !formsById().has(block.formId) ? "Unavailable form" : undefined;
+                            return block.type === "form" && !formsById().has(block.formId) ? text("Unavailable form") : undefined;
                           }}
                           error={() => {
                             const block = selected().block;
                             if (block.type !== "form") return undefined;
-                            if (!formsById().has(block.formId)) return "This form is missing or inactive.";
+                            if (!formsById().has(block.formId)) return text("This form is missing or inactive.");
                             return diagnosticFor(block.id, "formId");
                           }}
                           options={formOptions()}
@@ -3241,15 +3334,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <Show when={selectedForm()}>
                         <Show when={selectedFormBindingOptions().length > 0}>
                           <DetailPanel.Section
-                            title="Values supplied by this page"
+                            title={text("Values supplied by this page")}
                             icon="ti ti-input-check"
-                            description="Hide Form inputs and provide trusted values from this page."
+                            description={text("Hide Form inputs and provide trusted values from this page.")}
                             collapsible
                             defaultOpen={Object.keys(selectedFormBlock()?.fixedValues ?? {}).length > 0}
                           >
                             <div class="flex flex-col gap-3">
                               <InlineGuidance>
-                                Supplied values are hidden from the Form and injected again by the server when it is submitted.
+                                {text("Supplied values are hidden from the Form and injected again by the server when it is submitted.")}
                               </InlineGuidance>
                               <For each={selectedFormBindingOptions()}>
                                 {(binding) => {
@@ -3259,10 +3352,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     return value?.source === "LITERAL" ? value : null;
                                   };
                                   const sourceOptions = () => [
-                                    { id: "LITERAL", label: "Fixed value" },
-                                    ...(binding.field.type === "principal" ? [{ id: "AUTH", label: "Current signed-in user" }] : []),
+                                    { id: "LITERAL", label: text("Fixed value") },
+                                    ...(binding.field.type === "principal" ? [{ id: "AUTH", label: text("Current signed-in user") }] : []),
                                     ...(binding.targetTableId && selectedPage().record?.tableId === binding.targetTableId
-                                      ? [{ id: "RECORD", label: "Current page record" }]
+                                      ? [{ id: "RECORD", label: text("Current page record") }]
                                       : []),
                                     ...(binding.targetTableId
                                       ? Object.entries(selectedPage().parameters)
@@ -3274,7 +3367,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     <div class="flex flex-col gap-2">
                                       <Select
                                         label={binding.label}
-                                        placeholder="Ask in Form"
+                                        placeholder={text("Ask in Form")}
                                         clearable
                                         value={() => {
                                           const value = current();
@@ -3329,16 +3422,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </DetailPanel.Section>
                         </Show>
                         <DetailPanel.Section
-                          title="After submission"
+                          title={text("After submission")}
                           icon="ti ti-arrow-forward-up"
-                          description="Optionally navigate after the Form creates its record."
+                          description={text("Optionally navigate after the Form creates its record.")}
                           collapsible
                           defaultOpen={Boolean(selectedFormBlock()?.onSuccessNavigate)}
                         >
                           <div class="flex flex-col gap-3">
                             <Select
-                              label="Target page"
-                              placeholder="Stay on this page"
+                              label={text("Target page")}
+                              placeholder={text("Stay on this page")}
                               clearable
                               value={() => selectedFormBlock()?.onSuccessNavigate?.pageId ?? null}
                               options={draft.draft().pages.map((page) => ({ id: page.id, label: page.title }))}
@@ -3368,7 +3461,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       const current = () => navigation().params[parameterId];
                                       const options = () => [
                                         ...(selectedForm()?.tableId === parameter.tableId
-                                          ? [{ id: "RESULT", label: "Created Form record" }]
+                                          ? [{ id: "RESULT", label: text("Created Form record") }]
                                           : []),
                                         ...Object.entries(selectedPage().parameters)
                                           .filter(([, candidate]) => candidate.tableId === parameter.tableId)
@@ -3376,13 +3469,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       ];
                                       return (
                                         <Select
-                                          label={`Value for ${parameterId}`}
+                                          label={messages().valueFor({ label: parameterId })}
                                           value={() => {
                                             const value = current();
                                             return value?.source === "RESULT" ? "RESULT" : value ? `PARAMS:${value.path}` : null;
                                           }}
                                           options={options()}
-                                          error={() => (current() ? undefined : "Choose a compatible value.")}
+                                          error={() => (current() ? undefined : text("Choose a compatible value."))}
                                           onValueChange={(value) =>
                                             value &&
                                             updateSelectedBlock((block) => {
@@ -3415,16 +3508,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "scanner"}>
-                    <DetailPanel.Group label="Scanner settings">
+                    <DetailPanel.Group label={text("Scanner settings")}>
                       <DetailPanel.Section
-                        title="Scanner workflow"
+                        title={text("Scanner workflow")}
                         icon="ti ti-scan"
-                        description="Each scan resolves a code and starts this workflow. Readers must be signed in."
+                        description={text("Each scan resolves a code and starts this workflow. Readers must be signed in.")}
                       >
                         <div class="flex flex-col gap-3">
                           <Select
-                            label="Scanner run option"
-                            description="Only enabled Scanner run options with a ready workflow revision are listed."
+                            label={text("Scanner run option")}
+                            description={text("Only enabled Scanner run options with a ready workflow revision are listed.")}
                             value={() => {
                               const block = selected().block;
                               return block.type === "scanner" ? block.launcherId : null;
@@ -3433,7 +3526,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             error={() => {
                               const block = selected().block;
                               return block.type === "scanner" && !scannerLaunchers().some((launcher) => launcher.id === block.launcherId)
-                                ? "This Scanner run option is unavailable."
+                                ? text("This Scanner run option is unavailable.")
                                 : diagnosticFor(block.id, "launcherId");
                             }}
                             onValueChange={(launcherId) =>
@@ -3442,9 +3535,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           />
                           <Show when={scannerLaunchers().length === 0}>
                             <InlineGuidance>
-                              Add and enable a Scanner run option on a workflow before publishing this block.{" "}
+                              {text("Add and enable a Scanner run option on a workflow before publishing this block.")}{" "}
                               <Button variant="text" size="xs" onClick={() => void openWorkflowConfiguration()}>
-                                Configure workflows
+                                {text("Configure workflows")}
                               </Button>
                             </InlineGuidance>
                           </Show>
@@ -3453,18 +3546,18 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "record"}>
-                    <DetailPanel.Group label="Record settings">
+                    <DetailPanel.Group label={text("Record settings")}>
                       <DetailPanel.Section
-                        title="Fields"
+                        title={text("Fields")}
                         icon="ti ti-columns-3"
-                        description="Choose visible fields and which of them readers may edit."
+                        description={text("Choose visible fields and which of them readers may edit.")}
                         collapsible
                         defaultOpen
                       >
                         <div class="flex flex-col gap-4">
                           <MultiSelectInput
-                            label="Fields"
-                            description="Choose at least one field shown by this Record block."
+                            label={text("Fields")}
+                            description={text("Choose at least one field shown by this Record block.")}
                             searchable
                             value={() => selectedRecordBlock()?.fieldIds ?? []}
                             options={pageRecordFields().map((field) => ({
@@ -3476,7 +3569,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             error={() => {
                               const block = selectedRecordBlock();
                               if (!block) return undefined;
-                              if (block.fieldIds.length === 0) return "Choose at least one field.";
+                              if (block.fieldIds.length === 0) return text("Choose at least one field.");
                               return diagnosticFor(block.id, "fieldIds");
                             }}
                             onValueChange={(fieldIds) =>
@@ -3492,7 +3585,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <MultiSelectInput
-                            label="Editable fields"
+                            label={text("Editable fields")}
                             searchable
                             clearable
                             value={() => selectedRecordBlock()?.editableFieldIds ?? []}
@@ -3513,9 +3606,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </div>
                       </DetailPanel.Section>
                       <DetailPanel.Section
-                        title="Documents"
+                        title={text("Documents")}
                         icon="ti ti-files"
-                        description="Let readers view and download existing documents for the page record."
+                        description={text("Let readers view and download existing documents for the page record.")}
                         collapsible
                         defaultOpen={Boolean(selectedRecordBlock()?.documents)}
                       >
@@ -3523,17 +3616,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           when={documentTemplateOptions().length > 0}
                           fallback={
                             <InlineGuidance tone="info">
-                              This block shows documents already generated for the page record. Create and enable a document template for
-                              this table, then generate documents from a workflow.{" "}
+                              {messages().documentsGuidance({ table: text("this table") })}{" "}
                               <ButtonLink variant="text" size="xs" href="/app/grids/help/grids-documents-pdfs">
-                                Read the document guide
+                                {text("Read the document guide")}
                               </ButtonLink>
                             </InlineGuidance>
                           }
                         >
                           <MultiSelectInput
-                            label="Document templates"
-                            description="Show existing generated documents from these enabled templates."
+                            label={text("Document templates")}
+                            description={text("Show existing generated documents from these enabled templates.")}
                             searchable
                             clearable
                             value={() => selectedRecordBlock()?.documents?.templateIds ?? []}
@@ -3551,17 +3643,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     </DetailPanel.Group>
                   </Show>
                   <Show when={selected().block.type === "chart"}>
-                    <DetailPanel.Group label="Chart settings">
+                    <DetailPanel.Group label={text("Chart settings")}>
                       <DetailPanel.Section
-                        title="Chart"
+                        title={text("Chart")}
                         icon="ti ti-chart-bar"
-                        description="Choose the chart presentation and result limit."
+                        description={text("Choose the chart presentation and result limit.")}
                         collapsible
                         defaultOpen
                       >
                         <div class="flex flex-col gap-4">
                           <TextInput
-                            label="Subtitle"
+                            label={text("Subtitle")}
                             value={() => {
                               const block = selected().block;
                               return block.type === "chart" ? (block.subtitle ?? "") : "";
@@ -3574,7 +3666,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             clearable
                           />
                           <Select
-                            label="Chart type"
+                            label={text("Chart type")}
                             value={() => {
                               const block = selected().block;
                               return block.type === "chart" ? block.chartType : null;
@@ -3585,13 +3677,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               updateSelectedBlock((block) => (block.type === "chart" ? { ...block, chartType: next } : block));
                             }}
                             options={[
-                              { id: "bar", label: "Bar" },
-                              { id: "line", label: "Line" },
-                              { id: "donut", label: "Donut" },
+                              { id: "bar", label: text("Bar") },
+                              { id: "line", label: text("Line") },
+                              { id: "donut", label: text("Donut") },
                             ]}
                           />
                           <NumberInput
-                            label="Result limit"
+                            label={text("Result limit")}
                             value={() => {
                               const block = selected().block;
                               return block.type === "chart" ? block.limit : null;
@@ -3607,9 +3699,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         </div>
                       </DetailPanel.Section>
                       <DetailPanel.Section
-                        title="Appearance"
+                        title={text("Appearance")}
                         icon="ti ti-palette"
-                        description="Optional axis labels and value formatting."
+                        description={text("Optional axis labels and value formatting.")}
                         collapsible
                         defaultOpen={Boolean(
                           selectedChartBlock()?.valueFormat || selectedChartBlock()?.xAxisLabel || selectedChartBlock()?.yAxisLabel,
@@ -3617,7 +3709,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       >
                         <div class="flex flex-col gap-3">
                           <TextInput
-                            label="X-axis label"
+                            label={text("X-axis label")}
                             clearable
                             value={() => selectedChartBlock()?.xAxisLabel ?? ""}
                             onValueChange={(xAxisLabel) =>
@@ -3627,7 +3719,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <TextInput
-                            label="Y-axis label"
+                            label={text("Y-axis label")}
                             clearable
                             value={() => selectedChartBlock()?.yAxisLabel ?? ""}
                             onValueChange={(yAxisLabel) =>
@@ -3637,14 +3729,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             }
                           />
                           <Select
-                            label="Value format"
-                            placeholder="Automatic"
+                            label={text("Value format")}
+                            placeholder={text("Automatic")}
                             clearable
                             value={() => selectedChartBlock()?.valueFormat?.style ?? null}
                             options={[
-                              { id: "number", label: "Number" },
-                              { id: "integer", label: "Integer" },
-                              { id: "percent", label: "Percent" },
+                              { id: "number", label: text("Number") },
+                              { id: "integer", label: text("Integer") },
+                              { id: "percent", label: text("Percent") },
                             ]}
                             onValueChange={(style) =>
                               updateSelectedBlock((block) =>
@@ -3659,7 +3751,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           />
                           <Show when={selectedChartBlock()?.valueFormat?.style !== "integer" && selectedChartBlock()?.valueFormat}>
                             <NumberInput
-                              label="Decimal places"
+                              label={text("Decimal places")}
                               min={0}
                               max={20}
                               step={1}
@@ -3682,7 +3774,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </Show>
                           <Show when={selectedChartBlock()?.valueFormat?.style === "number"}>
                             <TextInput
-                              label="Unit"
+                              label={text("Unit")}
                               clearable
                               value={() =>
                                 selectedChartBlock()?.valueFormat?.style === "number" ? (selectedChartBlock()?.valueFormat?.unit ?? "") : ""
@@ -3703,15 +3795,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                               }
                             />
                             <Select
-                              label="Unit position"
+                              label={text("Unit position")}
                               value={() =>
                                 selectedChartBlock()?.valueFormat?.style === "number"
                                   ? (selectedChartBlock()?.valueFormat?.unitPosition ?? "suffix")
                                   : "suffix"
                               }
                               options={[
-                                { id: "prefix", label: "Before value" },
-                                { id: "suffix", label: "After value" },
+                                { id: "prefix", label: text("Before value") },
+                                { id: "suffix", label: text("After value") },
                               ]}
                               onValueChange={(unitPosition) =>
                                 (unitPosition === "prefix" || unitPosition === "suffix") &&
@@ -3727,11 +3819,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                     </DetailPanel.Group>
                   </Show>
-                  <DetailPanel.Group label="Block management">
-                    <DetailPanel.Section title="Block order" icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
+                  <DetailPanel.Group label={text("Block management")}>
+                    <DetailPanel.Section title={text("Block order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
                       <div class="flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" disabled={selected().blockIndex === 0} onClick={() => moveSelectedBlock(-1)}>
-                          <i class="ti ti-arrow-up" aria-hidden="true" /> Move up
+                          <i class="ti ti-arrow-up" aria-hidden="true" /> {text("Move up")}
                         </Button>
                         <Button
                           size="sm"
@@ -3739,22 +3831,24 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           disabled={selected().blockIndex === selected().column.blocks.length - 1}
                           onClick={() => moveSelectedBlock(1)}
                         >
-                          <i class="ti ti-arrow-down" aria-hidden="true" /> Move down
+                          <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
                         </Button>
                       </div>
                     </DetailPanel.Section>
                     <DetailPanel.Section
-                      title="Danger zone"
+                      title={text("Danger zone")}
                       icon="ti ti-trash"
                       tone="danger"
                       description={
-                        blockCount() === 1 ? "Every page needs at least one block." : "Permanently remove this block from the draft."
+                        blockCount() === 1
+                          ? text("Every page needs at least one block.")
+                          : text("Permanently remove this block from the draft.")
                       }
                       collapsible
                       defaultOpen={false}
                     >
                       <Button size="sm" variant="danger" disabled={blockCount() === 1} onClick={() => void removeSelectedBlock()}>
-                        <i class="ti ti-trash" aria-hidden="true" /> Remove block
+                        <i class="ti ti-trash" aria-hidden="true" /> {text("Remove block")}
                       </Button>
                     </DetailPanel.Section>
                   </DetailPanel.Group>
@@ -3772,11 +3866,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 return (
                   <>
                     <DetailPanel.Action
-                      title="Back to actions"
+                      title={text("Back to actions")}
                       description={
                         selected().owner === "rows"
-                          ? selectedRecordsBlock()?.title || "Records table"
-                          : selectedActionsBlock()?.title || "Actions block"
+                          ? selectedRecordsBlock()?.title || text("Records table")
+                          : selectedActionsBlock()?.title || text("Actions block")
                       }
                       leading={<i class="ti ti-arrow-left" aria-hidden="true" />}
                       onClick={() => {
@@ -3784,17 +3878,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         setInspectorMode("block");
                       }}
                     />
-                    <DetailPanel.Group label="Action settings">
-                      <DetailPanel.Section title="Action" icon="ti ti-bolt" tone="accent">
+                    <DetailPanel.Group label={text("Action settings")}>
+                      <DetailPanel.Section title={text("Action")} icon="ti ti-bolt" tone="accent">
                         <div class="flex flex-col gap-3">
                           <TextInput
-                            label="Label"
+                            label={text("Label")}
                             value={() => selected().action.label}
                             onValueChange={(label) => updateSelectedAction((action) => ({ ...action, label }))}
                             required
                           />
                           <IconInput
-                            label="Icon"
+                            label={text("Icon")}
                             value={() => iconInputValue(selected().action.icon)}
                             onValueChange={(value) => {
                               const icon = iconSlug(value);
@@ -3806,11 +3900,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           />
                           <Show when={selected().owner === "rows"}>
                             <Switch
-                              label="Show label in table"
+                              label={text("Show label in table")}
                               description={
                                 selected().action.icon
-                                  ? "Turn this off for a compact icon-only button. The label remains its accessible name."
-                                  : "Choose an icon before hiding the visible label."
+                                  ? text("Turn this off for a compact icon-only button. The label remains its accessible name.")
+                                  : text("Choose an icon before hiding the visible label.")
                               }
                               value={() => {
                                 const action = selected().action;
@@ -3824,15 +3918,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           </Show>
                           <Show when={selected().owner === "actions"}>
                             <Select
-                              label="Action type"
+                              label={text("Action type")}
                               value={() => selected().action.kind}
                               options={[
-                                { id: "navigate", label: "Open page", icon: "ti ti-link" },
+                                { id: "navigate", label: text("Open page"), icon: "ti ti-link" },
                                 {
                                   id: "workflow",
-                                  label: "Run workflow",
+                                  label: text("Run workflow"),
                                   icon: "ti ti-player-play",
-                                  description: workflowLaunchers().length === 0 ? "No enabled App run option is available." : undefined,
+                                  description:
+                                    workflowLaunchers().length === 0 ? text("No enabled App run option is available.") : undefined,
                                   disabled: workflowLaunchers().length === 0,
                                 },
                               ]}
@@ -3880,10 +3975,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                       <Show when={selectedNavigateAction()}>
                         {(action) => (
-                          <DetailPanel.Section title="Navigation" icon="ti ti-route">
+                          <DetailPanel.Section title={text("Navigation")} icon="ti ti-route">
                             <div class="flex flex-col gap-3">
                               <Select
-                                label="Target page"
+                                label={text("Target page")}
                                 value={() => action().pageId}
                                 options={draft.draft().pages.map((page) => ({ id: page.id, label: page.title }))}
                                 onValueChange={(pageId) =>
@@ -3894,11 +3989,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 }
                               />
                               <Select
-                                label="Browser history"
+                                label={text("Browser history")}
                                 value={() => action().history}
                                 options={[
-                                  { id: "push", label: "Add to history" },
-                                  { id: "replace", label: "Replace current page" },
+                                  { id: "push", label: text("Add to history") },
+                                  { id: "replace", label: text("Replace current page") },
                                 ]}
                                 onValueChange={(history) =>
                                   (history === "push" || history === "replace") &&
@@ -3912,7 +4007,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                     {([parameterId, parameter]) => {
                                       const options = () => [
                                         ...(selectedPage().record?.tableId === parameter.tableId
-                                          ? [{ id: "RECORD", label: "Current page record" }]
+                                          ? [{ id: "RECORD", label: text("Current page record") }]
                                           : []),
                                         ...Object.entries(selectedPage().parameters)
                                           .filter(([, candidate]) => candidate.tableId === parameter.tableId)
@@ -3921,13 +4016,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       const current = () => action().params[parameterId];
                                       return (
                                         <Select
-                                          label={`Value for ${parameterId}`}
+                                          label={messages().valueFor({ label: parameterId })}
                                           value={() => {
                                             const value = current();
                                             return value?.source === "RECORD" ? "RECORD" : value ? `PARAMS:${value.path}` : null;
                                           }}
                                           options={options()}
-                                          error={() => (current() ? undefined : "Choose a compatible record source.")}
+                                          error={() => (current() ? undefined : text("Choose a compatible record source."))}
                                           onValueChange={(value) =>
                                             value &&
                                             updateSelectedAction((candidate) =>
@@ -3958,13 +4053,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       <Show when={selectedWorkflowAction()}>
                         {(workflowAction) => (
                           <DetailPanel.Section
-                            title="Workflow"
+                            title={text("Workflow")}
                             icon="ti ti-player-play"
-                            description="Workflow actions are available only to signed-in app readers."
+                            description={text("Workflow actions are available only to signed-in app readers.")}
                           >
                             <div class="flex flex-col gap-3">
                               <Select
-                                label="App run option"
+                                label={text("App run option")}
                                 searchable
                                 value={() => workflowAction().launcherId}
                                 options={workflowLauncherOptions()}
@@ -3985,19 +4080,21 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 }
                               />
                               <Show when={selectedLauncher()?.config.inputMode === "fixed"}>
-                                <InlineGuidance>This App run option supplies its own fixed workflow inputs.</InlineGuidance>
+                                <InlineGuidance>{text("This App run option supplies its own fixed workflow inputs.")}</InlineGuidance>
                               </Show>
                               <Show when={selected().owner === "rows" && selectedLauncher() && !rowInputForLauncher(selectedLauncher()!)}>
                                 <InlineGuidance tone="warning">
-                                  This run option does not accept the selected{" "}
-                                  {selectedSourceTableId() ? (tablesById().get(selectedSourceTableId()!)?.name ?? "table") : "table"} row.
-                                  Use a prompt run option with a matching record input if the workflow should act on that row.{" "}
+                                  {messages().rowRunOptionMismatch({
+                                    table: selectedSourceTableId()
+                                      ? (tablesById().get(selectedSourceTableId()!)?.name ?? text("table"))
+                                      : text("table"),
+                                  })}{" "}
                                   <Button
                                     variant="text"
                                     size="xs"
                                     onClick={() => void openWorkflowConfiguration(selectedLauncher()?.workflowId)}
                                   >
-                                    Open workflow
+                                    {text("Open workflow")}
                                   </Button>
                                 </InlineGuidance>
                               </Show>
@@ -4015,14 +4112,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                       return value?.source === "LITERAL" ? value : null;
                                     };
                                     const sourceOptions = () => [
-                                      { id: "LITERAL", label: "Fixed value" },
+                                      { id: "LITERAL", label: text("Fixed value") },
                                       ...(input.type === "record" && selectedPage().record?.tableId === boundTableId()
-                                        ? [{ id: "RECORD", label: "Current page record" }]
+                                        ? [{ id: "RECORD", label: text("Current page record") }]
                                         : []),
                                       ...(selected().owner === "rows" &&
                                       input.type === "record" &&
                                       selectedSourceTableId() === boundTableId()
-                                        ? [{ id: "ROW", label: "Selected table row" }]
+                                        ? [{ id: "ROW", label: text("Selected table row") }]
                                         : []),
                                       ...(input.type === "record"
                                         ? Object.entries(selectedPage().parameters)
@@ -4035,7 +4132,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                         <Select
                                           label={typeof input.config.label === "string" ? input.config.label : input.name}
                                           description={typeof input.config.description === "string" ? input.config.description : undefined}
-                                          placeholder="Not supplied"
+                                          placeholder={text("Not supplied")}
                                           clearable
                                           value={() => {
                                             const value = inputValue();
@@ -4045,7 +4142,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                           options={sourceOptions()}
                                           error={() =>
                                             !inputValue() && input.config.required
-                                              ? "Choose where this required workflow input comes from."
+                                              ? text("Choose where this required workflow input comes from.")
                                               : diagnosticFor(selected().action.id, input.name)
                                           }
                                           onValueChange={(source) =>
@@ -4106,8 +4203,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                                 </For>
                               </Show>
                               <TextInput
-                                label="Confirmation message"
-                                description="Optional. Ask the user before invoking the workflow."
+                                label={text("Confirmation message")}
+                                description={text("Optional. Ask the user before invoking the workflow.")}
                                 clearable
                                 value={() => selectedWorkflowAction()?.confirm ?? ""}
                                 onValueChange={(confirm) =>
@@ -4133,10 +4230,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         }
                         error={() => diagnosticFor(selected().action.id, "availableWhen")}
                       />
-                      <DetailPanel.Section title="Order" icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
+                      <DetailPanel.Section title={text("Order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
                         <div class="flex flex-wrap gap-2">
                           <Button size="sm" variant="secondary" disabled={selected().index === 0} onClick={() => moveSelectedAction(-1)}>
-                            <i class="ti ti-arrow-up" aria-hidden="true" /> Move up
+                            <i class="ti ti-arrow-up" aria-hidden="true" /> {text("Move up")}
                           </Button>
                           <Button
                             size="sm"
@@ -4144,18 +4241,18 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             disabled={selected().index === selectedActionCount() - 1}
                             onClick={() => moveSelectedAction(1)}
                           >
-                            <i class="ti ti-arrow-down" aria-hidden="true" /> Move down
+                            <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
                           </Button>
                         </div>
                       </DetailPanel.Section>
                       <DetailPanel.Section
-                        title="Danger zone"
+                        title={text("Danger zone")}
                         icon="ti ti-trash"
                         tone="danger"
                         description={
                           selected().owner === "actions" && selectedActionCount() <= 1
-                            ? "Every Actions block needs at least one action."
-                            : "Permanently remove this action from the draft."
+                            ? text("Every Actions block needs at least one action.")
+                            : text("Permanently remove this action from the draft.")
                         }
                         collapsible
                         defaultOpen={false}
@@ -4166,7 +4263,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           disabled={selected().owner === "actions" && selectedActionCount() <= 1}
                           onClick={() => void removeSelectedAction()}
                         >
-                          <i class="ti ti-trash" aria-hidden="true" /> Remove action
+                          <i class="ti ti-trash" aria-hidden="true" /> {text("Remove action")}
                         </Button>
                       </DetailPanel.Section>
                     </DetailPanel.Group>

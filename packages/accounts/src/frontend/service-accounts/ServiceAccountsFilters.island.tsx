@@ -1,29 +1,12 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { useAccountsMessages } from "../messages";
 
 type Props = {
   search: string;
   kind: string;
   status: string;
 };
-
-const KIND_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "user_delegated", label: "User-bound", icon: "ti ti-user-key" },
-      { value: "resource_bound", label: "Resource-bound", icon: "ti ti-box" },
-    ],
-  },
-];
-
-const STATUS_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "active", label: "Active", icon: "ti ti-check" },
-      { value: "revoked", label: "Revoked", icon: "ti ti-key-off" },
-    ],
-  },
-];
 
 const buildUrl = (params: { search?: string; kind?: string; status?: string; page?: number }) => {
   const query = new URLSearchParams();
@@ -36,6 +19,23 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
 };
 
 export default function ServiceAccountsFilters(props: Props) {
+  const messages = useAccountsMessages();
+  const kindOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "user_delegated", label: messages().userBound, icon: "ti ti-user-key" },
+        { value: "resource_bound", label: messages().resourceBound, icon: "ti ti-box" },
+      ],
+    },
+  ];
+  const statusOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "active", label: messages().active, icon: "ti ti-check" },
+        { value: "revoked", label: messages().revoked, icon: "ti ti-key-off" },
+      ],
+    },
+  ];
   const navigate = (patch: Partial<Props>) => {
     navigateTo(buildUrl({ ...props, ...patch, page: 1 }));
   };
@@ -43,18 +43,18 @@ export default function ServiceAccountsFilters(props: Props) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label="Type"
+        label={messages().type}
         icon="ti ti-filter"
-        options={KIND_OPTIONS}
+        options={kindOptions()}
         value={props.kind ? [props.kind] : []}
         onValueChange={(value) => navigate({ kind: value[0] ?? "" })}
         isActive={props.kind.length > 0}
         defaultValue={[]}
       />
       <FilterChip
-        label="Status"
+        label={messages().status}
         icon="ti ti-circle-check"
-        options={STATUS_OPTIONS}
+        options={statusOptions()}
         value={props.status ? [props.status] : ["active"]}
         onValueChange={(value) => navigate({ status: value[0] ?? "active" })}
         isActive={(props.status || "active") !== "active"}

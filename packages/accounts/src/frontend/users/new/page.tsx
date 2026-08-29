@@ -1,10 +1,11 @@
 import { NoticeCard } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
 import AccountsWorkspace from "../../AccountsWorkspace";
+import { accountsMessages } from "../../messages";
 import DenyRequest from "../DenyRequest.island";
 import CreateUserForm from "./CreateUserForm.island";
 
@@ -19,6 +20,7 @@ type AccountRequest = {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = accountsMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const requestId = c.req.query("request");
@@ -55,10 +57,10 @@ export default ssr<AuthContext>(async (c) => {
     <Layout
       c={c}
       title={[
-        { title: "Start", href: "/" },
-        { title: "Accounts", href: "/app/accounts" },
-        { title: "Users", href: "/app/accounts/users" },
-        { title: "New User" },
+        { title: t.start, href: "/" },
+        { title: t.accounts, href: "/app/accounts" },
+        { title: t.users, href: "/app/accounts/users" },
+        { title: t.newUser },
       ]}
     >
       <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-new">
@@ -68,21 +70,21 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-primary flex items-center gap-2">
                   <i class="ti ti-user-plus text-amber-500" />
-                  FreeIPA Access Request
+                  {t.freeIpaAccessRequest}
                 </h3>
                 <DenyRequest requestId={accountRequest.id} email={accountRequest.email} firstName={accountRequest.firstName} />
               </div>
 
               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-                <dt class="text-dimmed">Name</dt>
+                <dt class="text-dimmed">{t.name}</dt>
                 <dd class="text-primary font-medium">
                   {accountRequest.displayName || `${accountRequest.firstName} ${accountRequest.lastName}`}
                 </dd>
-                <dt class="text-dimmed">Email</dt>
+                <dt class="text-dimmed">{t.email}</dt>
                 <dd class="text-secondary">{accountRequest.email}</dd>
                 {accountRequest.phone && (
                   <>
-                    <dt class="text-dimmed">Phone</dt>
+                    <dt class="text-dimmed">{t.phone}</dt>
                     <dd class="text-secondary">{accountRequest.phone}</dd>
                   </>
                 )}
@@ -92,19 +94,19 @@ export default ssr<AuthContext>(async (c) => {
                 <NoticeCard tone="warning" icon={false}>
                   <p class="text-[10px] font-semibold mb-1 flex items-center gap-1">
                     <i class="ti ti-message text-xs" />
-                    Requester's Note
+                    {t.requesterNote}
                   </p>
                   <p class="text-sm">{accountRequest.comment}</p>
                 </NoticeCard>
               )}
 
-              <p class="text-xs text-dimmed">The request will be marked as completed when the FreeIPA-backed account is created.</p>
+              <p class="text-xs text-dimmed">{t.requestCompletesOnCreate}</p>
             </div>
           )}
           <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] p-6">
             <div class="mb-6 flex flex-col gap-2">
-              <h1 class="text-xl font-bold text-primary">Create New Account</h1>
-              <p class="text-sm text-dimmed">This page opens the same provider-first dialog flow used from the Users and Requests pages.</p>
+              <h1 class="text-xl font-bold text-primary">{t.createNewAccount}</h1>
+              <p class="text-sm text-dimmed">{t.createPageDescription}</p>
             </div>
             <CreateUserForm
               autoOpen
@@ -124,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
             />
             <div class="mt-6">
               <CreateUserForm
-                buttonLabel="Open account creation"
+                buttonLabel={t.openAccountCreation}
                 freeIpaEnabled={freeIpaEnabled}
                 prefill={
                   accountRequest

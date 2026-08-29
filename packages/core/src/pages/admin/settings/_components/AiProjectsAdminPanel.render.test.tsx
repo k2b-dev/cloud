@@ -11,7 +11,10 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: AiProjectsAdminPanel } = await import("./AiProjectsAdminPanel.tsx");
+const [{ LocaleProvider }, { default: AiProjectsAdminPanel }] = await Promise.all([
+  import("@k2b/ui"),
+  import("./AiProjectsAdminPanel.tsx"),
+]);
 
 describe("AiProjectsAdminPanel", () => {
   test("renders unmanaged Projects as an immediate recovery surface without a settings save footer", () => {
@@ -48,5 +51,27 @@ describe("AiProjectsAdminPanel", () => {
     expect(html).toContain("Actions for Unclaimed");
     expect(html).toContain("Delete Project");
     expect(html).not.toContain("Save changes");
+  });
+
+  test("renders German copy through the inherited request locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(AiProjectsAdminPanel, {
+            projects: [],
+            summary: { total: 0, unmanaged: 0, totalAccess: 0 },
+            total: 0,
+            page: 1,
+            perPage: 100,
+            search: "",
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain("KI-Projekte");
+    expect(html).toContain("Keine KI-Projekte vorhanden.");
+    expect(html).toContain('aria-label="KI-Projekte durchsuchen"');
   });
 });

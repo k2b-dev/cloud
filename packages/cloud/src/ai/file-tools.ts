@@ -492,7 +492,7 @@ export const evaluateAiMath = (input: string): number => {
   return result;
 };
 
-const dateInBerlin = (): string => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Berlin" }).format(new Date());
+const dateInTimeZone = (timeZone: string, now: Date): string => new Intl.DateTimeFormat("sv-SE", { timeZone }).format(now);
 
 const utcDate = (year: number, month: number, day: number): Date => {
   const date = new Date(0);
@@ -501,8 +501,8 @@ const utcDate = (year: number, month: number, day: number): Date => {
   return date;
 };
 
-const parseIsoDate = (value: string): { year: number; month: number; day: number } => {
-  const normalized = ["today", "now"].includes(value.trim().toLowerCase()) ? dateInBerlin() : value.trim();
+const parseIsoDate = (value: string, timeZone: string, now: Date): { year: number; month: number; day: number } => {
+  const normalized = ["today", "now"].includes(value.trim().toLowerCase()) ? dateInTimeZone(timeZone, now) : value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
   if (!match) throw new Error('Use an ISO date (YYYY-MM-DD), "today", or "now".');
   const [year, month, day] = match.slice(1).map(Number) as [number, number, number];
@@ -523,10 +523,10 @@ const checkedIsoDate = (date: Date): string => {
   return isoDate(date);
 };
 
-export const evaluateAiDate = (input: string): string => {
+export const evaluateAiDate = (input: string, timeZone = "UTC", now = new Date()): string => {
   const match = /^(.+?)(?:\s*([+-])\s*(\d+)\s+(days?|weeks?|months?|years?))?$/i.exec(input.trim());
   if (!match) throw new Error("Invalid date calculation.");
-  const base = parseIsoDate(match[1]!);
+  const base = parseIsoDate(match[1]!, timeZone, now);
   if (!match[2]) return checkedIsoDate(utcDate(base.year, base.month, base.day));
   const amount = Number(match[3]) * (match[2] === "+" ? 1 : -1);
   if (!Number.isSafeInteger(amount)) throw new Error("Date offset is too large.");
@@ -560,6 +560,6 @@ export const createCloudAiCalculateTool = () =>
     outputSchema: CloudAiCalculateOutputSchema,
     approval: "never",
     promptHint: "calculate arithmetic or deterministic ISO-date offsets instead of estimating mentally.",
-  }).server(async (input) => ({
-    result: input.kind === "math" ? String(evaluateAiMath(input.expression)) : evaluateAiDate(input.expression),
+  }).server(async (input, ctx) => ({
+    result: input.kind === "math" ? String(evaluateAiMath(input.expression)) : evaluateAiDate(input.expression, ctx.timeZone ?? "UTC"),
   }));

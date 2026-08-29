@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts } from "@k2b/ui";
+import { Button, prompts, useLocale } from "@k2b/ui";
 import { createResource, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import { errorMessage } from "../utils/api-helpers";
@@ -7,6 +7,7 @@ import DocumentBrowser from "./DocumentBrowser";
 import { openDocumentDetailsDialog } from "./DocumentDetailsDialog";
 import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
+import { documentMessages } from "./messages";
 import type { PublicDocument } from "./public-document-types";
 
 type DocumentPage = { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
@@ -14,20 +15,22 @@ type PermissionLevel = "none" | "read" | "write" | "admin";
 
 const PAGE_SIZE = 100;
 
-const loadPage = async (baseId: string, cursor?: string | null, signal?: AbortSignal): Promise<DocumentPage> => {
+const loadPage = async (baseId: string, cursor?: string | null, signal?: AbortSignal, locale = "en"): Promise<DocumentPage> => {
   const response = await apiClient.documents["by-base"][":baseId"].$get(
     { param: { baseId }, query: { limit: String(PAGE_SIZE), cursor: cursor ?? "" } },
     signal ? { init: { signal } } : undefined,
   );
-  if (!response.ok) throw new Error(await errorMessage(response, "Could not load documents"));
+  if (!response.ok) throw new Error(await errorMessage(response, documentMessages.resolve([locale]).t.couldNotLoadDocuments));
   return response.json() as Promise<DocumentPage>;
 };
 
-export default function DocumentsWorkspace(props: {
-  baseId: string;
-  documentTemplateLevels: Record<string, PermissionLevel>;
-}) {
-  const [page, { refetch }] = createResource(() => props.baseId, (baseId) => loadPage(baseId));
+export default function DocumentsWorkspace(props: { baseId: string; documentTemplateLevels: Record<string, PermissionLevel> }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
+  const [page, { refetch }] = createResource(
+    () => [props.baseId, locale()] as const,
+    ([baseId, requestLocale]) => loadPage(baseId, null, undefined, requestLocale),
+  );
   const [appended, setAppended] = createSignal<PublicDocument[]>([]);
   const [cursor, setCursor] = createSignal<string | null>(null);
   const [hasMore, setHasMore] = createSignal(false);
@@ -42,7 +45,7 @@ export default function DocumentsWorkspace(props: {
   };
   const downloadDocument = async (document: PublicDocument, signal?: AbortSignal) => {
     const response = await requestDocumentDownload(document.id, signal);
-    await downloadPdfResponse(response, document.filename);
+    await downloadPdfResponse(response, document.filename, locale());
   };
 
   const downloadMut = mutations.create<void, PublicDocument, { documentId: string }>({
@@ -60,8 +63,8 @@ export default function DocumentsWorkspace(props: {
   const loadMoreMut = mutations.create<DocumentPage, void>({
     mutation: (_, { abortSignal }) => {
       const nextCursor = currentCursor();
-      if (!nextCursor) throw new Error("No more documents to load.");
-      return loadPage(props.baseId, nextCursor, abortSignal);
+      if (!nextCursor) throw new Error(t().noMoreDocuments);
+      return loadPage(props.baseId, nextCursor, abortSignal, locale());
     },
     onSuccess: (next) => {
       setAppended((current) => [...current, ...next.items]);
@@ -82,8 +85,8 @@ export default function DocumentsWorkspace(props: {
     <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden" data-scroll-preserve="grids-documents-workspace">
       <header class="paper flex shrink-0 items-center justify-between gap-3 px-4 py-3">
         <div>
-          <h2 class="text-base font-semibold text-primary">All documents</h2>
-          <p class="text-xs text-dimmed">Every completed Document from this Base, across records and templates.</p>
+          <h2 class="text-base font-semibold text-primary">{t().allDocuments}</h2>
+          <p class="text-xs text-dimmed">{t().allDocumentsDescription}</p>
         </div>
         <Button
           variant="secondary"
@@ -98,7 +101,7 @@ export default function DocumentsWorkspace(props: {
           disabled={page.loading}
         >
           <i class={page.loading ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
-          Refresh
+          {t().refresh}
         </Button>
       </header>
       <DocumentBrowser
@@ -109,7 +112,7 @@ export default function DocumentsWorkspace(props: {
         folders={[]}
         documents={documents()}
         breadcrumbs={[]}
-        emptyText="No documents yet. Generate one from a record or template."
+        emptyText={t().noDocumentsYet}
         hasMore={moreAvailable()}
         loadingMore={loadMoreMut.loading()}
         busyDocumentId={busyDocumentId()}

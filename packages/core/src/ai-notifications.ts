@@ -1,4 +1,5 @@
 import { scheduler } from "@k2b/sync";
+import { i18n } from "@k2b/stdlib";
 import { type BoundNotificationMap, notification } from "@valentinkolb/cloud";
 import { AI_SHORT_ID_PATTERN } from "@valentinkolb/cloud/ai";
 import { coreSettings, logger, notifications, trace } from "@valentinkolb/cloud/services";
@@ -9,26 +10,46 @@ const RECOVERY_SCHEDULE_ID = "core:ai-notifications:recover";
 const RECOVERY_BATCH_SIZE = 100;
 
 const log = logger("core:ai-notifications");
+const presentation = (label: string, description: string) => ({ baseLocale: "en", translations: { de: { label, description } } });
+const notificationMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      responseReady: "Assistant response ready",
+      responseFinished: "Your Assistant response has finished.",
+      responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
+      taskAttention: ({ taskId }: { taskId: string }) => `Scheduled task ${taskId} needs attention`,
+    },
+    de: {
+      responseReady: "Antwort des Assistenten ist bereit",
+      responseFinished: "Die Antwort des Assistenten ist fertig.",
+      responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
+      taskAttention: ({ taskId }) => `Geplante Aufgabe ${taskId} erfordert deine Aufmerksamkeit`,
+    },
+  },
+});
+const text = (locale: string) => notificationMessages.resolve([locale]).t;
 
 export const AI_NOTIFICATIONS = {
   turnCompleted: notification({
     recipient: "user",
     label: "Assistant responses",
     description: "A notification when a background Assistant response finishes.",
+    presentation: presentation("Antworten des Assistenten", "Benachrichtigung, wenn eine Antwort im Hintergrund fertig ist."),
     delivery: { recommended: ["browser"] },
     data: z.object({ conversationId: z.string().regex(AI_SHORT_ID_PATTERN) }),
-    render: ({ conversationId }) => ({
-      title: "Assistant response ready",
-      body: "Your Assistant response has finished.",
+    render: ({ conversationId }, { locale }) => ({
+      title: text(locale).responseReady,
+      body: text(locale).responseFinished,
       targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
     }),
-    email: async ({ conversationId }) => {
+    email: async ({ conversationId }, { locale }) => {
       const configuredUrl = String((await coreSettings.get<string>("app.url")) || "").trim();
       const baseUrl = /^https?:\/\//.test(configuredUrl) ? configuredUrl : configuredUrl ? `https://${configuredUrl}` : "";
       const target = `/app/assistant?conversation=${encodeURIComponent(conversationId)}`;
       return {
-        subject: "Assistant response ready",
-        content: `Your Assistant response has finished. Open it at ${baseUrl ? `${baseUrl.replace(/\/+$/, "")}${target}` : target}`,
+        subject: text(locale).responseReady,
+        content: text(locale).responseEmail({ target: baseUrl ? `${baseUrl.replace(/\/+$/, "")}${target}` : target }),
       };
     },
   }),
@@ -36,14 +57,18 @@ export const AI_NOTIFICATIONS = {
     recipient: "user",
     label: "Assistant scheduled tasks",
     description: "A notification when a scheduled Assistant task cannot continue.",
+    presentation: presentation(
+      "Geplante Aufgaben des Assistenten",
+      "Benachrichtigung, wenn eine geplante Aufgabe nicht fortgesetzt werden kann.",
+    ),
     delivery: { recommended: ["browser"] },
     data: z.object({
       conversationId: z.string().regex(AI_SHORT_ID_PATTERN),
       taskId: z.string().regex(AI_SHORT_ID_PATTERN),
       error: z.string(),
     }),
-    render: ({ conversationId, taskId, error }) => ({
-      title: `Scheduled task ${taskId} needs attention`,
+    render: ({ conversationId, taskId, error }, { locale }) => ({
+      title: text(locale).taskAttention({ taskId }),
       body: error,
       targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
     }),
@@ -100,6 +125,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       LIMIT ${limit}
     `;
 
+    const locale = await coreSettings.get<string>("app.locale");
     let sent = 0;
     let failed = 0;
     for (const candidate of candidates) {
@@ -108,6 +134,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
           recipient: { userId: candidate.user_id },
           data: { conversationId: candidate.conversation_id },
           idempotencyKey: `turn:${candidate.turn_id}`,
+          locale,
         });
         sent += 1;
       } catch (error) {
@@ -159,6 +186,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       LIMIT ${limit}
     `;
 
+    const locale = await coreSettings.get<string>("app.locale");
     let sent = 0;
     let failed = 0;
     for (const candidate of candidates) {
@@ -167,6 +195,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
           recipient: { userId: candidate.user_id },
           data: { conversationId: candidate.conversation_id, taskId: candidate.task_id, error: candidate.error },
           idempotencyKey: `occurrence:${candidate.occurrence_id}`,
+          locale,
         });
         sent += 1;
       } catch (error) {

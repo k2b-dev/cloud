@@ -53,13 +53,15 @@ describe("NotebookSettingsStore", () => {
 
   test("preserves preferences for other notebooks and when changing the last notebook", () => {
     writeSettings("first", { richMode: "source" });
-    writeSettings("second", { lastNoteId: "note-2", navigatorSort: "title" });
+    writeSettings("second", { lastNoteId: "note-2", navigatorSort: "title", treeSort: "created" });
     setLastNotebookId("second");
 
     expect(parseSettings(cookieHeader(), "first").richMode).toBe("source");
     expect(parseSettings(cookieHeader(), "second").lastNoteId).toBe("note-2");
     expect(parseSettings(cookieHeader(), "second").navigatorSort).toBe("title");
+    expect(parseSettings(cookieHeader(), "second").treeSort).toBe("created");
     expect(parseSettings(cookieHeader(), "first").navigatorSort).toBe("updated");
+    expect(parseSettings(cookieHeader(), "first").treeSort).toBe("title");
   });
 
   test("persists detail-panel visibility for server rendering", () => {
@@ -83,7 +85,7 @@ describe("NotebookSettingsStore", () => {
       JSON.stringify({
         sidebarMode: "broken",
         detailPanelOpen: "yes",
-        notebooks: { first: { richMode: "broken", navigatorSort: 42, lastNoteId: false } },
+        notebooks: { first: { richMode: "broken", navigatorSort: 42, treeSort: "broken", lastNoteId: false } },
       }),
     )}`;
 
@@ -92,6 +94,7 @@ describe("NotebookSettingsStore", () => {
       richMode: "rich",
       sidebarMode: "simple",
       navigatorSort: "updated",
+      treeSort: "title",
     });
     expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
     expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);

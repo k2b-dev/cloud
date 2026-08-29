@@ -18,6 +18,7 @@ import {
 import { logAudit, type SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortId } from "./short-id";
+import { workflowServiceText } from "./workflow-service-messages";
 import { workflowInputShapeError } from "./workflow-values";
 
 type DbRow = Record<string, unknown>;
@@ -193,9 +194,13 @@ export const createLauncher = async (
   workflow: GridsWorkflow,
   input: CreateGridsWorkflowLauncherInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<GridsWorkflowLauncher>> => {
   const diagnostics = validateLauncherConfig(workflow, input.config);
-  if (diagnostics.length > 0) return fail(err.badInput(diagnostics.map((item) => item.message).join("; ")));
+  if (diagnostics.length > 0) {
+    const t = workflowServiceText(locale);
+    return fail(err.badInput(diagnostics.map((item) => t.launcherDiagnostic({ code: item.code, fallback: item.message })).join("; ")));
+  }
   const launcher = await sql.begin(async (tx) => {
     const row = await insertWithShortId(
       (shortId) =>
@@ -234,10 +239,14 @@ export const updateLauncher = async (
   workflow: GridsWorkflow,
   input: UpdateGridsWorkflowLauncherInput,
   actorId: string | null,
+  locale?: string,
 ): Promise<Result<GridsWorkflowLauncher>> => {
   const config = input.config ?? launcher.config;
   const diagnostics = validateLauncherConfig(workflow, config);
-  if (diagnostics.length > 0) return fail(err.badInput(diagnostics.map((item) => item.message).join("; ")));
+  if (diagnostics.length > 0) {
+    const t = workflowServiceText(locale);
+    return fail(err.badInput(diagnostics.map((item) => t.launcherDiagnostic({ code: item.code, fallback: item.message })).join("; ")));
+  }
   const [row] = await sql<DbRow[]>`
     UPDATE grids.workflow_launchers
     SET name = ${input.name?.trim() ?? launcher.name},
@@ -250,7 +259,7 @@ export const updateLauncher = async (
     WHERE id = ${launcher.id}::uuid AND deleted_at IS NULL
     RETURNING ${selectColumns}
   `;
-  if (!row) return fail(err.notFound("workflow launcher"));
+  if (!row) return fail({ ...err.notFound("workflow launcher"), message: workflowServiceText(locale).launcherNotFound });
   const updated = mapLauncher(row);
   await logAudit({
     baseId: workflow.baseId,

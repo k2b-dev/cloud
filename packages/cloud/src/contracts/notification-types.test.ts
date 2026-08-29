@@ -6,6 +6,7 @@ import {
   isSafeNotificationTargetHref,
   type NotificationSendInput,
   notification,
+  resolveNotificationDefinitionPresentation,
   validateNotificationTargetHref,
 } from "./notification-types";
 
@@ -20,10 +21,14 @@ const NOTIFICATIONS = {
     recipient: "user",
     label: "Completed chats",
     description: "When an Assistant response is ready.",
+    presentation: {
+      baseLocale: "en",
+      translations: { de: { label: "Abgeschlossene Chats", description: "Wenn eine Assistant-Antwort bereit ist." } },
+    },
     delivery: { recommended: ["browser"] },
     data: z.object({ conversationId: z.string() }),
-    render: ({ conversationId }) => ({
-      title: "Response ready",
+    render: ({ conversationId }, { locale }) => ({
+      title: locale.startsWith("de") ? "Antwort bereit" : "Response ready",
       targetHref: `/app/assistant/${conversationId}`,
     }),
   }),
@@ -61,6 +66,7 @@ acceptsSend(app.notifications.turnCompleted, {
   recipient: { userId: "user-1" },
   data: { conversationId: "conversation-1" },
   idempotencyKey: "turn-1",
+  locale: "de-CH",
 });
 
 acceptsSend(app.notifications.magicLink, {
@@ -83,6 +89,42 @@ describe("notification definitions", () => {
   test("bind stable app-qualified ids", () => {
     expect(app.notifications.turnCompleted.id).toBe("type-test.turnCompleted");
     expect(app.notifications.magicLink.id).toBe("type-test.magicLink");
+  });
+
+  test("resolves localized definition presentation through language ancestors", () => {
+    expect(resolveNotificationDefinitionPresentation(app.notifications.turnCompleted, "de-CH")).toEqual({
+      label: "Abgeschlossene Chats",
+      description: "Wenn eine Assistant-Antwort bereit ist.",
+    });
+    expect(resolveNotificationDefinitionPresentation(app.notifications.turnCompleted, "fr")).toEqual({
+      label: "Completed chats",
+      description: "When an Assistant response is ready.",
+    });
+  });
+
+  test("validates and canonicalizes localized definition presentation", () => {
+    const definition = notification({
+      recipient: "user",
+      label: "Updates",
+      description: "Status updates.",
+      presentation: { baseLocale: "EN", translations: { "DE-ch": { label: "Aktualisierungen" } } },
+      data: z.object({}),
+      render: () => ({ title: "Update" }),
+    });
+    expect(definition.presentation).toEqual({
+      baseLocale: "en",
+      translations: { "de-CH": { label: "Aktualisierungen" } },
+    });
+    expect(() =>
+      notification({
+        recipient: "user",
+        label: "Updates",
+        description: "Status updates.",
+        presentation: { baseLocale: "en", translations: { EN: { label: "Updates" } } },
+        data: z.object({}),
+        render: () => ({ title: "Update" }),
+      }),
+    ).toThrow("must not repeat base locale en");
   });
 
   test("reject email recipients without required email delivery", () => {

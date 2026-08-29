@@ -1,6 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { isSpotlightShortcut, openSpotlightSearch, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
+import { isSpotlightShortcut, openSpotlightSearch, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
+import { capabilityUiMessages } from "./messages";
 
 export type CapabilitySearchEntry = {
   href: string;
@@ -16,12 +17,14 @@ type Props = {
 };
 
 export default function CapabilitySearchButton(props: Props) {
+  const locale = useLocale();
+  const t = () => capabilityUiMessages.resolve([locale()]).t;
   const openSearch = async () => {
     const selected = await openSpotlightSearch<CapabilitySearchEntry>({
-      title: "Search capabilities",
+      title: t().search,
       icon: "ti ti-api-app",
-      placeholder: "Search apps, queries, and actions...",
-      noResultsText: "No matching capabilities.",
+      placeholder: t().searchPlaceholder,
+      noResultsText: t().noSearchResults,
       resolve: ({ query }) => {
         const needle = query.trim().toLocaleLowerCase();
         return props.entries
@@ -52,9 +55,9 @@ export default function CapabilitySearchButton(props: Props) {
   return (
     <SpotlightButton
       variant={props.variant ?? "chip"}
-      label="Search capabilities"
-      ariaLabel="Search capabilities"
-      title={`Search capabilities (${SPOTLIGHT_SHORTCUT_TITLE})`}
+      label={t().search}
+      ariaLabel={t().search}
+      title={`${t().search} (${SPOTLIGHT_SHORTCUT_TITLE})`}
       onClick={openSearch}
     />
   );

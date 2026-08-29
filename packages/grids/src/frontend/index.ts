@@ -1,4 +1,4 @@
-import { type AuthContext, auth, rateLimit } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { pdfResponse } from "../api/download-response";
@@ -13,6 +13,7 @@ import tableRecordsPage from "./[baseId]/table/[tableId]/page";
 import viewRecordsPage from "./[baseId]/table/[tableId]/view/[viewId]/page";
 import adminPage from "./admin";
 import customAppPage from "./custom-app/page";
+import { resolveGridsMessages } from "./messages";
 import indexPage from "./page";
 import publicDocumentPage from "./public/documents/[token]/page";
 import publicFormPage from "./public/forms/[token]/page";
@@ -29,13 +30,14 @@ const auditRequestContext = (c: Context<AuthContext>) => ({
 export const publicRoutes = new Hono<AuthContext>()
   .get("/forms/:token", auth.requireRole("*"), ...publicFormPage)
   .get("/documents/:token/download", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }), auth.requireRole("*"), async (c) => {
+    const { t } = resolveGridsMessages(getLocale(c));
     const requestAudit = auditRequestContext(c);
     const resolved = await gridsService.document.resolveDocumentLinkDownload(c.req.param("token") ?? "");
-    if (!resolved.ok) return c.json({ message: "Document link not found" }, 404);
+    if (!resolved.ok) return c.json({ message: t.documentLinkNotFound }, 404);
     const pdf = await gridsService.document.getPdf(resolved.data.document);
     if (!pdf.ok) return c.json({ message: pdf.error.message }, pdf.error.status);
     const access = await gridsService.document.recordDocumentLinkAccess(resolved.data.link.id, requestAudit);
-    if (!access.ok) return c.json({ message: "Document link not found" }, 404);
+    if (!access.ok) return c.json({ message: t.documentLinkNotFound }, 404);
     return pdfResponse(pdf.data.pdf, resolved.data.document.filename, {
       "X-Grids-Document-Id": resolved.data.document.shortId,
       "X-Grids-Document-Link-Id": resolved.data.link.shortId,

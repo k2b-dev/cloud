@@ -591,6 +591,7 @@ export default function NotebookDetailPanel(props: Props) {
                     <For each={noteActivity.data()}>
                       {(item) => (
                         <DetailPanel.Action
+                          class="notebooks-note-activity-action"
                           href={buildVersionsUrl(props.notebookId, noteId())}
                           leading={<Avatar name={item.actor.displayName} size="xs" />}
                           title={item.actor.displayName}

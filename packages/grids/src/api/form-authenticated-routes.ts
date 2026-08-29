@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -16,9 +16,11 @@ import {
   submitFormResponse,
   UpdateFormSchema,
 } from "./form-api-shared";
+import { apiMessages } from "./messages";
 import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
 import { toPublicForm, toPublicForms } from "./public-dto";
 import { resolvePublicIdParam, resolveStoredPublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 type AuthenticatedFormRoutesDeps = SubmitFormDeps & {
   service?: typeof gridsService;
@@ -49,9 +51,9 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       }),
       async (context) => {
         const tableId = await resolveId(context, "tableId", "table");
-        if (!tableId) return context.json({ message: "Invalid table id" }, 400);
+        if (!tableId) return context.json({ message: apiMessages(context).invalidTableId }, 400);
         const table = await service.table.get(tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "read");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
         return context.json(await projectForms(await service.form.listForTable(tableId)));
@@ -66,12 +68,12 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       }),
       async (context) => {
         const tableId = await resolveId(context, "tableId", "table");
-        if (!tableId) return context.json({ message: "Invalid table id" }, 400);
+        if (!tableId) return context.json({ message: apiMessages(context).invalidTableId }, 400);
         const table = await service.table.get(tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "read");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
-        return context.json(await projectForm(await service.form.buildDefault(tableId)));
+        return context.json(await projectForm(await service.form.buildDefault(tableId, getLocale(context))));
       },
     )
     .post(
@@ -89,11 +91,11 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       v("json", FormSubmitSchema),
       async (context) => {
         const formId = await resolveId(context, "formId", "form");
-        if (!formId) return context.json({ message: "Invalid form id" }, 400);
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
         const form = await service.form.get(formId);
-        if (!form || !form.isActive) return context.json({ message: "Form not found" }, 404);
+        if (!form || !form.isActive) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const table = await service.table.get(form.tableId);
-        if (!table) return context.json({ message: "Form not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "write");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
         return submitFormResponse(context, form, context.req.valid("json"), actorId(context), deps, {
@@ -114,11 +116,11 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       }),
       async (context) => {
         const formId = await resolveId(context, "formId", "form");
-        if (!formId) return context.json({ message: "Invalid form id" }, 400);
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
         const form = await service.form.get(formId);
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const table = await service.table.get(form.tableId);
-        if (!table) return context.json({ message: "Form not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const tableGate = await gateAtTarget(context, { baseId: table.baseId }, "read");
         if (!tableGate.ok) return respond(context, () => Promise.resolve(tableGate));
         return context.json(await projectForm(form));
@@ -137,15 +139,15 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       v("json", CreateFormSchema),
       async (context) => {
         const tableId = await resolveId(context, "tableId", "table");
-        if (!tableId) return context.json({ message: "Invalid table id" }, 400);
+        if (!tableId) return context.json({ message: apiMessages(context).invalidTableId }, 400);
         const table = await service.table.get(tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
         const body = context.req.valid("json");
         const config = body.config ? await fromPublicFormConfig(tableId, body.config) : undefined;
-        if (body.config && !config) return context.json({ message: "Invalid form field ID" }, 400);
-        const result = await service.form.create({ ...body, tableId, config: config ?? undefined }, actorId(context));
+        if (body.config && !config) return context.json({ message: apiMessages(context).invalidFormFieldId }, 400);
+        const result = await service.form.create({ ...body, tableId, config: config ?? undefined }, actorId(context), getLocale(context));
         if (!result.ok) return respond(context, () => Promise.resolve(result), 201);
         return context.json(await projectForm(result.data), 201);
       },
@@ -160,17 +162,17 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       v("json", UpdateFormSchema),
       async (context) => {
         const formId = await resolveId(context, "formId", "form");
-        if (!formId) return context.json({ message: "Invalid form id" }, 400);
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
         const form = await service.form.get(formId);
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const table = await service.table.get(form.tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
         const body = context.req.valid("json");
         const config = body.config ? await fromPublicFormConfig(form.tableId, body.config) : undefined;
-        if (body.config && !config) return context.json({ message: "Invalid form field ID" }, 400);
-        const result = await service.form.update(formId, { ...body, config: config ?? undefined }, actorId(context));
+        if (body.config && !config) return context.json({ message: apiMessages(context).invalidFormFieldId }, 400);
+        const result = await service.form.update(formId, { ...body, config: config ?? undefined }, actorId(context), getLocale(context));
         if (!result.ok) return respond(context, () => Promise.resolve(result));
         return context.json(await projectForm(result.data));
       },
@@ -184,14 +186,14 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       }),
       async (context) => {
         const formId = await resolveId(context, "formId", "form");
-        if (!formId) return context.json({ message: "Invalid form id" }, 400);
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
         const form = await service.form.get(formId);
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const table = await service.table.get(form.tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
-        const result = await service.form.remove(formId, actorId(context));
+        const result = await service.form.remove(formId, actorId(context), getLocale(context));
         if (!result.ok) return context.json({ message: result.error.message }, result.error.status);
         return context.body(null, 204);
       },
@@ -208,14 +210,14 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       }),
       async (context) => {
         const formId = await resolveStoredId(context, "formId", "form");
-        if (!formId) return context.json({ message: "Invalid form id" }, 400);
+        if (!formId) return context.json({ message: apiMessages(context).invalidFormId }, 400);
         const form = await service.form.get(formId, { includeDeleted: true });
-        if (!form) return context.json({ message: "Form not found" }, 404);
+        if (!form) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const table = await service.table.get(form.tableId);
-        if (!table) return context.json({ message: "Table not found" }, 404);
+        if (!table) return context.json({ message: apiMessages(context).tableNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
-        const result = await service.form.restore(formId, actorId(context));
+        const result = await service.form.restore(formId, actorId(context), getLocale(context));
         if (!result.ok) return respond(context, () => Promise.resolve(result));
         return context.json(await projectForm(result.data));
       },

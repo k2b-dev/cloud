@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Dropdown, prompts, Tooltip } from "@k2b/ui";
+import { Button, Dropdown, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form, PublicGridRecord } from "../../../api/public-dto";
@@ -9,6 +9,7 @@ import { isUserEditable } from "../fields/field-prompt-schema";
 import { openFormModal } from "../records/FormSubmitModal";
 import { openRecordUpsertDialog } from "../records/RecordUpsertDialog";
 import { errorMessage } from "../utils/api-helpers";
+import { toolbarMessages } from "./messages";
 
 type Props = {
   baseId: string;
@@ -26,18 +27,17 @@ type Props = {
 };
 
 export function GridCreateActions(props: Props) {
+  const locale = useLocale();
+  const t = () => toolbarMessages.resolve([locale()]).t;
   const activeForms = createMemo(() => (props.canSubmitForms ? (props.forms ?? []).filter((form) => form.isActive) : []));
-  const blockedReason = () =>
-    props.canSubmitForms
-      ? "Add an active form before creating records in this table."
-      : "This table does not allow changes from direct editing or forms.";
+  const blockedReason = () => (props.canSubmitForms ? t().activeFormRequired : t().changesUnavailable);
   const addMutation = mutations.create<PublicGridRecord, Record<string, unknown>>({
     mutation: async (payload) => {
       const response = await apiClient.records["by-table"][":tableId"].$post({
         param: { tableId: props.tableId },
         json: payload,
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to create record"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().createFailed));
       return response.json();
     },
     onSuccess: (created) => {
@@ -51,7 +51,7 @@ export function GridCreateActions(props: Props) {
     const liveFields = props.fields.filter((field) => !field.deletedAt);
     const fillable = liveFields.filter((field) => isUserEditable(field.type) || field.type === "relation");
     if (fillable.length === 0) {
-      prompts.error("This table has no editable fields. Add one first.");
+      prompts.error(t().noEditableFields);
       return;
     }
     const result = await openRecordUpsertDialog({
@@ -81,13 +81,19 @@ export function GridCreateActions(props: Props) {
                 <Show when={addMutation.loading()} fallback={<i class="ti ti-plus" />}>
                   <i class="ti ti-loader-2 animate-spin" />
                 </Show>
-                Add record
+                {t().addRecord}
               </Button>
             </Show>
             <Show when={!props.canDirectWrite}>
               <Tooltip.Anchor content={blockedReason()}>
-                <Button variant="secondary" size="sm" type="button" disabled aria-label={`Add record unavailable: ${blockedReason()}`}>
-                  <i class="ti ti-lock" aria-hidden="true" /> Add record
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled
+                  aria-label={t().addRecordUnavailable({ reason: blockedReason() })}
+                >
+                  <i class="ti ti-lock" aria-hidden="true" /> {t().addRecord}
                 </Button>
               </Tooltip.Anchor>
             </Show>
@@ -107,7 +113,7 @@ export function GridCreateActions(props: Props) {
             >
               <Dropdown.Trigger variant="primary" size="sm">
                 <i class="ti ti-forms" />
-                Add with form
+                {t().addWithForm}
                 <i class="ti ti-chevron-down text-[10px] opacity-60" />
               </Dropdown.Trigger>
             </Dropdown.Root>
@@ -116,7 +122,7 @@ export function GridCreateActions(props: Props) {
           {(form) => (
             <Button variant="primary" size="sm" type="button" onClick={() => void submitForm(form())}>
               <i class="ti ti-forms" />
-              Add with form
+              {t().addWithForm}
             </Button>
           )}
         </Show>
@@ -125,7 +131,7 @@ export function GridCreateActions(props: Props) {
             <Show when={addMutation.loading()} fallback={<i class="ti ti-plus" />}>
               <i class="ti ti-loader-2 animate-spin" />
             </Show>
-            Add record
+            {t().addRecord}
           </Button>
         </Show>
       </Show>

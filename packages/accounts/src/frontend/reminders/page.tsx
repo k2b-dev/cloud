@@ -1,13 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import ReminderFilters from "./ReminderFilters.island";
 
 const parsePage = (value: string | undefined): number => {
@@ -26,6 +27,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
@@ -55,35 +57,37 @@ export default ssr<AuthContext>(async (c) => {
   })();
   type ReminderRow = (typeof remindersPage.items)[number];
   const columns: DataTableColumn<ReminderRow>[] = [
-    { id: "user", header: "User", value: (entry) => entry.displayName || entry.uid || "(deleted user)" },
-    { id: "kind", header: "Kind", value: () => "Account expiry" },
-    { id: "target", header: "Target expiry", value: (entry) => entry.targetExpiryAt, cellClass: "whitespace-nowrap" },
-    { id: "status", header: "Status", value: (entry) => entry.status },
-    { id: "attempts", header: "Attempts", value: (entry) => entry.attemptCount },
-    { id: "lastAttempt", header: "Last attempt", value: (entry) => entry.lastAttemptAt, cellClass: "whitespace-nowrap" },
+    { id: "user", header: t.user, value: (entry) => entry.displayName || entry.uid || `(${t.deletedUser})` },
+    { id: "kind", header: t.kind, value: () => t.accountExpiry },
+    { id: "target", header: t.targetExpiry, value: (entry) => entry.targetExpiryAt, cellClass: "whitespace-nowrap" },
+    {
+      id: "status",
+      header: t.status,
+      value: (entry) => (entry.status === "pending" ? t.pending : entry.status === "sent" ? t.sent : t.error),
+    },
+    { id: "attempts", header: t.attempts, value: (entry) => entry.attemptCount },
+    { id: "lastAttempt", header: t.lastAttempt, value: (entry) => entry.lastAttemptAt, cellClass: "whitespace-nowrap" },
   ];
 
   return () => (
     <Layout
       c={c}
       fullWidth
-      title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Reminder History" }]}
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.reminderHistory }]}
     >
       <AccountsWorkspace active="reminders" isAdmin pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-reminders">
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-reminders-title">
-            <h1 class="text-base font-semibold text-primary">Reminder History</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {remindersPage.total} {remindersPage.total === 1 ? "entry" : "entries"}
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.reminderHistory}</h1>
+            <p class="mt-1 text-xs text-dimmed">{t.entryCount({ count: remindersPage.total })}</p>
           </div>
 
           <div style="view-transition-name: accounts-reminders-search">
             <SearchBar
               action={buildUrl({ status, kind, page: 1 })}
               value={search}
-              placeholder="Search reminder history..."
-              ariaLabel="Search reminder history"
+              placeholder={t.searchReminders}
+              ariaLabel={t.searchReminders}
             />
           </div>
 
@@ -92,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           {remindersPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>No reminder history entries found.</>} />
+            <Placeholder surface="paper" description={<>{t.noReminders}</>} />
           ) : (
             <div class="paper overflow-hidden" style="view-transition-name: accounts-reminders-table">
               <DataTable
@@ -104,7 +108,7 @@ export default ssr<AuthContext>(async (c) => {
                 scrollPreserveKey="accounts-reminders-table"
                 renderCell={({ row: entry, col }) => {
                   if (col.id === "user") {
-                    const label = entry.displayName || entry.uid || "(deleted user)";
+                    const label = entry.displayName || entry.uid || `(${t.deletedUser})`;
                     return (
                       <div class="flex min-w-0 items-center gap-2">
                         <AccountAvatar name={label} userId={entry.userId} avatarHash={entry.avatarHash} size="xs" />
@@ -119,17 +123,22 @@ export default ssr<AuthContext>(async (c) => {
                       </div>
                     );
                   }
-                  if (col.id === "kind") return <span class="text-dimmed">Account expiry</span>;
+                  if (col.id === "kind") return <span class="text-dimmed">{t.accountExpiry}</span>;
                   if (col.id === "target")
                     return (
                       <span class="text-dimmed">
-                        {dates.formatDateTime(entry.targetExpiryAt)} · {entry.thresholdDays}d
+                        {dates.formatDateTime(entry.targetExpiryAt, { locale })} · {t.daysShort({ count: entry.thresholdDays })}
                       </span>
                     );
-                  if (col.id === "status") return <span class="text-dimmed">{entry.status}</span>;
+                  if (col.id === "status") {
+                    const label = entry.status === "pending" ? t.pending : entry.status === "sent" ? t.sent : t.error;
+                    return <span class="text-dimmed">{label}</span>;
+                  }
                   if (col.id === "attempts") return <span class="text-dimmed">{entry.attemptCount}</span>;
                   if (col.id === "lastAttempt")
-                    return <span class="text-dimmed">{entry.lastAttemptAt ? dates.formatDateTime(entry.lastAttemptAt) : "-"}</span>;
+                    return (
+                      <span class="text-dimmed">{entry.lastAttemptAt ? dates.formatDateTime(entry.lastAttemptAt, { locale }) : "-"}</span>
+                    );
                   return "";
                 }}
               />

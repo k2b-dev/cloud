@@ -223,6 +223,7 @@ describe("document link routes", () => {
       document,
       input: { expiresIn: "30d", comment: "External review" },
       actorId: userId,
+      locale: "en",
       ip: "203.0.113.7",
       userAgent: "document-link-route-test",
     });
@@ -254,6 +255,7 @@ describe("document link routes", () => {
     expect(revokeInput).toEqual({
       linkId,
       actorId: userId,
+      locale: "en",
       ip: "203.0.113.7",
       userAgent: "document-link-route-test",
     });

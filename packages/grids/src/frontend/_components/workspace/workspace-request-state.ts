@@ -1,6 +1,7 @@
 import type { DocumentTemplate } from "../../../contracts";
 import type { Base, CustomApp, Table, Workflow } from "../../../service";
 import { gridsService } from "../../../service";
+import { resolveWorkspaceMessages } from "./messages";
 import { canUseEditModeForCatalog, loadCatalog } from "./workspace-catalog-state";
 import { resolveBaseLevel } from "./workspace-state-access";
 import { buildChrome } from "./workspace-state-helpers";
@@ -20,13 +21,14 @@ export const loadWorkspaceRequest = async (
   base: Base,
   eventCursors: { metadata: string | null; records: string | null },
 ): Promise<WorkspaceRequestContext | Extract<GridsWorkspaceState, { kind: "accessDenied" }>> => {
+  const t = resolveWorkspaceMessages(params.locale);
   const level = await resolveBaseLevel(params.user, base.id);
   const canManageBase = gridsService.permission.hasAtLeast(level, "admin");
   const hasBaseRead = gridsService.permission.hasAtLeast(level, "read");
-  if (!hasBaseRead) return { kind: "accessDenied", title: "Access denied", message: "No access to this base" };
+  if (!hasBaseRead) return { kind: "accessDenied", title: t.accessDenied, message: t.noBaseAccess };
   const catalog = await loadCatalog(base.id, params.user, canManageBase);
   if (params.activeCustomAppSlug && !canManageBase) {
-    return { kind: "accessDenied", title: "Access denied", message: "Base admin access is required to edit Apps" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.appAdminRequired };
   }
   const requestedCustomApp = params.activeCustomAppSlug
     ? await gridsService.customApp.getByShortIdForBase(base.id, params.activeCustomAppSlug)
@@ -54,7 +56,7 @@ export const loadWorkspaceRequest = async (
     common: {
       params,
       base,
-      chrome: buildChrome(params.href, base),
+      chrome: buildChrome(params.href, base, params.locale),
       catalog,
       canManageBase,
       canCreateTables,

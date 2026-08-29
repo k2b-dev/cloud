@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, timed as timing } from "@k2b/stdlib/solid";
-import { Button, prompts } from "@k2b/ui";
+import { Button, prompts, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contracts";
@@ -27,6 +27,7 @@ import {
 import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
 import { formatDocumentMonth } from "./document-workspace-utils";
+import { documentMessages } from "./messages";
 import type {
   PublicDocument,
   PublicDocumentBrowseResponse,
@@ -50,7 +51,7 @@ type Props = {
 };
 
 const fetchBrowserPage = async (
-  args: ReturnType<typeof documentBrowserKey> & { cursor?: string | null; signal?: AbortSignal },
+  args: ReturnType<typeof documentBrowserKey> & { cursor?: string | null; signal?: AbortSignal; locale?: string },
 ): Promise<PublicDocumentBrowseResponse> => {
   const res = await apiClient.documents["by-template"][":templateId"].browse.$get(
     {
@@ -65,11 +66,14 @@ const fetchBrowserPage = async (
     },
     args.signal ? { init: { signal: args.signal } } : undefined,
   );
-  if (!res.ok) throw new Error(await errorMessage(res, "Could not load generated documents"));
+  if (!res.ok) throw new Error(await errorMessage(res, documentMessages.resolve([args.locale ?? "en"]).t.couldNotLoadGeneratedDocuments));
   return (await res.json()) as PublicDocumentBrowseResponse;
 };
 
 export default function DocumentTemplateWorkspace(props: Props) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
+  const dateConfig = () => ({ ...props.dateConfig, locale: locale() });
   const initialPage = replaceDocumentBrowserPage(props.initialBrowserPage);
   const [searchDraft, setSearchDraft] = createSignal("");
   const [search, setSearch] = createSignal("");
@@ -91,7 +95,7 @@ export default function DocumentTemplateWorkspace(props: Props) {
   const browserKeyString = (key = currentBrowserKey()) => serializeDocumentBrowserKey(key);
   let loadedBrowserKey = browserKeyString();
   const browserMut = mutations.create<PublicDocumentBrowseResponse, ReturnType<typeof currentBrowserKey>>({
-    mutation: (key, { abortSignal }) => fetchBrowserPage({ ...key, search: key.search.trim(), signal: abortSignal }),
+    mutation: (key, { abortSignal }) => fetchBrowserPage({ ...key, search: key.search.trim(), signal: abortSignal, locale: locale() }),
     onSuccess: (page) => {
       const next = replaceDocumentBrowserPage(page);
       setDocumentItems(next.documents);
@@ -114,10 +118,11 @@ export default function DocumentTemplateWorkspace(props: Props) {
   const loadMoreMut = mutations.create<PublicDocumentBrowseResponse, void, { key: string; cursor: string }>({
     onBefore: () => {
       const cursor = documentPage().cursor;
-      if (!cursor) throw new Error("No more documents to load.");
+      if (!cursor) throw new Error(t().noMoreDocuments);
       return { key: browserKeyString(), cursor };
     },
-    mutation: async (_, { cursor, abortSignal }) => fetchBrowserPage({ ...currentBrowserKey(), cursor, signal: abortSignal }),
+    mutation: async (_, { cursor, abortSignal }) =>
+      fetchBrowserPage({ ...currentBrowserKey(), cursor, signal: abortSignal, locale: locale() }),
     onSuccess: (page, ctx) => {
       if (!ctx) return;
       const current = {
@@ -136,17 +141,17 @@ export default function DocumentTemplateWorkspace(props: Props) {
 
   const documents = () => documentItems();
   const folders = () => folderItems();
-  const countLabel = () => documentCountLabel(activeViewMode(), folders(), documents(), documentPage().hasMore);
+  const countLabel = () => documentCountLabel(activeViewMode(), folders(), documents(), documentPage().hasMore, locale());
   const folderTitle = (folder: PublicDocumentFolder) => {
     if (folder.kind === "year") return folder.label;
     const [year, month] = folder.path;
-    return year && month ? formatDocumentMonth(year, month, props.dateConfig) : folder.label;
+    return year && month ? formatDocumentMonth(year, month, dateConfig()) : folder.label;
   };
   const breadcrumbs = (): DocumentBreadcrumb[] => {
     const path = folderPath();
-    const items: DocumentBreadcrumb[] = [{ label: "Documents", path: [] }];
+    const items: DocumentBreadcrumb[] = [{ label: t().documents, path: [] }];
     if (path[0]) items.push({ label: path[0], path: [path[0]] });
-    if (path[0] && path[1]) items.push({ label: formatDocumentMonth(path[0], path[1], props.dateConfig), path: [path[0], path[1]] });
+    if (path[0] && path[1]) items.push({ label: formatDocumentMonth(path[0], path[1], dateConfig()), path: [path[0], path[1]] });
     return items;
   };
   const setMode = (mode: DocumentViewMode) => {
@@ -162,7 +167,7 @@ export default function DocumentTemplateWorkspace(props: Props) {
   };
   const downloadDocument = async (document: PublicDocument, signal?: AbortSignal) => {
     const res = await requestDocumentDownload(document.id, signal);
-    await downloadPdfResponse(res, document.filename);
+    await downloadPdfResponse(res, document.filename, locale());
   };
   const openDocumentLink = (document: PublicDocument) => {
     if (!props.canWriteTemplate) return;
@@ -201,7 +206,7 @@ export default function DocumentTemplateWorkspace(props: Props) {
     },
   });
 
-  const emptyText = () => documentBrowserEmptyText(search(), activeViewMode(), folderPath());
+  const emptyText = () => documentBrowserEmptyText(search(), activeViewMode(), folderPath(), locale());
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden" data-scroll-preserve="grids-document-template-workspace">
@@ -237,7 +242,7 @@ export default function DocumentTemplateWorkspace(props: Props) {
               }
             >
               <i class="ti ti-settings" />
-              Manage
+              {t().manage}
             </Button>
           </div>
         )}

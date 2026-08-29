@@ -5,6 +5,10 @@ export const app = defineApp({
   name: "FAQ",
   icon: "ti ti-help-circle",
   description: "Frequently asked questions and public help content.",
+  presentation: {
+    baseLocale: "en",
+    translations: { de: { description: "Häufig gestellte Fragen und öffentliche Hilfeinhalte." } },
+  },
   appearance: { accent: "#b45309", background: { from: "#f59e0b" } },
   basePath: "/faq",
   baseUrl: "http://app-faq:3000",

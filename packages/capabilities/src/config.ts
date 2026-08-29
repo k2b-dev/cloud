@@ -5,6 +5,15 @@ export const app = defineApp({
   name: "Capabilities",
   icon: "ti ti-api-app",
   description: "Inspect and run the live Queries and Actions available to your account.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Capabilities",
+        description: "Die für das eigene Konto verfügbaren Queries und Actions prüfen und ausführen.",
+      },
+    },
+  },
   appearance: {
     accent: "#4f46e5",
     background: {

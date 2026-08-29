@@ -1,4 +1,5 @@
-import { ButtonLink, Placeholder } from "@k2b/ui";
+import { ButtonLink, Placeholder, useLocale } from "@k2b/ui";
+import { filesMessages } from "../messages";
 
 type Props = {
   title: string;
@@ -10,6 +11,8 @@ type Props = {
 
 /** Shared recovery state for unavailable file-storage routes. */
 export default function FilesUnavailable(props: Props) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   return (
     <main class="mx-auto flex min-h-64 max-w-md items-center px-3">
       <Placeholder
@@ -22,7 +25,7 @@ export default function FilesUnavailable(props: Props) {
         class="w-full"
         action={
           <ButtonLink href={props.actionHref ?? "/app/files"} variant="secondary" size="sm">
-            {props.actionLabel ?? "Back to files"}
+            {props.actionLabel ?? t().backToFiles}
           </ButtonLink>
         }
       />

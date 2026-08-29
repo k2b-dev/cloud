@@ -213,6 +213,15 @@
   color: var(--color-zinc-300);
 }
 
+.k2b-ui .notebooks-note-activity-action > .k2b-button__label {
+  gap: 0.75rem;
+}
+
+.k2b-ui .notebooks-note-activity-action .k2b-detail-panel__action-leading {
+  width: auto;
+  flex-basis: auto;
+}
+
 @media (min-width: 40rem) {
   .notebooks-overview-note-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
+import { documentServiceText } from "./document-messages";
 import { captureRecordRevision, lockDurableHistoryMutationBoundary, prepareRecordMutation } from "./durable-history";
 import { type FederatedRevisionScope, getActive, verifyRevisionScope } from "./federated-tables";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
@@ -131,10 +132,12 @@ const verifyTarget = async (
   tableId: string,
   recordId: string,
   fieldId: string,
+  locale?: string,
 ): Promise<Result<{ baseId: string; config: FileFieldConfig }>> => {
+  const t = documentServiceText(locale);
   const table = await getTable(tableId);
-  if (!table) return fail(err.notFound("Table"));
-  if (table.kind === "federated") return fail(err.badInput("combined tables are read-only"));
+  if (!table) return fail(err.notFound(t.tableNotFound));
+  if (table.kind === "federated") return fail(err.badInput(t.combinedReadonly));
   const [row] = await sql<{ record_ok: boolean; field_ok: boolean; config: unknown }[]>`
     SELECT
       EXISTS (
@@ -163,8 +166,8 @@ const verifyTarget = async (
           AND f.deleted_at IS NULL
       ) AS config
   `;
-  if (!row?.record_ok) return fail(err.notFound("Record"));
-  if (!row.field_ok) return fail(err.badInput("field is not a live file field on this table"));
+  if (!row?.record_ok) return fail(err.notFound(t.recordNotFound));
+  if (!row.field_ok) return fail(err.badInput(t.invalidFileField));
   return ok({ baseId: table.baseId, config: (row.config && typeof row.config === "object" ? row.config : {}) as FileFieldConfig });
 };
 
@@ -179,9 +182,11 @@ const resolveReadTargets = async (params: {
   tableId: string;
   recordId: string;
   fieldIds: string[];
+  locale?: string;
 }): Promise<Result<Map<string, ReadTarget>>> => {
+  const t = documentServiceText(params.locale);
   const table = await getTable(params.tableId);
-  if (!table) return fail(err.notFound("Table"));
+  if (!table) return fail(err.notFound(t.tableNotFound));
   if (table.kind === "stored") {
     const [record] = await sql<Array<{ record_ok: boolean }>>`
       SELECT EXISTS (
@@ -194,7 +199,7 @@ const resolveReadTargets = async (params: {
           AND record.deleted_at IS NULL
       ) AS record_ok
     `;
-    if (!record?.record_ok) return fail(err.notFound("Record"));
+    if (!record?.record_ok) return fail(err.notFound(t.recordNotFound));
     const fields = await sql<Array<{ id: string }>>`
       SELECT id::text
       FROM grids.fields
@@ -228,7 +233,7 @@ const resolveReadTargets = async (params: {
       AND table_id = ANY(${sql.array(sourceTableIds, "UUID")}::uuid[])
       AND deleted_at IS NULL
   `;
-  if (!record) return fail(err.notFound("Record"));
+  if (!record) return fail(err.notFound(t.recordNotFound));
   const targetFields = await sql<Array<{ id: string }>>`
     SELECT id::text
     FROM grids.fields
@@ -262,11 +267,17 @@ const resolveReadTargets = async (params: {
   );
 };
 
-const resolveReadTarget = async (params: { tableId: string; recordId: string; fieldId: string }): Promise<Result<ReadTarget>> => {
+const resolveReadTarget = async (params: {
+  tableId: string;
+  recordId: string;
+  fieldId: string;
+  locale?: string;
+}): Promise<Result<ReadTarget>> => {
+  const t = documentServiceText(params.locale);
   const targets = await resolveReadTargets({ ...params, fieldIds: [params.fieldId] });
   if (!targets.ok) return targets;
   const target = targets.data.get(params.fieldId);
-  return target ? ok(target) : fail(err.badInput("field is not a live file field on this table"));
+  return target ? ok(target) : fail(err.badInput(t.invalidFileField));
 };
 
 const publicationGuard = (target: ReadTarget): unknown =>
@@ -292,7 +303,12 @@ const matchesAccept = (filename: string, mimeType: string, accept: string[] | un
   });
 };
 
-export const listForRecordField = async (params: { tableId: string; recordId: string; fieldId: string }): Promise<Result<GridFile[]>> => {
+export const listForRecordField = async (params: {
+  tableId: string;
+  recordId: string;
+  fieldId: string;
+  locale?: string;
+}): Promise<Result<GridFile[]>> => {
   const target = await resolveReadTarget(params);
   if (!target.ok) return target;
   if (!target.data.sourceFieldId) return ok([]);
@@ -313,6 +329,7 @@ export const listForRecord = async (params: {
   tableId: string;
   recordId: string;
   fieldIds: string[];
+  locale?: string;
 }): Promise<Record<string, GridFile[]>> => {
   const fieldIds = [...new Set(params.fieldIds)].filter(Boolean);
   const filesByField = Object.fromEntries(fieldIds.map((fieldId) => [fieldId, [] as GridFile[]]));
@@ -348,7 +365,9 @@ export const listFirstImagePreviews = async (params: {
   recordIds: string[];
   fieldIds: string[];
   expectedFederatedRevisionScope?: FederatedRevisionScope;
+  locale?: string;
 }): Promise<Record<string, Record<string, GridFilePreview>>> => {
+  const t = documentServiceText(params.locale);
   if (params.expectedFederatedRevisionScope) {
     const current = await verifyRevisionScope(params.expectedFederatedRevisionScope);
     if (!current.ok) throw current.error;
@@ -370,7 +389,7 @@ export const listFirstImagePreviews = async (params: {
     if (!active.ok) throw new Error(active.error.message);
     const expected = params.expectedFederatedRevisionScope?.find((entry) => entry.tableId === params.tableId);
     if (expected && (expected.revisionId !== active.data.id || expected.revisionToken !== active.data.revisionToken)) {
-      throw err.conflict("combined table publication changed while file previews were loading; retry the query");
+      throw err.conflict(t.publicationChanged);
     }
     const sourceTableIds = active.data.sources.map((source) => source.sourceTableId);
     const records = await sql<Array<{ id: string; table_id: string }>>`
@@ -451,22 +470,24 @@ export const upload = async (params: {
   bytes: Uint8Array;
   userId: string | null;
   origin: MutationOrigin;
+  locale?: string;
 }): Promise<Result<GridFile>> => {
-  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId);
+  const t = documentServiceText(params.locale);
+  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId, params.locale);
   if (!target.ok) return target;
   const filename = normalizeFilename(params.filename);
   if (!matchesAccept(filename, params.mimeType || "application/octet-stream", target.data.config.accept)) {
-    return fail(err.badInput("file type is not accepted by this field"));
+    return fail(err.badInput(t.fileTypeRejected));
   }
   const maxFiles = target.data.config.maxFiles;
 
   return sql.begin(async (tx) => {
-    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin);
+    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin, params.locale);
     if (!allowed.ok) return allowed;
     await lockDurableHistoryMutationBoundary(tx, params.tableId);
     await lockMutationTarget(tx, params.recordId, params.fieldId);
     await prepareRecordMutation(tx, params.tableId, params.recordId);
-    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId);
+    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId, params.locale);
     if (!mutable.ok) return mutable;
 
     if (typeof maxFiles === "number" && Number.isInteger(maxFiles) && maxFiles > 0) {
@@ -476,7 +497,7 @@ export const upload = async (params: {
         WHERE record_id = ${params.recordId}::uuid AND field_id = ${params.fieldId}::uuid
       `;
       if ((countRow?.count ?? 0) >= maxFiles) {
-        return fail(err.badInput(`file field already has the maximum of ${maxFiles} file(s)`));
+        return fail(err.badInput(t.fileLimit({ limit: maxFiles })));
       }
     }
 
@@ -548,22 +569,24 @@ export const replace = async (params: {
   bytes: Uint8Array;
   userId: string | null;
   origin: MutationOrigin;
+  locale?: string;
 }): Promise<Result<GridFile>> => {
-  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId);
+  const t = documentServiceText(params.locale);
+  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId, params.locale);
   if (!target.ok) return target;
   const filename = normalizeFilename(params.filename);
   const mimeType = params.mimeType || "application/octet-stream";
   if (!matchesAccept(filename, mimeType, target.data.config.accept)) {
-    return fail(err.badInput("file type is not accepted by this field"));
+    return fail(err.badInput(t.fileTypeRejected));
   }
 
   return sql.begin(async (tx): Promise<Result<GridFile>> => {
-    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin);
+    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin, params.locale);
     if (!allowed.ok) return allowed;
     await lockDurableHistoryMutationBoundary(tx, params.tableId);
     await lockMutationTarget(tx, params.recordId, params.fieldId);
     await prepareRecordMutation(tx, params.tableId, params.recordId);
-    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId);
+    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId, params.locale);
     if (!mutable.ok) return mutable;
     const [existingRow] = await tx<DbRow[]>`
       SELECT file.id::text AS id, file.short_id, attachment.record_id::text AS record_id,
@@ -576,7 +599,7 @@ export const replace = async (params: {
         AND attachment.field_id = ${params.fieldId}::uuid
       FOR UPDATE OF file, attachment
     `;
-    if (!existingRow) return fail(err.notFound("File"));
+    if (!existingRow) return fail(err.notFound(t.fileNotFound));
 
     const createdRow = await insertWithShortIdForDb(tx, "idx_grids_files_short_id", async (attempt, shortId) => {
       const [created] = await attempt<Omit<DbRow, "record_id" | "field_id" | "position">[]>`
@@ -632,10 +655,12 @@ export const getContent = async (params: {
   recordId: string;
   fieldId: string;
   fileId: string;
+  locale?: string;
 }): Promise<Result<GridFileContent>> => {
+  const t = documentServiceText(params.locale);
   const target = await resolveReadTarget(params);
   if (!target.ok) return target;
-  if (!target.data.sourceFieldId) return fail(err.notFound("File"));
+  if (!target.data.sourceFieldId) return fail(err.notFound(t.fileNotFound));
   const [row] = await sql<(DbRow & { bytes: Uint8Array })[]>`
     SELECT file.id::text AS id, file.short_id, attachment.record_id::text AS record_id,
            attachment.field_id::text AS field_id, attachment.position, file.filename, file.mime_type,
@@ -647,7 +672,7 @@ export const getContent = async (params: {
       AND attachment.field_id = ${target.data.sourceFieldId}::uuid
       AND ${publicationGuard(target.data)}
   `;
-  if (!row) return fail(err.notFound("File"));
+  if (!row) return fail(err.notFound(t.fileNotFound));
   return ok({ ...mapRow(row, target.data.targetFieldId, target.data.publication === null), bytes: row.bytes });
 };
 
@@ -674,16 +699,18 @@ export const remove = async (params: {
   fileId: string;
   userId?: string | null;
   origin: MutationOrigin;
+  locale?: string;
 }): Promise<Result<void>> => {
-  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId);
+  const t = documentServiceText(params.locale);
+  const target = await verifyTarget(params.tableId, params.recordId, params.fieldId, params.locale);
   if (!target.ok) return target;
   return sql.begin(async (tx): Promise<Result<void>> => {
-    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin);
+    const allowed = await assertMutationAllowed(tx, params.tableId, params.origin, params.locale);
     if (!allowed.ok) return allowed;
     await lockDurableHistoryMutationBoundary(tx, params.tableId);
     await lockMutationTarget(tx, params.recordId, params.fieldId);
     await prepareRecordMutation(tx, params.tableId, params.recordId);
-    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId);
+    const mutable = await assertRecordMutable(tx, params.tableId, params.recordId, params.locale);
     if (!mutable.ok) return mutable;
     const [row] = await tx<DbRow[]>`
       SELECT file.id::text AS id, file.short_id, attachment.record_id::text AS record_id,
@@ -696,7 +723,7 @@ export const remove = async (params: {
         AND attachment.field_id = ${params.fieldId}::uuid
       FOR UPDATE OF file, attachment
     `;
-    if (!row) return fail(err.notFound("File"));
+    if (!row) return fail(err.notFound(t.fileNotFound));
     const file = mapRow(row);
     await tx`DELETE FROM grids.file_attachments WHERE file_id = ${params.fileId}::uuid`;
     await supersedePendingFinalizationRequest(tx, params.tableId, params.recordId, params.userId ?? null);
@@ -732,11 +759,12 @@ type ProtectParams = {
   userId: string | null;
 };
 
-const protectWithClient = async (params: ProtectParams, client: SqlClient): Promise<Result<void>> => {
+const protectWithClient = async (params: ProtectParams, client: SqlClient, locale?: string): Promise<Result<void>> => {
+  const t = documentServiceText(locale);
   const [asset] = await client<{ id: string }[]>`
     SELECT id::text AS id FROM grids.files WHERE id = ${params.fileId}::uuid FOR UPDATE
   `;
-  if (!asset) return fail(err.notFound("File"));
+  if (!asset) return fail(err.notFound(t.fileNotFound));
   await client`
     INSERT INTO grids.file_protected_references (
       file_id, owner_kind, owner_id, base_id, table_id, record_id, created_by
@@ -751,11 +779,11 @@ const protectWithClient = async (params: ProtectParams, client: SqlClient): Prom
   return ok();
 };
 
-export const protect = async (params: ProtectParams, client?: SqlClient): Promise<Result<void>> =>
-  client ? protectWithClient(params, client) : sql.begin((tx) => protectWithClient(params, tx));
+export const protect = async (params: ProtectParams, client?: SqlClient, locale?: string): Promise<Result<void>> =>
+  client ? protectWithClient(params, client, locale) : sql.begin((tx) => protectWithClient(params, tx, locale));
 
 export const createProtected = async (
-  params: Omit<ProtectParams, "fileId"> & { filename: string; mimeType: string; bytes: Uint8Array },
+  params: Omit<ProtectParams, "fileId"> & { filename: string; mimeType: string; bytes: Uint8Array; locale?: string },
   client: SqlClient,
 ): Promise<Result<ProtectedFileAsset>> => {
   const filename = normalizeFilename(params.filename);
@@ -782,7 +810,7 @@ export const createProtected = async (
     if (!created) throw new Error("insert returned no row");
     return created;
   });
-  const protectedResult = await protectWithClient({ ...params, fileId: row.id }, client);
+  const protectedResult = await protectWithClient({ ...params, fileId: row.id }, client, params.locale);
   if (!protectedResult.ok) return protectedResult;
   return ok({
     id: row.id,
@@ -798,8 +826,9 @@ export const createProtected = async (
 
 type ProtectionIdentity = Pick<ProtectParams, "fileId" | "ownerKind" | "ownerId">;
 
-const releaseProtectionWithClient = async (params: ProtectionIdentity, client: SqlClient): Promise<Result<void>> => {
-  if (params.ownerKind === "document_artifact") return fail(err.badInput("Document artifact protection cannot be released"));
+const releaseProtectionWithClient = async (params: ProtectionIdentity, client: SqlClient, locale?: string): Promise<Result<void>> => {
+  const t = documentServiceText(locale);
+  if (params.ownerKind === "document_artifact") return fail(err.badInput(t.artifactProtectionReleaseDenied));
   const [asset] = await client<{ id: string }[]>`
     SELECT id::text AS id FROM grids.files WHERE id = ${params.fileId}::uuid FOR UPDATE
   `;
@@ -817,10 +846,11 @@ const releaseProtectionWithClient = async (params: ProtectionIdentity, client: S
   return ok();
 };
 
-export const releaseProtection = async (params: ProtectionIdentity, client?: SqlClient): Promise<Result<void>> =>
-  client ? releaseProtectionWithClient(params, client) : sql.begin((tx) => releaseProtectionWithClient(params, tx));
+export const releaseProtection = async (params: ProtectionIdentity, client?: SqlClient, locale?: string): Promise<Result<void>> =>
+  client ? releaseProtectionWithClient(params, client, locale) : sql.begin((tx) => releaseProtectionWithClient(params, tx, locale));
 
-export const getProtectedContent = async (params: ProtectionIdentity): Promise<Result<ProtectedFileContent>> => {
+export const getProtectedContent = async (params: ProtectionIdentity & { locale?: string }): Promise<Result<ProtectedFileContent>> => {
+  const t = documentServiceText(params.locale);
   const [row] = await sql<
     Array<{
       id: string;
@@ -842,7 +872,7 @@ export const getProtectedContent = async (params: ProtectionIdentity): Promise<R
       AND protected.owner_kind = ${params.ownerKind}
       AND protected.owner_id = ${params.ownerId}::uuid
   `;
-  if (!row) return fail(err.notFound("File"));
+  if (!row) return fail(err.notFound(t.fileNotFound));
   return ok({
     id: row.id,
     shortId: row.short_id,

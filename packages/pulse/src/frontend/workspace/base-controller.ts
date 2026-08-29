@@ -4,6 +4,7 @@ import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { jsonFetch } from "../http";
 import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
+import { usePulseMessages } from "../use-messages";
 
 type BaseControllerDeps = {
   bases: Accessor<PulseBase[]>;
@@ -19,6 +20,7 @@ type BaseControllerDeps = {
 };
 
 export const createBaseController = (deps: BaseControllerDeps) => {
+  const t = usePulseMessages();
   let disposed = false;
   type SettingsIntent = {
     baseId: string;
@@ -60,7 +62,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   };
   const requireWritable = (): boolean => {
     if (!deps.writeBlocked()) return true;
-    toast.error("Refresh Pulse data before making more changes.");
+    toast.error(t().refreshBeforeChanges);
     return false;
   };
 
@@ -77,19 +79,19 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     if (!requireWritable()) return "failed";
     const name = input.name.trim();
     if (!name) {
-      toast.error("Pulse name is required");
+      toast.error(t().pulseNameRequired);
       return "failed";
     }
     if (!Number.isInteger(input.rawRetentionDays) || input.rawRetentionDays < 1 || input.rawRetentionDays > 3650) {
-      toast.error("Raw retention must be between 1 and 3650 days");
+      toast.error(t().rawRetentionRange);
       return "failed";
     }
     if (!Number.isInteger(input.rollupRetentionDays) || input.rollupRetentionDays < 1 || input.rollupRetentionDays > 3650) {
-      toast.error("Rollup retention must be between 1 and 3650 days");
+      toast.error(t().rollupRetentionRange);
       return "failed";
     }
     if (!Number.isInteger(input.sensitiveRetentionHours) || input.sensitiveRetentionHours < 1 || input.sensitiveRetentionHours > 8760) {
-      toast.error("Sensitive retention must be between 1 and 8760 hours");
+      toast.error(t().sensitiveRetentionRange);
       return "failed";
     }
     deps.setLoading(true);
@@ -107,14 +109,14 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       if (
         !(await reconcile(
           () => Promise.all([deps.refreshBases(), deps.refreshWorkspace()]).then(() => undefined),
-          "Pulse settings were saved, but the workspace could not be refreshed.",
+          t().settingsSavedRefreshFailed,
         ))
       )
         return "persisted";
-      toast.success("Pulse settings saved");
+      toast.success(t().settingsSaved);
       return "persisted";
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update Pulse settings");
+      toast.error(error instanceof Error ? error.message : t().settingsUpdateFailed);
       return "failed";
     } finally {
       deps.setLoading(false);
@@ -124,8 +126,8 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   const clearData = async (base: PulseBase) => {
     if (!requireWritable()) return;
     const confirmed = await prompts.confirm(
-      `Clear all metrics, events, states, observed resources, and scrape history from "${base.name}"? Sources, API keys, dashboards, saved queries, access, and settings will be kept.`,
-      { title: "Clear Pulse data", variant: "danger", confirmText: "Clear data" },
+      t().clearDataConfirm({ name: base.name }),
+      { title: t().clearPulseData, variant: "danger", confirmText: t().clearData },
     );
     if (disposed || !confirmed || !requireWritable()) return;
 
@@ -134,10 +136,10 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       await clearMutation.mutate(base.id);
       if (disposed) return;
       if (clearMutation.error()) throw clearMutation.error();
-      if (!(await reconcile(deps.refreshWorkspace, "Pulse data clearing started, but the workspace could not be refreshed."))) return;
-      toast.success("Pulse data clear started");
+      if (!(await reconcile(deps.refreshWorkspace, t().clearDataStartedRefreshFailed))) return;
+      toast.success(t().clearDataStarted);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not clear Pulse data");
+      toast.error(error instanceof Error ? error.message : t().clearDataFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -146,8 +148,8 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   const deleteBase = async (base: PulseBase) => {
     if (!requireWritable()) return false;
     const confirmed = await prompts.confirm(
-      `Delete "${base.name}" and all Pulse data in this base? This cannot be undone. Large bases are removed in the background.`,
-      { title: "Delete Pulse base", variant: "danger", confirmText: "Delete" },
+      t().deleteBaseConfirm({ name: base.name }),
+      { title: t().deletePulseBase, variant: "danger", confirmText: t().delete },
     );
     if (disposed || !confirmed || !requireWritable()) return false;
 
@@ -156,14 +158,14 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       await deleteMutation.mutate(base.id);
       if (disposed) return false;
       if (deleteMutation.error()) throw deleteMutation.error();
-      if (!(await reconcile(deps.refreshBases, "Pulse base deletion started, but the base list could not be refreshed."))) return false;
+      if (!(await reconcile(deps.refreshBases, t().deleteBaseStartedRefreshFailed))) return false;
       const nextBase = deps.bases().find((item) => item.id !== base.id) ?? null;
       deps.navigateToBase(nextBase?.id ?? "");
 
-      toast.success("Pulse base deletion started");
+      toast.success(t().deleteBaseStarted);
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not delete Pulse base");
+      toast.error(error instanceof Error ? error.message : t().deleteBaseFailed);
       return false;
     } finally {
       deps.setLoading(false);
@@ -185,7 +187,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
         deleteBase: () => deleteBase(base),
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open Pulse settings");
+      toast.error(error instanceof Error ? error.message : t().openSettingsFailed);
     } finally {
       deps.setLoading(false);
       deps.setSettingsDialogOpen(false);

@@ -1,11 +1,14 @@
-import { ButtonLink, Tooltip } from "@k2b/ui";
+import { ButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { FormatSpec } from "../../../contracts";
 import { barcodeSvgForCell, barcodeSvgForDisplay, barcodeUrl, barcodeValueText } from "./BarcodeRendering";
+import { tableMessages } from "./messages";
 
 type BarcodeFormat = Extract<FormatSpec, { kind: "barcode" }>;
 
 export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; size?: "table" | "detail"; showOpenAction?: boolean }) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   const svg = createMemo(() => barcodeSvgForCell(props.value, props.format));
   const sizedSvg = createMemo(() => {
     const raw = svg();
@@ -25,7 +28,7 @@ export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; s
   const openButton = () => (
     <Show when={props.showOpenAction && sizedSvg() && openUrl()}>
       {(url) => (
-        <Tooltip.Anchor content="Open URL" disabled={detail()}>
+        <Tooltip.Anchor content={t().openUrl} disabled={detail()}>
           <ButtonLink
             href={url()}
             target="_blank"
@@ -33,12 +36,12 @@ export function BarcodeDisplay(props: { value: unknown; format: BarcodeFormat; s
             variant={detail() ? "secondary" : "ghost"}
             size="sm"
             class={detail() ? "w-fit" : "text-dimmed hover:text-primary"}
-            aria-label="Open URL"
+            aria-label={t().openUrl}
             onClick={(event) => event.stopPropagation()}
           >
             <i class="ti ti-external-link" />
             <Show when={detail()}>
-              <span>Open</span>
+              <span>{t().openUrl}</span>
             </Show>
           </ButtonLink>
         </Tooltip.Anchor>

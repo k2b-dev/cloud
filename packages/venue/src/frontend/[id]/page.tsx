@@ -1,11 +1,12 @@
 import type { CalendarView } from "@k2b/ui";
 import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { serviceAccountCredentials } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { venueService } from "../../service";
+import { venueMessages } from "../../messages";
 import VenueWorkspace from "../_components/VenueWorkspace.island";
 import { venueDashboardRouteScope } from "../dashboard-query";
 
@@ -40,6 +41,7 @@ const resolveView = (venueId: string, pathView: string | undefined, sectionId: s
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = venueMessages.resolve([getLocale(c)]);
   const id = c.req.param("id");
   if (!id) return c.redirect("/app/venue");
   const url = new URL(c.req.raw.url);
@@ -48,8 +50,8 @@ export default ssr<AuthContext>(async (c) => {
 
   if (!venue) {
     return () => (
-      <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Venues", href: "/app/venue" }, { title: "Not found" }]} fullWidth>
-        <div class="paper m-4 p-6 text-sm text-dimmed">Venue not found or not accessible.</div>
+      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/venue" }, { title: t.notFound }]} fullWidth>
+        <div class="paper m-4 p-6 text-sm text-dimmed">{t.venueNotFound}</div>
       </Layout>
     );
   }
@@ -105,7 +107,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout
       c={c}
-      title={[{ title: "Start", href: "/" }, { title: "Venues", href: "/app/venue" }, { title: venue.name }]}
+      title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/venue" }, { title: venue.name }]}
       fullWidth
       fullPage
     >

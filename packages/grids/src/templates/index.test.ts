@@ -26,7 +26,7 @@ import { validateLauncherConfig } from "../service/workflow-launchers";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { CreateGridsWorkflowSchema, scannerLauncherInputSources } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
-import { templates } from ".";
+import { getTemplates, templates } from ".";
 import type { GridTemplate, TemplateDateExpression, TemplateField, TemplateRef } from "./types";
 import { field, formula } from "./types";
 
@@ -305,6 +305,48 @@ const templateResolverContext = (template: GridTemplate, currentTableKey: string
 };
 
 describe("built-in grid templates", () => {
+  test("localizes templates with BCP-47 fallback while preserving stable structure", () => {
+    const english = getTemplates("en");
+    const german = getTemplates("de");
+
+    expect(english).toEqual(templates);
+    expect(getTemplates("fr")).toEqual(english);
+    expect(getTemplates("de-CH")).toEqual(german);
+    expect(german.map((template) => template.name)).toEqual(["Buchhandlung", "Private Finanzen", "Inventar"]);
+
+    const stableShape = (template: GridTemplate) => ({
+      id: template.id,
+      icon: template.icon,
+      tables: template.tables.map((table) => ({
+        key: table.key,
+        fields: table.fields.map((field) => ({
+          key: field.key,
+          type: field.type,
+          icon: field.icon,
+          optionIds: ((field.config as { options?: Array<{ id: string }> } | undefined)?.options ?? []).map((option) => option.id),
+        })),
+      })),
+      records: (template.records ?? []).map((record) => ({ key: record.key, table: record.table })),
+      views: (template.views ?? []).map((view) => ({ key: view.key, table: view.table })),
+      forms: (template.forms ?? []).map((form) => ({ key: form.key, table: form.table })),
+      customApps: (template.customApps ?? []).map((app) => app.key),
+      documentTemplates: (template.documentTemplates ?? []).map((document) => ({
+        key: document.key,
+        table: document.table,
+        starterId: document.starterId,
+      })),
+      emailTemplates: (template.emailTemplates ?? []).map((email) => email.key),
+      workflows: (template.workflows ?? []).map((workflow) => workflow.key),
+      launchers: (template.workflowLaunchers ?? []).map((launcher) => ({
+        key: launcher.key,
+        workflow: launcher.workflow,
+        kind: launcher.config.kind,
+      })),
+    });
+
+    for (const [index, template] of english.entries()) expect(stableShape(german[index]!)).toEqual(stableShape(template));
+  });
+
   test("template ids are unique", () => {
     assertUnique(
       templates.map((template) => template.id),
@@ -872,7 +914,7 @@ describe("built-in grid templates", () => {
   });
 
   test("template resources pass the same write schemas used during creation", async () => {
-    for (const template of templates) {
+    for (const template of [...templates, ...getTemplates("de")]) {
       const ctx = templateTestContext(template);
 
       expect(
@@ -1196,7 +1238,7 @@ describe("built-in grid templates", () => {
         ).toBe(true);
       }
     }
-  });
+  }, 20_000);
 
   test("template fields use polished labels and descriptions", () => {
     for (const template of templates) {

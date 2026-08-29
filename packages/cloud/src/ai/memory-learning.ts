@@ -4,6 +4,7 @@ import { z } from "zod";
 import { CloudResourceRefSchema } from "../contracts/capabilities";
 import { coreSettings } from "../services";
 import { logger } from "../services/logging";
+import { normalizeLocale } from "../shared/locale";
 import { parseAiAttachmentMarkers } from "./attachments";
 import { type AiMemoryLearningChange, aiMemoryLearningRuns } from "./memory-learning-runs";
 import {
@@ -55,6 +56,7 @@ type Candidate = {
   userId: string;
   completedAsOf: string;
   failCount: number;
+  locale?: string | null;
 };
 
 type TurnEvidence = {
@@ -74,6 +76,7 @@ type MemoryLearningDeps = {
   listWorkflowPatterns?: (limit: number) => Promise<AiMemoryWorkflowPattern[]>;
   monthlyTokenBudget?: number;
   readMonthlyAccountedTokens?: (userId: string) => Promise<number>;
+  readDefaultLocale?: () => Promise<string>;
 };
 
 export type AiMemoryLearningRunSummary = {
@@ -137,6 +140,7 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
         conversation.created_by_user_id AS user_id,
         turn.completed_at,
         turn.memory_learn_fail_count,
+        turn.run_config->>'locale' AS locale,
         row_number() OVER (
           PARTITION BY conversation.created_by_user_id
           ORDER BY turn.completed_at ASC, turn.id ASC
@@ -162,7 +166,8 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
       turn_id AS "turnId",
       user_id AS "userId",
       completed_at::text AS "completedAsOf",
-      memory_learn_fail_count AS "failCount"
+      memory_learn_fail_count AS "failCount",
+      locale
     FROM eligible
     WHERE user_rank <= 5
     ORDER BY completed_at ASC, turn_id ASC
@@ -424,11 +429,14 @@ export const learnAiMemoriesFromPrivateChats = async (
     input.deps?.readAdditionalInstructions ??
     (() => coreSettings.get<string>(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY).then((value) => value ?? ""))
   )();
-  const systemPrompt = buildAiTaskPrompt({
-    baseInstructions: MEMORY_LEARNING_PROMPT,
-    additionalInstructions,
-    outputContract: MEMORY_LEARNING_OUTPUT_CONTRACT,
-  });
+  let defaultLocale: Promise<string> | undefined;
+  const resolveLearningLocale = (locale?: string | null): Promise<string> => {
+    if (locale) return Promise.resolve(normalizeLocale(locale));
+    defaultLocale ??= (input.deps?.readDefaultLocale ?? (() => coreSettings.get<string>("app.locale")))().then(
+      normalizeLocale,
+    );
+    return defaultLocale;
+  };
 
   let processedCandidates = 0;
   for (const candidate of candidates) {
@@ -449,6 +457,12 @@ export const learnAiMemoriesFromPrivateChats = async (
       }
       const selected = await aiMemories.selectHot(candidate.userId, evidence.userText);
       const taskInput = learningInput(evidence, selected.memories);
+      const locale = await resolveLearningLocale(candidate.locale);
+      const systemPrompt = buildAiTaskPrompt({
+        baseInstructions: `${MEMORY_LEARNING_PROMPT}\nWrite new or changed memory content in the language identified by locale ${locale}.`,
+        additionalInstructions,
+        outputContract: MEMORY_LEARNING_OUTPUT_CONTRACT,
+      });
       const reservedTokens = estimatedTokens(systemPrompt, taskInput);
       if ((await readMonthlyUsage(candidate.userId)) + reservedTokens > monthlyTokenBudget) continue;
       runId = await aiMemoryLearningRuns.start({
@@ -517,11 +531,6 @@ export const learnAiMemoriesFromPrivateChats = async (
     await input.heartbeat?.();
   }
 
-  const workflowPrompt = buildAiTaskPrompt({
-    baseInstructions: WORKFLOW_PATTERN_PROMPT,
-    additionalInstructions,
-    outputContract: WORKFLOW_PATTERN_OUTPUT_CONTRACT,
-  });
   const patterns = await (input.deps?.listWorkflowPatterns ?? listAiPendingWorkflowPatterns)(WORKFLOW_PATTERN_LIMIT);
   for (const pattern of patterns) {
     if (input.signal?.aborted) break;
@@ -534,6 +543,12 @@ export const learnAiMemoriesFromPrivateChats = async (
         await markAiWorkflowPatternReviewed(pattern);
         continue;
       }
+      const locale = await resolveLearningLocale(context.source.candidate.locale);
+      const workflowPrompt = buildAiTaskPrompt({
+        baseInstructions: `${WORKFLOW_PATTERN_PROMPT}\nWrite new or changed workflow content in the language identified by locale ${locale}.`,
+        additionalInstructions,
+        outputContract: WORKFLOW_PATTERN_OUTPUT_CONTRACT,
+      });
       const reservedTokens = estimatedTokens(workflowPrompt, context.input);
       if ((await readMonthlyUsage(pattern.userId)) + reservedTokens > monthlyTokenBudget) continue;
       runId = await aiMemoryLearningRuns.start({

@@ -1,11 +1,13 @@
 import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { gridsWorkspace, isGridsStreamCursor } from "../../../lib/workspace-events";
+import { workflowMessages } from "./messages";
 import type { PublicWorkflowRunEvent } from "./workflow-run-public-event";
 
 type ProviderError = { code: string; message: string };
 
 type WorkflowRunEventsProviderOptions = {
   workflowId: string;
+  locale?: string;
   onReady?: () => void;
   onEvent?: (event: PublicWorkflowRunEvent, cursor: string | null) => void;
   onError?: (error: ProviderError) => void;
@@ -42,6 +44,7 @@ const parseError = (payload: unknown, fallback: ProviderError): ProviderError =>
 };
 
 export const createWorkflowRunEventsProvider = (options: WorkflowRunEventsProviderOptions) => {
+  const t = workflowMessages.resolve([options.locale ?? "en"]).t;
   let revoked = false;
 
   return createLiveWebSocket<ProviderMessage>({
@@ -64,7 +67,7 @@ export const createWorkflowRunEventsProvider = (options: WorkflowRunEventsProvid
         return;
       }
       if (message.type === gridsWorkspace.wsType.workflowRunsRevoked) {
-        const error = parseError(message.payload, { code: "access_denied", message: "Workflow access was revoked." });
+        const error = parseError(message.payload, { code: "access_denied", message: t.workflowAccessRevoked });
         revoked = true;
         try {
           options.onRevoked?.(error);
@@ -74,7 +77,7 @@ export const createWorkflowRunEventsProvider = (options: WorkflowRunEventsProvid
         return;
       }
       if (message.type === gridsWorkspace.wsType.workflowRunsError) {
-        const error = parseError(message.payload, { code: "stream_failed", message: "Workflow updates failed." });
+        const error = parseError(message.payload, { code: "stream_failed", message: t.workflowUpdatesFailed });
         if (isTerminalWorkflowRunLiveErrorCode(error.code)) controls.terminate(error);
         else options.onError?.(error);
         return;

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Checkbox, DataTable, type DataTableColumn, IconButton, Placeholder, Tooltip } from "@k2b/ui";
+import { Checkbox, DataTable, type DataTableColumn, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { AggregationSpec, ColumnSpec } from "../../../contracts";
@@ -7,21 +7,7 @@ import { effectiveDisplayField } from "../../../lookup-display";
 import { fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
 import { FieldValue } from "./FieldValue";
 import { fieldDisplayFormat, formatFieldValueText } from "./field-value-format";
-
-/** Friendly label for an aggregation kind — used as the fallback when
- *  the user didn't set a custom label on the aggregation row. */
-const AGG_LABELS: Record<string, string> = {
-  count: "values",
-  countEmpty: "empty",
-  countUnique: "unique",
-  sum: "Σ",
-  avg: "avg",
-  min: "min",
-  max: "max",
-  median: "median",
-  earliest: "earliest",
-  latest: "latest",
-};
+import { tableMessages } from "./messages";
 
 /**
  * DatabaseTable — minimal, presentational records table.
@@ -113,6 +99,8 @@ const SelectionCheckbox = (props: { checked: boolean; indeterminate?: boolean; l
 };
 
 export default function DatabaseTable(props: Props) {
+  const locale = useLocale();
+  const t = () => tableMessages.resolve([locale()]).t;
   /** Fields that actually render. When the caller passes `viewColumns`,
    *  it dictates BOTH visibility and order. Otherwise we fall back to
    *  the table-level default: every non-deleted, non-`hideInTable`
@@ -211,7 +199,7 @@ export default function DatabaseTable(props: Props) {
             <SelectionCheckbox
               checked={allVisibleSelected()}
               indeterminate={someVisibleSelected()}
-              label={allVisibleSelected() ? "Clear visible records" : "Select visible records"}
+              label={allVisibleSelected() ? t().clearVisible : t().selectVisible}
               onChange={props.bulkSelection.onToggleVisible}
             />
           ),
@@ -228,7 +216,8 @@ export default function DatabaseTable(props: Props) {
       return {
         id: field.id,
         header: headerLabel(field, computed),
-        subtitle: props.showColumnSubtitles === false ? undefined : computed ? "computed" : fieldTypeLabel(field.type).toLowerCase(),
+        subtitle:
+          props.showColumnSubtitles === false ? undefined : computed ? t().computed : fieldTypeLabel(field.type, locale()).toLowerCase(),
         value: (record) => record.data[field.id],
         headerClass: computed ? "bg-[var(--ui-selected)]" : undefined,
       };
@@ -268,8 +257,21 @@ export default function DatabaseTable(props: Props) {
                   fieldsByTable: props.fieldsByTable,
                   dateConfig: props.dateConfig,
                   format: displayFormat(field),
+                  locale: locale(),
                 });
-          const fallbackLabel = AGG_LABELS[spec.agg] ?? spec.agg;
+          const fallbackLabel =
+            {
+              count: t().values,
+              countEmpty: t().empty,
+              countUnique: t().unique,
+              sum: t().sum,
+              avg: t().average,
+              min: t().minimum,
+              max: t().maximum,
+              median: t().median,
+              earliest: t().earliest,
+              latest: t().latest,
+            }[spec.agg] ?? spec.agg;
           const label = spec.label?.trim() || fallbackLabel;
           return (
             <Show when={value() !== undefined && value() !== null}>
@@ -286,9 +288,9 @@ export default function DatabaseTable(props: Props) {
   };
 
   return (
-    <Show when={visibleFields().length > 0} fallback={<Placeholder surface="paper" description={<>No visible fields.</>} />}>
+    <Show when={visibleFields().length > 0} fallback={<Placeholder surface="paper" description={<>{t().noVisibleFields}</>} />}>
       <DataTable
-        ariaLabel="Records"
+        ariaLabel={t().records}
         rows={props.result.items}
         columns={columns()}
         class={shellClass()}
@@ -301,7 +303,7 @@ export default function DatabaseTable(props: Props) {
             ? "font-medium outline outline-1 -outline-offset-1 outline-[var(--ui-border-strong)]"
             : undefined
         }
-        empty="No records"
+        empty={t().noRecords}
         hasMore={props.hasMore}
         loadingMore={props.loadingMore}
         onLoadMore={props.onLoadMore}
@@ -312,7 +314,7 @@ export default function DatabaseTable(props: Props) {
             return (
               <SelectionCheckbox
                 checked={props.bulkSelection.selectedIds.has(row.id)}
-                label={`Select record ${row.id}`}
+                label={t().selectRecord({ id: row.id })}
                 onChange={(selected) => props.bulkSelection?.onToggleRecord(row.id, selected)}
               />
             );
@@ -338,9 +340,9 @@ export default function DatabaseTable(props: Props) {
             <div class="flex min-w-0 items-start gap-2">
               <div class="min-w-0 flex-1">{renderAdminHeader(field, subtitle, computed)}</div>
               <div class="flex shrink-0 items-center gap-0">
-                <Tooltip.Anchor content="Move column left">
+                <Tooltip.Anchor content={t().moveColumnLeft}>
                   <IconButton
-                    label={`Move ${field.name} left`}
+                    label={t().moveLeft({ name: field.name })}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {
@@ -353,9 +355,9 @@ export default function DatabaseTable(props: Props) {
                     <i class="ti ti-chevron-left text-xs" />
                   </IconButton>
                 </Tooltip.Anchor>
-                <Tooltip.Anchor content="Move column right">
+                <Tooltip.Anchor content={t().moveColumnRight}>
                   <IconButton
-                    label={`Move ${field.name} right`}
+                    label={t().moveRight({ name: field.name })}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {
@@ -368,9 +370,9 @@ export default function DatabaseTable(props: Props) {
                     <i class="ti ti-chevron-right text-xs" />
                   </IconButton>
                 </Tooltip.Anchor>
-                <Tooltip.Anchor content={isViewColumnEdit ? "Column settings" : "Field settings"}>
+                <Tooltip.Anchor content={isViewColumnEdit ? t().columnSettings : t().fieldSettings}>
                   <IconButton
-                    label={`${isViewColumnEdit ? "Column" : "Field"} settings for ${field.name}`}
+                    label={t().settingsFor({ kind: isViewColumnEdit ? t().columnSettings : t().fieldSettings, name: field.name })}
                     size="xs"
                     class="app-accent-text h-6 w-6 shrink-0 hover:opacity-75"
                     onClick={(event) => {

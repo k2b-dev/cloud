@@ -34,6 +34,12 @@ import {
 } from "./capability-contracts";
 import type { ShiftAssignment, Venue } from "./contracts";
 import { type UpcomingSlotSummary, venueService } from "./service";
+import { venueMessages } from "./messages";
+
+const messagesFor = (context: CapabilityExecutionContext) => venueMessages.resolve(context.locale ? [context.locale] : []).t;
+
+const permissionLabel = (permission: Venue["permission"], t: ReturnType<typeof messagesFor>): string =>
+  permission === "admin" ? t.admin : permission === "write" ? t.staff : permission === "read" ? t.read : t.public;
 
 const venueHref = (venueId: string): string => `/app/venue/${venueId}`;
 const publicVenueHref = (venueId: string): string => `/app/venue/public/${venueId}`;
@@ -95,6 +101,7 @@ const requireVenue = async (venueId: string, scope: VenueAccessScope, permission
 };
 
 const runVenueSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const scope = scopeFor(context);
   if (!scope.ok) return ok({ data: [] });
   const [accessible, publicVenues] = await Promise.all([
@@ -117,8 +124,8 @@ const runVenueSearch = async (input: UniversalSearchInput, context: CapabilityEx
       icon: venue.icon.slice(0, 120),
       priority: 7,
       metadata: [
-        { label: "Timezone", value: venue.timezone.slice(0, 1_000) },
-        { label: "Access", value: venue.permission ?? "Public" },
+        { label: t.timezone, value: venue.timezone.slice(0, 1_000) },
+        { label: t.capabilityAccess, value: permissionLabel(venue.permission, t) },
       ],
       links: [{ rel: "open", href: openVenueHref(venue) }],
     }));
@@ -152,24 +159,26 @@ const runVenueList = async (input: z.infer<typeof VenueListInputSchema>, context
 };
 
 const runVenueRead = async (input: z.infer<typeof VenueReadInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.id, scope.data, "read", true);
   if (!venue.ok) return venue;
   return ok({
     data: mapVenue(venue.data),
-    summary: `Read Venue “${venue.data.name}”.`,
+    summary: t.capabilityReadVenue({ name: venue.data.name }),
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: openVenueHref(venue.data) }],
   });
 };
 
 const runVenueStatus = async (input: z.infer<typeof VenueTargetInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.venueId, scope.data, "read", true);
   if (!venue.ok) return venue;
-  const status = await venueService.status(venue.data, new Date(), false);
+  const status = await venueService.status(venue.data, new Date(), false, context.locale);
   return ok({
     data: {
       venueId: venue.data.publicId,
@@ -187,7 +196,7 @@ const runVenueStatus = async (input: z.infer<typeof VenueTargetInputSchema>, con
         endsAt: opening.endsAt,
       })),
     },
-    summary: `“${venue.data.name}” is ${status.statusLabel}.`,
+    summary: t.capabilityVenueStatus({ name: venue.data.name, status: status.statusLabel }),
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "status" as const, href: openVenueHref(venue.data) }],
   });
@@ -248,6 +257,7 @@ const mapPersonalAssignment = (assignment: PersonalAssignment) => ({
 });
 
 const runAssignmentRead = async (input: z.infer<typeof AssignmentReadInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   if (!context.user) return fail(err.forbidden("Venue assignments require a user-backed actor"));
   const assignmentId = await venueService.publicResources.resolve("assignments", input.id);
   if (!assignmentId) return fail(err.notFound("Shift assignment"));
@@ -260,7 +270,7 @@ const runAssignmentRead = async (input: z.infer<typeof AssignmentReadInputSchema
   if (!venue.ok) return venue;
   return ok({
     data: mapPersonalAssignment(publicAssignment),
-    summary: `Read your shift assignment at “${publicAssignment.venueName}”.`,
+    summary: t.capabilityReadAssignment({ name: publicAssignment.venueName }),
     refs: [{ type: "venue.assignment", id: publicAssignment.id }],
     links: [{ rel: "open" as const, href: myShiftsHref(publicAssignment.venueId) }],
   });
@@ -309,6 +319,7 @@ const runAssignmentMine = async (input: z.infer<typeof AssignmentMineInputSchema
 };
 
 const runFeedbackSummary = async (input: z.infer<typeof VenueTargetInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.venueId, scope.data, "read");
@@ -323,8 +334,8 @@ const runFeedbackSummary = async (input: z.infer<typeof VenueTargetInputSchema>,
     },
     summary:
       feedback.summary.count === 0
-        ? `Read feedback for “${venue.data.name}”: no ratings in the last 30 days.`
-        : `Read feedback for “${venue.data.name}”: ${feedback.summary.averageRating} from ${feedback.summary.count} ${feedback.summary.count === 1 ? "rating" : "ratings"}.`,
+        ? t.capabilityFeedbackEmpty({ name: venue.data.name })
+        : t.capabilityFeedback({ name: venue.data.name, average: feedback.summary.averageRating, count: feedback.summary.count }),
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: `${venueHref(venue.data.publicId)}/feedback` }],
   });
@@ -353,6 +364,7 @@ const mapCreatedAssignment = (assignment: ShiftAssignment, venue: Venue) => ({
 });
 
 const runShiftRead = async (input: z.infer<typeof ShiftReadInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.venueId, scope.data, "read");
@@ -372,7 +384,7 @@ const runShiftRead = async (input: z.infer<typeof ShiftReadInputSchema>, context
   return shift
     ? ok({
         data: mapShift(shift),
-        summary: `Read shift “${shift.template.title}” at “${venue.data.name}” on ${shift.date}.`,
+        summary: t.capabilityReadShift({ title: shift.template.title, venue: venue.data.name, date: shift.date }),
         refs: [{ type: "venue.venue", id: venue.data.publicId }],
         links: [{ rel: "open" as const, href: shiftHref(venue.data.publicId) }],
       })
@@ -392,6 +404,7 @@ const validateFreeSignupWindow = (input: z.infer<typeof AssignmentFreeSignupInpu
 };
 
 const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const actor = await requireUserAndVenue(input.venueId, context, "write");
   if (!actor.ok) return actor;
   if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
@@ -404,7 +417,7 @@ const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSc
   const assignment = (await venueService.publicResources.projectAssignments([result.data]))[0]!;
   return ok({
     data: mapCreatedAssignment(assignment, actor.data.venue),
-    summary: `Signed up for “${template.title}” at ${actor.data.venue.name}.`,
+    summary: t.capabilitySignedUp({ title: template.title, venue: actor.data.venue.name }),
     refs: [
       { type: "venue.venue", id: actor.data.venue.publicId },
       { type: "venue.assignment", id: assignment.id },
@@ -414,6 +427,7 @@ const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSc
 };
 
 const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignupInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const actor = await requireUserAndVenue(input.venueId, context, "write");
   if (!actor.ok) return actor;
   if (actor.data.venue.signupMode === "templates") return fail(err.badInput("Free shift signup is disabled for this Venue"));
@@ -424,7 +438,7 @@ const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignu
   const assignment = (await venueService.publicResources.projectAssignments([result.data]))[0]!;
   return ok({
     data: mapCreatedAssignment(assignment, actor.data.venue),
-    summary: `Signed up for a shift at ${actor.data.venue.name}.`,
+    summary: t.capabilityFreeSignedUp({ venue: actor.data.venue.name }),
     refs: [
       { type: "venue.venue", id: actor.data.venue.publicId },
       { type: "venue.assignment", id: assignment.id },
@@ -434,6 +448,7 @@ const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignu
 };
 
 const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSchema>, context: CapabilityExecutionContext) => {
+  const t = messagesFor(context);
   const actor = await requireUserAndVenue(input.venueId, context, "read");
   if (!actor.ok) return actor;
   const assignmentId = await venueService.publicResources.resolveOwned("assignments", actor.data.venue.id, input.assignmentId);
@@ -442,7 +457,7 @@ const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSc
   if (!result.ok) return result;
   return ok({
     data: { assignmentId: input.assignmentId, cancelled: true as const },
-    summary: `Cancelled your shift at ${actor.data.venue.name}.`,
+    summary: t.capabilityCancelled({ venue: actor.data.venue.name }),
     refs: [{ type: "venue.venue", id: actor.data.venue.publicId }],
     links: [{ rel: "open" as const, href: myShiftsHref(actor.data.venue.publicId) }],
   });
@@ -556,6 +571,7 @@ export const venueCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
+        const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "write");
         if (!actor.ok) return actor;
         if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
@@ -575,12 +591,12 @@ export const venueCapabilities = defineCapabilities({
         if (shift.currentUserAssignmentId) return fail(err.badInput("You are already signed up for this shift"));
         if (shift.full) return fail(err.badInput("This shift is already full"));
         return ok({
-          message: `Sign up for ${shift.template.title} at ${actor.data.venue.name}.`,
+          message: t.capabilitySignupReview({ title: shift.template.title, venue: actor.data.venue.name }),
           details: [
-            { label: "Venue", value: actor.data.venue.name },
-            { label: "Shift", value: shift.template.title },
-            { label: "Starts", value: shift.startsAt, format: "date-time" },
-            { label: "Ends", value: shift.endsAt, format: "date-time" },
+            { label: t.venueFallbackTitle, value: actor.data.venue.name },
+            { label: t.shift, value: shift.template.title },
+            { label: t.starts, value: shift.startsAt, format: "date-time" },
+            { label: t.ends, value: shift.endsAt, format: "date-time" },
           ],
           links: [{ rel: "open" as const, href: shiftHref(actor.data.venue.publicId) }],
         });
@@ -596,19 +612,20 @@ export const venueCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
+        const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "write");
         if (!actor.ok) return actor;
         if (actor.data.venue.signupMode === "templates") return fail(err.badInput("Free shift signup is disabled for this Venue"));
         const window = validateFreeSignupWindow(input);
         if (!window.ok) return window;
         return ok({
-          message: `Create a free shift assignment at ${actor.data.venue.name}.`,
+          message: t.capabilityFreeReview({ venue: actor.data.venue.name }),
           details: [
-            { label: "Venue", value: actor.data.venue.name },
-            { label: "Timezone", value: actor.data.venue.timezone },
-            { label: "Starts", value: window.data.start.toISOString(), format: "date-time" },
-            { label: "Ends", value: window.data.end.toISOString(), format: "date-time" },
-            ...(input.note ? [{ label: "Private note", value: input.note, display: "block" as const }] : []),
+            { label: t.venueFallbackTitle, value: actor.data.venue.name },
+            { label: t.timezone, value: actor.data.venue.timezone },
+            { label: t.starts, value: window.data.start.toISOString(), format: "date-time" },
+            { label: t.ends, value: window.data.end.toISOString(), format: "date-time" },
+            ...(input.note ? [{ label: t.privateNote, value: input.note, display: "block" as const }] : []),
           ],
           links: [{ rel: "open" as const, href: myShiftsHref(actor.data.venue.publicId) }],
         });
@@ -624,6 +641,7 @@ export const venueCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
+        const t = messagesFor(context);
         const actor = await requireUserAndVenue(input.venueId, context, "read");
         if (!actor.ok) return actor;
         const assignmentId = await venueService.publicResources.resolveOwned("assignments", actor.data.venue.id, input.assignmentId);
@@ -631,11 +649,11 @@ export const venueCapabilities = defineCapabilities({
         const assignment = await venueService.assignments.getPersonal(actor.data.venue.id, assignmentId, actor.data.user.id);
         if (!assignment) return fail(err.notFound("Shift assignment"));
         return ok({
-          message: `Cancel your shift assignment at ${actor.data.venue.name}.`,
+          message: t.capabilityCancelReview({ venue: actor.data.venue.name }),
           details: [
-            { label: "Venue", value: actor.data.venue.name },
-            { label: "Starts", value: assignment.startsAt, format: "date-time" },
-            { label: "Ends", value: assignment.endsAt, format: "date-time" },
+            { label: t.venueFallbackTitle, value: actor.data.venue.name },
+            { label: t.starts, value: assignment.startsAt, format: "date-time" },
+            { label: t.ends, value: assignment.endsAt, format: "date-time" },
           ],
           links: [{ rel: "open" as const, href: myShiftsHref(actor.data.venue.publicId) }],
         });

@@ -1,7 +1,19 @@
-import { Button, DateRangePicker, ImageInput, MarkdownView, NoticeCard, Placeholder, prompts, SegmentedControl, TextInput } from "@k2b/ui";
+import {
+  Button,
+  DateRangePicker,
+  ImageInput,
+  MarkdownView,
+  NoticeCard,
+  Placeholder,
+  prompts,
+  SegmentedControl,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { PublicSection, PublicSectionInput } from "../../../contracts";
+import { venueMessages, type VenueMessages } from "../../../messages";
 import { DialogFrame } from "./schedule";
 
 type MenuItemDraft = {
@@ -89,19 +101,20 @@ const buildPublicSectionContent = (
   text: string,
   items: MenuItemDraft[],
   links: LinkDraft[],
+  t: VenueMessages,
 ): { content: PublicSectionInput["content"]; error: null } | { content: null; error: string } => {
   if (kind === "menu") {
     const invalidRange = items.find((item) => item.availableFrom && item.availableUntil && item.availableFrom > item.availableUntil);
     if (invalidRange) {
-      return { content: null, error: `${invalidRange.name.trim() || "Menu item"}: availability ends before it starts.` };
+      return { content: null, error: t.menuAvailabilityInvalid({ name: invalidRange.name.trim() || t.item }) };
     }
     const content = menuContent(items);
-    return content.items.length > 0 ? { content, error: null } : { content: null, error: "Add at least one menu item." };
+    return content.items.length > 0 ? { content, error: null } : { content: null, error: t.addMenuItemRequired };
   }
 
   if (kind === "links") {
     const content = linksContent(links);
-    return content.links.length > 0 ? { content, error: null } : { content: null, error: "Add at least one link." };
+    return content.links.length > 0 ? { content, error: null } : { content: null, error: t.addLinkRequired };
   }
 
   return { content: { markdown: text, text }, error: null };
@@ -114,6 +127,8 @@ export function PublicSectionDialog(props: {
   title?: string;
   submitLabel?: string;
 }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   let nextItemId = 1;
   const newItem = (): MenuItemDraft => ({
     id: String(nextItemId++),
@@ -159,13 +174,13 @@ export function PublicSectionDialog(props: {
 
   const submit = () => {
     if (!title().trim()) {
-      prompts.error("Title is required.");
+      prompts.error(t().titleRequired);
       return;
     }
 
-    const result = buildPublicSectionContent(kind(), contentText(), Array.from(items), Array.from(links));
+    const result = buildPublicSectionContent(kind(), contentText(), Array.from(items), Array.from(links), t());
     if (result.error || !result.content) {
-      prompts.error(result.error ?? "Section content is invalid.");
+      prompts.error(result.error ?? t().sectionInvalid);
       return;
     }
 
@@ -180,9 +195,9 @@ export function PublicSectionDialog(props: {
 
   return (
     <DialogFrame
-      title={props.title ?? "Add public section"}
+      title={props.title ?? t().addPublicSection}
       icon={sectionKindIcon(kind())}
-      submitLabel={props.submitLabel ?? "Add section"}
+      submitLabel={props.submitLabel ?? t().addSection}
       onCancel={() => props.close(null)}
       onSubmit={submit}
     >
@@ -192,10 +207,7 @@ export function PublicSectionDialog(props: {
           fallback={
             <div class="flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-2 text-sm text-secondary dark:bg-zinc-900">
               <i class={sectionKindIcon(kind())} />
-              <span>
-                {kind()[0]?.toUpperCase()}
-                {kind().slice(1)} section
-              </span>
+              <span>{t().sectionKind({ kind: kind()[0]?.toUpperCase() + kind().slice(1) })}</span>
             </div>
           }
         >
@@ -203,20 +215,14 @@ export function PublicSectionDialog(props: {
             value={kind}
             onValueChange={setKind}
             options={[
-              { value: "markdown", label: "Markdown", icon: "ti ti-markdown" },
-              { value: "menu", label: "Menu", icon: "ti ti-tools-kitchen-2" },
-              { value: "notice", label: "Notice", icon: "ti ti-speakerphone" },
-              { value: "links", label: "Links", icon: "ti ti-link" },
+              { value: "markdown", label: t().markdown, icon: "ti ti-markdown" },
+              { value: "menu", label: t().menu, icon: "ti ti-tools-kitchen-2" },
+              { value: "notice", label: t().notice, icon: "ti ti-speakerphone" },
+              { value: "links", label: t().links, icon: "ti ti-link" },
             ]}
           />
         </Show>
-        <TextInput
-          label="Title"
-          description="Shown as the section heading on the public page."
-          value={title}
-          onValueChange={setTitle}
-          required
-        />
+        <TextInput label={t().title} description={t().sectionTitleDescription} value={title} onValueChange={setTitle} required />
         <Show
           when={kind() === "menu"}
           fallback={
@@ -224,8 +230,8 @@ export function PublicSectionDialog(props: {
               when={kind() === "links"}
               fallback={
                 <TextInput
-                  label="Content"
-                  description="Text visitors see in this section."
+                  label={t().content}
+                  description={t().contentDescription}
                   value={contentText}
                   onValueChange={setContentText}
                   multiline
@@ -239,22 +245,22 @@ export function PublicSectionDialog(props: {
                   {(link, index) => (
                     <div class="paper p-3">
                       <div class="mb-3 flex items-center justify-between gap-2">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Link {index() + 1}</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().linkNumber({ count: index() + 1 })}</p>
                         <Button type="button" variant="secondary" size="xs" onClick={() => removeLink(link.id)}>
-                          <i class="ti ti-trash" /> Remove
+                          <i class="ti ti-trash" /> {t().remove}
                         </Button>
                       </div>
                       <div class="grid gap-3 sm:grid-cols-2">
                         <TextInput
-                          label="Label"
-                          description="Visible text for this link."
+                          label={t().label}
+                          description={t().linkLabelDescription}
                           value={() => link.label}
                           onValueChange={(value) => updateLink(link.id, { label: value })}
                           required
                         />
                         <TextInput
-                          label="URL"
-                          description="Destination opened when visitors click."
+                          label={t().url}
+                          description={t().linkUrlDescription}
                           value={() => link.href}
                           onValueChange={(value) => updateLink(link.id, { href: value })}
                           placeholder="https://example.com"
@@ -265,7 +271,7 @@ export function PublicSectionDialog(props: {
                   )}
                 </For>
                 <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={addLink}>
-                  <i class="ti ti-plus" /> Add link
+                  <i class="ti ti-plus" /> {t().addLink}
                 </Button>
               </div>
             </Show>
@@ -276,52 +282,52 @@ export function PublicSectionDialog(props: {
               {(item, index) => (
                 <div class="paper p-3">
                   <div class="mb-3 flex items-center justify-between gap-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">Item {index() + 1}</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().itemNumber({ count: index() + 1 })}</p>
                     <Button type="button" variant="secondary" size="xs" onClick={() => removeItem(item.id)}>
-                      <i class="ti ti-trash" /> Remove
+                      <i class="ti ti-trash" /> {t().remove}
                     </Button>
                   </div>
                   <div class="grid gap-3">
                     <ImageInput
-                      label="Image"
-                      description="Optional square image for this menu item."
+                      label={t().image}
+                      description={t().menuImageDescription}
                       value={() => item.image}
                       onValueChange={(value) => updateItem(item.id, { image: value })}
                       variant="small"
                     />
                     <div class="grid gap-3 sm:grid-cols-2">
                       <TextInput
-                        label="Name"
-                        description="Main label for this item."
+                        label={t().name}
+                        description={t().menuNameDescription}
                         value={() => item.name}
                         onValueChange={(value) => updateItem(item.id, { name: value })}
                         required
                       />
                       <TextInput
-                        label="Price"
-                        description="Optional visible price or price range."
+                        label={t().price}
+                        description={t().priceDescription}
                         value={() => item.price}
                         onValueChange={(value) => updateItem(item.id, { price: value })}
                       />
                     </div>
                     <TextInput
-                      label="Description"
-                      description="Short explanation shown below the name."
+                      label={t().description}
+                      description={t().menuDescription}
                       value={() => item.description}
                       onValueChange={(value) => updateItem(item.id, { description: value })}
                       multiline
                       lines={2}
                     />
                     <TextInput
-                      label="Allergens / info"
-                      description="Optional allergens or dietary notes."
+                      label={t().allergens}
+                      description={t().allergensDescription}
                       value={() => item.info}
                       onValueChange={(value) => updateItem(item.id, { info: value })}
-                      placeholder="Contains nuts"
+                      placeholder={t().containsNuts}
                     />
                     <DateRangePicker
-                      label="Availability"
-                      description="Optional. The item is public from the first through the last selected day in the venue timezone."
+                      label={t().availability}
+                      description={t().availabilityDescription}
                       value={() => ({ start: item.availableFrom, end: item.availableUntil })}
                       onValueChange={(value) => updateItem(item.id, { availableFrom: value.start, availableUntil: value.end })}
                       clearable
@@ -331,7 +337,7 @@ export function PublicSectionDialog(props: {
               )}
             </For>
             <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={addItem}>
-              <i class="ti ti-plus" /> Add menu item
+              <i class="ti ti-plus" /> {t().addMenuItem}
             </Button>
           </div>
         </Show>
@@ -341,6 +347,8 @@ export function PublicSectionDialog(props: {
 }
 
 export function PublicSectionPreview(props: { section: PublicSection }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const items = () => (Array.isArray(props.section.content.items) ? props.section.content.items : []);
   const links = () => (Array.isArray(props.section.content.links) ? props.section.content.links : []);
 
@@ -351,23 +359,23 @@ export function PublicSectionPreview(props: { section: PublicSection }) {
       </Show>
       <Show when={props.section.kind === "notice"}>
         <NoticeCard tone="warning" icon={false}>
-          {sectionText(props.section, "text") || sectionText(props.section, "markdown") || "No notice text yet."}
+          {sectionText(props.section, "text") || sectionText(props.section, "markdown") || t().noNoticeText}
         </NoticeCard>
       </Show>
       <Show when={props.section.kind === "links"}>
         <div class="grid gap-2">
           <For
             each={links()}
-            fallback={
-              <Placeholder align="left" class="px-0 py-2" description={<>{sectionText(props.section, "text") || "No links yet."}</>} />
-            }
+            fallback={<Placeholder align="left" class="px-0 py-2" description={<>{sectionText(props.section, "text") || t().noLinks}</>} />}
           >
             {(raw) => {
               const link = raw as Record<string, unknown>;
               return (
                 <a class="paper flex items-center gap-3 p-3 no-underline hover:paper-highlighted" href={String(link.href ?? "#")}>
                   <i class="ti ti-link text-dimmed" />
-                  <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{String(link.label ?? link.href ?? "Link")}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">
+                    {String(link.label ?? link.href ?? t().links)}
+                  </span>
                   <i class="ti ti-external-link text-dimmed" />
                 </a>
               );
@@ -377,7 +385,7 @@ export function PublicSectionPreview(props: { section: PublicSection }) {
       </Show>
       <Show when={props.section.kind === "menu"}>
         <div class="grid gap-2">
-          <For each={items()} fallback={<Placeholder align="left" class="px-0 py-2" description={<>No menu items yet.</>} />}>
+          <For each={items()} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noMenuItems}</>} />}>
             {(raw) => {
               const item = raw as Record<string, unknown>;
               const image = typeof item.image === "string" ? item.image : "";
@@ -388,7 +396,7 @@ export function PublicSectionPreview(props: { section: PublicSection }) {
                       <img src={image} alt="" class="h-14 w-14 shrink-0 rounded-lg object-cover" />
                     </Show>
                     <div class="min-w-0 flex-1">
-                      <p class="font-medium text-primary">{String(item.name ?? "Item")}</p>
+                      <p class="font-medium text-primary">{String(item.name ?? t().item)}</p>
                       <Show when={item.description}>
                         <p class="text-xs text-dimmed">{String(item.description)}</p>
                       </Show>

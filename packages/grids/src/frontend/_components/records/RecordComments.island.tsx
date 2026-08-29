@@ -1,7 +1,8 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Button, DetailPanel, Discussion, IconButton, MarkdownView, prompts, TextInput, Tooltip, toast } from "@k2b/ui";
+import { Avatar, Button, DetailPanel, Discussion, IconButton, MarkdownView, prompts, TextInput, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicRecordComment as RecordComment } from "../../../api/public-dto";
+import { recordMessages } from "./messages";
 
 type CommentPermissions = { actorUserId: string | null; canWrite: boolean; canModerate: boolean };
 type CommentsResponse = { items: RecordComment[]; nextCursor: string | null; permissions: CommentPermissions };
@@ -25,14 +26,18 @@ const withCursor = (endpoint: string, cursor: string): string => {
 
 const relativeTime = (value: string, dateConfig?: DateContext): string => {
   const elapsed = Date.now() - new Date(value).getTime();
-  if (elapsed < 60_000) return "just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;
-  if (elapsed < 604_800_000) return `${Math.floor(elapsed / 86_400_000)}d`;
+  const locale = dateConfig?.locale ?? "en";
+  if (elapsed < 60_000) return recordMessages.resolve([locale]).t.justNow;
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "narrow" });
+  if (elapsed < 3_600_000) return relative.format(-Math.floor(elapsed / 60_000), "minute");
+  if (elapsed < 86_400_000) return relative.format(-Math.floor(elapsed / 3_600_000), "hour");
+  if (elapsed < 604_800_000) return relative.format(-Math.floor(elapsed / 86_400_000), "day");
   return dates.formatDate(value, dateConfig);
 };
 
 export default function RecordComments(props: Props) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const [comments, setComments] = createSignal<RecordComment[]>([]);
   const [permissions, setPermissions] = createSignal<CommentPermissions>({ actorUserId: null, canWrite: false, canModerate: false });
   const [nextCursor, setNextCursor] = createSignal<string | null>(null);
@@ -53,7 +58,7 @@ export default function RecordComments(props: Props) {
       const response = await fetch(cursor ? withCursor(props.endpoint, cursor) : props.endpoint, {
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error(await responseError(response, "Could not load comments."));
+      if (!response.ok) throw new Error(await responseError(response, t().commentLoadFailed));
       const page = (await response.json()) as CommentsResponse;
       if (sequence !== requestSequence) return false;
       setComments((current) => (append ? [...current, ...page.items] : page.items));
@@ -62,7 +67,7 @@ export default function RecordComments(props: Props) {
       return true;
     } catch (cause) {
       if (sequence !== requestSequence) return false;
-      const message = cause instanceof Error ? cause.message : "Could not load comments.";
+      const message = cause instanceof Error ? cause.message : t().commentLoadFailed;
       if (append) throw cause;
       setError(message);
       return false;
@@ -96,7 +101,7 @@ export default function RecordComments(props: Props) {
       {
         id: temporaryId,
         authorUserId: permissions().actorUserId,
-        authorDisplayName: "You",
+        authorDisplayName: t().you,
         authorAvatarHash: null,
         body: normalized,
         deletedAt: null,
@@ -111,15 +116,15 @@ export default function RecordComments(props: Props) {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ body: normalized }),
       });
-      if (!response.ok) throw new Error(await responseError(response, "Could not post comment."));
+      if (!response.ok) throw new Error(await responseError(response, t().commentPostFailed));
       const created = (await response.json()) as RecordComment;
       setComments((current) => current.map((comment) => (comment.id === temporaryId ? created : comment)));
       setComposerOpen(false);
-      toast.success("Comment posted");
+      toast.success(t().commentPosted);
       return true;
     } catch (cause) {
       setComments((current) => current.filter((comment) => comment.id !== temporaryId));
-      prompts.error(cause instanceof Error ? cause.message : "Could not post comment.");
+      prompts.error(cause instanceof Error ? cause.message : t().commentPostFailed);
       return false;
     }
   };
@@ -134,13 +139,13 @@ export default function RecordComments(props: Props) {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ body: normalized }),
       });
-      if (!response.ok) throw new Error(await responseError(response, "Could not update comment."));
+      if (!response.ok) throw new Error(await responseError(response, t().commentUpdateFailed));
       const updated = (await response.json()) as RecordComment;
       setComments((current) => current.map((item) => (item.id === comment.id ? updated : item)));
       setEditingId(null);
-      toast.success("Comment updated");
+      toast.success(t().commentUpdated);
     } catch (cause) {
-      prompts.error(cause instanceof Error ? cause.message : "Could not update comment.");
+      prompts.error(cause instanceof Error ? cause.message : t().commentUpdateFailed);
     } finally {
       setSavingId(null);
     }
@@ -148,39 +153,39 @@ export default function RecordComments(props: Props) {
 
   const remove = async (comment: RecordComment) => {
     if (
-      !(await prompts.confirm("The comment remains visible as deleted in the thread.", {
-        title: "Delete comment?",
+      !(await prompts.confirm(t().deleteCommentDetail, {
+        title: t().deleteCommentTitle,
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
       }))
     )
       return;
     setSavingId(comment.id);
     try {
       const response = await fetch(`${props.endpoint}/${encodeURIComponent(comment.id)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(await responseError(response, "Could not delete comment."));
+      if (!response.ok) throw new Error(await responseError(response, t().commentDeleteFailed));
       const now = new Date().toISOString();
       setComments((current) =>
         current.map((item) => (item.id === comment.id ? { ...item, body: null, deletedAt: now, updatedAt: now } : item)),
       );
-      toast.success("Comment deleted");
+      toast.success(t().deletedComment);
     } catch (cause) {
-      prompts.error(cause instanceof Error ? cause.message : "Could not delete comment.");
+      prompts.error(cause instanceof Error ? cause.message : t().commentDeleteFailed);
     } finally {
       setSavingId(null);
     }
   };
 
   return (
-    <DetailPanel.Group label="Record comments">
+    <DetailPanel.Group label={t().recordComments}>
       <DetailPanel.Section
-        title={props.title ?? "Comments"}
+        title={props.title ?? t().comments}
         icon="ti ti-messages"
         meta={comments().length}
         actions={
           permissions().canWrite && !composerOpen() ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => setComposerOpen(true)}>
-              <i class="ti ti-plus" aria-hidden="true" /> Add comment
+              <i class="ti ti-plus" aria-hidden="true" /> {t().addComment}
             </Button>
           ) : undefined
         }
@@ -188,14 +193,14 @@ export default function RecordComments(props: Props) {
         <div class="flex min-w-0 flex-col gap-3">
           <Discussion.List
             loading={loading() && comments().length === 0}
-            loadingLabel="Loading comments"
+            loadingLabel={t().loadingComments}
             error={error()}
             onRetry={async () => {
               await load();
             }}
             hasMore={nextCursor() !== null}
             loadingMore={loadingOlder()}
-            loadMoreLabel="Load earlier comments"
+            loadMoreLabel={t().loadEarlierComments}
             onLoadMore={() => {
               const cursor = nextCursor();
               return cursor ? load(cursor, true) : false;
@@ -222,14 +227,14 @@ export default function RecordComments(props: Props) {
                       <time dateTime={comment.createdAt}>{relativeTime(comment.createdAt, props.dateConfig)}</time>
                     </Tooltip.Anchor>
                   }
-                  meta={comment.updatedAt !== comment.createdAt && !comment.deletedAt ? "edited" : undefined}
+                  meta={comment.updatedAt !== comment.createdAt && !comment.deletedAt ? t().edited : undefined}
                   actions={
                     canManage(comment) && !comment.id.startsWith("pending-") ? (
                       <>
-                        <Tooltip.Anchor content="Edit comment">
+                        <Tooltip.Anchor content={t().editComment}>
                           <IconButton
                             type="button"
-                            label="Edit comment"
+                            label={t().editComment}
                             variant="ghost"
                             size="sm"
                             class="h-7! w-7!"
@@ -242,10 +247,10 @@ export default function RecordComments(props: Props) {
                             <i class="ti ti-pencil" aria-hidden="true" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Tooltip.Anchor content="Delete comment">
+                        <Tooltip.Anchor content={t().deleteComment}>
                           <IconButton
                             type="button"
-                            label="Delete comment"
+                            label={t().deleteComment}
                             variant="ghost"
                             size="sm"
                             class="h-7! w-7! hover:text-danger"
@@ -264,7 +269,7 @@ export default function RecordComments(props: Props) {
                     fallback={
                       <Show
                         when={!comment.deletedAt && comment.body}
-                        fallback={<p class="mt-1 text-sm italic text-dimmed">Comment deleted</p>}
+                        fallback={<p class="mt-1 text-sm italic text-dimmed">{t().deletedComment}</p>}
                       >
                         {(markdown) => <MarkdownView markdown={markdown()} headingScale="compact" />}
                       </Show>
@@ -278,7 +283,7 @@ export default function RecordComments(props: Props) {
                       }}
                     >
                       <TextInput
-                        aria-label="Edit comment"
+                        aria-label={t().editComment}
                         value={() => editingBody()}
                         onValueChange={setEditingBody}
                         markdown
@@ -286,10 +291,10 @@ export default function RecordComments(props: Props) {
                       />
                       <div class="flex justify-end gap-2">
                         <Button type="button" variant="secondary" size="sm" onClick={() => setEditingId(null)}>
-                          Cancel
+                          {t().cancel}
                         </Button>
                         <Button type="submit" size="sm" disabled={!editingBody().trim() || savingId() === comment.id}>
-                          Save
+                          {t().saveChanges}
                         </Button>
                       </div>
                     </form>
@@ -301,10 +306,10 @@ export default function RecordComments(props: Props) {
 
           <Show when={permissions().canWrite && composerOpen()}>
             <Discussion.Composer
-              label="Add comment"
-              placeholder="Write a comment in markdown…"
-              submitLabel="Post comment"
-              cancelLabel="Cancel"
+              label={t().addComment}
+              placeholder={t().writeComment}
+              submitLabel={t().postComment}
+              cancelLabel={t().cancel}
               onCancel={() => setComposerOpen(false)}
               onSubmit={post}
             />

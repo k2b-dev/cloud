@@ -2,6 +2,7 @@ import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { gridsWorkspace, isGridsStreamCursor } from "../../../lib/workspace-events";
 import type { LiveRecordEvent } from "./live-refresh";
 import { isLiveRecordEventForTable, isTerminalLiveErrorCode } from "./live-refresh";
+import { recordsViewMessages } from "./messages";
 
 type LiveProviderError = {
   code: string;
@@ -11,6 +12,7 @@ type LiveProviderError = {
 type GridsRecordEventsProviderOptions = {
   tableId: string;
   initialCursor?: string | null;
+  locale?: string;
   onReady?: () => void;
   onEvent?: (event: LiveRecordEvent | null, cursor: string | null) => void;
   onError?: (error: LiveProviderError) => void;
@@ -42,6 +44,7 @@ const errorFromPayload = (payload: unknown, fallback: LiveProviderError): LivePr
 };
 
 export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderOptions) => {
+  const { t } = recordsViewMessages.resolve([opts.locale ?? "en"]);
   let revoked = false;
 
   return createLiveWebSocket<ProviderMessage>({
@@ -66,7 +69,7 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
       }
 
       if (message.type === gridsWorkspace.wsType.recordsRevoked) {
-        const error = errorFromPayload(message.payload, { code: "access_denied", message: "Access was revoked." });
+        const error = errorFromPayload(message.payload, { code: "access_denied", message: t.accessChanged });
         revoked = true;
         try {
           opts.onRevoked?.(error);
@@ -77,7 +80,7 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
       }
 
       if (message.type === gridsWorkspace.wsType.recordsError) {
-        const error = errorFromPayload(message.payload, { code: "internal_error", message: "Live updates failed." });
+        const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveUnavailable });
         if (isTerminalLiveErrorCode(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;

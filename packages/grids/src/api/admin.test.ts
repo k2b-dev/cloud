@@ -203,7 +203,7 @@ describe("Grids admin API", () => {
     const body = await response.json();
 
     expect(response.status).toBe(400);
-    expect(body).toEqual({ message: "Grids App grants only accept 'read' or 'none'" });
+    expect(body).toEqual({ message: "Grids App grants only accept 'read' or 'none'." });
     expect(updateCalls).toEqual([]);
   });
 

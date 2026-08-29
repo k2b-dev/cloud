@@ -257,8 +257,8 @@ describe("Assistant chat context", () => {
       Bun.file(resolve(import.meta.dir, "AssistantContextContent.tsx")).text(),
       Bun.file(resolve(import.meta.dir, "AssistantWorkspace.island.tsx")).text(),
     ]);
-    expect(context).toContain('title="View project"');
-    expect(context).toMatch(/icon="ti ti-eye"\s+title="View project"/);
+    expect(context).toContain('title={text("View project")}');
+    expect(context).toMatch(/icon="ti ti-eye"\s+title=\{text\("View project"\)\}/);
     expect(context).not.toContain("openAssistantProjectSettingsDialog");
     expect(shared).toContain("<DetailPanel.Action");
     expect(workspace).toContain("chatContextPresence() === true");

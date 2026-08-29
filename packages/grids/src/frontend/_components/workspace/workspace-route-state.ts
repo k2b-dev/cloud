@@ -1,3 +1,4 @@
+import { resolveWorkspaceMessages } from "./messages";
 import { loadDocumentTemplateState } from "./workspace-document-state";
 import { loadQueryState } from "./workspace-query-state";
 import { loadRecordsState } from "./workspace-records-state";
@@ -11,8 +12,9 @@ export const tableForPublicRouteId = <T extends { shortId: string }>(tables: rea
 
 export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Promise<GridsWorkspaceState> => {
   const { common } = request;
+  const t = resolveWorkspaceMessages(common.params.locale);
   if (common.params.activeCustomAppSlug) {
-    if (!request.requestedCustomApp) return { kind: "notFound", title: "Not found", message: "App not found" };
+    if (!request.requestedCustomApp) return { kind: "notFound", title: t.notFound, message: t.appNotFound };
     return okState(
       common,
       {
@@ -28,7 +30,7 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
   const activeTableFromSlug = request.requestedViewTable ?? tableForPublicRouteId(common.catalog.tables, common.params.activeTableSlug);
 
   if (common.params.documentsRequested) {
-    return okState(common, { kind: "documents" }, [...common.chrome.titleBase, { title: "Documents" }]);
+    return okState(common, { kind: "documents" }, [...common.chrome.titleBase, { title: t.documents }]);
   }
   if (queryWorkspaceRequested) return loadQueryState(common, activeTableFromSlug, common.params.activeViewSlug);
   if (workflowWorkspaceRequested) {
@@ -36,7 +38,7 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
   }
   if (common.params.activeDocumentTableSlug && common.params.activeDocumentTemplateSlug) {
     if (!request.requestedDocumentTable || !request.requestedDocumentTemplate) {
-      return { kind: "notFound", title: "Not found", message: "Document template not found" };
+      return { kind: "notFound", title: t.notFound, message: t.documentTemplateNotFound };
     }
     return loadDocumentTemplateState(common, request.requestedDocumentTable, request.requestedDocumentTemplate);
   }

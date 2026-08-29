@@ -1,10 +1,11 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { DslQueryAutocompleteResponseSchema } from "../contracts";
 import { renderGqlAssistantContext, renderGqlAssistantSkill } from "../query-dsl/assistant-docs";
 import { buildDslQueryIntelligence } from "../query-dsl/intelligence";
+import { presentDslQueryCompletions } from "../query-dsl/intelligence-presentation";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { gridsService } from "../service";
@@ -26,11 +27,14 @@ import {
   emptyDslAst,
   executeGqlSource,
   executeSavedViewSource,
+  gqlDiagnosticsForLocale,
   sourceAst,
 } from "./gql-runtime";
+import { apiMessages } from "./messages";
 import { gateAt } from "./permissions";
 import { queryAdmissionMiddleware } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 type GqlApiOptions = {
   requireAuthenticated?: MiddlewareHandler<AuthContext>;
@@ -86,7 +90,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const base = await gridsService.base.get(baseId);
-        if (!base) return c.text("Base not found", 404);
+        if (!base) return c.text(apiMessages(c).baseNotFound, 404);
         const ctx = await buildPermissionedGqlResolverContext(c, base.id, undefined, undefined, emptyDslAst(), {
           loadViews: true,
           loadAllFields: true,
@@ -121,7 +125,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
-        const scope = await fromPublicGqlScope(baseId, body);
+        const scope = await fromPublicGqlScope(baseId, body, { locale: getLocale(c) });
         if (!scope.ok) return c.json({ message: scope.error.message }, scope.error.status);
         const result = await executeGqlSource(
           c,
@@ -149,7 +153,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const body = c.req.valid("json");
-        const scope = await fromPublicGqlScope(baseId, body);
+        const scope = await fromPublicGqlScope(baseId, body, { locale: getLocale(c) });
         if (!scope.ok) return c.json({ message: scope.error.message }, scope.error.status);
         const result = await executeGqlSource(c, baseId, { ...body, ...scope.data }, { maxRows: 10_000, operation: "execute" });
         return c.json(await toPublicGqlResponse(result.response));
@@ -195,7 +199,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const publicBody = c.req.valid("json");
-        const scope = await fromPublicGqlScope(baseId, publicBody);
+        const scope = await fromPublicGqlScope(baseId, publicBody, { locale: getLocale(c) });
         if (!scope.ok) return c.json({ message: scope.error.message }, scope.error.status);
         const body = { ...publicBody, ...scope.data };
         const parsed = parseGridsQueryDsl(body.query);
@@ -209,16 +213,19 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
           ? (() => {
               const ast = sourceAst(parsed.ast, body.currentSource, ctx);
               const resolved = resolveDslQueryToQueryPlan(ast, ctx);
-              return resolved.ok ? [] : resolved.diagnostics;
+              return resolved.ok ? [] : gqlDiagnosticsForLocale(resolved.diagnostics, getLocale(c), "gql.resolution");
             })()
-          : parsed.diagnostics;
-        const items = buildDslQueryIntelligence({
-          query: body.query,
-          caret: body.caret ?? body.query.length,
-          ctx,
-          ...(body.currentSource ? { currentSource: body.currentSource } : {}),
-          ...(body.contextKeys ? { contextKeys: body.contextKeys } : {}),
-        });
+          : gqlDiagnosticsForLocale(parsed.diagnostics, getLocale(c), "gql.syntax");
+        const items = presentDslQueryCompletions(
+          buildDslQueryIntelligence({
+            query: body.query,
+            caret: body.caret ?? body.query.length,
+            ctx,
+            ...(body.currentSource ? { currentSource: body.currentSource } : {}),
+            ...(body.contextKeys ? { contextKeys: body.contextKeys } : {}),
+          }),
+          getLocale(c),
+        );
 
         return c.json({ ok: true as const, diagnostics, items });
       },
@@ -240,14 +247,14 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const publicBody = c.req.valid("json");
-        const scope = await fromPublicGqlScope(baseId, publicBody);
+        const scope = await fromPublicGqlScope(baseId, publicBody, { locale: getLocale(c) });
         if (!scope.ok) return c.json({ message: scope.error.message }, scope.error.status);
         const body = { ...publicBody, ...scope.data };
         const canonical = await canonicalGqlSource(c, baseId, body);
         if (!canonical.ok) return c.json({ ok: false, diagnostics: canonical.diagnostics });
 
         const tableId = await projectPublicId("table", canonical.tableId);
-        if (!tableId) return c.json({ message: "Missing public table ID" }, 500);
+        if (!tableId) return c.json({ message: apiMessages(c).missingPublicTableId }, 500);
         return c.json({ ok: true, tableId, source: canonical.source });
       },
     );

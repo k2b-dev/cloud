@@ -19,6 +19,7 @@ import {
   renderLiquidText,
   templatePatternContext,
 } from "./document-liquid";
+import { documentServiceText } from "./document-messages";
 import type { RecordSnapshotDraft, SnapshotRecord } from "./document-snapshots";
 import { normalizeDocumentTags, safePdfFilename } from "./document-values";
 import { listByTable as listFields } from "./fields";
@@ -107,9 +108,6 @@ export const documentRecordDataWithPublicIds = (
     }),
   );
 
-const diagnosticsMessage = (diagnostics: Array<{ message: string }>): string =>
-  diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
-
 type DocumentColumn = { key?: unknown; label?: unknown };
 
 export const rowsWithColumnLabels = (columns: unknown[], rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> => {
@@ -146,8 +144,9 @@ const executeDocumentGqlSource = async (params: {
   source: string;
   dateConfig?: DateContext;
 }): Promise<Result<{ columns: unknown[]; rows: Array<Record<string, unknown>> }>> => {
+  const t = documentServiceText(params.dateConfig?.locale);
   const parsed = parseGridsQueryDsl(params.source);
-  if (!parsed.ok) return fail(err.badInput(diagnosticsMessage(parsed.diagnostics)));
+  if (!parsed.ok) return fail(err.badInput(t.sourceInvalid));
 
   const ctx = await buildTrustedGqlResolverContext({
     baseId: params.baseId,
@@ -156,7 +155,7 @@ const executeDocumentGqlSource = async (params: {
     purpose: "document-template-render",
   });
   const resolved = resolveDslQueryToQueryPlan(parsed.ast, ctx);
-  if (!resolved.ok) return fail(err.badInput(diagnosticsMessage(resolved.diagnostics)));
+  if (!resolved.ok) return fail(err.badInput(t.sourceInvalid));
 
   const fieldsByTableId = await fieldsWithPlanExtras(ctx.fieldsByTableId, params.tableId, resolved.plan);
   const preview = await previewDslQuery(resolved.plan, {
@@ -168,7 +167,7 @@ const executeDocumentGqlSource = async (params: {
     // table access, but cannot substitute GQL on this trusted execution path.
     viewer: { userId: null, userGroups: [], isAdmin: true },
   });
-  if (!preview.ok) return fail(err.badInput(preview.error.message));
+  if (!preview.ok) return fail(err.badInput(t.sourceExecutionFailed));
 
   return ok({
     columns: preview.data.columns,
@@ -227,7 +226,7 @@ export const buildTemplateInputContext = (
   },
   app: appData,
   business: businessData,
-  template: templatePatternContext(template),
+  template: templatePatternContext(template, dateConfig?.locale),
   date: datePatternContext(createdAt, dateConfig),
 });
 
@@ -256,7 +255,7 @@ export const buildRenderData = (params: {
   },
   rows: params.rows,
   columns: params.columns,
-  template: templatePatternContext(params.template),
+  template: templatePatternContext(params.template, params.dateConfig?.locale),
   date: datePatternContext(params.createdAt ? new Date(params.createdAt) : new Date(), params.dateConfig),
   images: params.images ?? [],
   primaryImage: params.primaryImage ?? params.images?.[0] ?? null,
@@ -351,6 +350,7 @@ export const buildLiveRenderData = async (params: {
       params.dateConfig,
       recordMeta,
     ),
+    params.dateConfig?.locale,
   );
   if (!source.ok) return source;
 
@@ -390,13 +390,15 @@ const injectPageCss = (html: string, pageCss: string | null): string => {
 export const renderDocumentHtml = async (
   template: Pick<DocumentTemplate, "renderer">,
   data: Record<string, unknown>,
+  locale?: string,
 ): Promise<Result<string>> => {
+  const t = documentServiceText(locale);
   if (template.renderer.kind !== "html") {
-    return fail(err.badInput("Document template uses a Document profile instead of HTML."));
+    return fail(err.badInput(t.htmlProfileMismatch));
   }
-  const html = await renderLiquidText(template.renderer.body, data, RENDER_MAX_BYTES);
+  const html = await renderLiquidText(template.renderer.body, data, RENDER_MAX_BYTES, locale);
   if (!html.ok) return html;
-  const pageCss = await renderLiquidText(template.renderer.css ?? "", data, TEMPLATE_PART_MAX_BYTES);
+  const pageCss = await renderLiquidText(template.renderer.css ?? "", data, TEMPLATE_PART_MAX_BYTES, locale);
   if (!pageCss.ok) return pageCss;
   return ok(injectPageCss(html.data, pageCss.data));
 };
@@ -404,18 +406,21 @@ export const renderDocumentHtml = async (
 export const renderDocumentSource = async (
   template: Pick<DocumentTemplate, "source">,
   data: Record<string, unknown>,
-): Promise<Result<string>> => renderLiquidText(template.source, data, SOURCE_MAX_BYTES);
+  locale?: string,
+): Promise<Result<string>> => renderLiquidText(template.source, data, SOURCE_MAX_BYTES, locale);
 
 export const renderDocumentPdfPreview = async (
   template: Pick<DocumentTemplate, "renderer">,
   data: Record<string, unknown>,
   filename?: string,
   config?: GotenbergConfig,
+  locale?: string,
 ): Promise<TemplatePdfPreviewResult> => {
+  const t = documentServiceText(locale);
   if (template.renderer.kind !== "html") {
-    return { ok: false, error: { phase: "template", message: "Document template uses a Document profile instead of HTML.", status: 400 } };
+    return { ok: false, error: { phase: "template", message: t.htmlProfileMismatch, status: 400 } };
   }
-  return renderTemplatePdfPreview(
+  const rendered = await renderTemplatePdfPreview(
     {
       htmlTemplate: template.renderer.body,
       headerHtmlTemplate: template.renderer.header,
@@ -427,23 +432,33 @@ export const renderDocumentPdfPreview = async (
     },
     config ? { config } : {},
   );
+  if (rendered.ok) return rendered;
+  return {
+    ok: false,
+    error: {
+      ...rendered.error,
+      message: rendered.error.phase === "template" ? t.templateRenderFailed : t.pdfRenderFailed,
+    },
+  };
 };
 
 export const renderDocumentProfileInput = async (
   template: Pick<DocumentTemplate, "renderer">,
   data: Record<string, unknown>,
+  locale?: string,
 ): Promise<Result<Record<string, unknown>>> => {
-  if (template.renderer.kind !== "profile") return fail(err.badInput("Document template does not use a Document profile."));
-  const rendered = await renderLiquidPlainText(template.renderer.inputTemplate, data, RENDER_MAX_BYTES);
+  const t = documentServiceText(locale);
+  if (template.renderer.kind !== "profile") return fail(err.badInput(t.profileRequired));
+  const rendered = await renderLiquidPlainText(template.renderer.inputTemplate, data, RENDER_MAX_BYTES, locale);
   if (!rendered.ok) return rendered;
   try {
     const parsed: unknown = JSON.parse(rendered.data);
     if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-      return fail(err.badInput("Document profile input must render a JSON object."));
+      return fail(err.badInput(t.profileInputObject));
     }
     return ok(parsed as Record<string, unknown>);
   } catch (error) {
-    return fail(err.badInput(`Document profile input rendered invalid JSON: ${error instanceof Error ? error.message : "parse failed"}`));
+    return fail(err.badInput(t.profileInputInvalidJson({ reason: error instanceof Error ? error.message : "parse failed" })));
   }
 };
 
@@ -458,6 +473,7 @@ export const buildDocumentRenderData = async (params: {
   documentNumber?: string;
   numberSeries?: { id: string; value: number };
 }): Promise<Result<{ documentNumber: string; filename: string; tags: string[]; data: Record<string, unknown> }>> => {
+  const t = documentServiceText(params.dateConfig?.locale);
   const createdAt = params.createdAt ?? new Date();
   const documentNumber = params.documentNumber
     ? ok(params.documentNumber)
@@ -470,13 +486,13 @@ export const buildDocumentRenderData = async (params: {
           data: params.renderData,
           series: params.numberSeries,
         })
-      : fail(err.badInput("Document profile rendering requires an allocated document number."));
+      : fail(err.badInput(t.allocatedNumberRequired));
   if (!documentNumber.ok) return fail(documentNumber.error);
 
   const tags = normalizeDocumentTags(params.tags);
   const renderDataBase = {
     ...params.renderData,
-    template: templatePatternContext(params.template),
+    template: templatePatternContext(params.template, params.dateConfig?.locale),
     date: datePatternContext(createdAt, params.dateConfig),
     series: params.numberSeries ?? { id: "draft", value: 0 },
     document: {
@@ -492,7 +508,12 @@ export const buildDocumentRenderData = async (params: {
   const renderedFilename = requestedFilename
     ? ok(requestedFilename)
     : params.template.renderer.kind === "html"
-      ? await renderLiquidText(params.template.renderer.filenameTemplate, renderDataBase, FILENAME_TEMPLATE_MAX_BYTES)
+      ? await renderLiquidText(
+          params.template.renderer.filenameTemplate,
+          renderDataBase,
+          FILENAME_TEMPLATE_MAX_BYTES,
+          params.dateConfig?.locale,
+        )
       : ok(`${documentNumber.data}.pdf`);
   if (!renderedFilename.ok) return fail(renderedFilename.error);
 
@@ -510,9 +531,11 @@ export const buildDocumentRenderData = async (params: {
 
 export const renderDocumentPdf = async (
   document: Pick<Document, "templateSnapshot" | "renderData" | "filename">,
+  locale?: string,
 ): Promise<Result<RenderHtmlToPdfResult>> => {
+  const t = documentServiceText(locale);
   const renderer = DocumentTemplateRendererSchema.safeParse(document.templateSnapshot.renderer);
-  if (!renderer.success || renderer.data.kind !== "html") return fail(err.badInput("Document snapshot does not contain an HTML renderer."));
+  if (!renderer.success || renderer.data.kind !== "html") return fail(err.badInput(t.snapshotHtmlRendererRequired));
   const rendered = await renderTemplatePdfPreview({
     htmlTemplate: renderer.data.body,
     headerHtmlTemplate: renderer.data.header,
@@ -523,6 +546,6 @@ export const renderDocumentPdf = async (
     filename: document.filename.replace(/\.pdf$/i, ".html"),
   });
   if (rendered.ok) return ok(rendered.pdf);
-  const message = `${rendered.error.phase}: ${rendered.error.message}`;
+  const message = rendered.error.phase === "template" ? t.templateRenderFailed : t.pdfRenderFailed;
   return fail(rendered.error.status === 400 ? err.badInput(message) : err.internal(message));
 };

@@ -1,4 +1,5 @@
 import type { WorkflowIrInput, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
+import { workflowMessages } from "./messages";
 
 export type WorkflowRunInputDraftValue = string | number | boolean | string[] | null | undefined;
 export type WorkflowRunInputDraft = Record<string, WorkflowRunInputDraftValue>;
@@ -46,7 +47,8 @@ const missingValue = (value: WorkflowRunInputDraftValue): boolean =>
   (typeof value === "string" && value.trim() === "") ||
   (Array.isArray(value) && value.length === 0);
 
-export const buildWorkflowRunInput = (inputs: WorkflowIrInput[], draft: WorkflowRunInputDraft): WorkflowRunInputResult => {
+export const buildWorkflowRunInput = (inputs: WorkflowIrInput[], draft: WorkflowRunInputDraft, locale = "en"): WorkflowRunInputResult => {
+  const t = workflowMessages.resolve([locale]).t;
   const result: Record<string, WorkflowJsonValue> = {};
   const errors: Record<string, string> = {};
 
@@ -54,24 +56,24 @@ export const buildWorkflowRunInput = (inputs: WorkflowIrInput[], draft: Workflow
     const name = definition.name;
     const value = draft[name];
     if (missingValue(value)) {
-      if (workflowInputRequired(definition)) errors[name] = `${workflowInputLabel(definition)} is required.`;
+      if (workflowInputRequired(definition)) errors[name] = t.inputRequired({ label: workflowInputLabel(definition) });
       continue;
     }
 
     if (definition.type === "number" && (typeof value !== "number" || !Number.isFinite(value))) {
-      errors[name] = `${workflowInputLabel(definition)} must be a number.`;
+      errors[name] = t.inputNumber({ label: workflowInputLabel(definition) });
       continue;
     }
     if (definition.type === "boolean" && typeof value !== "boolean") {
-      errors[name] = `${workflowInputLabel(definition)} must be true or false.`;
+      errors[name] = t.inputBoolean({ label: workflowInputLabel(definition) });
       continue;
     }
     if (definition.type === "recordList" && !Array.isArray(value)) {
-      errors[name] = `${workflowInputLabel(definition)} must contain records.`;
+      errors[name] = t.inputRecords({ label: workflowInputLabel(definition) });
       continue;
     }
     if (definition.type !== "number" && definition.type !== "boolean" && definition.type !== "recordList" && typeof value !== "string") {
-      errors[name] = `${workflowInputLabel(definition)} is invalid.`;
+      errors[name] = t.inputInvalid({ label: workflowInputLabel(definition) });
       continue;
     }
 

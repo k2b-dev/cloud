@@ -1,5 +1,5 @@
 import type { User } from "@valentinkolb/cloud/contracts";
-import { auth } from "@valentinkolb/cloud/server";
+import { auth, getLocale } from "@valentinkolb/cloud/server";
 import { accounts, logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
@@ -13,6 +13,7 @@ import { latestMetadataEventCursor, liveMetadataEvents, toPublicMetadataEvent } 
 import { projectPublicId, projectPublicIds, resolvePublicId } from "./service/public-resources";
 import { latestRecordEventCursor, liveRecordEvents, toPublicRecordEvent } from "./service/record-events";
 import { latestWorkflowRunEventCursor, liveWorkflowRunEvents } from "./service/workflow-run-events";
+import { gridsWebSocketMessages } from "./ws-messages";
 
 const log = logger("grids:ws");
 const WS_TYPE = gridsWorkspace.wsType;
@@ -62,6 +63,7 @@ type WsContext = {
   subscription: Subscription | null;
   streamAbort: AbortController | null;
   accessRefreshTimeout: ReturnType<typeof setTimeout> | null;
+  locale: string;
 };
 
 type AccessResult =
@@ -79,10 +81,10 @@ type WorkspaceRuntime = {
   projectRecordEvent: typeof toPublicRecordEvent;
   projectMetadataEvent: typeof toPublicMetadataEvent;
   projectWorkflowRunEvent: typeof toPublicWorkflowRunEvent;
-  evaluateRecordsAccess: (tableId: string, sessionToken: string | null) => Promise<AccessResult>;
-  evaluateBaseAccess: (baseId: string, sessionToken: string | null) => Promise<AccessResult>;
-  evaluateWorkflowAccess: (workflowId: string, sessionToken: string | null) => Promise<AccessResult>;
-  evaluateSubscriptionAccess: (subscription: Subscription, sessionToken: string | null) => Promise<AccessResult>;
+  evaluateRecordsAccess: (tableId: string, sessionToken: string | null, locale: string) => Promise<AccessResult>;
+  evaluateBaseAccess: (baseId: string, sessionToken: string | null, locale: string) => Promise<AccessResult>;
+  evaluateWorkflowAccess: (workflowId: string, sessionToken: string | null, locale: string) => Promise<AccessResult>;
+  evaluateSubscriptionAccess: (subscription: Subscription, sessionToken: string | null, locale: string) => Promise<AccessResult>;
   latestRecordCursor: typeof latestRecordEventCursor;
   latestMetadataCursor: typeof latestMetadataEventCursor;
   latestWorkflowRunCursor: typeof latestWorkflowRunEventCursor;
@@ -93,14 +95,17 @@ type WorkspaceRuntime = {
   cancel: (timeout: ReturnType<typeof setTimeout>) => void;
 };
 
-const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null): WsContext => ({
+const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, locale: string): WsContext => ({
   socket,
   phase: "open",
   sessionToken,
   subscription: null,
   streamAbort: null,
   accessRefreshTimeout: null,
+  locale,
 });
+
+const messages = (locale: string) => gridsWebSocketMessages.resolve([locale]).t;
 
 export const sendWorkspaceMessage = (socket: ServerWebSocket<unknown>, type: string, payload?: unknown): boolean => {
   try {
@@ -214,7 +219,7 @@ const revokeAccess = (
         : WS_TYPE.workflowRunsRevoked,
     {
       code: access.code,
-      message: access.code === "access_denied" ? "Access was revoked" : access.message,
+      message: access.code === "access_denied" ? messages(ctx.locale).accessRevoked : access.message,
       baseId: subscription.publicBaseId,
       tableId: subscription.kind === "records" ? subscription.publicTableId : undefined,
     },
@@ -229,19 +234,20 @@ const resolveSessionUser = async (sessionToken: string | null): Promise<User | n
   return accounts.users.get({ id: session.userId });
 };
 
-const evaluateTableAccess = async (tableId: string, sessionToken: string | null): Promise<AccessResult> => {
+const evaluateTableAccess = async (tableId: string, sessionToken: string | null, locale: string): Promise<AccessResult> => {
+  const t = messages(locale);
   const user = await resolveSessionUser(sessionToken);
-  if (!user) return { ok: false, code: "login_required", message: "Login required", tableId };
+  if (!user) return { ok: false, code: "login_required", message: t.loginRequired, tableId };
 
   const table = await gridsService.table.get(tableId);
-  if (!table) return { ok: false, code: "not_found", message: "Table not found", tableId };
+  if (!table) return { ok: false, code: "not_found", message: t.tableNotFound, tableId };
 
   const grants = await gridsService.permission.loadBaseGrantsForSubject({
     subject: { type: "user", userId: user.id },
     baseId: table.baseId,
   });
   if (!gridsService.permission.hasAtLeast(gridsService.permission.resolve(grants, { baseId: table.baseId }), "read")) {
-    return { ok: false, code: "access_denied", message: "Access denied", tableId: table.id };
+    return { ok: false, code: "access_denied", message: t.accessDenied, tableId: table.id };
   }
 
   return {
@@ -251,12 +257,13 @@ const evaluateTableAccess = async (tableId: string, sessionToken: string | null)
   };
 };
 
-const evaluateBaseAccess = async (baseId: string, sessionToken: string | null): Promise<AccessResult> => {
+const evaluateBaseAccess = async (baseId: string, sessionToken: string | null, locale: string): Promise<AccessResult> => {
+  const t = messages(locale);
   const user = await resolveSessionUser(sessionToken);
-  if (!user) return { ok: false, code: "login_required", message: "Login required" };
+  if (!user) return { ok: false, code: "login_required", message: t.loginRequired };
 
   const base = await gridsService.base.get(baseId);
-  if (!base) return { ok: false, code: "not_found", message: "Base not found" };
+  if (!base) return { ok: false, code: "not_found", message: t.baseNotFound };
 
   const grants = await gridsService.permission.loadBaseGrantsForSubject({
     subject: { type: "user", userId: user.id },
@@ -264,18 +271,19 @@ const evaluateBaseAccess = async (baseId: string, sessionToken: string | null): 
   });
   const level = gridsService.permission.resolve(grants, { baseId: base.id });
   if (!gridsService.permission.hasAtLeast(level, "read")) {
-    return { ok: false, code: "access_denied", message: "Access denied" };
+    return { ok: false, code: "access_denied", message: t.accessDenied };
   }
 
   return { ok: true, baseId: base.id };
 };
 
-const evaluateWorkflowAccess = async (workflowId: string, sessionToken: string | null): Promise<AccessResult> => {
+const evaluateWorkflowAccess = async (workflowId: string, sessionToken: string | null, locale: string): Promise<AccessResult> => {
+  const t = messages(locale);
   const user = await resolveSessionUser(sessionToken);
-  if (!user) return { ok: false, code: "login_required", message: "Login required" };
+  if (!user) return { ok: false, code: "login_required", message: t.loginRequired };
 
   const workflow = await gridsService.workflow.get(workflowId);
-  if (!workflow) return { ok: false, code: "not_found", message: "Workflow not found" };
+  if (!workflow) return { ok: false, code: "not_found", message: t.workflowNotFound };
 
   const grants = await gridsService.permission.loadBaseGrantsForSubject({
     subject: { type: "user", userId: user.id },
@@ -283,18 +291,18 @@ const evaluateWorkflowAccess = async (workflowId: string, sessionToken: string |
   });
   const level = gridsService.permission.resolve(grants, { baseId: workflow.baseId });
   if (!gridsService.permission.hasAtLeast(level, "read")) {
-    return { ok: false, code: "access_denied", message: "Access denied" };
+    return { ok: false, code: "access_denied", message: t.accessDenied };
   }
 
   return { ok: true, baseId: workflow.baseId, workflowId: workflow.id };
 };
 
-const evaluateSubscriptionAccess = (subscription: Subscription, sessionToken: string | null): Promise<AccessResult> =>
+const evaluateSubscriptionAccess = (subscription: Subscription, sessionToken: string | null, locale: string): Promise<AccessResult> =>
   subscription.kind === "records"
-    ? evaluateTableAccess(subscription.tableId, sessionToken)
+    ? evaluateTableAccess(subscription.tableId, sessionToken, locale)
     : subscription.kind === "metadata"
-      ? evaluateBaseAccess(subscription.baseId, sessionToken)
-      : evaluateWorkflowAccess(subscription.workflowId, sessionToken);
+      ? evaluateBaseAccess(subscription.baseId, sessionToken, locale)
+      : evaluateWorkflowAccess(subscription.workflowId, sessionToken, locale);
 
 const workspaceRuntime: WorkspaceRuntime = {
   resolvePublicId,
@@ -321,7 +329,7 @@ const ensureCurrentAccess = async (
   runtime: WorkspaceRuntime,
   subscription: Subscription,
 ): Promise<Extract<AccessResult, { ok: true }> | null> => {
-  const access = await runtime.evaluateSubscriptionAccess(subscription, ctx.sessionToken);
+  const access = await runtime.evaluateSubscriptionAccess(subscription, ctx.sessionToken, ctx.locale);
   if (ctx.phase !== "subscribed" || ctx.subscription !== subscription) return null;
   if (access.ok) return access;
   revokeAccess(ctx, runtime, subscription, access);
@@ -352,7 +360,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
             event: await runtime.projectRecordEvent(event.data),
           });
           if (!sent) {
-            closeWithError(ctx, runtime, "backpressure", "Live updates exceeded the connection capacity", tableId);
+            closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).liveCapacityExceeded, tableId);
             break;
           }
         }
@@ -366,7 +374,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
             event: await runtime.projectMetadataEvent(event.data),
           });
           if (!sent) {
-            closeWithError(ctx, runtime, "backpressure", "Live updates exceeded the connection capacity");
+            closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).liveCapacityExceeded);
             break;
           }
         }
@@ -381,7 +389,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
             event: await runtime.projectWorkflowRunEvent(event.data),
           });
           if (!sent) {
-            closeWithError(ctx, runtime, "backpressure", "Workflow updates exceeded the connection capacity");
+            closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).workflowCapacityExceeded);
             break;
           }
         }
@@ -392,7 +400,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
           ctx,
           runtime,
           "stream_ended",
-          subscription.kind === "workflow-runs" ? "Workflow update stream ended" : "Workspace event stream ended",
+          subscription.kind === "workflow-runs" ? messages(ctx.locale).workflowStreamEnded : messages(ctx.locale).workspaceStreamEnded,
           subscription.kind === "records" ? subscription.tableId : undefined,
         );
       }
@@ -407,7 +415,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
         ctx,
         runtime,
         "stream_failed",
-        "Workspace event stream failed",
+        messages(ctx.locale).workspaceStreamFailed,
         subscription.kind === "records" ? subscription.tableId : undefined,
       );
     } finally {
@@ -425,7 +433,7 @@ const startAccessRefresh = (ctx: WsContext, runtime: WorkspaceRuntime) => {
     const subscription = ctx.subscription;
     const sessionToken = ctx.sessionToken;
     try {
-      const access = await runtime.evaluateSubscriptionAccess(subscription, sessionToken);
+      const access = await runtime.evaluateSubscriptionAccess(subscription, sessionToken, ctx.locale);
       if (!isWorkspaceAccessRefreshCurrent(ctx, subscription, sessionToken)) return;
       if (!access.ok) {
         revokeAccess(ctx, runtime, subscription, access);
@@ -442,7 +450,7 @@ const startAccessRefresh = (ctx: WsContext, runtime: WorkspaceRuntime) => {
         ctx,
         runtime,
         "internal_error",
-        "Access refresh failed",
+        messages(ctx.locale).accessRefreshFailed,
         subscription.kind === "records" ? subscription.tableId : undefined,
       );
     }
@@ -472,7 +480,7 @@ const resolveSubscriptionCursor = async (
       ctx,
       runtime,
       "stream_failed",
-      "Workspace event stream failed",
+      messages(ctx.locale).workspaceStreamFailed,
       ctx.subscription?.kind === "records" ? ctx.subscription.tableId : undefined,
     );
     return null;
@@ -488,14 +496,14 @@ const handleSubscribe = async (
   const sessionToken = payload.sessionToken ?? ctx.sessionToken;
   const tableId = await runtime.resolvePublicId("table", payload.tableId);
   if (!tableId) {
-    closeWithError(ctx, runtime, "not_found", "Table not found", payload.tableId);
+    closeWithError(ctx, runtime, "not_found", messages(ctx.locale).tableNotFound, payload.tableId);
     return;
   }
-  const access = await runtime.evaluateRecordsAccess(tableId, sessionToken);
+  const access = await runtime.evaluateRecordsAccess(tableId, sessionToken, ctx.locale);
   if (isClosing(ctx)) return;
   if (!access.ok || !access.tableId) {
     if (access.ok) {
-      closeWithError(ctx, runtime, "not_found", "Table not found", payload.tableId);
+      closeWithError(ctx, runtime, "not_found", messages(ctx.locale).tableNotFound, payload.tableId);
       return;
     }
     closeWithError(ctx, runtime, access.code, access.message, payload.tableId);
@@ -504,7 +512,7 @@ const handleSubscribe = async (
 
   const publicBaseId = await runtime.projectPublicId("base", access.baseId);
   if (!publicBaseId) {
-    closeWithError(ctx, runtime, "not_found", "Base not found", payload.tableId);
+    closeWithError(ctx, runtime, "not_found", messages(ctx.locale).baseNotFound, payload.tableId);
     return;
   }
 
@@ -523,7 +531,7 @@ const handleSubscribe = async (
   if (!baselineCursor) return;
   if (isClosing(ctx) || ctx.subscription !== subscription) return;
   if (!send(ctx.socket, WS_TYPE.recordsReady, { tableId: payload.tableId, cursor: baselineCursor })) {
-    closeWithError(ctx, runtime, "backpressure", "Live updates exceeded the connection capacity", access.tableId);
+    closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).liveCapacityExceeded, access.tableId);
     return;
   }
   startStream(ctx, runtime, baselineCursor);
@@ -539,10 +547,10 @@ const handleMetadataSubscribe = async (
   const sessionToken = payload.sessionToken ?? ctx.sessionToken;
   const baseId = await runtime.resolvePublicId("base", payload.baseId);
   if (!baseId) {
-    closeWithError(ctx, runtime, "not_found", "Base not found", undefined, WS_TYPE.metadataError);
+    closeWithError(ctx, runtime, "not_found", messages(ctx.locale).baseNotFound, undefined, WS_TYPE.metadataError);
     return;
   }
-  const access = await runtime.evaluateBaseAccess(baseId, sessionToken);
+  const access = await runtime.evaluateBaseAccess(baseId, sessionToken, ctx.locale);
   if (isClosing(ctx)) return;
   if (!access.ok) {
     closeWithError(ctx, runtime, access.code, access.message, undefined, WS_TYPE.metadataError);
@@ -560,7 +568,7 @@ const handleMetadataSubscribe = async (
   if (!baselineCursor) return;
   if (isClosing(ctx) || ctx.subscription !== subscription) return;
   if (!send(ctx.socket, WS_TYPE.metadataReady, { baseId: payload.baseId, cursor: baselineCursor })) {
-    closeWithError(ctx, runtime, "backpressure", "Live updates exceeded the connection capacity");
+    closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).liveCapacityExceeded);
     return;
   }
   startStream(ctx, runtime, baselineCursor);
@@ -576,17 +584,17 @@ const handleWorkflowRunsSubscribe = async (
   const sessionToken = payload.sessionToken ?? ctx.sessionToken;
   const workflowId = await runtime.resolvePublicId("workflow", payload.workflowId);
   if (!workflowId) {
-    closeWithError(ctx, runtime, "not_found", "Workflow not found", undefined, WS_TYPE.workflowRunsError);
+    closeWithError(ctx, runtime, "not_found", messages(ctx.locale).workflowNotFound, undefined, WS_TYPE.workflowRunsError);
     return;
   }
-  const access = await runtime.evaluateWorkflowAccess(workflowId, sessionToken);
+  const access = await runtime.evaluateWorkflowAccess(workflowId, sessionToken, ctx.locale);
   if (isClosing(ctx)) return;
   if (!access.ok || !access.workflowId) {
     closeWithError(
       ctx,
       runtime,
       access.ok ? "not_found" : access.code,
-      access.ok ? "Workflow not found" : access.message,
+      access.ok ? messages(ctx.locale).workflowNotFound : access.message,
       undefined,
       WS_TYPE.workflowRunsError,
     );
@@ -595,7 +603,7 @@ const handleWorkflowRunsSubscribe = async (
 
   const publicBaseId = await runtime.projectPublicId("base", access.baseId);
   if (!publicBaseId) {
-    closeWithError(ctx, runtime, "not_found", "Base not found", undefined, WS_TYPE.workflowRunsError);
+    closeWithError(ctx, runtime, "not_found", messages(ctx.locale).baseNotFound, undefined, WS_TYPE.workflowRunsError);
     return;
   }
 
@@ -617,7 +625,7 @@ const handleWorkflowRunsSubscribe = async (
   if (!baselineCursor) return;
   if (isClosing(ctx) || ctx.subscription !== subscription) return;
   if (!send(ctx.socket, WS_TYPE.workflowRunsReady, { workflowId: payload.workflowId, cursor: baselineCursor })) {
-    closeWithError(ctx, runtime, "backpressure", "Workflow updates exceeded the connection capacity");
+    closeWithError(ctx, runtime, "backpressure", messages(ctx.locale).workflowCapacityExceeded);
     return;
   }
   startStream(ctx, runtime, baselineCursor);
@@ -633,7 +641,7 @@ const handleClientMessage = async (ctx: WsContext, runtime: WorkspaceRuntime, ra
       ctx,
       runtime,
       "invalid_json",
-      "Invalid JSON payload",
+      messages(ctx.locale).invalidJson,
       ctx.subscription?.kind === "records" ? ctx.subscription.tableId : undefined,
     );
     return;
@@ -645,7 +653,7 @@ const handleClientMessage = async (ctx: WsContext, runtime: WorkspaceRuntime, ra
       ctx,
       runtime,
       "invalid_message",
-      "Invalid message payload",
+      messages(ctx.locale).invalidMessage,
       ctx.subscription?.kind === "records" ? ctx.subscription.tableId : undefined,
     );
     return;
@@ -660,7 +668,7 @@ const handleClientMessage = async (ctx: WsContext, runtime: WorkspaceRuntime, ra
   }
 };
 
-export const createWorkspaceWebSocketSession = (sessionToken: string | null, overrides: Partial<WorkspaceRuntime> = {}) => {
+export const createWorkspaceWebSocketSession = (sessionToken: string | null, overrides: Partial<WorkspaceRuntime> = {}, locale = "en") => {
   const runtime = { ...workspaceRuntime, ...overrides };
   let ctx: WsContext | null = null;
   let processing: Promise<void> = Promise.resolve();
@@ -668,7 +676,7 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
 
   return {
     open(socket: ServerWebSocket<unknown>): void {
-      ctx = createContext(socket, sessionToken);
+      ctx = createContext(socket, sessionToken, locale);
     },
 
     message(data: unknown): void {
@@ -678,7 +686,7 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
           ctx,
           runtime,
           "invalid_message",
-          "Invalid websocket subscription",
+          messages(ctx.locale).invalidSubscription,
           ctx.subscription?.kind === "records" ? ctx.subscription.tableId : undefined,
         );
         return;
@@ -688,7 +696,7 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
           ctx,
           runtime,
           "backpressure",
-          "Too many pending websocket messages",
+          messages(ctx.locale).tooManyPendingMessages,
           ctx.subscription?.kind === "records" ? ctx.subscription.tableId : undefined,
         );
         return;
@@ -707,7 +715,7 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
             currentCtx,
             runtime,
             "internal_error",
-            "Message handling failed",
+            messages(currentCtx.locale).messageHandlingFailed,
             currentCtx.subscription?.kind === "records" ? currentCtx.subscription.tableId : undefined,
           );
         })
@@ -732,7 +740,7 @@ export const createWorkspaceWebSocketSession = (sessionToken: string | null, ove
 const app = new Hono().get(
   "/",
   upgradeWebSocket((c) => {
-    const session = createWorkspaceWebSocketSession(auth.session.getToken(c));
+    const session = createWorkspaceWebSocketSession(auth.session.getToken(c), {}, getLocale(c));
 
     return {
       onOpen(_, ws) {

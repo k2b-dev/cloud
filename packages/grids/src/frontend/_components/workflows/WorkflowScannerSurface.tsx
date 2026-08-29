@@ -1,4 +1,4 @@
-import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, TextInput, Tooltip } from "@k2b/ui";
+import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
@@ -11,7 +11,7 @@ import {
 import type { GridsScannerPromptInputSource } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { createScannerEngine, type ScannerDetection, type ScannerEngine } from "./scanner-engine";
-import { workflowStepStatusTextClass as stepStatusTextClass } from "./workflow-display";
+import { workflowStepStatusTextClass as stepStatusTextClass, workflowRunStatusLabel, workflowStepStatusLabel } from "./workflow-display";
 import { createWorkflowRunEventBuffer } from "./workflow-run-event-buffer";
 import type { PublicWorkflowRunEventSummary, PublicWorkflowRunStepSummary } from "./workflow-run-public-event";
 
@@ -24,6 +24,7 @@ type WorkflowRunsApi = {
 
 const workflowRunsApi = apiClient.workflows.runs as unknown as WorkflowRunsApi;
 
+import { workflowMessages } from "./messages";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import { createWorkflowRunEventsProvider, isTerminalWorkflowRunLiveErrorCode } from "./workflow-run-events-provider";
 import { acquireScannerStream, stopScannerStream } from "./workflow-scanner-camera";
@@ -100,33 +101,35 @@ const statusClass = (status: ScanStatus) =>
       ? "text-red-700 dark:text-red-300"
       : "text-blue-700 dark:text-blue-300";
 
-const displayTime = (value: number) =>
-  new Date(value).toLocaleTimeString([], {
+const displayTime = (value: number, locale: string) =>
+  new Date(value).toLocaleTimeString(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
 
 async function openScanDetails(item: ScanLogItem, retry?: () => void) {
-  await dialogCore.open<void>(
-    (close) => (
+  await dialogCore.open<void>((close) => {
+    const locale = useLocale();
+    const t = () => workflowMessages.resolve([locale()]).t;
+    return (
       <PanelDialog>
-        <PanelDialog.Header title="Scan details" subtitle={item.runId ?? item.code} icon="ti ti-barcode" close={() => close()} />
+        <PanelDialog.Header title={t().scanDetails} subtitle={item.runId ?? item.code} icon="ti ti-barcode" close={() => close()} />
         <PanelDialog.Body>
-          <PanelDialog.Section title="Result" icon="ti ti-activity">
+          <PanelDialog.Section title={t().result} icon="ti ti-activity">
             <dl class="grid gap-x-3 gap-y-2 text-sm sm:grid-cols-[7rem_minmax(0,1fr)]">
-              <dt class="text-dimmed">Status</dt>
-              <dd class={`font-semibold ${statusClass(item.status)}`}>{item.status}</dd>
-              <dt class="text-dimmed">Format</dt>
+              <dt class="text-dimmed">{t().status}</dt>
+              <dd class={`font-semibold ${statusClass(item.status)}`}>{workflowRunStatusLabel(item.status, locale())}</dd>
+              <dt class="text-dimmed">{t().format}</dt>
               <dd class="font-mono">{item.format ?? "-"}</dd>
-              <dt class="text-dimmed">Message</dt>
+              <dt class="text-dimmed">{t().message}</dt>
               <dd>{item.message}</dd>
-              <dt class="text-dimmed">Scanned value</dt>
+              <dt class="text-dimmed">{t().scannedValue}</dt>
               <dd class="break-all font-mono text-xs">{item.code}</dd>
             </dl>
           </PanelDialog.Section>
-          <PanelDialog.Section title="Steps" icon="ti ti-list-details">
-            <Show when={item.steps.length > 0} fallback={<p class="text-sm text-dimmed">No step data loaded yet.</p>}>
+          <PanelDialog.Section title={t().steps} icon="ti ti-list-details">
+            <Show when={item.steps.length > 0} fallback={<p class="text-sm text-dimmed">{t().noStepData}</p>}>
               <div class="flex flex-col gap-2">
                 <For each={item.steps}>
                   {(step) => (
@@ -135,7 +138,9 @@ async function openScanDetails(item: ScanLogItem, retry?: () => void) {
                         <p class="truncate font-medium text-primary">{step.sourcePath?.length ? step.sourcePath.join(".") : step.key}</p>
                         <p class="text-xs text-dimmed">{step.action ?? step.kind}</p>
                       </div>
-                      <span class={`text-xs font-semibold ${stepStatusTextClass(step.status)}`}>{step.status}</span>
+                      <span class={`text-xs font-semibold ${stepStatusTextClass(step.status)}`}>
+                        {workflowStepStatusLabel(step.status, locale())}
+                      </span>
                     </div>
                   )}
                 </For>
@@ -154,21 +159,22 @@ async function openScanDetails(item: ScanLogItem, retry?: () => void) {
                   retryAction()();
                 }}
               >
-                <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
               </Button>
             )}
           </Show>
           <Button variant="secondary" type="button" onClick={() => close()}>
-            Close
+            {t().close}
           </Button>
         </PanelDialog.Footer>
       </PanelDialog>
-    ),
-    panelDialogOptions,
-  );
+    );
+  }, panelDialogOptions);
 }
 
 export default function WorkflowScannerSurface(props: Props) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   let cameraFrame: HTMLElement | undefined;
   let video: HTMLVideoElement | undefined;
   let stream: MediaStream | null = null;
@@ -229,7 +235,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   const loadInputContract = async (): Promise<WorkflowScannerInputContract> => {
     if (props.state.inputContract) return props.state.inputContract;
-    throw new Error("Scanner input contract is unavailable.");
+    throw new Error(t().scannerInputUnavailable);
   };
 
   const requestSessionInputs = async (changing = false): Promise<boolean> => {
@@ -244,9 +250,9 @@ export default function WorkflowScannerSurface(props: Props) {
         ...contract,
         mode: "execute",
         initialValues: sessionInputs(),
-        title: changing ? "Change scanner context" : "Set up scanner",
-        subtitle: "These values stay active until you change or close the scanner.",
-        submitLabel: changing ? "Apply" : "Start scanning",
+        title: changing ? t().changeScannerContext : t().setupScanner,
+        subtitle: t().scannerContextDescription,
+        submitLabel: changing ? t().apply : t().startScanning,
         icon: "ti ti-adjustments",
       });
       if (prompted === undefined) return false;
@@ -261,7 +267,7 @@ export default function WorkflowScannerSurface(props: Props) {
   const announceLog = (item: ScanLogItem) => {
     const announcement = {
       id: ++announcementId,
-      text: `Scan ${item.code}: ${item.message}. Status ${item.status}.`,
+      text: t().scanAnnouncement({ code: item.code, message: item.message, status: workflowRunStatusLabel(item.status, locale()) }),
     };
     setAnnouncements((items) => [...items.slice(-9), announcement]);
   };
@@ -320,7 +326,7 @@ export default function WorkflowScannerSurface(props: Props) {
     const res = props.transport?.getSteps
       ? await props.transport.getSteps(runId)
       : await workflowRunsApi[":runId"].steps.$get({ param: { runId } });
-    if (!res.ok) throw new Error(await errorMessage(res, "Request failed"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().requestFailed));
     const payload = PublicGridsWorkflowStepRunListSchema.parse(await res.json());
     return payload.items;
   };
@@ -340,14 +346,14 @@ export default function WorkflowScannerSurface(props: Props) {
         run.resultMessage ??
         run.error?.message ??
         run.operatorMessage ??
-        (status === "succeeded" ? "Succeeded" : status === "failed" ? "Workflow failed" : "Running"),
+        (status === "succeeded" ? t().succeeded : status === "failed" ? t().workflowFailed : t().running),
       ...(steps ? { steps } : {}),
     });
   };
 
   const refreshRun = async (logId: string, runId: string) => {
     const res = await getRun(runId);
-    if (!res.ok) throw new Error(await errorMessage(res, "Request failed"));
+    if (!res.ok) throw new Error(await errorMessage(res, t().requestFailed));
     const run = PublicGridsWorkflowRunSchema.parse(await res.json());
     let steps: PublicWorkflowRunStepSummary[] | undefined;
     if (isTerminal(run)) {
@@ -425,6 +431,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   const runEvents = createWorkflowRunEventsProvider({
     workflowId: props.state.workflowId,
+    locale: locale(),
     onReady: () => {
       streamReady = true;
       stopFallback();
@@ -461,21 +468,21 @@ export default function WorkflowScannerSurface(props: Props) {
       );
       const responseKind = workflowScannerResponseKind(res);
       if (responseKind === "revision-conflict") {
-        const message = await errorMessage(res, "Workflow changed while the scanner was open");
-        const pausedMessage = `${message} Restart the scanner to load the latest workflow revision.`;
+        const message = await errorMessage(res, t().workflowChangedScanner);
+        const pausedMessage = `${message} ${t().restartForLatestRevision}`;
         setPauseReason(pausedMessage);
         stopCamera();
         updateLog(item.id, { status: "failed", message: pausedMessage });
         return;
       }
-      if (responseKind === "failed") throw new Error(await errorMessage(res, "Scanner workflow could not be started"));
+      if (responseKind === "failed") throw new Error(await errorMessage(res, t().scannerStartFailed));
       const receipt = PublicWorkflowInvocationReceiptSchema.parse(await res.json());
       const runId = receipt.runId;
       const pending = pendingRunEvents.take(runId);
       if (pending) applyRun(item.id, pending.run, pending.steps);
       else {
         const status = receipt.status === "queued" ? "queued" : "running";
-        updateLog(item.id, { runId, status, message: status === "queued" ? "Queued" : "Running" });
+        updateLog(item.id, { runId, status, message: status === "queued" ? t().queued : t().running });
       }
       setTimeout(() => {
         if (!disposed) void refreshRun(item.id, runId).catch(() => !streamReady && startFallback());
@@ -483,7 +490,7 @@ export default function WorkflowScannerSurface(props: Props) {
     } catch (error) {
       updateLog(item.id, {
         status: "failed",
-        message: error instanceof Error ? error.message : "Scanner workflow could not be started",
+        message: error instanceof Error ? error.message : t().scannerStartFailed,
       });
     }
   };
@@ -505,9 +512,9 @@ export default function WorkflowScannerSurface(props: Props) {
         const prompted = await requestWorkflowRunInput({
           ...afterScanContract,
           mode: "execute",
-          title: "Complete scan",
-          subtitle: "Provide the values for this scanned item.",
-          submitLabel: "Run workflow",
+          title: t().completeScan,
+          subtitle: t().provideScannedInputs,
+          submitLabel: t().runWorkflow,
           icon: "ti ti-clipboard-check",
         });
         if (prompted === undefined) return;
@@ -521,7 +528,7 @@ export default function WorkflowScannerSurface(props: Props) {
       code: trimmed,
       format,
       status: busy ? "failed" : "queued",
-      message: busy ? "Scanner is busy. Wait for active workflow runs to finish." : "Queued",
+      message: busy ? t().scannerBusy : t().queued,
       runId: null,
       run: null,
       steps: [],
@@ -535,7 +542,7 @@ export default function WorkflowScannerSurface(props: Props) {
 
   const retryScan = (item: ScanLogItem) => {
     if (pauseReason() || item.runId || activeScanIds().size >= MAX_ACTIVE_SCAN_RUNS) return;
-    updateLog(item.id, { status: "queued", message: "Retrying" });
+    updateLog(item.id, { status: "queued", message: t().retrying });
     void submitScan(item);
   };
 
@@ -580,7 +587,7 @@ export default function WorkflowScannerSurface(props: Props) {
       setDetections(found);
       for (const detection of found) void runScan(detection.rawValue, detection.format);
     } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Scanner failed");
+      setCameraError(error instanceof Error ? error.message : t().scannerFailed);
     } finally {
       decoding = false;
       window.setTimeout(() => void tick(), 220);
@@ -598,7 +605,7 @@ export default function WorkflowScannerSurface(props: Props) {
     if (pauseReason()) return;
     setCameraError(null);
     try {
-      engine ??= createScannerEngine();
+      engine ??= createScannerEngine(t().scannerCanvasFailed);
       const acquired = await acquireScannerStream(navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices), () => disposed);
       if (!acquired) return;
       if (!video) {
@@ -616,7 +623,7 @@ export default function WorkflowScannerSurface(props: Props) {
       setCameraRunning(true);
       void tick();
     } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Camera could not be started");
+      setCameraError(error instanceof Error ? error.message : t().cameraStartFailed);
       stopCamera();
     }
   };
@@ -642,17 +649,17 @@ export default function WorkflowScannerSurface(props: Props) {
       setInputContract(await loadInputContract());
       const configured = await requestSessionInputs();
       if (!configured) {
-        setSetupError("Scanner setup was canceled.");
+        setSetupError(t().setupCanceled);
         return;
       }
       submitInitialCode();
       if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError("Camera scanning is not supported in this browser.");
+        setCameraError(t().cameraUnsupported);
         return;
       }
       await startCamera();
     } catch (error) {
-      setSetupError(error instanceof Error ? error.message : "Scanner inputs could not be loaded.");
+      setSetupError(error instanceof Error ? error.message : t().scannerInputsLoadFailed);
     }
   };
 
@@ -700,19 +707,19 @@ export default function WorkflowScannerSurface(props: Props) {
     <div class={shellClass}>
       <Show when={props.mode === "page"}>
         <header class="flex shrink-0 items-center gap-3 px-4 py-3">
-          <Tooltip.Anchor content="Back to workflow" placement="bottom">
+          <Tooltip.Anchor content={t().backToWorkflow} placement="bottom">
             <IconButtonLink
               variant="ghost"
               size="sm"
               href={props.state.returnHref ?? `/app/grids/${props.state.baseId}/workflows/${props.state.workflowId}`}
-              label="Back to workflow"
+              label={t().backToWorkflow}
             >
               <i class="ti ti-arrow-left" />
             </IconButtonLink>
           </Tooltip.Anchor>
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-semibold">{props.state.workflowName}</p>
-            <p class="truncate text-xs text-dimmed">Scanner</p>
+            <p class="truncate text-xs text-dimmed">{t().scanner}</p>
           </div>
         </header>
       </Show>
@@ -739,7 +746,7 @@ export default function WorkflowScannerSurface(props: Props) {
           </div>
           <div class="absolute left-3 top-3 flex flex-wrap items-center gap-2">
             <span class="rounded-full bg-black/70 px-2 py-1 text-xs font-medium text-white">
-              {pauseReason() ? "Paused" : cameraRunning() ? "Scanning" : "Camera off"}
+              {pauseReason() ? t().paused : cameraRunning() ? t().scanning : t().cameraOff}
             </span>
             <Show when={cameraError()}>
               <span class="rounded-full bg-red-600/90 px-2 py-1 text-xs font-medium text-white" role="alert">
@@ -766,7 +773,7 @@ export default function WorkflowScannerSurface(props: Props) {
                   onClick={() => (cameraRunning() ? stopCamera() : void startCamera())}
                 >
                   <i class={`ti ${cameraRunning() ? "ti-video-off" : "ti-video"}`} />
-                  {cameraRunning() ? "Stop" : "Start"}
+                  {cameraRunning() ? t().stop : t().start}
                 </Button>
               }
             >
@@ -777,7 +784,7 @@ export default function WorkflowScannerSurface(props: Props) {
                 class="bg-black/70 text-white hover:bg-black/90"
                 onClick={() => window.location.reload()}
               >
-                <i class="ti ti-refresh" aria-hidden="true" /> Restart
+                <i class="ti ti-refresh" aria-hidden="true" /> {t().restart}
               </Button>
             </Show>
           </div>
@@ -785,7 +792,7 @@ export default function WorkflowScannerSurface(props: Props) {
             <div class="absolute inset-0 flex items-center justify-center bg-black/70 p-6 text-center text-white">
               <div class="max-w-md">
                 <i class={`ti ${setupError() ? "ti-alert-circle" : "ti-adjustments"} mb-3 text-2xl`} aria-hidden="true" />
-                <p class="text-sm font-semibold">{setupError() ?? "Preparing scanner..."}</p>
+                <p class="text-sm font-semibold">{setupError() ?? t().preparingScanner}</p>
                 <Show when={setupError()}>
                   <Button
                     variant="secondary"
@@ -795,7 +802,7 @@ export default function WorkflowScannerSurface(props: Props) {
                     disabled={collectingInput()}
                     onClick={() => void initializeScanner()}
                   >
-                    <i class="ti ti-refresh" aria-hidden="true" /> Set up
+                    <i class="ti ti-refresh" aria-hidden="true" /> {t().setUp}
                   </Button>
                 </Show>
               </div>
@@ -806,22 +813,14 @@ export default function WorkflowScannerSurface(props: Props) {
         <section class="flex min-h-0 flex-col overflow-hidden">
           <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 px-1 pb-2">
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-dimmed">
-              <span>
-                <strong class="text-primary">{counts().total}</strong> scans
-              </span>
-              <span>
-                <strong class="text-emerald-700 dark:text-emerald-300">{counts().ok}</strong> ok
-              </span>
-              <span>
-                <strong class="text-blue-700 dark:text-blue-300">{counts().active}</strong> active
-              </span>
-              <span>
-                <strong class="text-red-700 dark:text-red-300">{counts().failed}</strong> errors
-              </span>
+              <span>{t().scanCount({ count: counts().total })}</span>
+              <span>{t().okCount({ count: counts().ok })}</span>
+              <span>{t().activeCount({ count: counts().active })}</span>
+              <span>{t().errorCount({ count: counts().failed })}</span>
             </div>
             <Show when={(promptContract("session")?.workflow.plan.inputs.length ?? 0) > 0}>
               <Button variant="secondary" size="sm" type="button" disabled={collectingInput()} onClick={() => void changeSessionInputs()}>
-                <i class="ti ti-adjustments" aria-hidden="true" /> Change context
+                <i class="ti ti-adjustments" aria-hidden="true" /> {t().changeContext}
               </Button>
             </Show>
           </div>
@@ -830,8 +829,8 @@ export default function WorkflowScannerSurface(props: Props) {
               <TextInput
                 value={manualCode}
                 onValueChange={setManualCode}
-                placeholder="Enter scan code..."
-                aria-label="Scan code"
+                placeholder={t().enterScanCode}
+                aria-label={t().scanCode}
                 icon="ti ti-keyboard"
                 name="manual-scan-code"
                 autocomplete="off"
@@ -845,16 +844,16 @@ export default function WorkflowScannerSurface(props: Props) {
               class="shrink-0"
               disabled={!manualCode().trim() || Boolean(pauseReason()) || !setupReady() || collectingInput()}
             >
-              <i class="ti ti-scan" aria-hidden="true" /> Scan
+              <i class="ti ti-scan" aria-hidden="true" /> {t().scan}
             </Button>
           </form>
           <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
             <Show when={counts().total > logs().length}>
-              <p class="px-3 py-1 text-[11px] text-dimmed">Showing the latest {MAX_VISIBLE_SCAN_LOGS} scans.</p>
+              <p class="px-3 py-1 text-[11px] text-dimmed">{t().latestScans({ count: MAX_VISIBLE_SCAN_LOGS })}</p>
             </Show>
             <Show
               when={logs().length > 0}
-              fallback={<div class="flex h-full items-center justify-center px-4 text-center text-sm text-dimmed">No scans yet.</div>}
+              fallback={<div class="flex h-full items-center justify-center px-4 text-center text-sm text-dimmed">{t().noScans}</div>}
             >
               <For each={logs()}>
                 {(item) => (
@@ -881,7 +880,7 @@ export default function WorkflowScannerSurface(props: Props) {
                       <span class="block truncate text-sm font-medium text-primary">{item.message}</span>
                       <span class="block truncate font-mono text-[11px] text-dimmed">{item.code}</span>
                     </span>
-                    <span class="text-xs text-dimmed">{displayTime(item.createdAt)}</span>
+                    <span class="text-xs text-dimmed">{displayTime(item.createdAt, locale())}</span>
                   </button>
                 )}
               </For>

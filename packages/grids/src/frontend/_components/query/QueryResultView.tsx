@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts } from "@k2b/ui";
+import { Button, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
@@ -7,6 +7,7 @@ import type { PublicField as Field, PublicTable as Table } from "../../../api/pu
 import { openViewSettingsDialog } from "../dialogs/ViewSettingsDialogs";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkspaceQueryResultViewRoute } from "../workspace/workspace-public-state-model";
+import { queryMessages } from "./messages";
 import QueryResultTable from "./QueryResultTable";
 
 const leaveEditMode = () => {
@@ -29,6 +30,7 @@ export default function QueryResultView(props: {
   fieldsByTable: Record<string, Field[]>;
   editMode: boolean;
 }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   type PageRequest = { cursor: string | null; history: Array<string | null> };
   const openSettings = () => {
     if (!props.route.canEditActiveView) return;
@@ -57,7 +59,7 @@ export default function QueryResultView(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load view page."));
+      if (!response.ok) throw new Error(await errorMessage(response, t.loadViewPageFailed));
       return response.json();
     },
     onSuccess: (next, request) => {
@@ -83,16 +85,16 @@ export default function QueryResultView(props: {
       <Show when={props.editMode && props.route.canEditActiveView}>
         <div class="flex shrink-0 items-center gap-2">
           <Button variant="success" size="sm" type="button" onClick={openSettings}>
-            <i class="ti ti-table-spark" aria-hidden="true" /> View
+            <i class="ti ti-table-spark" aria-hidden="true" /> {t.view}
           </Button>
           <Button variant="ghost" size="sm" type="button" class="ml-auto" onClick={leaveEditMode}>
-            Done
+            {t.done}
           </Button>
         </div>
       </Show>
       <Show
         when={result()}
-        fallback={<Placeholder state="loading" surface="paper" title="Loading view" description="The query result is being prepared." />}
+        fallback={<Placeholder state="loading" surface="paper" title={t.loadingView} description={t.preparingResult} />}
       >
         <Show
           when={success()}
@@ -100,11 +102,11 @@ export default function QueryResultView(props: {
             <Placeholder
               state="error"
               surface="paper"
-              title="Could not load view"
+              title={t.loadViewFailed}
               description={
                 diagnostics()
                   .map((item) => item.message)
-                  .join("; ") || "The view returned no result."
+                  .join("; ") || t.noViewResult
               }
               action={
                 <div class="flex flex-wrap items-center justify-center gap-2">
@@ -116,12 +118,12 @@ export default function QueryResultView(props: {
                       disabled={pageMut.loading()}
                       onClick={() => pageMut.mutate({ cursor: null, history: [] })}
                     >
-                      <i class="ti ti-chevrons-left" aria-hidden="true" /> First page
+                      <i class="ti ti-chevrons-left" aria-hidden="true" /> {t.firstPage}
                     </Button>
                   </Show>
                   <Show when={props.route.canEditActiveView}>
                     <Button variant="secondary" size="sm" type="button" onClick={openSettings}>
-                      <i class="ti ti-settings" aria-hidden="true" /> View settings
+                      <i class="ti ti-settings" aria-hidden="true" /> {t.viewSettings}
                     </Button>
                   </Show>
                 </div>

@@ -7,15 +7,12 @@ import { jsonFetch } from "../http";
 import {
   createPulseSource,
   scrapePulseSourceOnce,
-  sourceCreatedMessage,
   sourceCreateValidationError,
-  sourceInitialScrapeFailureMessage,
-  sourceInitialScrapeSuccessMessage,
 } from "./source-actions";
 import { openSourceCreateDialog } from "./source-create-dialog";
 import { openSourceEditDialog } from "./source-edit-dialog";
-import { formatIngestCounts } from "./source-helpers";
 import type { CreateSourceInput, WorkspaceView } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type SourceControllerDeps = {
   selectedBaseId: Accessor<string>;
@@ -30,6 +27,7 @@ type SourceControllerDeps = {
 };
 
 export const createSourceController = (deps: SourceControllerDeps) => {
+  const t = usePulseMessages();
   let disposed = false;
   const createMutation = mutation.create<PulseSource, { baseId: string; input: CreateSourceInput }>({
     mutation: ({ baseId, input }, { abortSignal }) => createPulseSource(baseId, input, abortSignal),
@@ -97,7 +95,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
   };
   const requireWritable = (): boolean => {
     if (!deps.writeBlocked()) return true;
-    toast.error("Refresh Pulse data before making more changes.");
+    toast.error(t().refreshBeforeChanges);
     return false;
   };
 
@@ -107,14 +105,14 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (disposed) return false;
       if (scrapeMutation.error()) throw scrapeMutation.error();
       const counts = scrapeMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData], "The source was created and scraped, but Pulse data could not be refreshed.")))
+      if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedScrapedRefreshFailed)))
         return false;
-      toast.success(sourceInitialScrapeSuccessMessage(counts));
+      toast.success(t().sourceAddedScraped({ counts: t().ingestCounts(counts) }));
       return true;
     } catch (error) {
       if (disposed) return false;
-      if (!(await reconcile([deps.refreshBaseData], "The source was created, but the source list could not be refreshed."))) return false;
-      toast.error(sourceInitialScrapeFailureMessage(error));
+      if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedRefreshFailed))) return false;
+      toast.error(t().sourceAddedScrapeFailed({ detail: error instanceof Error ? error.message : undefined }));
       return true;
     }
   };
@@ -123,7 +121,7 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (disposed || !requireWritable()) return false;
     const baseId = deps.selectedBaseId();
     if (!baseId) return false;
-    const validationError = sourceCreateValidationError(input);
+    const validationError = sourceCreateValidationError(input) ? t().endpointRequired : null;
     if (validationError) {
       toast.error(validationError);
       return false;
@@ -139,12 +137,12 @@ export const createSourceController = (deps: SourceControllerDeps) => {
         deps.navigate({ view: "sources", sourceId: source.id });
         return true;
       }
-      if (!(await reconcile([deps.refreshBaseData], "The source was created, but the source list could not be refreshed."))) return true;
+      if (!(await reconcile([deps.refreshBaseData], t().sourceCreatedRefreshFailed))) return true;
       deps.navigate({ view: "sources", sourceId: source.id });
-      toast.success(sourceCreatedMessage(input.kind));
+      toast.success(input.kind === "http_ingest" ? t().httpIngestSourceCreated : t().metricsSourceCreated);
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not add source");
+      toast.error(error instanceof Error ? error.message : t().sourceAddFailed);
       return false;
     } finally {
       deps.setLoading(false);
@@ -169,13 +167,13 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (
         !(await reconcile(
           [deps.refreshBaseData, deps.refreshSourceDetail, deps.refreshDashboard],
-          "The scrape completed, but Pulse data could not be refreshed.",
+          t().sourceChangedRefreshFailed,
         ))
       )
         return;
-      toast.success(`Metrics scraped: ${formatIngestCounts(counts)}`);
+      toast.success(t().metricsScraped({ counts: t().ingestCounts(counts) }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Scrape failed");
+      toast.error(error instanceof Error ? error.message : t().scrapeFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -191,11 +189,11 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (disposed) return;
       if (toggleMutation.error()) throw toggleMutation.error();
       const updated = toggleMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData, deps.refreshDashboard], "The source changed, but Pulse data could not be refreshed.")))
+      if (!(await reconcile([deps.refreshBaseData, deps.refreshDashboard], t().sourceChangedRefreshFailed)))
         return;
-      toast.success(updated.enabled ? "Source resumed" : "Source paused");
+      toast.success(updated.enabled ? t().sourceResumed : t().sourcePaused);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update source");
+      toast.error(error instanceof Error ? error.message : t().sourceUpdateFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -212,10 +210,10 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       await editMutation.mutate({ baseId, sourceId: source.id, patch: { ...patch } });
       if (disposed) return;
       if (editMutation.error()) throw editMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], "The source was updated, but the source list could not be refreshed."))) return;
-      toast.success("Source updated");
+      if (!(await reconcile([deps.refreshBaseData], t().sourceUpdatedRefreshFailed))) return;
+      toast.success(t().sourceUpdated);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update source");
+      toast.error(error instanceof Error ? error.message : t().sourceUpdateFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -225,8 +223,8 @@ export const createSourceController = (deps: SourceControllerDeps) => {
     if (!requireWritable()) return;
     const baseId = deps.selectedBaseId();
     if (!baseId) return;
-    const confirmed = await prompts.confirm(`Remove source "${source.name}"? Existing samples stay available, but new data will stop.`, {
-      title: "Remove source",
+    const confirmed = await prompts.confirm(t().removeSourceConfirm({ name: source.name }), {
+      title: t().removeSource,
       variant: "danger",
     });
     if (disposed || !confirmed || !requireWritable()) return;
@@ -236,39 +234,39 @@ export const createSourceController = (deps: SourceControllerDeps) => {
       if (disposed) return;
       if (removeMutation.error()) throw removeMutation.error();
       if (
-        !(await reconcile([deps.refreshBaseData, deps.refreshDashboard], "The source was removed, but Pulse data could not be refreshed."))
+        !(await reconcile([deps.refreshBaseData, deps.refreshDashboard], t().sourceRemovedRefreshFailed))
       )
         return;
       deps.setSelectedSourceId((current) => (current === source.id ? "" : current));
-      toast.success("Source removed");
+      toast.success(t().sourceRemoved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not remove source");
+      toast.error(error instanceof Error ? error.message : t().sourceRemoveFailed);
     } finally {
       deps.setLoading(false);
     }
   };
 
   const createApiKey = async (source: PulseSource, input: Parameters<ResourceApiKeysProps["createKey"]>[0]) => {
-    if (deps.writeBlocked()) throw new Error("Refresh Pulse data before making more changes.");
+    if (deps.writeBlocked()) throw new Error(t().refreshBeforeChanges);
     const baseId = deps.selectedBaseId();
-    if (!baseId) throw new Error("No Pulse base selected.");
+    if (!baseId) throw new Error(t().noBaseSelected);
     await createApiKeyMutation.mutate({ baseId, sourceId: source.id, input: { ...input } });
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
     if (createApiKeyMutation.error()) throw createApiKeyMutation.error();
     const created = createApiKeyMutation.data()!;
-    await reconcile([deps.refreshSourceDetail], "The API key was created, but the key list could not be refreshed.");
+    await reconcile([deps.refreshSourceDetail], t().apiKeyCreatedRefreshFailed);
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
     return created;
   };
 
   const revokeApiKey = async (source: PulseSource, credentialId: string) => {
-    if (deps.writeBlocked()) throw new Error("Refresh Pulse data before making more changes.");
+    if (deps.writeBlocked()) throw new Error(t().refreshBeforeChanges);
     const baseId = deps.selectedBaseId();
-    if (!baseId) throw new Error("No Pulse base selected.");
+    if (!baseId) throw new Error(t().noBaseSelected);
     await revokeApiKeyMutation.mutate({ baseId, sourceId: source.id, credentialId });
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
     if (revokeApiKeyMutation.error()) throw revokeApiKeyMutation.error();
-    await reconcile([deps.refreshSourceDetail], "The API key was revoked, but the key list could not be refreshed.");
+    await reconcile([deps.refreshSourceDetail], t().apiKeyRevokedRefreshFailed);
     if (disposed) throw new DOMException("Source owner was disposed", "AbortError");
   };
 

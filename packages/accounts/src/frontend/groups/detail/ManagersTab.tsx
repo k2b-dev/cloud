@@ -2,6 +2,7 @@ import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/u
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { getPrimaryAccountBadge, getProviderBadge } from "../../lib/account-badges";
+import { useAccountsMessages } from "../../messages";
 import AddMember from "./AddMember.island";
 import RemoveMember from "./RemoveMember.island";
 import TabToolbar from "./TabToolbar";
@@ -22,12 +23,13 @@ type ManagersTabProps = {
 };
 
 export default function ManagersTab(props: ManagersTabProps) {
+  const messages = useAccountsMessages();
   const isEmpty = props.items.length === 0;
   const columns: DataTableColumn<EntityListItem>[] = [
-    { id: "type", header: "Type", value: (item) => item.kind, cellClass: "whitespace-nowrap" },
+    { id: "type", header: messages().type, value: (item) => item.kind, cellClass: "whitespace-nowrap" },
     {
       id: "name",
-      header: "Name",
+      header: messages().name,
       value: (item) =>
         item.kind === "user"
           ? item.user.displayName || item.user.mail || item.user.uid
@@ -37,14 +39,14 @@ export default function ManagersTab(props: ManagersTabProps) {
     },
     {
       id: "detail",
-      header: "Detail",
+      header: messages().detail,
       value: (item) => (item.kind === "user" ? item.user.mail : item.kind === "group" ? item.group.description : item.serviceAccount.appId),
       cellClass: "max-w-[24rem]",
     },
-    { id: "access", header: "Access" },
+    { id: "access", header: messages().access },
     {
       id: "actions",
-      header: "Actions",
+      header: messages().actions,
       headerClass: "text-right",
       cellClass: "w-10 text-right whitespace-nowrap max-w-none",
     },
@@ -77,7 +79,7 @@ export default function ManagersTab(props: ManagersTabProps) {
       />
 
       {isEmpty ? (
-        <Placeholder surface="paper" icon="ti ti-users-group" description={<>This group has no managers.</>} />
+        <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noManagers}</>} />
       ) : (
         <div class="paper overflow-hidden">
           <DataTable
@@ -93,7 +95,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                 const user = item.user;
                 const accessBadge = getPrimaryAccountBadge(user);
                 const href = props.isAdmin ? `/app/accounts/users/${user.id}` : undefined;
-                if (col.id === "type") return <span class="text-dimmed">User</span>;
+                if (col.id === "type") return <span class="text-dimmed">{messages().user}</span>;
                 if (col.id === "name") {
                   const label = `${user.displayName || user.mail || user.uid} (${user.uid})`;
                   const content = (
@@ -128,7 +130,11 @@ export default function ManagersTab(props: ManagersTabProps) {
                   );
                 }
                 if (col.id === "access")
-                  return <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${accessBadge.className}`}>{accessBadge.label}</span>;
+                  return (
+                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${accessBadge.className}`}>
+                      {user.profile === "user" ? messages().fullAccount : messages().guestAccount}
+                    </span>
+                  );
                 if (col.id === "actions") {
                   return props.canManage ? (
                     <RemoveMember
@@ -145,9 +151,9 @@ export default function ManagersTab(props: ManagersTabProps) {
 
               if (item.kind === "service_account") {
                 const serviceAccount = item.serviceAccount;
-                const kindLabel = serviceAccount.kind === "user_delegated" ? "User-bound" : "Resource-bound";
+                const kindLabel = serviceAccount.kind === "user_delegated" ? messages().userBound : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
-                if (col.id === "type") return <span class="text-dimmed">Service account</span>;
+                if (col.id === "type") return <span class="text-dimmed">{messages().serviceAccount}</span>;
                 if (col.id === "name") {
                   const content = (
                     <>
@@ -167,8 +173,8 @@ export default function ManagersTab(props: ManagersTabProps) {
                 }
                 if (col.id === "detail") {
                   const content = (
-                    <span class="block truncate" title={serviceAccount.appId || "No app ID"}>
-                      {serviceAccount.appId || <span class="italic">No app ID</span>}
+                    <span class="block truncate" title={serviceAccount.appId || messages().noAppId}>
+                      {serviceAccount.appId || <span class="italic">{messages().noAppId}</span>}
                     </span>
                   );
                   return href ? (
@@ -191,7 +197,7 @@ export default function ManagersTab(props: ManagersTabProps) {
               const group = item.group;
               const providerBadge = getProviderBadge(group.provider);
               const href = props.groupHref(group.id);
-              if (col.id === "type") return <span class="text-dimmed">Group</span>;
+              if (col.id === "type") return <span class="text-dimmed">{messages().group}</span>;
               if (col.id === "name")
                 return (
                   <a href={href} class="block truncate font-medium text-primary hover:underline">
@@ -200,14 +206,16 @@ export default function ManagersTab(props: ManagersTabProps) {
                 );
               if (col.id === "detail") {
                 return (
-                  <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || "No description"}>
-                    {group.description || <span class="italic">No description</span>}
+                  <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || messages().noDescription}>
+                    {group.description || <span class="italic">{messages().noDescription}</span>}
                   </a>
                 );
               }
               if (col.id === "access")
                 return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>{providerBadge.label}</span>
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
+                    {group.provider === "ipa" ? "FreeIPA" : messages().local}
+                  </span>
                 );
               if (col.id === "actions")
                 return props.canManage ? (

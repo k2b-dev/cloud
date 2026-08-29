@@ -1,4 +1,5 @@
 import { errorMessage } from "../utils/api-helpers";
+import { documentMessages } from "./messages";
 
 const decodeHeaderValue = (value: string): string => {
   try {
@@ -22,8 +23,8 @@ const filenameFromResponse = (res: Response, fallbackName: string): string => {
   return filenameFromContentDisposition(res.headers.get("Content-Disposition")) ?? fallbackName;
 };
 
-export const downloadPdfResponse = async (res: Response, fallbackName: string) => {
-  if (!res.ok) throw new Error(await errorMessage(res, "Failed to render PDF"));
+export const downloadPdfResponse = async (res: Response, fallbackName: string, locale = "en") => {
+  if (!res.ok) throw new Error(await errorMessage(res, documentMessages.resolve([locale]).t.failedToRenderPdf));
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

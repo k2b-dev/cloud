@@ -1,10 +1,22 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, dialogCore, NoticeCard, PanelDialog, PdfPreview, panelDialogFixedOptions, prompts, TagsInput, TextInput } from "@k2b/ui";
+import {
+  Button,
+  dialogCore,
+  NoticeCard,
+  PanelDialog,
+  PdfPreview,
+  panelDialogFixedOptions,
+  prompts,
+  TagsInput,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { PublicTable as Table } from "../../../api/public-dto";
 import RecordPicker from "../records/RecordPicker";
 import { downloadPdfResponse } from "./document-download";
 import { isPdfResponse, requestDocumentTemplateGeneration, requestDocumentTemplatePreview } from "./document-transfer-client";
+import { documentMessages } from "./messages";
 import type { PublicDocumentTemplateSummary } from "./public-document-types";
 
 type DocumentGenerateDialogArgs = {
@@ -22,6 +34,8 @@ export const openDocumentGenerateDialog = (args: DocumentGenerateDialogArgs) =>
   });
 
 function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close: () => void }) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
   const idempotencyKey = crypto.randomUUID();
   const [recordId, setRecordId] = createSignal(props.args.initialRecordId ?? "");
   const [filename, setFilename] = createSignal("");
@@ -38,7 +52,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
   };
   const previewPdf = async () => {
     const selected = recordId().trim();
-    if (!selected) throw new Error("Choose a record first.");
+    if (!selected) throw new Error(t().chooseRecordFirst);
     setPreviewedRecordId(null);
     const res = await requestDocumentTemplatePreview({ templateId: props.args.template.id, recordId: selected });
     if (isPdfResponse(res)) setPreviewedRecordId(selected);
@@ -48,8 +62,8 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
   const generateMut = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
       const selected = recordId().trim();
-      if (!selected) throw new Error("Choose a record first.");
-      if (!hasCurrentPreview()) throw new Error("Render a PDF preview before generating this document.");
+      if (!selected) throw new Error(t().chooseRecordFirst);
+      if (!hasCurrentPreview()) throw new Error(t().previewBeforeGenerate);
       const res = await requestDocumentTemplateGeneration({
         templateId: props.args.template.id,
         recordId: selected,
@@ -58,7 +72,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
         idempotencyKey,
         signal: abortSignal,
       });
-      await downloadPdfResponse(res, filename().trim() || `${props.args.template.name}.pdf`);
+      await downloadPdfResponse(res, filename().trim() || `${props.args.template.name}.pdf`, locale());
     },
     onSuccess: async () => {
       await props.args.onGenerated();
@@ -70,7 +84,10 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={`${props.args.mode === "generate-again" ? "Generate again" : "Generate"} — ${props.args.template.name}`}
+        title={t().generateTitle({
+          action: props.args.mode === "generate-again" ? t().generateAgain : t().generate,
+          template: props.args.template.name,
+        })}
         subtitle={props.args.table.name}
         icon="ti ti-file-type-pdf"
         close={props.close}
@@ -82,38 +99,34 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             templateId={props.args.template.id}
             value={recordId}
             onChange={setSelectedRecord}
-            label="Record"
-            description="Choose the record whose current data should be used for this Document."
-            placeholder="Search records..."
+            label={t().record}
+            description={t().recordDescription}
+            placeholder={t().searchRecords}
           />
           <Show when={props.args.template.renderer.kind === "html"}>
             <TextInput
-              label="Filename"
-              description="Optional. Leave empty to use the filename defined by the template."
+              label={t().filename}
+              description={t().optionalTemplateFilename}
               value={filename}
               onValueChange={setFilename}
               icon="ti ti-file-text"
-              placeholder="Use template default"
+              placeholder={t().useTemplateDefault}
             />
           </Show>
           <TagsInput
-            label="Tags"
-            description="Optional labels for finding and organizing the generated document."
-            placeholder="customer, signed, 2026"
+            label={t().tags}
+            description={t().tagsDescription}
+            placeholder={t().tagsPlaceholder}
             value={tags}
             onValueChange={setTags}
           />
-          <NoticeCard
-            tone="info"
-            title="The generated Document stays unchanged"
-            detail="Later changes to the record or template do not update its artifacts. Generate again to create a new Document."
-          />
+          <NoticeCard tone="info" title={t().immutableGeneratedDocument} detail={t().immutableGeneratedDocumentDetail} />
         </section>
         <PdfPreview
-          title="PDF preview"
+          title={t().pdfPreview}
           class="h-[min(56rem,62dvh)] min-h-[36rem] shrink-0"
-          buttonLabel="Render preview"
-          emptyText="Choose a record and render a PDF preview before generating."
+          buttonLabel={t().renderPreview}
+          emptyText={t().chooseRecordAndPreview}
           disabled={() => !recordId().trim()}
           request={previewPdf}
         />
@@ -122,7 +135,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
         <span />
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={props.close} disabled={generateMut.loading()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button
             variant="primary"
@@ -132,7 +145,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             disabled={generateMut.loading() || !hasCurrentPreview()}
           >
             {generateMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
-            {props.args.mode === "generate-again" ? "Generate again" : "Generate Document"}
+            {props.args.mode === "generate-again" ? t().generateAgain : t().generateDocument}
           </Button>
         </div>
       </PanelDialog.Footer>

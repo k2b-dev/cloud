@@ -1,6 +1,7 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import type { Context, MiddlewareHandler } from "hono";
 import { boundedQueryPoolSize } from "../service/bounded-query";
+import { apiMessages } from "./messages";
 
 type QueryAdmissionRejection = "aborted" | "full" | "timeout";
 type QueryAdmissionResult<T> = { ok: true; value: T } | { ok: false; reason: QueryAdmissionRejection };
@@ -177,6 +178,6 @@ export const queryAdmissionMiddleware = (admission: QueryAdmission = queryAdmiss
     }, c.req.raw.signal);
     if (result.ok) return;
     c.header("Retry-After", "1");
-    return c.json({ message: "Grids is busy. Retry shortly." }, 503);
+    return c.json({ message: apiMessages(c).queryBusy }, 503);
   };
 };

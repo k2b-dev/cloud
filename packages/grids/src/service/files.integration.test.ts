@@ -50,7 +50,7 @@ describe("durable file asset lifecycle Postgres integration", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("BAD_INPUT");
-      expect(result.error.message).toBe("Document artifact protection cannot be released");
+      expect(result.error.message).toBe("Protection for a document artifact cannot be released.");
     }
   });
 

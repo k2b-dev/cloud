@@ -19,6 +19,7 @@ import {
   EvidenceTarWriter,
   safeArchiveSegment,
 } from "./evidence-archive";
+import { serviceMessagesFor } from "./messages";
 import { insertWithShortIdForDb } from "./short-id";
 
 const PAGE_SIZE = 200;
@@ -153,6 +154,7 @@ export const preflight = async (params: {
   from: string | null;
   to: string | null;
   sections?: readonly EvidenceExportSection[];
+  locale?: string;
 }): Promise<EvidenceExportPreflight> => {
   const [base] = await sql<Array<{ short_id: string }>>`SELECT short_id FROM grids.bases WHERE id = ${params.baseId}::uuid`;
   if (!base) throw new Error("Base not found");
@@ -318,17 +320,18 @@ export const preflight = async (params: {
       },
     };
   });
+  const t = serviceMessagesFor(params.locale);
   const warnings = selected.has("revisions")
     ? history.flatMap((item) =>
         item.enabled
           ? item.baselineComplete
             ? []
-            : [`Table ${item.tableId} is still capturing its durable-history baseline.`]
-          : [`Table ${item.tableId} has no Durable History; earlier record states are not available.`],
+            : [t.evidenceHistoryCapturing({ table: item.tableId })]
+          : [t.evidenceHistoryMissing({ table: item.tableId })],
       )
     : [];
-  if (estimatedEntries > EVIDENCE_EXPORT_MAX_ENTRIES) warnings.push("The known entry count exceeds the export package limit.");
-  if (estimatedBytes > EVIDENCE_EXPORT_MAX_PACKAGE_BYTES) warnings.push("Known file and Document bytes exceed the export package limit.");
+  if (estimatedEntries > EVIDENCE_EXPORT_MAX_ENTRIES) warnings.push(t.evidenceEntryWarning);
+  if (estimatedBytes > EVIDENCE_EXPORT_MAX_PACKAGE_BYTES) warnings.push(t.evidenceBytesWarning);
   return {
     scope: { baseId: base.short_id, tableId: table?.short_id ?? null },
     known,
@@ -347,10 +350,10 @@ export const create = async (params: {
   sections: EvidenceExportSection[];
   requestedBy: string | null;
   requestedByDisplayName: string | null;
+  locale?: string;
 }): Promise<Result<EvidenceExport>> => {
   const preview = await preflight(params);
-  if (!preview.withinKnownBudgets)
-    return fail(err.badInput("The requested evidence scope exceeds the known package budgets. Narrow the table, period, or sections."));
+  if (!preview.withinKnownBudgets) return fail(err.badInput(serviceMessagesFor(params.locale).evidenceScopeTooLarge));
   const selected = new Set(params.sections);
   const estimatedEntries =
     (selected.has("records") ? preview.known.records : 0) +
@@ -1155,7 +1158,7 @@ export const expireCompletedExports = async (baseId: string | null = null): Prom
   for (const row of rows) await expireOne(row.id);
 };
 
-export const retry = async (shortId: string): Promise<Result<EvidenceExport>> => {
+export const retry = async (shortId: string, locale?: string): Promise<Result<EvidenceExport>> => {
   const [updated] = await sql<Array<{ id: string; attempt: number }>>`
     UPDATE grids.evidence_exports
     SET status = 'queued', attempt = attempt + 1, processed_entries = 0, started_at = NULL, completed_at = NULL,
@@ -1163,14 +1166,14 @@ export const retry = async (shortId: string): Promise<Result<EvidenceExport>> =>
     WHERE short_id = ${shortId} AND status IN ('failed', 'canceled')
     RETURNING id::text, attempt
   `;
-  if (!updated) return fail(err.conflict("Only failed or canceled evidence exports can be retried."));
+  if (!updated) return fail(err.conflict(serviceMessagesFor(locale).evidenceRetryState));
   const row = await loadInternal(shortId);
   if (!row) throw new Error("Retried evidence export disappeared");
   await queueExport(updated.id, updated.attempt);
   return ok(mapExport(row));
 };
 
-export const cancel = async (shortId: string): Promise<Result<EvidenceExport>> => {
+export const cancel = async (shortId: string, locale?: string): Promise<Result<EvidenceExport>> => {
   const [updated] = await sql<Array<{ id: string }>>`
     UPDATE grids.evidence_exports
     SET status = CASE WHEN status = 'queued' THEN 'canceled' ELSE 'cancel_requested' END,
@@ -1179,7 +1182,7 @@ export const cancel = async (shortId: string): Promise<Result<EvidenceExport>> =
     WHERE short_id = ${shortId} AND status IN ('queued', 'running')
     RETURNING id::text
   `;
-  if (!updated) return fail(err.conflict("Only queued or running evidence exports can be canceled."));
+  if (!updated) return fail(err.conflict(serviceMessagesFor(locale).evidenceCancelState));
   const row = await loadInternal(shortId);
   if (!row) throw new Error("Canceled evidence export disappeared");
   return ok(mapExport(row));
@@ -1187,11 +1190,12 @@ export const cancel = async (shortId: string): Promise<Result<EvidenceExport>> =
 
 export const download = async (
   shortId: string,
+  locale?: string,
 ): Promise<Result<{ filename: string; sizeBytes: number; sha256: string; body: ReadableStream<Uint8Array> }>> => {
   await expireByShortId(shortId);
   const row = await loadInternal(shortId);
   if (!row || row.status !== "completed" || !row.package_filename || !row.package_sha256)
-    return fail(err.notFound("Evidence export package"));
+    return fail(err.notFound(serviceMessagesFor(locale).evidencePackage));
   let sequence = 0;
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {

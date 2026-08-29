@@ -1,10 +1,11 @@
 import { fuzzy } from "@k2b/stdlib";
-import { CopyButton, DataTable, type DataTableColumn, TextInput } from "@k2b/ui";
+import { CopyButton, DataTable, type DataTableColumn, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { GRID_FORMULA_FUNCTIONS } from "../../../formula/function-catalog";
-import { FIELD_TYPE_LABELS, fieldTypeIcon, fieldTypeLabel } from "./field-type-meta";
+import { fieldTypeIcon, fieldTypeLabel } from "./field-type-meta";
 import { formulaFieldRefs, formulaFieldToken } from "./formula-authoring";
+import { gridsFieldMessages } from "./messages";
 
 type RefField = ReturnType<typeof formulaFieldRefs>[number];
 type FunctionCategory = "number" | "text" | "date" | "logic";
@@ -134,13 +135,26 @@ const functionExample = (name: string): string => {
 const functionCopyText = (fn: (typeof GRID_FORMULA_FUNCTIONS)[number]) => functionExample(fn.name);
 
 export default function FormulaReferenceWindow(props: { tableName: string; fields: Field[]; currentFieldId?: string | null }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
+  const categoryMeta = (category: FunctionCategory) => ({
+    ...FUNCTION_CATEGORY_META[category],
+    label:
+      category === "number"
+        ? t().numberCategory
+        : category === "text"
+          ? t().textCategory
+          : category === "date"
+            ? t().dateCategory
+            : t().logicCategory,
+  });
   const [query, setQuery] = createSignal("");
   const fields = createMemo(() => formulaFieldRefs(props.fields, props.currentFieldId ?? undefined));
   const fieldRows = createMemo(() => {
     const rows = fields().map((field) => ({
       kind: "field" as const,
       field,
-      search: `${field.name} ${field.type} ${formulaFieldToken(field)} ${fieldTypeLabel(field.type)}`,
+      search: `${field.name} ${field.type} ${formulaFieldToken(field)} ${fieldTypeLabel(field.type, locale())}`,
     }));
     const q = query().trim();
     if (!q) return rows;
@@ -149,12 +163,13 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
   const functionRows = createMemo(() => {
     const rows = GRID_FORMULA_FUNCTIONS.map((fn) => {
       const category = functionCategory(fn.name);
-      const meta = FUNCTION_CATEGORY_META[category];
+      const meta = categoryMeta(category);
+      const description = t().formulaFunctionDescription({ name: fn.name, fallback: fn.description });
       return {
         kind: "function" as const,
         fn,
         category,
-        search: `${meta.label} ${category} ${fn.name} ${fn.signature} ${fn.description} ${functionExample(fn.name)}`,
+        search: `${meta.label} ${category} ${fn.name} ${fn.signature} ${description} ${functionExample(fn.name)}`,
       };
     }).sort(
       (a, b) =>
@@ -170,17 +185,17 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
   const fieldColumns: DataTableColumn<Extract<ReferenceItem, { kind: "field" }>>[] = [
     {
       id: "field",
-      header: "Field",
+      header: t().field,
       value: (row) => row.field.name,
     },
     {
       id: "type",
-      header: "Type",
+      header: t().type,
       value: (row) => row.field.type,
     },
     {
       id: "ref",
-      header: "Ref",
+      header: t().reference,
       value: (row) => formulaFieldToken(row.field),
     },
     {
@@ -194,19 +209,19 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
   const functionColumns: DataTableColumn<Extract<ReferenceItem, { kind: "function" }>>[] = [
     {
       id: "category",
-      header: "Type",
+      header: t().type,
       value: (row) => row.category,
       headerClass: "w-28",
       cellClass: "w-28",
     },
     {
       id: "function",
-      header: "Function",
+      header: t().function,
       value: (row) => row.fn.name,
     },
     {
       id: "example",
-      header: "Example",
+      header: t().example,
       value: (row) => functionExample(row.fn.name),
     },
     {
@@ -223,16 +238,16 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
       <div class="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-[var(--ui-space-section)]">
         <header class="flex flex-wrap items-start justify-between gap-[var(--ui-space-section)]">
           <div>
-            <h1 class="text-2xl font-semibold tracking-normal">Formula reference</h1>
+            <h1 class="text-2xl font-semibold tracking-normal">{t().formulaReference}</h1>
             <p class="text-sm text-dimmed">{props.tableName}</p>
           </div>
           <div class="w-full max-w-md">
             <TextInput
-              aria-label="Search fields and functions"
+              aria-label={t().searchFieldsFunctions}
               value={query}
               onValueChange={setQuery}
               icon="ti ti-search"
-              placeholder="Search fields and functions..."
+              placeholder={t().searchFieldsFunctionsPlaceholder}
               clearable
             />
           </div>
@@ -241,15 +256,15 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
         <div class="grid min-h-0 flex-1 grid-cols-1 gap-[var(--ui-space-section)] lg:grid-cols-2">
           <section class="flex min-h-0 flex-col gap-2">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-columns" /> Fields <span class="text-dimmed">{fieldsCount()}</span>
+              <i class="ti ti-columns" /> {t().fields} <span class="text-dimmed">{fieldsCount()}</span>
             </h2>
             <DataTable
-              ariaLabel="Formula fields"
+              ariaLabel={t().formulaFields}
               rows={fieldRows()}
               columns={fieldColumns}
               getRowId={(row) => row.field.id}
               class="paper min-h-0 flex-1 overflow-auto"
-              empty="No matching fields"
+              empty={t().noMatchingFields}
               renderCell={({ row, col, value }) => {
                 if (col.id === "field") {
                   return (
@@ -260,7 +275,7 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
                   );
                 }
                 if (col.id === "type") {
-                  return <span class="text-dimmed">{FIELD_TYPE_LABELS[row.field.type] ?? row.field.type}</span>;
+                  return <span class="text-dimmed">{fieldTypeLabel(row.field.type, locale())}</span>;
                 }
                 if (col.id === "ref") return <code class="font-mono text-primary">{String(value)}</code>;
                 return <CopyButton text={String(value)} class="h-8 w-8 text-dimmed hover:text-primary" />;
@@ -270,18 +285,18 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
 
           <section class="flex min-h-0 flex-col gap-2">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-function" /> Functions <span class="text-dimmed">{functionsCount()}</span>
+              <i class="ti ti-function" /> {t().functions} <span class="text-dimmed">{functionsCount()}</span>
             </h2>
             <DataTable
-              ariaLabel="Formula functions"
+              ariaLabel={t().formulaFunctions}
               rows={functionRows()}
               columns={functionColumns}
               getRowId={(row) => row.fn.name}
               class="paper min-h-0 flex-1 overflow-auto"
-              empty="No matching functions"
+              empty={t().noMatchingFunctions}
               renderCell={({ row, col, value }) => {
                 if (col.id === "category") {
-                  const meta = FUNCTION_CATEGORY_META[row.category];
+                  const meta = categoryMeta(row.category);
                   return (
                     <span class={`chip ${meta.class}`}>
                       <i class={`${meta.icon} text-xs`} />
@@ -293,7 +308,9 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
                   return (
                     <span class="flex min-w-0 flex-col gap-0.5">
                       <code class="truncate font-mono text-[12px] font-semibold text-primary">{row.fn.signature}</code>
-                      <span class="truncate text-[11px] text-dimmed">{row.fn.description}</span>
+                      <span class="truncate text-[11px] text-dimmed">
+                        {t().formulaFunctionDescription({ name: row.fn.name, fallback: row.fn.description })}
+                      </span>
                     </span>
                   );
                 }

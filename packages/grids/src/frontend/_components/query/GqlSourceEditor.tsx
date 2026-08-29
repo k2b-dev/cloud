@@ -1,10 +1,11 @@
 import { highlight } from "@k2b/stdlib";
-import { AutocompleteEditor, type AutocompleteEditorProps } from "@k2b/ui";
+import { AutocompleteEditor, type AutocompleteEditorProps, useLocale } from "@k2b/ui";
 import { createMemo, splitProps } from "solid-js";
 import { aggregateKindPattern } from "../../../aggregate-catalog";
 import { apiClient } from "../../../api/client";
 import type { DslQueryContextKey } from "../../../query-dsl/parameters";
 import { errorMessage } from "../utils/api-helpers";
+import { queryMessages } from "./messages";
 import { buildBackendGqlCompletions, type GqlCurrentSource } from "./query-autocomplete";
 
 const gqlHighlight = highlight.compile(
@@ -31,6 +32,7 @@ type Props = Omit<AutocompleteEditorProps, "completions" | "highlight"> & {
 };
 
 export function GqlSourceEditor(props: Props) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const [scope, editorProps] = splitProps(props, ["baseId", "currentSource", "contextKeys"]);
   const completions = createMemo(() =>
     buildBackendGqlCompletions({
@@ -41,7 +43,7 @@ export function GqlSourceEditor(props: Props) {
           { param: { baseId: scope.baseId }, json: request },
           { init: { signal } },
         );
-        if (!response.ok) throw new Error(await errorMessage(response, "Could not load query suggestions."));
+        if (!response.ok) throw new Error(await errorMessage(response, t.loadSuggestionsFailed));
         return response.json();
       },
     }),

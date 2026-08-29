@@ -1,34 +1,31 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, dialogCore, PanelDialog, Placeholder, panelDialogOptions, StatusBadge } from "@k2b/ui";
+import {
+  Button,
+  DescriptionList,
+  DetailPanel,
+  dialogCore,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  StatusBadge,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { PublicRecordRevision, PublicRecordRevisionPage } from "../../../api/durable-history";
+import { recordMessages } from "./messages";
 
 export const RECORD_VERSION_PAGE_SIZE = 5;
 
-const actionLabel: Record<PublicRecordRevision["action"], string> = {
-  baseline: "History started",
-  created: "Record created",
-  updated: "Record updated",
-  deleted: "Record moved to trash",
-  restored: "Record restored",
-  finalized: "Record finalized",
-  "file.added": "File added",
-  "file.replaced": "File replaced",
-  "file.removed": "File removed",
-};
-
-const valueLabel = (value: unknown): string => {
-  if (value === null || value === undefined || value === "") return "Empty";
-  if (Array.isArray(value)) return value.length === 0 ? "Empty" : value.map(valueLabel).join(", ");
+const valueLabel = (value: unknown, empty: string): string => {
+  if (value === null || value === undefined || value === "") return empty;
+  if (Array.isArray(value)) return value.length === 0 ? empty : value.map((item) => valueLabel(item, empty)).join(", ");
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 };
 
-const readError = async (response: Response): Promise<string> => {
+const readError = async (response: Response, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
-  return body && typeof body === "object" && "message" in body && typeof body.message === "string"
-    ? body.message
-    : "Record versions could not be loaded.";
+  return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
 const endpoint = (tableId: string, recordId: string) =>
@@ -36,6 +33,19 @@ const endpoint = (tableId: string, recordId: string) =>
 
 const openRevision = (props: { tableId: string; recordId: string; revision: PublicRecordRevision }) =>
   dialogCore.open<void>((close) => {
+    const locale = useLocale();
+    const t = () => recordMessages.resolve([locale()]).t;
+    const actionLabel: Record<PublicRecordRevision["action"], string> = {
+      baseline: t().historyStarted,
+      created: t().recordCreated,
+      updated: t().recordUpdated,
+      deleted: t().movedToTrash,
+      restored: t().recordRestored,
+      finalized: t().recordFinalized,
+      "file.added": t().fileAdded,
+      "file.replaced": t().fileReplaced,
+      "file.removed": t().fileRemoved,
+    };
     const fieldsById = new Map(props.revision.fields.map((field) => [field.id, field]));
     const values = Object.entries(props.revision.data)
       .map(([fieldId, value]) => ({ field: fieldsById.get(fieldId), value }))
@@ -44,32 +54,32 @@ const openRevision = (props: { tableId: string; recordId: string; revision: Publ
     return (
       <PanelDialog>
         <PanelDialog.Header
-          title={`Version ${props.revision.revision}`}
+          title={t().version({ revision: props.revision.revision })}
           subtitle={actionLabel[props.revision.action]}
           icon="ti ti-history"
           close={close}
         />
         <PanelDialog.Body>
-          <PanelDialog.Section title="Version" icon="ti ti-clock-record">
+          <PanelDialog.Section title={t().versionSection} icon="ti ti-clock-record">
             <DescriptionList
               layout="rows"
               size="sm"
               items={[
-                { term: "Recorded", description: new Date(props.revision.createdAt).toLocaleString() },
-                { term: "Actor", description: props.revision.actorDisplayName ?? "System or anonymous actor" },
-                { term: "Record state", description: props.revision.deletedAt ? "In trash" : "Active" },
+                { term: t().recorded, description: new Date(props.revision.createdAt).toLocaleString(locale()) },
+                { term: t().actor, description: props.revision.actorDisplayName ?? t().systemActor },
+                { term: t().recordState, description: props.revision.deletedAt ? t().inTrash : t().active },
               ]}
             />
           </PanelDialog.Section>
-          <PanelDialog.Section title="Fields" icon="ti ti-list-details">
+          <PanelDialog.Section title={t().fields} icon="ti ti-list-details">
             <DescriptionList
               layout="rows"
               size="sm"
-              items={values.map(({ field, value }) => ({ term: field!.name, description: valueLabel(value) }))}
+              items={values.map(({ field, value }) => ({ term: field!.name, description: valueLabel(value, t().empty) }))}
             />
           </PanelDialog.Section>
           <Show when={props.revision.files.length > 0}>
-            <PanelDialog.Section title="Files" icon="ti ti-paperclip">
+            <PanelDialog.Section title={t().files} icon="ti ti-paperclip">
               <For each={props.revision.files}>
                 {(file) => (
                   <DetailPanel.Action
@@ -77,7 +87,7 @@ const openRevision = (props: { tableId: string; recordId: string; revision: Publ
                     navigation="document"
                     download={file.filename}
                     title={file.filename}
-                    description={`${(file.sizeBytes / 1024).toFixed(file.sizeBytes < 1024 ? 1 : 0)} KiB`}
+                    description={`${new Intl.NumberFormat(locale(), { maximumFractionDigits: file.sizeBytes < 1024 ? 1 : 0 }).format(file.sizeBytes / 1024)} KiB`}
                     leading={<i class="ti ti-file" aria-hidden="true" />}
                     trailing={<i class="ti ti-download" aria-hidden="true" />}
                   />
@@ -89,7 +99,7 @@ const openRevision = (props: { tableId: string; recordId: string; revision: Publ
         <PanelDialog.Footer>
           <span />
           <Button variant="secondary" size="sm" onClick={() => close()}>
-            Close
+            {t().close}
           </Button>
         </PanelDialog.Footer>
       </PanelDialog>
@@ -97,6 +107,19 @@ const openRevision = (props: { tableId: string; recordId: string; revision: Publ
   }, panelDialogOptions);
 
 export default function RecordVersions(props: { tableId: string; recordId: string }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
+  const actionLabel = (): Record<PublicRecordRevision["action"], string> => ({
+    baseline: t().historyStarted,
+    created: t().recordCreated,
+    updated: t().recordUpdated,
+    deleted: t().movedToTrash,
+    restored: t().recordRestored,
+    finalized: t().recordFinalized,
+    "file.added": t().fileAdded,
+    "file.replaced": t().fileReplaced,
+    "file.removed": t().fileRemoved,
+  });
   const [mounted, setMounted] = createSignal(false);
   const pages = query.createInfinite<string, PublicRecordRevisionPage, string>({
     source: () => endpoint(props.tableId, props.recordId),
@@ -105,7 +128,7 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
       const url = new URL(source, window.location.origin);
       if (cursor) url.searchParams.set("cursor", cursor);
       const response = await fetch(`${url.pathname}${url.search}`, { headers: { Accept: "application/json" }, signal: abortSignal });
-      if (!response.ok) throw new Error(await readError(response));
+      if (!response.ok) throw new Error(await readError(response, t().versionsFailed));
       return response.json() as Promise<PublicRecordRevisionPage>;
     },
     getNextCursor: (page) => page.nextCursor ?? undefined,
@@ -120,31 +143,33 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
 
   return (
     <Show when={status()?.enabled !== false}>
-      <DetailPanel.Group label="Record versions">
+      <DetailPanel.Group label={t().recordVersions}>
         <DetailPanel.Section
-          title="Durable history"
+          title={t().durableHistory}
           icon="ti ti-history"
           tone="accent"
           meta={
             enabledStatus() ? (
               <span class="flex items-center gap-2">
-                <StatusBadge tone="ok" variant="text" label="On" />
+                <StatusBadge tone="ok" variant="text" label={t().on} />
                 <Show when={revisions().length > 0}>{revisions().length}</Show>
               </span>
             ) : undefined
           }
-          description={enabledStatus() ? `History is provable from ${new Date(enabledStatus()!.activatedAt).toLocaleString()}.` : undefined}
+          description={
+            enabledStatus() ? t().historyProvable({ date: new Date(enabledStatus()!.activatedAt).toLocaleString(locale()) }) : undefined
+          }
         >
           <div class="flex flex-col gap-2">
             <Show when={pages.loading() && revisions().length === 0}>
-              <Placeholder align="left" class="px-0 py-2" description={<>Loading record versions…</>} />
+              <Placeholder align="left" class="px-0 py-2" description={<>{t().loadingVersions}</>} />
             </Show>
             <Show when={pages.error()}>
               {(error) => (
                 <div class="flex items-center gap-2 text-sm text-danger" role="alert">
                   <span>{error().message}</span>
                   <Button size="xs" variant="ghost" onClick={() => void pages.invalidate()}>
-                    Retry
+                    {t().retry}
                   </Button>
                 </div>
               )}
@@ -156,8 +181,8 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
                 return (
                   <DetailPanel.Action
                     onClick={() => void openRevision({ tableId: props.tableId, recordId: props.recordId, revision })}
-                    title={`Version ${revision.revision} · ${actionLabel[revision.action]}`}
-                    description={`${changed ? `${changed} · ` : ""}${revision.actorDisplayName ?? "System or anonymous actor"} · ${new Date(revision.createdAt).toLocaleString()}`}
+                    title={`${t().version({ revision: revision.revision })} · ${actionLabel()[revision.action]}`}
+                    description={`${changed ? `${changed} · ` : ""}${revision.actorDisplayName ?? t().systemActor} · ${new Date(revision.createdAt).toLocaleString(locale())}`}
                     leading={<i class="ti ti-history" aria-hidden="true" />}
                     trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                   />
@@ -170,10 +195,10 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
                 size="sm"
                 class="w-fit"
                 loading={pages.loadingMore()}
-                loadingLabel="Loading more"
+                loadingLabel={t().loadingMore}
                 onClick={() => void pages.loadMore()}
               >
-                Load more
+                {t().loadingMore}
               </Button>
             </Show>
           </div>

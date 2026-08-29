@@ -1,4 +1,5 @@
 import type { PulseExplorerQuery } from "../../contracts";
+import { pulseMessages } from "../../messages";
 
 export type SavedQueryDialogResult = {
   description: string | null;
@@ -7,19 +8,16 @@ export type SavedQueryDialogResult = {
 
 type SaveQueryFormResult = Record<string, unknown> | null | undefined;
 
-const defaultSavedQueryNames: {
-  [Kind in PulseExplorerQuery["kind"]]: (compiled: Extract<PulseExplorerQuery, { kind: Kind }>) => string;
-} = {
-  metric: (compiled) => compiled.metric,
-  events: (compiled) => compiled.event || "All events",
-  states: (compiled) => compiled.state || "All states",
-};
-
 const cleanText = (value: unknown): string => String(value ?? "").trim();
 
-export const defaultSavedQueryName = (compiled: PulseExplorerQuery | null): string => {
-  if (!compiled) return "Pulse query";
-  return (defaultSavedQueryNames[compiled.kind] as (query: PulseExplorerQuery) => string)(compiled);
+export const defaultSavedQueryName = (
+  compiled: PulseExplorerQuery | null,
+  t = pulseMessages.resolve().t,
+): string => {
+  if (!compiled) return t.pulseQuery;
+  if (compiled.kind === "metric") return compiled.metric;
+  if (compiled.kind === "events") return compiled.event || t.allEvents;
+  return compiled.state || t.allStates;
 };
 
 export const normalizeSavedQueryDialogResult = (result: SaveQueryFormResult): SavedQueryDialogResult | null => {

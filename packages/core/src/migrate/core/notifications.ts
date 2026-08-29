@@ -26,6 +26,7 @@ export const migrate = async (): Promise<void> => {
       kind TEXT NOT NULL,
       label TEXT NOT NULL,
       description TEXT NOT NULL,
+      presentation JSONB,
       recipient_kind TEXT NOT NULL,
       recommended_channels TEXT[] NOT NULL DEFAULT '{}',
       required_channels TEXT[] NOT NULL DEFAULT '{}',
@@ -37,6 +38,10 @@ export const migrate = async (): Promise<void> => {
         CHECK (recipient_kind IN ('user', 'email')),
       UNIQUE (app_id, kind)
     )
+  `.simple();
+  await sql`
+    ALTER TABLE notifications.definitions
+    ADD COLUMN IF NOT EXISTS presentation JSONB
   `.simple();
 
   await sql`

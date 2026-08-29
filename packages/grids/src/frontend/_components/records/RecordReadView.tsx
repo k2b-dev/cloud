@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/solid";
-import { DescriptionList, DetailPanel, IconButton, Placeholder, StatusBadge, Tooltip } from "@k2b/ui";
+import { DescriptionList, DetailPanel, IconButton, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
 import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
@@ -10,6 +10,7 @@ import { fieldTypeIcon } from "../fields/field-type-meta";
 import { barcodeValueText, canRenderBarcode } from "../table/BarcodeRendering";
 import { FieldValue } from "../table/FieldValue";
 import { resolveFieldDisplay } from "../table/field-display";
+import { recordMessages } from "./messages";
 import { fieldDisplayFormatForView, recordDisplayTitle, recordTitleField } from "./record-display";
 
 type RecordReadViewMode = "live" | "trash" | "snapshot";
@@ -41,6 +42,8 @@ const visibleFieldsFor = (fields: Field[]) => fields.filter((field) => !field.de
 export const hasRecordDetailValue = (value: unknown): boolean => value !== null && value !== undefined && value !== "";
 
 export default function RecordReadView(props: RecordReadViewProps) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const recordClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
   const mode = () => props.mode ?? "live";
   const visibleFields = () => visibleFieldsFor(props.fields);
@@ -99,6 +102,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
       value: props.record.data[field.id],
       record: props.record,
       relationLabels: props.relationLabels,
+      locale: locale(),
     });
     return intent.kind === "relation" ? intent.items : [];
   };
@@ -114,20 +118,20 @@ export default function RecordReadView(props: RecordReadViewProps) {
       fallbackText: new URL(recordHref(), props.cloudUrl).href,
     });
   const copyRecordLabel = () => {
-    if (recordClipboard.error()) return "Could not copy record reference";
-    return recordClipboard.wasCopied() ? "Record reference copied" : "Copy record reference";
+    if (recordClipboard.error()) return t().copyReferenceFailed;
+    return recordClipboard.wasCopied() ? t().copiedReference : t().copyReference;
   };
 
   const defaultHeaderMeta = () => (
     <>
       <Show when={mode() === "trash"}>
         <span class="inline-flex items-center gap-1 text-[0.6875rem] leading-4 text-amber-600 dark:text-amber-400">
-          <i class="ti ti-trash" aria-hidden="true" /> Deleted
+          <i class="ti ti-trash" aria-hidden="true" /> {t().deleted}
         </span>
       </Show>
       <Show when={mode() === "snapshot"}>
         <span class="inline-flex items-center gap-1 text-[0.6875rem] leading-4 text-blue-600 dark:text-blue-400">
-          <i class="ti ti-camera" aria-hidden="true" /> Snapshot
+          <i class="ti ti-camera" aria-hidden="true" /> {t().snapshot}
         </span>
       </Show>
       <Show when={mode() === "live" && props.showFinalizationStatus}>
@@ -135,7 +139,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
           variant="text"
           tone={props.record.finalizedAt ? "ok" : "neutral"}
           icon={props.record.finalizedAt ? "ti ti-lock" : "ti ti-pencil"}
-          label={props.record.finalizedAt ? "Finalized" : "Finalization on · Draft"}
+          label={props.record.finalizedAt ? t().finalized : t().finalizationDraft}
         />
       </Show>
       <span class="text-[0.6875rem] leading-4 text-dimmed">v{props.record.version}</span>
@@ -194,7 +198,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
         <Show when={hasFieldSections()}>
           <For each={barcodeFields()}>
             {(field) => (
-              <DetailPanel.Group label={`${field.name} field`}>
+              <DetailPanel.Group label={t().fieldGroup({ name: field.name })}>
                 <DetailPanel.Section title={field.name} icon={fieldTypeIcon(field.type, field.icon)}>
                   {renderField(field, props.record)}
                 </DetailPanel.Section>
@@ -202,8 +206,8 @@ export default function RecordReadView(props: RecordReadViewProps) {
             )}
           </For>
           <Show when={detailsFields().length > 0}>
-            <DetailPanel.Group label="Record fields">
-              <DetailPanel.Section title="Fields" icon="ti ti-list-details">
+            <DetailPanel.Group label={t().recordFields}>
+              <DetailPanel.Section title={t().fields} icon="ti ti-list-details">
                 <DescriptionList
                   layout="rows"
                   size="sm"
@@ -217,7 +221,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
           </Show>
           <For each={textBlockFields()}>
             {(field) => (
-              <DetailPanel.Group label={`${field.name} field`}>
+              <DetailPanel.Group label={t().fieldGroup({ name: field.name })}>
                 <DetailPanel.Section title={field.name} icon={fieldTypeIcon(field.type, field.icon)}>
                   <div class="break-words text-sm leading-relaxed text-secondary">{renderField(field, props.record)}</div>
                 </DetailPanel.Section>
@@ -225,8 +229,8 @@ export default function RecordReadView(props: RecordReadViewProps) {
             )}
           </For>
           <Show when={fileFields().length > 0}>
-            <DetailPanel.Group label="Record files">
-              <DetailPanel.Section title="Files" icon="ti ti-paperclip">
+            <DetailPanel.Group label={t().recordFiles}>
+              <DetailPanel.Section title={t().files} icon="ti ti-paperclip">
                 <div class="flex flex-col gap-4">
                   <For each={fileFields()}>
                     {(field) => (
@@ -243,17 +247,17 @@ export default function RecordReadView(props: RecordReadViewProps) {
         </Show>
 
         <Show when={bodyFields().length === 0}>
-          <DetailPanel.Group label="Record fields">
-            <DetailPanel.Section title="Fields" icon="ti ti-list-details">
-              <Placeholder align="left" description={<>No record values yet.</>} />
+          <DetailPanel.Group label={t().recordFields}>
+            <DetailPanel.Section title={t().fields} icon="ti ti-list-details">
+              <Placeholder align="left" description={<>{t().noValues}</>} />
             </DetailPanel.Section>
           </DetailPanel.Group>
         </Show>
 
         <Show when={relationFields().length > 0 || props.relationsAfter !== undefined}>
-          <DetailPanel.Group label="Record relationships">
+          <DetailPanel.Group label={t().relationships}>
             <Show when={relationFields().length > 0}>
-              <DetailPanel.Section title="Relations" icon="ti ti-link" tone="accent">
+              <DetailPanel.Section title={t().relations} icon="ti ti-link" tone="accent">
                 <For each={relationFields()}>
                   {(field) => {
                     const items = relationItems(field);

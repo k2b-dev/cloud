@@ -1,6 +1,6 @@
 import { ok } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -25,8 +25,10 @@ import {
   WorkflowAutocompleteBodySchema,
   WorkflowAutocompleteResponseSchema,
 } from "../workflows/contracts";
+import { apiMessages } from "./messages";
 import { currentActorUserId, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
+import { v } from "./validator";
 import {
   baseExists,
   buildWorkflowCompletions,
@@ -96,8 +98,8 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", WorkflowValidateSchema),
       async (c) => {
         const baseId = await resolvePublicIdParam(c, "baseId", "base");
-        if (!baseId) return c.json({ message: "Invalid base id" }, 400);
-        if (!(await baseExists(baseId))) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).invalidBaseId }, 400);
+        if (!(await baseExists(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const result = await validatePermissionedWorkflowSource(c, baseId, c.req.valid("json").source);
@@ -119,8 +121,8 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", WorkflowAutocompleteBodySchema),
       async (c) => {
         const baseId = await resolvePublicIdParam(c, "baseId", "base");
-        if (!baseId) return c.json({ message: "Invalid base id" }, 400);
-        if (!(await baseExists(baseId))) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).invalidBaseId }, 400);
+        if (!(await baseExists(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const body = c.req.valid("json");
@@ -129,7 +131,7 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
         return c.json({
           ok: true as const,
           diagnostics: validation.ok ? [] : validation.diagnostics,
-          items: buildWorkflowCompletions(body.source, body.caret ?? body.source.length, catalog),
+          items: buildWorkflowCompletions(body.source, body.caret ?? body.source.length, catalog, getLocale(c)),
         });
       },
     )
@@ -147,8 +149,8 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const baseId = await resolvePublicIdParam(c, "baseId", "base");
-        if (!baseId) return c.json({ message: "Invalid base id" }, 400);
-        if (!(await baseExists(baseId))) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).invalidBaseId }, 400);
+        if (!(await baseExists(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const gate = await gateAt(c, { baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const visible = await visibleWorkflowsForBase(c, baseId);
@@ -170,14 +172,14 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", CreateGridsWorkflowSchema),
       async (c) => {
         const baseId = await resolvePublicIdParam(c, "baseId", "base");
-        if (!baseId) return c.json({ message: "Invalid base id" }, 400);
-        if (!(await baseExists(baseId))) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).invalidBaseId }, 400);
+        if (!(await baseExists(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const gate = await gateAt(c, { baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return respond(
           c,
           async () => {
-            const result = await createWorkflow(baseId, c.req.valid("json"), currentActorUserId(c));
+            const result = await createWorkflow(baseId, c.req.valid("json"), currentActorUserId(c), getLocale(c));
             return result.ok ? ok(await toPublicWorkflow(result.data)) : result;
           },
           201,
@@ -197,9 +199,9 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         return c.json(await toPublicWorkflow(workflow));
       },
     )
@@ -216,9 +218,9 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         return c.json(await toPublicWorkflowTriggerState(await dependencies.getWorkflowTriggerRuntimeState(workflow)));
       },
     )
@@ -247,17 +249,24 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", UpdateGridsWorkflowSchema),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const expectedRevision = Number(c.req.header(WORKFLOW_REVISION_HEADER));
         if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1) {
-          return c.json({ message: `${WORKFLOW_REVISION_HEADER} must contain the workflow revision.` }, 400);
+          return c.json({ message: apiMessages(c).revisionHeaderRequired({ header: WORKFLOW_REVISION_HEADER }) }, 400);
         }
         return respond(c, async () => {
-          const result = await dependencies.updateWorkflow(workflowId, c.req.valid("json"), currentActorUserId(c), expectedRevision);
+          const result = await dependencies.updateWorkflow(
+            workflowId,
+            c.req.valid("json"),
+            currentActorUserId(c),
+            expectedRevision,
+            {},
+            getLocale(c),
+          );
           return result.ok ? ok(await toPublicWorkflow(result.data)) : result;
         });
       },
@@ -282,9 +291,9 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       ),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId, true);
-        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const query = c.req.valid("query");
         return c.json(
           toPublicWorkflowRevisionList(
@@ -312,15 +321,21 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
         const revision = Number(c.req.param("revision"));
         if (!workflowId || !Number.isSafeInteger(revision) || revision < 1) {
-          return c.json({ message: "Invalid workflow revision" }, 400);
+          return c.json({ message: apiMessages(c).invalidWorkflowRevision }, 400);
         }
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const input = c.req.valid("json");
         return respond(c, async () => {
-          const result = await dependencies.restoreWorkflowRevision(workflowId, revision, currentActorUserId(c), input.expectedRevision);
+          const result = await dependencies.restoreWorkflowRevision(
+            workflowId,
+            revision,
+            currentActorUserId(c),
+            input.expectedRevision,
+            getLocale(c),
+          );
           return result.ok ? ok(await toPublicWorkflow(result.data)) : result;
         });
       },
@@ -340,14 +355,14 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
         const revision = Number(c.req.param("revision"));
         if (!workflowId || !Number.isSafeInteger(revision) || revision < 1) {
-          return c.json({ message: "Invalid workflow revision" }, 400);
+          return c.json({ message: apiMessages(c).invalidWorkflowRevision }, 400);
         }
         const workflow = await dependencies.getWorkflow(workflowId, true);
-        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const snapshot = await dependencies.getWorkflowRevision(workflowId, revision);
         return snapshot
           ? c.json(await toPublicWorkflowRevision(snapshot, workflow.shortId))
-          : c.json({ message: "Workflow revision not found" }, 404);
+          : c.json({ message: apiMessages(c).workflowRevisionNotFound }, 404);
       },
     )
     .delete(
@@ -364,12 +379,12 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await removeWorkflow(workflowId, currentActorUserId(c));
+        const result = await removeWorkflow(workflowId, currentActorUserId(c), getLocale(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         return c.body(null, 204);
       },
@@ -387,9 +402,9 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow || !(await canReadWorkflow(c, workflow))) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         return c.json({ items: await toPublicWorkflowLaunchers(await listLaunchers(workflow.id)) });
       },
     )
@@ -408,15 +423,15 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", CreateGridsWorkflowLauncherSchema),
       async (c) => {
         const workflowId = await resolvePublicIdParam(c, "workflowId", "workflow");
-        if (!workflowId) return c.json({ message: "Invalid workflow id" }, 400);
+        if (!workflowId) return c.json({ message: apiMessages(c).invalidWorkflowId }, 400);
         const workflow = await dependencies.getWorkflow(workflowId);
-        if (!workflow) return c.json({ message: "Workflow not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return respond(
           c,
           async () => {
-            const result = await createLauncher(workflow, c.req.valid("json"), currentActorUserId(c));
+            const result = await createLauncher(workflow, c.req.valid("json"), currentActorUserId(c), getLocale(c));
             return result.ok ? ok(await toPublicWorkflowLauncher(result.data)) : result;
           },
           201,
@@ -436,9 +451,11 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         const loaded = await loadReadableLauncher(c, launcherId, dependencies.getWorkflow);
-        return loaded ? c.json(await toPublicWorkflowLauncher(loaded.launcher)) : c.json({ message: "Workflow launcher not found" }, 404);
+        return loaded
+          ? c.json(await toPublicWorkflowLauncher(loaded.launcher))
+          : c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
       },
     )
     .patch(
@@ -456,15 +473,15 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       v("json", UpdateGridsWorkflowLauncherSchema),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         const launcher = await getLauncher(launcherId);
-        if (!launcher) return c.json({ message: "Workflow launcher not found" }, 404);
+        if (!launcher) return c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
         const workflow = await dependencies.getWorkflow(launcher.workflowId);
-        if (!workflow) return c.json({ message: "Workflow launcher not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return respond(c, async () => {
-          const result = await updateLauncher(launcher, workflow, c.req.valid("json"), currentActorUserId(c));
+          const result = await updateLauncher(launcher, workflow, c.req.valid("json"), currentActorUserId(c), getLocale(c));
           return result.ok ? ok(await toPublicWorkflowLauncher(result.data)) : result;
         });
       },
@@ -483,11 +500,11 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
       }),
       async (c) => {
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: apiMessages(c).invalidWorkflowLauncherId }, 400);
         const launcher = await getLauncher(launcherId);
-        if (!launcher) return c.json({ message: "Workflow launcher not found" }, 404);
+        if (!launcher) return c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
         const workflow = await dependencies.getWorkflow(launcher.workflowId);
-        if (!workflow) return c.json({ message: "Workflow launcher not found" }, 404);
+        if (!workflow) return c.json({ message: apiMessages(c).workflowLauncherNotFound }, 404);
         const gate = await gateAt(c, { baseId: workflow.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         await removeLauncher(launcher, currentActorUserId(c));

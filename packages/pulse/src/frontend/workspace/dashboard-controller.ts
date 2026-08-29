@@ -26,6 +26,7 @@ import {
 } from "./public-display-dialog";
 import type { RefreshIntervalOption, WorkspaceView } from "./types";
 import { refreshIntervalFromOption } from "./workspace-options";
+import { usePulseMessages } from "../use-messages";
 
 type DashboardControllerDeps = {
   selectedBaseId: Accessor<string>;
@@ -57,6 +58,7 @@ type DashboardControllerDeps = {
 };
 
 export const createDashboardController = (deps: DashboardControllerDeps) => {
+  const t = usePulseMessages();
   let disposed = false;
   let compileRequestId = 0;
   const createMutation = mutation.create<PulseDashboard, { baseId: string; name: string; dsl: string }>({
@@ -117,7 +119,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
   };
   const requireWritable = (): boolean => {
     if (!deps.writeBlocked()) return true;
-    toast.error("Refresh Pulse data before making more changes.");
+    toast.error(t().refreshBeforeChanges);
     return false;
   };
 
@@ -126,13 +128,13 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
     const baseId = deps.selectedBaseId();
     if (!baseId) return null;
     const result = await prompts.form({
-      title: "New dashboard",
+      title: t().newDashboard,
       icon: "ti ti-layout-dashboard",
       fields: {
-        name: { type: "text", label: "Name", required: true, placeholder: "Operations" },
-        description: { type: "text", label: "Description", multiline: true, placeholder: "What should this dashboard answer?" },
+        name: { type: "text", label: t().name, required: true, placeholder: "Operations" },
+        description: { type: "text", label: t().description, multiline: true, placeholder: t().dashboardQuestionPlaceholder },
       },
-      confirmText: "Create",
+      confirmText: t().create,
     });
     if (disposed || !result || !requireWritable()) return null;
     const name = String(result.name ?? "").trim();
@@ -144,7 +146,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       if (disposed) return null;
       if (createMutation.error()) throw createMutation.error();
       const dashboard = createMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData], "The dashboard was created, but the dashboard list could not be refreshed.")))
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardCreatedRefreshFailed)))
         return null;
       const dashboardDsl = dashboardToDsl(dashboard);
       deps.setDashboardDslText(dashboardDsl);
@@ -154,10 +156,10 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       deps.setDashboardDslSeededFor(dashboard.id);
       deps.setSelectedDashboardId(dashboard.id);
       deps.navigate({ view: "dashboard-edit", dashboardId: dashboard.id });
-      toast.success("Dashboard created. Edit the DSL to add content.");
+      toast.success(t().dashboardCreated);
       return dashboard;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create dashboard");
+      toast.error(error instanceof Error ? error.message : t().dashboardCreateFailed);
       return null;
     } finally {
       deps.setLoading(false);
@@ -209,7 +211,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
     const dashboard = deps.selectedDashboard();
     const compiled = deps.dashboardDslDiagnostics();
     if (!dashboard || deps.dashboardDslDiagnosticsText() !== deps.dashboardDslText() || !compiled?.ok || !compiled.config) {
-      toast.error("Fix dashboard DSL errors before saving");
+      toast.error(t().fixDashboardDsl);
       return;
     }
     deps.setDashboardDslSaving(true);
@@ -222,14 +224,14 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       if (disposed) return;
       if (saveMutation.error()) throw saveMutation.error();
       const updated = saveMutation.data()!;
-      if (!(await reconcile([deps.refreshBaseData], "The dashboard was saved, but the dashboard list could not be refreshed."))) return;
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardSavedListRefreshFailed))) return;
       deps.setDashboardDslSeededFor("");
-      if (!(await reconcile([() => deps.refreshDashboard(updated)], "The dashboard was saved, but its data could not be refreshed.")))
+      if (!(await reconcile([() => deps.refreshDashboard(updated)], t().dashboardSavedDataRefreshFailed)))
         return;
       deps.navigate({ view: "dashboard", dashboardId: updated.id });
-      toast.success("Dashboard saved");
+      toast.success(t().dashboardSaved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save dashboard");
+      toast.error(error instanceof Error ? error.message : t().dashboardSaveFailed);
     } finally {
       deps.setDashboardDslSaving(false);
     }
@@ -247,14 +249,14 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
     dashboard: PulseDashboard,
     options: { theme?: PublicDashboardDisplayTheme; height?: PublicDashboardDisplayHeight } = {},
   ) => {
-    if (deps.writeBlocked()) throw new Error("Refresh Pulse data before making more changes.");
+    if (deps.writeBlocked()) throw new Error(t().refreshBeforeChanges);
     await publicLinkMutation.mutate({ dashboardId: dashboard.id });
     if (disposed) throw new DOMException("Dashboard owner was disposed", "AbortError");
     if (publicLinkMutation.error()) throw publicLinkMutation.error();
     const result = publicLinkMutation.data()!;
-    if (!(await reconcile([deps.refreshBaseData], "The public link was created, but the dashboard list could not be refreshed.", false))) {
+    if (!(await reconcile([deps.refreshBaseData], t().publicLinkCreatedRefreshFailed, false))) {
       if (disposed) throw new DOMException("Dashboard owner was disposed", "AbortError");
-      throw new Error("The public link was created, but the dashboard list could not be refreshed.");
+      throw new Error(t().publicLinkCreatedRefreshFailed);
     }
     return publicUrl(result.token, options);
   };
@@ -267,9 +269,9 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       if (disposed) return;
       if (options.copy) await clipboard.copy(link);
       if (disposed) return;
-      toast.success(options.copy ? "Public dashboard link copied" : "Public dashboard link enabled");
+      toast.success(options.copy ? t().publicDashboardLinkCopied : t().publicDashboardLinkEnabled);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create public link");
+      toast.error(error instanceof Error ? error.message : t().publicLinkCreateFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -283,11 +285,11 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       await disablePublicLinkMutation.mutate({ dashboardId: dashboard.id });
       if (disposed) return;
       if (disablePublicLinkMutation.error()) throw disablePublicLinkMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], "The public link was disabled, but the dashboard list could not be refreshed.")))
+      if (!(await reconcile([deps.refreshBaseData], t().publicLinkDisabledRefreshFailed)))
         return;
-      toast.success("Public dashboard link disabled");
+      toast.success(t().publicDashboardLinkDisabled);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not disable public link");
+      toast.error(error instanceof Error ? error.message : t().publicLinkDisableFailed);
     } finally {
       deps.setLoading(false);
     }
@@ -303,7 +305,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
     if (!requireWritable()) return "failed";
     const name = input.name.trim();
     if (!name) {
-      toast.error("Dashboard name is required");
+      toast.error(t().dashboardNameRequired);
       return "failed";
     }
     deps.setLoading(true);
@@ -315,12 +317,12 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
       await settingsMutation.mutate({ dashboardId: dashboard.id, name, config });
       if (disposed) return "failed";
       if (settingsMutation.error()) throw settingsMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], "The dashboard was updated, but the dashboard list could not be refreshed.")))
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardUpdatedRefreshFailed)))
         return "persisted";
-      toast.success("Dashboard updated");
+      toast.success(t().dashboardUpdated);
       return "reconciled";
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update dashboard");
+      toast.error(error instanceof Error ? error.message : t().dashboardUpdateFailed);
       return "failed";
     } finally {
       deps.setLoading(false);
@@ -329,24 +331,24 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
 
   const deleteDashboard = async (dashboard: PulseDashboard): Promise<DashboardWriteResult> => {
     if (!requireWritable()) return "failed";
-    const confirmed = await prompts.confirm(`Delete dashboard "${dashboard.name}"?`, { title: "Delete dashboard", variant: "danger" });
+    const confirmed = await prompts.confirm(t().deleteDashboardConfirm({ name: dashboard.name }), { title: t().deleteDashboard, variant: "danger" });
     if (disposed || !confirmed || !requireWritable()) return "failed";
     deps.setLoading(true);
     try {
       await deleteMutation.mutate({ dashboardId: dashboard.id });
       if (disposed) return "failed";
       if (deleteMutation.error()) throw deleteMutation.error();
-      if (!(await reconcile([deps.refreshBaseData], "The dashboard was deleted, but the dashboard list could not be refreshed."))) {
+      if (!(await reconcile([deps.refreshBaseData], t().dashboardDeletedRefreshFailed))) {
         if (deps.selectedDashboardId() === dashboard.id) deps.navigate({ view: "dashboard" });
         return "persisted";
       }
       const fallback = deps.dashboards().find((item) => item.id !== dashboard.id) ?? null;
       if (deps.selectedDashboardId() === dashboard.id)
         deps.navigate(fallback ? { view: "dashboard", dashboardId: fallback.id } : { view: "dashboard" });
-      toast.success("Dashboard deleted");
+      toast.success(t().dashboardDeleted);
       return "reconciled";
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not delete dashboard");
+      toast.error(error instanceof Error ? error.message : t().dashboardDeleteFailed);
       return "failed";
     } finally {
       deps.setLoading(false);
@@ -366,7 +368,7 @@ export const createDashboardController = (deps: DashboardControllerDeps) => {
         deleteDashboard,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not open dashboard settings");
+      toast.error(error instanceof Error ? error.message : t().openDashboardSettingsFailed);
     }
   };
 

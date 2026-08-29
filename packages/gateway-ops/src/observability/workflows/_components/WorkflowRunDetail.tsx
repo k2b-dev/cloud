@@ -1,55 +1,72 @@
-import { DataPanel, DataTable, type DataTableColumn, NoticeCard, StatusBadge, StructuredDataPreview } from "@k2b/ui";
+import { DataPanel, DataTable, type DataTableColumn, NoticeCard, StatusBadge, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { formatDurationMs, formatNumber, formatRelative } from "@valentinkolb/cloud/shared";
 import type { WorkflowRunState } from "@valentinkolb/cloud/workflows";
 import type { WorkflowRunDetail, WorkflowStepSummary } from "@valentinkolb/cloud/workflows/store";
 import type { JSX } from "solid-js";
 import { type WorkflowsFilterState, workflowsFilter } from "../filters";
-import { EFFECT_TONE, RUN_LABEL, RUN_TONE, runErrorSummary, STEP_TONE, stepDetail } from "../presentation";
+import { EFFECT_TONE, RUN_TONE, runErrorSummary, STEP_TONE, stepDetail } from "../presentation";
 import WorkflowRunActions from "./WorkflowRunActions.island";
-
-const columns: DataTableColumn<WorkflowStepSummary>[] = [
-  { id: "step", header: "Step", cellClass: "min-w-[160px]" },
-  { id: "action", header: "Action" },
-  { id: "state", header: "State" },
-  { id: "effect", header: "Effect" },
-  { id: "details", header: "Details", cellClass: "min-w-[220px]" },
-  { id: "attempts", header: "Attempts", align: "right" },
-  { id: "duration", header: "Duration", align: "right" },
-];
+import { gatewayOpsMessages, type GatewayOpsMessages } from "../../../messages";
 
 const attentionStepFor = (detail: WorkflowRunDetail) =>
   detail.steps.find((step) => step.state === "needs_attention" && (step.effectState === "executing" || step.effectState === "ambiguous"));
 
-const RunSteps = (props: { steps: WorkflowStepSummary[] }) => (
+const stateLabel = (state: WorkflowRunState | string, t: GatewayOpsMessages): string => {
+  if (state === "queued") return t.queued;
+  if (state === "running") return t.running;
+  if (state === "waiting") return t.waiting;
+  if (state === "succeeded" || state === "completed" || state === "planned" || state === "terminal") return t.succeeded;
+  if (state === "failed") return t.failed;
+  if (state === "canceled") return t.canceled;
+  if (state === "needs_attention") return t.needsAttentionLabel;
+  if (state === "executing") return t.executing;
+  if (state === "ambiguous") return t.ambiguous;
+  return state;
+};
+
+const RunSteps = (props: { steps: WorkflowStepSummary[] }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  const columns: DataTableColumn<WorkflowStepSummary>[] = [
+    { id: "step", header: t.step, cellClass: "min-w-[160px]" },
+    { id: "action", header: t.actionLabel },
+    { id: "state", header: t.state },
+    { id: "effect", header: t.effect },
+    { id: "details", header: t.details, cellClass: "min-w-[220px]" },
+    { id: "attempts", header: t.attempts, align: "right" },
+    { id: "duration", header: t.duration, align: "right" },
+  ];
+  return (
   <DataTable
     rows={props.steps}
     columns={columns}
     getRowId={(step) => step.stepKey}
     density="compact"
     class="overflow-x-auto"
-    empty="This run has not recorded a step yet."
+    empty={t.noRecordedStep}
     renderCell={({ row, col, value, render }) => {
       if (col.id === "step") return <span class="font-mono text-xs">{row.stepKey}</span>;
       if (col.id === "action") return <span class="text-secondary">{row.action ?? row.kind}</span>;
-      if (col.id === "state") return <StatusBadge tone={STEP_TONE[row.state] ?? "neutral"} label={row.state} variant="dot" />;
+      if (col.id === "state") return <StatusBadge tone={STEP_TONE[row.state] ?? "neutral"} label={stateLabel(row.state, t)} variant="dot" />;
       if (col.id === "effect")
         return row.effectState ? (
-          <StatusBadge tone={EFFECT_TONE[row.effectState] ?? "neutral"} label={row.effectState} variant="dot" />
+          <StatusBadge tone={EFFECT_TONE[row.effectState] ?? "neutral"} label={stateLabel(row.effectState, t)} variant="dot" />
         ) : (
           <span class="text-dimmed">—</span>
         );
       if (col.id === "details")
         return (
-          <span class="block max-w-[360px] truncate text-secondary" title={stepDetail(row)}>
-            {stepDetail(row)}
+          <span class="block max-w-[360px] truncate text-secondary" title={stepDetail(row, t.waitingOn)}>
+            {stepDetail(row, t.waitingOn)}
           </span>
         );
-      if (col.id === "attempts") return <span class="text-dimmed">{row.attempt + 1}</span>;
-      if (col.id === "duration") return <span class="text-secondary">{formatDurationMs(row.durationMs)}</span>;
+      if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(row.attempt + 1, { locale: locale() })}</span>;
+      if (col.id === "duration") return <span class="text-secondary">{formatDurationMs(row.durationMs, { locale: locale() })}</span>;
       return render(value);
     }}
   />
-);
+  );
+};
 
 const RunFact = (props: { label: string; children: JSX.Element }) => (
   <div class="min-w-0">
@@ -59,10 +76,12 @@ const RunFact = (props: { label: string; children: JSX.Element }) => (
 );
 
 const ChildLinks = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   if (!Object.values(props.detail.children).some((count) => count > 0)) return null;
   return (
     <div class="flex flex-wrap items-center gap-2">
-      <span class="text-dimmed">Children</span>
+      <span class="text-dimmed">{t.children}</span>
       {(Object.entries(props.detail.children) as [WorkflowRunState, number][])
         .filter(([, count]) => count > 0)
         .map(([childState, count]) => (
@@ -77,7 +96,7 @@ const ChildLinks = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterSt
           >
             <StatusBadge
               tone={RUN_TONE[childState]}
-              label={`${formatNumber(count)} ${RUN_LABEL[childState].toLowerCase()}`}
+              label={`${formatNumber(count, { locale: locale() })} ${stateLabel(childState, t).toLocaleLowerCase(locale())}`}
               variant="dot"
             />
           </a>
@@ -86,16 +105,19 @@ const ChildLinks = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterSt
   );
 };
 
-const RunOverview = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState }) => (
+const RunOverview = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  return (
   <section>
-    <h3 class="text-xs font-semibold text-primary">Run overview</h3>
+    <h3 class="text-xs font-semibold text-primary">{t.runOverview}</h3>
     <dl class="mt-2 grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-      <RunFact label="Trigger">{props.detail.eventType ?? "Direct invocation"}</RunFact>
-      <RunFact label="Occurred">{formatRelative(props.detail.occurredAt)}</RunFact>
-      <RunFact label="Start lag">{formatDurationMs(props.detail.startLagMs)}</RunFact>
-      <RunFact label="Duration">{formatDurationMs(props.detail.durationMs)}</RunFact>
+      <RunFact label={t.trigger}>{props.detail.eventType ?? t.directInvocation}</RunFact>
+      <RunFact label={t.occurred}>{formatRelative(props.detail.occurredAt, { locale: locale() })}</RunFact>
+      <RunFact label={t.startLag}>{formatDurationMs(props.detail.startLagMs, { locale: locale() })}</RunFact>
+      <RunFact label={t.duration}>{formatDurationMs(props.detail.durationMs, { locale: locale() })}</RunFact>
       {props.detail.parentRunId ? (
-        <RunFact label="Parent run">
+        <RunFact label={t.parentRun}>
           <a
             class="font-mono text-[11px] hover:underline"
             href={workflowsFilter.build(props.state, { view: "runs", run: props.detail.parentRunId, parent: "" })}
@@ -109,7 +131,8 @@ const RunOverview = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterS
       <ChildLinks detail={props.detail} state={props.state} />
     </div>
   </section>
-);
+  );
+};
 
 const Disclosure = (props: { title: string; description: string; children: JSX.Element }) => (
   <details class="group rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]">
@@ -124,21 +147,25 @@ const Disclosure = (props: { title: string; description: string; children: JSX.E
   </details>
 );
 
-const RunPayloads = (props: { detail: WorkflowRunDetail }) => (
-  <Disclosure title="Inputs and outputs" description="Invocation data, result and event payload">
+const RunPayloads = (props: { detail: WorkflowRunDetail }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  return <Disclosure title={t.inputsOutputs} description={t.invocationDataDescription}>
     <div class="grid gap-3 lg:grid-cols-2">
-      <StructuredDataPreview title="Inputs" data={props.detail.inputs} empty="No inputs." />
-      <StructuredDataPreview title="Result" data={props.detail.result} empty={props.detail.resultMessage ?? "No result."} />
-      {props.detail.eventData ? <StructuredDataPreview title="Event payload" data={props.detail.eventData} class="lg:col-span-2" /> : null}
+      <StructuredDataPreview title={t.inputs} data={props.detail.inputs} empty={t.noInputs} />
+      <StructuredDataPreview title={t.result} data={props.detail.result} empty={props.detail.resultMessage ?? t.noResult} />
+      {props.detail.eventData ? <StructuredDataPreview title={t.eventPayload} data={props.detail.eventData} class="lg:col-span-2" /> : null}
     </div>
-  </Disclosure>
-);
+  </Disclosure>;
+};
 
-const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => (
-  <Disclosure title="Technical details" description="Identifiers, budgets, journal and pinned definition">
+const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
+  return <Disclosure title={t.technicalDetails} description={t.technicalDetailsDescription}>
     <div class="flex flex-col gap-3">
       <StructuredDataPreview
-        title="Identity"
+        title={t.identity}
         data={{
           runId: props.detail.id,
           scopeId: props.detail.scopeId,
@@ -146,10 +173,10 @@ const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => (
           revision: props.detail.revision,
         }}
       />
-      {props.detail.error ? <StructuredDataPreview title="Error" data={props.detail.error} /> : null}
+      {props.detail.error ? <StructuredDataPreview title={t.error} data={props.detail.error} /> : null}
       {Object.keys(props.detail.effectBudget).length > 0 ? (
         <StructuredDataPreview
-          title="Effect budget"
+          title={t.effectBudget}
           data={Object.fromEntries(
             Object.entries(props.detail.effectBudget).map(([dimension, limit]) => [
               dimension,
@@ -159,7 +186,7 @@ const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => (
         />
       ) : null}
       <StructuredDataPreview
-        title="Step journal"
+        title={t.stepJournal}
         data={props.detail.steps.map((step) => ({
           stepKey: step.stepKey,
           sourcePath: step.sourcePath,
@@ -170,20 +197,22 @@ const DurableExecutionData = (props: { detail: WorkflowRunDetail }) => (
           effectState: step.effectState,
         }))}
       />
-      <StructuredDataPreview title="Pinned definition" data={{ source: props.detail.source }} />
+      <StructuredDataPreview title={t.pinnedDefinition} data={{ source: props.detail.source }} />
     </div>
-  </Disclosure>
-);
+  </Disclosure>;
+};
 
 const RunOutcome = (props: { detail: WorkflowRunDetail }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   const attentionStep = attentionStepFor(props.detail);
   const error = runErrorSummary(props.detail.error);
   if (attentionStep)
     return (
       <NoticeCard
         tone="warning"
-        title={`${attentionStep.action ?? attentionStep.stepKey} needs an operator decision`}
-        detail="Check the external provider before resolving this effect. Marking success resumes the pinned plan without repeating it; marking failure ends the run."
+        title={t.needsOperatorDecision({ name: attentionStep.action ?? attentionStep.stepKey })}
+        detail={t.operatorDecisionDetail}
       />
     );
   if (error)
@@ -192,7 +221,7 @@ const RunOutcome = (props: { detail: WorkflowRunDetail }) => {
         tone="danger"
         title={error.message}
         detail={
-          [error.code, error.retryable === null ? null : error.retryable ? "The run can retry." : "The run will not retry."]
+          [error.code, error.retryable === null ? null : error.retryable ? t.runCanRetry : t.runWillNotRetry]
             .filter(Boolean)
             .join(" · ") || undefined
         }
@@ -202,6 +231,8 @@ const RunOutcome = (props: { detail: WorkflowRunDetail }) => {
 };
 
 const RunBody = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState }) => {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   return (
     <>
       <div class="flex flex-col gap-4 px-3 py-3">
@@ -209,9 +240,9 @@ const RunBody = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState
         <RunOverview detail={props.detail} state={props.state} />
       </div>
       <div class="px-3 pb-2">
-        <h3 class="text-xs font-semibold text-primary">Execution steps</h3>
+        <h3 class="text-xs font-semibold text-primary">{t.executionSteps}</h3>
         <p class="text-[10px] text-dimmed">
-          {formatNumber(props.detail.steps.length)} recorded step{props.detail.steps.length === 1 ? "" : "s"}
+          {t.recordedSteps({ count: props.detail.steps.length })}
         </p>
       </div>
       <RunSteps steps={props.detail.steps} />
@@ -224,22 +255,24 @@ const RunBody = (props: { detail: WorkflowRunDetail; state: WorkflowsFilterState
 };
 
 export default function WorkflowRunDetailView(props: { detail: WorkflowRunDetail; state: WorkflowsFilterState }) {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   const attentionStep = attentionStepFor(props.detail);
   return (
     <DataPanel
-      title={`${props.detail.workflowName} · revision ${props.detail.revision}`}
+      title={`${props.detail.workflowName} · ${t.revision({ revision: props.detail.revision })}`}
       subtitle={
         <span class="mt-1 flex flex-wrap items-center gap-2">
-          <StatusBadge tone={RUN_TONE[props.detail.state]} label={RUN_LABEL[props.detail.state]} />
+          <StatusBadge tone={RUN_TONE[props.detail.state]} label={stateLabel(props.detail.state, t)} />
           <span class="text-dimmed">
-            {props.detail.appId} · {props.detail.mode} · attempt {props.detail.attempt} · {formatRelative(props.detail.createdAt)}
+            {props.detail.appId} · {props.detail.mode} · {t.attemptNumber({ count: props.detail.attempt })} · {formatRelative(props.detail.createdAt, { locale: locale() })}
           </span>
         </span>
       }
       actions={
         <div class="flex flex-wrap items-center justify-end gap-2">
           <a class="text-xs text-secondary hover:underline" href={workflowsFilter.build(props.state, { run: "" })}>
-            Back to {props.state.view}
+            {t.backToView({ view: props.state.view })}
           </a>
           <WorkflowRunActions
             runId={props.detail.id}

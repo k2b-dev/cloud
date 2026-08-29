@@ -1,4 +1,4 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
 import { currentActorUser, gateBaseAtAccess, gridsAccessContext } from "../../../api/permissions";
 import { toPublicFields, toPublicTables, toPublicViews } from "../../../api/public-dto";
@@ -7,6 +7,7 @@ import { gridsService } from "../../../service";
 import { ALL_RECORD_ACCESS } from "../../../service/record-access";
 import QueryReferenceWindow, { normalizeQueryReferenceTab } from "../../_components/query/QueryReferenceWindow";
 import { serializeWorkspaceState } from "../../_components/workspace/workspace-state-serialization";
+import { resolveGridsMessages } from "../../messages";
 
 const messagePage =
   (message: string, icon = "ti-alert-circle") =>
@@ -19,6 +20,7 @@ const messagePage =
   );
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = resolveGridsMessages(getLocale(c));
   const baseSlug = c.req.param("baseId")!;
   return serializeWorkspaceState(
     baseSlug,
@@ -28,15 +30,15 @@ export default ssr<AuthContext>(async (c) => {
       const sourceId = c.req.param("sourceId");
       const defaultTab =
         normalizeQueryReferenceTab(routeTabParam) ?? normalizeQueryReferenceTab(defaultTabParam) ?? (sourceId ? "tables" : "basics");
-      c.get("page").title = defaultTab === "workflows" ? "Workflow reference" : defaultTab === "gql" ? "GQL reference" : "Grids reference";
+      c.get("page").title = defaultTab === "workflows" ? t.workflowReference : defaultTab === "gql" ? t.gqlReference : t.gridsReference;
       const base = await gridsService.base.getByShortId(baseSlug);
-      if (!base) return messagePage("Base not found");
+      if (!base) return messagePage(t.baseNotFound);
 
       const user = currentActorUser(c);
-      if (!user) return messagePage("Sign in to open the Grids reference.", "ti-lock");
+      if (!user) return messagePage(t.signInToOpenReference, "ti-lock");
 
       const gate = await gateBaseAtAccess(gridsAccessContext(c), base.id, "read");
-      if (!gate.ok) return messagePage("No access to this base", "ti-lock");
+      if (!gate.ok) return messagePage(t.noBaseAccess, "ti-lock");
 
       const catalog = await gridsService.base.catalog({
         baseId: base.id,

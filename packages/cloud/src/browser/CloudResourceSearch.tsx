@@ -1,9 +1,10 @@
 import { query, timed } from "@k2b/stdlib/solid";
-import { NoticeCard, Select } from "@k2b/ui";
+import { NoticeCard, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { SearchApp, SearchItem, SearchResponse } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
+import { resourceSearchMessages } from "./resource-search-messages";
 
 type ParsedInput = {
   query: string;
@@ -132,16 +133,18 @@ const removeTagFromInput = (raw: string, tag: string): string => {
 const metadataRows = (metadata?: SearchItem["metadata"]) =>
   (metadata ?? []).filter((entry) => entry.label.trim().length > 0 && entry.value.trim().length > 0).slice(0, 5);
 
-const loadSearch = async (url: string, abortSignal: AbortSignal): Promise<SearchResponse> => {
+const loadSearch = async (url: string, abortSignal: AbortSignal, fallbackMessage: string): Promise<SearchResponse> => {
   const response = await fetch(url, { signal: abortSignal });
   const payload = (await response.json()) as SearchResponse | { message?: string };
   if (!response.ok) {
-    throw new Error("message" in payload ? (payload.message ?? "Search failed.") : "Search failed.");
+    throw new Error("message" in payload ? (payload.message ?? fallbackMessage) : fallbackMessage);
   }
   return payload as SearchResponse;
 };
 
 export default function CloudResourceSearch(props: CloudResourceSearchProps) {
+  const locale = useLocale();
+  const t = () => resourceSearchMessages.resolve([locale()]).t;
   const [rawInput, setRawInput] = createSignal("");
   const [appId, setAppId] = createSignal<string | null>(props.initialAppId ?? null);
   const [searchUrl, setSearchUrl] = createSignal(
@@ -160,7 +163,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const searchQuery = query.create({
     source: searchUrl,
     enabled: () => searchUrl().length > 0,
-    load: (url, { abortSignal }) => loadSearch(url, abortSignal),
+    load: (url, { abortSignal }) => loadSearch(url, abortSignal, t().searchFailed),
   });
   const resultItems = createMemo(() => {
     const sorted = filterCloudResourceSearchItems(searchQuery.data()?.items ?? [], props)
@@ -465,8 +468,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               onClick={updateCursor}
               onSelect={updateCursor}
               onKeyDown={handleKeyDown}
-              placeholder={props.placeholder ?? "Search across apps..."}
-              aria-label="Search Cloud resources"
+              placeholder={props.placeholder ?? t().searchPlaceholder}
+              aria-label={t().searchCloudResources}
               class="w-full border-0 bg-transparent text-base outline-none placeholder:text-dimmed md:text-lg"
               spellcheck={false}
               autocapitalize="off"
@@ -485,7 +488,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             <div
               class="absolute left-3 right-3 top-full z-30 -mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-xl bg-white/95 p-1.5 shadow-lg ring-1 ring-inset ring-zinc-300/60 backdrop-blur-sm dark:bg-zinc-900/95 dark:ring-zinc-700/60"
               role="listbox"
-              aria-label="Tag suggestions"
+              aria-label={t().tagSuggestions}
             >
               <For each={filteredSuggestions()}>
                 {(suggestion, index) => {
@@ -519,10 +522,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
         </div>
         <Select
           class="w-44 shrink-0"
-          aria-label="Filter by app"
+          aria-label={t().filterByApp}
           value={appId}
           onValueChange={setAppId}
-          placeholder="All apps"
+          placeholder={t().allApps}
           clearable
           options={apps().map((app) => ({ id: app.id, label: app.name, icon: app.icon }))}
         />
@@ -552,8 +555,8 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                               type="button"
                               class="opacity-60 hover:opacity-100"
                               onClick={() => removeTag(tag)}
-                              aria-label={`Remove tag ${tag}`}
-                              title={`Remove #${tag}`}
+                              aria-label={t().removeTag({ tag })}
+                              title={t().removeTagTitle({ tag })}
                             >
                               <i class="ti ti-x text-[10px]" />
                             </button>
@@ -565,10 +568,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 </Show>
                 <Show when={bodyMode() === "ready"}>
                   <span>
-                    {resultItems().length} result{resultItems().length === 1 ? "" : "s"} <span aria-hidden="true">•</span>{" "}
+                    {t().resultCount({ count: resultItems().length })} <span aria-hidden="true">•</span>{" "}
                     <Show when={props.onHelp}>
                       <button type="button" class="text-blue-500 hover:underline dark:text-blue-400" onClick={() => props.onHelp?.()}>
-                        tag help
+                        {t().tagHelp}
                       </button>
                     </Show>
                   </span>
@@ -590,10 +593,10 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             <Show when={bodyMode() === "suggestions"}>
               <div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
                 <p class="text-xs text-dimmed">
-                  Type to search, or use a <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] dark:bg-zinc-900">#tag</code> to focus
-                  on one app.
+                  {t().typeToSearchBeforeTag} <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] dark:bg-zinc-900">#tag</code>{" "}
+                  {t().typeToSearchAfterTag}
                 </p>
-                <Show when={tagSuggestions().length > 0} fallback={<p class="text-xs text-dimmed">No tags available.</p>}>
+                <Show when={tagSuggestions().length > 0} fallback={<p class="text-xs text-dimmed">{t().noTagsAvailable}</p>}>
                   <div class="flex flex-wrap gap-1">
                     <For each={tagSuggestions()}>
                       {(suggestion) => (
@@ -601,7 +604,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                           type="button"
                           onClick={() => insertTagAtCursor(suggestion.tag)}
                           class="inline-flex items-center gap-1 rounded-full bg-zinc-100/80 px-2 py-0.5 text-[10px] leading-4 text-zinc-700 transition-colors hover:bg-zinc-200/80 dark:bg-zinc-900/55 dark:text-zinc-200 dark:hover:bg-zinc-800/80"
-                          title={`Add #${suggestion.tag} (${suggestion.appName})`}
+                          title={t().addTag({ tag: suggestion.tag, app: suggestion.appName })}
                         >
                           <i class={`${suggestion.appIcon} text-[10px] text-dimmed`} />
                           <span>#{suggestion.tag}</span>
@@ -616,7 +619,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     class="self-start text-[11px] text-blue-500 hover:underline dark:text-blue-400"
                     onClick={() => props.onHelp?.()}
                   >
-                    See all tag descriptions
+                    {t().seeAllTagDescriptions}
                   </button>
                 </Show>
               </div>
@@ -628,7 +631,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                 <i class="ti ti-tag-off text-2xl text-dimmed" />
                 <div class="flex flex-col gap-1">
                   <p class="text-xs">
-                    No app supports{" "}
+                    {t().noAppSupports}{" "}
                     <For each={unsupportedTags()}>
                       {(tag, index) => (
                         <>
@@ -641,7 +644,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     </For>
                     .
                   </p>
-                  <p class="text-[11px] text-dimmed">Remove the tag or pick one below.</p>
+                  <p class="text-[11px] text-dimmed">{t().removeTagOrPick}</p>
                 </div>
                 <div class="flex flex-wrap items-center justify-center gap-1.5">
                   <For each={unsupportedTags()}>
@@ -651,7 +654,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                         onClick={() => removeTag(tag)}
                         class="inline-flex items-center gap-1 rounded-full bg-amber-200/60 px-2.5 py-1 text-[11px] text-amber-900 hover:bg-amber-300/60 dark:bg-amber-900/35 dark:text-amber-200 dark:hover:bg-amber-900/55"
                       >
-                        <span>Remove #{tag}</span>
+                        <span>{t().removeNamedTag({ tag })}</span>
                         <i class="ti ti-x text-[10px]" />
                       </button>
                     )}
@@ -665,11 +668,11 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
               <div class="flex h-full min-h-0 flex-col items-center justify-center gap-2 text-center">
                 <i class="ti ti-mood-empty text-2xl text-dimmed" />
                 <p class="text-xs text-dimmed">
-                  No matches
+                  {t().noMatches}
                   {parsedInput().query.length > 0 ? (
                     <>
                       {" "}
-                      for <span class="text-zinc-700 dark:text-zinc-200">"{parsedInput().query}"</span>
+                      {t().matchesFor} <span class="text-zinc-700 dark:text-zinc-200">"{parsedInput().query}"</span>
                     </>
                   ) : null}
                   .
@@ -737,7 +740,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
           class="hidden min-h-0 overflow-y-auto overscroll-y-contain rounded-xl bg-zinc-50/80 p-3 dark:bg-zinc-900/55 md:col-start-2 md:row-start-1 md:row-span-2 md:my-3 md:mr-3 md:block"
           onWheel={(event) => event.stopPropagation()}
         >
-          <Show when={activeItem()} fallback={<div class="text-xs text-dimmed">Select a result to preview details.</div>}>
+          <Show when={activeItem()} fallback={<div class="text-xs text-dimmed">{t().selectPreview}</div>}>
             {(item) => (
               <div class="flex flex-col gap-4">
                 <div class="flex items-center gap-3">

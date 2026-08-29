@@ -1,5 +1,6 @@
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
 import type { PublicField as Field, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
+import { queryMessages } from "./messages";
 
 export type QueryWorkspaceCurrentSource =
   | { kind: "table"; tableId: string; label: string; ref: string }
@@ -37,12 +38,12 @@ export const queryTextStats = (query: string): QueryTextStats => {
 };
 
 type PreviewSummary =
-  | { kind: "idle"; label: "No result"; tone: "muted" }
-  | { kind: "checking"; label: "Checking"; tone: "pending" }
-  | { kind: "issues"; label: "Issues"; tone: "danger"; diagnostics: number }
+  | { kind: "idle"; label: string; tone: "muted" }
+  | { kind: "checking"; label: string; tone: "pending" }
+  | { kind: "issues"; label: string; tone: "danger"; diagnostics: number }
   | {
       kind: "ready";
-      label: "Ready";
+      label: string;
       tone: "success";
       rows: number;
       columns: number;
@@ -52,13 +53,14 @@ type PreviewSummary =
       limit?: number;
     };
 
-export const previewSummary = (preview: PublicDslQueryPreviewResponse | null, loading: boolean): PreviewSummary => {
-  if (loading) return { kind: "checking", label: "Checking", tone: "pending" };
-  if (!preview) return { kind: "idle", label: "No result", tone: "muted" };
-  if (!preview.ok) return { kind: "issues", label: "Issues", tone: "danger", diagnostics: preview.diagnostics.length };
+export const previewSummary = (preview: PublicDslQueryPreviewResponse | null, loading: boolean, locale = "en"): PreviewSummary => {
+  const { t } = queryMessages.resolve([locale]);
+  if (loading) return { kind: "checking", label: t.checking, tone: "pending" };
+  if (!preview) return { kind: "idle", label: t.noResult, tone: "muted" };
+  if (!preview.ok) return { kind: "issues", label: t.issues, tone: "danger", diagnostics: preview.diagnostics.length };
   return {
     kind: "ready",
-    label: "Ready",
+    label: t.ready,
     tone: "success",
     rows: preview.rows.length,
     columns: preview.columns.length,

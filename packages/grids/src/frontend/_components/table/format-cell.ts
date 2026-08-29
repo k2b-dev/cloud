@@ -1,10 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import Decimal from "decimal.js";
 import type { FormatSpec } from "../../../contracts";
+import { tableMessages } from "./messages";
 
 /**
  * Renders a single field value to its display string. Type-aware:
- *  - boolean → "Yes" / "No"
+ *  - boolean → locale-aware yes / no labels
  *  - select   → option labels, not ids
  *  - number with unit → "<amount> <unit>" or "<unit> <amount>"
  *  - duration → HH:MM:SS
@@ -23,26 +24,33 @@ export const formatCell = (
   fieldConfig?: Record<string, unknown>,
   format?: FormatSpec,
   dateConfig?: DateContext,
+  locale = dateConfig?.locale ?? "en",
 ): string => {
   if (value === null || value === undefined || value === "") return "";
 
-  const override = format ? formatOverride(value, type, format, dateConfig) : null;
+  const override = format ? formatOverride(value, type, format, dateConfig, locale) : null;
   if (override !== null) return override;
 
   // ── Type-default rendering ──────────────────────────────────────
   const renderer = DEFAULT_RENDERERS[type];
-  if (renderer) return renderer(value, fieldConfig ?? {}, dateConfig);
+  if (renderer) return renderer(value, fieldConfig ?? {}, dateConfig, locale);
 
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 };
 
-type CellRenderer = (value: unknown, fieldConfig: Record<string, unknown>, dateConfig?: DateContext) => string;
+type CellRenderer = (value: unknown, fieldConfig: Record<string, unknown>, dateConfig: DateContext | undefined, locale: string) => string;
 
-const formatOverride = (value: unknown, type: string, format: FormatSpec, dateConfig?: DateContext): string | null => {
-  if (format.kind === "date" && canUseDateFormat(type, value)) return formatDate(value, format, dateConfig);
-  if (format.kind === "decimal" && canUseDecimalFormat(type, value)) return formatDecimal(value, format);
-  if (format.kind === "percent" && canUsePercentFormat(type)) return formatPercent(value, format);
+const formatOverride = (
+  value: unknown,
+  type: string,
+  format: FormatSpec,
+  dateConfig: DateContext | undefined,
+  locale: string,
+): string | null => {
+  if (format.kind === "date" && canUseDateFormat(type, value)) return formatDate(value, format, dateConfig, locale);
+  if (format.kind === "decimal" && canUseDecimalFormat(type, value)) return formatDecimal(value, format, locale);
+  if (format.kind === "percent" && canUsePercentFormat(type)) return formatPercent(value, format, locale);
   return null;
 };
 
@@ -57,7 +65,10 @@ const canUsePercentFormat = (type: string): boolean => type === "percent" || typ
 const DEFAULT_RENDERERS: Record<string, CellRenderer> = {
   date: (value, fieldConfig, dateConfig) =>
     typeof value === "string" ? formatDateDefault(value, fieldConfig, dateConfig) : fallbackValue(value),
-  boolean: (value) => (value ? "Yes" : "No"),
+  boolean: (value, _fieldConfig, _dateConfig, locale) => {
+    const { t } = tableMessages.resolve([locale]);
+    return value ? t.yes : t.no;
+  },
   select: (value, fieldConfig) => (Array.isArray(value) ? formatSelect(value, fieldConfig) : fallbackValue(value)),
   number: (value, fieldConfig) => formatNumberDefault(value, fieldConfig),
   percent: (value) => (typeof value === "number" ? `${value}%` : fallbackValue(value)),
@@ -103,7 +114,12 @@ const formatDuration = (value: number): string => {
 
 // ─── format-spec implementations ─────────────────────────────────
 
-const formatDate = (iso: string, spec: Extract<FormatSpec, { kind: "date" }>, dateConfig?: DateContext): string => {
+const formatDate = (
+  iso: string,
+  spec: Extract<FormatSpec, { kind: "date" }>,
+  dateConfig: DateContext | undefined,
+  locale: string,
+): string => {
   if (spec.format === "iso") {
     return spec.includeTime ? zonedDateTimeText(iso, dateConfig) : iso.slice(0, 10);
   }
@@ -112,15 +128,11 @@ const formatDate = (iso: string, spec: Extract<FormatSpec, { kind: "date" }>, da
   const timeZone = spec.includeTime ? dateConfig?.timeZone : "UTC";
   if (spec.format === "relative") {
     const days = Math.round((Date.now() - d.getTime()) / 86_400_000);
-    if (days === 0) return "today";
-    if (days === 1) return "yesterday";
-    if (days === -1) return "tomorrow";
-    if (days > 0 && days < 30) return `${days}d ago`;
-    if (days < 0 && days > -30) return `in ${-days}d`;
-    return d.toLocaleDateString(undefined, timeZone ? { timeZone } : undefined);
+    if (days > -30 && days < 30) return new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "narrow" }).format(-days, "day");
+    return d.toLocaleDateString(locale, timeZone ? { timeZone } : undefined);
   }
   if (spec.format === "long") {
-    return d.toLocaleDateString(undefined, {
+    return d.toLocaleDateString(locale, {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -130,11 +142,28 @@ const formatDate = (iso: string, spec: Extract<FormatSpec, { kind: "date" }>, da
   }
   // short — locale-aware
   return spec.includeTime
-    ? d.toLocaleString(undefined, timeZone ? { timeZone } : undefined)
-    : d.toLocaleDateString(undefined, timeZone ? { timeZone } : undefined);
+    ? d.toLocaleString(locale, timeZone ? { timeZone } : undefined)
+    : d.toLocaleDateString(locale, timeZone ? { timeZone } : undefined);
 };
 
-const formatDecimal = (v: number | string, spec: Extract<FormatSpec, { kind: "decimal" }>): string => {
+const numberSymbols = (locale: string): { decimal: string; group: string } => {
+  const parts = new Intl.NumberFormat(locale).formatToParts(1000.1);
+  return {
+    decimal: parts.find((part) => part.type === "decimal")?.value ?? ".",
+    group: parts.find((part) => part.type === "group")?.value ?? ",",
+  };
+};
+
+const localizeFixedDecimal = (fixed: string, locale: string, grouped: boolean): string => {
+  const { decimal, group } = numberSymbols(locale);
+  const [integer = "", fraction] = fixed.split(".");
+  const sign = integer.startsWith("-") ? "-" : "";
+  const digits = sign ? integer.slice(1) : integer;
+  const localizedInteger = grouped ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, group) : digits;
+  return `${sign}${localizedInteger}${fraction === undefined ? "" : `${decimal}${fraction}`}`;
+};
+
+const formatDecimal = (v: number | string, spec: Extract<FormatSpec, { kind: "decimal" }>, locale: string): string => {
   let dec: Decimal;
   try {
     dec = new Decimal(typeof v === "number" ? String(v) : v);
@@ -143,16 +172,14 @@ const formatDecimal = (v: number | string, spec: Extract<FormatSpec, { kind: "de
   }
   if (!dec.isFinite()) return String(v);
   const fixed = spec.precision !== undefined ? dec.toFixed(spec.precision) : dec.toFixed();
-  if (!spec.thousandsSeparator) return fixed;
-  const [int, fraction] = fixed.split(".");
-  return fraction === undefined ? int!.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : `${int!.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${fraction}`;
+  return localizeFixedDecimal(fixed, locale, spec.thousandsSeparator === true);
 };
 
-const formatPercent = (value: unknown, spec: Extract<FormatSpec, { kind: "percent" }>): string => {
+const formatPercent = (value: unknown, spec: Extract<FormatSpec, { kind: "percent" }>, locale: string): string => {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   if (!Number.isFinite(n)) return String(value);
   const fixed = spec.precision !== undefined ? n.toFixed(spec.precision) : String(n);
-  return `${fixed}%`;
+  return `${localizeFixedDecimal(fixed, locale, false)}%`;
 };
 
 export const progressRatio = (value: unknown, type: string, fieldConfig?: Record<string, unknown>): number => {

@@ -16,7 +16,13 @@ export const aiModelChoiceGroups = (profile: ModelChoiceTraits): readonly string
   ...(profile.capabilities.includes("tools") ? ["tools"] : []),
 ];
 
-export const aiModelGroupFiltersFor = (profiles: readonly ModelChoiceTraits[]) => {
+export const aiModelGroupFiltersFor = (
+  profiles: readonly ModelChoiceTraits[],
+  labels?: Partial<Record<(typeof AI_MODEL_CHOICE_GROUPS)[number]["value"], string>>,
+) => {
   const available = new Set(profiles.flatMap(aiModelChoiceGroups));
-  return AI_MODEL_CHOICE_GROUPS.filter((group) => available.has(group.value));
+  return AI_MODEL_CHOICE_GROUPS.filter((group) => available.has(group.value)).map((group) => ({
+    ...group,
+    label: labels?.[group.value] ?? group.label,
+  }));
 };

@@ -1,10 +1,11 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
-import { Button, Calendar, type CalendarEvent, Placeholder } from "@k2b/ui";
+import { Button, Calendar, type CalendarEvent, Placeholder, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { RecordDisplayConfig } from "../../../contracts";
 import { recordDisplayTitle } from "../records/record-display";
 import type { GridsCalendarView } from "./display-mode";
+import { recordsViewMessages } from "./messages";
 
 export function RecordCalendarView(props: {
   items: GridRecord[];
@@ -20,6 +21,8 @@ export function RecordCalendarView(props: {
   loadingMore?: boolean;
   onLoadMore?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   const dateField = () => {
     const fieldId = props.displayConfig.calendar?.dateFieldId;
     return fieldId ? props.fields.find((field) => field.id === fieldId && field.type === "date" && !field.deletedAt) : undefined;
@@ -59,7 +62,7 @@ export function RecordCalendarView(props: {
     <div class="paper relative min-h-0 flex-1 overflow-hidden">
       <Show
         when={dateField()}
-        fallback={<Placeholder icon="ti ti-calendar" class="min-h-48 justify-center" description={<>Choose a date field in settings.</>} />}
+        fallback={<Placeholder icon="ti ti-calendar" class="min-h-48 justify-center" description={<>{t().chooseDateField}</>} />}
       >
         <Calendar
           class="h-full"
@@ -86,7 +89,7 @@ export function RecordCalendarView(props: {
             disabled={props.loadingMore}
           >
             {props.loadingMore ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-chevron-down" />}
-            Load more events
+            {t().loadMoreEvents}
           </Button>
         </Show>
       </Show>

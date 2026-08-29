@@ -1,5 +1,6 @@
-import { prompts } from "@k2b/ui";
+import { prompts, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
+import { platformMessages } from "./platform-messages";
 
 export type GlobalSearchHelpApp = {
   appId: string;
@@ -13,6 +14,8 @@ export type GlobalSearchHelpApp = {
 type GlobalSearchHelpDialogProps = { apps: GlobalSearchHelpApp[] };
 
 export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProps) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const apps = createMemo(() =>
     props.apps
       .filter((app) => app.tags.length > 0)
@@ -31,9 +34,7 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
     <div class="flex max-h-[min(42rem,var(--ui-dialog-available-height))] min-h-0 flex-col gap-4 text-zinc-900 dark:text-zinc-100">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="text-sm text-dimmed">
-            Use <code>#tag</code> to narrow your search. You can combine text + multiple tags.
-          </p>
+          <p class="text-sm text-dimmed">{t().searchTagsDescription({ tag: "#tag" })}</p>
         </div>
       </div>
 
@@ -53,7 +54,7 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
                   when={(app.tagHelp?.length ?? 0) > 0}
                   fallback={
                     <p class="mt-1 text-xs text-dimmed">
-                      Tags:{" "}
+                      {t().tags}:{" "}
                       <For each={app.tags}>
                         {(tag, index) => (
                           <>
@@ -81,7 +82,7 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
           </For>
           <Show when={apps().length === 0}>
             <div class="rounded-lg ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800 p-3 text-xs text-dimmed bg-zinc-50/50 dark:bg-zinc-900/35">
-              No app-specific search tags available.
+              {t().noAppSearchTags}
             </div>
           </Show>
         </div>
@@ -90,9 +91,13 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
   );
 }
 
-export const openGlobalSearchHelpDialog = (apps: GlobalSearchHelpApp[]) => {
+export const openGlobalSearchHelpDialog = (
+  apps: GlobalSearchHelpApp[],
+  locale = typeof document === "undefined" ? "en" : document.documentElement.lang || "en",
+) => {
+  const t = platformMessages.resolve([locale]).t;
   void prompts.dialog<void>(() => <GlobalSearchHelpDialog apps={apps} />, {
-    title: "Search Tags",
+    title: t.searchTags,
     icon: "ti ti-help-circle",
     size: "large",
   });

@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { CreateDocumentTemplateSchema, UpdateDocumentTemplateSchema } from "../contracts";
@@ -21,8 +21,10 @@ import {
   projectRelationLookup,
   RecordLookupQuerySchema,
 } from "./documents-api-shared";
+import { apiMessages } from "./messages";
 import { currentActorUserId, gateAt } from "./permissions";
 import { resolvePublicIdParam, resolveStoredPublicIdParam } from "./route-params";
+import { v } from "./validator";
 
 export const createDocumentTemplateRoutes = () =>
   new Hono<AuthContext>()
@@ -39,9 +41,9 @@ export const createDocumentTemplateRoutes = () =>
       v("query", DocumentTemplateSummaryQuerySchema),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const tableGate = await gateAt(c, { baseId: table.baseId }, c.req.valid("query").min);
         if (!tableGate.ok) return respond(c, () => Promise.resolve(tableGate));
         const templates = await gridsService.document.listTemplatesForTable(tableId);
@@ -61,9 +63,9 @@ export const createDocumentTemplateRoutes = () =>
       }),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return c.json(await projectDocumentTemplates(await gridsService.document.listTemplatesForTable(tableId)));
@@ -83,12 +85,12 @@ export const createDocumentTemplateRoutes = () =>
       v("json", CreateDocumentTemplateSchema),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const created = await gridsService.document.createTemplate(tableId, c.req.valid("json"), currentActorUserId(c));
+        const created = await gridsService.document.createTemplate(tableId, c.req.valid("json"), currentActorUserId(c), getLocale(c));
         if (!created.ok) return c.json({ message: created.error.message }, created.error.status);
         return c.json((await projectDocumentTemplates([created.data]))[0]!, 201);
       },
@@ -108,18 +110,19 @@ export const createDocumentTemplateRoutes = () =>
       v("json", PublicReorderDocumentTemplatesSchema),
       async (c) => {
         const tableId = await resolvePublicIdParam(c, "tableId", "table");
-        if (!tableId) return c.json({ message: "Table not found" }, 404);
+        if (!tableId) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const table = await gridsService.table.get(tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const publicTemplateIds = c.req.valid("json").templateIds;
         const resolvedTemplateIds = await resolvePublicIds("documentTemplate", publicTemplateIds);
-        if (resolvedTemplateIds.size !== publicTemplateIds.length) return c.json({ message: "Document template not found" }, 404);
+        if (resolvedTemplateIds.size !== publicTemplateIds.length) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const result = await gridsService.document.reorderTemplates(
           tableId,
           publicTemplateIds.map((id) => resolvedTemplateIds.get(id)!),
           currentActorUserId(c),
+          getLocale(c),
         );
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         return c.body(null, 204);
@@ -138,7 +141,7 @@ export const createDocumentTemplateRoutes = () =>
       }),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         return c.json((await projectDocumentTemplates([loaded.template]))[0]!);
@@ -158,10 +161,15 @@ export const createDocumentTemplateRoutes = () =>
       v("json", UpdateDocumentTemplateSchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const updated = await gridsService.document.updateTemplate(loaded.template.id, c.req.valid("json"), currentActorUserId(c));
+        const updated = await gridsService.document.updateTemplate(
+          loaded.template.id,
+          c.req.valid("json"),
+          currentActorUserId(c),
+          getLocale(c),
+        );
         if (!updated.ok) return c.json({ message: updated.error.message }, updated.error.status);
         return c.json((await projectDocumentTemplates([updated.data]))[0]!);
       },
@@ -179,10 +187,10 @@ export const createDocumentTemplateRoutes = () =>
       }),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateTemplate(c, loaded, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const result = await gridsService.document.removeTemplate(loaded.template.id, currentActorUserId(c));
+        const result = await gridsService.document.removeTemplate(loaded.template.id, currentActorUserId(c), getLocale(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         return c.body(null, 204);
       },
@@ -201,14 +209,14 @@ export const createDocumentTemplateRoutes = () =>
       }),
       async (c) => {
         const templateId = await resolveStoredPublicIdParam(c, "templateId", "documentTemplate");
-        if (!templateId) return c.json({ message: "Document template not found" }, 404);
+        if (!templateId) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const template = await gridsService.document.getStoredTemplate(templateId);
-        if (!template) return c.json({ message: "Document template not found" }, 404);
+        if (!template) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const table = await gridsService.table.get(template.tableId);
-        if (!table) return c.json({ message: "Table not found" }, 404);
+        if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "admin");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        const restored = await gridsService.document.restoreTemplate(templateId, currentActorUserId(c));
+        const restored = await gridsService.document.restoreTemplate(templateId, currentActorUserId(c), getLocale(c));
         if (!restored.ok) return c.json({ message: restored.error.message }, restored.error.status);
         return c.json((await projectDocumentTemplates([restored.data]))[0]!);
       },
@@ -227,12 +235,12 @@ export const createDocumentTemplateRoutes = () =>
       v("query", RecordLookupQuerySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
-        if (!loaded) return c.json({ message: "Document template not found" }, 404);
+        if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
         const gate = await gateEnabledTemplateWrite(c, loaded);
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const { q, limit, excludeIds: publicExcludeIds } = c.req.valid("query");
         const excludeIds = await resolvePublicIds("record", publicExcludeIds);
-        if (excludeIds.size !== publicExcludeIds.length) return c.json({ message: "Record not found" }, 404);
+        if (excludeIds.size !== publicExcludeIds.length) return c.json({ message: apiMessages(c).recordNotFound }, 404);
         return c.json(
           await projectRelationLookup(
             await gridsService.relations.lookup({

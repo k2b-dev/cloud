@@ -1,4 +1,4 @@
-import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip } from "@k2b/ui";
+import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm } from "../../../api/public-dto";
@@ -6,6 +6,7 @@ import type { FormConfig } from "../../../service/forms";
 import { isRecordInputField } from "../fields/field-render";
 import { errorMessage } from "../utils/api-helpers";
 import { openFormEditorDialog } from "./FormEditorDialog";
+import { gridsFormMessages } from "./messages";
 
 export { openFormEditorDialog } from "./FormEditorDialog";
 
@@ -36,6 +37,8 @@ type Props = {
  * forms here, the default is always available regardless.
  */
 export default function FormsManager(props: Props) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const [forms, setForms] = createSignal<PublicForm[]>(props.initialForms.filter((f) => !f.isDefault));
 
   const updateForms = (next: PublicForm[]) => {
@@ -60,12 +63,12 @@ export default function FormsManager(props: Props) {
   // ---- Create ----------------------------------------------------------
   const handleCreate = async () => {
     const result = await prompts.form({
-      title: "New form",
+      title: t().newForm,
       icon: "ti ti-forms",
       fields: {
-        name: { type: "text", label: "Name", required: true, placeholder: "e.g. Public sign-up" },
+        name: { type: "text", label: t().name, required: true, placeholder: t().formNameExample },
       },
-      confirmText: "Create",
+      confirmText: t().create,
     });
     if (!result) return;
 
@@ -83,7 +86,7 @@ export default function FormsManager(props: Props) {
       json: { name: String(result.name).trim(), config, isPublic: false },
     });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, "Failed to create form"));
+      prompts.error(await errorMessage(res, t().createFormFailed));
       return;
     }
     const created = await res.json();
@@ -96,15 +99,15 @@ export default function FormsManager(props: Props) {
   // ---- Delete ----------------------------------------------------------
   const handleDelete = async (form: PublicForm) => {
     if (!form.id) return;
-    const confirmed = await prompts.confirm(`Delete form "${form.name}"? Submissions already saved as records remain.`, {
-      title: "Delete form?",
+    const confirmed = await prompts.confirm(t().deleteFormConfirm({ name: form.name }), {
+      title: t().deleteFormQuestion,
       variant: "danger",
-      confirmText: "Delete",
+      confirmText: t().delete,
     });
     if (!confirmed) return;
     const res = await apiClient.forms[":formId"].$delete({ param: { formId: form.id } });
     if (res.status >= 400) {
-      prompts.error(await errorMessage(res, "Failed to delete form"));
+      prompts.error(await errorMessage(res, t().deleteFormFailed));
       return;
     }
     updateForms(forms().filter((f) => f.id !== form.id));
@@ -112,7 +115,7 @@ export default function FormsManager(props: Props) {
 
   return (
     <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-      <Show when={forms().length > 0} fallback={<Placeholder surface="paper" align="left" description={<>No custom forms yet.</>} />}>
+      <Show when={forms().length > 0} fallback={<Placeholder surface="paper" align="left" description={<>{t().noCustomForms}</>} />}>
         <ul class="flex flex-col gap-2">
           <For each={forms()}>
             {(form) => (
@@ -127,26 +130,23 @@ export default function FormsManager(props: Props) {
                     type="button"
                     class="flex min-h-8 min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
                     onClick={() => openFormEditor(form)}
-                    aria-label={`Edit form ${form.name}`}
+                    aria-label={t().editFormNamed({ name: form.name })}
                   >
                     <span class="flex min-w-0 flex-1 items-baseline gap-2">
                       <span class="text-sm font-semibold text-primary truncate">{form.name}</span>
-                      <span class="text-[10px] text-dimmed">
-                        {form.config.fields.length} field
-                        {form.config.fields.length === 1 ? "" : "s"}
-                      </span>
-                      <span class="text-[10px] text-dimmed">· {form.publicToken ? "public" : "private"}</span>
+                      <span class="text-[10px] text-dimmed">{t().fieldCount({ count: form.config.fields.length })}</span>
+                      <span class="text-[10px] text-dimmed">· {form.publicToken ? t().publicStatus : t().privateStatus}</span>
                     </span>
                   </button>
                   <div class="flex shrink-0 items-center gap-0">
                     <Show when={form.publicToken}>{(token) => <CopyButton text={publicFormUrl(token())} />}</Show>
-                    <Tooltip.Anchor content="Edit form">
+                    <Tooltip.Anchor content={t().editFormNamed({ name: form.name })}>
                       <IconButton
                         variant="ghost"
                         size="sm"
                         type="button"
                         onClick={() => openFormEditor(form)}
-                        label={`Edit form ${form.name}`}
+                        label={t().editFormNamed({ name: form.name })}
                       >
                         <i class="ti ti-pencil" />
                       </IconButton>
@@ -161,7 +161,7 @@ export default function FormsManager(props: Props) {
 
       <Show when={props.canManage}>
         <Button variant="success" size="sm" type="button" class="self-start" onClick={handleCreate}>
-          <i class="ti ti-plus" /> New form
+          <i class="ti ti-plus" /> {t().newForm}
         </Button>
       </Show>
     </div>

@@ -2,6 +2,7 @@ import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { For, type JSX } from "solid-js";
 import type { PulseDashboard } from "../../contracts";
 import type { WorkspaceView } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type Props = {
   title: string;
@@ -25,23 +26,25 @@ type Props = {
   openActivityMetrics: () => void;
 };
 
-const SidebarSections = (props: Props) => (
+const SidebarSections = (props: Props) => {
+  const t = usePulseMessages();
+  return (
   <>
-    <AppWorkspace.SidebarSection title="Dashboards">
+    <AppWorkspace.SidebarSection title={t().dashboards}>
       <AppWorkspace.SidebarItem icon="ti ti-plus" active={false} onClick={() => void props.createDashboard()}>
-        New dashboard
+        {t().newDashboard}
       </AppWorkspace.SidebarItem>
       <For each={props.dashboards}>{(dashboard) => props.renderDashboardItem(dashboard)}</For>
     </AppWorkspace.SidebarSection>
 
-    <AppWorkspace.SidebarSection title="Data">
+    <AppWorkspace.SidebarSection title={t().data}>
       <AppWorkspace.SidebarItem
         icon="ti ti-cube"
         active={props.activeView === "resources" || props.activeView === "resource-detail"}
         onClick={props.openResources}
         meta={props.resourceCount}
       >
-        Resources
+        {t().resources}
       </AppWorkspace.SidebarItem>
       <AppWorkspace.SidebarItem
         icon="ti ti-database"
@@ -49,21 +52,21 @@ const SidebarSections = (props: Props) => (
         onClick={props.openSources}
         meta={props.sourceCount}
       >
-        Sources
+        {t().sources}
       </AppWorkspace.SidebarItem>
       <AppWorkspace.SidebarItem icon="ti ti-terminal-2" active={props.activeView === "explorer"} onClick={props.openQueryExplorer}>
-        Query explorer
+        {t().queryExplorer}
       </AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
 
-    <AppWorkspace.SidebarSection title="Signals">
+    <AppWorkspace.SidebarSection title={t().signals}>
       <AppWorkspace.SidebarItem
         icon="ti ti-bolt"
         active={props.activeView === "activity-events" || props.activeView === "event-detail"}
         onClick={props.openActivityEvents}
         meta={props.eventCount}
       >
-        Events
+        {t().events}
       </AppWorkspace.SidebarItem>
       <AppWorkspace.SidebarItem
         icon="ti ti-toggle-right"
@@ -71,7 +74,7 @@ const SidebarSections = (props: Props) => (
         onClick={props.openActivityStates}
         meta={props.stateCount}
       >
-        States
+        {t().states}
       </AppWorkspace.SidebarItem>
       <AppWorkspace.SidebarItem
         icon="ti ti-chart-dots"
@@ -79,23 +82,25 @@ const SidebarSections = (props: Props) => (
         onClick={props.openActivityMetrics}
         meta={props.metricCount}
       >
-        Metrics
+        {t().metrics}
       </AppWorkspace.SidebarItem>
     </AppWorkspace.SidebarSection>
   </>
-);
+  );
+};
 
 export default function PulseSidebar(props: Props) {
+  const t = usePulseMessages();
   const collapsedDashboardMenu = () => [
     {
-      sectionLabel: "Dashboards",
+      sectionLabel: t().dashboards,
       items: [
         ...props.dashboards.map((dashboard) => ({
           icon: "ti ti-chart-area-line",
           label: dashboard.name,
           action: () => props.openDashboard(dashboard.id),
         })),
-        { icon: "ti ti-plus", label: "New dashboard", action: () => void props.createDashboard() },
+        { icon: "ti ti-plus", label: t().newDashboard, action: () => void props.createDashboard() },
       ],
     },
   ];
@@ -106,7 +111,7 @@ export default function PulseSidebar(props: Props) {
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileItems>
           <AppWorkspace.SidebarItem icon="ti ti-settings" disabled={props.settingsDisabled} onClick={() => void props.openSettings()}>
-            Settings
+            {t().settings}
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="pulse-sidebar-mobile">
@@ -124,7 +129,7 @@ export default function PulseSidebar(props: Props) {
             <Dropdown.Trigger
               appearance="plain"
               iconOnly
-              label="Dashboards"
+              label={t().dashboards}
               class={`k2b-app-workspace__sidebar-icon-action ${
                 props.activeView === "dashboard" || props.activeView === "dashboard-edit" ? "is-active" : ""
               }`}
@@ -136,51 +141,51 @@ export default function PulseSidebar(props: Props) {
         <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
           <AppWorkspace.SidebarIconAction
             icon="ti ti-cube"
-            label="Resources"
+            label={t().resources}
             active={props.activeView === "resources" || props.activeView === "resource-detail"}
             onClick={props.openResources}
           />
           <AppWorkspace.SidebarIconAction
             icon="ti ti-database"
-            label="Sources"
+            label={t().sources}
             active={props.activeView === "sources"}
             onClick={props.openSources}
           />
           <AppWorkspace.SidebarIconAction
             icon="ti ti-terminal-2"
-            label="Query explorer"
+            label={t().queryExplorer}
             active={props.activeView === "explorer"}
             onClick={props.openQueryExplorer}
           />
           <AppWorkspace.SidebarIconAction
             icon="ti ti-bolt"
-            label="Events"
+            label={t().events}
             active={props.activeView === "activity-events" || props.activeView === "event-detail"}
             onClick={props.openActivityEvents}
           />
           <AppWorkspace.SidebarIconAction
             icon="ti ti-toggle-right"
-            label="States"
+            label={t().states}
             active={props.activeView === "activity-states" || props.activeView === "state-detail"}
             onClick={props.openActivityStates}
           />
           <AppWorkspace.SidebarIconAction
             icon="ti ti-chart-dots"
-            label="Metrics"
+            label={t().metrics}
             active={props.activeView === "activity-metrics" || props.activeView === "metric-detail"}
             onClick={props.openActivityMetrics}
           />
         </AppWorkspace.SidebarIconGrid>
         <AppWorkspace.SidebarFooter sidebarMode="expanded">
           <AppWorkspace.SidebarItem icon="ti ti-settings" disabled={props.settingsDisabled} onClick={() => void props.openSettings()}>
-            Settings
+            {t().settings}
           </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarFooter>
         <AppWorkspace.SidebarFooter sidebarMode="collapsed">
           <AppWorkspace.SidebarIconGrid>
             <AppWorkspace.SidebarIconAction
               icon="ti ti-settings"
-              label={`Settings for ${props.title}`}
+              label={t().settingsFor({ title: props.title })}
               disabled={props.settingsDisabled}
               onClick={() => void props.openSettings()}
             />

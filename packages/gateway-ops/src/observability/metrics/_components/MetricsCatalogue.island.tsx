@@ -1,5 +1,6 @@
-import { DataTable, type DataTableColumn, FilterChip, type FilterChipSection, TextInput } from "@k2b/ui";
+import { DataTable, type DataTableColumn, FilterChip, type FilterChipSection, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
+import { gatewayOpsMessages } from "../../../messages";
 
 export type MetricsCatalogueRow = {
   name: string;
@@ -17,16 +18,16 @@ type MetricsCatalogueProps = {
   sources: { id: string; label: string }[];
 };
 
-const columns: DataTableColumn<MetricsCatalogueRow>[] = [
-  { id: "name", header: "Metric", value: (row) => row.name, cellClass: "font-mono text-[11px] max-w-[26rem]" },
-  { id: "source", header: "Source", value: (row) => row.source, cellClass: "whitespace-nowrap" },
-  { id: "type", header: "Type", value: (row) => row.type, cellClass: "whitespace-nowrap" },
-  { id: "series", header: "Series", value: (row) => row.series, cellClass: "whitespace-nowrap text-right" },
-  { id: "status", header: "Status", value: (row) => row.status, cellClass: "whitespace-nowrap" },
-  { id: "description", header: "Description", value: (row) => row.description, cellClass: "min-w-[24rem]" },
-];
-
 export default function MetricsCatalogue(props: MetricsCatalogueProps) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const columns: DataTableColumn<MetricsCatalogueRow>[] = [
+    { id: "name", header: t.metric, value: (row) => row.name, cellClass: "font-mono text-[11px] max-w-[26rem]" },
+    { id: "source", header: t.source, value: (row) => row.source, cellClass: "whitespace-nowrap" },
+    { id: "type", header: t.type, value: (row) => row.type, cellClass: "whitespace-nowrap" },
+    { id: "series", header: t.series, value: (row) => row.series, cellClass: "whitespace-nowrap text-right" },
+    { id: "status", header: t.status, value: (row) => row.status, cellClass: "whitespace-nowrap" },
+    { id: "description", header: t.description, value: (row) => row.description, cellClass: "min-w-[24rem]" },
+  ];
   const [search, setSearch] = createSignal("");
   const [source, setSource] = createSignal("");
   const [type, setType] = createSignal("");
@@ -34,7 +35,7 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
   const sourceOptions = createMemo<FilterChipSection[]>(() => [
     {
       options: [
-        { value: "", label: "All", icon: "ti ti-list" },
+        { value: "", label: t.all, icon: "ti ti-list" },
         ...props.sources.map((item) => ({ value: item.id, label: item.label, icon: "ti ti-database" })),
       ],
     },
@@ -42,9 +43,9 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
   const typeOptions: FilterChipSection[] = [
     {
       options: [
-        { value: "", label: "All", icon: "ti ti-list" },
-        { value: "gauge", label: "Gauge", icon: "ti ti-chart-bar" },
-        { value: "counter", label: "Counter", icon: "ti ti-refresh" },
+        { value: "", label: t.all, icon: "ti ti-list" },
+        { value: "gauge", label: t.gauge, icon: "ti ti-chart-bar" },
+        { value: "counter", label: t.counter, icon: "ti ti-refresh" },
       ],
     },
   ];
@@ -68,26 +69,24 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
     >
       <div class="flex flex-col gap-2 px-3 py-2">
         <div>
-          <h2 class="text-xs font-semibold text-primary">Metrics</h2>
-          <p class="text-[10px] text-dimmed">
-            {filteredRows().length} of {props.rows.length} metrics
-          </p>
+          <h2 class="text-xs font-semibold text-primary">{t.metrics}</h2>
+          <p class="text-[10px] text-dimmed">{t.metricsCount({ count: filteredRows().length, total: props.rows.length })}</p>
         </div>
         <TextInput
           name="metrics-search"
           type="search"
-          placeholder="Search metrics..."
-          aria-label="Search metrics"
+          placeholder={t.searchMetrics}
+          aria-label={t.searchMetricsLabel}
           icon="ti ti-search"
           activeIcon="ti ti-search"
           value={search}
           onValueChange={setSearch}
           clearable
-          clearLabel="Clear search"
+          clearLabel={t.clearSearch}
         />
         <div class="flex flex-wrap gap-2">
           <FilterChip
-            label="Source"
+            label={t.source}
             icon="ti ti-filter"
             options={sourceOptions()}
             value={source() ? [source()] : []}
@@ -96,7 +95,7 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
             defaultValue={[]}
           />
           <FilterChip
-            label="Type"
+            label={t.type}
             icon="ti ti-chart-dots"
             options={typeOptions}
             value={type() ? [type()] : []}
@@ -136,19 +135,19 @@ export default function MetricsCatalogue(props: MetricsCatalogueProps) {
               return (
                 <span class="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300" title={row.error ?? undefined}>
                   <i class="ti ti-alert-triangle text-xs" />
-                  Degraded
+                  {t.degraded}
                 </span>
               );
             return (
               <span class="inline-flex items-center gap-1 text-red-700 dark:text-red-300" title={row.error ?? undefined}>
                 <i class="ti ti-alert-triangle text-xs" />
-                Error
+                {t.error}
               </span>
             );
           }
           return render(value);
         }}
-        empty="No metrics match the current filters."
+        empty={t.noMatchingMetrics}
       />
     </section>
   );

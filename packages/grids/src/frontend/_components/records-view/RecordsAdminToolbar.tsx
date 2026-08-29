@@ -1,5 +1,6 @@
-import { Button, Tooltip } from "@k2b/ui";
+import { Button, Tooltip, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
+import { recordsViewMessages } from "./messages";
 
 export function RecordsAdminToolbar(props: {
   savedView: boolean;
@@ -16,9 +17,11 @@ export function RecordsAdminToolbar(props: {
   onAddViewColumn: () => void;
   onDone: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   const viewDisabledReason = () => {
-    if (!props.activeViewAvailable) return "This view is no longer available.";
-    if (!props.canEditActiveView) return "You don't have permission to edit this view.";
+    if (!props.activeViewAvailable) return t().viewUnavailable;
+    if (!props.canEditActiveView) return t().editViewDenied;
     return "";
   };
 
@@ -29,10 +32,10 @@ export function RecordsAdminToolbar(props: {
         fallback={
           <>
             <Button variant="success" size="sm" onClick={props.onOpenTableSettings}>
-              <i class="ti ti-settings" /> General
+              <i class="ti ti-settings" /> {t().general}
             </Button>
             <Button variant="success" size="sm" onClick={props.onAddField}>
-              <i class="ti ti-plus" /> Add field
+              <i class="ti ti-plus" /> {t().addField}
             </Button>
             <Show when={props.allowForms}>
               <Button variant="success" size="sm" onClick={props.onOpenForms}>
@@ -40,7 +43,7 @@ export function RecordsAdminToolbar(props: {
               </Button>
             </Show>
             <Button variant="success" size="sm" onClick={props.onOpenTemplates}>
-              <i class="ti ti-file-type-pdf" /> Templates
+              <i class="ti ti-file-type-pdf" /> {t().templates}
             </Button>
           </>
         }
@@ -49,19 +52,19 @@ export function RecordsAdminToolbar(props: {
           <Tooltip.Anchor content={viewDisabledReason()} disabled={!viewDisabledReason()}>
             <span class="inline-flex">
               <Button variant="success" size="sm" onClick={props.onOpenViewSettings} disabled={Boolean(viewDisabledReason())}>
-                <i class="ti ti-table-spark" /> View
+                <i class="ti ti-table-spark" /> {t().view}
               </Button>
             </span>
           </Tooltip.Anchor>
           <Show when={props.hiddenViewColumnCount > 0}>
             <Button variant="success" size="sm" onClick={props.onAddViewColumn}>
-              <i class="ti ti-plus" /> Add column
+              <i class="ti ti-plus" /> {t().addColumn}
             </Button>
           </Show>
         </>
       </Show>
       <Button variant="ghost" size="sm" type="button" class="ml-auto" onClick={props.onDone}>
-        Done
+        {t().done}
       </Button>
     </div>
   );

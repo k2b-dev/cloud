@@ -2761,7 +2761,7 @@ const appWithAdmin = appWithLimits
     async (c) => {
       const denied = requireAdmin(c);
       if (denied) return denied;
-      const result = await settingsService.entry.list({ filter: { group: NOTEBOOKS_SETTING_GROUP } });
+      const result = await settingsService.entry.list({ filter: { group: NOTEBOOKS_SETTING_GROUP }, locale: getLocale(c) });
       return respond(c, ok(result.items));
     },
   )

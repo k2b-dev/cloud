@@ -1,5 +1,6 @@
 import { Button, ButtonLink, prompts } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
+import { useCustomAppRuntimeMessages } from "./runtime-messages";
 import { invokeCustomAppWorkflow } from "./workflow-action-client";
 
 export type CustomAppRenderedAction =
@@ -21,6 +22,7 @@ export type CustomAppRenderedAction =
     };
 
 export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
+  const messages = useCustomAppRuntimeMessages();
   const [pendingId, setPendingId] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<{ kind: "running" | "success" | "error"; message: string } | null>(null);
   let controller: AbortController | null = null;
@@ -47,13 +49,20 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
       const outcome = await invokeCustomAppWorkflow({
         endpoint: action.endpoint,
         signal: controller.signal,
-        onRunning: () => setStatus({ kind: "running", message: "Workflow is running…" }),
+        onRunning: () => setStatus({ kind: "running", message: messages().workflowRunning }),
+        messages: {
+          startFailed: messages().workflowStartFailed,
+          statusUnavailable: messages().workflowStatusUnavailable,
+          completed: messages().workflowCompleted,
+          failed: messages().workflowFailed,
+          stillRunning: messages().workflowStillRunning,
+        },
       });
       setStatus(outcome);
       if (outcome.kind === "success") reloadTimer = window.setTimeout(() => window.location.reload(), 600);
     } catch (cause) {
       if (controller?.signal.aborted) return;
-      setStatus({ kind: "error", message: cause instanceof Error ? cause.message : "The workflow could not be started." });
+      setStatus({ kind: "error", message: cause instanceof Error ? cause.message : messages().workflowStartFailed });
     } finally {
       controller = null;
       setPendingId(null);
@@ -102,7 +111,7 @@ export default function Actions(props: { actions: CustomAppRenderedAction[] }) {
                 variant="primary"
                 size="sm"
                 loading={pendingId() === action.id}
-                loadingLabel="Starting…"
+                loadingLabel={messages().starting}
                 disabled={Boolean(pendingId())}
                 onClick={() => void invoke(action as Extract<CustomAppRenderedAction, { kind: "workflow" }>)}
               >

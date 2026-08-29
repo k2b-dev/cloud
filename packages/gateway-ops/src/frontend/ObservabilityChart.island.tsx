@@ -1,4 +1,4 @@
-import { Chart } from "@k2b/ui";
+import { Chart, useLocale } from "@k2b/ui";
 import { formatBytes, formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 
 /**
@@ -42,22 +42,23 @@ export type ObservabilityChartProps = {
 };
 
 /** Chart axes hand over a raw number, so each shared helper is adapted to that. */
-const formatterFor = (format: ObservabilityChartFormat | undefined, domain?: readonly [number, number]): ((value: number) => string) => {
-  if (format === "bytes") return (value) => formatBytes(value);
-  if (format === "datetime") return (value) => formatDateTime(new Date(value));
+const formatterFor = (format: ObservabilityChartFormat | undefined, locale: string, domain?: readonly [number, number]): ((value: number) => string) => {
+  if (format === "bytes") return (value) => formatBytes(value, { locale });
+  if (format === "datetime") return (value) => formatDateTime(new Date(value), { locale });
   if (format === "timeline") {
     const span = domain ? Math.abs(domain[1] - domain[0]) : 0;
-    const formatter = new Intl.DateTimeFormat(undefined, {
+    const formatter = new Intl.DateTimeFormat(locale, {
       ...(span > 24 * 60 * 60 * 1000 ? { day: "2-digit", month: "short" } : {}),
       hour: "2-digit",
       minute: "2-digit",
     });
     return (value) => formatter.format(new Date(value));
   }
-  return (value) => formatNumber(value);
+  return (value) => formatNumber(value, { locale });
 };
 
 export default function ObservabilityChart(props: ObservabilityChartProps) {
+  const locale = useLocale();
   const cls = () => props.class ?? "h-64 text-dimmed";
   const lineDomain = (): readonly [number, number] | undefined => {
     if (props.kind !== "line") return undefined;
@@ -75,8 +76,8 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
         kind="line"
         class={cls()}
         series={props.series ?? []}
-        xAxis={{ format: formatterFor(props.xFormat, lineDomain()) }}
-        yAxis={{ format: formatterFor(props.yFormat) }}
+        xAxis={{ format: formatterFor(props.xFormat, locale(), lineDomain()) }}
+        yAxis={{ format: formatterFor(props.yFormat, locale()) }}
         legend={props.legend}
         area={props.area}
         interactive={props.interactive}
@@ -93,7 +94,7 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
         rows={props.rows ?? []}
         states={props.states}
         domain={props.domain}
-        xAxis={{ format: formatterFor(props.xFormat, props.domain) }}
+        xAxis={{ format: formatterFor(props.xFormat, locale(), props.domain) }}
         legend={props.legend}
         interactive={props.interactive}
       />
@@ -101,7 +102,7 @@ export default function ObservabilityChart(props: ObservabilityChartProps) {
   }
 
   if (props.kind === "bar") {
-    return <Chart kind="bar" class={cls()} data={props.data ?? []} yAxis={{ format: formatterFor(props.yFormat) }} />;
+    return <Chart kind="bar" class={cls()} data={props.data ?? []} yAxis={{ format: formatterFor(props.yFormat, locale()) }} />;
   }
 
   return <Chart kind="donut" class={cls()} data={props.data ?? []} legend={props.legend} />;

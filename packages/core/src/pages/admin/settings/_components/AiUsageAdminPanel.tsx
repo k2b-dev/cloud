@@ -1,4 +1,15 @@
-import { Chart, DataPanel, DataTable, type DataTableColumn, RangePicker, SettingsPage, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import {
+  Chart,
+  DataPanel,
+  DataTable,
+  type DataTableColumn,
+  RangePicker,
+  SettingsPage,
+  StatCell,
+  StatGrid,
+  StatusBadge,
+  useLocale,
+} from "@k2b/ui";
 import type {
   AiUsageBackgroundTask,
   AiUsageCapability,
@@ -9,6 +20,7 @@ import type {
   AiUsageUser,
 } from "@valentinkolb/cloud/ai/admin";
 import { formatDateTime, formatDurationMs, formatNumber, formatPercent } from "@valentinkolb/cloud/shared";
+import { aiUsageMessages } from "./ai-usage-messages";
 
 const ranges: readonly { value: AiUsageRange; label: string; href: string }[] = [
   { value: "24h", label: "24h", href: "/admin/settings?tab=ai-usage&range=24h" },
@@ -17,117 +29,124 @@ const ranges: readonly { value: AiUsageRange; label: string; href: string }[] = 
   { value: "90d", label: "90d", href: "/admin/settings?tab=ai-usage&range=90d" },
 ];
 
-const feedbackReasonLabels: Record<string, string> = {
-  incorrect: "Incorrect",
-  did_not_follow_request: "Did not follow request",
-  incomplete: "Incomplete",
-  poor_tool_choice: "Poor tool choice",
-  too_slow: "Too slow",
-  other: "Other",
-};
-const rate = (failed: number, total: number) => (total > 0 ? formatPercent(failed / total) : "—");
-const credits = (value: number | null) => formatNumber(value, { decimals: 4 });
-
 export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
+  const locale = useLocale();
+  const t = () => aiUsageMessages.resolve([locale()]).t;
+  const dateContext = () => ({ locale: locale() });
+  const numberContext = () => ({ locale: locale() });
+  const rate = (failed: number, total: number) => (total > 0 ? formatPercent(failed / total, numberContext()) : "—");
+  const credits = (value: number | null) => formatNumber(value, { ...numberContext(), decimals: 4 });
+  const feedbackReasonLabels = () =>
+    ({
+      incorrect: t().incorrect,
+      did_not_follow_request: t().didNotFollowRequest,
+      incomplete: t().incomplete,
+      poor_tool_choice: t().poorToolChoice,
+      too_slow: t().tooSlow,
+      other: t().other,
+    }) satisfies Record<string, string>;
   const modelColumns: DataTableColumn<AiUsageModel>[] = [
-    { id: "model", header: "Model", value: (row) => row.modelProfileId },
-    { id: "turns", header: "Turns", value: (row) => row.turns, align: "right" },
-    { id: "tokens", header: "Tokens", value: (row) => row.tokens, align: "right" },
-    { id: "credits", header: "Credits", value: (row) => row.credits, align: "right" },
-    { id: "speed", header: "Speed", value: (row) => row.avgOutputTokensPerSecond, align: "right" },
-    { id: "latency", header: "Generation", value: (row) => row.avgGenerationMs, align: "right" },
-    { id: "errors", header: "Errors", value: (row) => row.failed, align: "right" },
-    { id: "feedback", header: "Feedback", value: (row) => row.negativeFeedback, align: "right" },
-    { id: "switches", header: "Switched away", value: (row) => row.switchesAway, align: "right" },
+    { id: "model", header: t().model, value: (row) => row.modelProfileId },
+    { id: "turns", header: t().turns, value: (row) => row.turns, align: "right" },
+    { id: "tokens", header: t().tokens, value: (row) => row.tokens, align: "right" },
+    { id: "credits", header: t().credits, value: (row) => row.credits, align: "right" },
+    { id: "speed", header: t().speed, value: (row) => row.avgOutputTokensPerSecond, align: "right" },
+    { id: "latency", header: t().generation, value: (row) => row.avgGenerationMs, align: "right" },
+    { id: "errors", header: t().errors, value: (row) => row.failed, align: "right" },
+    { id: "feedback", header: t().feedback, value: (row) => row.negativeFeedback, align: "right" },
+    { id: "switches", header: t().switchedAway, value: (row) => row.switchesAway, align: "right" },
   ];
   const userColumns: DataTableColumn<AiUsageUser>[] = [
-    { id: "user", header: "User", value: (row) => row.label },
-    { id: "turns", header: "Turns", value: (row) => row.turns, align: "right" },
-    { id: "tokens", header: "Tokens", value: (row) => row.tokens, align: "right" },
-    { id: "credits", header: "Credits", value: (row) => row.credits, align: "right" },
-    { id: "capabilities", header: "Capabilities", value: (row) => row.capabilities, align: "right" },
-    { id: "errors", header: "Errors", value: (row) => row.failed, align: "right" },
-    { id: "feedback", header: "Ratings", value: (row) => row.feedbackGiven, align: "right" },
+    { id: "user", header: t().user, value: (row) => row.label },
+    { id: "turns", header: t().turns, value: (row) => row.turns, align: "right" },
+    { id: "tokens", header: t().tokens, value: (row) => row.tokens, align: "right" },
+    { id: "credits", header: t().credits, value: (row) => row.credits, align: "right" },
+    { id: "capabilities", header: t().capabilities, value: (row) => row.capabilities, align: "right" },
+    { id: "errors", header: t().errors, value: (row) => row.failed, align: "right" },
+    { id: "feedback", header: t().ratings, value: (row) => row.feedbackGiven, align: "right" },
   ];
   const capabilityColumns: DataTableColumn<AiUsageCapability>[] = [
-    { id: "capability", header: "Capability", value: (row) => row.name },
-    { id: "calls", header: "Calls", value: (row) => row.calls, align: "right" },
-    { id: "users", header: "Users", value: (row) => row.users, align: "right" },
-    { id: "duration", header: "Average duration", value: (row) => row.avgDurationMs, align: "right" },
-    { id: "errors", header: "Errors", value: (row) => row.failed, align: "right" },
-    { id: "rejected", header: "Rejected", value: (row) => row.rejected, align: "right" },
+    { id: "capability", header: t().capability, value: (row) => row.name },
+    { id: "calls", header: t().calls, value: (row) => row.calls, align: "right" },
+    { id: "users", header: t().users, value: (row) => row.users, align: "right" },
+    { id: "duration", header: t().averageDuration, value: (row) => row.avgDurationMs, align: "right" },
+    { id: "errors", header: t().errors, value: (row) => row.failed, align: "right" },
+    { id: "rejected", header: t().rejected, value: (row) => row.rejected, align: "right" },
   ];
   const backgroundColumns: DataTableColumn<AiUsageBackgroundTask>[] = [
-    { id: "task", header: "Background task", value: (row) => row.task },
-    { id: "model", header: "Model", value: (row) => row.modelProfileId },
-    { id: "runs", header: "Runs", value: (row) => row.runs, align: "right" },
-    { id: "tokens", header: "Tokens", value: (row) => row.tokens, align: "right" },
-    { id: "duration", header: "Average duration", value: (row) => row.avgDurationMs, align: "right" },
-    { id: "errors", header: "Errors", value: (row) => row.failed, align: "right" },
-    { id: "last", header: "Last run", value: (row) => row.lastRunAt },
+    { id: "task", header: t().backgroundTask, value: (row) => row.task },
+    { id: "model", header: t().model, value: (row) => row.modelProfileId },
+    { id: "runs", header: t().runs, value: (row) => row.runs, align: "right" },
+    { id: "tokens", header: t().tokens, value: (row) => row.tokens, align: "right" },
+    { id: "duration", header: t().averageDuration, value: (row) => row.avgDurationMs, align: "right" },
+    { id: "errors", header: t().errors, value: (row) => row.failed, align: "right" },
+    { id: "last", header: t().lastRun, value: (row) => row.lastRunAt },
   ];
   const feedbackColumns: DataTableColumn<AiUsageFeedback>[] = [
-    { id: "rating", header: "Rating", value: (row) => row.rating },
-    { id: "message", header: "Message", value: (row) => row.conversationTitle },
-    { id: "user", header: "User", value: (row) => row.userLabel },
-    { id: "model", header: "Model", value: (row) => row.modelProfileId },
-    { id: "reason", header: "Reason", value: (row) => row.reasons.join(",") },
-    { id: "when", header: "Received", value: (row) => row.updatedAt },
+    { id: "rating", header: t().rating, value: (row) => row.rating },
+    { id: "message", header: t().message, value: (row) => row.conversationTitle },
+    { id: "user", header: t().user, value: (row) => row.userLabel },
+    { id: "model", header: t().model, value: (row) => row.modelProfileId },
+    { id: "reason", header: t().reason, value: (row) => row.reasons.join(",") },
+    { id: "when", header: t().received, value: (row) => row.updatedAt },
   ];
   const totalFeedback = props.report.overview.positiveFeedback + props.report.overview.negativeFeedback;
 
   return (
     <SettingsPage
-      title="AI Usage"
-      subtitle="Usage, cost signals, quality feedback, and failures across interactive and background AI."
+      title={t().title}
+      subtitle={t().description}
       icon="ti ti-chart-histogram"
-      actions={<RangePicker label={null} ariaLabel="AI usage range" options={ranges} value={props.report.overview.range} />}
+      actions={<RangePicker label={null} ariaLabel={t().range} options={ranges} value={props.report.overview.range} />}
       scrollPreserveKey="admin-ai-usage"
     >
       <StatGrid columns={5}>
         <StatCell
-          label="Turns"
-          value={formatNumber(props.report.overview.turns)}
-          sub={`${formatNumber(props.report.overview.activeUsers)} active users`}
+          label={t().turns}
+          value={formatNumber(props.report.overview.turns, numberContext())}
+          sub={t().activeUsers({ count: formatNumber(props.report.overview.activeUsers, numberContext()) })}
         />
         <StatCell
-          label="Tokens"
-          value={formatNumber(props.report.overview.inputTokens + props.report.overview.outputTokens, { compact: true })}
-          sub={`${formatNumber(props.report.overview.outputTokens, { compact: true })} output`}
+          label={t().tokens}
+          value={formatNumber(props.report.overview.inputTokens + props.report.overview.outputTokens, {
+            ...numberContext(),
+            compact: true,
+          })}
+          sub={t().outputTokens({ count: formatNumber(props.report.overview.outputTokens, { ...numberContext(), compact: true }) })}
         />
         <StatCell
-          label="Credits"
+          label={t().credits}
           value={credits(props.report.overview.creditsUsed)}
-          sub={`${formatPercent(props.report.overview.creditsCoverage)} of turns priced`}
+          sub={t().turnsPriced({ percent: formatPercent(props.report.overview.creditsCoverage, numberContext()) })}
         />
         <StatCell
-          label="Turn errors"
-          value={formatNumber(props.report.overview.failedTurns)}
+          label={t().turnErrors}
+          value={formatNumber(props.report.overview.failedTurns, numberContext())}
           sub={rate(props.report.overview.failedTurns, props.report.overview.turns)}
           valueClass={props.report.overview.failedTurns > 0 ? "text-red-500" : undefined}
           accent={props.report.overview.failedTurns > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
         />
         <StatCell
-          label="Positive feedback"
-          value={totalFeedback > 0 ? formatPercent(props.report.overview.positiveFeedback / totalFeedback) : "—"}
-          sub={`${formatNumber(totalFeedback)} ratings`}
+          label={t().positiveFeedback}
+          value={totalFeedback > 0 ? formatPercent(props.report.overview.positiveFeedback / totalFeedback, numberContext()) : "—"}
+          sub={t().ratingCount({ count: formatNumber(totalFeedback, numberContext()) })}
         />
       </StatGrid>
 
       <DataPanel
-        title="Usage over time"
-        subtitle="Interactive turns and failures in the selected range."
+        title={t().usageOverTime}
+        subtitle={t().usageOverTimeDescription}
         isEmpty={props.report.timeline.length === 0}
-        empty="No AI turns in this range."
+        empty={t().noTurns}
       >
         <Chart
           kind="line"
           class="h-72 w-full text-dimmed"
           series={[
-            { label: "Turns", data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.turns })) },
-            { label: "Errors", data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.failed })) },
+            { label: t().turns, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.turns })) },
+            { label: t().errors, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.failed })) },
           ]}
-          xAxis={{ format: (value) => formatDateTime(new Date(value)) }}
+          xAxis={{ format: (value) => formatDateTime(new Date(value), dateContext()) }}
           legend
           area
           interactive
@@ -135,27 +154,27 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
       </DataPanel>
 
       <DataPanel
-        title="Token volume"
-        subtitle="Reported input and output tokens combined per time bucket."
+        title={t().tokenVolume}
+        subtitle={t().tokenVolumeDescription}
         isEmpty={props.report.timeline.length === 0}
-        empty="No reported token usage in this range."
+        empty={t().noTokens}
       >
         <Chart
           kind="line"
           class="h-56 w-full text-dimmed"
           series={[
-            { label: "Tokens", data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.tokens })) },
+            { label: t().tokens, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.tokens })) },
           ]}
-          xAxis={{ format: (value) => formatDateTime(new Date(value)) }}
-          yAxis={{ format: (value) => formatNumber(value, { compact: true }) }}
+          xAxis={{ format: (value) => formatDateTime(new Date(value), dateContext()) }}
+          yAxis={{ format: (value) => formatNumber(value, { ...numberContext(), compact: true }) }}
           area
           interactive
         />
       </DataPanel>
 
       <DataPanel
-        title="Models"
-        subtitle={`${formatNumber(props.report.overview.modelSwitches)} mid-chat model switches. Latency uses generation time; speed uses output tokens per second.`}
+        title={t().models}
+        subtitle={t().modelSummary({ count: formatNumber(props.report.overview.modelSwitches, numberContext()) })}
         class="overflow-hidden"
       >
         <DataTable
@@ -165,28 +184,30 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
           density="compact"
           hoverRows
           class="overflow-x-auto"
-          empty="No model usage in this range."
+          empty={t().noModels}
           renderCell={({ row, col, value, render }) => {
             if (col.id === "model")
               return (
                 <div>
                   <div class="font-medium text-primary">{row.modelProfileId}</div>
-                  <div class="text-[10px] text-dimmed">{row.providerModel ?? "Provider model unavailable"}</div>
+                  <div class="text-[10px] text-dimmed">{row.providerModel ?? t().providerModelUnavailable}</div>
                 </div>
               );
             if (col.id === "turns" || col.id === "tokens" || col.id === "switches")
-              return <span class="tabular-nums">{formatNumber(Number(value))}</span>;
+              return <span class="tabular-nums">{formatNumber(Number(value), numberContext())}</span>;
             if (col.id === "credits") return <span class="tabular-nums">{credits(row.credits)}</span>;
             if (col.id === "speed")
               return (
                 <span class="tabular-nums">
-                  {row.avgOutputTokensPerSecond === null ? "—" : `${formatNumber(row.avgOutputTokensPerSecond, { decimals: 1 })} tok/s`}
+                  {row.avgOutputTokensPerSecond === null
+                    ? "—"
+                    : `${formatNumber(row.avgOutputTokensPerSecond, { ...numberContext(), decimals: 1 })} tok/s`}
                 </span>
               );
             if (col.id === "latency")
               return (
-                <span class="tabular-nums" title={`p95 ${formatDurationMs(row.p95GenerationMs)}`}>
-                  {formatDurationMs(row.avgGenerationMs)}
+                <span class="tabular-nums" title={`p95 ${formatDurationMs(row.p95GenerationMs, numberContext())}`}>
+                  {formatDurationMs(row.avgGenerationMs, numberContext())}
                 </span>
               );
             if (col.id === "errors")
@@ -203,11 +224,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel
-        title="Users"
-        subtitle="Private message content is never exposed; this table contains accounting metadata only."
-        class="overflow-hidden"
-      >
+      <DataPanel title={t().usersTitle} subtitle={t().usersDescription} class="overflow-hidden">
         <DataTable
           rows={props.report.users}
           columns={userColumns}
@@ -215,7 +232,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
           density="compact"
           hoverRows
           class="overflow-x-auto"
-          empty="No user usage in this range."
+          empty={t().noUsers}
           renderCell={({ row, col, value, render }) => {
             if (col.id === "user") return <span class="font-medium text-primary">{row.label}</span>;
             if (col.id === "credits") return <span class="tabular-nums">{credits(row.credits)}</span>;
@@ -226,11 +243,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel
-        title="Capabilities"
-        subtitle="Application capability calls, failures, rejections, and server execution time."
-        class="overflow-hidden"
-      >
+      <DataPanel title={t().capabilitiesTitle} subtitle={t().capabilitiesDescription} class="overflow-hidden">
         <DataTable
           rows={props.report.capabilities}
           columns={capabilityColumns}
@@ -238,10 +251,10 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
           density="compact"
           hoverRows
           class="overflow-x-auto"
-          empty="No application capabilities used in this range."
+          empty={t().noCapabilities}
           renderCell={({ row, col, value, render }) => {
             if (col.id === "capability") return <code class="text-[10px] text-primary">{row.name}</code>;
-            if (col.id === "duration") return <span class="tabular-nums">{formatDurationMs(row.avgDurationMs)}</span>;
+            if (col.id === "duration") return <span class="tabular-nums">{formatDurationMs(row.avgDurationMs, numberContext())}</span>;
             if (col.id === "errors")
               return <StatusBadge label={`${row.failed} · ${rate(row.failed, row.calls)}`} tone={row.failed > 0 ? "error" : "neutral"} />;
             return render(value);
@@ -249,11 +262,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel
-        title="Background AI"
-        subtitle="Structured AI and workflow tasks. Errors remain grouped by owning application, task, and model."
-        class="overflow-hidden"
-      >
+      <DataPanel title={t().backgroundAi} subtitle={t().backgroundDescription} class="overflow-hidden">
         <DataTable
           rows={props.report.backgroundTasks}
           columns={backgroundColumns}
@@ -261,7 +270,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
           density="compact"
           hoverRows
           class="overflow-x-auto"
-          empty="No background AI runs in this range."
+          empty={t().noBackground}
           renderCell={({ row, col, value, render }) => {
             if (col.id === "task")
               return (
@@ -275,8 +284,8 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
                   ) : null}
                 </div>
               );
-            if (col.id === "model") return <code class="text-[10px]">{row.modelProfileId ?? "unresolved"}</code>;
-            if (col.id === "duration") return <span class="tabular-nums">{formatDurationMs(row.avgDurationMs)}</span>;
+            if (col.id === "model") return <code class="text-[10px]">{row.modelProfileId ?? t().unresolved}</code>;
+            if (col.id === "duration") return <span class="tabular-nums">{formatDurationMs(row.avgDurationMs, numberContext())}</span>;
             if (col.id === "errors")
               return (
                 <StatusBadge
@@ -285,7 +294,8 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
                   title={row.lastError ?? undefined}
                 />
               );
-            if (col.id === "last") return <span class="whitespace-nowrap text-xs text-dimmed">{formatDateTime(row.lastRunAt)}</span>;
+            if (col.id === "last")
+              return <span class="whitespace-nowrap text-xs text-dimmed">{formatDateTime(row.lastRunAt, dateContext())}</span>;
             return render(value);
           }}
         />
@@ -293,27 +303,23 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
 
       <div class="grid gap-2 xl:grid-cols-2">
         <DataPanel
-          title="Launched by applications"
-          subtitle={`${formatNumber(props.report.overview.launchedChats)} chats explicitly launched outside Assistant.`}
+          title={t().launchedByApps}
+          subtitle={t().launchedDescription({ count: formatNumber(props.report.overview.launchedChats, numberContext()) })}
           class="overflow-hidden"
         >
           <DataTable
             rows={props.report.launches}
             columns={[
-              { id: "app", header: "Application", value: (row) => row.appId },
-              { id: "chats", header: "Chats", value: (row) => row.chats, align: "right" },
-              { id: "users", header: "Users", value: (row) => row.users, align: "right" },
+              { id: "app", header: t().application, value: (row) => row.appId },
+              { id: "chats", header: t().chats, value: (row) => row.chats, align: "right" },
+              { id: "users", header: t().users, value: (row) => row.users, align: "right" },
             ]}
             getRowId={(row) => row.appId}
             density="compact"
-            empty="No application-launched chats in this range."
+            empty={t().noLaunches}
           />
         </DataPanel>
-        <DataPanel
-          title="Message ranking"
-          subtitle="Needs-work ratings first, then newest. Reasons and comments are shown; message content stays private."
-          class="overflow-hidden"
-        >
+        <DataPanel title={t().messageRanking} subtitle={t().messageRankingDescription} class="overflow-hidden">
           <DataTable
             rows={props.report.feedback}
             columns={feedbackColumns}
@@ -321,10 +327,12 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
             density="compact"
             hoverRows
             class="overflow-x-auto"
-            empty="No message feedback in this range."
+            empty={t().noMessageFeedback}
             renderCell={({ row, col, value, render }) => {
               if (col.id === "rating")
-                return <StatusBadge label={row.rating === "up" ? "Helpful" : "Needs work"} tone={row.rating === "up" ? "ok" : "error"} />;
+                return (
+                  <StatusBadge label={row.rating === "up" ? t().helpful : t().needsWork} tone={row.rating === "up" ? "ok" : "error"} />
+                );
               if (col.id === "message")
                 return (
                   <div class="max-w-64">
@@ -334,11 +342,11 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
                     </div>
                   </div>
                 );
-              if (col.id === "model") return <code class="text-[10px]">{row.modelProfileId ?? "unknown"}</code>;
+              if (col.id === "model") return <code class="text-[10px]">{row.modelProfileId ?? t().unknown}</code>;
               if (col.id === "reason")
                 return (
                   <div class="max-w-80 text-xs">
-                    <div>{row.reasons.map((reason) => feedbackReasonLabels[reason] ?? reason).join(", ") || "Comment only"}</div>
+                    <div>{row.reasons.map((reason) => feedbackReasonLabels()[reason] ?? reason).join(", ") || t().commentOnly}</div>
                     {row.comment ? (
                       <div class="truncate text-dimmed" title={row.comment}>
                         {row.comment}
@@ -346,7 +354,8 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
                     ) : null}
                   </div>
                 );
-              if (col.id === "when") return <span class="whitespace-nowrap text-xs text-dimmed">{formatDateTime(row.updatedAt)}</span>;
+              if (col.id === "when")
+                return <span class="whitespace-nowrap text-xs text-dimmed">{formatDateTime(row.updatedAt, dateContext())}</span>;
               return render(value);
             }}
           />

@@ -1,5 +1,5 @@
 import { AccessEntrySchema, ErrorResponseSchema, GrantAccessSchema, PermissionLevelSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -7,7 +7,9 @@ import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { projectPublicIds, resolvePublicId } from "../service/public-resources";
 import { validateAccessLevelForResource } from "./access";
+import { apiMessages } from "./messages";
 import { currentActorUserId } from "./permissions";
+import { v } from "./validator";
 
 const ScopedAccessEntrySchema = AccessEntrySchema.extend({
   resourceType: z.enum(["base", "customApp"]),
@@ -67,9 +69,9 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
       }),
       async (c) => {
         const baseId = await resolveBase(c.req.param("baseId")!);
-        if (!baseId) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const base = await gridsService.base.get(baseId);
-        if (!base) return c.json({ message: "Base not found" }, 404);
+        if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         return c.json(await toPublicScopedEntries(await gridsService.access.listForBaseTree(baseId)));
       },
     )
@@ -87,9 +89,9 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
       v("json", GrantAccessSchema),
       async (c) => {
         const baseId = await resolveBase(c.req.param("baseId")!);
-        if (!baseId) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const base = await gridsService.base.get(baseId);
-        if (!base) return c.json({ message: "Base not found" }, 404);
+        if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const result = await gridsService.access.grant({
           resourceType: "base",
           resourceId: baseId,
@@ -98,7 +100,7 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
         });
         if (!result.ok) return respond(c, () => Promise.resolve(result));
         const created = (await gridsService.access.listForBase(baseId)).find((entry) => entry.id === result.data.accessId);
-        if (!created) return c.json({ message: "Created access entry not found" }, 500);
+        if (!created) return c.json({ message: apiMessages(c).createdAccessEntryNotFound }, 500);
         return c.json(created, 201);
       },
     )
@@ -116,11 +118,11 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
       v("json", UpdateLevelSchema),
       async (c) => {
         const baseId = await resolveBase(c.req.param("baseId")!);
-        if (!baseId) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const accessId = c.req.param("accessId")!;
         const binding = await gridsService.access.resolveBinding(accessId);
         if (!binding || binding.baseId !== baseId) {
-          return c.json({ message: "Access entry not found" }, 404);
+          return c.json({ message: apiMessages(c).accessEntryNotFound }, 404);
         }
         const { permission } = c.req.valid("json");
         const validationError = validateAccessLevelForResource(binding.resourceType, permission);
@@ -143,11 +145,11 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
       }),
       async (c) => {
         const baseId = await resolveBase(c.req.param("baseId")!);
-        if (!baseId) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const accessId = c.req.param("accessId")!;
         const binding = await gridsService.access.resolveBinding(accessId);
         if (!binding || binding.baseId !== baseId) {
-          return c.json({ message: "Access entry not found" }, 404);
+          return c.json({ message: apiMessages(c).accessEntryNotFound }, 404);
         }
         const result = await gridsService.access.revoke(accessId, currentActorUserId(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
@@ -167,10 +169,10 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
       }),
       async (c) => {
         const baseId = await resolveBase(c.req.param("baseId")!);
-        if (!baseId) return c.json({ message: "Base not found" }, 404);
+        if (!baseId) return c.json({ message: apiMessages(c).baseNotFound }, 404);
         const base = await gridsService.base.get(baseId);
-        if (!base) return c.json({ message: "Base not found" }, 404);
-        const result = await gridsService.base.remove(baseId, currentActorUserId(c));
+        if (!base) return c.json({ message: apiMessages(c).baseNotFound }, 404);
+        const result = await gridsService.base.remove(baseId, currentActorUserId(c), getLocale(c));
         if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
         return c.body(null, 204);
       },

@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { FieldColumnSpecSchema, RecordDisplayConfigSchema, TableAuditPolicySchema, TableMutationPolicySchema } from "../contracts";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForTableSchemaChange, refreshForTableSchemaChange } from "./federated-tables";
 import { emitMetadataEvent } from "./metadata-events";
 import { writeNamedResource } from "./named-resource-conflict";
@@ -171,7 +172,13 @@ export const getByShortId = async (shortId: string): Promise<Table | null> => {
   return row ? mapRow(row) : null;
 };
 
-const ensureUniqueTableName = async (baseId: string, name: string, exceptTableId: string | null = null): Promise<Result<void>> => {
+const ensureUniqueTableName = async (
+  baseId: string,
+  name: string,
+  exceptTableId: string | null = null,
+  locale?: string,
+): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const [row] = await sql<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM grids.tables
@@ -180,20 +187,21 @@ const ensureUniqueTableName = async (baseId: string, name: string, exceptTableId
       AND lower(trim(name)) = ${normalizeRefKey(name)}
       AND (${exceptTableId}::uuid IS NULL OR id <> ${exceptTableId}::uuid)
   `;
-  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict("table name must be unique within this grid"));
+  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict(messages.tableNameUnique));
 };
 
-export const create = async (input: CreateTableInput, actorId: string | null): Promise<Result<Table>> => {
+export const create = async (input: CreateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
+  const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
-  if (name.length === 0) return fail(err.badInput("name required"));
-  const uniqueName = await ensureUniqueTableName(input.baseId, name);
+  if (name.length === 0) return fail(err.badInput(messages.nameRequired));
+  const uniqueName = await ensureUniqueTableName(input.baseId, name, null, locale);
   if (!uniqueName.ok) return uniqueName;
   const columnsParsed = FieldColumnSpecSchema.array().safeParse(input.columns ?? []);
-  if (!columnsParsed.success) return fail(err.badInput("invalid table columns"));
+  if (!columnsParsed.success) return fail(err.badInput(messages.invalidTableColumns));
   const displayConfigParsed = RecordDisplayConfigSchema.safeParse(input.displayConfig ?? { mode: "table" });
-  if (!displayConfigParsed.success) return fail(err.badInput("invalid table display config"));
+  if (!displayConfigParsed.success) return fail(err.badInput(messages.invalidTableDisplayConfig));
   if (tableFieldReferences(columnsParsed.data, displayConfigParsed.data, {}).length > 0) {
-    return fail(err.badInput("new tables cannot reference fields before those fields exist"));
+    return fail(err.badInput(messages.newTableFieldReference));
   }
 
   const kind = input.kind ?? "stored";
@@ -231,7 +239,7 @@ export const create = async (input: CreateTableInput, actorId: string | null): P
         return row;
       }),
     "idx_grids_tables_live_name",
-    "table name must be unique within this grid",
+    messages.tableNameUnique,
   );
   if (!inserted.ok) return inserted;
   const table = mapRow(inserted.data);
@@ -245,7 +253,8 @@ export const create = async (input: CreateTableInput, actorId: string | null): P
   return ok(table);
 };
 
-export const update = async (id: string, input: UpdateTableInput, actorId: string | null): Promise<Result<Table>> => {
+export const update = async (id: string, input: UpdateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
+  const messages = getGridsCrudMessages(locale);
   const result = await sql.begin(async (tx): Promise<Result<{ table: Table; changed: boolean }>> => {
     // Field deletion takes the same lock before checking policy dependents.
     // Validation therefore always sees a stable table/field combination.
@@ -256,11 +265,11 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
       WHERE t.id = ${id}::uuid AND t.deleted_at IS NULL
       FOR UPDATE OF t
     `;
-    if (!lockedRow) return fail(err.notFound("Table"));
+    if (!lockedRow) return fail(err.notFound(messages.table));
     const existing = mapRow(lockedRow);
 
     const name = input.name?.trim();
-    if (name !== undefined && name.length === 0) return fail(err.badInput("name cannot be empty"));
+    if (name !== undefined && name.length === 0) return fail(err.badInput(messages.nameEmpty));
     const next = {
       name: name ?? existing.name,
       description: input.description !== undefined ? input.description : existing.description,
@@ -276,12 +285,12 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
             : existing.disableDirectInsert,
     };
     const columnsParsed = FieldColumnSpecSchema.array().safeParse(next.columns);
-    if (!columnsParsed.success) return fail(err.badInput("invalid table columns"));
+    if (!columnsParsed.success) return fail(err.badInput(messages.invalidTableColumns));
     const displayConfigParsed = RecordDisplayConfigSchema.safeParse(next.displayConfig);
-    if (!displayConfigParsed.success) return fail(err.badInput("invalid table display config"));
+    if (!displayConfigParsed.success) return fail(err.badInput(messages.invalidTableDisplayConfig));
     const auditPolicyParsed = TableAuditPolicySchema.safeParse(next.auditPolicy);
     if (!auditPolicyParsed.success) {
-      return fail(err.badInput(auditPolicyParsed.error.issues[0]?.message ?? "invalid table audit policy"));
+      return fail(err.badInput(auditPolicyParsed.error.issues[0]?.message ?? messages.invalidTableAuditPolicy));
     }
     const fieldRows = await tx<{ id: string }[]>`
       SELECT id::text AS id
@@ -292,7 +301,7 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
     const staleFieldId = tableFieldReferences(columnsParsed.data, displayConfigParsed.data, auditPolicyParsed.data).find(
       (fieldId) => !liveFieldIds.has(fieldId),
     );
-    if (staleFieldId) return fail(err.badInput("table configuration references an unknown field"));
+    if (staleFieldId) return fail(err.badInput(messages.tableUnknownField));
 
     const updated = await writeNamedResource(
       () =>
@@ -313,10 +322,10 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
           return row;
         }),
       "idx_grids_tables_live_name",
-      "table name must be unique within this grid",
+      messages.tableNameUnique,
     );
     if (!updated.ok) return updated;
-    if (!updated.data) return fail(err.internal("update failed"));
+    if (!updated.data) return fail(err.internal(messages.updateFailed));
     const table = mapRow(updated.data);
 
     const diff: Record<string, { old: unknown; new: unknown }> = {};
@@ -362,9 +371,10 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
  * they simply become unreachable through the API while the parent
  * table is hidden. Restore brings them all back.
  */
-export const remove = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const remove = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("Table"));
+  if (!existing) return fail(err.notFound(messages.table));
   await sql.begin(async (tx) => {
     await degradeForTableSchemaChange(id, actorId, tx);
     await tx`UPDATE grids.tables SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
@@ -380,9 +390,10 @@ export const remove = async (id: string, actorId: string | null): Promise<Result
   return ok();
 };
 
-export const restore = async (id: string, actorId: string | null): Promise<Result<Table>> => {
+export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<Table>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id, { includeDeleted: true });
-  if (!existing) return fail(err.notFound("Table"));
+  if (!existing) return fail(err.notFound(messages.table));
   if (existing.deletedAt === null) return ok(existing);
   const restored = await sql.begin(async (tx) => {
     await degradeForTableSchemaChange(id, actorId, tx);
@@ -396,7 +407,7 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
         return row;
       },
       "idx_grids_tables_live_name",
-      "table name must be unique within this grid",
+      messages.tableNameUnique,
     );
     if (!result.ok) return result;
     await logAudit({ baseId: existing.baseId, tableId: id, userId: actorId, action: "restored" }, tx);
@@ -404,7 +415,7 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
   });
   if (!restored.ok) return restored;
   const row = restored.data;
-  if (!row) return fail(err.internal("restore failed"));
+  if (!row) return fail(err.internal(messages.restoreFailed));
   const table = mapRow(row);
   await emitMetadataEvent({
     type: "table.restored",

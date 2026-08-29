@@ -1,7 +1,8 @@
 import { DataTable, IconButton, Tooltip, type DataTableColumn } from "@k2b/ui";
 import { type Accessor, type JSX } from "solid-js";
 import type { PulseMetricSummary } from "../../contracts";
-import { compactDateWithDelta, formatSignalValue, formatValue, plural, type PulseDateContext } from "./helpers";
+import { usePulseMessages } from "../use-messages";
+import { compactDateWithDelta, formatSignalValue, formatValue, type PulseDateContext } from "./helpers";
 import { SignalCatalogTabs, SignalCatalogToolbar, type SignalCatalogKind, type SignalCatalogTab } from "./SignalCatalogChrome";
 import type { ActivityEventGroup, ActivityStateGroup } from "./types";
 
@@ -70,6 +71,7 @@ const renderMetricLastSeenCell = (metric: PulseMetricSummary, dateContext: Pulse
 );
 
 export default function SignalCatalogView(props: SignalCatalogViewProps) {
+  const t = usePulseMessages();
   const renderSourceLink = (sourceId: string | null | undefined) => {
     if (!sourceId) return <span class="text-xs text-dimmed">-</span>;
     return (
@@ -80,10 +82,10 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
           event.stopPropagation();
           props.openSource(sourceId);
         }}
-        title="Open source"
+        title={t().openSource}
       >
         <i class="ti ti-database-share shrink-0" />
-        <span class="truncate">{props.sourceNameById().get(sourceId) ?? "Unknown source"}</span>
+        <span class="truncate">{props.sourceNameById().get(sourceId) ?? t().unknownSource}</span>
       </button>
     );
   };
@@ -94,7 +96,7 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
     render: (value: unknown) => JSX.Element,
   ) => {
     if (col.id === "kind") {
-      return renderSignalNameCell("Open event", group.kind, () => props.openEventDetail(group.kind));
+      return renderSignalNameCell(t().openEvent, group.kind, () => props.openEventDetail(group.kind));
     }
     if (col.id === "source") return renderSourceLink(group.sourceId);
     if (col.id === "value")
@@ -110,11 +112,11 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
     render: (value: unknown) => JSX.Element,
   ) => {
     if (col.id === "key") {
-      return renderSignalNameCell("Open state", group.key, () => props.openStateDetail(group.key));
+      return renderSignalNameCell(t().openState, group.key, () => props.openStateDetail(group.key));
     }
     if (col.id === "source") return renderSourceLink(group.sourceId);
     if (col.id === "value") {
-      if (group.rows.length > 1) return <span class="text-xs text-dimmed">{plural(group.rows.length, "variant")}</span>;
+      if (group.rows.length > 1) return <span class="text-xs text-dimmed">{t().variantCount({ count: group.rows.length })}</span>;
       return (
         <span class="line-clamp-2 text-xs text-secondary" title={formatSignalValue(group.latest.value)}>
           {formatSignalValue(group.latest.value)}
@@ -132,7 +134,7 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
     render: (value: unknown) => JSX.Element,
   ) => {
     if (col.id === "name") {
-      return renderSignalNameCell("Open metric", metric.name, () => props.openMetricDetail(metric.name));
+      return renderSignalNameCell(t().openMetric, metric.name, () => props.openMetricDetail(metric.name));
     }
     if (col.id === "unit") return <span class="text-xs text-secondary">{metric.unit ?? "-"}</span>;
     if (col.id === "sources") return renderMetricScopeCountCell(metric, props.metricScopeByName(), "sources");
@@ -154,7 +156,7 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
           density="compact"
           fillHeight
           class="paper flex-1 min-h-0 overflow-auto"
-          empty="No events ingested yet."
+          empty={t().noEventsIngested}
           scrollPreserveKey="pulse-signals-events"
           renderCell={({ row, col, render }) => renderEventGroupCell(row, col, render)}
         />
@@ -171,7 +173,7 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
           density="compact"
           fillHeight
           class="paper flex-1 min-h-0 overflow-auto"
-          empty="No states ingested yet."
+          empty={t().noStatesIngested}
           scrollPreserveKey="pulse-signals-states"
           renderCell={({ row, col, render }) => renderStateGroupCell(row, col, render)}
         />
@@ -187,7 +189,7 @@ export default function SignalCatalogView(props: SignalCatalogViewProps) {
         density="compact"
         fillHeight
         class="paper flex-1 min-h-0 overflow-auto"
-        empty="No metrics ingested yet."
+        empty={t().noMetricsIngested}
         scrollPreserveKey="pulse-signals-metrics"
         renderCell={({ row, col, render }) => renderMetricCell(row, col, render)}
       />

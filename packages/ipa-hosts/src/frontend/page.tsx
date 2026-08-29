@@ -1,5 +1,5 @@
 import { Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../config";
@@ -10,8 +10,10 @@ import HostSettings from "./HostSettings.island";
 import HostsTable from "./HostsTable";
 import NewHostgroup from "./NewHostgroup.island";
 import SyncHosts from "./SyncHosts.island";
+import { hostMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = hostMessages.resolve([getLocale(c)]);
   const rawPage = Number(c.req.query("page") ?? "1");
   const page = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
   const rawUngroupedPage = Number(c.req.query("ungrouped_page") ?? "1");
@@ -61,16 +63,16 @@ export default ssr<AuthContext>(async (c) => {
         {/* Stat cards — see skills/cloud-app/references/frontend.md § Stats */}
         <StatGrid columns={3}>
           <StatCell
-            label="Hostgroups"
+            label={t.hostgroups}
             value={total}
-            sub={search ? "filtered" : "mirrored from IPA"}
+            sub={search ? t.filtered : t.mirroredFromIpa}
             accent={{ tone: "blue", icon: "ti ti-server" }}
           />
-          <StatCell label="Hosts in groups" value={hostsInGroups} sub={`of ${hostStats.hostsTotal} total`} />
+          <StatCell label={t.hostsInGroups} value={hostsInGroups} sub={t.ofTotal({ total: hostStats.hostsTotal })} />
           <StatCell
-            label="Ungrouped"
+            label={t.ungrouped}
             value={ungroupedHostsPage.total}
-            sub={ungroupedHostsPage.total > 0 ? "needs assignment" : "all assigned"}
+            sub={ungroupedHostsPage.total > 0 ? t.needsAssignment : t.allAssigned}
             valueClass={ungroupedHostsPage.total > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
             accent={
               ungroupedHostsPage.total > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : { tone: "emerald", icon: "ti ti-check" }
@@ -80,12 +82,7 @@ export default ssr<AuthContext>(async (c) => {
 
         <div class="flex flex-wrap items-center gap-2">
           <div class="min-w-0 flex-1">
-            <SearchBar
-              action="/admin/ipa-hosts"
-              value={search}
-              placeholder="Search hostgroups and hosts..."
-              ariaLabel="Search hostgroups and hosts"
-            />
+            <SearchBar action="/admin/ipa-hosts" value={search} placeholder={t.search} ariaLabel={t.searchLabel} />
           </div>
           <SyncHosts />
           <HostSettings />
@@ -98,17 +95,14 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex items-center gap-3">
                 <i class="ti ti-server-off shrink-0 text-lg text-amber-500" />
                 <div class="min-w-0 flex-1">
-                  <div class="text-sm font-semibold text-primary">Ungrouped hosts</div>
+                  <div class="text-sm font-semibold text-primary">{t.ungroupedHosts}</div>
                   <div class="text-xs text-dimmed">
-                    {ungroupedHostsPage.total} {ungroupedHostsPage.total === 1 ? "host" : "hosts"} without any hostgroup membership
+                    {t.hostCount({ count: ungroupedHostsPage.total })} {t.withoutGroup}
                   </div>
                 </div>
               </div>
             </div>
-            <HostsTable
-              hosts={ungroupedHostsPage.items}
-              emptyMessage={search ? `No ungrouped hosts matching "${search}".` : "No mirrored hosts without a hostgroup membership."}
-            />
+            <HostsTable hosts={ungroupedHostsPage.items} emptyMessage={search ? t.noUngroupedMatch({ query: search }) : t.noUngrouped} />
             {ungroupedPagination.total_pages > 1 ? (
               <div class="px-3 py-3">
                 <Pagination
@@ -129,12 +123,7 @@ export default ssr<AuthContext>(async (c) => {
             <Pagination currentPage={pagination.page} totalPages={pagination.total_pages} baseUrl={buildBaseUrl("page")} />
           </>
         ) : (
-          <Placeholder
-            surface="paper"
-            description={
-              <>{search ? `No hostgroups matching "${search}".` : "No mirrored hostgroups yet. Run a sync to load data from FreeIPA."}</>
-            }
-          />
+          <Placeholder surface="paper" description={<>{search ? t.noGroupMatch({ query: search }) : t.noGroups}</>} />
         )}
       </div>
     </AdminLayout>

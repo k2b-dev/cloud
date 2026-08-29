@@ -1,7 +1,8 @@
-import { isUniqueViolation } from "@valentinkolb/cloud/services";
 import { crypto, err } from "@k2b/stdlib";
+import { isUniqueViolation } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 
 type DbRow = Record<string, unknown>;
 
@@ -33,6 +34,7 @@ export const getOrCreateRecordScanCode = async (params: {
   recordId: string;
   code: string;
   client?: SqlClient;
+  locale?: string;
 }): Promise<RecordScanCode> => {
   const client = params.client ?? sql;
   const [row] = await client<DbRow[]>`
@@ -49,7 +51,7 @@ export const getOrCreateRecordScanCode = async (params: {
     DO UPDATE SET record_id = EXCLUDED.record_id
     RETURNING id, base_id, table_id, record_id, code, active, created_at, rotated_at
   `;
-  if (!row) throw err.notFound("record");
+  if (!row) throw err.notFound(getGridsCrudMessages(params.locale).record);
   return mapScanCodeRow(row);
 };
 
@@ -58,6 +60,7 @@ export const ensureRecordScanCode = async (params: {
   tableId: string;
   recordId: string;
   client?: SqlClient;
+  locale?: string;
 }): Promise<RecordScanCode> => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
@@ -70,7 +73,7 @@ export const ensureRecordScanCode = async (params: {
       throw error;
     }
   }
-  throw err.internal("record scan code generation collided repeatedly");
+  throw err.internal(getGridsCrudMessages(params.locale).recordScanCollision);
 };
 
 export const getRecordScanCode = async (code: string): Promise<RecordScanCode | null> => {

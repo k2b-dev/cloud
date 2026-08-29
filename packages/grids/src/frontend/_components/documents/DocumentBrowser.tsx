@@ -1,8 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, Placeholder, Tag } from "@k2b/ui";
+import { Button, IconButton, Placeholder, Tag, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { documentActionState } from "./document-browser-model";
 import { formatDocumentRelativeTime } from "./document-workspace-utils";
+import { documentMessages } from "./messages";
 import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentBreadcrumb = { label: string; path: string[] };
@@ -48,6 +49,9 @@ function DocumentTags(props: { tags: string[] }) {
 }
 
 export default function DocumentBrowser(props: Props) {
+  const locale = useLocale();
+  const t = () => documentMessages.resolve([locale()]).t;
+  const dateConfig = () => ({ ...props.dateConfig, locale: locale() });
   const renderDocumentActions = (document: PublicDocument) => {
     const state = () => documentActionState(props.canWrite, props.busyDocumentId, document.id);
     return (
@@ -57,7 +61,7 @@ export default function DocumentBrowser(props: Props) {
             variant="ghost"
             size="sm"
             class="shrink-0 text-dimmed hover:text-secondary"
-            label="Document details"
+            label={t().documentDetails}
             onClick={(event) => {
               event.stopPropagation();
               props.onEdit(document);
@@ -69,7 +73,7 @@ export default function DocumentBrowser(props: Props) {
             variant="ghost"
             size="sm"
             class="shrink-0 text-dimmed hover:text-secondary"
-            label="Create public link"
+            label={t().createPublicLink}
             onClick={(event) => {
               event.stopPropagation();
               props.onLink(document);
@@ -82,7 +86,7 @@ export default function DocumentBrowser(props: Props) {
           variant="ghost"
           size="sm"
           class="shrink-0 text-dimmed hover:text-secondary"
-          label="Download document"
+          label={t().downloadDocument}
           onClick={(event) => {
             event.stopPropagation();
             props.onDownload(document);
@@ -99,7 +103,7 @@ export default function DocumentBrowser(props: Props) {
     <section class="paper min-h-0 flex-1 overflow-hidden">
       <Show
         when={!props.loading}
-        fallback={<Placeholder state="loading" class="h-full" title="Loading documents" description="Reading generated documents." />}
+        fallback={<Placeholder state="loading" class="h-full" title={t().loadingDocuments} description={t().readingGeneratedDocuments} />}
       >
         <Show
           when={!props.error}
@@ -107,8 +111,8 @@ export default function DocumentBrowser(props: Props) {
             <Placeholder
               state="error"
               class="h-full"
-              title="Could not load generated documents"
-              description={props.error?.message ?? "Try again in a moment."}
+              title={t().couldNotLoadGeneratedDocuments}
+              description={props.error?.message ?? t().tryAgainMoment}
             />
           }
         >
@@ -154,7 +158,9 @@ export default function DocumentBrowser(props: Props) {
                           </span>
                           <span class="min-w-0">
                             <span class="block truncate font-medium text-primary">{props.folderTitle(folder)}</span>
-                            <span class="block text-xs text-dimmed">{folder.count} documents</span>
+                            <span class="block text-xs text-dimmed">
+                              {t().documentCount({ count: folder.count, formatted: new Intl.NumberFormat(locale()).format(folder.count) })}
+                            </span>
                           </span>
                         </div>
                         <i class="ti ti-chevron-right text-dimmed" />
@@ -177,7 +183,7 @@ export default function DocumentBrowser(props: Props) {
                           </div>
                         </button>
                         <span class="hidden text-xs text-dimmed sm:block">
-                          {formatDocumentRelativeTime(document.createdAt, props.dateConfig)}
+                          {formatDocumentRelativeTime(document.createdAt, dateConfig())}
                         </span>
                         {renderDocumentActions(document)}
                       </div>
@@ -187,7 +193,7 @@ export default function DocumentBrowser(props: Props) {
                     <div class="flex justify-center p-3">
                       <Button variant="secondary" size="sm" type="button" onClick={props.onLoadMore} disabled={props.loadingMore}>
                         {props.loadingMore ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-dots" />}
-                        Load more documents
+                        {t().loadMoreDocuments}
                       </Button>
                     </div>
                   </Show>

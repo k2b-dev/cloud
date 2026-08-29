@@ -1,14 +1,15 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { AppOverview } from "@k2b/ui";
 import { filesService } from "@/service";
 import { ssr } from "../config";
+import { filesMessages } from "./messages";
 
 /**
  * Files index page - redirects to first accessible base
  */
 export default ssr<AuthContext>(async (c) => {
+  const { t } = filesMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
 
   // Get all accessible bases
@@ -16,14 +17,10 @@ export default ssr<AuthContext>(async (c) => {
 
   if (bases.length === 0) {
     return () => (
-      <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Files" }]}>
-        <AppOverview title="Files" subtitle="Browse and manage shared file storage." icon="ti ti-folders">
-          <AppOverview.Main title="Storage" description="No accessible file storage is available for your account.">
-            <AppOverview.EmptyState
-              title="No accessible storage"
-              description="Ask an administrator to grant access to a home or group file storage."
-              icon="ti ti-folder-off"
-            />
+      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files }]}>
+        <AppOverview title={t.files} subtitle={t.browse} icon="ti ti-folders">
+          <AppOverview.Main title={t.storage} description={t.noStorageDescription}>
+            <AppOverview.EmptyState title={t.noStorage} description={t.requestAccess} icon="ti ti-folder-off" />
           </AppOverview.Main>
         </AppOverview>
       </Layout>

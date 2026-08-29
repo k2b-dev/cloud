@@ -1,10 +1,11 @@
 import { timed } from "@k2b/stdlib/solid";
-import { AutocompleteEditor, Button, DataTable, type DataTableColumn, NoticeCard } from "@k2b/ui";
+import { AutocompleteEditor, Button, DataTable, type DataTableColumn, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { buildFormulaCompletions, formulaFieldRefs, formulaFieldToken, formulaHighlight } from "./formula-authoring";
+import { gridsFieldMessages } from "./messages";
 
 type FormulaPreviewResponse = {
   ok: boolean;
@@ -13,10 +14,10 @@ type FormulaPreviewResponse = {
   rows: { recordId: string; values: Record<string, unknown>; result: unknown }[];
 };
 
-const previewValue = (value: unknown): string => {
-  if (value === null || value === undefined || value === "") return "empty";
+const previewValue = (value: unknown, empty: string): string => {
+  if (value === null || value === undefined || value === "") return empty;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.map(previewValue).join(", ");
+  if (Array.isArray(value)) return value.map((item) => previewValue(item, empty)).join(", ");
   return JSON.stringify(value);
 };
 
@@ -32,6 +33,8 @@ const openReferenceWindow = (href: string | null) => {
 };
 
 function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading: boolean }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const columns = (): DataTableColumn<FormulaPreviewResponse["rows"][number]>[] => {
     const preview = props.preview;
     if (!preview) return [];
@@ -39,12 +42,12 @@ function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading
       ...preview.fields.map((field) => ({
         id: field.id,
         header: field.name,
-        subtitle: field.type,
+        subtitle: t().typeLabel({ type: field.type }),
         value: (row: FormulaPreviewResponse["rows"][number]) => row.values[field.id],
       })),
       {
         id: "result",
-        header: "Result",
+        header: t().result,
         value: (row: FormulaPreviewResponse["rows"][number]) => row.result,
         headerClass: "text-primary",
       },
@@ -54,16 +57,16 @@ function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading
   return (
     <div class="flex flex-col gap-2 text-xs">
       <div class="flex items-center justify-between gap-2">
-        <span class="font-medium text-secondary">Formula preview</span>
+        <span class="font-medium text-secondary">{t().formulaPreview}</span>
         <Show when={props.loading}>
           <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
-            <i class="ti ti-loader-2 animate-spin" /> Checking
+            <i class="ti ti-loader-2 animate-spin" /> {t().checking}
           </span>
         </Show>
       </div>
 
       <div class="h-48 overflow-auto">
-        <Show when={props.preview} fallback={<p class="text-dimmed">Type a formula to preview the latest records.</p>}>
+        <Show when={props.preview} fallback={<p class="text-dimmed">{t().typeFormula}</p>}>
           {(preview) => (
             <div class="flex flex-col gap-2">
               <Show when={preview().diagnostics.length > 0}>
@@ -74,10 +77,10 @@ function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading
 
               <Show
                 when={preview().rows.length > 0}
-                fallback={<Show when={preview().ok}>{<p class="text-dimmed">No records to preview yet.</p>}</Show>}
+                fallback={<Show when={preview().ok}>{<p class="text-dimmed">{t().formulaNoRecords}</p>}</Show>}
               >
                 <DataTable
-                  ariaLabel="Formula preview"
+                  ariaLabel={t().formulaPreviewLabel}
                   rows={preview().rows}
                   columns={columns()}
                   getRowId={(row) => row.recordId}
@@ -97,7 +100,7 @@ function FormulaPreview(props: { preview: FormulaPreviewResponse | null; loading
                             : "text-dimmed"
                       }
                     >
-                      {previewValue(value)}
+                      {previewValue(value, t().empty)}
                     </span>
                   )}
                 />
@@ -120,6 +123,8 @@ export function FormulaExpressionEditor(props: {
   tableId?: string;
   ariaLabel?: string;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFieldMessages.resolve([locale()]).t;
   const refs = () => formulaFieldRefs(props.fields, props.currentFieldId);
   const completions = () => buildFormulaCompletions(refs());
   const referenceHref = () =>
@@ -141,11 +146,11 @@ export function FormulaExpressionEditor(props: {
     const date = refOr(dateRefs(), "date");
     const active = refOr(boolRefs(), "active");
     return [
-      { label: "Markup", expression: `${price} * 1.19` },
-      { label: "Total", expression: `${price} * ${qty}` },
-      { label: "Text label", expression: `CONCAT(UPPER(${name}), ' - EUR ', ${price})` },
-      { label: "Conditional", expression: `IF(${active}, 'Available', 'Out of stock')` },
-      { label: "Date age", expression: `DATEDIFF(${date}, TODAY(), 'days')` },
+      { label: t().markup, expression: `${price} * 1.19` },
+      { label: t().total, expression: `${price} * ${qty}` },
+      { label: t().textLabel, expression: `CONCAT(UPPER(${name}), ' - EUR ', ${price})` },
+      { label: t().conditional, expression: `IF(${active}, 'Available', 'Out of stock')` },
+      { label: t().dateAge, expression: `DATEDIFF(${date}, TODAY(), 'days')` },
     ];
   };
 
@@ -165,14 +170,14 @@ export function FormulaExpressionEditor(props: {
         param: { tableId: props.currentTableId },
         json: { expression, currentFieldId: props.currentFieldId ?? null },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not preview formula."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().previewFormulaFailed));
       const data = await res.json();
       if (token === previewToken) setPreview(data);
-    } catch (error) {
+    } catch {
       if (token === previewToken) {
         setPreview({
           ok: false,
-          diagnostics: [{ severity: "error", message: error instanceof Error ? error.message : "Could not preview formula." }],
+          diagnostics: [{ severity: "error", message: t().previewFormulaFailed }],
           fields: [],
           rows: [],
         });
@@ -189,17 +194,14 @@ export function FormulaExpressionEditor(props: {
   return (
     <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-1 text-xs leading-snug text-dimmed">
-        <span class="font-medium">Formula basics</span>
-        <span>
-          Search fields by name, then insert a readable reference. Use double quotes for names with spaces, for example{" "}
-          <code>"Unit price"</code>.
-        </span>
-        <span>If you rename a field used here, Grids updates the formula when possible. Review it afterward.</span>
-        <span>Strings use single quotes. Decimal arithmetic stays exact when exact values are involved.</span>
+        <span class="font-medium">{t().formulaBasics}</span>
+        <span>{t().formulaReferenceHelp}</span>
+        <span>{t().formulaRenameWarning}</span>
+        <span>{t().formulaStrings}</span>
       </div>
 
       <div class="flex flex-col gap-2 text-xs">
-        <span class="font-medium text-secondary">Examples</span>
+        <span class="font-medium text-secondary">{t().examples}</span>
         <div class="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           <For each={examples()}>
             {(example) => (
@@ -219,29 +221,26 @@ export function FormulaExpressionEditor(props: {
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <span class="text-label text-xs">Expression</span>
+        <span class="text-label text-xs">{t().expression}</span>
         <AutocompleteEditor
           value={props.value}
           onValueChange={props.onInput}
-          placeholder="Reference fields by name. Leading = is optional."
+          placeholder={t().expressionPlaceholder}
           completions={completions()}
           highlight={formulaHighlight}
           restoreExpansionOnBackspace={false}
           lines={4}
-          aria-label={props.ariaLabel ?? "Formula expression"}
+          aria-label={props.ariaLabel ?? t().formulaExpression}
         />
       </div>
 
-      <p class="text-xs text-dimmed leading-snug">
-        Formula results update automatically. If you rename a referenced field, Grids updates the formula when possible; review it
-        afterward.
-      </p>
+      <p class="text-xs text-dimmed leading-snug">{t().formulaUpdates}</p>
 
       <div class="flex flex-col gap-2">
         <FormulaPreview preview={preview()} loading={previewLoading()} />
         <Show when={referenceHref()}>
           <Button variant="secondary" size="sm" type="button" class="w-fit" onClick={() => openReferenceWindow(referenceHref())}>
-            <i class="ti ti-external-link" /> Open reference
+            <i class="ti ti-external-link" /> {t().openReference}
           </Button>
         </Show>
       </div>

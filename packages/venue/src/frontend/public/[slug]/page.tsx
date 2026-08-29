@@ -1,5 +1,7 @@
 import { coreSettings } from "@valentinkolb/cloud/services";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { ssr } from "../../../config";
+import { venueMessages } from "../../../messages";
 import { venueService } from "../../../service";
 import {
   buildPublicVenueFeedbackUrl,
@@ -10,12 +12,13 @@ import {
 import PublicVenuePage from "./PublicVenuePage.island";
 
 export default ssr(async (c) => {
+  const { t } = venueMessages.resolve([getLocale(c)]);
   c.header("Cache-Control", "no-store");
   c.header("Referrer-Policy", "no-referrer");
   const id = c.req.param("id") ?? "";
-  const internalStatus = id ? await venueService.publicStatus(id) : null;
+  const internalStatus = id ? await venueService.publicStatus(id, new Date(), getLocale(c)) : null;
   const status = internalStatus ? await venueService.publicResources.projectPublicStatus(internalStatus) : null;
-  c.get("page").title = status?.venue.name ?? "Venue";
+  c.get("page").title = status?.venue.name ?? t.venueFallbackTitle;
 
   const requestOrigin = new URL(c.req.raw.url).origin;
   const appUrl = await coreSettings.get<string>("app.url").catch(() => "");

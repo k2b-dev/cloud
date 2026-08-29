@@ -18,6 +18,7 @@ import { listByBase as listTablesByBase } from "../service/tables";
 import { buildWorkflowCatalog, type WorkflowCatalog, type WorkflowCatalogEntry } from "../service/workflow-catalog";
 import { listWorkflowScopes, listWorkflows } from "../service/workflow-definitions";
 import { bindGridsWorkflow } from "../workflows/binder";
+import { presentWorkflowCompletions } from "../workflows/completion-presentation";
 import type {
   GridsWorkflow,
   GridsWorkflowEmailDelivery,
@@ -537,31 +538,45 @@ const uniqueEntries = <T extends WorkflowCatalogEntry>(index: { refs: Map<string
     (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
   );
 
-export const buildWorkflowCompletions = (source: string, caret: number, catalog: WorkflowCatalog): WorkflowCompletionItem[] => {
+export const buildWorkflowCompletions = (
+  source: string,
+  caret: number,
+  catalog: WorkflowCatalog,
+  locale?: string,
+): WorkflowCompletionItem[] => {
   const context = workflowCompletionContext(source, caret);
 
   if (context.key === "table") {
-    return uniqueEntries(catalog.tables).map((entry) =>
-      workflowCompletionItem(context, "source", entry.name, entry.name, `Table ${entry.shortId}`),
+    return presentWorkflowCompletions(
+      uniqueEntries(catalog.tables).map((entry) =>
+        workflowCompletionItem(context, "source", entry.name, entry.name, `Table ${entry.shortId}`),
+      ),
+      locale,
     );
   }
   if (context.key === "field") {
     const fields = [...catalog.fieldsByTable.values()].flatMap(uniqueEntries);
-    return [...new Map(fields.map((entry) => [entry.id, entry])).values()].map((entry) =>
-      workflowCompletionItem(context, "field", entry.name, entry.name, `Field ${entry.shortId}`),
+    return presentWorkflowCompletions(
+      [...new Map(fields.map((entry) => [entry.id, entry])).values()].map((entry) =>
+        workflowCompletionItem(context, "field", entry.name, entry.name, `Field ${entry.shortId}`),
+      ),
+      locale,
     );
   }
   if (context.key === "template") {
-    return [
-      ...uniqueEntries(catalog.templates).map((entry) =>
-        workflowCompletionItem(context, "source", entry.name, entry.name, "Document template"),
-      ),
-      ...uniqueEntries(catalog.emailTemplates).map((entry) =>
-        workflowCompletionItem(context, "source", entry.name, entry.name, "Email template"),
-      ),
-    ];
+    return presentWorkflowCompletions(
+      [
+        ...uniqueEntries(catalog.templates).map((entry) =>
+          workflowCompletionItem(context, "source", entry.name, entry.name, "Document template"),
+        ),
+        ...uniqueEntries(catalog.emailTemplates).map((entry) =>
+          workflowCompletionItem(context, "source", entry.name, entry.name, "Email template"),
+        ),
+      ],
+      locale,
+    );
   }
-  return buildWorkflowManifestCompletions(source, caret, gridsWorkflows);
+  return presentWorkflowCompletions(buildWorkflowManifestCompletions(source, caret, gridsWorkflows), locale);
 };
 
 export const baseExists = async (baseId: string): Promise<boolean> => Boolean(await getBase(baseId));

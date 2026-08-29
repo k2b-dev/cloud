@@ -1,5 +1,6 @@
 import { apiClient } from "@/api/client";
 import type { RelationLookupItem } from "../../../contracts";
+import { recordMessages } from "./messages";
 
 export type RecordLookupItem = RelationLookupItem;
 
@@ -11,7 +12,9 @@ export const fetchRecordLookup = async (params: {
   limit?: number;
   includeDeleted?: boolean;
   signal: AbortSignal;
+  locale?: string;
 }): Promise<RecordLookupItem[]> => {
+  const { t } = recordMessages.resolve([params.locale ?? "en"]);
   if (params.templateId) {
     const res = await apiClient.documents.templates[":templateId"].records.lookup.$get(
       {
@@ -25,8 +28,8 @@ export const fetchRecordLookup = async (params: {
       { init: { signal: params.signal } },
     );
     if (!res.ok) {
-      if (res.status === 403) throw new Error("You do not have permission to choose records for this document template.");
-      throw new Error("Could not load records.");
+      if (res.status === 403) throw new Error(t.documentRecordLookupDenied);
+      throw new Error(t.recordLookupFailed);
     }
     const data = (await res.json()) as { items: RecordLookupItem[] };
     return data.items;
@@ -45,9 +48,9 @@ export const fetchRecordLookup = async (params: {
   );
   if (!res.ok) {
     if (res.status === 403) {
-      throw new Error("You do not have permission to choose records from this table.");
+      throw new Error(t.tableRecordLookupDenied);
     }
-    throw new Error("Could not load records.");
+    throw new Error(t.recordLookupFailed);
   }
   const data = await res.json();
   return data.items;

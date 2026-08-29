@@ -14,6 +14,10 @@ describe("workflow run inputs", () => {
       ok: false,
       errors: { loan: "Loan is required.", notify: "notify is required." },
     });
+    expect(buildWorkflowRunInput(inputs, {}, "de-CH")).toEqual({
+      ok: false,
+      errors: { loan: "Loan ist erforderlich.", notify: "notify ist erforderlich." },
+    });
     expect(buildWorkflowRunInput(inputs, { loan: "record-id", notify: false, amount: 12.5 })).toEqual({
       ok: true,
       input: { loan: "record-id", notify: false, amount: 12.5 },

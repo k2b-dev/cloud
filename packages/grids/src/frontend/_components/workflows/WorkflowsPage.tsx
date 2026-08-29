@@ -15,6 +15,7 @@ import {
   StatGrid,
   StatusBadge,
   Tag,
+  useLocale,
 } from "@k2b/ui";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
@@ -39,6 +40,7 @@ import type {
   PublicWorkflowTriggerRuntimeState,
   PublicWorkspaceWorkflowOverview,
 } from "../workspace/workspace-public-state-model";
+import { workflowMessages } from "./messages";
 import { WorkflowAutomaticTriggerState } from "./WorkflowAutomaticTriggerState";
 import { WorkflowEditor } from "./WorkflowEditor";
 import { WorkflowLauncherManager } from "./WorkflowLauncherManager";
@@ -46,10 +48,11 @@ import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import type { WorkflowScannerState } from "./WorkflowScannerSurface";
 import {
-  channelLabels,
   formatWorkflowRunDate as formatDate,
   formatWorkflowRunDuration as formatDuration,
   isTerminalWorkflowRunStatus,
+  workflowChannelLabel,
+  workflowRunStatusLabel,
   workflowRunStatusTone,
 } from "./workflow-display";
 import { reconcileWorkflowRunList, type WorkflowRunListFilter } from "./workflow-run-list";
@@ -115,64 +118,34 @@ type WorkflowsPageApi = {
 
 const workflowsPageApi = apiClient.workflows as unknown as WorkflowsPageApi;
 
-const statsWindowLabels: Record<WorkflowRunStatsWindow, string> = {
-  "10m": "10 min",
-  "1h": "1 hour",
-  "12h": "12 hours",
-  "24h": "24 hours",
-  "7d": "7 days",
-  "30d": "30 days",
+const statsWindowLabel = (value: WorkflowRunStatsWindow, locale: string): string => {
+  const t = workflowMessages.resolve([locale]).t;
+  return { "10m": t.tenMinutes, "1h": t.oneHour, "12h": t.twelveHours, "24h": t.twentyFourHours, "7d": t.sevenDays, "30d": t.thirtyDays }[
+    value
+  ];
 };
-
-const statsWindowOptions: FilterChipSection[] = [
-  {
-    options: (Object.keys(statsWindowLabels) as WorkflowRunStatsWindow[]).map((value) => ({
-      value,
-      label: statsWindowLabels[value],
-      icon: "ti ti-clock",
-    })),
-  },
-];
-
-const runStatusOptions: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All statuses", icon: "ti ti-list" },
-      { value: "queued", label: "Queued", icon: "ti ti-clock" },
-      { value: "running", label: "Running", icon: "ti ti-loader" },
-      { value: "waiting", label: "Waiting", icon: "ti ti-hourglass" },
-      { value: "succeeded", label: "Succeeded", icon: "ti ti-circle-check" },
-      { value: "failed", label: "Failed", icon: "ti ti-alert-circle" },
-      { value: "needs_attention", label: "Needs attention", icon: "ti ti-alert-triangle" },
-      { value: "canceled", label: "Canceled", icon: "ti ti-ban" },
-    ],
-  },
-];
-
-const runChannelOptions: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All channels", icon: "ti ti-list" },
-      ...Object.entries(channelLabels).map(([value, label]) => ({ value, label, icon: "ti ti-route" })),
-    ],
-  },
-];
 
 type WorkflowLoadArea = "stats" | "runs" | "launchers" | "triggers";
 
-const formatMetricDuration = (ms: number | null): string => {
+const formatMetricDuration = (ms: number | null, locale: string): string => {
   if (ms === null) return "-";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
-  return `${Math.round(ms / 60_000)}m`;
+  const format = (value: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale, { maximumFractionDigits }).format(value);
+  if (ms < 1000) return `${format(ms)}ms`;
+  if (ms < 60_000) return `${format(ms / 1000, ms < 10_000 ? 1 : 0)}s`;
+  return `${format(ms / 60_000)}m`;
 };
 
-const formatPercent = (value: number): string => `${value.toFixed(value >= 10 ? 0 : 1)}%`;
+const formatPercent = (value: number, locale: string): string =>
+  new Intl.NumberFormat(locale, {
+    style: "percent",
+    maximumFractionDigits: value >= 10 ? 0 : 1,
+  }).format(value / 100);
 
-const triggerSummary = (workflow: PublicWorkflow): string => {
+const triggerSummary = (workflow: PublicWorkflow, locale: string): string => {
+  const t = workflowMessages.resolve([locale]).t;
   const triggers = workflow.plan.triggers.map((trigger) => trigger.kind);
-  if (triggers.length === 0) return "No automatic trigger";
-  return triggers.map((trigger) => (trigger === "recordEvent" ? "Record event" : "Schedule")).join(", ");
+  if (triggers.length === 0) return t.noAutomaticTrigger;
+  return triggers.map((trigger) => (trigger === "recordEvent" ? t.recordEvent : t.schedule)).join(", ");
 };
 
 function EmailDeliveryTable(props: {
@@ -181,18 +154,20 @@ function EmailDeliveryTable(props: {
   nextCursor?: string | null;
   onLoadMore?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
   const recipients = (delivery: WorkflowEmailDelivery) =>
     delivery.recipients.map((recipient) => `${recipient.kind}:${recipient.recipient}`).join(", ") || "-";
   const columns = createMemo<DataTableColumn<WorkflowEmailDelivery>[]>(() => [
-    { id: "status", header: "Status", value: (delivery) => delivery.status },
-    { id: "subject", header: "Subject", value: (delivery) => delivery.subject, cellClass: "max-w-72" },
-    { id: "recipients", header: "Recipients", value: recipients, cellClass: "max-w-72" },
-    { id: "sent", header: "Sent", value: (delivery) => delivery.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "status", header: t().status, value: (delivery) => delivery.status },
+    { id: "subject", header: t().subject, value: (delivery) => delivery.subject, cellClass: "max-w-72" },
+    { id: "recipients", header: t().recipients, value: recipients, cellClass: "max-w-72" },
+    { id: "sent", header: t().sent, value: (delivery) => delivery.createdAt, cellClass: "whitespace-nowrap" },
   ]);
   return (
     <section class="flex min-h-0 flex-1 flex-col">
       <DataTable
-        ariaLabel="Workflow email deliveries"
+        ariaLabel={t().workflowEmailDeliveries}
         rows={props.deliveries}
         columns={columns()}
         getRowId={(delivery) =>
@@ -204,19 +179,22 @@ function EmailDeliveryTable(props: {
         hasMore={!!props.nextCursor}
         loadingMore={props.loading}
         onLoadMore={props.onLoadMore}
-        empty={props.loading ? "Loading email deliveries..." : "No workflow emails sent yet."}
+        empty={props.loading ? t().loadingEmailDeliveries : t().noWorkflowEmails}
         renderCell={({ row: delivery, col, render, value }) => {
           if (col.id === "status") {
             return (
               <span class="flex min-w-0 flex-col items-start gap-1">
-                <StatusBadge tone={delivery.status === "failed" ? "error" : "ok"} label={delivery.status} />
+                <StatusBadge
+                  tone={delivery.status === "failed" ? "error" : "ok"}
+                  label={delivery.status === "failed" ? t().failed : t().sent}
+                />
                 <Show when={delivery.error}>
                   {(error) => <span class="block max-w-48 truncate text-red-600 dark:text-red-400">{error()}</span>}
                 </Show>
               </span>
             );
           }
-          if (col.id === "sent") return <span class="text-dimmed">{formatDate(delivery.createdAt)}</span>;
+          if (col.id === "sent") return <span class="text-dimmed">{formatDate(delivery.createdAt, locale())}</span>;
           if (col.id === "recipients") return <span class="text-dimmed">{recipients(delivery)}</span>;
           return render(value);
         }}
@@ -226,6 +204,41 @@ function EmailDeliveryTable(props: {
 }
 
 export default function WorkflowsPage(props: Props) {
+  const locale = useLocale();
+  const t = () => workflowMessages.resolve([locale()]).t;
+  const statsWindowOptions = createMemo<FilterChipSection[]>(() => [
+    {
+      options: (["10m", "1h", "12h", "24h", "7d", "30d"] as WorkflowRunStatsWindow[]).map((value) => ({
+        value,
+        label: statsWindowLabel(value, locale()),
+        icon: "ti ti-clock",
+      })),
+    },
+  ]);
+  const runStatusOptions = createMemo<FilterChipSection[]>(() => [
+    {
+      options: [
+        { value: "all", label: t().allStatuses, icon: "ti ti-list" },
+        { value: "queued", label: t().queued, icon: "ti ti-clock" },
+        { value: "running", label: t().running, icon: "ti ti-loader" },
+        { value: "waiting", label: t().waitingStatus, icon: "ti ti-hourglass" },
+        { value: "succeeded", label: t().succeeded, icon: "ti ti-circle-check" },
+        { value: "failed", label: t().failed, icon: "ti ti-alert-circle" },
+        { value: "needs_attention", label: t().needsAttention, icon: "ti ti-alert-triangle" },
+        { value: "canceled", label: t().canceled, icon: "ti ti-ban" },
+      ],
+    },
+  ]);
+  const runChannelOptions = createMemo<FilterChipSection[]>(() => [
+    {
+      options: [
+        { value: "all", label: t().allChannels, icon: "ti ti-list" },
+        ...(["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as PublicWorkflowRun["channel"][]).map(
+          (value) => ({ value, label: workflowChannelLabel(value, locale()), icon: "ti ti-route" }),
+        ),
+      ],
+    },
+  ]);
   const [statsWindow, setStatsWindow] = createSignal<WorkflowRunStatsWindow>(props.initialOverview.filters.window);
   const [runStatus, setRunStatus] = createSignal<WorkflowRunStatusFilter>(props.initialOverview.filters.status);
   const [runChannel, setRunChannel] = createSignal<WorkflowRunChannelFilter>(props.initialOverview.filters.channel);
@@ -269,7 +282,7 @@ export default function WorkflowsPage(props: Props) {
         { param: { baseId: props.baseId }, query: { window: statsWindow() } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not load workflow stats."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().loadStatsFailed));
       setStats(PublicGridsWorkflowRunStatsSchema.parse(await res.json()));
     },
     onSuccess: () => setLoadFailure("stats"),
@@ -290,7 +303,7 @@ export default function WorkflowsPage(props: Props) {
       },
       { init: { signal } },
     );
-    if (!res.ok) throw new Error(await errorMessage(res, "Could not load workflow runs."));
+    if (!res.ok) throw new Error(await errorMessage(res, t().loadRunsFailed));
     return PublicGridsWorkflowRunListSchema.parse(await res.json());
   };
 
@@ -332,7 +345,7 @@ export default function WorkflowsPage(props: Props) {
       },
       { init: { signal } },
     );
-    if (!res.ok) throw new Error(await errorMessage(res, "Could not load workflow email deliveries."));
+    if (!res.ok) throw new Error(await errorMessage(res, t().loadEmailDeliveriesFailed));
     return PublicGridsWorkflowEmailDeliveryListSchema.parse(await res.json());
   };
 
@@ -398,7 +411,7 @@ export default function WorkflowsPage(props: Props) {
         { param: { workflowId: workflow.id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not load workflow launchers."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().loadLaunchersFailed));
       setLaunchers(PublicGridsWorkflowLauncherListSchema.parse(await res.json()).items);
     },
     onSuccess: () => setLoadFailure("launchers"),
@@ -416,7 +429,7 @@ export default function WorkflowsPage(props: Props) {
         { param: { workflowId: workflow.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load automatic trigger state."));
+      if (!response.ok) throw new Error(await errorMessage(response, t().loadTriggerStateFailed));
       setTriggerState(PublicWorkflowTriggerRuntimeStateSchema.parse(await response.json()));
     },
     onSuccess: () => setLoadFailure("triggers"),
@@ -529,13 +542,13 @@ export default function WorkflowsPage(props: Props) {
       (close) => (
         <PanelDialog surface="floating">
           <PanelDialog.Header
-            title={`${workflow.name} scanner`}
-            subtitle={workflow.description ?? "Workflow scanner"}
+            title={t().scannerNamed({ name: workflow.name })}
+            subtitle={workflow.description ?? t().workflowScanner}
             icon="ti ti-barcode"
             close={() => close()}
           />
           <PanelDialog.Body>
-            <Suspense fallback={<Placeholder state="loading" title="Loading scanner" />}>
+            <Suspense fallback={<Placeholder state="loading" title={t().loadingScanner} />}>
               <WorkflowScannerSurface
                 mode="dialog"
                 state={
@@ -570,7 +583,7 @@ export default function WorkflowsPage(props: Props) {
   >({
     mutation: async ({ input, mode }, { abortSignal }) => {
       const workflow = props.activeWorkflow;
-      if (!workflow) throw new Error("Choose a workflow first.");
+      if (!workflow) throw new Error(t().chooseWorkflow);
       const res = await workflowsPageApi[":workflowId"].invoke.manual.$post(
         {
           param: { workflowId: workflow.id },
@@ -583,7 +596,7 @@ export default function WorkflowsPage(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not run workflow."));
+      if (!res.ok) throw new Error(await errorMessage(res, t().runFailed));
       const receipt = PublicWorkflowInvocationReceiptSchema.parse(await res.json());
       return { runId: receipt.runId, status: receipt.status };
     },
@@ -606,13 +619,13 @@ export default function WorkflowsPage(props: Props) {
   };
 
   const runColumns = createMemo<DataTableColumn<PublicWorkflowRun>[]>(() => [
-    { id: "status", header: "Status", value: (run) => run.status, cellClass: "whitespace-nowrap" },
-    { id: "started", header: "Started", value: (run) => run.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "channel", header: "Channel", value: (run) => run.channel, cellClass: "whitespace-nowrap" },
-    { id: "mode", header: "Mode", value: (run) => run.mode, cellClass: "whitespace-nowrap" },
-    { id: "result", header: "Result", value: (run) => run.error?.message ?? run.resultMessage, cellClass: "max-w-[32rem]" },
-    { id: "duration", header: "Duration", value: (run) => formatDuration(run), cellClass: "whitespace-nowrap" },
-    { id: "revision", header: "Revision", value: (run) => run.workflowRevision, align: "right" },
+    { id: "status", header: t().status, value: (run) => run.status, cellClass: "whitespace-nowrap" },
+    { id: "started", header: t().started, value: (run) => run.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "channel", header: t().channel, value: (run) => run.channel, cellClass: "whitespace-nowrap" },
+    { id: "mode", header: t().mode, value: (run) => run.mode, cellClass: "whitespace-nowrap" },
+    { id: "result", header: t().result, value: (run) => run.error?.message ?? run.resultMessage, cellClass: "max-w-[32rem]" },
+    { id: "duration", header: t().duration, value: (run) => formatDuration(run, locale()), cellClass: "whitespace-nowrap" },
+    { id: "revision", header: t().revision, value: (run) => run.workflowRevision, align: "right" },
   ]);
 
   const openEmailActivity = async () => {
@@ -628,8 +641,8 @@ export default function WorkflowsPage(props: Props) {
         (close) => (
           <PanelDialog surface="floating">
             <PanelDialog.Header
-              title="Email activity"
-              subtitle={`Messages sent by ${workflow.name}`}
+              title={t().emailActivity}
+              subtitle={t().messagesSentBy({ name: workflow.name })}
               icon="ti ti-mail"
               close={() => close()}
             />
@@ -640,7 +653,7 @@ export default function WorkflowsPage(props: Props) {
                     <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
                       <span>{message()}</span>
                       <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={() => emailDeliveriesMut.mutate()}>
-                        <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                        <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                       </Button>
                     </NoticeCard>
                   )}
@@ -672,10 +685,8 @@ export default function WorkflowsPage(props: Props) {
           <Placeholder
             surface="paper"
             class="flex-1"
-            title="No workflows yet"
-            description={
-              props.editMode ? "Create a workflow from the Workflows section in the sidebar." : "Turn on Edit mode to create a workflow."
-            }
+            title={t().noWorkflows}
+            description={props.editMode ? t().createWorkflowSidebar : t().enableEditMode}
           />
         </div>
       }
@@ -686,12 +697,12 @@ export default function WorkflowsPage(props: Props) {
             <div class="min-w-0">
               <div class="flex min-w-0 flex-wrap items-center gap-2">
                 <h1 class="min-w-0 truncate text-base font-semibold text-primary">{workflow().name}</h1>
-                <StatusBadge tone={workflow().enabled ? "ok" : "neutral"} label={workflow().enabled ? "enabled" : "disabled"} />
-                <Tag size="sm">{triggerSummary(workflow())}</Tag>
+                <StatusBadge tone={workflow().enabled ? "ok" : "neutral"} label={workflow().enabled ? t().enabled : t().disabled} />
+                <Tag size="sm">{triggerSummary(workflow(), locale())}</Tag>
               </div>
               <Show when={workflow().description}>{(description) => <p class="mt-0.5 text-xs text-dimmed">{description()}</p>}</Show>
             </div>
-            <div class="flex min-w-0 flex-wrap items-center gap-2" role="toolbar" aria-label="Workflow actions">
+            <div class="flex min-w-0 flex-wrap items-center gap-2" role="toolbar" aria-label={t().workflowActions}>
               <Show when={props.canRunActiveWorkflow}>
                 <Button
                   variant="primary"
@@ -701,7 +712,7 @@ export default function WorkflowsPage(props: Props) {
                   disabled={runMut.loading() || !workflow().enabled}
                   onClick={() => void runWorkflow()}
                 >
-                  <i class={runMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} /> Run workflow
+                  <i class={runMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-play"} /> {t().runWorkflow}
                 </Button>
                 <Button
                   variant="secondary"
@@ -711,7 +722,7 @@ export default function WorkflowsPage(props: Props) {
                   disabled={runMut.loading()}
                   onClick={() => void runWorkflow("dryRun")}
                 >
-                  <i class="ti ti-flask" /> Dry run
+                  <i class="ti ti-flask" /> {t().dryRun}
                 </Button>
                 <For each={scannerLaunchers()}>
                   {(launcher) => (
@@ -729,13 +740,13 @@ export default function WorkflowsPage(props: Props) {
               </Show>
               <Show when={props.editMode && props.canManageActiveWorkflow}>
                 <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openLaunchers(workflow())}>
-                  <i class="ti ti-rocket" /> Run options
+                  <i class="ti ti-rocket" /> {t().runOptions}
                 </Button>
                 <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openHistory(workflow())}>
-                  <i class="ti ti-history" /> History
+                  <i class="ti ti-history" /> {t().history}
                 </Button>
                 <Button variant="success" size="sm" type="button" class="shrink-0" onClick={() => void openEditor(workflow())}>
-                  <i class="ti ti-settings" /> Manage
+                  <i class="ti ti-settings" /> {t().manage}
                 </Button>
               </Show>
             </div>
@@ -750,18 +761,18 @@ export default function WorkflowsPage(props: Props) {
               <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
                 <span>{message()}</span>
                 <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={reloadAll}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                 </Button>
               </NoticeCard>
             )}
           </Show>
 
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-xs text-dimmed">Health over {statsWindowLabels[statsWindow()]}</span>
+            <span class="text-xs text-dimmed">{t().healthOver({ window: statsWindowLabel(statsWindow(), locale()) })}</span>
             <FilterChip
-              label="Metrics window"
+              label={t().metricsWindow}
               icon="ti ti-clock"
-              options={statsWindowOptions}
+              options={statsWindowOptions()}
               value={[statsWindow()]}
               onValueChange={changeStatsWindow}
               defaultValue={["24h"]}
@@ -775,26 +786,30 @@ export default function WorkflowsPage(props: Props) {
               <Placeholder
                 surface="paper"
                 state={statsMut.loading() ? "loading" : "error"}
-                title={statsMut.loading() ? "Loading workflow statistics" : "Workflow statistics unavailable"}
+                title={statsMut.loading() ? t().loadingStatistics : t().statisticsUnavailable}
               />
             }
           >
             <StatGrid columns={5} size="sm">
               <StatCell
-                label="Last run"
-                value={activeStats()?.latestStatus?.replaceAll("_", " ") ?? "No runs"}
-                sub={activeStats()?.lastRunAt ? formatDate(activeStats()?.lastRunAt ?? "") : statsWindowLabels[statsWindow()]}
+                label={t().lastRun}
+                value={activeStats()?.latestStatus ? workflowRunStatusLabel(activeStats()!.latestStatus!, locale()) : t().noRuns}
+                sub={
+                  activeStats()?.lastRunAt
+                    ? formatDate(activeStats()?.lastRunAt ?? "", locale())
+                    : statsWindowLabel(statsWindow(), locale())
+                }
                 valueClass={
                   activeStats()?.latestStatus === "failed" || activeStats()?.latestStatus === "needs_attention"
                     ? "text-red-600 dark:text-red-400"
                     : undefined
                 }
               />
-              <StatCell label="Runs" value={activeStats()?.total ?? 0} accent={{ tone: "zinc", icon: "ti ti-list" }} />
-              <StatCell label="Active" value={activeStats()?.active ?? 0} accent={{ tone: "blue", icon: "ti ti-player-play" }} />
+              <StatCell label={t().runs} value={activeStats()?.total ?? 0} accent={{ tone: "zinc", icon: "ti ti-list" }} />
+              <StatCell label={t().active} value={activeStats()?.active ?? 0} accent={{ tone: "blue", icon: "ti ti-player-play" }} />
               <StatCell
-                label="Error rate"
-                value={formatPercent(activeStats()?.errorRate ?? 0)}
+                label={t().errorRate}
+                value={formatPercent(activeStats()?.errorRate ?? 0, locale())}
                 valueClass={
                   (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0 ? "text-red-600 dark:text-red-400" : undefined
                 }
@@ -805,8 +820,8 @@ export default function WorkflowsPage(props: Props) {
                 }
               />
               <StatCell
-                label="P99 runtime"
-                value={formatMetricDuration(activeStats()?.p99DurationMs ?? null)}
+                label={t().p99Runtime}
+                value={formatMetricDuration(activeStats()?.p99DurationMs ?? null, locale())}
                 accent={{ tone: "zinc", icon: "ti ti-hourglass" }}
               />
             </StatGrid>
@@ -815,27 +830,27 @@ export default function WorkflowsPage(props: Props) {
           <section class="flex min-h-0 flex-1 flex-col gap-2">
             <div class="flex flex-wrap items-end justify-between gap-2">
               <div class="min-w-0">
-                <h2 class="text-sm font-semibold text-primary">Runs</h2>
-                <p class="text-xs text-dimmed">Select a run to inspect its steps, outputs, and generated documents.</p>
+                <h2 class="text-sm font-semibold text-primary">{t().runs}</h2>
+                <p class="text-xs text-dimmed">{t().runsDescription}</p>
               </div>
               <Button variant="secondary" size="sm" type="button" class="shrink-0" onClick={() => void openEmailActivity()}>
-                <i class="ti ti-mail" /> Email activity
+                <i class="ti ti-mail" /> {t().emailActivity}
               </Button>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <FilterChip
-                label="Status"
+                label={t().status}
                 icon="ti ti-filter"
-                options={runStatusOptions}
+                options={runStatusOptions()}
                 value={[runStatus()]}
                 onValueChange={changeRunStatus}
                 defaultValue={["all"]}
                 isActive={runStatus() !== "all"}
               />
               <FilterChip
-                label="Channel"
+                label={t().channel}
                 icon="ti ti-route"
-                options={runChannelOptions}
+                options={runChannelOptions()}
                 value={[runChannel()]}
                 onValueChange={changeRunChannel}
                 defaultValue={["all"]}
@@ -847,11 +862,11 @@ export default function WorkflowsPage(props: Props) {
                     runsMut.loading() || statsMut.loading() || triggerStateMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"
                   }
                 />{" "}
-                Refresh
+                {t().refresh}
               </Button>
             </div>
             <DataTable
-              ariaLabel="Workflow runs"
+              ariaLabel={t().workflowRuns}
               rows={runs()}
               columns={runColumns()}
               getRowId={(run) => run.id}
@@ -865,14 +880,14 @@ export default function WorkflowsPage(props: Props) {
               loadingMore={runsMut.loading() || loadMoreRunsMut.loading()}
               onLoadMore={() => loadMoreRunsMut.mutate()}
               onRowClick={(run) => props.onSelectRun(run.id)}
-              empty={runsMut.loading() ? "Loading workflow runs..." : "No runs match these filters."}
+              empty={runsMut.loading() ? t().loadingRuns : t().noMatchingRuns}
               renderCell={({ row: run, col, render, value }) => {
                 if (col.id === "status") {
-                  return <StatusBadge tone={workflowRunStatusTone(run.status)} label={run.status.replaceAll("_", " ")} />;
+                  return <StatusBadge tone={workflowRunStatusTone(run.status)} label={workflowRunStatusLabel(run.status, locale())} />;
                 }
-                if (col.id === "started") return <span class="text-dimmed">{formatDate(run.createdAt)}</span>;
-                if (col.id === "channel") return channelLabels[run.channel] ?? run.channel;
-                if (col.id === "mode") return run.mode === "dryRun" ? "Dry run" : "Execute";
+                if (col.id === "started") return <span class="text-dimmed">{formatDate(run.createdAt, locale())}</span>;
+                if (col.id === "channel") return workflowChannelLabel(run.channel, locale());
+                if (col.id === "mode") return run.mode === "dryRun" ? t().dryRun : t().execute;
                 if (col.id === "result") {
                   return (
                     <span class={run.error ? "text-red-600 dark:text-red-400" : "text-dimmed"}>

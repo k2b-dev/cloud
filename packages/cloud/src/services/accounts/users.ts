@@ -572,6 +572,7 @@ export const setExpiry = async (params: {
 export const sendLoginLink = async (params: {
   id: string;
   notificationSender: AccountsNotificationSender;
+  locale?: string;
 }): Promise<MutationResult<void>> => {
   const user = await getMinimal({ id: params.id });
   if (!user) return { ok: false, error: "User not found", status: 404 };
@@ -588,6 +589,7 @@ export const sendLoginLink = async (params: {
       email: user.mail,
       token,
       magicLink: createAuthLoginUrl(appUrl, { token }),
+      locale: params.locale,
     });
     if (delivery.status !== "error" && delivery.status !== "suppressed") return { ok: true, data: undefined };
   } catch {

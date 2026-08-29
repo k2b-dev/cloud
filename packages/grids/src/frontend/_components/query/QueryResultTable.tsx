@@ -1,8 +1,9 @@
-import { Button, DataTable, type DataTableColumn } from "@k2b/ui";
+import { Button, DataTable, type DataTableColumn, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { FieldValue } from "../table/FieldValue";
+import { queryMessages } from "./messages";
 
 type QueryResult = Extract<PublicDslQueryPreviewResponse, { ok: true }>;
 type QueryResultRow = QueryResult["rows"][number] & { __rowKey: string };
@@ -27,6 +28,7 @@ export default function QueryResultTable(props: {
   onPrevious?: () => void;
   onNext?: (cursor: string) => void;
 }) {
+  const { t } = queryMessages.resolve([useLocale()()]);
   const rows = createMemo<QueryResultRow[]>(() =>
     props.result.rows.map((row, index) => ({ ...row, __rowKey: row.recordId ? `${row.recordId}:${index}` : `row-${index}` })),
   );
@@ -50,15 +52,15 @@ export default function QueryResultTable(props: {
   const rowRange = () => {
     const current = page();
     const returned = current?.returned ?? props.result.rows.length;
-    if (returned === 0) return "No rows";
+    if (returned === 0) return t.noRows;
     const start = current?.start ?? 0;
-    return `Rows ${start + 1}-${start + returned}`;
+    return t.rowRange({ start: start + 1, end: start + returned });
   };
 
   return (
     <div class={`${props.surface === "flat" ? "" : "paper"} flex h-full min-h-0 flex-1 flex-col overflow-hidden`}>
       <DataTable
-        ariaLabel="Query results"
+        ariaLabel={t.queryResults}
         rows={rows()}
         columns={columns()}
         getRowId={(row) => row.__rowKey}
@@ -67,7 +69,7 @@ export default function QueryResultTable(props: {
         fillHeight
         hoverRows={false}
         cellContentClass="max-h-24 overflow-auto whitespace-pre-wrap break-words"
-        empty={<span>No rows match this query.</span>}
+        empty={<span>{t.noMatchingRows}</span>}
         renderCell={({ col, value }) => {
           const column = props.result.columns.find((item) => item.key === col.id);
           const field = column ? fieldForColumn(column) : null;
@@ -87,11 +89,7 @@ export default function QueryResultTable(props: {
       />
       <Show when={hasFooter()}>
         <div class="flex shrink-0 items-center justify-between gap-3 bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs text-secondary">
-          <span>
-            {hasUnpageableRemainder()
-              ? `Showing first ${props.result.rows.length} ${props.result.rows.length === 1 ? "row" : "rows"}`
-              : rowRange()}
-          </span>
+          <span>{hasUnpageableRemainder() ? t.showingFirstRows({ count: props.result.rows.length }) : rowRange()}</span>
           <Show when={hasPager()}>
             <div class="flex items-center gap-2">
               <Button
@@ -101,7 +99,8 @@ export default function QueryResultTable(props: {
                 disabled={props.loading || !props.canGoBack}
                 onClick={() => props.onPrevious?.()}
               >
-                <i class={props.loading ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-left"} /> {props.backLabel ?? "Previous"}
+                <i class={props.loading ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-left"} />{" "}
+                {props.backLabel === "First page" ? t.firstPage : t.previous}
               </Button>
               <Button
                 variant="secondary"
@@ -113,7 +112,7 @@ export default function QueryResultTable(props: {
                   if (cursor) props.onNext?.(cursor);
                 }}
               >
-                Next <i class={props.loading ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-right"} />
+                {t.next} <i class={props.loading ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-right"} />
               </Button>
             </div>
           </Show>

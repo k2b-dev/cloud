@@ -18,7 +18,7 @@ describe("Mail public notifications", () => {
       }).success,
     ).toBeFalse();
 
-    expect(await NOTIFICATIONS.conversationReminder.render(reminder)).toEqual({
+    expect(await NOTIFICATIONS.conversationReminder.render(reminder, { locale: "en" })).toEqual({
       title: "Mail reminder",
       body: "Follow up",
       targetHref: "/api/mail/mailboxes/Box001/notification-targets/reminder/Rem001",
@@ -28,7 +28,7 @@ describe("Mail public notifications", () => {
   test("keeps workflow notification links on the public mailbox ID", async () => {
     const data = { mailboxId: "Box001", title: "Done", body: "The workflow finished." };
     expect(NOTIFICATIONS.workflowNotice.data.safeParse(data).success).toBeTrue();
-    expect(await NOTIFICATIONS.workflowNotice.render(data)).toEqual({
+    expect(await NOTIFICATIONS.workflowNotice.render(data, { locale: "en" })).toEqual({
       title: "Done",
       body: "The workflow finished.",
       targetHref: "/app/mail/Box001",

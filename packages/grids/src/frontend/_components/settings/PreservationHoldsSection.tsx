@@ -1,5 +1,16 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, InlineGuidance, Placeholder, prompts, Select, SettingsCollection, StatusBadge, TextInput, toast } from "@k2b/ui";
+import {
+  Button,
+  InlineGuidance,
+  Placeholder,
+  prompts,
+  Select,
+  SettingsCollection,
+  StatusBadge,
+  TextInput,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -10,27 +21,28 @@ import {
   type PreservationHoldsResponse,
 } from "../../../preservation-hold-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { useGridsSettingsMessages } from "./messages";
 
-const askReleaseReason = () =>
+const askReleaseReason = (messages: ReturnType<ReturnType<typeof useGridsSettingsMessages>>) =>
   prompts.form({
-    title: "Release preservation hold",
+    title: messages.releaseHoldTitle,
     icon: "ti ti-lock-open",
     fields: {
       explanation: {
         type: "info" as const,
-        content: "This releases only the selected hold. Other active holds continue to block controlled destruction.",
+        content: messages.releaseHoldExplanation,
       },
       reason: {
         type: "text" as const,
-        label: "Reason",
-        description: "Why can this hold be released?",
+        label: messages.reason,
+        description: messages.releaseHoldReason,
         required: true,
         multiline: true,
         lines: 3,
         maxLength: PRESERVATION_HOLD_REASON_MAX_LENGTH,
       },
     },
-    confirmText: "Release hold",
+    confirmText: messages.releaseHold,
     variant: "danger",
   });
 
@@ -46,6 +58,8 @@ export const buildPreservationHoldInput = (
 };
 
 export const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: CreatePreservationHoldInput) => void }) => {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
   const [scope, setScope] = createSignal<"base" | "table">("base");
   const [tableId, setTableId] = createSignal<string | null>(null);
   const [reason, setReason] = createSignal("");
@@ -60,10 +74,10 @@ export const CreatePreservationHoldDialog = (props: { baseId: string; close: (in
       }}
     >
       <div class="k2b-dialog__body">
-        <p>This blocks future controlled destruction in the selected scope. Records remain editable and access does not change.</p>
+        <p>{messages().holdScopeExplanation}</p>
         <Select
-          label="Scope"
-          description="Choose the complete Base or one active Table."
+          label={messages().scope}
+          description={messages().holdScopeDescription}
           required
           value={scope}
           onValueChange={(value) => {
@@ -71,19 +85,19 @@ export const CreatePreservationHoldDialog = (props: { baseId: string; close: (in
             if (value !== "table") setTableId(null);
           }}
           options={[
-            { id: "base", label: "Entire Base", description: "Blocks controlled destruction across every Table." },
+            { id: "base", label: messages().entireBase, description: messages().entireBaseHoldDescription },
             {
               id: "table",
-              label: "One Table",
-              description: "Preserves only this Table's contents. The parent Base cannot be destroyed while the hold is active.",
+              label: messages().oneTable,
+              description: messages().oneTableHoldDescription,
             },
           ]}
         />
         <Show when={scope() === "table"}>
           <Select
-            label="Table"
-            description="Search active Tables in this Base."
-            placeholder="Search Tables..."
+            label={messages().table}
+            description={messages().searchActiveTables}
+            placeholder={messages().searchTablesPlaceholder}
             required
             value={tableId}
             onValueChange={setTableId}
@@ -92,19 +106,19 @@ export const CreatePreservationHoldDialog = (props: { baseId: string; close: (in
                 { param: { baseId: props.baseId }, query: { q: search, limit: "25" } },
                 { init: { signal } },
               );
-              if (!response.ok) throw new Error(await errorMessage(response, "Could not search Tables"));
+              if (!response.ok) throw new Error(await errorMessage(response, messages().searchTablesFailed));
               return ((await response.json()) as PublicTable[]).map((table) => ({
                 id: table.id,
                 label: table.name,
-                description: `${table.kind === "federated" ? "Combined Table" : "Stored Table"} · ${table.id}`,
+                description: `${table.kind === "federated" ? messages().combinedTable : messages().storedTable} · ${table.id}`,
                 icon: table.icon ?? "ti ti-table",
               }));
             }}
           />
         </Show>
         <TextInput
-          label="Reason"
-          description="Tell other administrators why this scope must be preserved."
+          label={messages().reason}
+          description={messages().holdReasonDescription}
           required
           multiline
           lines={3}
@@ -115,10 +129,10 @@ export const CreatePreservationHoldDialog = (props: { baseId: string; close: (in
       </div>
       <footer class="k2b-dialog__actions">
         <Button type="button" variant="secondary" onClick={() => props.close()}>
-          Cancel
+          {messages().cancel}
         </Button>
         <Button type="submit" disabled={!input()}>
-          Create hold
+          {messages().createHold}
         </Button>
       </footer>
     </form>
@@ -126,6 +140,10 @@ export const CreatePreservationHoldDialog = (props: { baseId: string; close: (in
 };
 
 export function PreservationHoldsSection(props: { baseId: string; onSavingChange: (saving: boolean) => void }) {
+  const locale = useLocale();
+  const messages = useGridsSettingsMessages(locale);
+  const dateTime = (value: string) =>
+    new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
   let disposed = false;
   const holds = query.create({
     source: () => props.baseId,
@@ -134,7 +152,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
         { param: { baseId }, query: { status: "active", page: "1", per_page: "100" } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load preservation holds"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().loadHoldsFailed));
       return (await response.json()) as PreservationHoldsResponse;
     },
   });
@@ -145,14 +163,12 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
         { param: { baseId: props.baseId }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not create preservation hold"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().createHoldFailed));
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Preservation hold created");
-      void holds
-        .invalidate()
-        .catch(() => !disposed && void prompts.error("The hold was created, but active holds could not be refreshed."));
+      toast.success(messages().holdCreated);
+      void holds.invalidate().catch(() => !disposed && void prompts.error(messages().holdCreatedRefreshFailed));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -163,14 +179,12 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
         { param: { baseId: props.baseId, holdId }, json: { reason } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not release preservation hold"));
+      if (!response.ok) throw new Error(await errorMessage(response, messages().releaseHoldFailed));
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Preservation hold released");
-      void holds
-        .invalidate()
-        .catch(() => !disposed && void prompts.error("The hold was released, but active holds could not be refreshed."));
+      toast.success(messages().holdReleased);
+      void holds.invalidate().catch(() => !disposed && void prompts.error(messages().holdReleasedRefreshFailed));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -180,12 +194,12 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
   const create = async () => {
     const input = await prompts.dialog<CreatePreservationHoldInput>(
       (close) => <CreatePreservationHoldDialog baseId={props.baseId} close={close} />,
-      { title: "Create preservation hold", icon: "ti ti-lock-plus", size: "medium" },
+      { title: messages().createPreservationHold, icon: "ti ti-lock-plus", size: "medium" },
     );
     if (input) createHold.mutate(input);
   };
   const release = async (holdId: string) => {
-    const result = await askReleaseReason();
+    const result = await askReleaseReason(messages());
     const reason = result?.reason.trim();
     if (reason) releaseHold.mutate({ holdId, reason });
   };
@@ -199,20 +213,20 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
   return (
     <>
       <InlineGuidance tone="info" icon="ti ti-info-circle">
-        A Table hold also prevents deleting its parent Base, so the hold cannot be bypassed. Holds do not lock Records or change access.
+        {messages().holdsGuidance}
       </InlineGuidance>
-      <Show when={!holds.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading preservation holds" />}>
+      <Show when={!holds.loading()} fallback={<Placeholder state="loading" variant="compact" title={messages().loadingHolds} />}>
         <Show
           when={!holds.error()}
           fallback={
             <Placeholder
               state="error"
               variant="compact"
-              title="Preservation holds are unavailable"
-              description={holds.error() instanceof Error ? holds.error()!.message : "Could not load preservation holds"}
+              title={messages().holdsUnavailable}
+              description={holds.error() instanceof Error ? holds.error()!.message : messages().loadHoldsFailed}
               action={
                 <Button size="sm" variant="secondary" onClick={() => void holds.refresh()}>
-                  Retry
+                  {messages().retry}
                 </Button>
               }
             />
@@ -222,25 +236,30 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
             class="mt-5"
             title={
               <span class="inline-flex items-center gap-2">
-                <i class="ti ti-lock" aria-hidden="true" /> Active holds
+                <i class="ti ti-lock" aria-hidden="true" /> {messages().activeHolds}
               </span>
             }
-            description="Every active hold must be released separately."
-            empty="No active preservation holds."
+            description={messages().activeHoldsDescription}
+            empty={messages().noActiveHolds}
           >
             <SettingsCollection.Action>
               <Button size="sm" variant="secondary" disabled={busy()} onClick={() => void create()}>
-                <i class="ti ti-lock-plus" aria-hidden="true" /> Create hold
+                <i class="ti ti-lock-plus" aria-hidden="true" /> {messages().createHold}
               </Button>
             </SettingsCollection.Action>
             <For each={holds.data()?.items ?? []}>
               {(hold) => {
-                const scopeLabel = hold.scope.type === "base" ? "Entire Base" : hold.scope.tableName;
-                const scopeDescription = hold.scope.type === "base" ? "Base" : `Table ${hold.scope.tableId}`;
+                const scopeLabel = hold.scope.type === "base" ? messages().entireBase : hold.scope.tableName;
+                const scopeDescription = hold.scope.type === "base" ? messages().base : messages().tableWithId({ id: hold.scope.tableId });
                 return (
                   <SettingsCollection.Item
                     title={scopeLabel}
-                    description={`${hold.reason} · Created ${new Date(hold.createdAt).toLocaleString()}${hold.createdByDisplayName ? ` by ${hold.createdByDisplayName}` : ""} · ${hold.id}`}
+                    description={messages().holdCreatedDescription({
+                      reason: hold.reason,
+                      date: dateTime(hold.createdAt),
+                      by: hold.createdByDisplayName ?? "",
+                      id: hold.id,
+                    })}
                     icon={<i class={hold.scope.type === "base" ? "ti ti-database" : "ti ti-table"} aria-hidden="true" />}
                   >
                     <SettingsCollection.Item.Status>
@@ -248,7 +267,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
                     </SettingsCollection.Item.Status>
                     <SettingsCollection.Item.Actions>
                       <Button size="sm" variant="secondary" disabled={busy()} onClick={() => void release(hold.id)}>
-                        Release
+                        {messages().release}
                       </Button>
                     </SettingsCollection.Item.Actions>
                   </SettingsCollection.Item>
@@ -257,7 +276,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
             </For>
           </SettingsCollection>
           <Show when={(holds.data()?.pagination.total ?? 0) > 100}>
-            <p class="text-xs text-dimmed">Showing the newest 100 active holds. Use the CLI to page through the complete list.</p>
+            <p class="text-xs text-dimmed">{messages().newestHoldsCli}</p>
           </Show>
         </Show>
       </Show>

@@ -9,6 +9,7 @@ import type {
   NotificationSendInput,
 } from "../../contracts/notification-types";
 import { validateNotificationTargetHref } from "../../contracts/notification-types";
+import { normalizeLocale } from "../../shared/locale";
 import { logger } from "../logging";
 import { encryptSecret } from "../secrets";
 import { ensureNotificationDefinition } from "./catalog";
@@ -240,7 +241,8 @@ export const sendTypedNotification = async <
   if (!idempotencyKey || idempotencyKey.length > 300) throw new Error("Notification idempotencyKey must contain 1 to 300 characters");
 
   const data: output<S> = definition.data.parse(input.data);
-  const presentation = validatePresentation(await definition.render(data));
+  const renderContext = { locale: normalizeLocale(input.locale) };
+  const presentation = validatePresentation(await definition.render(data, renderContext));
   const resolved = await resolveRecipient(input.recipient);
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);
@@ -294,7 +296,7 @@ export const sendTypedNotification = async <
   const event = { id: identity.id, definitionId: definition.id };
   let emailPresentationPromise: Promise<EmailNotificationPresentation | undefined> | undefined;
   const emailPresentation = (): Promise<EmailNotificationPresentation | undefined> => {
-    emailPresentationPromise ??= definition.email ? Promise.resolve(definition.email(data)) : Promise.resolve(undefined);
+    emailPresentationPromise ??= definition.email ? Promise.resolve(definition.email(data, renderContext)) : Promise.resolve(undefined);
     return emailPresentationPromise;
   };
 

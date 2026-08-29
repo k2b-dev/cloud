@@ -2,6 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { useAccountsMessages } from "../../messages";
 
 type RemoveFromGroupProps = {
   /** Group id to remove from parent */
@@ -13,6 +14,7 @@ type RemoveFromGroupProps = {
 };
 
 export default function RemoveFromGroup(props: RemoveFromGroupProps) {
+  const messages = useAccountsMessages();
   const mutation = mutations.create<void, void>({
     mutation: async () => {
       // Remove this group from the parent group
@@ -22,7 +24,7 @@ export default function RemoveFromGroup(props: RemoveFromGroupProps) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.message ?? "Failed to remove from group.");
+        throw new Error(data.message ?? messages().removeFromGroupFailed);
       }
     },
     onSuccess: () => {
@@ -34,11 +36,11 @@ export default function RemoveFromGroup(props: RemoveFromGroupProps) {
   });
 
   const handleClick = async () => {
-    const confirmed = await prompts.confirm(`Remove this group from "${props.parentGroupName}"?`, {
-      title: "Remove from Group",
+    const confirmed = await prompts.confirm(messages().removeFromGroupConfirm({ name: props.parentGroupName }), {
+      title: messages().removeFromGroup,
       icon: "ti ti-folder-minus",
-      confirmText: "Remove",
-      cancelText: "Cancel",
+      confirmText: messages().remove,
+      cancelText: messages().cancel,
       variant: "danger",
     });
 
@@ -47,5 +49,11 @@ export default function RemoveFromGroup(props: RemoveFromGroupProps) {
     }
   };
 
-  return <RemoveButton ariaLabel={`Remove from ${props.parentGroupName}`} onClick={handleClick} loading={mutation.loading()} />;
+  return (
+    <RemoveButton
+      ariaLabel={messages().removeFromLabel({ name: props.parentGroupName })}
+      onClick={handleClick}
+      loading={mutation.loading()}
+    />
+  );
 }

@@ -1,5 +1,5 @@
 import { NoticeCard, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { formatDate } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
@@ -7,8 +7,11 @@ import { ssr } from "../config";
 import { proxyAuthService } from "../service";
 import CreateProxyClient from "./_components/CreateProxyClient.island";
 import ProxyClientActions from "./_components/ProxyClientActions.island";
+import { proxyAuthMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = proxyAuthMessages.resolve([locale]);
   const { items: clients } = await proxyAuthService.client.list();
   const rawAppUrl = await get<string>("app.url");
   const baseUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
@@ -17,33 +20,33 @@ export default ssr<AuthContext>(async (c) => {
   const clientsWithoutGroups = clients.filter((c) => c.allowedGroups.length === 0).length;
   type ClientRow = (typeof clients)[number];
   const columns: DataTableColumn<ClientRow>[] = [
-    { id: "client", header: "Client", value: (client) => client.name },
-    { id: "description", header: "Description", value: (client) => client.description, cellClass: "max-w-[18rem]" },
-    { id: "groups", header: "Allowed groups", value: (client) => client.allowedGroups.length },
-    { id: "created", header: "Created", value: (client) => client.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "client", header: t.client, value: (client) => client.name },
+    { id: "description", header: t.description, value: (client) => client.description, cellClass: "max-w-[18rem]" },
+    { id: "groups", header: t.allowedGroups, value: (client) => client.allowedGroups.length },
+    { id: "created", header: t.created, value: (client) => client.createdAt, cellClass: "whitespace-nowrap" },
     {
       id: "actions",
-      header: <span class="sr-only">Actions</span>,
+      header: <span class="sr-only">{t.actions}</span>,
       headerClass: "w-px text-right",
       cellClass: "text-right whitespace-nowrap",
     },
   ];
 
   return () => (
-    <AdminLayout c={c} title="Proxy Auth">
+    <AdminLayout c={c} title={t.appName}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-proxy-auth-title">
-          <h1 class="text-base font-semibold text-primary">Proxy Auth</h1>
+          <h1 class="text-base font-semibold text-primary">{t.appName}</h1>
         </div>
 
         {/* Stat cards — see skills/cloud-app/references/frontend.md § Stats */}
         <StatGrid columns={3}>
-          <StatCell label="Clients" value={clients.length} sub="registered" accent={{ tone: "blue", icon: "ti ti-shield-half" }} />
-          <StatCell label="Allowed groups" value={totalAllowedGroups} sub="across all clients" />
+          <StatCell label={t.clients} value={clients.length} sub={t.registered} accent={{ tone: "blue", icon: "ti ti-shield-half" }} />
+          <StatCell label={t.allowedGroups} value={totalAllowedGroups} sub={t.acrossClients} />
           <StatCell
-            label="No groups"
+            label={t.noGroups}
             value={clientsWithoutGroups}
-            sub={clientsWithoutGroups > 0 ? "blocked until configured" : "all gated"}
+            sub={clientsWithoutGroups > 0 ? t.blockedUntilConfigured : t.allGated}
             valueClass={clientsWithoutGroups > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
             accent={clientsWithoutGroups > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : { tone: "emerald", icon: "ti ti-check" }}
           />
@@ -65,8 +68,8 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "client") return <span class="font-medium text-primary">{client.name}</span>;
                 if (col.id === "description") {
                   return (
-                    <span class="text-dimmed" title={client.description || "No description"}>
-                      {client.description || <span class="italic">No description</span>}
+                    <span class="text-dimmed" title={client.description || t.noDescription}>
+                      {client.description || <span class="italic">{t.noDescription}</span>}
                     </span>
                   );
                 }
@@ -81,35 +84,30 @@ export default ssr<AuthContext>(async (c) => {
                     </div>
                   );
                 }
-                if (col.id === "created") return <span class="text-dimmed">{formatDate(client.createdAt)}</span>;
+                if (col.id === "created") return <span class="text-dimmed">{formatDate(client.createdAt, { locale })}</span>;
                 if (col.id === "actions") return <ProxyClientActions client={client} />;
                 return "";
               }}
             />
           </section>
         ) : (
-          <Placeholder
-            surface="paper"
-            description={<>No proxy auth clients found. Create one to protect external apps via Traefik ForwardAuth.</>}
-          />
+          <Placeholder surface="paper" description={<>{t.empty}</>} />
         )}
 
         <NoticeCard tone="info" icon={false} style="view-transition-name: admin-proxy-auth-reference">
-          <h2 class="mb-3 text-sm font-medium">Traefik ForwardAuth Setup</h2>
-          <p class="text-xs mb-3 opacity-80">
-            Use these settings in your Traefik configuration to protect external services. Each client has a unique verify URL.
-          </p>
+          <h2 class="mb-3 text-sm font-medium">{t.setupTitle}</h2>
+          <p class="text-xs mb-3 opacity-80">{t.setupDescription}</p>
 
           <div class="space-y-2 text-xs font-mono mb-4">
             <div class="flex flex-col gap-0.5">
-              <span class="opacity-70">Verify URL Pattern:</span>
+              <span class="opacity-70">{t.verifyUrlPattern}:</span>
               <code class="break-all">
                 {baseUrl}/proxy-auth/verify/{"<client-id>"}
               </code>
             </div>
           </div>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">Example Configuration</h2>
+          <h2 class="mb-2 mt-6 text-sm font-medium">{t.exampleConfiguration}</h2>
           <pre class="text-xs bg-blue-50 dark:bg-blue-950/30 p-3 rounded overflow-x-auto">
             {`http:
   middlewares:
@@ -123,17 +121,16 @@ export default ssr<AuthContext>(async (c) => {
         trustForwardHeader: true`}
           </pre>
 
-          <h2 class="mb-2 mt-6 text-sm font-medium">Response Headers</h2>
+          <h2 class="mb-2 mt-6 text-sm font-medium">{t.responseHeaders}</h2>
           <div class="space-y-1 text-xs">
             <div>
-              <code class="font-mono">X-Forwarded-User</code> <span class="opacity-70">— Username (uid)</span>
+              <code class="font-mono">X-Forwarded-User</code> <span class="opacity-70">— {t.username}</span>
             </div>
             <div>
-              <code class="font-mono">X-Forwarded-Email</code> <span class="opacity-70">— Email address</span>
+              <code class="font-mono">X-Forwarded-Email</code> <span class="opacity-70">— {t.emailAddress}</span>
             </div>
             <div>
-              <code class="font-mono">X-Forwarded-Groups</code>{" "}
-              <span class="opacity-70">— Comma-separated direct and nested group list</span>
+              <code class="font-mono">X-Forwarded-Groups</code> <span class="opacity-70">— {t.groupList}</span>
             </div>
           </div>
         </NoticeCard>

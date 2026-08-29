@@ -4,6 +4,7 @@ import { type FormatSpec, FormatSpecSchema } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import { barcodeValueText, canRenderBarcode } from "./BarcodeRendering";
 import { formatCell, progressRatio } from "./format-cell";
+import { tableMessages } from "./messages";
 import { type SelectBadgeItem, selectBadgeItems } from "./select-badge-utils";
 
 export type RelationDisplayItem = { id: string; label: string; linkable: boolean };
@@ -27,6 +28,7 @@ export type ResolveFieldDisplayOptions = {
   dateConfig?: DateContext;
   format?: FormatSpec;
   relationValueMode?: "ids" | "labels";
+  locale?: string;
 };
 
 const valueToLabelPart = (value: unknown): string => {
@@ -42,10 +44,11 @@ const valueToLabelPart = (value: unknown): string => {
   return "";
 };
 
-const expandedRecordLabel = (expanded: Record<string, unknown> | undefined): string => {
-  if (!expanded) return "Unavailable record";
+const expandedRecordLabel = (expanded: Record<string, unknown> | undefined, locale: string): string => {
+  const { t } = tableMessages.resolve([locale]);
+  if (!expanded) return t.unavailableRecord;
   const parts = Object.values(expanded).map(valueToLabelPart).filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "Untitled record";
+  return parts.length > 0 ? parts.join(" · ") : t.untitledRecord;
 };
 
 export const relationIds = (value: unknown): string[] => {
@@ -63,10 +66,12 @@ const isMarkdownLongtext = (field: Field): boolean =>
   field.type === "longtext" && Boolean((field.config as { markdown?: boolean }).markdown);
 
 const relationLabel = (id: string, options: ResolveFieldDisplayOptions): string =>
-  options.relationLabels?.[id] ?? expandedRecordLabel(options.record?.expanded?.[id]);
+  options.relationLabels?.[id] ?? expandedRecordLabel(options.record?.expanded?.[id], options.locale ?? options.dateConfig?.locale ?? "en");
 
 export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldDisplayIntent => {
   const { field, value } = options;
+  const locale = options.locale ?? options.dateConfig?.locale ?? "en";
+  const { t } = tableMessages.resolve([locale]);
   if (value === null || value === undefined || value === "") return { kind: "empty" };
 
   if (field.type === "relation") {
@@ -90,15 +95,12 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
       const id = (item as { id?: unknown }).id;
       const type = (item as { type?: unknown }).type;
       if (typeof id !== "string" || (type !== "user" && type !== "group")) return [];
-      return [options.relationLabels?.[id] ?? (type === "user" ? "Private user" : "Private group")];
+      return [options.relationLabels?.[id] ?? (type === "user" ? t.privateUser : t.privateGroup)];
     });
     if (labels.length > 0) return { kind: "principal", text: labels.join(", ") };
     const users = values.filter((item) => item && typeof item === "object" && (item as { type?: unknown }).type === "user").length;
     const groups = values.filter((item) => item && typeof item === "object" && (item as { type?: unknown }).type === "group").length;
-    const parts = [
-      users ? `${users} ${users === 1 ? "user" : "users"}` : "",
-      groups ? `${groups} ${groups === 1 ? "group" : "groups"}` : "",
-    ].filter(Boolean);
+    const parts = [users ? t.usersCount({ count: users }) : "", groups ? t.groupsCount({ count: groups }) : ""].filter(Boolean);
     return parts.length ? { kind: "principal", text: parts.join(", ") } : { kind: "empty" };
   }
 
@@ -109,7 +111,14 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
     return {
       kind: "select",
       items: selectBadgeItems(value, displayField.type, displayField.config),
-      text: formatCell(Array.isArray(value) ? value : [value], displayField.type, displayField.config),
+      text: formatCell(
+        Array.isArray(value) ? value : [value],
+        displayField.type,
+        displayField.config,
+        undefined,
+        options.dateConfig,
+        locale,
+      ),
     };
   }
   if (isMarkdownLongtext(displayField)) return { kind: "markdown", text: valueToLabelPart(value) };
@@ -119,11 +128,11 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
   if (format?.kind === "progress" && (displayField.type === "percent" || displayField.type === "formula")) {
     const ratio = progressRatio(value, displayField.type, displayField.config);
     const percent = Math.round(ratio * 100);
-    const text = formatCell(value, displayField.type, displayField.config, undefined, options.dateConfig);
+    const text = formatCell(value, displayField.type, displayField.config, undefined, options.dateConfig, locale);
     const label = format.label === "none" ? "" : format.label === "value" ? text : `${percent}%`;
     return { kind: "progress", ratio, label, text, format };
   }
-  return { kind: "text", text: formatCell(value, displayField.type, displayField.config, format, options.dateConfig) };
+  return { kind: "text", text: formatCell(value, displayField.type, displayField.config, format, options.dateConfig, locale) };
 };
 
 export const fieldDisplayText = (intent: FieldDisplayIntent): string => {

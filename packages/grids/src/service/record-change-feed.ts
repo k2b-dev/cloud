@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
+import { getGridsCrudMessages } from "./crud-messages";
 
 export const RECORD_CHANGE_FEED_RETENTION_DAYS = 30;
 export const RECORD_CHANGE_FEED_MAX_LIMIT = 100;
@@ -105,15 +106,17 @@ export const listRecordChanges = async (params: {
   limit?: number;
   cursorSigningKey?: string;
   now?: Date;
+  locale?: string;
 }): Promise<Result<RecordChangeFeedPage>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), RECORD_CHANGE_FEED_MAX_LIMIT);
   const key = params.cursorSigningKey ?? signingKey();
   const boundary = params.cursor ? decodeRecordChangeFeedCursor(params.cursor, params.scope, key) : null;
-  if (params.cursor && !boundary) return fail(err.badInput("Invalid Record change feed cursor."));
+  if (params.cursor && !boundary) return fail(err.badInput(messages.invalidChangeFeedCursor));
 
   const cutoff = new Date((params.now ?? new Date()).getTime() - RECORD_CHANGE_FEED_RETENTION_DAYS * 24 * 60 * 60 * 1_000);
   if (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime()) {
-    return fail(err.conflict("Record change feed cursor expired; perform a full Record rescan."));
+    return fail(err.conflict(messages.expiredChangeFeedCursor));
   }
 
   const rows = await sql<ChangeRow[]>`

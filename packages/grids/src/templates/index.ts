@@ -1,6 +1,6 @@
-import { bookshopTemplate } from "./bookshop";
-import { financeTemplate } from "./finance";
-import { inventoryTemplate } from "./inventory";
+import { bookshopTemplate, createBookshopTemplate } from "./bookshop";
+import { createFinanceTemplate, financeTemplate } from "./finance";
+import { createInventoryTemplate, inventoryTemplate } from "./inventory";
 import type { GridTemplate } from "./types";
 
 export type {
@@ -11,4 +11,11 @@ export type {
 
 export const templates: GridTemplate[] = [bookshopTemplate, financeTemplate, inventoryTemplate];
 
-export const getTemplate = (id: string): GridTemplate | null => templates.find((template) => template.id === id) ?? null;
+export const getTemplates = (locale?: string): GridTemplate[] => [
+  createBookshopTemplate(locale),
+  createFinanceTemplate(locale),
+  createInventoryTemplate(locale),
+];
+
+export const getTemplate = (id: string, locale?: string): GridTemplate | null =>
+  getTemplates(locale).find((template) => template.id === id) ?? null;

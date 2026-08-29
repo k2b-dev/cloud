@@ -21,6 +21,25 @@ describe("notification catalog registration", () => {
     expect(attempts).toBe(2);
   });
 
+  test("retries while Core has not added a new catalog column yet", async () => {
+    let attempts = 0;
+    const stop = await startNotificationDefinitionRegistration(
+      "rollout-test",
+      {},
+      {
+        retryMs: 1,
+        register: async () => {
+          attempts += 1;
+          if (attempts === 1) throw Object.assign(new Error("column does not exist"), { code: "42703" });
+        },
+      },
+    );
+
+    for (let index = 0; index < 50 && attempts < 2; index += 1) await Bun.sleep(2);
+    stop();
+    expect(attempts).toBe(2);
+  });
+
   test("does not hide non-rollout registration failures", async () => {
     await expect(
       startNotificationDefinitionRegistration(

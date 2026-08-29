@@ -2,6 +2,7 @@ import { logger } from "@valentinkolb/cloud/services";
 import { gridsService } from "../../../service";
 import { latestMetadataEventCursor } from "../../../service/metadata-events";
 import { latestRecordEventCursor } from "../../../service/record-events";
+import { resolveWorkspaceMessages } from "./messages";
 import { loadWorkspaceRequest } from "./workspace-request-state";
 import { loadWorkspaceRoute } from "./workspace-route-state";
 import type { GridsWorkspaceState, LoadWorkspaceParams } from "./workspace-state-model";
@@ -36,8 +37,9 @@ export const loadGridsWorkspaceState = async (
   params: LoadWorkspaceParams,
   deps: WorkspaceStateDeps = defaultDeps,
 ): Promise<GridsWorkspaceState> => {
+  const t = resolveWorkspaceMessages(params.locale);
   const base = await gridsService.base.getByShortId(params.baseShortId);
-  if (!base) return { kind: "notFound", title: "Not found", message: "Base not found" };
+  if (!base) return { kind: "notFound", title: t.notFound, message: t.baseNotFound };
   const [metadataCursor, recordCursor] = await Promise.all([
     loadEventCursor("metadata", () => deps.latestMetadataEventCursor(base.id)),
     loadEventCursor("records", () => deps.latestRecordEventCursor(base.id)),

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import PrincipalInput from "./PrincipalInput";
@@ -63,5 +64,26 @@ describe("PrincipalInput", () => {
     expect(html).toContain("Select a group");
     expect(html).not.toContain("Select a user or group");
     expect(html).not.toContain('role="radiogroup"');
+  });
+
+  test("uses the inherited regional German locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(PrincipalInput, {
+            label: "Verantwortlich",
+            value: null,
+            multi: false,
+            onChange: () => undefined,
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain("Person oder Gruppe auswählen");
+    expect(html).toContain(">Personen</button>");
+    expect(html).toContain(">Gruppen</button>");
+    expect(html).toContain('aria-label="Personen und Gruppen filtern"');
   });
 });

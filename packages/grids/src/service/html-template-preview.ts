@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { ok, type Result } from "@k2b/stdlib";
 import { HTML_TEMPLATE_ERROR, htmlTemplateConfigSchema } from "../field-types/html-template";
+import { documentServiceText } from "./document-messages";
 import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
 import type { AuthorizedRecordAccess } from "./record-access";
 import { list as listRecords } from "./records";
@@ -8,7 +9,11 @@ import type { ExpansionViewer } from "./relations";
 
 type HtmlTemplatePreviewResult = {
   ok: boolean;
-  diagnostics: Array<{ severity: "error" | "info"; message: string }>;
+  diagnostics: Array<{
+    code: "html.invalid_config" | "html.empty" | "html.field_not_found" | "html.render_failed";
+    severity: "error" | "info";
+    message: string;
+  }>;
   rows: Array<{ recordId: string; html: string }>;
 };
 
@@ -21,18 +26,23 @@ export const checkHtmlTemplate = async (params: {
   recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<HtmlTemplatePreviewResult>> => {
+  const t = documentServiceText(params.dateConfig?.locale);
   const config = htmlTemplateConfigSchema.safeParse({ template: params.template, css: params.css });
   if (!config.success) {
     return ok({
       ok: false,
-      diagnostics: config.error.issues.map((issue) => ({ severity: "error" as const, message: issue.message })),
+      diagnostics: config.error.issues.map((issue) => ({
+        code: "html.invalid_config" as const,
+        severity: "error" as const,
+        message: t.invalidHtmlConfig({ field: issue.path.join(".") || "template" }),
+      })),
       rows: [],
     });
   }
   if (!config.data.template) {
     return ok({
       ok: true,
-      diagnostics: [{ severity: "info", message: "Type an HTML template to preview the latest records." }],
+      diagnostics: [{ code: "html.empty", severity: "info", message: t.previewTemplateHint }],
       rows: [],
     });
   }
@@ -49,7 +59,11 @@ export const checkHtmlTemplate = async (params: {
   if (!listed.ok) return listed;
   const current = listed.data.fields.find((field) => field.id === params.fieldId && field.type === "html_template" && !field.deletedAt);
   if (!current) {
-    return ok({ ok: false, diagnostics: [{ severity: "error", message: "HTML template field not found." }], rows: [] });
+    return ok({
+      ok: false,
+      diagnostics: [{ code: "html.field_not_found", severity: "error", message: t.htmlFieldNotFound }],
+      rows: [],
+    });
   }
   const fields = listed.data.fields.map((field) => (field.id === current.id ? { ...field, config: config.data } : field));
   await enrichRecordsWithHtmlTemplates(listed.data.items, fields, { dateConfig: params.dateConfig, fieldIds: new Set([current.id]) });
@@ -57,7 +71,7 @@ export const checkHtmlTemplate = async (params: {
   const failed = rows.some((row) => row.html === HTML_TEMPLATE_ERROR);
   return ok({
     ok: !failed,
-    diagnostics: failed ? [{ severity: "error", message: "Some preview records could not be rendered." }] : [],
+    diagnostics: failed ? [{ code: "html.render_failed", severity: "error", message: t.previewRenderFailed }] : [],
     rows,
   });
 };

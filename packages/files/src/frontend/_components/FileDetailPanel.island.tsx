@@ -1,9 +1,10 @@
 import { dates, fileIcons, text } from "@k2b/stdlib";
-import { Button, DescriptionList, DetailPanel, IconButton, Placeholder, Tooltip } from "@k2b/ui";
+import { Button, DescriptionList, DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { FileBaseInfo, FileInfo } from "@/contracts";
 import { DETAIL_FILE_SELECT_EVENT, type DetailFileSelectPayload, fileApiUrl, setDetailFileInUrl } from "./context";
 import { type buildFileMenuElements, canOpenFileInline, createFileActionMutations, type FileActionContext } from "./FileActions";
+import { filesMessages } from "../messages";
 
 type FileDetailPanelProps = {
   initialFile: FileInfo | null;
@@ -14,18 +15,6 @@ type FileDetailPanelProps = {
   bases: FileBaseInfo[];
   useFullDetailKey?: boolean;
   showEmpty?: boolean;
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  image: "Image",
-  pdf: "PDF Document",
-  video: "Video",
-  audio: "Audio",
-  text: "Text File",
-  code: "Source Code",
-  document: "Document",
-  archive: "Archive",
-  other: "File",
 };
 
 type FileActionEntry = Extract<ReturnType<typeof buildFileMenuElements>[number], { label: string }>;
@@ -48,6 +37,8 @@ const parseFullDetailKey = (key: string) => {
 };
 
 export default function FileDetailPanel(props: FileDetailPanelProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const fileActions = createFileActionMutations();
   const [file, setFile] = createSignal<FileInfo | null>(props.initialFile);
   const [filePath, setFilePath] = createSignal<string | null>(props.initialFilePath);
@@ -102,6 +93,28 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
   const isDirectory = () => file()?.type === "directory";
   const category = () => (file() ? fileIcons.getFileCategory(file()!) : "other");
   const icon = () => (file() ? fileIcons.getFileIcon(file()!) : "ti-file");
+  const categoryLabel = () => {
+    switch (category()) {
+      case "image":
+        return t().image;
+      case "pdf":
+        return t().pdf;
+      case "video":
+        return t().video;
+      case "audio":
+        return t().audio;
+      case "text":
+        return t().textFile;
+      case "code":
+        return t().sourceCode;
+      case "document":
+        return t().document;
+      case "archive":
+        return t().archive;
+      default:
+        return t().file;
+    }
+  };
 
   const itemPath = () => {
     const currentPath = filePath();
@@ -133,13 +146,13 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
 
   const detailSubtitle = () => {
     const currentFile = file();
-    if (!currentFile || currentFile.type === "directory") return "Folder";
-    return `${CATEGORY_LABELS[category()] ?? "File"} · ${text.pprintBytes(currentFile.size)} · ${dates.formatDateTimeRelative(currentFile.mtime)}`;
+    if (!currentFile || currentFile.type === "directory") return t().folder;
+    return `${categoryLabel()} · ${text.pprintBytes(currentFile.size)} · ${dates.formatDateTimeRelative(currentFile.mtime)}`;
   };
 
   const closeAction = () => (
-    <Tooltip.Anchor content="Close details">
-      <IconButton onClick={handleClose} label="Close file detail panel" size="sm" variant="ghost">
+    <Tooltip.Anchor content={t().closeDetails}>
+      <IconButton onClick={handleClose} label={t().closeDetailPanel} size="sm" variant="ghost">
         <i class="ti ti-x" aria-hidden="true" />
       </IconButton>
     </Tooltip.Anchor>
@@ -156,7 +169,7 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
         onCloseDetail: handleClose,
       })
       .filter(isActionEntry);
-    return items.filter((entry) => !entry.label.startsWith("Show "));
+    return items.slice(1);
   });
 
   const runAction = (entry: FileActionEntry) => {
@@ -174,7 +187,7 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
       when={file()}
       fallback={
         props.showEmpty === false ? null : (
-          <Placeholder icon="ti ti-file-info" class="h-full min-h-0 justify-center" description={<>Select a file to view details</>} />
+          <Placeholder icon="ti ti-file-info" class="h-full min-h-0 justify-center" description={<>{t().selectForDetails}</>} />
         )
       }
     >
@@ -208,25 +221,25 @@ export default function FileDetailPanel(props: FileDetailPanelProps) {
           </Show>
 
           <DetailPanel.Body scrollPreserveKey={detailScrollPreserveKey()}>
-            <DetailPanel.Summary title="Details">
+            <DetailPanel.Summary title={t().details}>
               <DescriptionList
                 layout="rows"
                 size="sm"
                 items={[
-                  { term: "Path", description: <span class="break-all font-mono">{fullPath()}</span> },
-                  { term: "Kind", description: isDirectory() ? "Folder" : (CATEGORY_LABELS[category()] ?? "File") },
-                  { term: "Modified", description: dates.formatDateTime(currentFile().mtime) },
-                  ...(!isDirectory() ? [{ term: "Size", description: text.pprintBytes(currentFile().size) }] : []),
+                  { term: t().path, description: <span class="break-all font-mono">{fullPath()}</span> },
+                  { term: t().kind, description: isDirectory() ? t().folder : categoryLabel() },
+                  { term: t().modified, description: dates.formatDateTime(currentFile().mtime) },
+                  ...(!isDirectory() ? [{ term: t().size, description: text.pprintBytes(currentFile().size) }] : []),
                 ]}
               />
             </DetailPanel.Summary>
 
             <Show when={actionItems().length > 0}>
-              <DetailPanel.Section title="Actions" icon="ti ti-bolt" tone="accent">
+              <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="accent">
                 <div class="flex flex-col gap-0.5">
                   <For each={actionItems()}>
                     {(entry) => {
-                      const label = () => (entry.label === "Open" && canOpenFileInline(currentFile()) ? "Preview" : entry.label);
+                      const label = () => (entry.icon === "ti ti-eye" && canOpenFileInline(currentFile()) ? t().preview : entry.label);
                       return entry.variant === "danger" ? (
                         <Button variant="danger" size="sm" class="justify-start" title={entry.label} onClick={() => runAction(entry)}>
                           {entry.icon && <i class={entry.icon} aria-hidden="true" />}

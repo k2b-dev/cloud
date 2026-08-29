@@ -1,7 +1,8 @@
-import { Button, DataTable, FilterChip, TextInput, type DataTableColumn, type FilterChipSection } from "@k2b/ui";
+import { Button, DataTable, FilterChip, TextInput, type DataTableColumn, type FilterChipSection, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import type { PulseInventory, PulseResourceSummary } from "../../contracts";
-import { compactDateWithDelta, dimensionsSummary, plural, type PulseDateContext } from "./helpers";
+import { compactDateWithDelta, dimensionsSummary, type PulseDateContext } from "./helpers";
+import { usePulseMessages } from "../use-messages";
 
 type Props = {
   search: () => string;
@@ -32,12 +33,14 @@ const resourceIcon = (type: string | null) => {
 };
 
 export default function ResourceBrowserView(props: Props) {
+  const t = usePulseMessages();
+  const locale = useLocale();
   const resourceColumns: DataTableColumn<PulseResourceSummary>[] = [
-    { id: "resource", header: "Resource", value: "label", cellClass: "min-w-72" },
-    { id: "type", header: "Type", value: "type", cellClass: "w-32 whitespace-nowrap" },
-    { id: "source", header: "Source", cellClass: "min-w-40" },
-    { id: "signals", header: "Signals", cellClass: "w-40 whitespace-nowrap" },
-    { id: "lastSeen", header: "Last seen", value: "lastSeenAt", cellClass: "w-44 whitespace-nowrap" },
+    { id: "resource", header: t().resource, value: "label", cellClass: "min-w-72" },
+    { id: "type", header: t().type, value: "type", cellClass: "w-32 whitespace-nowrap" },
+    { id: "source", header: t().source, cellClass: "min-w-40" },
+    { id: "signals", header: t().signals, cellClass: "w-40 whitespace-nowrap" },
+    { id: "lastSeen", header: t().lastSeen, value: "lastSeenAt", cellClass: "w-44 whitespace-nowrap" },
   ];
   const typeCounts = createMemo(() => {
     const counts = new Map<string, number>();
@@ -47,7 +50,7 @@ export default function ResourceBrowserView(props: Props) {
     }
     return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
   });
-  const sourceLabel = (sourceId: string) => props.sourceNameById().get(sourceId) ?? "Unknown source";
+  const sourceLabel = (sourceId: string) => props.sourceNameById().get(sourceId) ?? t().unknownSource;
   const sourceCounts = createMemo(() => {
     const counts = new Map<string, number>();
     for (const resource of props.inventory().resources) {
@@ -98,7 +101,7 @@ export default function ResourceBrowserView(props: Props) {
       const count = resource.metricCount + resource.stateCount + resource.eventCount;
       return (
         <span class="text-xs text-secondary">
-          {plural(count, "signal")}{" "}
+          {t().signalCount({ count })}{" "}
           <span class="text-dimmed">
             ({resource.metricCount}m/{resource.stateCount}s/{resource.eventCount}e)
           </span>
@@ -123,12 +126,12 @@ export default function ResourceBrowserView(props: Props) {
             icon="ti ti-search"
             value={props.search}
             onValueChange={props.setSearch}
-            placeholder="Search resources, sources, labels, hosts, services..."
+            placeholder={t().searchResourcesPlaceholder}
             clearable
           />
         </div>
         <FilterChip
-          label="Source"
+          label={t().source}
           icon="ti ti-database-share"
           options={sourceFilterOptions()}
           value={props.sourceFilter() ? [props.sourceFilter()] : []}
@@ -137,7 +140,7 @@ export default function ResourceBrowserView(props: Props) {
           defaultValue={[]}
         />
         <FilterChip
-          label="Type"
+          label={t().type}
           icon="ti ti-filter"
           options={typeFilterOptions()}
           value={props.typeFilter() ? [props.typeFilter()] : []}
@@ -149,11 +152,13 @@ export default function ResourceBrowserView(props: Props) {
 
       <div class="flex shrink-0 flex-wrap items-center gap-2 px-1 text-xs text-dimmed">
         <span>
-          {plural(props.filteredResources().length, "resource")}
-          <Show when={props.filteredResources().length !== props.inventory().resources.length}>
-            {` of ${props.inventory().resources.length.toLocaleString()}`}
-          </Show>
-          {` across ${plural(sourceCount(), "source")}`}
+          {props.filteredResources().length === props.inventory().resources.length
+            ? `${t().resourceCount({ count: props.filteredResources().length })} · ${t().sourceCount({ count: sourceCount() })}`
+            : t().filteredResourceSummary({
+                visible: t().resourceCount({ count: props.filteredResources().length }),
+                total: props.inventory().resources.length.toLocaleString(locale()),
+                sources: t().sourceCount({ count: sourceCount() }),
+              })}
         </span>
         <Show when={props.sourceFilter()}>
           <Button type="button" variant="subtle" size="xs" onClick={() => props.setSourceFilter([])}>
@@ -172,7 +177,7 @@ export default function ResourceBrowserView(props: Props) {
         <Show when={hasFilters()}>
           <Button type="button" variant="ghost" size="xs" onClick={props.clearFilters}>
             <i class="ti ti-filter-off" />
-            Clear filters
+            {t().clearFilters}
           </Button>
         </Show>
       </div>
@@ -186,7 +191,7 @@ export default function ResourceBrowserView(props: Props) {
         density="compact"
         fillHeight
         class="paper flex-1 min-h-0 overflow-auto"
-        empty="No resources detected yet."
+        empty={t().noResourcesDetected}
         scrollPreserveKey="pulse-resources-table"
         renderCell={({ row, col }) => renderResourceCell(row, col)}
       />

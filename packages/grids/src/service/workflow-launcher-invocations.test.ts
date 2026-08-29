@@ -177,6 +177,7 @@ describe("workflow kernel scanner launchers", () => {
     const input = scannerInput({
       scannedText: "https://cloud.example/app/grids/scan?code=gsc_opaque",
       inputs: { note: "accepted" },
+      locale: "de-ch",
     });
 
     const first = await invokeScannerLauncher(input, item.deps);
@@ -184,7 +185,7 @@ describe("workflow kernel scanner launchers", () => {
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
-    expect(item.resolveScanCode).toHaveBeenCalledWith(baseId, tableId, "gsc_opaque", ALL_RECORD_ACCESS);
+    expect(item.resolveScanCode).toHaveBeenCalledWith(baseId, tableId, "gsc_opaque", ALL_RECORD_ACCESS, "de-ch");
     expect(item.invokeWorkflow).toHaveBeenCalledTimes(2);
     const calls = item.invokeWorkflow.mock.calls;
     expect(calls[0]![0]).toMatchObject({
@@ -195,7 +196,7 @@ describe("workflow kernel scanner launchers", () => {
       idempotencyKey: `launcher:${launcherId}:scan-1`,
       inputs: { note: "accepted", record: recordId },
       trustedRecordIds: new Map([[tableId, new Set([recordId])]]),
-      context: { launcher: { id: launcherId, kind: "scanner", operationId: "scan-1" } },
+      context: { locale: "de-CH", launcher: { id: launcherId, kind: "scanner", operationId: "scan-1" } },
     });
     expect(calls[1]![0].idempotencyKey).toBe(calls[0]![0].idempotencyKey);
   });
@@ -206,7 +207,7 @@ describe("workflow kernel scanner launchers", () => {
     const result = await invokeScannerLauncher(scannerInput({ scannedText: "A-42" }), item.deps);
 
     expect(result.ok).toBe(true);
-    expect(item.resolveUniqueField).toHaveBeenCalledWith(baseId, tableId, "Asset code", "A-42", ALL_RECORD_ACCESS);
+    expect(item.resolveUniqueField).toHaveBeenCalledWith(baseId, tableId, "Asset code", "A-42", ALL_RECORD_ACCESS, undefined);
     expect(item.resolveScanCode).not.toHaveBeenCalled();
   });
 
@@ -355,7 +356,7 @@ describe("workflow kernel bulk launchers", () => {
     const result = await invokeBulkLauncher(queryInput, item.deps);
 
     expect(result.ok).toBe(true);
-    expect(item.resolveQueryRecordIds).toHaveBeenCalledWith(tableId, { limit: 2 }, principal, ALL_RECORD_ACCESS);
+    expect(item.resolveQueryRecordIds).toHaveBeenCalledWith(tableId, { limit: 2 }, principal, ALL_RECORD_ACCESS, undefined);
     expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
     expect(item.invokeWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -481,7 +482,7 @@ describe("workflow kernel Record launchers", () => {
 
     expect(admission.ok).toBe(true);
     expect(result.ok).toBe(true);
-    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId], ALL_RECORD_ACCESS);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId], ALL_RECORD_ACCESS, undefined);
     expect(item.invokeWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "record",

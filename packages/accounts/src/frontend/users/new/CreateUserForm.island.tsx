@@ -1,10 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, Checkbox, CopyButton, prompts, SegmentedControl, TextInput } from "@k2b/ui";
+import { Button, Checkbox, CopyButton, NoticeCard, prompts, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";
+import { type accountsMessages, useAccountsMessages } from "../../messages";
 
 type PrefillData = {
   requestId: string;
@@ -55,25 +56,29 @@ type Props = {
   freeIpaEnabled?: boolean;
 };
 
-const PROVIDER_CARDS: Array<{
+type AccountsCopy = ReturnType<typeof accountsMessages.resolve>["t"];
+
+const providerCards = (
+  t: AccountsCopy,
+): Array<{
   value: ProviderChoice;
   title: string;
   eyebrow: string;
   description: string;
   icon: string;
-}> = [
+}> => [
   {
     value: "ipa",
-    title: "Managed by FreeIPA",
-    eyebrow: "Directory",
-    description: "Use this for centrally managed accounts. Access is derived from FreeIPA group membership after creation.",
+    title: t.managedByFreeIpa,
+    eyebrow: t.directory,
+    description: t.freeIpaProviderDescription,
     icon: "ti ti-building-fortress",
   },
   {
     value: "local",
-    title: "Managed locally",
-    eyebrow: "App-managed",
-    description: "Use this for app-managed accounts. New users receive a welcome email and later sign in through email links.",
+    title: t.managedLocally,
+    eyebrow: t.appManaged,
+    description: t.localProviderDescription,
     icon: "ti ti-home-spark",
   },
 ];
@@ -83,41 +88,43 @@ const PROVIDER_CARD_CLASS =
 const PROVIDER_CARD_ICON_CLASS =
   "flex h-10 w-10 items-center justify-center rounded-lg bg-white text-zinc-600 shadow-sm shadow-zinc-950/[0.04] transition group-hover:text-blue-600 dark:bg-zinc-950/75 dark:text-zinc-300 dark:shadow-none dark:group-hover:text-blue-300";
 
-const PROFILE_OPTIONS = [
-  { value: "user", label: "Full account", icon: "ti ti-user-check" },
-  { value: "guest", label: "Guest account", icon: "ti ti-user-exclamation" },
-] as const;
+const profileOptions = (t: AccountsCopy) =>
+  [
+    { value: "user", label: t.fullAccount, icon: "ti ti-user-check" },
+    { value: "guest", label: t.guestAccount, icon: "ti ti-user-exclamation" },
+  ] as const;
 
-const buildPayloadSummary = (payload: CreateUserPayload) => {
-  const lines: Array<[string, string]> = [["Managed by", payload.provider === "ipa" ? "FreeIPA" : "Local"]];
+const buildPayloadSummary = (payload: CreateUserPayload, t: AccountsCopy) => {
+  const lines: Array<[string, string]> = [[t.managedBy, payload.provider === "ipa" ? "FreeIPA" : t.local]];
 
   if (payload.provider === "local") {
-    lines.push(["Access level", payload.profile === "user" ? "Full account" : "Guest account"]);
+    lines.push([t.accessLevel, payload.profile === "user" ? t.fullAccount : t.guestAccount]);
     if (payload.profile === "user") {
-      lines.push(["Privileges", payload.admin ? "Admin" : "Standard"]);
+      lines.push([t.privileges, payload.admin ? t.admin : t.standard]);
     }
   } else {
-    lines.push(["Access level", "Derived from FreeIPA groups"]);
+    lines.push([t.accessLevel, t.derivedFromIpaGroups]);
   }
 
-  lines.push(["Email", payload.email]);
-  lines.push(["Name", `${payload.givenname} ${payload.sn}`]);
-  lines.push(["Display name", payload.displayName || `${payload.givenname} ${payload.sn}`]);
-  lines.push(["Onboarding", payload.provider === "ipa" ? "Welcome email / password flow" : "Welcome email / email sign-in"]);
+  lines.push([t.email, payload.email]);
+  lines.push([t.name, `${payload.givenname} ${payload.sn}`]);
+  lines.push([t.displayName, payload.displayName || `${payload.givenname} ${payload.sn}`]);
+  lines.push([t.onboarding, payload.provider === "ipa" ? t.ipaOnboarding : t.localOnboarding]);
 
   return lines;
 };
 
 function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => void; requestPrefill: boolean }) {
+  const messages = useAccountsMessages();
   return (
     <div class="flex flex-col gap-3">
       <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">Where should this account be managed?</p>
-        <p class="text-xs text-dimmed">Choose the provider first. Only local accounts expose a direct profile choice during creation.</p>
+        <p class="text-sm font-medium text-primary">{messages().chooseProviderQuestion}</p>
+        <p class="text-xs text-dimmed">{messages().chooseProviderDescription}</p>
       </div>
 
       <div class="grid gap-3 md:grid-cols-2">
-        {PROVIDER_CARDS.map((provider) => (
+        {providerCards(messages()).map((provider) => (
           <button type="button" class={PROVIDER_CARD_CLASS} onClick={() => props.close(provider.value)}>
             <div class="flex items-center gap-3">
               <div class={PROVIDER_CARD_ICON_CLASS}>
@@ -131,7 +138,7 @@ function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => 
             <p class="text-sm leading-6 text-secondary">{provider.description}</p>
             <Show when={props.requestPrefill && provider.value === "ipa"}>
               <NoticeCard tone="success" icon={false} class="mt-auto">
-                Recommended for this request.
+                {messages().recommendedForRequest}
               </NoticeCard>
             </Show>
           </button>
@@ -142,6 +149,7 @@ function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => 
 }
 
 function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillData; close: (payload?: CreateUserPayload) => void }) {
+  const messages = useAccountsMessages();
   const [profile, setProfile] = createSignal<LocalProfile>("user");
   const [admin, setAdmin] = createSignal(false);
   const [email, setEmail] = createSignal(props.prefill?.email ?? "");
@@ -166,9 +174,9 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
 
   const validate = () => {
     const nextErrors: Record<string, string> = {};
-    if (!email().trim()) nextErrors.email = "Email is required.";
-    if (!givenname().trim()) nextErrors.givenname = "First name is required.";
-    if (!sn().trim()) nextErrors.sn = "Last name is required.";
+    if (!email().trim()) nextErrors.email = messages().emailRequired;
+    if (!givenname().trim()) nextErrors.givenname = messages().firstNameRequired;
+    if (!sn().trim()) nextErrors.sn = messages().lastNameRequired;
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -205,19 +213,17 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
   return (
     <div class="flex flex-col gap-5">
       <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">{props.provider === "ipa" ? "Create FreeIPA account" : "Create local account"}</p>
-        <p class="text-xs text-dimmed">
-          {props.provider === "ipa"
-            ? "The effective access level will be determined after creation through FreeIPA group membership."
-            : "Choose the access level directly for this local account. Users receive a welcome email and sign in by email."}
+        <p class="text-sm font-medium text-primary">
+          {props.provider === "ipa" ? messages().createFreeIpa : messages().createLocalAccount}
         </p>
+        <p class="text-xs text-dimmed">{props.provider === "ipa" ? messages().ipaAccessAfterCreation : messages().localAccessCreation}</p>
       </div>
 
       <Show when={props.prefill}>
         <NoticeCard tone="success" icon={false}>
           <div class="flex items-center gap-2">
             <i class="ti ti-sparkles text-base" />
-            <span class="font-medium">Prefilled from a pending FreeIPA access request.</span>
+            <span class="font-medium">{messages().prefilledRequest}</span>
           </div>
         </NoticeCard>
       </Show>
@@ -227,11 +233,8 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
           <div class="flex items-start gap-3">
             <i class="ti ti-info-circle mt-0.5 text-base" />
             <div class="flex flex-col gap-1">
-              <span class="font-medium">FreeIPA decides the effective access level.</span>
-              <span class="text-xs text-blue-700/90 dark:text-blue-200/80">
-                The new account starts managed by FreeIPA. Whether it behaves like a full or guest account depends on the assigned directory
-                groups.
-              </span>
+              <span class="font-medium">{messages().ipaDecidesAccess}</span>
+              <span class="text-xs text-blue-700/90 dark:text-blue-200/80">{messages().ipaAccessExplanation}</span>
             </div>
           </div>
         </NoticeCard>
@@ -240,12 +243,12 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
       <Show when={props.provider === "local"}>
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
-            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-dimmed">Access level</p>
-            <span class="text-[11px] text-dimmed">Only local accounts choose this directly.</span>
+            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-dimmed">{messages().accessLevel}</p>
+            <span class="text-[11px] text-dimmed">{messages().localAccessOnly}</span>
           </div>
           <SegmentedControl
-            ariaLabel="Local account profile"
-            options={PROFILE_OPTIONS.map((option) => ({ value: option.value, label: option.label, icon: option.icon }))}
+            ariaLabel={messages().localAccountProfile}
+            options={profileOptions(messages()).map((option) => ({ value: option.value, label: option.label, icon: option.icon }))}
             value={profile}
             onValueChange={(value) => setProfile(value as LocalProfile)}
           />
@@ -255,8 +258,8 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
       <Show when={props.provider === "local" && profile() === "user"}>
         <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
           <Checkbox
-            label="Grant admin access"
-            description="Only local full accounts can be admins. FreeIPA admin access is managed through FreeIPA groups."
+            label={messages().grantAdminAccess}
+            description={messages().adminAccessDescription}
             value={admin}
             onValueChange={setAdmin}
           />
@@ -265,7 +268,7 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
 
       <div class="grid gap-4 md:grid-cols-2">
         <TextInput
-          label="Email"
+          label={messages().email}
           required
           icon="ti ti-mail"
           value={email}
@@ -274,47 +277,43 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
           placeholder="name@example.com"
         />
         <TextInput
-          label="Display name"
+          label={messages().displayName}
           icon="ti ti-id-badge-2"
           value={displayName}
           onValueChange={(value) => {
             setDisplayNameTouched(true);
             setDisplayName(value);
           }}
-          placeholder="Visible name in the app"
+          placeholder={messages().visibleNamePlaceholder}
         />
         <TextInput
-          label="First name"
+          label={messages().firstName}
           required
           icon="ti ti-user"
           value={givenname}
           onValueChange={setGivenname}
           error={() => errors().givenname}
-          placeholder="First name"
+          placeholder={messages().firstName}
         />
         <TextInput
-          label="Last name"
+          label={messages().lastName}
           required
           icon="ti ti-user"
           value={sn}
           onValueChange={setSn}
           error={() => errors().sn}
-          placeholder="Last name"
+          placeholder={messages().lastName}
         />
       </div>
 
       <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3 text-xs text-dimmed">
-        The username and UID are generated automatically from the provided name and email data.
+        {messages().generatedIdentity}
       </div>
 
       <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
         <Checkbox
-          label="Send welcome email automatically"
-          description={
-            props.provider === "ipa"
-              ? "If enabled, the created user receives the onboarding email immediately."
-              : "If enabled, the created user receives the local onboarding email immediately."
-          }
+          label={messages().sendWelcomeAutomatically}
+          description={props.provider === "ipa" ? messages().ipaWelcomeDescription : messages().localWelcomeDescription}
           value={autoSendNotification}
           onValueChange={setAutoSendNotification}
         />
@@ -322,23 +321,17 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
 
       <div class="flex justify-end">
         <Button size="sm" onClick={handleSubmit}>
-          Continue
+          {messages().continue}
         </Button>
       </div>
     </div>
   );
 }
 
-const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse) => {
+const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse, t: AccountsCopy, locale: string) => {
   const nfsCommands = `sudo nfsctl useradd ${data.uid}`;
   const isIpa = payload.provider === "ipa";
-  const notificationMessage = data.notificationSent
-    ? isIpa
-      ? "Welcome email with the initial FreeIPA instructions was sent."
-      : "Welcome email with the local sign-in instructions was sent."
-    : isIpa
-      ? "Welcome email was not sent automatically."
-      : "Welcome email was not sent automatically.";
+  const notificationMessage = data.notificationSent ? (isIpa ? t.ipaWelcomeSent : t.localWelcomeSent) : t.welcomeNotSent;
 
   return prompts.dialog<void>(
     (close) => (
@@ -347,9 +340,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
           <div class="flex items-start gap-3">
             <i class="ti ti-check text-base" />
             <div class="flex flex-col gap-1">
-              <span class="font-medium">
-                {payload.provider === "ipa" ? "FreeIPA-backed account" : "Local account"} created successfully.
-              </span>
+              <span class="font-medium">{payload.provider === "ipa" ? t.ipaAccountCreated : t.localAccountCreated}</span>
               <span class="text-xs">{notificationMessage}</span>
             </div>
           </div>
@@ -358,22 +349,22 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
         <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt class="text-dimmed">UID</dt>
           <dd class="font-mono">{data.uid}</dd>
-          <dt class="text-dimmed">Managed by</dt>
-          <dd>{payload.provider === "ipa" ? "FreeIPA" : "Local"}</dd>
+          <dt class="text-dimmed">{t.managedBy}</dt>
+          <dd>{payload.provider === "ipa" ? "FreeIPA" : t.local}</dd>
           <Show when={payload.provider === "local"}>
             {(() => {
               const localPayload = payload.provider === "local" ? payload : null;
               return (
                 <>
-                  <dt class="text-dimmed">Access level</dt>
-                  <dd>{localPayload?.profile === "user" ? "Full account" : "Guest account"}</dd>
+                  <dt class="text-dimmed">{t.accessLevel}</dt>
+                  <dd>{localPayload?.profile === "user" ? t.fullAccount : t.guestAccount}</dd>
                 </>
               );
             })()}
           </Show>
           <Show when={data.accountExpires}>
-            <dt class="text-dimmed">Account expires</dt>
-            <dd>{dates.formatDate(data.accountExpires!)}</dd>
+            <dt class="text-dimmed">{t.accountExpires}</dt>
+            <dd>{dates.formatDate(data.accountExpires!, { locale })}</dd>
           </Show>
         </dl>
 
@@ -381,10 +372,10 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
           <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
             <div class="flex items-center justify-between gap-3">
               <div class="flex flex-col">
-                <span class="text-sm font-medium text-primary">NFS follow-up</span>
-                <span class="text-xs text-dimmed">Only needed if your team manages NFS home directories manually.</span>
+                <span class="text-sm font-medium text-primary">{t.nfsFollowUp}</span>
+                <span class="text-xs text-dimmed">{t.nfsFollowUpDescription}</span>
               </div>
-              <CopyButton text={nfsCommands} label="Copy" />
+              <CopyButton text={nfsCommands} label={t.copy} />
             </div>
             <pre class="overflow-x-auto whitespace-pre rounded-xl bg-white/80 px-3 py-3 text-xs font-mono text-secondary dark:bg-zinc-950/80">
               {nfsCommands}
@@ -394,7 +385,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
 
         <div class="flex justify-end gap-3">
           <Button size="sm" variant="secondary" onClick={() => close()}>
-            Close
+            {t.close}
           </Button>
           <Button
             size="sm"
@@ -403,16 +394,18 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
               navigateTo(`/app/accounts/users/${data.id}`);
             }}
           >
-            View account
+            {t.viewAccount}
           </Button>
         </div>
       </div>
     ),
-    { title: "Account created", icon: "ti ti-user-check", size: "large" },
+    { title: t.accountCreated, icon: "ti ti-user-check", size: "large" },
   );
 };
 
 export default function CreateUserForm(props: Props) {
+  const messages = useAccountsMessages();
+  const locale = useLocale();
   let opened = false;
   const freeIpaEnabled = props.freeIpaEnabled ?? true;
 
@@ -420,7 +413,7 @@ export default function CreateUserForm(props: Props) {
     if (!freeIpaEnabled) return "local";
     if (props.prefill) return "ipa";
     return prompts.dialog<ProviderChoice>((close) => <ProviderSelectionDialog close={close} requestPrefill={false} />, {
-      title: "Choose account provider",
+      title: messages().chooseAccountProvider,
       icon: "ti ti-user-plus",
       size: "medium",
     });
@@ -428,7 +421,7 @@ export default function CreateUserForm(props: Props) {
 
   const openCreateDialog = async (provider: ProviderChoice): Promise<CreateUserPayload | undefined> =>
     prompts.dialog<CreateUserPayload>((close) => <CreateUserDialog provider={provider} prefill={props.prefill} close={close} />, {
-      title: provider === "ipa" ? "Create FreeIPA account" : "Create local account",
+      title: provider === "ipa" ? messages().createFreeIpa : messages().createLocalAccount,
       icon: provider === "ipa" ? "ti ti-building-fortress" : "ti ti-home-spark",
       size: "large",
     });
@@ -443,25 +436,25 @@ export default function CreateUserForm(props: Props) {
 
       const confirmed = await prompts.confirm(
         <div class="flex flex-col gap-4 text-sm">
-          <p>Please confirm the new account.</p>
+          <p>{messages().confirmNewAccount}</p>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-            {buildPayloadSummary(payload).map(([label, value]) => (
+            {buildPayloadSummary(payload, messages()).map(([label, value]) => (
               <>
                 <dt class="text-dimmed">{label}</dt>
-                <dd class={label === "Email" ? "font-mono" : ""}>{value}</dd>
+                <dd class={label === messages().email ? "font-mono" : ""}>{value}</dd>
               </>
             ))}
           </dl>
           <Show when={payload.provider === "ipa"}>
             <NoticeCard tone="info" icon={false}>
-              Effective FreeIPA access will still depend on the group assignments made afterwards.
+              {messages().ipaAccessDependsOnGroups}
             </NoticeCard>
           </Show>
         </div>,
         {
-          title: "Confirm account creation",
+          title: messages().confirmAccountCreation,
           icon: "ti ti-user-check",
-          confirmText: "Create account",
+          confirmText: messages().createAccount,
           size: "large",
         },
       );
@@ -471,7 +464,7 @@ export default function CreateUserForm(props: Props) {
       const res = await apiClient.users.$post({ json: payload });
       if (!res.ok) {
         const data = ErrorResponseSchema.safeParse(await res.json());
-        throw new Error(data.success ? data.data.message : "Failed to create account.");
+        throw new Error(data.success ? data.data.message : messages().createAccountFailed);
       }
 
       const data = CreateUserResponseSchema.parse(await res.json());
@@ -479,9 +472,9 @@ export default function CreateUserForm(props: Props) {
     },
     onSuccess: async (result) => {
       if (!result) return;
-      await buildSuccessDialog(result.payload, result.data);
+      await buildSuccessDialog(result.payload, result.data, messages(), locale());
     },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to create account."),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : messages().createAccountFailed),
   });
 
   onMount(() => {
@@ -500,7 +493,7 @@ export default function CreateUserForm(props: Props) {
         disabled={createMutation.loading()}
       >
         <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : (props.buttonIcon ?? "ti ti-plus")} />
-        <span>{createMutation.loading() ? "Working..." : (props.buttonLabel ?? "New User")}</span>
+        <span>{createMutation.loading() ? messages().working : (props.buttonLabel ?? messages().newUser)}</span>
       </Button>
     </Show>
   );

@@ -1,19 +1,21 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { hostMessages } from "./messages";
 
 const NewHostgroup = () => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const mutation = mutations.create<void, { name: string; description?: string }>({
     mutation: async (vars) => {
       const res = await apiClient.hostgroups.$post({ json: vars });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to create hostgroup.");
+        throw new Error(t().failedCreateGroup);
       }
     },
     onSuccess: () => {
-      toast.success("Hostgroup created");
+      toast.success(t().groupCreated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -21,20 +23,20 @@ const NewHostgroup = () => {
 
   const handleClick = async () => {
     const result = await prompts.form({
-      title: "New Hostgroup",
+      title: t().newGroup,
       icon: "ti ti-plus",
-      confirmText: "Create",
+      confirmText: t().create,
       fields: {
         name: {
           type: "text" as const,
-          label: "Name",
-          placeholder: "e.g. webservers",
+          label: t().name,
+          placeholder: t().groupNamePlaceholder,
           required: true,
         },
         description: {
           type: "text" as const,
-          label: "Description",
-          placeholder: "Optional description...",
+          label: t().description,
+          placeholder: t().optionalDescription,
         },
       },
     });
@@ -47,9 +49,9 @@ const NewHostgroup = () => {
   };
 
   return (
-    <Button size="sm" variant="secondary" onClick={handleClick} loading={mutation.loading()} loadingLabel="Creating hostgroup">
+    <Button size="sm" variant="secondary" onClick={handleClick} loading={mutation.loading()} loadingLabel={t().creatingGroup}>
       <i class="ti ti-plus" aria-hidden="true" />
-      New Hostgroup
+      {t().newGroup}
     </Button>
   );
 };

@@ -1,6 +1,9 @@
 import type { CapabilityClientError, CapabilityReviewClientResult } from "@valentinkolb/cloud/capabilities";
 import type { CapabilityActionManifest, CapabilityActionReview, CapabilitySemanticLink } from "@valentinkolb/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { capabilityRuntimeMessages } from "./messages";
+import { capabilityUiMessages } from "./frontend/messages";
 
 export type ActionRunDecision = { kind: "approved" } | { kind: "cancelled" } | { kind: "failed"; error: CapabilityClientError };
 
@@ -25,7 +28,9 @@ type ConfirmActionRunDependencies = {
 export const confirmActionRun = async (
   input: ConfirmActionRunInput,
   dependencies: ConfirmActionRunDependencies,
+  locale = "en",
 ): Promise<ActionRunDecision> => {
+  const t = capabilityRuntimeMessages.resolve([locale]).t;
   if (input.operation.review) {
     let reviewed: CapabilityReviewClientResult;
     try {
@@ -40,8 +45,8 @@ export const confirmActionRun = async (
         kind: "failed",
         error:
           cause instanceof Error && cause.name === "AbortError"
-            ? { code: "REQUEST_CANCELLED", message: "Action review was cancelled.", status: 499 }
-            : { code: "APP_UNAVAILABLE", message: "Could not load the action review.", status: 503 },
+            ? { code: "REQUEST_CANCELLED", message: t.reviewCancelled, status: 499 }
+            : { code: "APP_UNAVAILABLE", message: t.reviewUnavailable, status: 503 },
       };
     }
     if (!reviewed.ok) return { kind: "failed", error: reviewed.error };
@@ -55,19 +60,24 @@ export const confirmActionRun = async (
   return { kind: "approved" };
 };
 
-const linkLabel = (link: CapabilitySemanticLink): string =>
+const linkLabel = (link: CapabilitySemanticLink, locale: string): string => {
+  const t = capabilityUiMessages.resolve([locale]).t;
+  return (
   link.title ??
   (link.rel === "edit"
-    ? "Edit"
+    ? t.edit
     : link.rel === "status"
-      ? "Status"
+      ? t.status
       : link.rel === "preview"
-        ? "Preview"
+        ? t.preview
         : link.rel === "download"
-          ? "Download"
-          : "Open");
+          ? t.download
+          : t.open)
+  );
+};
 
 export function ActionReviewContent(props: { review: CapabilityActionReview }): JSX.Element {
+  const locale = useLocale();
   return (
     <div class="flex flex-col gap-4">
       <p class="m-0 whitespace-pre-wrap">{props.review.message}</p>
@@ -88,7 +98,7 @@ export function ActionReviewContent(props: { review: CapabilityActionReview }): 
           <For each={props.review.links}>
             {(link) => (
               <a class="text-sm font-medium text-accent hover:underline" href={link.href}>
-                {linkLabel(link)}
+                {linkLabel(link, locale())}
               </a>
             )}
           </For>

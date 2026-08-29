@@ -43,8 +43,10 @@ import { createWorkspaceDerivedModel } from "./workspace/workspace-derived-model
 import { installWorkspaceEffects } from "./workspace/workspace-effects";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
 import { createPulseWorkspaceState } from "./workspace/workspace-state";
+import { usePulseMessages } from "./use-messages";
 
 export default function PulseWorkspace(props: PulseWorkspaceProps) {
+  const t = usePulseMessages();
   const localState = createPulseWorkspaceState(props);
   let selectedSourceKind = () => props.initialSources?.find((source) => source.id === localState.selectedSourceId())?.kind ?? null;
   const queryState = createPulseWorkspaceQueries(props, {
@@ -627,9 +629,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   };
 
   const signalCatalogTabs = () => [
-    { kind: "events" as const, label: "Events", icon: "ti ti-bolt", count: eventGroups().length, open: openActivityEvents },
-    { kind: "states" as const, label: "States", icon: "ti ti-toggle-right", count: stateGroups().length, open: openActivityStates },
-    { kind: "metrics" as const, label: "Metrics", icon: "ti ti-chart-dots", count: activityMetrics().length, open: openActivityMetrics },
+    { kind: "events" as const, label: t().events, icon: "ti ti-bolt", count: eventGroups().length, open: openActivityEvents },
+    { kind: "states" as const, label: t().states, icon: "ti ti-toggle-right", count: stateGroups().length, open: openActivityStates },
+    { kind: "metrics" as const, label: t().metrics, icon: "ti ti-chart-dots", count: activityMetrics().length, open: openActivityMetrics },
   ];
 
   const openSourceFromDetail = (sourceId: string | null | undefined) => {
@@ -646,7 +648,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   });
 
   const resourceSourceLabel = (resource: PulseResourceSummary): string =>
-    resource.sourceIds.map((sourceId) => sourceNameById().get(sourceId) ?? "Unknown source").join(", ") || "No source";
+    resource.sourceIds.map((sourceId) => sourceNameById().get(sourceId) ?? t().unknownSource).join(", ") || t().noSource;
 
   const openSourceResources = (source: PulseSource) => {
     setResourceSearch("");
@@ -837,9 +839,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       setSelectedSeriesId={setSelectedFocusedSeriesId}
       setSelectedStateId={setSelectedFocusedStateId}
       setSelectedEventId={setSelectedFocusedEventId}
-      metricSeriesColumns={metricSeriesColumns}
-      stateColumns={stateColumns}
-      eventColumns={eventColumns}
+      metricSeriesColumns={metricSeriesColumns(t())}
+      stateColumns={stateColumns(t())}
+      eventColumns={eventColumns(t())}
       renderMetricSeriesCell={renderMetricSeriesCell}
       renderStateCell={renderStateCell}
       renderEventCell={renderEventCell}
@@ -870,9 +872,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       setSelectedSeriesId={setSelectedFocusedSeriesId}
       setSelectedStateId={setSelectedFocusedStateId}
       setSelectedEventId={setSelectedFocusedEventId}
-      metricSeriesColumns={metricSeriesColumns}
-      stateColumns={stateColumns}
-      eventColumns={eventColumns}
+      metricSeriesColumns={metricSeriesColumns(t())}
+      stateColumns={stateColumns(t())}
+      eventColumns={eventColumns(t())}
       renderMetricSeriesCell={renderMetricSeriesCell}
       renderStateCell={renderStateCell}
       renderEventCell={renderEventCell}
@@ -923,12 +925,12 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       points={points}
       events={explorerEvents}
       states={explorerStates}
-      eventColumns={eventColumns}
-      stateColumns={stateColumns}
+      eventColumns={eventColumns(t())}
+      stateColumns={stateColumns(t())}
       renderEventCell={renderEventCell}
       renderStateCell={renderStateCell}
       queryWasRun={() => lastRunQuery() === currentExplorerQuery()}
-      previewTitle={() => compiledMetricQuery()?.metric ?? (selectedMetric() || "Query")}
+      previewTitle={() => compiledMetricQuery()?.metric ?? (selectedMetric() || t().query)}
       previewUnit={previewUnit}
       previewSeries={previewSeries}
       dateContext={pulseDateContext}
@@ -967,14 +969,14 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         layout={explorerPanesLayout()}
         onLayoutChange={updateExplorerPanesLayout}
         class="h-full min-h-0 w-full"
-        ariaLabel="Query explorer panes"
+        ariaLabel={t().queryExplorerPanes}
         items={[
-          { id: "result", title: "Result", icon: "ti ti-chart-line", render: renderExplorerResultPane },
-          { id: "editor", title: "Query", icon: "ti ti-code", render: renderQueryEditorPane },
-          { id: "browse", title: "Browse", icon: "ti ti-list-search", render: renderBrowseExplorerPane },
+          { id: "result", title: t().result, icon: "ti ti-chart-line", render: renderExplorerResultPane },
+          { id: "editor", title: t().query, icon: "ti ti-code", render: renderQueryEditorPane },
+          { id: "browse", title: t().browse, icon: "ti ti-list-search", render: renderBrowseExplorerPane },
           {
             id: "saved",
-            title: "Saved",
+            title: t().saved,
             icon: "ti ti-device-floppy",
             render: () => (
               <SavedQueriesPane
@@ -989,7 +991,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
           },
           {
             id: "history",
-            title: "History",
+            title: t().history,
             icon: "ti ti-history",
             render: () => <QueryHistoryPane history={queryHistory} dateContext={pulseDateContext} onSelect={setQueryText} />,
           },
@@ -1009,9 +1011,9 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       eventGroups={eventGroups}
       stateGroups={stateGroups}
       metrics={activityMetrics}
-      eventColumns={eventGroupColumns}
-      stateColumns={stateGroupColumns}
-      metricColumns={metricColumns}
+      eventColumns={eventGroupColumns(t())}
+      stateColumns={stateGroupColumns(t())}
+      metricColumns={metricColumns(t())}
       metricScopeByName={metricScopeByName}
       sourceNameById={sourceNameById}
       dateContext={pulseDateContext}
@@ -1095,7 +1097,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   return (
     <AppWorkspace class={`${activeView() === "explorer" ? "min-h-0" : "min-h-[760px]"}`}>
       <PulseSidebar
-        title={selectedBase()?.name ?? "Pulse"}
+        title={selectedBase()?.name ?? t().appName}
         activeView={activeView()}
         dashboards={dashboards()}
         resourceCount={inventory().resources.length}
@@ -1122,7 +1124,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         >
           <Show when={activeReadError()}>
             {(error) => (
-              <NoticeCard tone="danger" title="Pulse data could not be refreshed" detail={error().message}>
+              <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
                 <Button variant="secondary" size="sm" onClick={() => void retryActiveRead()}>
                   Retry
                 </Button>

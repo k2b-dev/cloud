@@ -1,17 +1,20 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, dialogCore, panelDialogWideOptions, prompts } from "@k2b/ui";
+import { Button, CopyButton, dialogCore, panelDialogWideOptions, prompts, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { CreateOAuthClient, OAuthClientWithSecret } from "@/contracts";
 import OAuthClientDialog from "./OAuthClientDialog";
+import { oauthMessages } from "../messages";
 
 const CreateClientButton = () => {
+  const locale = useLocale();
+  const t = () => oauthMessages.resolve([locale()]).t;
   const mutation = mutations.create<OAuthClientWithSecret, CreateOAuthClient>({
     mutation: async (data) => {
       const res = await apiClient.index.$post({ json: data });
       const result = await res.json();
       if (!res.ok) {
-        throw new Error((result as { message?: string }).message ?? "Failed to create client.");
+        throw new Error(t().failedCreate);
       }
       return result as OAuthClientWithSecret;
     },
@@ -19,7 +22,7 @@ const CreateClientButton = () => {
       await prompts.alert(
         <div class="space-y-4">
           <div>
-            <div class="text-xs text-dimmed mb-1">Client ID</div>
+            <div class="text-xs text-dimmed mb-1">{t().clientId}</div>
             <div class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded px-3 py-2">
               <code class="text-sm flex-1 break-all">{data.clientId}</code>
               <CopyButton text={data.clientId} />
@@ -27,20 +30,20 @@ const CreateClientButton = () => {
           </div>
           {data.clientSecret && (
             <div>
-              <div class="text-xs text-dimmed mb-1">Client Secret</div>
+              <div class="text-xs text-dimmed mb-1">{t().clientSecret}</div>
               <div class="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded px-3 py-2">
                 <code class="text-sm flex-1 break-all">{data.clientSecret}</code>
                 <CopyButton text={data.clientSecret} />
               </div>
               <div class="text-xs text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
                 <i class="ti ti-alert-triangle" />
-                Save this secret now - it won't be shown again!
+                {t().saveSecretNow}
               </div>
             </div>
           )}
-          {!data.clientSecret && <div class="text-xs text-dimmed">This is a public client (no secret required).</div>}
+          {!data.clientSecret && <div class="text-xs text-dimmed">{t().publicNoSecret}</div>}
         </div>,
-        { title: "Client Created", icon: "ti ti-check" },
+        { title: t().clientCreated, icon: "ti ti-check" },
       );
       refreshCurrentPath();
     },
@@ -67,7 +70,7 @@ const CreateClientButton = () => {
   return (
     <Button type="button" size="sm" onClick={handleCreate}>
       <i class="ti ti-plus" />
-      New Client
+      {t().newClient}
     </Button>
   );
 };

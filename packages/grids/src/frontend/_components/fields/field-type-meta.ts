@@ -1,4 +1,5 @@
 import type { PublicField as Field } from "../../../api/public-dto";
+import { gridsFieldMessages } from "./messages";
 
 export const FIELD_CHOICE_GROUPS = [
   { value: "basic", label: "Basic" },
@@ -19,9 +20,20 @@ export const fieldTypeGroups = (type: string): readonly string[] => {
   return ["basic"];
 };
 
-export const fieldChoiceGroupsFor = (fields: readonly Pick<Field, "type">[], extra: readonly string[] = []) => {
+export const fieldChoiceGroupsFor = (fields: readonly Pick<Field, "type">[], extra: readonly string[] = [], locale = "en") => {
   const available = new Set([...fields.flatMap((field) => fieldTypeGroups(field.type)), ...extra]);
-  return FIELD_CHOICE_GROUPS.filter((group) => available.has(group.value));
+  const { t } = gridsFieldMessages.resolve([locale]);
+  const labels: Record<string, string> = {
+    basic: t.basicGroup,
+    relations: t.relationsGroup,
+    computed: t.computedGroup,
+    system: t.systemGroup,
+    files: t.filesGroup,
+  };
+  return FIELD_CHOICE_GROUPS.filter((group) => available.has(group.value)).map((group) => ({
+    ...group,
+    label: labels[group.value] ?? group.label,
+  }));
 };
 
 export const FIELD_TYPE_ICONS: Record<string, string> = {
@@ -74,14 +86,14 @@ export const FIELD_TYPE_LABELS: Record<string, string> = {
   updated_by: "Updated by",
 };
 
-export const fieldTypeLabel = (type: string): string => FIELD_TYPE_LABELS[type] ?? type;
+export const fieldTypeLabel = (type: string, locale = "en"): string => gridsFieldMessages.resolve([locale]).t.typeLabel({ type });
 
 export const fieldTypeIcon = (type: string, customIcon?: string | null): string => customIcon || FIELD_TYPE_ICONS[type] || "ti ti-columns";
 
-export const fieldOption = (field: Field, description = "Column") => ({
+export const fieldOption = (field: Field, description = "Column", locale = "en") => ({
   id: field.id,
   label: field.name,
-  description: `${description} · ${fieldTypeLabel(field.type)}`,
+  description: `${description} · ${fieldTypeLabel(field.type, locale)}`,
   icon: fieldTypeIcon(field.type, field.icon),
   groups: fieldTypeGroups(field.type),
 });

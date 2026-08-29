@@ -1,4 +1,5 @@
-import { Select } from "@k2b/ui";
+import { Select, useLocale } from "@k2b/ui";
+import { recordMessages } from "./messages";
 import { fetchRecordLookup } from "./record-lookup";
 
 type Props = {
@@ -17,13 +18,15 @@ type Props = {
 };
 
 export default function RecordPicker(props: Props) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const excludedIds = () => [...new Set([props.value(), ...(props.excludeIds?.() ?? [])].filter(Boolean))];
 
   return (
     <Select
       label={props.label}
       description={props.description}
-      placeholder={props.placeholder ?? "Search records..."}
+      placeholder={props.placeholder ?? t().searchRecords}
       icon="ti ti-database"
       activeIcon="ti ti-search"
       clearable={props.clearable ?? true}
@@ -39,6 +42,7 @@ export default function RecordPicker(props: Props) {
           excludeIds: excludedIds(),
           includeDeleted: props.includeDeleted,
           signal,
+          locale: locale(),
         });
         return items.map((item) => ({ id: item.id, label: item.label, icon: "ti ti-database" }));
       }}

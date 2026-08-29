@@ -22,6 +22,7 @@ import {
   type ReferenceScopeChip,
   type ReferenceStateRow,
 } from "./query-reference-inventory";
+import { usePulseMessages } from "./use-messages";
 
 type Props = {
   metrics: PulseMetricSummary[];
@@ -69,6 +70,7 @@ const ScopeChipRow = (props: {
 );
 
 export function PulseQueryReferenceInventory(props: Props) {
+  const t = usePulseMessages();
   const [metricQuery, setMetricQuery] = createSignal("");
   const [eventQuery, setEventQuery] = createSignal("");
   const [stateQuery, setStateQuery] = createSignal("");
@@ -112,11 +114,11 @@ export function PulseQueryReferenceInventory(props: Props) {
   });
 
   const metricColumns: DataTableColumn<ReferenceMetricRow>[] = [
-    { id: "name", header: "Metric", value: "name" },
-    { id: "type", header: "Type", value: "type", headerClass: "w-28", cellClass: "w-28 whitespace-nowrap" },
+    { id: "name", header: t().metric, value: "name" },
+    { id: "type", header: t().type, value: "type", headerClass: "w-28", cellClass: "w-28 whitespace-nowrap" },
     {
       id: "series",
-      header: "Series",
+      header: t().series,
       value: (row) => (selectedSourceId() || selectedEntityId() ? row.visibleSeriesCount : row.seriesCount),
       headerClass: "w-24",
       cellClass: "w-24 whitespace-nowrap",
@@ -125,8 +127,8 @@ export function PulseQueryReferenceInventory(props: Props) {
   ];
 
   const eventColumns: DataTableColumn<ReferenceEventRow>[] = [
-    { id: "kind", header: "Event", value: "kind" },
-    { id: "count", header: "Recent", value: "count", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
+    { id: "kind", header: t().event, value: "kind" },
+    { id: "count", header: t().recent, value: "count", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
     {
       id: "copy",
       header: "",
@@ -137,8 +139,8 @@ export function PulseQueryReferenceInventory(props: Props) {
   ];
 
   const stateColumns: DataTableColumn<ReferenceStateRow>[] = [
-    { id: "key", header: "State", value: "key" },
-    { id: "count", header: "Entities", value: "count", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
+    { id: "key", header: t().state, value: "key" },
+    { id: "count", header: t().entities, value: "count", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
     {
       id: "copy",
       header: "",
@@ -149,21 +151,21 @@ export function PulseQueryReferenceInventory(props: Props) {
   ];
 
   const fieldColumns: DataTableColumn<PulseSignalField>[] = [
-    { id: "scope", header: "Scope", value: "scope", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
-    { id: "signal", header: "Signal", value: "signalName" },
-    { id: "role", header: "Role", value: "role", headerClass: "w-28", cellClass: "w-28 whitespace-nowrap" },
-    { id: "field", header: "Field", value: "key" },
-    { id: "type", header: "Type", value: "valueType", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
+    { id: "scope", header: t().scope, value: "scope", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
+    { id: "signal", header: t().signal, value: "signalName" },
+    { id: "role", header: t().role, value: "role", headerClass: "w-28", cellClass: "w-28 whitespace-nowrap" },
+    { id: "field", header: t().field, value: "key" },
+    { id: "type", header: t().type, value: "valueType", headerClass: "w-24", cellClass: "w-24 whitespace-nowrap" },
     {
       id: "source",
-      header: "Source",
+      header: t().source,
       value: (row) => sourcesById().get(row.sourceId)?.name ?? row.sourceId.slice(0, 8),
       headerClass: "w-36",
       cellClass: "w-36 whitespace-nowrap",
     },
     {
       id: "observed",
-      header: "Observed",
+      header: t().observed,
       value: "observedCount",
       headerClass: "w-28",
       cellClass: "w-28 whitespace-nowrap",
@@ -174,24 +176,21 @@ export function PulseQueryReferenceInventory(props: Props) {
     <>
       <section class="paper flex flex-col gap-4 p-4">
         <div>
-          <h2 class="text-base font-semibold text-primary">Inventory</h2>
-          <p class="text-sm text-dimmed">
-            Filter this base by source or entity, then copy scoped snippets into the explorer or Dashboard DSL. Inventory is generated from
-            observed data, so empty sections usually mean the source has not published that kind of signal yet.
-          </p>
+          <h2 class="text-base font-semibold text-primary">{t().inventory}</h2>
+          <p class="text-sm text-dimmed">{t().inventoryDescription}</p>
         </div>
       </section>
       <section class="paper flex flex-col gap-4 p-4">
         <ScopeChipRow
-          label="Sources"
-          allLabel="All sources"
+          label={t().sources}
+          allLabel={t().allSources}
           selected={selectedSourceId()}
           items={sourceChips()}
           onSelect={setSelectedSourceId}
         />
         <ScopeChipRow
-          label="Entities"
-          allLabel="All entities"
+          label={t().entities}
+          allLabel={t().allEntities}
           selected={selectedEntityId()}
           items={entityChips()}
           onSelect={setSelectedEntityId}
@@ -202,10 +201,10 @@ export function PulseQueryReferenceInventory(props: Props) {
         <section class="flex min-h-0 flex-col gap-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-chart-dots" /> Metrics <span class="text-dimmed">{metricRows().length}</span>
+              <i class="ti ti-chart-dots" /> {t().metrics} <span class="text-dimmed">{metricRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={metricQuery} onValueChange={setMetricQuery} icon="ti ti-search" placeholder="Search metrics..." clearable />
+              <TextInput value={metricQuery} onValueChange={setMetricQuery} icon="ti ti-search" placeholder={t().searchMetricsPlaceholder} clearable />
             </div>
           </div>
           <DataTable
@@ -213,7 +212,7 @@ export function PulseQueryReferenceInventory(props: Props) {
             columns={metricColumns}
             getRowId={(row) => row.name}
             class="paper max-h-[420px] min-h-64 overflow-auto"
-            empty="No matching metrics"
+            empty={t().noMatchingMetrics}
             renderCell={({ row, col, value }) => {
               if (col.id === "name") return <code class="font-mono text-secondary">{row.name}</code>;
               if (col.id === "copy") return copyCell(String(value));
@@ -225,10 +224,10 @@ export function PulseQueryReferenceInventory(props: Props) {
         <section class="flex min-h-0 flex-col gap-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-bolt" /> Events <span class="text-dimmed">{eventRows().length}</span>
+              <i class="ti ti-bolt" /> {t().events} <span class="text-dimmed">{eventRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={eventQuery} onValueChange={setEventQuery} icon="ti ti-search" placeholder="Search events..." clearable />
+              <TextInput value={eventQuery} onValueChange={setEventQuery} icon="ti ti-search" placeholder={t().searchEventsPlaceholder} clearable />
             </div>
           </div>
           <DataTable
@@ -236,7 +235,7 @@ export function PulseQueryReferenceInventory(props: Props) {
             columns={eventColumns}
             getRowId={(row) => row.kind}
             class="paper max-h-[420px] min-h-64 overflow-auto"
-            empty="No matching events"
+            empty={t().noMatchingEvents}
             renderCell={({ row, col, value }) => {
               if (col.id === "kind") return <code class="font-mono text-secondary">{row.kind}</code>;
               if (col.id === "copy") return copyCell(String(value));
@@ -248,10 +247,10 @@ export function PulseQueryReferenceInventory(props: Props) {
         <section class="flex min-h-0 flex-col gap-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-toggle-right" /> States <span class="text-dimmed">{stateRows().length}</span>
+              <i class="ti ti-toggle-right" /> {t().states} <span class="text-dimmed">{stateRows().length}</span>
             </h2>
             <div class="w-full sm:w-64">
-              <TextInput value={stateQuery} onValueChange={setStateQuery} icon="ti ti-search" placeholder="Search states..." clearable />
+              <TextInput value={stateQuery} onValueChange={setStateQuery} icon="ti ti-search" placeholder={t().searchStatesPlaceholder} clearable />
             </div>
           </div>
           <DataTable
@@ -259,7 +258,7 @@ export function PulseQueryReferenceInventory(props: Props) {
             columns={stateColumns}
             getRowId={(row) => row.key}
             class="paper max-h-[420px] min-h-64 overflow-auto"
-            empty="No matching states"
+            empty={t().noMatchingStates}
             renderCell={({ row, col, value }) => {
               if (col.id === "key") return <code class="font-mono text-secondary">{row.key}</code>;
               if (col.id === "copy") return copyCell(String(value));
@@ -273,14 +272,14 @@ export function PulseQueryReferenceInventory(props: Props) {
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 class="flex items-center gap-2 text-sm font-semibold text-secondary">
-              <i class="ti ti-list-details" /> Fields <span class="text-dimmed">{fieldRows().length}</span>
+              <i class="ti ti-list-details" /> {t().fields} <span class="text-dimmed">{fieldRows().length}</span>
             </h2>
             <p class="mt-1 text-xs text-dimmed">
-              Dimensions are query filters and groups. Attributes retain high-cardinality event context.
+              {t().fieldsDescription}
             </p>
           </div>
           <div class="w-full sm:w-72">
-            <TextInput value={fieldQuery} onValueChange={setFieldQuery} icon="ti ti-search" placeholder="Search fields..." clearable />
+            <TextInput value={fieldQuery} onValueChange={setFieldQuery} icon="ti ti-search" placeholder={t().searchFieldsPlaceholder} clearable />
           </div>
         </div>
         <DataTable
@@ -288,7 +287,7 @@ export function PulseQueryReferenceInventory(props: Props) {
           columns={fieldColumns}
           getRowId={(row) => `${row.sourceId}:${row.scope}:${row.signalName}:${row.role}:${row.key}`}
           class="paper max-h-[420px] min-h-64 overflow-auto"
-          empty="No matching fields"
+          empty={t().noMatchingFields}
           renderCell={({ col, value }) => {
             if (col.id === "signal" || col.id === "field") return <code class="font-mono text-secondary">{String(value)}</code>;
             return <span class="text-dimmed">{String(value ?? "-")}</span>;

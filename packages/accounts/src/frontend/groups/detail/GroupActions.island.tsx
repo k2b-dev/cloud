@@ -1,8 +1,9 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, CopyButton, Dropdown, IconButton, prompts, Tooltip } from "@k2b/ui";
+import { Button, CopyButton, Dropdown, NoticeCard, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
+import { useAccountsMessages } from "../../messages";
 
 type GroupActionsProps = {
   id: string;
@@ -15,21 +16,22 @@ type GroupActionsProps = {
 
 /** Per-group action dropdown menu. */
 export default function GroupActions(props: GroupActionsProps) {
+  const messages = useAccountsMessages();
   const deleteMutation = mutations.create<void, string>({
     mutation: async (id) => {
       const res = await apiClient.groups[":id"].$delete({ param: { id } });
       if (!res.ok) {
         const data = ErrorResponseSchema.safeParse(await res.json());
-        throw new Error(data.success ? data.data.message : "Failed to delete group.");
+        throw new Error(data.success ? data.data.message : messages().deleteGroupFailed);
       }
     },
     onSuccess: async () => {
       const g = props.name;
-      const providerLabel = props.provider === "ipa" ? "FreeIPA" : "Local";
+      const providerLabel = props.provider === "ipa" ? "FreeIPA" : messages().local;
 
       if (!props.isPosix) {
-        await prompts.alert(`Group "${g}" deleted from ${providerLabel}.`, {
-          title: "Group Deleted",
+        await prompts.alert(messages().groupDeletedFrom({ name: g, provider: providerLabel }), {
+          title: messages().groupDeleted,
           icon: "ti ti-check",
         });
         navigateTo(props.listHref);
@@ -42,13 +44,13 @@ export default function GroupActions(props: GroupActionsProps) {
         (close) => (
           <div class="flex flex-col gap-4">
             <NoticeCard tone="success" icon={false}>
-              Group <code class="font-mono font-semibold">{g}</code> deleted from {providerLabel}.
+              {messages().groupDeletedFrom({ name: g, provider: providerLabel })}
             </NoticeCard>
 
             <div class="flex flex-col gap-1">
               <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">Delete / archive files:</span>
-                <CopyButton text={deleteCmd} label="Copy" />
+                <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{messages().deleteOrArchiveFiles}</span>
+                <CopyButton text={deleteCmd} label={messages().copy} />
               </div>
               <pre class="rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-mono text-zinc-700 dark:text-zinc-300 overflow-x-auto whitespace-pre">
                 {deleteCmd}
@@ -63,12 +65,12 @@ export default function GroupActions(props: GroupActionsProps) {
                   navigateTo(props.listHref);
                 }}
               >
-                Done
+                {messages().done}
               </Button>
             </div>
           </div>
         ),
-        { title: "Group Deleted", icon: "ti ti-check" },
+        { title: messages().groupDeleted, icon: "ti ti-check" },
       );
     },
     onError: (err) => {
@@ -84,7 +86,7 @@ export default function GroupActions(props: GroupActionsProps) {
       });
       if (!res.ok) {
         const data = ErrorResponseSchema.safeParse(await res.json());
-        throw new Error(data.success ? data.data.message : "Failed to update group.");
+        throw new Error(data.success ? data.data.message : messages().updateGroupFailed);
       }
     },
     onSuccess: () => refreshCurrentPath(),
@@ -93,14 +95,14 @@ export default function GroupActions(props: GroupActionsProps) {
 
   const handleEdit = async () => {
     const result = await prompts.form({
-      title: "Edit Group",
+      title: messages().editGroup,
       icon: "ti ti-pencil",
-      confirmText: "Save",
+      confirmText: messages().save,
       fields: {
         description: {
           type: "text" as const,
-          label: "Description",
-          placeholder: "Group description...",
+          label: messages().description,
+          placeholder: messages().groupDescriptionPlaceholder,
           multiline: true,
           default: props.description ?? "",
         },
@@ -112,30 +114,27 @@ export default function GroupActions(props: GroupActionsProps) {
   };
 
   const handleMakePosix = async () => {
-    const confirmed = await prompts.confirm(
-      `Convert "${props.name}" to a POSIX group? This assigns a stable GID for filesystem integrations and cannot be undone.`,
-      {
-        title: "Make POSIX",
-        icon: "ti ti-transform",
-        confirmText: "Convert",
-        cancelText: "Cancel",
-      },
-    );
+    const confirmed = await prompts.confirm(messages().posixConfirm({ name: props.name }), {
+      title: messages().makePosix,
+      icon: "ti ti-transform",
+      confirmText: messages().convert,
+      cancelText: messages().cancel,
+    });
     if (confirmed) {
       const res = await apiClient.groups[":id"].posix.$put({
         param: { id: props.id },
       });
       if (res.ok) refreshCurrentPath();
-      else prompts.error("Failed to convert group to POSIX.");
+      else prompts.error(messages().posixFailed);
     }
   };
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm(`Are you sure you want to delete the group "${props.name}"? This action cannot be undone.`, {
-      title: "Delete Group",
+    const confirmed = await prompts.confirm(messages().deleteGroupConfirm({ name: props.name }), {
+      title: messages().deleteGroup,
       icon: "ti ti-trash",
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      confirmText: messages().delete,
+      cancelText: messages().cancel,
       variant: "danger",
     });
 
@@ -155,19 +154,19 @@ export default function GroupActions(props: GroupActionsProps) {
               ? [
                   {
                     icon: "ti ti-transform",
-                    label: "Make POSIX",
+                    label: messages().makePosix,
                     action: handleMakePosix,
                   },
                 ]
               : []),
             {
               icon: "ti ti-pencil",
-              label: "Edit",
+              label: messages().edit,
               action: handleEdit,
             },
             {
               icon: "ti ti-trash",
-              label: "Delete",
+              label: messages().delete,
               action: handleDelete,
               variant: "danger" as const,
             },
@@ -175,7 +174,7 @@ export default function GroupActions(props: GroupActionsProps) {
         },
       ]}
     >
-      <Dropdown.Trigger iconOnly size="sm" label="Group actions" tooltip="Manage group">
+      <Dropdown.Trigger iconOnly size="sm" label={messages().groupActions} tooltip={messages().manageGroup}>
         <i class="ti ti-dots-vertical text-sm" />
       </Dropdown.Trigger>
     </Dropdown.Root>

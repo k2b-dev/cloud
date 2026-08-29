@@ -73,11 +73,15 @@ export const sameVenueDashboardSource = (left: VenueDashboardSource, right: Venu
   left.query.feedbackDays === right.query.feedbackDays &&
   left.query.feedbackSearch === right.query.feedbackSearch;
 
-export const loadVenueDashboard = async (source: VenueDashboardSource, abortSignal: AbortSignal): Promise<VenueDashboard> => {
+export const loadVenueDashboard = async (
+  source: VenueDashboardSource,
+  abortSignal: AbortSignal,
+  errorMessage = "Failed to refresh venue.",
+): Promise<VenueDashboard> => {
   const response = await apiClient.venues[":id"].dashboard.$get(
     { param: { id: source.venueId }, query: source.query },
     { init: { signal: abortSignal } },
   );
-  if (!response.ok) throw new Error("Failed to refresh venue.");
+  if (!response.ok) throw new Error(errorMessage);
   return await response.json();
 };

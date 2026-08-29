@@ -1,10 +1,13 @@
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, TextInput } from "@k2b/ui";
+import { NoticeCard, Button, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
+import { authMessages } from "./messages";
 
 export default function LoginForm(props: { redirectTo?: string; showBanner?: boolean; defaultUsername?: string; appName?: string }) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [username, setUsername] = createSignal(props.defaultUsername ?? "");
   const [password, setPassword] = createSignal("");
 
@@ -23,9 +26,9 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
           const params = new URLSearchParams({ "ipa-uid": data.ipaUid ?? username() });
           if (props.redirectTo) params.set("redirectTo", props.redirectTo);
           window.location.href = `/auth/new-password?${params.toString()}`;
-          throw new Error("Password expired — redirecting...");
+          throw new Error(t().passwordExpiredRedirect);
         }
-        throw new Error(data?.message ?? `Login failed (${res.status})`);
+        throw new Error(data?.message ?? t().loginFailed({ status: res.status }));
       }
     },
     onSuccess: () => {
@@ -50,14 +53,14 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
     >
       {props.showBanner && (
         <NoticeCard tone="info" icon={false}>
-          Use your FreeIPA username and password to sign in to {props.appName || "the app"}.
+          {t().freeIpaBanner({ appName: props.appName || t().thisApp })}
         </NoticeCard>
       )}
 
       <TextInput
-        label="Username or email"
-        description="Use your FreeIPA short name or the email address on your account."
-        placeholder="e.g. eva or eva@example.org"
+        label={t().usernameOrEmail}
+        description={t().usernameDescription}
+        placeholder={t().usernamePlaceholder}
         icon="ti ti-user"
         value={username}
         onValueChange={setUsername}
@@ -65,9 +68,9 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
       />
       <div class="flex flex-col gap-1">
         <TextInput
-          label="Password"
-          description="Use the password for your organization account."
-          placeholder="FreeIPA password"
+          label={t().password}
+          description={t().passwordDescription}
+          placeholder={t().freeIpaPassword}
           icon="ti ti-lock"
           password
           value={password}
@@ -75,7 +78,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
           autocomplete="current-password"
         />
         <a href={resetPasswordHref()} class="self-start text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline">
-          Reset password
+          {t().resetPassword}
         </a>
       </div>
 
@@ -85,9 +88,9 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel="Signing in">
+      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().signingIn}>
         {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-login-2" />}
-        Sign in with FreeIPA
+        {t().signInWithFreeIpa}
       </Button>
     </form>
   );

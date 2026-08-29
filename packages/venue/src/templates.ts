@@ -1,4 +1,5 @@
 import type { OpeningRuleInput, PublicSectionInput, ShiftTemplateInput, VenueInput, VenueTemplateSummary } from "./contracts";
+import { venueMessages } from "./messages";
 
 type VenueTemplate = VenueTemplateSummary & {
   venue: VenueInput;
@@ -181,4 +182,61 @@ export const templates: VenueTemplate[] = [
   },
 ];
 
-export const getVenueTemplate = (id: string): VenueTemplate | null => templates.find((template) => template.id === id) ?? null;
+const localizedTemplate = (template: VenueTemplate, locale?: string): VenueTemplate => {
+  const { t } = venueMessages.resolve(locale ? [locale] : []);
+  if (template.id === "service-desk") {
+    return {
+      ...template,
+      name: t.templateServiceDesk,
+      description: t.templateServiceDeskDescription,
+      venue: { ...template.venue, name: t.templateServiceDesk, description: t.templateServiceDeskVenueDescription },
+      shifts: template.shifts.map((shift, index) => ({
+        ...shift,
+        title: index % 2 === 0 ? t.templateMorningDesk : t.templateAfternoonDesk,
+      })),
+      sections: template.sections.map((section, index) => ({
+        ...section,
+        title: index === 0 ? t.templateBeforeVisit : t.templateClosures,
+        content: {
+          markdown: index === 0 ? t.templateBeforeVisitText : t.templateClosuresText,
+          text: index === 0 ? t.templateBeforeVisitText : t.templateClosuresText,
+        },
+      })),
+    };
+  }
+  return {
+    ...template,
+    name: t.templateCafe,
+    description: t.templateCafeDescription,
+    venue: { ...template.venue, name: t.templateCafe, description: t.templateCafeVenueDescription },
+    shifts: template.shifts.map((shift, index) => ({ ...shift, title: index < 5 ? t.templateLunchCounter : t.templateAfternoonCounter })),
+    sections: template.sections.map((section) => ({
+      ...section,
+      title: t.menu,
+      content: {
+        ...section.content,
+        items: Array.isArray(section.content.items)
+          ? section.content.items.map((raw, index) => ({
+              ...(raw as Record<string, unknown>),
+              ...(index === 0
+                ? { name: t.templateAvocadoToast, description: t.templateAvocadoToastDescription, info: t.containsGluten }
+                : {}),
+              ...(index === 1 ? { description: t.templateEspressoDescription, info: t.caffeine } : {}),
+              ...(index === 2 ? { description: t.templateCappuccinoDescription, info: t.containsMilk } : {}),
+            }))
+          : [],
+      },
+    })),
+  };
+};
+
+export const getVenueTemplate = (id: string, locale?: string): VenueTemplate | null => {
+  const template = templates.find((entry) => entry.id === id);
+  return template ? localizedTemplate(template, locale) : null;
+};
+
+export const listVenueTemplates = (locale?: string): VenueTemplateSummary[] =>
+  templates.map((template) => {
+    const localized = localizedTemplate(template, locale);
+    return { id: localized.id, name: localized.name, description: localized.description, icon: localized.icon };
+  });

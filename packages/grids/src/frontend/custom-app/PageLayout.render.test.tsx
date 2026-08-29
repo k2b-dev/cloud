@@ -5,6 +5,7 @@ import type { CustomAppDefinition } from "../../custom-apps/contracts";
 import "../_components/ssr-test-plugin";
 
 const { CustomAppPageLayout } = await import("./PageLayout");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const definition: CustomAppDefinition = {
   schemaVersion: 5,
@@ -126,5 +127,26 @@ describe("CustomAppPageLayout", () => {
 
     expect(html).toContain("k2b-app-workspace__sidebar");
     expect(html).toContain("New loan");
+  });
+
+  test("inherits the regional German locale without locale props", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(CustomAppPageLayout, {
+            definition,
+            page: definition.pages[0]!,
+            appId: "APP001",
+            hasSidebarActions: true,
+            sidebarActions: "New loan",
+            renderBlock: () => "Rendered content",
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain(">Aktionen<");
+    expect(html).toContain(">Seiten<");
   });
 });

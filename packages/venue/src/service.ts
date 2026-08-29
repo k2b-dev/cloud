@@ -44,10 +44,11 @@ import type {
   VenueTemplateSummary,
 } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
+import { venueMessages } from "./messages";
 import { filterPublicMenuSections } from "./public-menu";
 import * as publicProjection from "./service/public-projection";
 import { resolvePublicId, resolveVenuePublicId } from "./service/public-resources";
-import { getVenueTemplate, templates as venueTemplates } from "./templates";
+import { getVenueTemplate, listVenueTemplates as localizedVenueTemplates } from "./templates";
 
 const log = logger("venue:service");
 const VENUE_APP_ID = "venue";
@@ -610,21 +611,20 @@ const createVenue = async (input: VenueInput, user: UserLike): Promise<Result<Ve
   return sql.begin((tx) => createVenueInTx(tx, input, user));
 };
 
-const listVenueTemplates = (): VenueTemplateSummary[] =>
-  venueTemplates.map((template) => ({
-    id: template.id,
-    name: template.name,
-    description: template.description,
-    icon: template.icon,
-  }));
+const listVenueTemplates = (locale?: string): VenueTemplateSummary[] => localizedVenueTemplates(locale);
 
 const requireTemplateResult = <T>(result: Result<T>): T => {
   if (!result.ok) throw new TemplateError(result.error);
   return result.data;
 };
 
-const instantiateVenueTemplate = async (templateId: string, input: VenueTemplateCreateInput, user: UserLike): Promise<Result<Venue>> => {
-  const template = getVenueTemplate(templateId);
+const instantiateVenueTemplate = async (
+  templateId: string,
+  input: VenueTemplateCreateInput,
+  user: UserLike,
+  locale?: string,
+): Promise<Result<Venue>> => {
+  const template = getVenueTemplate(templateId, locale);
   if (!template) return fail(err.notFound("Template"));
 
   const name = input.name?.trim() || template.venue.name;
@@ -1360,7 +1360,8 @@ const feedbackSummary = async (
   };
 };
 
-const statusForVenue = async (venue: Venue, now = new Date(), includeSections = true): Promise<PublicStatus> => {
+const statusForVenue = async (venue: Venue, now = new Date(), includeSections = true, locale?: string): Promise<PublicStatus> => {
+  const { t } = venueMessages.resolve(locale ? [locale] : []);
   const days = 14;
   const startDate = localDateKey(now, venue.timezone);
   const endDate = dateKeyAfterDays(startDate, days, venue.timezone);
@@ -1372,20 +1373,20 @@ const statusForVenue = async (venue: Venue, now = new Date(), includeSections = 
     assignmentSummariesForRange(venue.id, new Date(now.getTime() - 1), rangeEnd),
     includeSections ? listSections(venue.id, true) : Promise.resolve([]),
   ]);
-  const availability = buildPublicAvailability({ venue, openingRules, overrides, templates, assignments, now, days });
+  const availability = buildPublicAvailability({ venue, openingRules, overrides, templates, assignments, now, days, locale });
 
   return {
     venue,
     ...availability,
-    statusLabel: availability.open ? "Open now" : "Closed now",
+    statusLabel: availability.open ? t.openNow : t.closedNow,
     openingRules,
     sections: filterPublicMenuSections(sections, startDate),
   };
 };
 
-const publicStatus = async (shortId: string, now = new Date()): Promise<PublicStatus | null> => {
+const publicStatus = async (shortId: string, now = new Date(), locale?: string): Promise<PublicStatus | null> => {
   const venue = await getVenueByShortId(shortId);
-  return venue?.publicEnabled ? statusForVenue(venue, now) : null;
+  return venue?.publicEnabled ? statusForVenue(venue, now, true, locale) : null;
 };
 
 export type VenueDashboardOptions = {

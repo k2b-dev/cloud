@@ -16,7 +16,7 @@ describe("App record details", () => {
     expect(source).toContain('actionVisibility="progressive"');
     expect(source).toContain("<IconButton");
     expect(source).toContain('fallback={<Placeholder align="left"');
-    expect(source).toContain('description="No generated documents yet."');
+    expect(source).toContain("description={messages().noDocuments}");
     expect(source).not.toContain('<ul class="flex flex-col gap-1">');
     expect(source).toContain("fetch(document.downloadUrl");
     expect(source).toContain("CustomAppDocument");

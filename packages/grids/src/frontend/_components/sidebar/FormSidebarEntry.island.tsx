@@ -1,9 +1,10 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, Button, prompts } from "@k2b/ui";
+import { AppWorkspace, Button, prompts, useLocale } from "@k2b/ui";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
 import { openFormEditorDialog } from "../forms/FormsManager";
 import { openFormModal } from "../records/FormSubmitModal";
+import { sidebarMessages } from "./messages";
 import SidebarTableMeta from "./SidebarTableMeta";
 
 type Props = {
@@ -17,22 +18,22 @@ type Props = {
   dateConfig?: DateContext;
 };
 
-const chooseEditModeAction = (formName: string) =>
+const chooseEditModeAction = (formName: string, t: ReturnType<typeof sidebarMessages.resolve>["t"]) =>
   prompts.dialog<"use" | "edit">(
     (close) => (
       <div class="flex flex-col gap-4">
-        <p class="text-sm text-dimmed">You are in edit mode. What do you want to do with "{formName}"?</p>
+        <p class="text-sm text-dimmed">{t.editModeQuestion({ name: formName })}</p>
         <div class="flex justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={() => close("use")}>
-            <i class="ti ti-send" /> Use form
+            <i class="ti ti-send" /> {t.useForm}
           </Button>
           <Button variant="primary" size="sm" type="button" onClick={() => close("edit")}>
-            <i class="ti ti-pencil" /> Edit form
+            <i class="ti ti-pencil" /> {t.editForm}
           </Button>
         </div>
       </div>
     ),
-    { title: "Form in edit mode", icon: "ti ti-forms", size: "small" },
+    { title: t.formInEditMode, icon: "ti ti-forms", size: "small" },
   );
 
 /**
@@ -45,6 +46,7 @@ const chooseEditModeAction = (formName: string) =>
  * payload minimal.
  */
 export default function FormSidebarEntry(props: Props) {
+  const { t } = sidebarMessages.resolve([useLocale()()]);
   const openSubmit = () =>
     openFormModal(props.form, props.fields, {
       onSubmitted: refreshCurrentPath,
@@ -61,11 +63,11 @@ export default function FormSidebarEntry(props: Props) {
 
   const handleClick = async () => {
     if (props.editMode) {
-      const action = await chooseEditModeAction(props.form.name);
+      const action = await chooseEditModeAction(props.form.name, t);
       if (action === "use") void openSubmit();
       if (action === "edit") {
         await openEditor().catch((error: unknown) => {
-          prompts.error(error instanceof Error ? error.message : "Could not open form editor");
+          prompts.error(error instanceof Error ? error.message : t.openFormEditorFailed);
         });
       }
       return;
@@ -77,7 +79,7 @@ export default function FormSidebarEntry(props: Props) {
     <AppWorkspace.SidebarItem
       class={props.editMode ? "text-secondary" : undefined}
       onClick={() => void handleClick()}
-      title={`${props.editMode ? "Edit" : "Submit"} ${props.form.name} (table: ${props.tableName})`}
+      title={t.formEntryTitle({ action: props.editMode ? t.edit : t.submit, name: props.form.name, table: props.tableName })}
     >
       <AppWorkspace.SidebarItemIcon icon="ti ti-forms" />
       <AppWorkspace.SidebarItemLabel>{props.form.name}</AppWorkspace.SidebarItemLabel>

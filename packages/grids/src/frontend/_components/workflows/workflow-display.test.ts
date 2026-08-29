@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   isTerminalWorkflowRunStatus,
+  workflowRunStatusLabel,
   workflowRunStatusTone,
   workflowStepErrorMessage,
   workflowStepIssueReason,
   workflowStepOutcomeSummary,
   workflowStepPlannedEffects,
+  workflowStepStatusLabel,
   workflowStepStatusTone,
 } from "./workflow-display";
 
@@ -20,6 +22,12 @@ describe("status badges", () => {
     expect(workflowStepStatusTone("failed")).toBe("error");
     expect(workflowStepStatusTone("unsupported")).toBe("error");
     expect(workflowRunStatusTone("succeeded")).toBe("ok");
+  });
+
+  test("localizes known states for regional German locales and preserves unknown state codes", () => {
+    expect(workflowRunStatusLabel("needs_attention", "de-CH")).toBe("Prüfung erforderlich");
+    expect(workflowStepStatusLabel("completed", "de-CH")).toBe("Abgeschlossen");
+    expect(workflowRunStatusLabel("future_state", "de-CH")).toBe("future_state");
   });
 });
 

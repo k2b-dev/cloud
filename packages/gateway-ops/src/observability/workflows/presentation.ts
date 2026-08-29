@@ -63,12 +63,12 @@ export const runErrorSummary = (error: unknown): { message: string; code: string
   return { message: message ?? code ?? "Workflow failed", code, retryable };
 };
 
-export const stepDetail = (step: WorkflowStepSummary): string => {
+export const stepDetail = (step: WorkflowStepSummary, waitingOn = "Waiting on"): string => {
   const dependency = readRecord(step.dependency);
   if (dependency) {
     const kind = readString(dependency, "kind") ?? "dependency";
     const key = readString(dependency, "key");
-    return key ? `Waiting on ${kind}: ${key}` : `Waiting on ${kind}`;
+    return key ? `${waitingOn} ${kind}: ${key}` : `${waitingOn} ${kind}`;
   }
 
   const outcome = readRecord(step.outcome);

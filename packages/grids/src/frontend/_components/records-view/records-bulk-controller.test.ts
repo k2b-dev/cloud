@@ -81,5 +81,10 @@ describe("Close selection preview", () => {
       policyRevision: null,
       blockers: [{ recordId: "recA", reason: "Finalization is not enabled for this Table." }],
     });
+    expect(await inspectCloseSelection("Tbl001", ["recA"], undefined, "de-CH")).toEqual({
+      mode: null,
+      policyRevision: null,
+      blockers: [{ recordId: "recA", reason: "Die Finalisierung ist für diese Tabelle nicht aktiviert." }],
+    });
   });
 });

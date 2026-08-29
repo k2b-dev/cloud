@@ -1,8 +1,9 @@
-import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, prompts, TextInput } from "@k2b/ui";
+import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { ColumnSpec } from "../../../contracts";
 import { FormulaExpressionEditor } from "../fields/FormulaExpressionEditor";
+import { recordsViewMessages } from "./messages";
 
 type ComputedColumn = Extract<ColumnSpec, { kind: "computed" }>;
 
@@ -24,17 +25,19 @@ export const openComputedColumnDialog = (args: {
   column?: ComputedColumn;
 }) =>
   dialogCore.open<ComputedColumnDialogResult | null>((close) => {
+    const locale = useLocale();
+    const t = () => recordsViewMessages.resolve([locale()]).t;
     const [label, setLabel] = createSignal(args.column?.label ?? "");
     const [expression, setExpression] = createSignal(args.column?.expression ?? "");
     const save = () => {
       const nextLabel = label().trim();
       const nextExpression = expression().trim();
       if (!nextLabel) {
-        prompts.error("Name is required");
+        prompts.error(t().nameRequired);
         return;
       }
       if (!nextExpression) {
-        prompts.error("Expression is required");
+        prompts.error(t().expressionRequired);
         return;
       }
       close({
@@ -51,22 +54,18 @@ export const openComputedColumnDialog = (args: {
     return (
       <PanelDialog>
         <PanelDialog.Header
-          title={args.column ? "Edit computed column" : "Computed column"}
+          title={args.column ? t().editComputedColumn : t().computedColumn}
           icon="ti ti-calculator"
           close={() => close(null)}
         />
         <PanelDialog.Body>
-          <NoticeCard
-            tone="info"
-            title="Show a value calculated for this view"
-            detail="The value updates automatically from the current record. This column appears only in this view and does not change the original record."
-          />
+          <NoticeCard tone="info" title={t().computedTitle} detail={t().computedDetail} />
           <TextInput
-            label="Name"
+            label={t().name}
             value={label}
             onValueChange={setLabel}
             icon="ti ti-typography"
-            placeholder="e.g. Total with VAT"
+            placeholder={t().computedExample}
             required
           />
           <FormulaExpressionEditor
@@ -76,21 +75,21 @@ export const openComputedColumnDialog = (args: {
             currentTableId={args.currentTableId}
             baseId={args.baseId}
             tableId={args.tableId}
-            ariaLabel="Computed column expression"
+            ariaLabel={t().computedExpression}
           />
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <Show when={args.column} fallback={<span />}>
             <Button variant="danger" size="sm" type="button" onClick={() => close({ action: "delete" })}>
-              <i class="ti ti-trash" /> Delete column
+              <i class="ti ti-trash" /> {t().deleteColumn}
             </Button>
           </Show>
           <div class="flex items-center gap-2">
             <Button variant="ghost" size="sm" type="button" onClick={() => close(null)}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="button" onClick={save}>
-              Save
+              {t().save}
             </Button>
           </div>
         </PanelDialog.Footer>

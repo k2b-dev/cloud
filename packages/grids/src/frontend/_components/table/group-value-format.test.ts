@@ -49,6 +49,8 @@ describe("group value formatting", () => {
     expect(formatAggregationValue({ value: 12.345, spec })).toBe("12.35");
     expect(formatAggregationValue({ value: 12, spec })).toBe("12");
     expect(formatAggregationValue({ value: null, spec })).toBe("—");
+    expect(formatAggregationValue({ value: 12.345, spec, locale: "de-CH" })).toBe("12.35");
+    expect(formatAggregationValue({ value: 12.345, spec, locale: "de" })).toBe("12,35");
   });
 
   test("applies aggregate format overrides with source field metadata", () => {
@@ -60,5 +62,10 @@ describe("group value formatting", () => {
     } as AggregationSpec;
 
     expect(formatAggregationValue({ value: "1200", spec, field: amount })).toBe("1,200.00");
+    expect(formatAggregationValue({ value: "1200", spec, field: amount, locale: "de" })).toBe("1.200,00");
+  });
+
+  test("localizes unknown group labels", () => {
+    expect(formatGroupValue({ value: null, spec: { fieldId: "missing" } as GroupBySpec, locale: "de-CH" })).toBe("Unbekannt");
   });
 });

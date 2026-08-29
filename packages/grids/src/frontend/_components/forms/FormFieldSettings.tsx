@@ -1,11 +1,12 @@
-import { Button, Checkbox, dialogCore, MultiSelectInput, NoticeCard, PanelDialog, panelDialogOptions, TextInput } from "@k2b/ui";
+import { Button, Checkbox, dialogCore, MultiSelectInput, NoticeCard, PanelDialog, panelDialogOptions, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FormFieldEntry } from "../../../service/forms";
-import { TYPE_LABELS } from "../fields/field-config-editor";
 import { isRecordInputField } from "../fields/field-render";
 import { fieldTypeIcon, fieldTypeLabel } from "../fields/field-type-meta";
+import { gridsFieldMessages } from "../fields/messages";
 import { FieldInput, type FrontendField } from "./form-fields";
+import { gridsFormMessages } from "./messages";
 export function FormFieldInspector(props: {
   class?: string;
   entry: () => FormFieldEntry | null;
@@ -14,6 +15,8 @@ export function FormFieldInspector(props: {
   updateEntry: (index: number, patch: Partial<Extract<FormFieldEntry, { kind: "user_input" }>>) => void;
   updateFormValue: (index: number, value: unknown) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const userEntry = createMemo(() =>
     props.entry()?.kind === "user_input" ? (props.entry() as Extract<FormFieldEntry, { kind: "user_input" }>) : null,
   );
@@ -25,9 +28,7 @@ export function FormFieldInspector(props: {
     <Show
       when={props.entry() && props.field()}
       fallback={
-        <div class={`paper min-h-64 items-center justify-center p-4 text-sm text-dimmed ${props.class ?? "flex"}`}>
-          Select a field to configure it.
-        </div>
+        <div class={`paper min-h-64 items-center justify-center p-4 text-sm text-dimmed ${props.class ?? "flex"}`}>{t().selectField}</div>
       }
     >
       <div class={`paper min-h-0 flex-col gap-3 p-4 ${props.class ?? "flex"}`}>
@@ -52,6 +53,8 @@ function FormFieldSettings(props: {
   updateEntry: (patch: Partial<Extract<FormFieldEntry, { kind: "user_input" }>>) => void;
   updateFormValue: (value: unknown) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   return (
     <>
       <div class="flex items-start gap-3">
@@ -61,8 +64,8 @@ function FormFieldSettings(props: {
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-semibold text-primary">{props.field()!.name}</p>
           <p class="text-[11px] text-dimmed">
-            {fieldTypeLabel(props.field()!.type)}
-            <Show when={props.valueEntry()}> · fixed value</Show>
+            {fieldTypeLabel(props.field()!.type, locale())}
+            <Show when={props.valueEntry()}> · {t().fixedValue}</Show>
           </p>
         </div>
       </div>
@@ -71,27 +74,27 @@ function FormFieldSettings(props: {
         {(entry) => (
           <>
             <Checkbox
-              label="Required"
-              description="Visitors must provide a value before submitting."
+              label={t().required}
+              description={t().requiredDescription}
               value={() => entry().required ?? false}
               onValueChange={(required) => props.updateEntry({ required })}
             />
             <div class="flex flex-col gap-3">
               <TextInput
-                label="Label override (optional)"
-                description="Use a different label on this form."
+                label={t().labelOverride}
+                description={t().labelOverrideDescription}
                 icon="ti ti-tag"
                 value={() => entry().label ?? ""}
                 onValueChange={(value) => props.updateEntry({ label: value.trim() === "" ? undefined : value })}
                 placeholder={props.field()!.name}
               />
               <TextInput
-                label="Help text (optional)"
-                description="Shown below the input."
+                label={t().helpText}
+                description={t().helpTextDescription}
                 icon="ti ti-info-circle"
                 value={() => entry().helpText ?? ""}
                 onValueChange={(value) => props.updateEntry({ helpText: value.trim() === "" ? undefined : value })}
-                placeholder="Extra context for visitors"
+                placeholder={t().helpTextPlaceholder}
                 multiline
                 lines={2}
               />
@@ -105,7 +108,7 @@ function FormFieldSettings(props: {
         {(entry) => (
           <>
             <NoticeCard tone="info" icon={false}>
-              This field is hidden from visitors. Every submission stores the fixed value below.
+              {t().hiddenFixedValue}
             </NoticeCard>
             <FieldInput
               field={props.field()!}
@@ -135,6 +138,8 @@ const cloneFormFieldEntry = (entry: FormFieldEntry): FormFieldEntry => {
 
 export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field: FrontendField }) =>
   dialogCore.open<FormFieldEntry | null>((close) => {
+    const locale = useLocale();
+    const t = () => gridsFormMessages.resolve([locale()]).t;
     const [draft, setDraft] = createSignal<FormFieldEntry>(cloneFormFieldEntry(args.entry));
     const userEntry = createMemo(() =>
       draft().kind === "user_input" ? (draft() as Extract<FormFieldEntry, { kind: "user_input" }>) : null,
@@ -152,7 +157,7 @@ export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field
     return (
       <PanelDialog>
         <PanelDialog.Header
-          title={`Field settings — ${args.field.name}`}
+          title={t().fieldSettings({ name: args.field.name })}
           icon={fieldTypeIcon(args.field.type, args.field.icon)}
           close={() => close(null)}
         />
@@ -167,13 +172,13 @@ export const openFormFieldSettingsDialog = (args: { entry: FormFieldEntry; field
           />
         </PanelDialog.Body>
         <PanelDialog.Footer>
-          <span class="text-[11px] text-dimmed">Confirm stages the field settings. Use the main form Save to persist.</span>
+          <span class="text-[11px] text-dimmed">{t().confirmStagesSettings}</span>
           <div class="flex items-center gap-2">
             <Button variant="secondary" size="sm" type="button" onClick={() => close(null)}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="button" onClick={() => close(cloneFormFieldEntry(draft()))}>
-              Confirm
+              {t().confirm}
             </Button>
           </div>
         </PanelDialog.Footer>
@@ -185,6 +190,8 @@ function InlineCreateEditor(props: {
   entry: Extract<FormFieldEntry, { kind: "user_input" }> | null;
   onChange: (patch: Partial<Extract<FormFieldEntry, { kind: "user_input" }>>) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsFormMessages.resolve([locale()]).t;
   const targetTableId = () =>
     props.field.type === "relation" ? (props.field.config as { targetTableId?: string }).targetTableId : undefined;
   const [targetFields, setTargetFields] = createSignal<FrontendField[]>([]);
@@ -207,7 +214,7 @@ function InlineCreateEditor(props: {
   const fieldOption = (field: FrontendField) => ({
     id: field.id,
     label: field.name,
-    description: TYPE_LABELS[field.type] ?? field.type,
+    description: gridsFieldMessages.resolve([locale()]).t.typeLabel({ type: field.type }),
     icon: fieldTypeIcon(field.type, field.icon),
   });
   const candidateOptions = createMemo(() => candidateFields().map(fieldOption));
@@ -253,17 +260,12 @@ function InlineCreateEditor(props: {
   return (
     <Show when={targetTableId()}>
       <div class="mt-1 flex flex-col gap-2">
-        <Checkbox
-          label="Create related records inline"
-          description="Let this form create the linked record together with the main record. Nothing is saved until submit."
-          value={enabled}
-          onValueChange={setEnabled}
-        />
+        <Checkbox label={t().inlineCreate} description={t().inlineCreateDescription} value={enabled} onValueChange={setEnabled} />
         <Show when={enabled()}>
           <MultiSelectInput
-            label="Inline fields"
-            description="Fields shown for the new linked record."
-            placeholder="Pick fields..."
+            label={t().inlineFields}
+            description={t().inlineFieldsDescription}
+            placeholder={t().pickFields}
             icon="ti ti-columns"
             value={selectedFieldIds}
             onValueChange={setInlineFieldIds}

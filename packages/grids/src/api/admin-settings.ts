@@ -1,10 +1,12 @@
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
-import { settingsService } from "@valentinkolb/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
+import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@valentinkolb/cloud/server";
+import { settingsService } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { apiMessages } from "./messages";
+import { v } from "./validator";
 
 const GRIDS_SETTING_GROUP = "grids";
 const GRIDS_SETTING_PREFIX = "grids.";
@@ -37,7 +39,7 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const result = await settingsService.entry.list({ filter: { group: GRIDS_SETTING_GROUP } });
+      const result = await settingsService.entry.list({ filter: { group: GRIDS_SETTING_GROUP }, locale: getLocale(c) });
       return respond(c, ok(result.items));
     },
   )
@@ -61,7 +63,7 @@ const app = new Hono<AuthContext>()
       }
       const result = await settingsService.entry.update({ key, value: c.req.valid("json").value });
       if (!result.ok) return respond(c, result);
-      return respond(c, ok({ message: "Setting updated" }));
+      return respond(c, ok({ message: apiMessages(c).settingUpdated }));
     },
   );
 

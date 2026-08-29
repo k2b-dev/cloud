@@ -19,6 +19,7 @@ export const loadRecordDetailData = async (params: {
   fields: Field[];
   viewer: ExpansionViewer;
   scope?: "full" | "history";
+  locale?: string;
 }): Promise<WorkspaceRecordDetail> => {
   const fileFieldIds = params.fields.filter((field) => field.type === "file" && !field.deletedAt).map((field) => field.id);
   const table = await gridsService.table.get(params.tableId);
@@ -42,9 +43,10 @@ export const loadRecordDetailData = async (params: {
       params.recordId,
       50,
       params.scope === "history" ? params.fields.map((field) => field.id) : undefined,
+      params.locale,
     ),
     table?.kind === "federated"
-      ? gridsService.audit.combined.describeRecord(params.tableId, params.recordId).then((result) => {
+      ? gridsService.audit.combined.describeRecord(params.tableId, params.recordId, undefined, params.locale).then((result) => {
           if (!result.ok) throw new Error(result.error.message);
           return result.data;
         })

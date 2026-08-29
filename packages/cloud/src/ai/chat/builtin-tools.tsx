@@ -1,9 +1,11 @@
 import { fileIcons } from "@k2b/stdlib";
+import { useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { aiToolIcon, displayToolName, formatToolDetailText, isRecord } from "./message-utils";
 import { AiToolActivity } from "./tool-disclosure";
+import { aiChatMessages } from "./messages";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -316,12 +318,16 @@ function FileOperationView(props: { block: ToolBlock; verb: string; resultPath?:
 }
 
 function ReadFileView(props: { block: ToolBlock }) {
+  const locale = useLocale();
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
   const path = () => text(result().path) || (isRecord(props.block.args) ? text(props.block.args.path) : "");
   const range = () => {
     const start = number(result().offset);
     const end = number(result().nextOffset);
-    return end > start ? `bytes ${start.toLocaleString()}–${end.toLocaleString()}` : "Read";
+    const t = aiChatMessages(locale());
+    return end > start
+      ? t.byteRange({ start: start.toLocaleString(locale()), end: end.toLocaleString(locale()) })
+      : t.read;
   };
   return (
     <CompletedActivity

@@ -6,6 +6,7 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, prompts } from "@k2b/ui";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
+import { useAccountsMessages } from "../messages";
 
 type JobKind = "ipa-backfill" | "local-user-backfill" | "guest-backfill";
 type OperationKey = "ipa-backfill" | "local-user-backfill" | "local-guest-backfill";
@@ -27,45 +28,42 @@ type OperationConfig = {
   description: string;
 };
 
-const OPERATIONS: readonly OperationConfig[] = [
-  {
-    key: "ipa-backfill",
-    label: "Force IPA Backfill",
-    icon: "ti ti-user-exclamation",
-    redirectTo: "/admin/observability/logs?source=auth:ipa:backfill",
-    confirmText: "Start IPA backfill",
-    loadingText: "Starting IPA backfill...",
-    successText: "IPA backfill job started.",
-    description:
-      "This updates expiry dates for FreeIPA-backed accounts when they are missing or too early. Expiry is never set earlier than now plus 7 days, and a later FreeIPA expiry is not shortened.",
-  },
-  {
-    key: "local-user-backfill",
-    label: "Force Local User Backfill",
-    icon: "ti ti-user-exclamation",
-    redirectTo: "/admin/observability/logs?source=auth:local-user:backfill",
-    confirmText: "Start local user backfill",
-    loadingText: "Starting local user backfill...",
-    successText: "Local user backfill job started.",
-    description:
-      "This updates expiry dates for local full accounts when they are missing or too early. Expiry is never set earlier than now plus 7 days.",
-  },
-  {
-    key: "local-guest-backfill",
-    label: "Force Local Guest Backfill",
-    icon: "ti ti-user-exclamation",
-    redirectTo: "/admin/observability/logs?source=auth:guest:backfill",
-    confirmText: "Start local guest backfill",
-    loadingText: "Starting local guest backfill...",
-    successText: "Local guest backfill job started.",
-    description:
-      "This updates expiry dates for local guest accounts when they are missing or too early. Expiry is never set earlier than now plus 7 days.",
-  },
-] as const;
-
 const SCHEDULED_JOBS_HREF = "/admin/observability/jobs?search=auth%3A";
 
 export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
+  const messages = useAccountsMessages();
+  const operations = (): readonly OperationConfig[] => [
+    {
+      key: "ipa-backfill",
+      label: messages().forceIpaBackfill,
+      icon: "ti ti-user-exclamation",
+      redirectTo: "/admin/observability/logs?source=auth:ipa:backfill",
+      confirmText: messages().startIpaBackfill,
+      loadingText: messages().startingIpaBackfill,
+      successText: messages().ipaBackfillStarted,
+      description: messages().ipaBackfillDescription,
+    },
+    {
+      key: "local-user-backfill",
+      label: messages().forceLocalUserBackfill,
+      icon: "ti ti-user-exclamation",
+      redirectTo: "/admin/observability/logs?source=auth:local-user:backfill",
+      confirmText: messages().startLocalUserBackfill,
+      loadingText: messages().startingLocalUserBackfill,
+      successText: messages().localUserBackfillStarted,
+      description: messages().localUserBackfillDescription,
+    },
+    {
+      key: "local-guest-backfill",
+      label: messages().forceLocalGuestBackfill,
+      icon: "ti ti-user-exclamation",
+      redirectTo: "/admin/observability/logs?source=auth:guest:backfill",
+      confirmText: messages().startLocalGuestBackfill,
+      loadingText: messages().startingLocalGuestBackfill,
+      successText: messages().localGuestBackfillStarted,
+      description: messages().localGuestBackfillDescription,
+    },
+  ];
   let activeOperationKey: OperationKey | null = null;
   const runMutation = mutations.create<{ message?: string; jobId?: string }, OperationConfig>({
     mutation: async (operation) => {
@@ -75,7 +73,7 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message ?? "Failed to start job.");
+        throw new Error(data.message ?? messages().jobStartFailed);
       }
 
       return await response.json();
@@ -87,7 +85,7 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
       title: operation.label,
       icon: operation.icon,
       confirmText: operation.confirmText,
-      cancelText: "Cancel",
+      cancelText: messages().cancel,
     });
     if (!confirmed) return;
 
@@ -95,10 +93,10 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
       activeOperationKey = operation.key;
       await runMutation.mutate(operation);
       const shouldOpenLogs = await prompts.confirm(operation.successText, {
-        title: "Job started",
+        title: messages().jobStarted,
         icon: "ti ti-check",
-        confirmText: "Show Logs",
-        cancelText: "Stay here",
+        confirmText: messages().showLogs,
+        cancelText: messages().stayHere,
         variant: "success",
       });
       if (shouldOpenLogs) {
@@ -113,43 +111,45 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
 
   return (
     <div class="flex flex-col gap-2">
-      {OPERATIONS.filter((operation) => props.freeIpaEnabled || operation.key !== "ipa-backfill").map((operation) => {
-        const isLoading = () => runMutation.loading() && activeOperationKey === operation.key;
-        return (
-          <section class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-4 md:flex-row md:items-center md:gap-4">
-            <div class="flex min-w-0 flex-1 items-start gap-3">
-              <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-dimmed">
-                <i class={isLoading() ? "ti ti-loader-2 animate-spin text-sm" : `${operation.icon} text-sm`} />
+      {operations()
+        .filter((operation) => props.freeIpaEnabled || operation.key !== "ipa-backfill")
+        .map((operation) => {
+          const isLoading = () => runMutation.loading() && activeOperationKey === operation.key;
+          return (
+            <section class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-4 md:flex-row md:items-center md:gap-4">
+              <div class="flex min-w-0 flex-1 items-start gap-3">
+                <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-dimmed">
+                  <i class={isLoading() ? "ti ti-loader-2 animate-spin text-sm" : `${operation.icon} text-sm`} />
+                </div>
+                <div class="min-w-0">
+                  <h3 class="text-sm font-medium text-primary">{operation.label}</h3>
+                  <p class="text-xs text-dimmed">{operation.description}</p>
+                </div>
               </div>
-              <div class="min-w-0">
-                <h3 class="text-sm font-medium text-primary">{operation.label}</h3>
-                <p class="text-xs text-dimmed">{operation.description}</p>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              class="w-full justify-center md:w-auto md:min-w-48"
-              onClick={() => void handleRun(operation)}
-              disabled={runMutation.loading()}
-            >
-              {isLoading() ? operation.loadingText : operation.label}
-            </Button>
-          </section>
-        );
-      })}
+              <Button
+                size="sm"
+                variant="secondary"
+                class="w-full justify-center md:w-auto md:min-w-48"
+                onClick={() => void handleRun(operation)}
+                disabled={runMutation.loading()}
+              >
+                {isLoading() ? operation.loadingText : operation.label}
+              </Button>
+            </section>
+          );
+        })}
       <section class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-4 md:flex-row md:items-center md:gap-4">
         <div class="flex min-w-0 flex-1 items-start gap-3">
           <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-dimmed">
             <i class="ti ti-calendar-time text-sm" />
           </div>
           <div class="min-w-0">
-            <h3 class="text-sm font-medium text-primary">Scheduled jobs</h3>
-            <p class="text-xs text-dimmed">Inspect and run account lifecycle schedules from observability.</p>
+            <h3 class="text-sm font-medium text-primary">{messages().scheduledJobs}</h3>
+            <p class="text-xs text-dimmed">{messages().scheduledJobsDescription}</p>
           </div>
         </div>
         <ButtonLink href={SCHEDULED_JOBS_HREF} size="sm" variant="secondary" class="w-full justify-center md:w-auto md:min-w-48">
-          Open Scheduled Jobs
+          {messages().openScheduledJobs}
         </ButtonLink>
       </section>
     </div>

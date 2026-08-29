@@ -5,6 +5,15 @@ export const app = defineApp({
   name: "Assistant",
   icon: "ti ti-sparkles",
   description: "General-purpose AI assistant for writing, rewriting, summarizing, and questions.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Assistent",
+        description: "KI-Assistent zum Schreiben, Überarbeiten, Zusammenfassen und Beantworten von Fragen.",
+      },
+    },
+  },
   appearance: {
     accent: "#14b8a6",
     background: {

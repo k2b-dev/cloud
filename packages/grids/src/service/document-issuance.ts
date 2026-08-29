@@ -9,6 +9,7 @@ import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, pro
 import { logAudit } from "./audit";
 import { documentNumberFor } from "./document-liquid";
 import { type DocumentDbRow, hydrateDocuments } from "./document-mappers";
+import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 import { buildDocumentRenderData, renderDocumentPdf, renderDocumentProfileInput } from "./document-rendering";
 import { persistRecordSnapshot, type RecordSnapshotDraft } from "./document-snapshots";
 import { normalizeDocumentTags } from "./document-values";
@@ -102,7 +103,9 @@ export const readDocumentArtifact = async (
   documentId: string,
   key: string,
   db: SQL = defaultSql,
+  locale?: string,
 ): Promise<Result<DocumentArtifactContent>> => {
+  const t = documentServiceText(locale);
   const [row] = await db<
     Array<{
       file_id: string;
@@ -120,10 +123,10 @@ export const readDocumentArtifact = async (
       ON protected.file_id = file.id AND protected.owner_kind = 'document_artifact' AND protected.owner_id = artifact.document_id
     WHERE artifact.document_id = ${documentId}::uuid AND artifact.artifact_key = ${key}
   `;
-  if (!row) return fail(err.notFound("Document artifact"));
+  if (!row) return fail(err.notFound(t.documentArtifactNotFound));
   const sizeBytes = Number(row.size_bytes);
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || row.bytes.byteLength !== sizeBytes || sha256Hex(row.bytes) !== row.sha256) {
-    return fail(err.internal("Stored Document artifact failed its integrity check."));
+    return fail(err.internal(t.artifactIntegrityFailed));
   }
   return ok({
     key,
@@ -155,29 +158,30 @@ const actorUserId = (actor: DocumentIssuanceActor): string | null =>
 
 const sha256Hex = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
 
-const canonicalJsonValue = (value: unknown, path = "$", seen = new Set<object>()): JsonValue => {
+const canonicalJsonValue = (value: unknown, path = "$", seen = new Set<object>(), locale?: string): JsonValue => {
+  const t = documentServiceText(locale);
   if (value === null || typeof value === "boolean" || typeof value === "string") {
-    if (typeof value === "string" && value.includes("\0")) throw err.badInput(`${path} must not contain NUL`);
+    if (typeof value === "string" && value.includes("\0")) throw err.badInput(t.jsonNoNul({ path }));
     return value;
   }
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw err.badInput(`${path} must contain only finite numbers`);
+    if (!Number.isFinite(value)) throw err.badInput(t.jsonFiniteNumbers({ path }));
     return value;
   }
-  if (typeof value !== "object") throw err.badInput(`${path} must contain only JSON values`);
-  if (seen.has(value)) throw err.badInput(`${path} must not contain circular values`);
+  if (typeof value !== "object") throw err.badInput(t.jsonValuesOnly({ path }));
+  if (seen.has(value)) throw err.badInput(t.jsonNoCycles({ path }));
   seen.add(value);
   try {
-    if (Array.isArray(value)) return value.map((item, index) => canonicalJsonValue(item, `${path}[${index}]`, seen));
+    if (Array.isArray(value)) return value.map((item, index) => canonicalJsonValue(item, `${path}[${index}]`, seen, locale));
     if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
-      throw err.badInput(`${path} must contain only plain JSON objects`);
+      throw err.badInput(t.jsonPlainObjects({ path }));
     }
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, item]) => {
-          if (key.includes("\0")) throw err.badInput(`${path} contains a key with NUL`);
-          return [key, canonicalJsonValue(item, `${path}.${key}`, seen)];
+          if (key.includes("\0")) throw err.badInput(t.jsonKeyNoNul({ path }));
+          return [key, canonicalJsonValue(item, `${path}.${key}`, seen, locale)];
         }),
     );
   } finally {
@@ -185,19 +189,25 @@ const canonicalJsonValue = (value: unknown, path = "$", seen = new Set<object>()
   }
 };
 
-const canonicalJson = (value: Record<string, unknown>): { value: Record<string, JsonValue>; json: string; sha256: string } => {
-  const canonical = canonicalJsonValue(value);
-  if (!canonical || Array.isArray(canonical) || typeof canonical !== "object") throw err.badInput("Document JSON must be an object");
+const canonicalJson = (
+  value: Record<string, unknown>,
+  locale?: string,
+): { value: Record<string, JsonValue>; json: string; sha256: string } => {
+  const t = documentServiceText(locale);
+  const canonical = canonicalJsonValue(value, "$", new Set(), locale);
+  if (!canonical || Array.isArray(canonical) || typeof canonical !== "object") throw err.badInput(t.documentJsonObject);
   const json = JSON.stringify(canonical);
   return { value: canonical, json, sha256: sha256Hex(json) };
 };
 
 export const canonicalDocumentJson = (
   value: Record<string, unknown>,
+  locale?: string,
 ): { value: Record<string, JsonValue>; json: string; sha256: string } => {
-  const canonical = canonicalJson(value);
+  const t = documentServiceText(locale);
+  const canonical = canonicalJson(value, locale);
   if (new TextEncoder().encode(canonical.json).byteLength > MAX_DOCUMENT_PROFILE_INPUT_BYTES) {
-    throw err.badInput(`Document JSON exceeds the ${MAX_DOCUMENT_PROFILE_INPUT_BYTES} byte limit`);
+    throw err.badInput(t.documentJsonTooLarge({ limit: MAX_DOCUMENT_PROFILE_INPUT_BYTES }));
   }
   return canonical;
 };
@@ -217,10 +227,10 @@ const serviceError = (error: unknown): ServiceError | null => {
   return null;
 };
 
-const validateIdempotencyKey = (key: string): Result<void> =>
+const validateIdempotencyKey = (key: string, locale?: string): Result<void> =>
   key === key.trim() && key.length >= 1 && key.length <= 200 && !key.includes("\0")
     ? ok()
-    : fail(err.badInput("Document idempotency key is invalid."));
+    : fail(err.badInput(documentServiceText(locale).idempotencyInvalid));
 
 const semanticSnapshot = (snapshot: RecordSnapshotDraft) => ({
   baseId: snapshot.baseId,
@@ -239,27 +249,30 @@ const semanticRenderData = (renderData: Record<string, unknown>) => {
 const requestHashFor = (input: IssueDocumentInput): Result<string> => {
   try {
     return ok(
-      canonicalJson({
-        template: input.template,
-        binding: semanticSnapshot(input.snapshot),
-        renderData: semanticRenderData(input.renderData),
-        actor: input.actor,
-        tags: normalizeDocumentTags(input.tags),
-        workflowRunId: input.workflowRunId ?? null,
-        workflowStepKey: input.workflowStepKey ?? null,
-        dateConfig: input.dateConfig ? { locale: input.dateConfig.locale ?? null, timeZone: input.dateConfig.timeZone ?? null } : null,
-        filename: input.filename?.trim() || null,
-      }).sha256,
+      canonicalJson(
+        {
+          template: input.template,
+          binding: semanticSnapshot(input.snapshot),
+          renderData: semanticRenderData(input.renderData),
+          actor: input.actor,
+          tags: normalizeDocumentTags(input.tags),
+          workflowRunId: input.workflowRunId ?? null,
+          workflowStepKey: input.workflowStepKey ?? null,
+          dateConfig: input.dateConfig ? { locale: input.dateConfig.locale ?? null, timeZone: input.dateConfig.timeZone ?? null } : null,
+          filename: input.filename?.trim() || null,
+        },
+        input.dateConfig?.locale,
+      ).sha256,
     );
   } catch (error) {
-    return fail(serviceError(error) ?? err.badInput("Document request contains invalid JSON."));
+    return fail(serviceError(error) ?? err.badInput(documentServiceText(input.dateConfig?.locale).requestInvalidJson));
   }
 };
 
 const validateRecordRevision = (input: IssueDocumentInput): Result<void> => {
+  const t = documentServiceText(input.dateConfig?.locale);
   const record = input.renderData.record;
-  if (!record || typeof record !== "object" || Array.isArray(record))
-    return fail(err.badInput("Document render data has no record revision."));
+  if (!record || typeof record !== "object" || Array.isArray(record)) return fail(err.badInput(t.revisionMissing));
   const value = record as Record<string, unknown>;
   const root = input.snapshot.root;
   const graph = input.snapshot.graph as { rootId?: unknown; records?: unknown };
@@ -284,7 +297,7 @@ const validateRecordRevision = (input: IssueDocumentInput): Result<void> => {
     Array.isArray(graphRootTable) ||
     (graphRootTable as Record<string, unknown>).id !== input.snapshot.tableId
   ) {
-    return fail(err.badInput("Document snapshot binding is invalid."));
+    return fail(err.badInput(t.snapshotBindingInvalid));
   }
   if (
     typeof value.id !== "string" ||
@@ -293,11 +306,11 @@ const validateRecordRevision = (input: IssueDocumentInput): Result<void> => {
     typeof value.updatedAt !== "string" ||
     !Number.isFinite(new Date(value.updatedAt).getTime())
   )
-    return fail(err.badInput("Document render data has an invalid record revision."));
+    return fail(err.badInput(t.revisionInvalid));
   const snapshotVersion = root.version;
   const graphVersion = (graphRoot as Record<string, unknown>).version;
   if (typeof snapshotVersion !== "number" || snapshotVersion !== value.version || graphVersion !== snapshotVersion) {
-    return fail(err.conflict("Record changed while the Document input was being frozen. Retry generation."));
+    return fail(err.conflict(t.recordChanged));
   }
   return ok();
 };
@@ -319,15 +332,17 @@ const parseFrozenRequest = (value: unknown): FrozenDocumentRequest => {
 const validateArtifactDrafts = (
   drafts: DocumentArtifactDraft[],
   minimum: number,
+  locale?: string,
 ): Result<Array<DocumentArtifactDraft & { sha256: string }>> => {
+  const t = documentServiceText(locale);
   if (drafts.length < minimum || drafts.length > MAX_ARTIFACTS) {
-    return fail(err.badInput(`A Document renderer must produce between ${minimum} and ${MAX_ARTIFACTS} artifacts.`));
+    return fail(err.badInput(t.artifactCount({ minimum, maximum: MAX_ARTIFACTS })));
   }
   const keys = new Set<string>();
   let totalBytes = 0;
   for (const artifact of drafts) {
     if (!/^[a-z][a-z0-9._-]{0,63}$/.test(artifact.key) || keys.has(artifact.key)) {
-      return fail(err.badInput("Document artifact keys must be unique lowercase identifiers."));
+      return fail(err.badInput(t.artifactKeysInvalid));
     }
     keys.add(artifact.key);
     if (
@@ -336,26 +351,25 @@ const validateArtifactDrafts = (
       artifact.filename.length > 255 ||
       /[\\/\u0000-\u001f\u007f]/.test(artifact.filename)
     ) {
-      return fail(err.badInput(`Document artifact ${artifact.key} has an invalid filename.`));
+      return fail(err.badInput(t.artifactFilenameInvalid({ key: artifact.key })));
     }
     if (!artifact.mediaType.trim() || artifact.mediaType.length > 255 || artifact.mediaType.includes("\0")) {
-      return fail(err.badInput(`Document artifact ${artifact.key} has an invalid media type.`));
+      return fail(err.badInput(t.artifactMediaTypeInvalid({ key: artifact.key })));
     }
-    if (artifact.bytes.byteLength === 0) return fail(err.badInput(`Document artifact ${artifact.key} is empty.`));
+    if (artifact.bytes.byteLength === 0) return fail(err.badInput(t.artifactEmpty({ key: artifact.key })));
     totalBytes += artifact.bytes.byteLength;
   }
-  if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES)
-    return fail(err.badInput(`Document artifacts exceed the ${MAX_TOTAL_ARTIFACT_BYTES} byte limit.`));
+  if (totalBytes > MAX_TOTAL_ARTIFACT_BYTES) return fail(err.badInput(t.artifactBytesExceeded({ limit: MAX_TOTAL_ARTIFACT_BYTES })));
   const pdf = drafts.find((artifact) => artifact.key === "pdf");
   if (!pdf || pdf.mediaType !== "application/pdf" || new TextDecoder().decode(pdf.bytes.subarray(0, 4)) !== "%PDF") {
-    return fail(err.badInput('A Document renderer must produce a valid "pdf" artifact.'));
+    return fail(err.badInput(t.pdfArtifactRequired));
   }
   return ok(drafts.map((artifact) => ({ ...artifact, sha256: sha256Hex(artifact.bytes) })));
 };
 
-const profileInputFor = async (template: DocumentTemplate, renderData: Record<string, unknown>) => {
+const profileInputFor = async (template: DocumentTemplate, renderData: Record<string, unknown>, locale?: string) => {
   if (template.renderer.kind !== "profile") return ok(null);
-  const input = await renderDocumentProfileInput(template, renderData);
+  const input = await renderDocumentProfileInput(template, renderData, locale);
   return input.ok ? ok(input.data) : input;
 };
 
@@ -380,11 +394,14 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     profileVersion: number;
     snapshot: Record<string, unknown>;
     issuedAt?: Date;
+    locale?: string;
   }): Promise<Result<DocumentArtifactDraft[]>> => {
+    const t = documentServiceText(input.locale);
     const profile = profiles.get(profileKey(input.profileId, input.profileVersion));
-    if (!profile) return fail(err.badInput(`Unknown Document profile ${input.profileId}@${input.profileVersion}.`));
+    if (!profile) return fail(err.badInput(t.unknownProfile({ profile: `${input.profileId}@${input.profileVersion}` })));
     const parsed = profile.input.safeParse(input.snapshot);
-    if (!parsed.success)
+    if (!parsed.success) {
+      if (isGermanDocumentLocale(input.locale)) return fail(err.badInput(t.profileInputInvalid));
       return fail(
         err.badInput(
           parsed.error.issues
@@ -393,16 +410,18 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             .join("; "),
         ),
       );
+    }
     try {
       const rendered = await profile.issue(parsed.data, {
         number: "PREVIEW",
         issuedAt: input.issuedAt ?? new Date(),
       });
-      const artifacts = validateArtifactDrafts(rendered.artifacts, 1);
+      const artifacts = validateArtifactDrafts(rendered.artifacts, 1, input.locale);
       return artifacts.ok ? ok(artifacts.data) : artifacts;
     } catch (error) {
       const known = serviceError(error);
-      return known ? fail(known) : fail(err.badInput(error instanceof Error ? error.message : "Document profile preview failed."));
+      if (known) return fail(isGermanDocumentLocale(input.locale) ? { ...known, message: t.profilePreviewFailed } : known);
+      return fail(err.badInput(!isGermanDocumentLocale(input.locale) && error instanceof Error ? error.message : t.profilePreviewFailed));
     }
   };
 
@@ -415,21 +434,20 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   const issueDocument = async (
     input: IssueDocumentInput,
   ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
-    const idempotency = validateIdempotencyKey(input.idempotencyKey);
+    const t = documentServiceText(input.dateConfig?.locale);
+    const idempotency = validateIdempotencyKey(input.idempotencyKey, input.dateConfig?.locale);
     if (!idempotency.ok) return idempotency;
     const actor = DocumentIssuanceActorSchema.safeParse(input.actor);
-    if (!actor.success) return fail(err.badInput("Document actor is invalid."));
-    if (!input.template.enabled) return fail(err.badInput("Document template is disabled."));
-    if (input.template.tableId !== input.snapshot.tableId)
-      return fail(err.badInput("Document template does not belong to the snapshot table."));
-    if ((input.workflowRunId == null) !== (input.workflowStepKey == null))
-      return fail(err.badInput("Document workflow binding is incomplete."));
+    if (!actor.success) return fail(err.badInput(t.actorInvalid));
+    if (!input.template.enabled) return fail(err.badInput(t.templateDisabled));
+    if (input.template.tableId !== input.snapshot.tableId) return fail(err.badInput(t.templateWrongTable));
+    if ((input.workflowRunId == null) !== (input.workflowStepKey == null)) return fail(err.badInput(t.workflowBindingIncomplete));
     const revision = validateRecordRevision(input);
     if (!revision.ok) return revision;
     const renderer = input.template.renderer;
     const profile = renderer.kind === "profile" ? profiles.get(profileKey(renderer.id, renderer.version)) : null;
     if (renderer.kind === "profile" && !profile) {
-      return fail(err.badInput(`Unknown Document profile ${renderer.id}@${renderer.version}.`));
+      return fail(err.badInput(t.unknownProfile({ profile: `${renderer.id}@${renderer.version}` })));
     }
     const requestHash = requestHashFor(input);
     if (!requestHash.ok) return requestHash;
@@ -444,8 +462,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
-          if (existing.request_hash !== requestHash.data)
-            throw err.conflict("Idempotency key was already used for a different Document request.");
+          if (existing.request_hash !== requestHash.data) throw err.conflict(t.idempotencyConflict);
           return existing;
         }
         return insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, documentShortId) => {
@@ -486,7 +503,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             AND template.deleted_at IS NULL AND table_.deleted_at IS NULL AND record.deleted_at IS NULL
           FOR SHARE OF template, table_, record
           `;
-          if (!binding) throw err.badInput("Document binding does not identify a live template record.");
+          if (!binding) throw err.badInput(t.liveBindingRequired);
           const renderRecord = input.renderData.record as Record<string, unknown>;
           const bindingRenderer =
             binding.renderer_kind === "html"
@@ -510,24 +527,27 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
                   }
                 : null;
           const bindingTemplateRevision = bindingRenderer
-            ? canonicalJson({
-                id: binding.short_id,
-                name: binding.name,
-                description: binding.description,
-                source: binding.source,
-                renderer: bindingRenderer,
-              }).sha256
+            ? canonicalJson(
+                {
+                  id: binding.short_id,
+                  name: binding.name,
+                  description: binding.description,
+                  source: binding.source,
+                  renderer: bindingRenderer,
+                },
+                input.dateConfig?.locale,
+              ).sha256
             : null;
           if (
             !binding.enabled ||
             binding.updated_at.toISOString() !== input.template.updatedAt ||
-            bindingTemplateRevision !== canonicalJson(templateSnapshot(input.template)).sha256 ||
+            bindingTemplateRevision !== canonicalJson(templateSnapshot(input.template), input.dateConfig?.locale).sha256 ||
             binding.renderer_kind !== input.template.renderer.kind ||
             (binding.renderer_kind === "profile" &&
               renderer.kind === "profile" &&
               (binding.profile_id !== renderer.id || binding.profile_version !== renderer.version))
           )
-            throw err.conflict("Document template changed while generation was being prepared.");
+            throw err.conflict(t.templateChanged);
           if (
             binding.record_id !== input.snapshot.recordId ||
             binding.record_id !== input.snapshot.root.id ||
@@ -537,7 +557,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             binding.record_updated_at.toISOString() !== input.snapshot.root.updatedAt ||
             binding.record_updated_at.toISOString() !== new Date(String(renderRecord.updatedAt)).toISOString()
           ) {
-            throw err.conflict("Record changed while the Document input was being frozen. Retry generation.");
+            throw err.conflict(t.recordChanged);
           }
 
           const issuedAt = new Date();
@@ -592,7 +612,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             FOR UPDATE
           `;
             const value = Number(counter?.next_value);
-            if (!Number.isSafeInteger(value) || value < 1) throw err.internal("Document number series is exhausted.");
+            if (!Number.isSafeInteger(value) || value < 1) throw err.internal(t.seriesExhausted);
             documentNumber = profile!.formatNumber({ value, issuedAt });
             await attempt`
             UPDATE grids.document_profile_counters SET next_value = ${value + 1}
@@ -610,9 +630,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             if (!built.ok) throw built.error;
             filename = built.data.filename;
             frozenRenderData = built.data.data;
-            const renderedProfileInput = await profileInputFor(input.template, frozenRenderData);
+            const renderedProfileInput = await profileInputFor(input.template, frozenRenderData, input.dateConfig?.locale);
             if (!renderedProfileInput.ok) throw renderedProfileInput.error;
-            if (!renderedProfileInput.data) throw err.internal("Document profile input was not rendered.");
+            if (!renderedProfileInput.data) throw err.internal(t.profileInputMissing);
             const parsed = profile!.input.safeParse(renderedProfileInput.data);
             if (!parsed.success) {
               throw err.badInput(
@@ -640,19 +660,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           };
           const [created] = await attempt<IssuanceRow[]>`
           INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${documentShortId}, ${canonicalJson({ ...frozen }).value}::jsonb)
+          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
           RETURNING id::text, base_id::text, request_hash, document_short_id, frozen_request, document_id::text, created_at
         `;
-          if (!created) throw err.internal("Document issuance receipt could not be created.");
+          if (!created) throw err.internal(t.receiptCreateFailed);
           return created;
         });
       });
 
       if (receipt.document_id) {
         const replay = await getDocument(receipt.document_id);
-        return replay
-          ? ok({ document: replay, artifacts: replay.artifacts, replayed: true })
-          : fail(err.internal("Completed Document receipt could not be read."));
+        return replay ? ok({ document: replay, artifacts: replay.artifacts, replayed: true }) : fail(err.internal(t.receiptReadFailed));
       }
       const frozen = parseFrozenRequest(receipt.frozen_request);
       let rendered: {
@@ -671,14 +689,15 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         });
         rendered = { artifacts: output.artifacts, validationStatus: output.validationStatus, validationReport: output.validationReport };
       } else {
-        const output = await (input.renderPdf ?? renderDocumentPdf)({
+        const renderInput = {
           templateSnapshot: templateSnapshot(frozen.template),
           renderData: frozen.renderData,
           filename: frozen.filename ?? `${frozen.documentNumber}.pdf`,
-        });
+        };
+        const output = await (input.renderPdf ? input.renderPdf(renderInput) : renderDocumentPdf(renderInput, input.dateConfig?.locale));
         if (!output.ok) return output;
         if (output.data.contentType.split(";", 1)[0]?.trim().toLowerCase() !== "application/pdf") {
-          return fail(err.badInput("Document renderer did not return a PDF."));
+          return fail(err.badInput(t.rendererNoPdf));
         }
         rendered = {
           artifacts: [
@@ -693,25 +712,25 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           validationReport: null,
         };
       }
-      const artifactDrafts = validateArtifactDrafts(rendered.artifacts, 1);
+      const artifactDrafts = validateArtifactDrafts(rendered.artifacts, 1, input.dateConfig?.locale);
       if (!artifactDrafts.ok) return artifactDrafts;
       const pdf = artifactDrafts.data.find((artifact) => artifact.key === "pdf")!;
-      const snapshotHash = frozen.profileInput ? canonicalDocumentJson(frozen.profileInput).sha256 : null;
+      const snapshotHash = frozen.profileInput ? canonicalDocumentJson(frozen.profileInput, input.dateConfig?.locale).sha256 : null;
       const templateData = templateSnapshot(frozen.template);
-      const templateRevision = canonicalDocumentJson(templateData).sha256;
+      const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
       const finalized = await db.begin(async (tx) => {
         const [locked] = await tx<IssuanceRow[]>`
           SELECT id::text, base_id::text, request_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE
         `;
-        if (!locked) throw err.internal("Document issuance receipt disappeared.");
+        if (!locked) throw err.internal(t.receiptMissing);
         if (locked.document_id) {
           const replayRows = await tx<DocumentDbRow[]>`SELECT * FROM grids.documents WHERE id = ${locked.document_id}::uuid`;
           const [replay] = await hydrateDocuments(replayRows, tx);
-          if (!replay) throw err.internal("Completed Document receipt could not be read.");
+          if (!replay) throw err.internal(t.receiptReadFailed);
           return { document: replay, replayed: true };
         }
-        const persisted = await persistRecordSnapshot(frozen.snapshot, tx);
+        const persisted = await persistRecordSnapshot(frozen.snapshot, tx, input.dateConfig?.locale);
         if (!persisted.ok) throw persisted.error;
         const documentId = Bun.randomUUIDv7();
         const files: Array<{ draft: (typeof artifactDrafts.data)[number]; fileId: string }> = [];
@@ -755,7 +774,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             ${frozen.actor}::jsonb, ${actorUserId(frozen.actor)}::uuid, ${frozen.issuedAt}
           ) RETURNING *
         `;
-        if (!row) throw err.internal("Document insert returned no row.");
+        if (!row) throw err.internal(t.documentInsertFailed);
         for (const file of files)
           await tx`
           INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id)
@@ -779,7 +798,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           tx,
         );
         const [document] = await hydrateDocuments([row], tx);
-        if (!document) throw err.internal("Created Document could not be read.");
+        if (!document) throw err.internal(t.createdDocumentReadFailed);
         return { document, replayed: false };
       });
       return ok({ document: finalized.document, artifacts: finalized.document.artifacts, replayed: finalized.replayed });
@@ -790,8 +809,8 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
     }
   };
 
-  const getDocumentArtifact = (documentId: string, key: string): Promise<Result<DocumentArtifactContent>> =>
-    readDocumentArtifact(documentId, key, db);
+  const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
+    readDocumentArtifact(documentId, key, db, locale);
 
   return { profiles: summaries, preview, issueDocument, getDocumentArtifact };
 };

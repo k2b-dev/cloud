@@ -1,8 +1,9 @@
 import { TextInput } from "@k2b/ui";
 import { For, Show, type Accessor } from "solid-js";
 import type { PulseCurrentState, PulseMetricSummary, PulseRecordedEvent, PulseSource } from "../../contracts";
-import { formatSignalValue, plural, sourceKindIcon, sourceStatus, suggestionTagClass } from "./helpers";
+import { formatSignalValue, sourceKindIcon, sourceStatus, suggestionTagClass } from "./helpers";
 import type { BrowseEntity } from "./types";
+import { usePulseMessages } from "../use-messages";
 
 type BrowseSourceRow = {
   source: PulseSource;
@@ -57,6 +58,7 @@ export default function QueryExplorerBrowsePane(props: {
   onApplySourceFilter: (sourceId: string) => void;
   onApplyDimensionFilter: (key: string, value: string) => void;
 }) {
+  const t = usePulseMessages();
   const scopeTagClass = "chip border-0 bg-zinc-100 app-accent-text dark:bg-zinc-900";
   const clearScopeButtonClass = "ml-1 inline-flex text-dimmed transition hover:app-accent-text";
   const rowClass = "group block w-full rounded px-2 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-900";
@@ -71,7 +73,7 @@ export default function QueryExplorerBrowsePane(props: {
           icon="ti ti-search"
           value={props.search}
           onValueChange={props.onSearchInput}
-          placeholder="Find sources, entities, metrics, events, states, labels..."
+          placeholder={t().findSignalsPlaceholder}
           clearable
         />
         <div class="flex flex-wrap gap-2">
@@ -79,8 +81,8 @@ export default function QueryExplorerBrowsePane(props: {
             {(source) => (
               <span class={scopeTagClass}>
                 <i class="ti ti-database-share" />
-                <span class="truncate">Source: {source().name}</span>
-                <button type="button" class={clearScopeButtonClass} onClick={props.onClearSourceScope} aria-label="Clear source scope">
+                <span class="truncate">{t().sourceScope({ name: source().name })}</span>
+                <button type="button" class={clearScopeButtonClass} onClick={props.onClearSourceScope} aria-label={t().clearSourceScope}>
                   <i class="ti ti-x" />
                 </button>
               </span>
@@ -90,15 +92,15 @@ export default function QueryExplorerBrowsePane(props: {
             {(entity) => (
               <span class={scopeTagClass}>
                 <i class="ti ti-cube" />
-                <span class="truncate">Resource: {entity().id}</span>
-                <button type="button" class={clearScopeButtonClass} onClick={props.onClearEntityScope} aria-label="Clear resource scope">
+                <span class="truncate">{t().resourceScope({ id: entity().id })}</span>
+                <button type="button" class={clearScopeButtonClass} onClick={props.onClearEntityScope} aria-label={t().clearResourceScope}>
                   <i class="ti ti-x" />
                 </button>
               </span>
             )}
           </Show>
           <Show when={!props.selectedSource() && !props.selectedEntity()}>
-            <span class="text-xs text-dimmed">Select a source or resource to narrow the signals below.</span>
+            <span class="text-xs text-dimmed">{t().selectScopeHint}</span>
           </Show>
         </div>
       </div>
@@ -107,10 +109,10 @@ export default function QueryExplorerBrowsePane(props: {
         <div class="grid gap-3 xl:grid-cols-2">
           <section class="rounded bg-zinc-50/80 p-2 dark:bg-zinc-900/45">
             <div class="mb-1 flex items-center justify-between gap-2 px-1">
-              <h3 class="text-label text-xs">Sources</h3>
-              <span class="text-[11px] text-dimmed">{props.sources().length} shown</span>
+              <h3 class="text-label text-xs">{t().sources}</h3>
+              <span class="text-[11px] text-dimmed">{t().shown({ count: props.sources().length })}</span>
             </div>
-            <Show when={props.sources().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching sources.</p>}>
+            <Show when={props.sources().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingSources}</p>}>
               <For each={props.sources()}>
                 {({ source, metricCount, eventCount, stateCount }) => (
                   <div class="rounded transition hover:bg-white dark:hover:bg-zinc-950">
@@ -118,10 +120,12 @@ export default function QueryExplorerBrowsePane(props: {
                       <span class="flex items-center gap-2">
                         <i class={`${sourceKindIcon(source.kind)} text-dimmed`} />
                         <span class="min-w-0 flex-1 truncate text-sm font-medium text-secondary">{source.name}</span>
-                        <span class={sourceStatus(source).text}>{sourceStatus(source).label}</span>
+                        <span class={sourceStatus(source, { paused: t().paused, error: t().error, healthy: t().healthy, waiting: t().waiting }).text}>
+                          {sourceStatus(source, { paused: t().paused, error: t().error, healthy: t().healthy, waiting: t().waiting }).label}
+                        </span>
                       </span>
                       <span class="mt-1 block truncate text-[11px] text-dimmed">
-                        {source.kind} · {plural(metricCount, "metric")} · {plural(eventCount, "event")} · {plural(stateCount, "state")}
+                        {source.kind} · {t().ingestCounts({ metrics: metricCount, events: eventCount, states: stateCount })}
                       </span>
                     </button>
                   </div>
@@ -132,10 +136,10 @@ export default function QueryExplorerBrowsePane(props: {
 
           <section class="rounded bg-zinc-50/80 p-2 dark:bg-zinc-900/45">
             <div class="mb-1 flex items-center justify-between gap-2 px-1">
-              <h3 class="text-label text-xs">Resources</h3>
-              <span class="text-[11px] text-dimmed">{props.entities().length} shown</span>
+              <h3 class="text-label text-xs">{t().resources}</h3>
+              <span class="text-[11px] text-dimmed">{t().shown({ count: props.entities().length })}</span>
             </div>
-            <Show when={props.entities().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching resources yet.</p>}>
+            <Show when={props.entities().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingResources}</p>}>
               <For each={props.entities()}>
                 {(entity) => (
                   <button type="button" class={rowClass} onClick={() => props.onSelectEntity(entity.id)}>
@@ -145,7 +149,7 @@ export default function QueryExplorerBrowsePane(props: {
                       <span class="text-[11px] text-dimmed">{entity.type ?? "entity"}</span>
                     </span>
                     <span class="mt-1 block truncate text-[11px] text-dimmed">
-                      {plural(entity.metricCount, "metric")} · {plural(entity.eventCount, "event")} · {plural(entity.stateCount, "state")}
+                      {t().ingestCounts({ metrics: entity.metricCount, events: entity.eventCount, states: entity.stateCount })}
                     </span>
                   </button>
                 )}
@@ -156,16 +160,15 @@ export default function QueryExplorerBrowsePane(props: {
 
         <section class="mt-3 rounded bg-zinc-50/80 p-2 dark:bg-zinc-900/45">
           <div class="mb-1 flex items-center justify-between gap-2 px-1">
-            <h3 class="text-label text-xs">Signals</h3>
+            <h3 class="text-label text-xs">{t().signals}</h3>
             <span class="text-[11px] text-dimmed">
-              {plural(props.metrics().length, "metric")} · {plural(props.events().length, "event")} ·{" "}
-              {plural(props.states().length, "state")}
+              {t().ingestCounts({ metrics: props.metrics().length, events: props.events().length, states: props.states().length })}
             </span>
           </div>
           <div class="grid gap-2 xl:grid-cols-3">
             <div>
-              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">Metrics</h4>
-              <Show when={props.metrics().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching metrics.</p>}>
+              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">{t().metrics}</h4>
+              <Show when={props.metrics().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingMetrics}</p>}>
                 <For each={props.metrics()}>
                   {({ metric, seriesCount, sampleDimensions }) => (
                     <div class="rounded px-2 py-2 transition hover:bg-white dark:hover:bg-zinc-950">
@@ -173,16 +176,16 @@ export default function QueryExplorerBrowsePane(props: {
                         <span class="block truncate text-sm font-medium text-secondary">{metric.name}</span>
                         <span class="block truncate text-[11px] text-dimmed">
                           {metric.type}
-                          {metric.unit ? ` · ${metric.unit}` : ""} · {plural(seriesCount, "variant")}
+                          {metric.unit ? ` · ${metric.unit}` : ""} · {t().variantCount({ count: seriesCount })}
                         </span>
                       </button>
                       <div class="mt-2 flex flex-wrap gap-1">
                         <button type="button" class={actionClass} onClick={() => props.onMetricQuery(metric, sampleDimensions)}>
-                          <i class="ti ti-code" /> query
+                          <i class="ti ti-code" /> {t().queryLower}
                         </button>
                         <Show when={props.sourceId()}>
                           <button type="button" class={actionClass} onClick={() => props.onApplySourceFilter(props.sourceId())}>
-                            <i class="ti ti-database-share" /> add source
+                            <i class="ti ti-database-share" /> {t().addSourceFilter}
                           </button>
                         </Show>
                       </div>
@@ -193,14 +196,14 @@ export default function QueryExplorerBrowsePane(props: {
             </div>
 
             <div>
-              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">Events</h4>
-              <Show when={props.events().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching events.</p>}>
+              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">{t().events}</h4>
+              <Show when={props.events().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingEvents}</p>}>
                 <For each={props.events()}>
                   {(event) => (
                     <div class="rounded px-2 py-2 transition hover:bg-white dark:hover:bg-zinc-950">
                       <button type="button" class="block w-full text-left" onClick={() => props.onEventQuery(event.kind, event.sample)}>
                         <span class="block truncate text-sm font-medium text-secondary">{event.kind}</span>
-                        <span class="block truncate text-[11px] text-dimmed">{plural(event.count, "recent row")}</span>
+                        <span class="block truncate text-[11px] text-dimmed">{t().recentRowCount({ count: event.count })}</span>
                       </button>
                     </div>
                   )}
@@ -209,15 +212,15 @@ export default function QueryExplorerBrowsePane(props: {
             </div>
 
             <div>
-              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">States</h4>
-              <Show when={props.states().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching states.</p>}>
+              <h4 class="px-1 pb-1 text-xs font-semibold text-dimmed">{t().states}</h4>
+              <Show when={props.states().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingStates}</p>}>
                 <For each={props.states()}>
                   {(state) => (
                     <div class="rounded px-2 py-2 transition hover:bg-white dark:hover:bg-zinc-950">
                       <button type="button" class="block w-full text-left" onClick={() => props.onStateQuery(state.key, state.sample)}>
                         <span class="block truncate text-sm font-medium text-secondary">{state.key}</span>
                         <span class="block truncate text-[11px] text-dimmed">
-                          {plural(state.count, "current row")} · latest {formatSignalValue(state.sample.value)}
+                          {t().currentRowCount({ count: state.count })} · {t().latestSignalValue({ value: formatSignalValue(state.sample.value) })}
                         </span>
                       </button>
                     </div>
@@ -230,10 +233,10 @@ export default function QueryExplorerBrowsePane(props: {
 
         <section class="mt-3 rounded bg-zinc-50/80 p-2 dark:bg-zinc-900/45">
           <div class="mb-2 flex items-center justify-between gap-2 px-1">
-            <h3 class="text-label text-xs">Labels</h3>
-            <span class="text-[11px] text-dimmed">Click to add a where filter</span>
+            <h3 class="text-label text-xs">{t().labels}</h3>
+            <span class="text-[11px] text-dimmed">{t().addWhereFilterHint}</span>
           </div>
-          <Show when={props.labels().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">No matching labels.</p>}>
+          <Show when={props.labels().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noMatchingLabels}</p>}>
             <div class="space-y-2">
               <For each={props.labels()}>
                 {(group) => (

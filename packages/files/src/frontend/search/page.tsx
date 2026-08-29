@@ -1,6 +1,6 @@
 import { AppWorkspace, ButtonLink, Placeholder, TextInput } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { FileBaseInfo, FileInfo, SearchResult } from "@/contracts";
 import { filesService } from "@/service";
@@ -11,40 +11,46 @@ import FileDetailPanel from "../_components/FileDetailPanel.island";
 import FileList from "../_components/FileList.island";
 import FilesUnavailable from "../_components/FilesUnavailable";
 import { filePageBaseUrl } from "../url";
+import { filesMessages } from "../messages";
 
 /** Shortcut presets for common searches */
 const SEARCH_SHORTCUTS = [
-  { label: "PDFs", pattern: "**/*.pdf", icon: "ti-file-type-pdf" },
+  { key: "pdfs", pattern: "**/*.pdf", icon: "ti-file-type-pdf" },
   {
-    label: "Images",
+    key: "images",
     pattern: "**/*.{jpg,jpeg,png,gif,webp,svg}",
     icon: "ti-photo",
   },
-  { label: "Videos", pattern: "**/*.{mp4,mkv,avi,mov,webm}", icon: "ti-video" },
+  { key: "videos", pattern: "**/*.{mp4,mkv,avi,mov,webm}", icon: "ti-video" },
   {
-    label: "Documents",
+    key: "documents",
     pattern: "**/*.{doc,docx,odt,rtf}",
     icon: "ti-file-text",
   },
   {
-    label: "Spreadsheets",
+    key: "spreadsheets",
     pattern: "**/*.{xls,xlsx,ods,csv}",
     icon: "ti-table",
   },
   {
-    label: "Archives",
+    key: "archives",
     pattern: "**/*.{zip,tar,gz,7z,rar}",
     icon: "ti-file-zip",
   },
   {
-    label: "Code",
+    key: "code",
     pattern: "**/*.{js,ts,py,go,rs,java,c,cpp,h}",
     icon: "ti-code",
   },
-];
+] as const;
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = filesMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
+  const shortcuts = SEARCH_SHORTCUTS.map((shortcut) => ({
+    ...shortcut,
+    label: t[shortcut.key],
+  }));
 
   // Parse query params
   const pattern = c.req.query("pattern") ?? "";
@@ -62,13 +68,13 @@ export default ssr<AuthContext>(async (c) => {
 
   if (basesInfo.length === 0) {
     return () => (
-      <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Files", href: "/app/files" }, { title: "Search" }]} fullWidth>
+      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files, href: "/app/files" }, { title: t.search }]} fullWidth>
         <FilesUnavailable
-          title="No accessible storage"
-          description="Ask an administrator to grant access to a home or group file storage."
+          title={t.noStorage}
+          description={t.requestAccess}
           icon="ti ti-folder-off"
           actionHref="/"
-          actionLabel="Back to start"
+          actionLabel={t.backToStart}
         />
       </Layout>
     );
@@ -106,7 +112,7 @@ export default ssr<AuthContext>(async (c) => {
         .filter((r) => r.files.length > 0);
       totalFiles = searchResults.reduce((sum, r) => sum + r.files.length, 0);
     } else {
-      searchError = result.error;
+      searchError = t.searchFailed;
     }
   }
 
@@ -169,7 +175,7 @@ export default ssr<AuthContext>(async (c) => {
   };
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Files", href: "/app/files" }, { title: "Search" }]} fullWidth>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files, href: "/app/files" }, { title: t.search }]} fullWidth>
       <AppWorkspace>
         <BaseSidebar bases={basesInfo} currentBaseType="search" currentBaseId="" />
 
@@ -198,7 +204,9 @@ export default ssr<AuthContext>(async (c) => {
                       <summary class="inline-flex items-center gap-1 cursor-pointer text-secondary hover:text-primary transition-colors list-none">
                         <i class="ti ti-database" />
                         <span>
-                          {selectedBaseIds.size === basesInfo.length ? "All bases" : `${selectedBaseIds.size}/${basesInfo.length} bases`}
+                          {selectedBaseIds.size === basesInfo.length
+                            ? t.allBases
+                            : t.basesSelected({ count: selectedBaseIds.size, total: basesInfo.length })}
                         </span>
                         <i class="ti ti-chevron-down text-dimmed text-[10px]" />
                       </summary>
@@ -221,11 +229,11 @@ export default ssr<AuthContext>(async (c) => {
 
                     <label class="flex items-center gap-1.5 cursor-pointer text-secondary">
                       <input type="checkbox" name="hidden" value="true" checked={showHiddenParam} />
-                      <span>Hidden</span>
+                      <span>{t.hidden}</span>
                     </label>
                     <label class="flex items-center gap-1.5 cursor-pointer text-secondary">
                       <input type="checkbox" name="dirs" value="true" checked={showDirsParam} />
-                      <span>Folders</span>
+                      <span>{t.folders}</span>
                     </label>
                   </div>
 
@@ -236,7 +244,7 @@ export default ssr<AuthContext>(async (c) => {
                 {/* Shortcuts (when no search) */}
                 {!hasSearch && (
                   <div class="flex flex-wrap gap-1.5">
-                    {SEARCH_SHORTCUTS.map((shortcut) => (
+                    {shortcuts.map((shortcut) => (
                       <ButtonLink href={buildSearchUrl({ pattern: shortcut.pattern })} variant="secondary" size="sm">
                         <i class={`ti ${shortcut.icon}`} />
                         {shortcut.label}
@@ -259,7 +267,7 @@ export default ssr<AuthContext>(async (c) => {
                     {/* Results navigation */}
                     {searchResults.length > 0 && (
                       <div class="flex flex-wrap items-center gap-2 text-sm">
-                        <span class="text-dimmed">Found in:</span>
+                        <span class="text-dimmed">{t.foundIn}</span>
                         {searchResults.map((result, i) => (
                           <>
                             {i > 0 && <span class="text-dimmed">,</span>}
@@ -309,7 +317,7 @@ export default ssr<AuthContext>(async (c) => {
                         {result.hasMore && (
                           <div class="flex items-center gap-2 text-xs text-dimmed px-3">
                             <i class="ti ti-dots" />
-                            <span>More results available - make your search more specific</span>
+                            <span>{t.moreResults}</span>
                           </div>
                         )}
                       </div>
@@ -317,7 +325,7 @@ export default ssr<AuthContext>(async (c) => {
 
                     {/* No results state */}
                     {totalFiles === 0 && (
-                      <Placeholder align="left" icon="ti ti-file-search" class="py-4" description={<>No files match your search</>} />
+                      <Placeholder align="left" icon="ti ti-file-search" class="py-4" description={<>{t.noSearchResults}</>} />
                     )}
                   </>
                 )}

@@ -1,10 +1,22 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, panelDialogWideOptions, prompts, TextInput } from "@k2b/ui";
+import {
+  Button,
+  dialogCore,
+  NoticeCard,
+  PanelDialog,
+  panelDialogOptions,
+  panelDialogWideOptions,
+  prompts,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
+import { formatNumber } from "@valentinkolb/cloud/shared";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import AccountAvatar from "@/frontend/AccountAvatar";
+import { useAccountsMessages } from "../messages";
 
 type SelectedUser = {
   id: string;
@@ -53,6 +65,8 @@ const readError = async (res: Response, fallback: string) => {
 };
 
 function BatchDialog(props: { close: () => void }) {
+  const messages = useAccountsMessages();
+  const locale = useLocale();
   let active = true;
   onCleanup(() => {
     active = false;
@@ -90,7 +104,7 @@ function BatchDialog(props: { close: () => void }) {
         { json: { selection: source.selection } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to preview recipients."));
+      if (!res.ok) throw new Error(await readError(res, messages().previewRecipientsFailed));
       return { sourceKey: source.key, data: await res.json() };
     },
   });
@@ -134,13 +148,13 @@ function BatchDialog(props: { close: () => void }) {
 
   const refreshPreview = async (expectedSourceKey = previewSource().key) => {
     if (!previewSource().hasAudience) {
-      prompts.error("Select at least one user or group.");
+      prompts.error(messages().selectAudience);
       return null;
     }
     await previewQuery.refresh();
     if (!active) return null;
     if (previewSource().key !== expectedSourceKey) {
-      prompts.error("The audience changed while recipients were being resolved. Review the preview and try again.");
+      prompts.error(messages().audienceChanged);
       return null;
     }
     if (previewQuery.error()) {
@@ -148,7 +162,7 @@ function BatchDialog(props: { close: () => void }) {
       return null;
     }
     if (previewQuery.stale()) {
-      prompts.error("The recipient preview could not be confirmed. Refresh it and try again.");
+      prompts.error(messages().previewNotConfirmed);
       return null;
     }
     return currentPreview();
@@ -156,7 +170,7 @@ function BatchDialog(props: { close: () => void }) {
 
   const createDraft = async () => {
     if (!canCreate()) {
-      prompts.error("Subject, message, and audience are required.");
+      prompts.error(messages().requiredNotificationFields);
       return;
     }
     const draftSource = previewSource();
@@ -164,7 +178,7 @@ function BatchDialog(props: { close: () => void }) {
     const latestPreview = await refreshPreview(draftSource.key);
     if (!latestPreview) return;
     if (latestPreview.deliverableCount === 0) {
-      prompts.error("No deliverable recipients match this audience.");
+      prompts.error(messages().noDeliverableAudience);
       return;
     }
     setLoading(true);
@@ -172,7 +186,7 @@ function BatchDialog(props: { close: () => void }) {
       const res = await apiClient.notifications.batches.$post({
         json: { subject: subject(), bodyMarkdown: body(), selection: draftSelection },
       });
-      if (!res.ok) throw new Error(await readError(res, "Failed to create notification batch."));
+      if (!res.ok) throw new Error(await readError(res, messages().createNotificationFailed));
       const batch = await res.json();
       props.close();
       navigateTo(`/app/accounts/notifications/${batch.id}`);
@@ -187,16 +201,11 @@ function BatchDialog(props: { close: () => void }) {
     void dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header
-            title="Add user"
-            subtitle="Search one account and add it to this batch."
-            icon="ti ti-user-plus"
-            close={close}
-          />
+          <PanelDialog.Header title={messages().addUser} subtitle={messages().addUserDescription} icon="ti ti-user-plus" close={close} />
           <PanelDialog.Body>
             <EntitySearch
               includeUsers
-              placeholder="Search users..."
+              placeholder={messages().searchUsers}
               excludeUserIds={users().map((user) => user.id)}
               onSelect={(principal) => {
                 addUser(principal);
@@ -216,15 +225,15 @@ function BatchDialog(props: { close: () => void }) {
       (close) => (
         <PanelDialog>
           <PanelDialog.Header
-            title="Add group"
-            subtitle="Search one group. Members of nested child groups are included automatically."
+            title={messages().addGroup}
+            subtitle={messages().addGroupDescription}
             icon="ti ti-users-group"
             close={close}
           />
           <PanelDialog.Body>
             <EntitySearch
               includeGroups
-              placeholder="Search groups..."
+              placeholder={messages().searchGroups}
               excludeGroupIds={groups().map((group) => group.id)}
               onSelect={(principal) => {
                 addGroup(principal);
@@ -240,39 +249,43 @@ function BatchDialog(props: { close: () => void }) {
   };
 
   const previewLabel = () => {
-    if (!hasAudience()) return "No audience selected.";
-    if (previewLoading()) return "Resolving recipients...";
+    if (!hasAudience()) return messages().noAudience;
+    if (previewLoading()) return messages().resolvingRecipients;
     const error = previewQuery.error();
     if (error) return error.message;
     const data = currentPreview();
-    if (!data) return "Recipient preview will update automatically.";
-    return `${data.deliverableCount} deliverable of ${data.targetCount} matched users (${data.skippedNoEmailCount} without email).`;
+    if (!data) return messages().previewUpdatesAutomatically;
+    return messages().previewSummary({
+      deliverable: formatNumber(data.deliverableCount, { locale: locale() }),
+      matched: formatNumber(data.targetCount, { locale: locale() }),
+      withoutEmail: formatNumber(data.skippedNoEmailCount, { locale: locale() }),
+    });
   };
 
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="New Notification Batch"
-        subtitle="Create a draft, preview recipients, then finalize it from the detail page."
+        title={messages().newNotificationBatch}
+        subtitle={messages().newNotificationDescription}
         icon="ti ti-mail-plus"
         close={props.close}
       />
       <PanelDialog.Body>
         <div class="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
-          <PanelDialog.Section title="Message" subtitle="Rendered through the standard system email template." icon="ti ti-message-2">
+          <PanelDialog.Section title={messages().message} subtitle={messages().messageTemplateDescription} icon="ti ti-message-2">
             <TextInput
-              label="Subject"
-              description="Email subject shown to every resolved recipient."
-              placeholder="Maintenance window tonight"
+              label={messages().subject}
+              description={messages().subjectDescription}
+              placeholder={messages().subjectExample}
               value={subject}
               onValueChange={setSubject}
               required
             />
 
             <TextInput
-              label="Body"
-              description="Markdown content for the notification email."
-              placeholder="Write the notification body..."
+              label={messages().body}
+              description={messages().bodyDescription}
+              placeholder={messages().bodyPlaceholder}
               markdown
               lines={13}
               value={body}
@@ -282,23 +295,25 @@ function BatchDialog(props: { close: () => void }) {
           </PanelDialog.Section>
 
           <aside class="flex min-w-0 flex-col gap-3">
-            <PanelDialog.Section
-              title="Selected users"
-              subtitle="Add explicit recipients. Group members can be added below."
-              icon="ti ti-users"
-            >
+            <PanelDialog.Section title={messages().selectedUsers} subtitle={messages().selectedUsersDescription} icon="ti ti-users">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-xs text-dimmed">{users().length} users selected</span>
+                <span class="text-xs text-dimmed">{messages().selectedUserCount({ count: users().length })}</span>
                 <Button size="sm" variant="subtle" onClick={openUserPicker}>
                   <i class="ti ti-user-plus" />
-                  <span>Add user</span>
+                  <span>{messages().addUser}</span>
                 </Button>
               </div>
-              <Show when={users().length > 0} fallback={<p class="text-xs text-dimmed">No individual users selected.</p>}>
+              <Show when={users().length > 0} fallback={<p class="text-xs text-dimmed">{messages().noSelectedUsers}</p>}>
                 <div class="flex flex-col gap-2">
                   <For each={users()}>
                     {(user) => (
-                      <Button size="sm" variant="subtle" class="justify-start" onClick={() => remove<SelectedUser>(user.id, setUsers)}>
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        class="justify-start"
+                        aria-label={messages().removeLabel({ name: user.label })}
+                        onClick={() => remove<SelectedUser>(user.id, setUsers)}
+                      >
                         <AccountAvatar name={user.label} userId={user.id} avatarHash={user.avatarHash} size="xs" />
                         <span class="min-w-0 flex-1 truncate text-left">{user.label}</span>
                         <span class="text-[10px] uppercase text-dimmed">{user.provider}</span>
@@ -310,23 +325,25 @@ function BatchDialog(props: { close: () => void }) {
               </Show>
             </PanelDialog.Section>
 
-            <PanelDialog.Section
-              title="Selected groups"
-              subtitle="Members of selected groups and nested child groups are included."
-              icon="ti ti-users-group"
-            >
+            <PanelDialog.Section title={messages().selectedGroups} subtitle={messages().selectedGroupsDescription} icon="ti ti-users-group">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-xs text-dimmed">{groups().length} groups selected</span>
+                <span class="text-xs text-dimmed">{messages().selectedGroupCount({ count: groups().length })}</span>
                 <Button size="sm" variant="subtle" onClick={openGroupPicker}>
                   <i class="ti ti-plus" />
-                  <span>Add group</span>
+                  <span>{messages().addGroup}</span>
                 </Button>
               </div>
-              <Show when={groups().length > 0} fallback={<p class="text-xs text-dimmed">No groups selected.</p>}>
+              <Show when={groups().length > 0} fallback={<p class="text-xs text-dimmed">{messages().noSelectedGroups}</p>}>
                 <div class="flex flex-col gap-2">
                   <For each={groups()}>
                     {(group) => (
-                      <Button size="sm" variant="subtle" class="justify-start" onClick={() => remove<SelectedGroup>(group.id, setGroups)}>
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        class="justify-start"
+                        aria-label={messages().removeLabel({ name: group.label })}
+                        onClick={() => remove<SelectedGroup>(group.id, setGroups)}
+                      >
                         <i class="ti ti-users-group" />
                         <span class="min-w-0 flex-1 truncate text-left">{group.label}</span>
                         <span class="text-[10px] uppercase text-dimmed">{group.provider}</span>
@@ -338,11 +355,7 @@ function BatchDialog(props: { close: () => void }) {
               </Show>
             </PanelDialog.Section>
 
-            <PanelDialog.Section
-              title="Live preview"
-              subtitle="Updated automatically from the current audience selection."
-              icon="ti ti-eye"
-            >
+            <PanelDialog.Section title={messages().livePreview} subtitle={messages().livePreviewDescription} icon="ti ti-eye">
               <NoticeCard
                 tone={previewQuery.error() ? "danger" : previewLoading() ? "info" : "neutral"}
                 icon={false}
@@ -368,7 +381,7 @@ function BatchDialog(props: { close: () => void }) {
         <div class="min-w-0 text-xs text-dimmed">{previewLabel()}</div>
         <div class="ml-auto flex flex-wrap justify-end gap-2">
           <Button size="sm" variant="secondary" onClick={props.close} disabled={loading()}>
-            Cancel
+            {messages().cancel}
           </Button>
           <Button
             size="sm"
@@ -377,11 +390,11 @@ function BatchDialog(props: { close: () => void }) {
             disabled={previewLoading() || loading() || !hasAudience()}
           >
             <i class={previewLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
-            <span>{previewLoading() ? "Previewing..." : "Refresh preview"}</span>
+            <span>{previewLoading() ? messages().previewing : messages().refreshPreview}</span>
           </Button>
           <Button size="sm" onClick={createDraft} disabled={loading() || !canCreate()}>
             <i class={loading() ? "ti ti-loader-2 animate-spin" : "ti ti-device-floppy"} />
-            <span>{loading() ? "Creating..." : "Create draft"}</span>
+            <span>{loading() ? messages().creating : messages().createDraft}</span>
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -390,6 +403,7 @@ function BatchDialog(props: { close: () => void }) {
 }
 
 export default function NewNotificationBatch() {
+  const messages = useAccountsMessages();
   const open = () => {
     void dialogCore.open<void>((close) => <BatchDialog close={close} />, panelDialogWideOptions);
   };
@@ -397,7 +411,7 @@ export default function NewNotificationBatch() {
   return (
     <Button size="sm" class="ml-auto max-w-full shrink-0 whitespace-nowrap" onClick={open}>
       <i class="ti ti-plus" />
-      <span>New Notification</span>
+      <span>{messages().newNotification}</span>
     </Button>
   );
 }

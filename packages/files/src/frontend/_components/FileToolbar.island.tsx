@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Dropdown, ProgressBar, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, Dropdown, ProgressBar, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { formatBytes } from "@valentinkolb/cloud/shared";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -21,6 +21,7 @@ import {
 } from "./context";
 import MoveTargetSearch from "./MoveTargetSearch";
 import { createUploadManager, type FileUploadState } from "./upload";
+import { filesMessages } from "../messages";
 
 type FileToolbarProps = {
   baseType: FileBaseInfo["type"];
@@ -36,13 +37,6 @@ type FileToolbarProps = {
   bases?: FileBaseInfo[];
 };
 
-const validateName = (v: string | undefined) => {
-  if (!v?.trim()) return "Name is required";
-  if (v.includes("/")) return "Name cannot contain /";
-  if (v === "." || v === "..") return "Invalid name";
-  return null;
-};
-
 export default function FileToolbar({
   baseType,
   baseId,
@@ -55,9 +49,25 @@ export default function FileToolbar({
   totalSize,
   bases = [],
 }: FileToolbarProps) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const [filterQuery, setFilterQuery] = createSignal(initialFilterQuery);
   const [selected, setSelected] = createSignal<SelectionKey[]>(initialSelected);
-  const uploadManager = createUploadManager();
+  const uploadManager = createUploadManager(() => ({
+    emptyFile: t().emptyFileUpload,
+    preparationFailed: t().uploadPreparationFailed,
+    startFailed: t().uploadStartFailed,
+    chunkFailed: t().chunkUploadFailed,
+    cancelled: t().uploadCancelled,
+    uploadFailed: t().uploadFailed,
+    selectFailed: t().selectFilesFailed,
+  }));
+  const validateName = (value: string | undefined) => {
+    if (!value?.trim()) return t().requiredName;
+    if (value.includes("/")) return t().invalidSlash;
+    if (value === "." || value === "..") return t().invalidName;
+    return null;
+  };
 
   // Listen for selection changes from FileList
   onMount(() => {
@@ -82,12 +92,12 @@ export default function FileToolbar({
       const keys = selected();
       if (keys.length === 0) return null;
 
-      const confirmed = await prompts.confirm(`Move ${keys.length} item${keys.length > 1 ? "s" : ""} to Trash?`, {
-        title: "Move to Trash",
+      const confirmed = await prompts.confirm(t().moveItemsTrash({ count: keys.length }), {
+        title: t().moveTrash,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Move to Trash",
-        cancelText: "Cancel",
+        confirmText: t().moveTrash,
+        cancelText: t().cancel,
       });
       if (!confirmed) return null;
 
@@ -111,10 +121,10 @@ export default function FileToolbar({
       clearSelection();
       refreshCurrentPath();
       if (result.errors > 0) {
-        void prompts.error(`Failed to delete ${result.errors} item${result.errors > 1 ? "s" : ""}`);
+        void prompts.error(t().deleteItemsFailed({ count: result.errors }));
         return;
       }
-      toast.success(`Moved ${result.total} item${result.total > 1 ? "s" : ""} to Trash`);
+      toast.success(t().movedItemsTrash({ count: result.total }));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -152,7 +162,7 @@ export default function FileToolbar({
         />
       ),
       {
-        title: `Move ${keys.length} item${keys.length > 1 ? "s" : ""}`,
+        title: t().moveItem({ count: keys.length }),
         icon: "ti ti-folder-share",
         size: "large",
       },
@@ -162,14 +172,14 @@ export default function FileToolbar({
   const mkdirMutation = mutations.create<{ name: string } | null, void>({
     mutation: async () => {
       const result = await prompts.form({
-        title: "New Folder",
+        title: t().newFolder,
         icon: "ti ti-folder-plus",
-        confirmText: "Create",
+        confirmText: t().create,
         fields: {
           name: {
             type: "text",
-            label: "Folder name",
-            placeholder: "My Folder",
+            label: t().folderName,
+            placeholder: t().folderPlaceholder,
             required: true,
             validate: validateName,
           },
@@ -184,14 +194,13 @@ export default function FileToolbar({
         query: { action: "mkdir", path: newPath },
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error("message" in data ? data.message : "Failed to create folder");
+        throw new Error(t().createFailed);
       }
       return { name };
     },
     onSuccess: (folder) => {
       if (!folder) return;
-      toast.success("Folder created");
+      toast.success(t().folderCreated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -239,26 +248,26 @@ export default function FileToolbar({
           width="11rem"
           items={[
             {
-              sectionLabel: "Upload",
+              sectionLabel: t().upload,
               items: [
                 {
                   icon: "ti ti-upload",
-                  label: "Upload Files",
+                  label: t().uploadFiles,
                   action: handleUploadFiles,
                 },
                 {
                   icon: "ti ti-folder-up",
-                  label: "Upload Folder",
+                  label: t().uploadFolder,
                   action: handleUploadFolder,
                 },
               ],
             },
             {
-              sectionLabel: "Create",
+              sectionLabel: t().create,
               items: [
                 {
                   icon: "ti ti-folder-plus",
-                  label: "New Folder",
+                  label: t().newFolder,
                   action: () => mkdirMutation.mutate(undefined),
                 },
               ],
@@ -274,7 +283,7 @@ export default function FileToolbar({
             }}
           >
             <i class={`ti text-sm ${uploadManager.state.isUploading ? "ti-loader-2 animate-spin" : "ti-plus"}`} />
-            <span>New</span>
+            <span>{t().new}</span>
             <i class="ti ti-chevron-down text-[10px]" />
           </Dropdown.Trigger>
         </Dropdown.Root>
@@ -288,19 +297,19 @@ export default function FileToolbar({
                 ? [
                     {
                       icon: "ti ti-folder-share",
-                      label: "Move",
+                      label: t().move,
                       action: handleBulkMove,
                     },
                   ]
                 : []),
               {
                 icon: "ti ti-download",
-                label: "Download",
+                label: t().download,
                 action: handleBulkDownload,
               },
               {
                 icon: "ti ti-trash",
-                label: "Delete",
+                label: t().delete,
                 variant: "danger" as const,
                 action: () => bulkDeleteMutation.mutate(undefined),
               },
@@ -308,14 +317,14 @@ export default function FileToolbar({
                 ? [
                     {
                       icon: "ti ti-list-check",
-                      label: "Select all",
+                      label: t().selectAll,
                       action: handleSelectAll,
                     },
                   ]
                 : []),
               {
                 icon: "ti ti-x",
-                label: "Deselect",
+                label: t().deselect,
                 action: clearSelection,
               },
             ]}
@@ -331,8 +340,8 @@ export default function FileToolbar({
         <form onSubmit={handleFilterSubmit} class="min-w-[14rem] flex-1" role="search">
           <TextInput
             type="search"
-            placeholder="Search in this folder..."
-            aria-label="Search files"
+            placeholder={t().searchFolder}
+            aria-label={t().searchFiles}
             value={filterQuery}
             onValueChange={setFilterQuery}
             clearable
@@ -346,23 +355,19 @@ export default function FileToolbar({
 
         <div class="ml-auto inline-flex min-h-[var(--ui-control-sm)] items-center gap-3 px-1 text-xs text-dimmed">
           <Show when={folderCount > 0}>
-            <span class="inline-flex items-center gap-1" title={`${folderCount} folder${folderCount !== 1 ? "s" : ""}`}>
+            <span class="inline-flex items-center gap-1" title={t().foldersCount({ count: folderCount })}>
               <i class="ti ti-folder text-[11px]" />
-              <span>
-                {folderCount} folder{folderCount !== 1 ? "s" : ""}
-              </span>
+              <span>{t().foldersCount({ count: folderCount })}</span>
             </span>
           </Show>
           <Show when={fileCount > 0}>
-            <span class="inline-flex items-center gap-1" title={`${fileCount} file${fileCount !== 1 ? "s" : ""} (${totalSize})`}>
+            <span class="inline-flex items-center gap-1" title={`${t().filesCount({ count: fileCount })} (${totalSize})`}>
               <i class="ti ti-file text-[11px]" />
-              <span>
-                {fileCount} file{fileCount !== 1 ? "s" : ""}
-              </span>
+              <span>{t().filesCount({ count: fileCount })}</span>
             </span>
           </Show>
           <Show when={folderCount === 0 && fileCount === 0}>
-            <span>Empty</span>
+            <span>{t().empty}</span>
           </Show>
           <Show when={totalSize !== "—" && fileCount > 0}>
             <span class="hidden sm:inline text-dimmed">{totalSize}</span>
@@ -376,23 +381,23 @@ export default function FileToolbar({
           <div class="flex items-center justify-between">
             <span class="text-xs font-medium text-dimmed">
               {uploadManager.state.isUploading
-                ? `Uploading ${completedFiles()}/${totalFiles()} files...`
+                ? t().uploadingFiles({ completed: completedFiles(), total: totalFiles() })
                 : failedFiles() > 0
-                  ? `Upload finished (${completedFiles()} ok, ${failedFiles()} failed)`
-                  : "Upload done"}
+                  ? t().uploadFinished({ completed: completedFiles(), failed: failedFiles() })
+                  : t().uploadDone}
             </span>
             <Show when={!uploadManager.state.isUploading}>
               <Button type="button" variant="ghost" size="xs" onClick={() => uploadManager.clearAll()}>
-                Clear
+                {t().clear}
               </Button>
             </Show>
             <Show when={uploadManager.state.isUploading}>
               <Button type="button" variant="danger" size="xs" onClick={() => uploadManager.cancel()}>
-                Cancel
+                {t().cancel}
               </Button>
             </Show>
           </div>
-          <ProgressBar value={globalProgress()} size="sm" showValue label="Overall upload progress" />
+          <ProgressBar value={globalProgress()} size="sm" showValue label={t().overallProgress} />
           <div class="text-[11px] text-dimmed">
             {formatBytes(uploadedBytes())} / {formatBytes(totalBytes())}
           </div>
@@ -410,6 +415,8 @@ export default function FileToolbar({
 }
 
 function UploadProgressItem(props: FileUploadState) {
+  const locale = useLocale();
+  const t = () => filesMessages.resolve([locale()]).t;
   const statusIcon = () => {
     switch (props.status) {
       case "pending":
@@ -433,7 +440,7 @@ function UploadProgressItem(props: FileUploadState) {
             {props.relativePath ?? props.filename}
           </span>
           <Show when={props.status === "uploading"}>
-            <ProgressBar value={props.progress} size="xs" class="w-20" label={`${props.filename} upload progress`} />
+            <ProgressBar value={props.progress} size="xs" class="w-20" label={t().fileUploadProgress({ filename: props.filename })} />
             <span class="w-8 text-right text-dimmed">{props.progress}%</span>
           </Show>
         </div>
@@ -446,7 +453,7 @@ function UploadProgressItem(props: FileUploadState) {
             {props.relativePath ?? props.filename}
           </span>
         </div>
-        <span class="text-red-400 text-[11px] pl-5">{props.error ?? "Upload failed"}</span>
+        <span class="text-red-400 text-[11px] pl-5">{props.error ?? t().uploadFailed}</span>
       </div>
     </Show>
   );

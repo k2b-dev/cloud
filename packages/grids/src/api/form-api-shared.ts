@@ -1,5 +1,5 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { getDateConfig, respond } from "@valentinkolb/cloud/server";
+import { getDateConfig, getLocale, respond } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
@@ -9,6 +9,7 @@ import type { Form } from "../service/forms";
 import { fromPublicRecordValues, projectPublicId } from "../service/public-resources";
 import type { AuthorizedRecordAccess } from "../service/record-access";
 import type { ExpansionViewer } from "../service/relation-access";
+import { apiMessages } from "./messages";
 import {
   PublicFormSchema as AuthenticatedPublicFormSchema,
   type PublicForm,
@@ -133,19 +134,21 @@ export const submitFormResponse = async (
   access?: { recordAccess: AuthorizedRecordAccess; viewer: ExpansionViewer },
 ) => {
   const submission = parseFormSubmission(submitted);
-  if (!submission) return context.json({ message: "Invalid form submission" }, 400);
+  if (!submission) return context.json({ message: apiMessages(context).invalidFormSubmission }, 400);
   const fields = await gridsService.field.listByTable(form.tableId);
   const fieldsByPublicId = new Map(fields.map((field) => [field.shortId, field]));
-  const data = await fromPublicRecordValues(form.tableId, submission.data, { allowTemporaryRelationIds: true });
+  const locale = getLocale(context);
+  const data = await fromPublicRecordValues(form.tableId, submission.data, { allowTemporaryRelationIds: true, locale });
   if (!data.ok) return respond(context, () => Promise.resolve(data));
   const inlineCreates: FormSubmission["inlineCreates"] = {};
   for (const [publicFieldId, drafts] of Object.entries(submission.inlineCreates)) {
     const relationField = fieldsByPublicId.get(publicFieldId);
     const targetTableId = relationField?.type === "relation" ? (relationField.config as { targetTableId?: unknown }).targetTableId : null;
-    if (!relationField || typeof targetTableId !== "string") return context.json({ message: "Invalid inline relation field" }, 400);
+    if (!relationField || typeof targetTableId !== "string")
+      return context.json({ message: apiMessages(context).invalidInlineRelationField }, 400);
     const convertedDrafts: typeof drafts = [];
     for (const draft of drafts) {
-      const converted = await fromPublicRecordValues(targetTableId, draft.data);
+      const converted = await fromPublicRecordValues(targetTableId, draft.data, { locale });
       if (!converted.ok) return respond(context, () => Promise.resolve(converted));
       convertedDrafts.push({ ...draft, data: converted.data });
     }
@@ -156,6 +159,6 @@ export const submitFormResponse = async (
   const result = await submit({ form, submission: { data: data.data, inlineCreates }, actorId, dateConfig, ...access });
   if (!result.ok) return respond(context, () => Promise.resolve(result), 201);
   const recordId = await projectPublicId("record", result.data.recordId);
-  if (!recordId) return context.json({ message: "Created record has no public ID" }, 500);
+  if (!recordId) return context.json({ message: apiMessages(context).createdRecordMissingPublicId }, 500);
   return context.json({ recordId }, 201);
 };

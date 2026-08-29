@@ -11,15 +11,19 @@ import {
   SegmentedControl,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { UpcomingSlot, VenueDashboard } from "../../../contracts";
+import { venueMessages } from "../../../messages";
 import { DOUBLE_CLICK_CONFIRM_COOKIE } from "./constants";
 import { ProgressBar } from "./schedule";
 import { defaultShiftRange, fmt, fmtTime, isSlotActive, readError, timeZoneDateConfig } from "./utils";
 
 export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const dashboard = () => props.dashboard;
   const defaultMode = dashboard().venue.signupMode === "free" ? "free" : "shifts";
   const [mode, setMode] = createSignal<"shifts" | "free">(defaultMode);
@@ -36,10 +40,10 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
             { init: { signal: abortSignal } },
           )
         : await target.signup.$post({ param: { id: venueId, templateId }, json: { date } }, { init: { signal: abortSignal } });
-      if (!res.ok) throw new Error(await readError(res, "Failed to sign up."));
+      if (!res.ok) throw new Error(await readError(res, t().signupFailed));
     },
     onSuccess: () => {
-      toast.success("Shift added");
+      toast.success(t().shiftAdded);
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),
@@ -51,10 +55,10 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
         { param: { id: venueId }, json: { startsAt, endsAt, note: signupNote } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, "Failed to sign up."));
+      if (!res.ok) throw new Error(await readError(res, t().signupFailed));
     },
     onSuccess: () => {
-      toast.success("Shift added");
+      toast.success(t().shiftAdded);
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),
@@ -63,7 +67,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
   const submitFreeSignup = async () => {
     const range = freeRange();
     if (!range.start || !range.end) {
-      prompts.error("Pick a start and end time.");
+      prompts.error(t().pickStartEnd);
       return;
     }
     await freeSignup.mutate({
@@ -83,7 +87,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
     <PanelDialog>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <PanelDialog.Header
-          title="Sign up for a shift"
+          title={t().signUpForShift}
           subtitle={dashboard().venue.name}
           icon="ti ti-user-plus"
           close={() => props.close(false)}
@@ -94,8 +98,8 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
               value={mode}
               onValueChange={setMode}
               options={[
-                { value: "shifts", label: "Shift slots", icon: "ti ti-calendar-event" },
-                { value: "free", label: "Free time", icon: "ti ti-clock-plus" },
+                { value: "shifts", label: t().shiftSlots, icon: "ti ti-calendar-event" },
+                { value: "free", label: t().freeTime, icon: "ti ti-clock-plus" },
               ]}
             />
           </Show>
@@ -104,18 +108,18 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
             fallback={
               <div class="grid gap-3">
                 <DateRangePicker
-                  label="Time"
+                  label={t().time}
                   value={freeRange}
                   onValueChange={setFreeRange}
                   withTime
-                  dateConfig={timeZoneDateConfig(dashboard().venue.timezone)}
+                  dateConfig={timeZoneDateConfig(dashboard().venue.timezone, locale())}
                   durationPresets={[
                     { label: "2h", minutes: 120 },
                     { label: "4h", minutes: 240 },
                     { label: "8h", minutes: 480 },
                   ]}
                 />
-                <TextInput label="Note" value={note} onValueChange={setNote} multiline lines={3} />
+                <TextInput label={t().note} value={note} onValueChange={setNote} multiline lines={3} />
                 <Button
                   type="button"
                   size="sm"
@@ -124,7 +128,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                   onClick={() => void submitFreeSignup()}
                 >
                   <i class={freeSignup.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
-                  Add free shift
+                  {t().addFreeShift}
                 </Button>
               </div>
             }
@@ -136,8 +140,8 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                   <Placeholder
                     surface="paper"
                     variant="panel"
-                    title="No shifts available"
-                    description="There are no upcoming shift slots in the current schedule."
+                    title={t().noShiftsAvailable}
+                    description={t().noShiftsAvailableDescription}
                     icon="ti ti-calendar-off"
                   />
                 }
@@ -148,13 +152,13 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                       <div class="min-w-0">
                         <p class="font-medium text-primary">{slot.template.title}</p>
                         <p class="text-xs text-dimmed">
-                          {fmt(slot.startsAt)} · {slot.template.startTime}-{slot.template.endTime}
+                          {fmt(slot.startsAt, locale())} · {slot.template.startTime}-{slot.template.endTime}
                         </p>
                       </div>
                       <span
                         class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
                       >
-                        {slot.full ? "Full" : "Open"}
+                        {slot.full ? t().full : t().open}
                       </span>
                     </div>
                     <div class="mt-3">
@@ -173,7 +177,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                           })
                         }
                       >
-                        Join
+                        {t().join}
                       </Button>
                       <Button
                         type="button"
@@ -189,7 +193,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                           })
                         }
                       >
-                        Join next 4 weeks
+                        {t().joinNextWeeks({ count: 4 })}
                       </Button>
                     </div>
                   </div>
@@ -201,7 +205,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
         <PanelDialog.Footer>
           <div />
           <Button type="button" variant="secondary" size="sm" onClick={() => props.close(false)}>
-            Close
+            {t().close}
           </Button>
         </PanelDialog.Footer>
       </div>
@@ -210,6 +214,8 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
 }
 
 export function ConfirmShiftSignupDialog(props: { slot: UpcomingSlot; timezone: string; close: (confirmed: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const [skipConfirm, setSkipConfirm] = createSignal(false);
   const confirm = () => {
     if (skipConfirm()) cookies.writeJsonCookie(DOUBLE_CLICK_CONFIRM_COOKIE, true);
@@ -220,15 +226,16 @@ export function ConfirmShiftSignupDialog(props: { slot: UpcomingSlot; timezone: 
       <div class="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
         <p class="font-semibold text-primary">{props.slot.template.title}</p>
         <p class="mt-1 text-dimmed">
-          {fmt(props.slot.startsAt)} · {fmtTime(props.slot.startsAt, props.timezone)}-{fmtTime(props.slot.endsAt, props.timezone)}
+          {fmt(props.slot.startsAt, locale())} · {fmtTime(props.slot.startsAt, props.timezone, locale())}-
+          {fmtTime(props.slot.endsAt, props.timezone, locale())}
         </p>
         <div class="mt-3">
           <ProgressBar slot={props.slot} />
         </div>
       </div>
       <CheckboxCard
-        label="Don't show this confirmation again"
-        description="Future calendar double-clicks will join shifts directly."
+        label={t().skipConfirmation}
+        description={t().skipConfirmationDescription}
         icon="ti ti-click"
         value={skipConfirm}
         onValueChange={setSkipConfirm}
@@ -236,10 +243,10 @@ export function ConfirmShiftSignupDialog(props: { slot: UpcomingSlot; timezone: 
       />
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(false)}>
-          Cancel
+          {t().cancel}
         </Button>
         <Button type="button" size="sm" onClick={confirm}>
-          Join shift
+          {t().joinShiftAction}
         </Button>
       </div>
     </div>

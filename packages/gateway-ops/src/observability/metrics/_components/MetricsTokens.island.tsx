@@ -1,8 +1,9 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, toast } from "@k2b/ui";
+import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { formatDateTime as formatDate } from "@valentinkolb/cloud/shared";
 import type { MetricsToken } from "../service";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   tokens: MetricsToken[];
@@ -24,19 +25,24 @@ const errorMessage = async (response: Response, fallback: string): Promise<strin
   }
 };
 
-const TokenDialog = (props: { token: string }) => (
-  <div class="flex flex-col gap-3">
-    <p class="text-xs text-dimmed">Store this bearer token now. It is shown once and cannot be recovered later.</p>
-    <div class="rounded-md bg-zinc-100 p-3 dark:bg-zinc-800">
-      <code class="block break-all text-[11px] text-primary">{props.token}</code>
+const TokenDialog = (props: { token: string }) => {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  return (
+    <div class="flex flex-col gap-3">
+      <p class="text-xs text-dimmed">{t.storeTokenNow}</p>
+      <div class="rounded-md bg-zinc-100 p-3 dark:bg-zinc-800">
+        <code class="block break-all text-[11px] text-primary">{props.token}</code>
+      </div>
+      <div class="flex justify-end">
+        <CopyButton text={props.token} label={t.copyToken} variant="primary" size="sm" />
+      </div>
     </div>
-    <div class="flex justify-end">
-      <CopyButton text={props.token} label="Copy token" variant="primary" size="sm" />
-    </div>
-  </div>
-);
+  );
+};
 
 export default function MetricsTokens(props: Props) {
+  const locale = useLocale();
+  const { t } = gatewayOpsMessages.resolve([locale()]);
   const createMutation = mutations.create<{ token: string; credential: MetricsToken }, { name: string; expiresAt: string | null }>({
     mutation: async (input) => {
       const response = await fetch("/api/gateway/metrics/tokens", {
@@ -45,12 +51,12 @@ export default function MetricsTokens(props: Props) {
         body: JSON.stringify(input),
       });
       const data = (await response.json()) as CreateResponse;
-      if (!response.ok || !("token" in data)) throw new Error("message" in data ? data.message : "Failed to create metrics token.");
+      if (!response.ok || !("token" in data)) throw new Error("message" in data ? data.message : t.createMetricsTokenFailed);
       return data;
     },
     onSuccess: async (data) => {
       await prompts.dialog(() => <TokenDialog token={data.token} />, {
-        title: "Metrics token created",
+        title: t.metricsTokenCreated,
         icon: "ti ti-key",
       });
       refreshCurrentPath();
@@ -61,10 +67,10 @@ export default function MetricsTokens(props: Props) {
   const revokeMutation = mutations.create<void, MetricsToken>({
     mutation: async (token) => {
       const response = await fetch(`/api/gateway/metrics/tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to revoke metrics token."));
+      if (!response.ok) throw new Error(await errorMessage(response, t.revokeMetricsTokenFailed));
     },
     onSuccess: () => {
-      toast.success("Metrics token revoked");
+      toast.success(t.metricsTokenRevoked);
       refreshCurrentPath();
     },
     onError: (error) => prompts.error(error.message),
@@ -72,21 +78,21 @@ export default function MetricsTokens(props: Props) {
 
   const createToken = async () => {
     const result = await prompts.form({
-      title: "Create metrics token",
+      title: t.createMetricsToken,
       icon: "ti ti-key",
-      confirmText: "Create",
+      confirmText: t.create,
       fields: {
         name: {
           type: "text" as const,
-          label: "Token name",
-          description: "Shown in the token list so admins can identify the scraper using it.",
-          default: "Pulse metrics scrape",
+          label: t.tokenName,
+          description: t.tokenNameDescription,
+          default: t.defaultMetricsTokenName,
           required: true,
         },
         expires_at: {
           type: "datetime" as const,
-          label: "Expiry",
-          description: "Optional expiry. Leave empty for a non-expiring token.",
+          label: t.expiry,
+          description: t.expiryDescription,
         },
       },
     });
@@ -98,10 +104,10 @@ export default function MetricsTokens(props: Props) {
   };
 
   const revokeToken = async (token: MetricsToken) => {
-    const confirmed = await prompts.confirm(`Revoke "${token.name}"? Scrapers using this bearer token will fail immediately.`, {
-      title: "Revoke metrics token",
+    const confirmed = await prompts.confirm(t.revokeTokenConfirm({ name: token.name }), {
+      title: t.revokeMetricsToken,
       icon: "ti ti-key-off",
-      confirmText: "Revoke",
+      confirmText: t.revoke,
       variant: "danger",
     });
     if (!confirmed) return;
@@ -112,12 +118,12 @@ export default function MetricsTokens(props: Props) {
     <section class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)]">
       <div class="flex items-center gap-2 px-3 py-2">
         <div class="min-w-0">
-          <h2 class="text-xs font-semibold text-primary">Bearer tokens</h2>
-          <p class="text-[10px] text-dimmed">Resource-bound service account tokens with the metrics:read scope.</p>
+          <h2 class="text-xs font-semibold text-primary">{t.bearerTokens}</h2>
+          <p class="text-[10px] text-dimmed">{t.bearerTokensDescription}</p>
         </div>
         <Button type="button" size="sm" class="ml-auto" onClick={createToken} disabled={createMutation.loading()}>
           <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} />
-          New token
+          {t.newToken}
         </Button>
       </div>
       {props.tokens.length > 0 ? (
@@ -125,12 +131,12 @@ export default function MetricsTokens(props: Props) {
           <table class="w-full text-left text-xs">
             <thead class="border-b border-zinc-100 text-[10px] uppercase tracking-wide text-dimmed">
               <tr>
-                <th class="px-3 py-2 font-medium">Name</th>
-                <th class="px-3 py-2 font-medium">Prefix</th>
-                <th class="px-3 py-2 font-medium">Scope</th>
-                <th class="px-3 py-2 font-medium">Expires</th>
-                <th class="px-3 py-2 font-medium">Last used</th>
-                <th class="px-3 py-2 text-right font-medium">Action</th>
+                <th class="px-3 py-2 font-medium">{t.name}</th>
+                <th class="px-3 py-2 font-medium">{t.prefix}</th>
+                <th class="px-3 py-2 font-medium">{t.scopeLabel}</th>
+                <th class="px-3 py-2 font-medium">{t.expires}</th>
+                <th class="px-3 py-2 font-medium">{t.lastUsed}</th>
+                <th class="px-3 py-2 text-right font-medium">{t.action}</th>
               </tr>
             </thead>
             <tbody>
@@ -143,15 +149,15 @@ export default function MetricsTokens(props: Props) {
                       {token.scopes.join(", ") || "-"}
                     </span>
                   </td>
-                  <td class="px-3 py-2 text-dimmed">{formatDate(token.expiresAt)}</td>
-                  <td class="px-3 py-2 text-dimmed">{formatDate(token.lastUsedAt)}</td>
+                  <td class="px-3 py-2 text-dimmed">{formatDate(token.expiresAt, { locale: locale() })}</td>
+                  <td class="px-3 py-2 text-dimmed">{formatDate(token.lastUsedAt, { locale: locale() })}</td>
                   <td class="px-3 py-2 text-right">
-                    <Tooltip.Anchor content="Revoke metrics token">
+                    <Tooltip.Anchor content={t.revokeMetricsToken}>
                       <IconButton
                         type="button"
                         variant="danger"
                         size="sm"
-                        label={`Revoke metrics token ${token.name}`}
+                        label={t.revokeNamedToken({ name: token.name })}
                         onClick={() => revokeToken(token)}
                         disabled={revokeMutation.loading()}
                       >
@@ -165,7 +171,7 @@ export default function MetricsTokens(props: Props) {
           </table>
         </div>
       ) : (
-        <Placeholder icon="ti ti-key" description={<>No metrics bearer tokens yet.</>} />
+        <Placeholder icon="ti ti-key" description={<>{t.noMetricsTokens}</>} />
       )}
     </section>
   );

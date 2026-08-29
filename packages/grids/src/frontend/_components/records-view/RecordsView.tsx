@@ -1,5 +1,15 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, Button, ButtonLink, dialogCore, PanelDialog, Placeholder, panelDialogWideOptions, prompts } from "@k2b/ui";
+import {
+  AppWorkspace,
+  Button,
+  ButtonLink,
+  dialogCore,
+  PanelDialog,
+  Placeholder,
+  panelDialogWideOptions,
+  prompts,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type {
   PublicField as Field,
@@ -37,6 +47,7 @@ import type {
   PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
 } from "../workspace/workspace-public-state-model";
 import { activeDisplayConfig, calendarQueryFilter, cardImageFieldIds, removeCalendarQueryFilter } from "./display-mode";
+import { recordsViewMessages } from "./messages";
 import type { CardSize, RecordsState } from "./query-url";
 import { cleanRecordMetaQuery, openRecordMetadataDialog, recordMetaActiveCount } from "./RecordMetadataDialog";
 import { RecordsAdminToolbar } from "./RecordsAdminToolbar";
@@ -124,6 +135,8 @@ type Props = {
 };
 
 export default function RecordsView(props: Props) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   // ── Canonical state ────────────────────────────────────────────────
   const [tableName, setTableName] = createSignal(props.tableName);
   const [tableDescription, setTableDescription] = createSignal(props.tableDescription);
@@ -184,7 +197,7 @@ export default function RecordsView(props: Props) {
   const customForms = () => forms().filter((form) => !form.isDefault);
   const formsButtonLabel = () => {
     const count = customForms().length;
-    return count > 0 ? `Forms (${count})` : "Add form";
+    return count > 0 ? t().forms({ count }) : t().addForm;
   };
   const renderMode = () => (isGrouped() || props.trashMode ? "table" : displayConfig().mode);
   const detailMode = (): "live" | "trash" => (query().deletedOnly ? "trash" : "live");
@@ -236,7 +249,7 @@ export default function RecordsView(props: Props) {
     void dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header title="Query" subtitle={tableName()} icon="ti ti-code" close={() => close()} />
+          <PanelDialog.Header title={t().query} subtitle={tableName()} icon="ti ti-code" close={() => close()} />
           <PanelDialog.Body>
             <div class="flex h-[min(72vh,46rem)] min-h-[30rem] min-w-0 overflow-hidden">
               <QueryWorkspace
@@ -253,10 +266,10 @@ export default function RecordsView(props: Props) {
           </PanelDialog.Body>
           <PanelDialog.Footer>
             <ButtonLink variant="secondary" size="sm" href={queryWorkspaceHref()}>
-              <i class="ti ti-arrows-maximize" /> Full workspace
+              <i class="ti ti-arrows-maximize" /> {t().fullWorkspace}
             </ButtonLink>
             <Button variant="primary" size="sm" type="button" onClick={() => close()}>
-              Done
+              {t().done}
             </Button>
           </PanelDialog.Footer>
         </PanelDialog>
@@ -279,6 +292,7 @@ export default function RecordsView(props: Props) {
     }),
     initialData: props.initialData,
     initialEventCursor: props.initialEventCursor,
+    locale: locale(),
     cursor,
     setCursor,
     isGrouped,
@@ -287,8 +301,8 @@ export default function RecordsView(props: Props) {
       if (recordId === selectedRecordId()) selectionController?.close();
     },
     onRefreshed: (result) => selectionController?.verifyAfterRefresh(result),
-    onRevoked: (error) => prompts.error(error.message || "Your access to this table changed. Reload the page to continue."),
-    onFatal: (error) => prompts.error(error.message || "Live updates are unavailable. Reload the page to continue."),
+    onRevoked: (error) => prompts.error(error.message || t().accessChanged),
+    onFatal: (error) => prompts.error(error.message || t().liveUnavailable),
   });
   const {
     data,
@@ -367,6 +381,7 @@ export default function RecordsView(props: Props) {
     initialRecord: props.initialSelectedRecord,
     initialDetail: props.initialSelectedRecordDetail,
     syncUrl,
+    locale,
   });
   const {
     record: selectedRecord,
@@ -389,6 +404,7 @@ export default function RecordsView(props: Props) {
     enabled: bulkSelectionEnabled,
     items: () => items() as GridRecord[],
     query: queryWithSearch,
+    locale,
     scopeKey: () =>
       JSON.stringify({
         tableId: props.tableId,
@@ -566,16 +582,16 @@ export default function RecordsView(props: Props) {
   // search bar, not inside the optional editing toolbar.
   const recordCountText = (): string => {
     if (isGrouped()) {
-      return formatRecordCount(buckets().length, "group", Boolean(nextCursor()));
+      return formatRecordCount(buckets().length, "group", Boolean(nextCursor()), locale());
     }
-    return formatRecordCount(items().length, "record", Boolean(nextCursor()));
+    return formatRecordCount(items().length, "record", Boolean(nextCursor()), locale());
   };
 
   const tableAggregationSpecs = (): AggregationSpec[] => {
     if (props.trashMode || isGrouped()) return [];
     const explicit = aggregations();
     if (explicit.length > 0) return explicit;
-    return defaultTableAggregations(fields());
+    return defaultTableAggregations(fields(), t().records);
   };
 
   const openExportDialog = () => {
@@ -624,6 +640,7 @@ export default function RecordsView(props: Props) {
     canManageTable: props.canManageTable,
     canManageBase: props.canManageBase,
     dateConfig: props.dateConfig,
+    fieldCreatedDisplayFailed: t().fieldCreatedDisplayFailed,
     refetch: () => void refetch(),
     setViewDisplayConfig,
   });
@@ -657,6 +674,7 @@ export default function RecordsView(props: Props) {
     isGrouped,
     isSavedView,
     syncUrl,
+    locale,
   });
 
   const hasOpenDetail = () => Boolean(selectedRecordId() || selectedGroup());
@@ -769,12 +787,12 @@ export default function RecordsView(props: Props) {
                   state="error"
                   surface="paper"
                   align="left"
-                  title="Could not refresh records"
+                  title={t().refreshFailed}
                   description={failure().error.message}
                   class="shrink-0 py-2"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={retryQuery}>
-                      <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                      <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                     </Button>
                   }
                 />

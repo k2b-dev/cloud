@@ -1,9 +1,22 @@
 import { mutation as mutations, timed } from "@k2b/stdlib/solid";
-import { Button, CheckboxCard, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, Select, TextInput } from "@k2b/ui";
+import {
+  Button,
+  CheckboxCard,
+  dialogCore,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  prompts,
+  Select,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicFederatedRevisionView, PublicFederatedSourceCandidate, PublicField } from "../../../api/public-dto";
+import { gridsFieldMessages } from "../fields/messages";
 import { errorMessage } from "../utils/api-helpers";
+import { gridsDialogMessages } from "./messages";
 
 type MappingDraft = PublicFederatedRevisionView["mappings"][number];
 type FederatedDiagnostic = PublicFederatedRevisionView["diagnostics"][number];
@@ -26,6 +39,9 @@ export const openFederatedTableDialog = (args: { tableId: string; tableName: str
   dialogCore.open<void>((close) => <FederatedTableDialog {...args} close={close} />, panelDialogOptions);
 
 function FederatedTableDialog(props: { tableId: string; tableName: string; targetFields: PublicField[]; close: () => void }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
+  const fieldT = () => gridsFieldMessages.resolve([locale()]).t;
   const [config, setConfig] = createSignal<PublicFederatedTableConfig | null>(null);
   const [candidates, setCandidates] = createSignal<PublicFederatedSourceCandidate[]>([]);
   const [candidateCache, setCandidateCache] = createSignal<Record<string, PublicFederatedSourceCandidate>>({});
@@ -65,7 +81,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   const loadFields = async (tableId: string) => {
     if (sourceFields()[tableId]) return;
     const response = await apiClient.fields["by-table"][":tableId"].$get({ param: { tableId } });
-    if (!response.ok) throw new Error(await errorMessage(response, "Could not load source fields"));
+    if (!response.ok) throw new Error(await errorMessage(response, t().sourceFieldsLoadFailed));
     const fields = await response.json();
     setSourceFields((current) => ({ ...current, [tableId]: fields }));
   };
@@ -84,7 +100,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
         },
         { init: { signal: candidateRequest.signal } },
       );
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not load source tables"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().sourceTablesLoadFailed));
       const page = await response.json();
       setCandidateTotal(page.total);
       setCandidates((current) => {
@@ -117,7 +133,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
       setCandidates([]);
       setCandidateCache({});
       const configResponse = await apiClient.tables[":tableId"].federation.$get({ param: { tableId: props.tableId } });
-      if (!configResponse.ok) throw new Error(await errorMessage(configResponse, "Could not load combined table configuration"));
+      if (!configResponse.ok) throw new Error(await errorMessage(configResponse, t().combinedConfigLoadFailed));
       const nextConfig = await configResponse.json();
       const sourceIds = nextConfig.draft.sources.flatMap((source) => (source.sourceTableId ? [source.sourceTableId] : []));
       setConfig(nextConfig);
@@ -129,7 +145,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
       const accessibleSourceIds = sourceIds.filter((sourceId) => candidateCache()[sourceId] !== undefined);
       await Promise.all(accessibleSourceIds.map(loadFields));
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Could not load combined table configuration");
+      prompts.error(error instanceof Error ? error.message : t().combinedConfigLoadFailed);
     } finally {
       setLoading(false);
     }
@@ -140,7 +156,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   const toggleSource = async (tableId: string, enabled: boolean) => {
     if (enabled) {
       if (selectedSources().length + hiddenSourceCount() >= MAX_SOURCES) {
-        prompts.error(`Combined tables support at most ${MAX_SOURCES} source tables.`);
+        prompts.error(t().sourceLimit({ count: MAX_SOURCES }));
         return;
       }
       setSelectedSources((current) => [...current, tableId]);
@@ -150,7 +166,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
         await loadFields(tableId);
       } catch (error) {
         setSelectedSources((current) => current.filter((id) => id !== tableId));
-        prompts.error(error instanceof Error ? error.message : "Could not load source fields");
+        prompts.error(error instanceof Error ? error.message : t().sourceFieldsLoadFailed);
       }
       return;
     }
@@ -195,7 +211,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
   const compatibleOptions = (sourceTableId: string, target: PublicField) =>
     (sourceFields()[sourceTableId] ?? [])
       .filter((field) => !field.deletedAt && (field.type === target.type || ["formula", "lookup", "rollup"].includes(field.type)))
-      .map((field) => ({ id: field.id, label: `${field.name} · ${field.type}`, icon: "ti ti-columns" }));
+      .map((field) => ({ id: field.id, label: `${field.name} · ${fieldT().typeLabel({ type: field.type })}`, icon: "ti ti-columns" }));
 
   const draftInput = () => ({
     sourceTableIds: selectedSources(),
@@ -204,12 +220,12 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
 
   const saveDraft = async (): Promise<PublicFederatedRevisionView> => {
     const draftToken = config()?.draft.revisionToken;
-    if (!draftToken) throw new Error("Combined table configuration is not loaded.");
+    if (!draftToken) throw new Error(t().combinedNotLoaded);
     const response = await apiClient.tables[":tableId"].federation.draft.$put({
       param: { tableId: props.tableId },
       json: { ...draftInput(), draftToken },
     });
-    if (!response.ok) throw new Error(await errorMessage(response, "Could not save combined table draft"));
+    if (!response.ok) throw new Error(await errorMessage(response, t().saveCombinedDraftFailed));
     const draft = await response.json();
     setConfig((current) => (current ? { ...current, draft } : current));
     setValidationDiagnostics(draft.diagnostics);
@@ -222,74 +238,64 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
         param: { tableId: props.tableId },
         json: draftInput(),
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not validate combined table"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().validateCombinedFailed));
       return response.json();
     },
     onSuccess: (result) => {
       setValidationDiagnostics(result.diagnostics);
-      if (result.valid) prompts.success("Combined table configuration is valid.");
+      if (result.valid) prompts.success(t().combinedValid);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const saveMutation = mutations.create<PublicFederatedRevisionView, void>({
     mutation: saveDraft,
-    onSuccess: () => prompts.success("Combined table draft saved."),
+    onSuccess: () => prompts.success(t().combinedDraftSaved),
     onError: (error) => prompts.error(error.message),
   });
   const publishMutation = mutations.create<PublicFederatedRevisionView, void>({
     mutation: async () => {
       await saveDraft();
       const response = await apiClient.tables[":tableId"].federation.publish.$post({ param: { tableId: props.tableId } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Could not publish combined table"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().publishCombinedFailed));
       return response.json();
     },
     onSuccess: () => {
-      prompts.success("Combined table published.");
+      prompts.success(t().combinedPublished);
       void load();
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const revoke = async (sourceTableId: string) => {
-    const confirmed = await prompts.confirm(
-      "Revoke this source? The combined table will fail closed until a new configuration is published.",
-      {
-        title: "Revoke source access?",
-        variant: "danger",
-        confirmText: "Revoke",
-      },
-    );
+    const confirmed = await prompts.confirm(t().revokeSourceConfirm, {
+      title: t().revokeSourceQuestion,
+      variant: "danger",
+      confirmText: t().revoke,
+    });
     if (!confirmed) return;
     const response = await apiClient.tables[":tableId"].federation.sources[":sourceTableId"].revoke.$post({
       param: { tableId: props.tableId, sourceTableId },
     });
-    if (!response.ok) return prompts.error(await errorMessage(response, "Could not revoke source"));
+    if (!response.ok) return prompts.error(await errorMessage(response, t().revokeSourceFailed));
     await load();
   };
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title={`Combined data — ${props.tableName}`} icon="ti ti-table-share" close={props.close} />
+      <PanelDialog.Header title={t().combinedFor({ table: props.tableName })} icon="ti ti-table-share" close={props.close} />
       <PanelDialog.Body>
-        <Show
-          when={!loading()}
-          fallback={<Placeholder state="loading" title="Loading combined table" description="Reading sources and mappings." />}
-        >
-          <PanelDialog.Section
-            title="Sources"
-            subtitle="Choose the tables that should feed this combined table. You must be an admin of each source."
-            icon="ti ti-database-share"
-          >
+        <Show when={!loading()} fallback={<Placeholder state="loading" title={t().loadingCombined} description={t().readingSources} />}>
+          <PanelDialog.Section title={t().sources} subtitle={t().sourcesDetail} icon="ti ti-database-share">
             <TextInput
-              aria-label="Search source bases and tables"
+              aria-label={t().searchSourceAria}
               value={candidateQuery}
               onValueChange={(value) => {
                 setCandidateQuery(value);
                 searchCandidates.debouncedFn(value);
               }}
               icon="ti ti-search"
-              placeholder="Search source bases and tables..."
+              placeholder={t().searchSources}
             />
             <Show
               when={candidates().length > 0}
@@ -297,12 +303,8 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                 <Placeholder
                   state={candidateLoading() ? "loading" : "empty"}
                   icon={candidateLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-database-off"}
-                  title={candidateLoading() ? "Loading source tables" : "No source tables available"}
-                  description={
-                    candidateQuery().trim()
-                      ? "No administered source matches this search."
-                      : "You need admin access to a stored table before you can add it."
-                  }
+                  title={candidateLoading() ? t().loadingSources : t().noSources}
+                  description={candidateQuery().trim() ? t().noSourceMatch : t().noAdminSources}
                 />
               }
             >
@@ -314,7 +316,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                       {(candidate) => (
                         <CheckboxCard
                           label={candidate.table.name}
-                          description={`${candidate.fieldCount} fields`}
+                          description={t().fieldCount({ count: candidate.fieldCount })}
                           icon={candidate.table.icon ?? "ti ti-table"}
                           variant="input"
                           value={() => selectedSources().includes(candidate.table.id)}
@@ -334,42 +336,32 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                   disabled={candidateLoading()}
                   onClick={() => void loadCandidates().catch((error) => prompts.error((error as Error).message))}
                 >
-                  {candidateLoading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-dots" />} Load more sources
+                  {candidateLoading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-dots" />} {t().loadMoreSources}
                 </Button>
               </Show>
             </Show>
             <Show when={hiddenSourceCount() > 0}>
               <div class="paper flex items-start gap-2 p-3 text-sm text-secondary">
                 <i class="ti ti-lock mt-0.5" aria-hidden="true" />
-                <span>
-                  {hiddenSourceCount()} inaccessible published source{hiddenSourceCount() === 1 ? " is" : "s are"} retained automatically.
-                </span>
+                <span>{t().hiddenSources({ count: hiddenSourceCount() })}</span>
               </div>
             </Show>
           </PanelDialog.Section>
 
-          <PanelDialog.Section
-            title="Field mappings"
-            subtitle="For each field in this table, choose the source field whose value should appear."
-            icon="ti ti-arrows-join-2"
-          >
+          <PanelDialog.Section title={t().fieldMappings} subtitle={t().fieldMappingsDetail} icon="ti ti-arrows-join-2">
             <Show
               when={selectedTables().length > 0 && canonicalFields().length > 0}
               fallback={
                 <Placeholder
                   icon="ti ti-columns"
-                  title="No editable mappings"
-                  description={
-                    hiddenSourceCount() > 0
-                      ? "Existing sources you can no longer access stay connected, but their private fields are hidden."
-                      : "Add a source and create the fields you want this table to show first."
-                  }
+                  title={t().noEditableMappings}
+                  description={hiddenSourceCount() > 0 ? t().hiddenMappingsDetail : t().addSourceFirst}
                 />
               }
             >
               <Select
-                label="Source to map"
-                description={`${selectedTables().length} selected source${selectedTables().length === 1 ? "" : "s"}`}
+                label={t().sourceToMap}
+                description={t().selectedSources({ count: selectedTables().length })}
                 value={() => mappingTable()?.id ?? ""}
                 onValueChange={setMappingSourceId}
                 options={selectedTables().map((table) => ({
@@ -394,16 +386,16 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                           <div class="space-y-2">
                             <Select
                               label={target.name}
-                              description={`${target.type} · leave empty when this source has no value`}
+                              description={t().mappingFieldDetail({ type: fieldT().typeLabel({ type: target.type }) })}
                               value={() => mappingFor(table.id, target.id)?.sourceFieldId ?? ""}
                               onValueChange={(sourceFieldId) => setMapping(table.id, target.id, sourceFieldId ?? "")}
                               options={compatibleOptions(table.id, target)}
-                              placeholder="Not mapped"
+                              placeholder={t().notMapped}
                               clearable
                             />
                             <Show when={target.type === "select" && sourceSelectOptions().length > 0}>
                               <div class="space-y-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
-                                <div class="text-xs font-medium text-secondary">Option mapping</div>
+                                <div class="text-xs font-medium text-secondary">{t().optionMapping}</div>
                                 <For each={sourceSelectOptions()}>
                                   {(sourceOption) => (
                                     <Select
@@ -419,7 +411,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                                         setOptionMapping(table.id, target.id, sourceOption.id, targetOptionId ?? "")
                                       }
                                       options={targetSelectOptions()}
-                                      placeholder="Choose canonical option"
+                                      placeholder={t().chooseCanonicalOption}
                                       clearable
                                     />
                                   )}
@@ -437,10 +429,12 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
           </PanelDialog.Section>
 
           <Show when={validationDiagnostics().length > 0}>
-            <PanelDialog.Section title="Validation" subtitle="Resolve every issue before publishing." icon="ti ti-alert-triangle">
+            <PanelDialog.Section title={t().validation} subtitle={t().validationDetail} icon="ti ti-alert-triangle">
               <div class="paper p-3">
                 <ul class="space-y-1 text-sm text-danger">
-                  <For each={validationDiagnostics()}>{(diagnostic) => <li>{diagnostic.message}</li>}</For>
+                  <For each={validationDiagnostics()}>
+                    {(diagnostic) => <li>{t().federatedDiagnostic({ code: diagnostic.code, fallback: diagnostic.message })}</li>}
+                  </For>
                 </ul>
               </div>
             </PanelDialog.Section>
@@ -449,8 +443,11 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
           <Show when={config()?.current} keyed>
             {(current) => (
               <PanelDialog.Section
-                title="Published revision"
-                subtitle={`Revision ${current.revision} · ${current.status === "active" ? "Active" : "Action required"}`}
+                title={t().publishedRevision}
+                subtitle={t().revisionStatus({
+                  revision: current.revision,
+                  status: current.status === "active" ? t().active : t().actionRequired,
+                })}
                 icon="ti ti-cloud-check"
               >
                 <For each={current.sources}>
@@ -458,11 +455,11 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
                     const table = () => sourceTables().find((candidate) => candidate.id === source.sourceTableId);
                     return (
                       <div class="flex items-center gap-2 py-1">
-                        <span class="min-w-0 flex-1 truncate text-sm text-primary">{table()?.name ?? "Unavailable source"}</span>
+                        <span class="min-w-0 flex-1 truncate text-sm text-primary">{table()?.name ?? t().unavailableSource}</span>
                         <Show when={table() && source.sourceTableId} keyed>
                           {(sourceTableId) => (
                             <Button variant="ghost" size="sm" type="button" class="text-danger" onClick={() => void revoke(sourceTableId)}>
-                              <i class="ti ti-unlink" /> Revoke
+                              <i class="ti ti-unlink" /> {t().revoke}
                             </Button>
                           )}
                         </Show>
@@ -477,7 +474,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button variant="secondary" size="sm" type="button" onClick={props.close}>
-          Close
+          {t().close}
         </Button>
         <div class="flex items-center gap-2">
           <Button
@@ -487,7 +484,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             disabled={validateMutation.loading() || selectedSources().length + hiddenSourceCount() === 0}
             onClick={() => validateMutation.mutate(undefined)}
           >
-            {validateMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-checkup-list" />} Validate
+            {validateMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-checkup-list" />} {t().validate}
           </Button>
           <Button
             variant="secondary"
@@ -496,7 +493,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             disabled={saveMutation.loading()}
             onClick={() => saveMutation.mutate(undefined)}
           >
-            Save draft
+            {t().saveDraft}
           </Button>
           <Button
             variant="primary"
@@ -505,7 +502,7 @@ function FederatedTableDialog(props: { tableId: string; tableName: string; targe
             disabled={publishMutation.loading() || selectedSources().length + hiddenSourceCount() === 0}
             onClick={() => publishMutation.mutate(undefined)}
           >
-            {publishMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-cloud-upload" />} Publish
+            {publishMutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-cloud-upload" />} {t().publish}
           </Button>
         </div>
       </PanelDialog.Footer>

@@ -5,6 +5,7 @@ import { type View, type ViewUiSettings, ViewUiSettingsSchema } from "../contrac
 import { groupedColumnFieldId } from "../presentation-ids";
 import { normalizeRefKey } from "../ref-syntax";
 import { logAudit, type SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { parseJsonbRow } from "./jsonb";
 import { emitTableMetadataEvent } from "./metadata-events";
 import { writeNamedResource } from "./named-resource-conflict";
@@ -27,7 +28,13 @@ const viewUiFieldReferences = (ui: ViewUiSettings): string[] => [
     .filter((fieldId): fieldId is string => fieldId !== null && fieldId !== "*"),
 ];
 
-const validateViewUiFields = async (tableId: string, ui: ViewUiSettings, client: SqlClient = sql): Promise<Result<void>> => {
+const validateViewUiFields = async (
+  tableId: string,
+  ui: ViewUiSettings,
+  client: SqlClient = sql,
+  locale?: string,
+): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const references = [...new Set(viewUiFieldReferences(ui))];
   if (references.length === 0) return ok();
   const rows = await client<{ id: string }[]>`
@@ -36,7 +43,7 @@ const validateViewUiFields = async (tableId: string, ui: ViewUiSettings, client:
     WHERE table_id = ${tableId}::uuid AND deleted_at IS NULL
   `;
   const live = new Set(rows.map((row) => row.id));
-  return references.every((fieldId) => live.has(fieldId)) ? ok() : fail(err.badInput("view UI references an unknown field"));
+  return references.every((fieldId) => live.has(fieldId)) ? ok() : fail(err.badInput(messages.viewUnknownField));
 };
 
 const mapRow = (row: DbRow): View => {
@@ -143,7 +150,13 @@ export const get = async (id: string, opts: { includeDeleted?: boolean } = {}): 
   return row ? mapRow(row) : null;
 };
 
-const ensureUniqueViewName = async (tableId: string, name: string, exceptViewId: string | null = null): Promise<Result<void>> => {
+const ensureUniqueViewName = async (
+  tableId: string,
+  name: string,
+  exceptViewId: string | null = null,
+  locale?: string,
+): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const [row] = await sql<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM grids.views v
@@ -155,7 +168,7 @@ const ensureUniqueViewName = async (tableId: string, name: string, exceptViewId:
       AND lower(trim(v.name)) = ${normalizeRefKey(name)}
       AND (${exceptViewId}::uuid IS NULL OR v.id <> ${exceptViewId}::uuid)
   `;
-  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict("view name must be unique within this grid"));
+  return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict(messages.viewNameUnique));
 };
 
 type CreateViewServiceInput = {
@@ -169,25 +182,26 @@ type CreateViewServiceInput = {
   ownerUserId?: string | null;
 };
 
-export const create = async (input: CreateViewServiceInput, actorId: string | null): Promise<Result<View>> => {
+export const create = async (input: CreateViewServiceInput, actorId: string | null, locale?: string): Promise<Result<View>> => {
+  const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
-  if (name.length === 0) return fail(err.badInput("name required"));
-  const uniqueName = await ensureUniqueViewName(input.tableId, name);
+  if (name.length === 0) return fail(err.badInput(messages.nameRequired));
+  const uniqueName = await ensureUniqueViewName(input.tableId, name, null, locale);
   if (!uniqueName.ok) return uniqueName;
 
   const source = input.source?.trim() || `from table {${input.tableId}}`;
-  if (source.length === 0) return fail(err.badInput("view source required"));
-  if (source.length > 20_000) return fail(err.badInput("view source is too long"));
+  if (source.length === 0) return fail(err.badInput(messages.viewSourceRequired));
+  if (source.length > 20_000) return fail(err.badInput(messages.viewSourceTooLong));
   const uiParsed = ViewUiSettingsSchema.safeParse(input.ui ?? {});
-  if (!uiParsed.success) return fail(err.badInput("invalid view UI settings"));
+  if (!uiParsed.success) return fail(err.badInput(messages.invalidViewUi));
   const inserted = await sql.begin(async (tx): Promise<Result<DbRow>> => {
     const [table] = await tx<{ id: string }[]>`
       SELECT id::text AS id FROM grids.tables
       WHERE id = ${input.tableId}::uuid AND deleted_at IS NULL
       FOR UPDATE
     `;
-    if (!table) return fail(err.notFound("Table"));
-    const validUi = await validateViewUiFields(input.tableId, uiParsed.data, tx);
+    if (!table) return fail(err.notFound(messages.table));
+    const validUi = await validateViewUiFields(input.tableId, uiParsed.data, tx, locale);
     if (!validUi.ok) return validUi;
     return writeNamedResource(
       () =>
@@ -214,7 +228,7 @@ export const create = async (input: CreateViewServiceInput, actorId: string | nu
           }, "idx_grids_views_short_id"),
         ),
       "idx_grids_views_live_name",
-      "view name must be unique within this grid",
+      messages.viewNameUnique,
     );
   });
   if (!inserted.ok) return inserted;
@@ -245,22 +259,23 @@ type UpdateViewServiceInput = {
   shared?: boolean;
 };
 
-export const update = async (id: string, input: UpdateViewServiceInput, actorId: string | null): Promise<Result<View>> => {
+export const update = async (id: string, input: UpdateViewServiceInput, actorId: string | null, locale?: string): Promise<Result<View>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("View"));
+  if (!existing) return fail(err.notFound(messages.view));
 
   const name = input.name?.trim();
-  if (name !== undefined && name.length === 0) return fail(err.badInput("name cannot be empty"));
-  const uniqueName = await ensureUniqueViewName(existing.tableId, name ?? existing.name, existing.id);
+  if (name !== undefined && name.length === 0) return fail(err.badInput(messages.nameEmpty));
+  const uniqueName = await ensureUniqueViewName(existing.tableId, name ?? existing.name, existing.id, locale);
   if (!uniqueName.ok) return uniqueName;
 
   const ownerUserId = input.shared === undefined ? existing.ownerUserId : input.shared ? null : actorId;
 
   const uiParsed = ViewUiSettingsSchema.safeParse(input.ui ?? existing.ui);
-  if (!uiParsed.success) return fail(err.badInput("invalid view UI settings"));
+  if (!uiParsed.success) return fail(err.badInput(messages.invalidViewUi));
   const nextSource = input.source?.trim() ?? existing.source;
-  if (nextSource.length === 0) return fail(err.badInput("view source required"));
-  if (nextSource.length > 20_000) return fail(err.badInput("view source is too long"));
+  if (nextSource.length === 0) return fail(err.badInput(messages.viewSourceRequired));
+  if (nextSource.length > 20_000) return fail(err.badInput(messages.viewSourceTooLong));
 
   const next = {
     name: name ?? existing.name,
@@ -277,8 +292,8 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
       WHERE id = ${existing.tableId}::uuid AND deleted_at IS NULL
       FOR UPDATE
     `;
-    if (!table) return fail(err.notFound("Table"));
-    const validUi = await validateViewUiFields(existing.tableId, uiParsed.data, tx);
+    if (!table) return fail(err.notFound(messages.table));
+    const validUi = await validateViewUiFields(existing.tableId, uiParsed.data, tx, locale);
     if (!validUi.ok) return validUi;
     return writeNamedResource(
       () =>
@@ -299,12 +314,12 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
           return row;
         }),
       "idx_grids_views_live_name",
-      "view name must be unique within this grid",
+      messages.viewNameUnique,
     );
   });
   if (!updated.ok) return updated;
   const row = updated.data;
-  if (!row) return fail(err.internal("update failed"));
+  if (!row) return fail(err.internal(messages.updateFailed));
   const view = mapRow(row);
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "updated", diff: { view: { old: existing.name, new: view.name } } });
   await emitTableMetadataEvent(existing.tableId, {
@@ -318,9 +333,10 @@ export const update = async (id: string, input: UpdateViewServiceInput, actorId:
 /**
  * Soft-deletes the view. The row stays restorable.
  */
-export const remove = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const remove = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("View"));
+  if (!existing) return fail(err.notFound(messages.view));
   await sql`UPDATE grids.views SET deleted_at = now() WHERE id = ${id}::uuid AND deleted_at IS NULL`;
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "deleted" });
   await emitTableMetadataEvent(existing.tableId, {
@@ -331,9 +347,10 @@ export const remove = async (id: string, actorId: string | null): Promise<Result
   return ok();
 };
 
-export const restore = async (id: string, actorId: string | null): Promise<Result<View>> => {
+export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<View>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id, { includeDeleted: true });
-  if (!existing) return fail(err.notFound("View"));
+  if (!existing) return fail(err.notFound(messages.view));
   if (existing.deletedAt === null) return ok(existing);
   const restored = await writeNamedResource(
     async () => {
@@ -345,11 +362,11 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
       return row;
     },
     "idx_grids_views_live_name",
-    "view name must be unique within this grid",
+    messages.viewNameUnique,
   );
   if (!restored.ok) return restored;
   const row = restored.data;
-  if (!row) return fail(err.internal("restore failed"));
+  if (!row) return fail(err.internal(messages.restoreFailed));
   const view = mapRow(row);
   await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" });
   await emitTableMetadataEvent(existing.tableId, {

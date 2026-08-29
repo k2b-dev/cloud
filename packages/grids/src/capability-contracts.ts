@@ -194,6 +194,7 @@ export const GqlViewExecuteInputSchema = z
 
 const GqlDiagnosticSchema = z
   .object({
+    code: z.enum(["gql.syntax", "gql.context", "gql.resolution", "gql.execution", "gql.cursor", "gql.access"]).optional(),
     line: z.number().int().positive().optional(),
     column: z.number().int().positive().optional(),
     length: z.number().int().positive().optional(),

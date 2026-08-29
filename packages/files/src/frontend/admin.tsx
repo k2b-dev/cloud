@@ -1,10 +1,12 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import FilesSettingsForm from "./_components/FilesSettingsForm.island";
+import { filesMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = filesMessages.resolve([getLocale(c)]);
   // Read current values via the typed async API. Cache-aside means subsequent
   // requests that miss Redis hit DB once, then hit Redis. Sub-millisecond.
   // `files.filegate_token` is `kind:"secret"` — never serialized into the
@@ -21,7 +23,7 @@ export default ssr<AuthContext>(async (c) => {
   ]);
 
   return () => (
-    <AdminLayout c={c} title="Files">
+    <AdminLayout c={c} title={t.files}>
       <FilesSettingsForm
         initial={{
           "files.filegate_url": filegateUrl ?? "",

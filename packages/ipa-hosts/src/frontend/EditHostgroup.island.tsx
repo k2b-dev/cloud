@@ -1,7 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { IconButton, prompts, Tooltip, toast } from "@k2b/ui";
+import { IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { hostMessages } from "./messages";
 
 type Props = {
   cn: string;
@@ -9,6 +10,8 @@ type Props = {
 };
 
 const EditHostgroup = (props: Props) => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const mutation = mutations.create<void, { description?: string }>({
     mutation: async (vars) => {
       const res = await apiClient.hostgroups[":cn"].$patch({
@@ -16,12 +19,11 @@ const EditHostgroup = (props: Props) => {
         json: vars,
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to update hostgroup.");
+        throw new Error(t().failedUpdateGroup);
       }
     },
     onSuccess: () => {
-      toast.success("Hostgroup updated");
+      toast.success(t().groupUpdated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -29,14 +31,14 @@ const EditHostgroup = (props: Props) => {
 
   const handleClick = async () => {
     const result = await prompts.form({
-      title: `Edit ${props.cn}`,
+      title: t().editNamed({ name: props.cn }),
       icon: "ti ti-pencil",
-      confirmText: "Save",
+      confirmText: t().save,
       fields: {
         description: {
           type: "text" as const,
-          label: "Description",
-          placeholder: "Optional description...",
+          label: t().description,
+          placeholder: t().optionalDescription,
           default: props.description ?? "",
         },
       },
@@ -47,13 +49,13 @@ const EditHostgroup = (props: Props) => {
   };
 
   return (
-    <Tooltip.Anchor content={`Edit hostgroup ${props.cn}`}>
+    <Tooltip.Anchor content={t().editGroup({ name: props.cn })}>
       <IconButton
         size="xs"
-        label={`Edit hostgroup ${props.cn}`}
+        label={t().editGroup({ name: props.cn })}
         onClick={handleClick}
         loading={mutation.loading()}
-        loadingLabel={`Editing hostgroup ${props.cn}`}
+        loadingLabel={t().editingGroup({ name: props.cn })}
       >
         <i class="ti ti-pencil" aria-hidden="true" />
       </IconButton>

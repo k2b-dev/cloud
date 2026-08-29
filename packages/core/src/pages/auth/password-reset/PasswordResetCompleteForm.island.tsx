@@ -1,8 +1,9 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button } from "@k2b/ui";
+import { NoticeCard, Button, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal } from "solid-js";
 import { PasswordSetupFields } from "../PasswordSetupFields";
+import { authMessages } from "../messages";
 
 type PasswordResetCompleteFormProps = {
   token: string;
@@ -10,6 +11,8 @@ type PasswordResetCompleteFormProps = {
 };
 
 export default function PasswordResetCompleteForm(props: PasswordResetCompleteFormProps) {
+  const locale = useLocale();
+  const t = () => authMessages.resolve([locale()]).t;
   const [newPassword, setNewPassword] = createSignal("");
   const [confirmPassword, setConfirmPassword] = createSignal("");
 
@@ -27,7 +30,7 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
         message?: string;
       } | null;
       if (!res.ok) {
-        throw new Error(data?.message ?? "Failed to reset password.");
+        throw new Error(data?.message ?? t().resetFailed);
       }
     },
     onSuccess: () => {
@@ -56,13 +59,13 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
         </NoticeCard>
       )}
 
-      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel="Resetting password">
+      <Button type="submit" class="w-full justify-center py-2" loading={mutation.loading()} loadingLabel={t().resettingPassword}>
         {mutation.loading() ? (
           <i class="ti ti-loader-2 animate-spin" />
         ) : (
           <>
             <i class="ti ti-lock-check" />
-            <span>Set password</span>
+            <span>{t().setPassword}</span>
           </>
         )}
       </Button>

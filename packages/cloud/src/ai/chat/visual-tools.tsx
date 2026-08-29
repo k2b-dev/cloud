@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, MarkdownEditor, prompts, Slider } from "@k2b/ui";
+import { Button, MarkdownEditor, prompts, Slider, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
@@ -333,6 +333,7 @@ export function CloudTextEditorBlock(props: {
   disabledLabel?: string;
   onSubmit?: (result: unknown) => void | Promise<void>;
 }) {
+  const locale = useLocale();
   const editor = () => (isRecord(props.args) ? props.args : null);
   const format = () => (editor()?.format === "markdown" ? "markdown" : "plain");
   const initialContent = () => (typeof editor()?.content === "string" ? String(editor()!.content) : "");
@@ -395,7 +396,7 @@ export function CloudTextEditorBlock(props: {
       </Show>
       <div class="mt-3 flex min-h-9 flex-wrap items-center gap-2">
         <span class="text-xs tabular-nums text-dimmed">
-          {content().length.toLocaleString()} / {CLOUD_AI_TEXT_EDITOR_MAX_CHARS.toLocaleString()}
+          {content().length.toLocaleString(locale())} / {CLOUD_AI_TEXT_EDITOR_MAX_CHARS.toLocaleString(locale())}
         </span>
         <Show
           when={!props.disabled && !submitted() && props.onSubmit}

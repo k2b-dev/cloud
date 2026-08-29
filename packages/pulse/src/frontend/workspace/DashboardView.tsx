@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Chart, DataTable, MarkdownView, Placeholder, Select, TextInput } from "@k2b/ui";
 import { type Accessor, createMemo, For, Show } from "solid-js";
+import { usePulseMessages } from "../use-messages";
 import type {
   MetricQueryPoint,
   PulseCurrentState,
@@ -81,6 +82,7 @@ const dashboardControlValue = (dashboard: PulseDashboard, control: PulseDashboar
   context.dashboardControlValues()[dashboard.id]?.[control.variable] ?? control.defaultValue;
 
 const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context: DashboardRenderContext }) => {
+  const t = usePulseMessages();
   const data = () => props.context.metricWidgetPoints()[props.widget.id] ?? [];
   const last = () => data().at(-1)?.value ?? null;
   const summary = () => props.context.metricByName().get(props.widget.metric);
@@ -157,7 +159,7 @@ const MetricWidgetChart = (props: { widget: PulseDashboardMetricWidget; context:
         getRowId={(point) => point.bucket}
         density="compact"
         class="max-h-64 overflow-auto"
-        empty="No points yet."
+        empty={t().noPoints}
       />
     );
   }
@@ -272,7 +274,9 @@ const CardWidget = (props: { widget: PulseDashboardCardWidget; context: Dashboar
   </article>
 );
 
-const EventsWidget = (props: { widget: PulseDashboardEventsWidget; context: DashboardRenderContext }) => (
+const EventsWidget = (props: { widget: PulseDashboardEventsWidget; context: DashboardRenderContext }) => {
+  const t = usePulseMessages();
+  return (
   <article class="paper h-full p-4">
     <div class="mb-3">
       <p class="text-sm font-semibold text-primary">{props.widget.title}</p>
@@ -291,12 +295,14 @@ const EventsWidget = (props: { widget: PulseDashboardEventsWidget; context: Dash
       getRowId={(event) => event.id}
       density="compact"
       class="max-h-80 overflow-auto"
-      empty="No events matched this query."
+      empty={t().noEventsMatched}
     />
   </article>
-);
+  );
+};
 
 const StatesWidget = (props: { widget: PulseDashboardStatesWidget; context: DashboardRenderContext }) => {
+  const t = usePulseMessages();
   const rows = () => props.context.dashboardStates()[props.widget.id] ?? [];
   const firstRow = createMemo(() => rows()[0]);
   return (
@@ -321,7 +327,7 @@ const StatesWidget = (props: { widget: PulseDashboardStatesWidget; context: Dash
             getRowId={(state) => stateRowId(state)}
             density="compact"
             class="max-h-80 overflow-auto"
-            empty="No states matched this query."
+            empty={t().noStatesMatched}
           />
         }
       >
@@ -338,6 +344,7 @@ const StatesWidget = (props: { widget: PulseDashboardStatesWidget; context: Dash
 };
 
 function MapWidget(props: { widget: PulseDashboardMapWidget; context: DashboardRenderContext }) {
+  const t = usePulseMessages();
   const series = () => props.context.dashboardMaps()[props.widget.id] ?? [];
   return (
     <article class="paper h-full p-4">
@@ -349,7 +356,7 @@ function MapWidget(props: { widget: PulseDashboardMapWidget; context: DashboardR
       </div>
       <Show
         when={series().some((item) => item.data.length)}
-        fallback={<div class="flex h-64 items-center justify-center text-sm text-dimmed">No valid map points matched this query.</div>}
+        fallback={<div class="flex h-64 items-center justify-center text-sm text-dimmed">{t().noMapPointsMatched}</div>}
       >
         <Chart kind="map" class="h-64 text-dimmed" series={series()} legend={series().some((item) => Boolean(item.label))} interactive />
       </Show>

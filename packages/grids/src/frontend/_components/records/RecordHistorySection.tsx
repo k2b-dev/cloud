@@ -1,8 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Avatar, DetailPanel, IconButton, Placeholder, Tooltip } from "@k2b/ui";
+import { Avatar, DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicRecordHistoryEntry as RecordHistoryEntry } from "../../../api/public-audit";
 import type { PublicField as Field } from "../../../api/public-dto";
+import { recordMessages } from "./messages";
 
 const ACTION_ICONS: Record<string, string> = {
   created: "ti-plus",
@@ -38,39 +39,43 @@ const ACTION_COLORS: Record<string, string> = {
   "document.created": "text-blue-600 dark:text-blue-400",
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  "file.added": "File added",
-  "file.replaced": "File replaced",
-  "file.removed": "File removed",
-  finalized: "Record finalized",
-  "record_snapshot.created": "Snapshot created",
-  "document.created": "Document created",
-  "workflow.record.created": "Record created by workflow",
-  "workflow.record.updated": "Record updated by workflow",
-  "workflow.record.finalization.requested": "Finalization requested by workflow",
-  "document_link.created": "Document link created",
-  "document_link.revoked": "Document link revoked",
-  "document_link.accessed": "Document link accessed",
+export const formatRecordHistoryAction = (action: string, locale = "en"): string => {
+  const t = recordMessages.resolve([locale]).t;
+  const labels: Record<string, string> = {
+    "file.added": t.fileAdded,
+    "file.replaced": t.fileReplaced,
+    "file.removed": t.fileRemoved,
+    finalized: t.recordFinalized,
+    "record_snapshot.created": t.snapshotCreated,
+    "document.created": t.documentCreated,
+    "workflow.record.created": t.workflowCreated,
+    "workflow.record.updated": t.workflowUpdated,
+    "workflow.record.finalization.requested": t.workflowFinalization,
+    "document_link.created": t.documentLinkCreated,
+    "document_link.revoked": t.documentLinkRevoked,
+    "document_link.accessed": t.documentLinkAccessed,
+  };
+  return labels[action] ?? action;
 };
-
-export const formatRecordHistoryAction = (action: string): string => ACTION_LABELS[action] ?? action;
 
 export function formatRecordRelativeTime(iso: string, dateConfig?: DateContext): string {
   const then = new Date(iso).getTime();
   const now = Date.now();
   const seconds = Math.floor((now - then) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 86_400 * 30) return `${Math.floor(seconds / 86_400)}d ago`;
+  const locale = dateConfig?.locale ?? "en";
+  if (seconds < 60) return recordMessages.resolve([locale]).t.justNow;
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "narrow" });
+  if (seconds < 3600) return relative.format(-Math.floor(seconds / 60), "minute");
+  if (seconds < 86_400) return relative.format(-Math.floor(seconds / 3600), "hour");
+  if (seconds < 86_400 * 30) return relative.format(-Math.floor(seconds / 86_400), "day");
   return new Intl.DateTimeFormat(dateConfig?.locale, { timeZone: dateConfig?.timeZone }).format(new Date(iso));
 }
 
-const displayValue = (value: unknown): string => {
-  if (value === null || value === undefined || value === "") return "Empty";
+const displayValue = (value: unknown, empty: string): string => {
+  if (value === null || value === undefined || value === "") return empty;
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.length === 0 ? "Empty" : value.map(displayValue).join(", ");
+  if (Array.isArray(value)) return value.length === 0 ? empty : value.map((item) => displayValue(item, empty)).join(", ");
   return JSON.stringify(value);
 };
 
@@ -82,25 +87,27 @@ type HistoryProps = {
 };
 
 export function RecordHistoryList(props: HistoryProps) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const fieldNames = () => new Map(props.fields.map((field) => [field.id, field.name]));
   return (
     <div class="flex flex-col gap-2">
       <Show when={props.entries.length === 0}>
-        <Placeholder align="left" class="px-0 py-2" description={<>No history yet.</>} />
+        <Placeholder align="left" class="px-0 py-2" description={<>{t().noHistory}</>} />
       </Show>
       <For each={props.entries}>
         {(entry) => {
           const fieldsChanged = entry.diff ? Object.keys(entry.diff) : [];
           const combinedEntry = "source" in entry;
           const changedLabels = fieldsChanged.map(
-            (fieldId) => fieldNames().get(fieldId) ?? (combinedEntry ? "Unavailable field" : fieldId),
+            (fieldId) => fieldNames().get(fieldId) ?? (combinedEntry ? t().unavailableField : fieldId),
           );
           const summary =
             fieldsChanged.length === 0
               ? null
               : fieldsChanged.length <= 3
                 ? changedLabels.join(", ")
-                : `${changedLabels.slice(0, 3).join(", ")} +${fieldsChanged.length - 3} more`;
+                : `${changedLabels.slice(0, 3).join(", ")} ${t().more({ count: fieldsChanged.length - 3 })}`;
           return (
             <div class="relative">
               <details class="text-xs">
@@ -111,21 +118,21 @@ export function RecordHistoryList(props: HistoryProps) {
                     class={`ti ${ACTION_ICONS[entry.action] ?? "ti-circle"} ${ACTION_COLORS[entry.action] ?? "text-dimmed"} text-xs`}
                     aria-hidden="true"
                   />
-                  <span class="text-secondary">{formatRecordHistoryAction(entry.action)}</span>
+                  <span class="text-secondary">{formatRecordHistoryAction(entry.action, locale())}</span>
                   <Show
                     when={entry.userDisplayName}
                     fallback={
-                      <Show when={entry.userId === null} fallback={<span class="text-dimmed italic">by deleted user</span>}>
+                      <Show when={entry.userId === null} fallback={<span class="text-dimmed italic">{t().deletedUser}</span>}>
                         <span class="text-dimmed inline-flex items-center gap-1">
                           <i class="ti ti-user-question text-[10px]" aria-hidden="true" />
-                          by system or anonymous actor
+                          {t().systemActorBy}
                         </span>
                       </Show>
                     }
                   >
                     {(name) => (
                       <span class="inline-flex min-w-0 items-center gap-1 text-dimmed">
-                        by
+                        {t().by}
                         <Avatar
                           name={name()}
                           src={
@@ -144,14 +151,10 @@ export function RecordHistoryList(props: HistoryProps) {
                     <span class="text-[10px] text-dimmed">{formatRecordRelativeTime(entry.createdAt, props.dateConfig)}</span>
                   </Tooltip.Anchor>
                 </summary>
-                <Show when={summary}>
-                  <p class="ml-5 text-[11px] text-dimmed">changed {summary}</p>
-                </Show>
+                <Show when={summary}>{(value) => <p class="ml-5 text-[11px] text-dimmed">{t().changed({ value: value() })}</p>}</Show>
                 <Show when={"source" in entry ? entry.source : null}>
                   {(source) => (
-                    <p class="ml-5 text-[11px] text-dimmed">
-                      Published from {source().baseName} · {source().tableName}
-                    </p>
+                    <p class="ml-5 text-[11px] text-dimmed">{t().publishedFrom({ base: source().baseName, table: source().tableName })}</p>
                   )}
                 </Show>
                 <Show when={(entry.context?.answers.length ?? 0) > 0}>
@@ -174,13 +177,13 @@ export function RecordHistoryList(props: HistoryProps) {
                         return (
                           <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 text-[11px]">
                             <dt class="font-medium text-secondary">
-                              {fieldNames().get(fieldId) ?? (combinedEntry ? "Unavailable field" : fieldId)}
+                              {fieldNames().get(fieldId) ?? (combinedEntry ? t().unavailableField : fieldId)}
                             </dt>
                             <dd class="mt-1 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2 gap-y-1">
-                              <span class="text-dimmed">Before</span>
-                              <span class="break-words text-secondary">{displayValue(change?.old)}</span>
-                              <span class="text-dimmed">After</span>
-                              <span class="break-words text-secondary">{displayValue(change?.new)}</span>
+                              <span class="text-dimmed">{t().before}</span>
+                              <span class="break-words text-secondary">{displayValue(change?.old, t().empty)}</span>
+                              <span class="text-dimmed">{t().after}</span>
+                              <span class="break-words text-secondary">{displayValue(change?.new, t().empty)}</span>
                             </dd>
                           </div>
                         );
@@ -190,13 +193,13 @@ export function RecordHistoryList(props: HistoryProps) {
                 </Show>
               </details>
               <Show when={props.onOpenRecord && entry.recordId}>
-                <Tooltip.Anchor content="Open record" class="absolute right-0 top-0">
+                <Tooltip.Anchor content={t().openRecord} class="absolute right-0 top-0">
                   <IconButton
                     variant="ghost"
                     size="sm"
                     type="button"
                     class="-my-1"
-                    label="Open record"
+                    label={t().openRecord}
                     onClick={() => {
                       props.onOpenRecord?.(entry.recordId!, "recordDeletedAt" in entry && entry.recordDeletedAt !== null);
                     }}
@@ -214,9 +217,11 @@ export function RecordHistoryList(props: HistoryProps) {
 }
 
 export default function RecordHistorySection(props: HistoryProps) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   return (
-    <DetailPanel.Group label="Record history">
-      <DetailPanel.Section title="History" icon="ti ti-history" meta={props.entries.length} collapsible>
+    <DetailPanel.Group label={t().recordHistory}>
+      <DetailPanel.Section title={t().history} icon="ti ti-history" meta={props.entries.length} collapsible>
         <RecordHistoryList {...props} />
       </DetailPanel.Section>
     </DetailPanel.Group>

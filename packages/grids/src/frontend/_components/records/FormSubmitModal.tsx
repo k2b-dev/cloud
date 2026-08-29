@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, CopyButton, dialogCore, NoticeCard, PanelDialog, panelDialogOptions } from "@k2b/ui";
+import { Button, CopyButton, dialogCore, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form } from "../../../api/public-dto";
 import { evaluateFormValidations } from "../../../form-validations";
 import { buildFormSubmitPayload, buildInitialValues, FieldInput, type InlineCreateState, userInputEntriesOf } from "../forms/form-fields";
 import { errorMessage } from "../utils/api-helpers";
+import { recordMessages } from "./messages";
 
 /**
  * Open a modal that lets an authenticated user fill out a form and
@@ -41,6 +42,8 @@ function FormSubmitBody(props: {
   dateConfig?: DateContext;
   close: (result?: void) => void;
 }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   const fieldsById = new Map(props.fields.map((f) => [f.id, f]));
   const entries = userInputEntriesOf(props.form.config.fields);
 
@@ -69,7 +72,7 @@ function FormSubmitBody(props: {
     setSubmitting(true);
     try {
       const formId = props.form.id;
-      if (!formId) throw new Error("This form cannot be submitted.");
+      if (!formId) throw new Error(t().submitUnavailable);
       const payload = buildFormSubmitPayload(
         entries.map((entry) => fieldsById.get(entry.fieldId)).filter((field): field is Field => Boolean(field && !field.deletedAt)),
         values(),
@@ -81,13 +84,13 @@ function FormSubmitBody(props: {
         json: payload,
       });
       if (!res.ok) {
-        setError(await errorMessage(res, "Submit failed"));
+        setError(await errorMessage(res, t().submitFailed));
         return;
       }
       props.onSubmitted?.();
       setDone(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Submit failed");
+      setError(e instanceof Error ? e.message : t().submitFailed);
     } finally {
       setSubmitting(false);
     }
@@ -104,7 +107,7 @@ function FormSubmitBody(props: {
     <Show
       when={!done()}
       fallback={
-        <SuccessState message={props.form.config.successMessage ?? "Saved."} onOk={() => props.close()} onAddAnother={handleAddAnother} />
+        <SuccessState message={props.form.config.successMessage ?? t().saved} onOk={() => props.close()} onAddAnother={handleAddAnother} />
       }
     >
       <form class="flex flex-col gap-3" onSubmit={handleSubmit}>
@@ -154,7 +157,7 @@ function FormSubmitBody(props: {
             {(token) => (
               <CopyButton
                 text={`${typeof window !== "undefined" ? window.location.origin : ""}/share/grids/forms/${token()}`}
-                label="Copy public link"
+                label={t().copyPublicLink}
                 variant="ghost"
                 size="sm"
               />
@@ -162,13 +165,13 @@ function FormSubmitBody(props: {
           </Show>
           <div class="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="sm" type="button" onClick={() => props.close()} disabled={submitting()}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button variant="primary" size="sm" type="submit" disabled={submitting()}>
               <Show when={submitting()} fallback={<i class="ti ti-send" />}>
                 <i class="ti ti-loader-2 animate-spin" />
               </Show>
-              {props.form.config.submitLabel ?? "Submit"}
+              {props.form.config.submitLabel ?? t().submit}
             </Button>
           </div>
         </div>
@@ -178,6 +181,8 @@ function FormSubmitBody(props: {
 }
 
 function SuccessState(props: { message: string; onOk: () => void; onAddAnother: () => void }) {
+  const locale = useLocale();
+  const t = () => recordMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col items-center gap-4 py-4 text-center">
       <div class="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
@@ -187,10 +192,10 @@ function SuccessState(props: { message: string; onOk: () => void; onAddAnother: 
       <div class="flex items-center gap-2">
         <Button variant="ghost" size="sm" type="button" onClick={props.onAddAnother}>
           <i class="ti ti-plus" />
-          Add another
+          {t().addAnother}
         </Button>
         <Button variant="primary" size="sm" type="button" onClick={props.onOk}>
-          OK
+          {t().ok}
         </Button>
       </div>
     </div>

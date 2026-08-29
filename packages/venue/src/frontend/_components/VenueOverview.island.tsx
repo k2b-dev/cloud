@@ -1,9 +1,10 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { AppOverview, Button, prompts, TextInput, toast } from "@k2b/ui";
+import { AppOverview, Button, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { Venue, VenueTemplateSummary } from "../../contracts";
+import { venueMessages } from "../../messages";
 
 type Props = {
   venues: Venue[];
@@ -14,12 +15,6 @@ type Props = {
 const readError = async (res: Response, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? fallback;
-};
-
-const signupLabel = (mode: Venue["signupMode"]): string => {
-  if (mode === "templates") return "shift signup";
-  if (mode === "both") return "shift + free signup";
-  return "free signup";
 };
 
 const slugify = (value: string): string =>
@@ -44,13 +39,13 @@ const updateQueryParam = (value: string) => {
   window.history.replaceState({}, "", url.toString());
 };
 
-const permissionLabel = (permission: Venue["permission"]): string => {
-  if (permission === "admin") return "Admin";
-  if (permission === "write") return "Staff";
-  return "Viewer";
-};
-
 export default function VenueOverview(props: Props) {
+  const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
+  const signupLabel = (mode: Venue["signupMode"]): string =>
+    mode === "templates" ? t().shiftSignup : mode === "both" ? t().shiftAndFreeSignup : t().freeSignup;
+  const permissionLabel = (permission: Venue["permission"]): string =>
+    permission === "admin" ? t().admin : permission === "write" ? t().staff : t().viewer;
   const [query, setQuery] = createSignal(props.initialQuery);
   const filteredVenues = createMemo(() => props.venues.filter((venue) => venueMatches(venue, query())));
   const onSearchInput = (value: string) => {
@@ -60,13 +55,13 @@ export default function VenueOverview(props: Props) {
   const createVenue = mutation.create<string | null, void>({
     mutation: async () => {
       const result = await prompts.form({
-        title: "Create venue",
+        title: t().createVenue,
         icon: "ti ti-building-carousel",
-        confirmText: "Create",
+        confirmText: t().create,
         fields: {
-          name: { type: "text", label: "Name", required: true, placeholder: "StuVe Café" },
-          slug: { type: "text", label: "Public slug", required: true, placeholder: "stuve-cafe" },
-          description: { type: "text", label: "Description", multiline: true, lines: 3 },
+          name: { type: "text", label: t().name, required: true, placeholder: "StuVe Café" },
+          slug: { type: "text", label: t().publicSlug, required: true, placeholder: "stuve-cafe" },
+          description: { type: "text", label: t().description, multiline: true, lines: 3 },
         },
       });
       if (!result) return null;
@@ -88,13 +83,13 @@ export default function VenueOverview(props: Props) {
           bannerBase64: null,
         },
       });
-      if (!res.ok) throw new Error(await readError(res, "Failed to create venue."));
+      if (!res.ok) throw new Error(await readError(res, t().createVenueFailed));
       const venue = await res.json();
       return venue.id;
     },
     onSuccess: (id) => {
       if (!id) return;
-      toast.success("Venue created");
+      toast.success(t().venueCreated);
       navigateTo(`/app/venue/${id}`);
     },
     onError: (err) => prompts.error(err.message),
@@ -109,13 +104,13 @@ export default function VenueOverview(props: Props) {
           slug: input.slug?.trim() || undefined,
         },
       });
-      if (!res.ok) throw new Error(await readError(res, "Failed to create venue from template."));
+      if (!res.ok) throw new Error(await readError(res, t().createFromTemplateFailed));
       const venue = await res.json();
       return venue.id;
     },
     onSuccess: (id) => {
       if (!id) return;
-      toast.success("Venue created");
+      toast.success(t().venueCreated);
       navigateTo(`/app/venue/${id}`);
     },
     onError: (err) => prompts.error(err.message),
@@ -126,10 +121,10 @@ export default function VenueOverview(props: Props) {
     const result = await prompts.form({
       title: template.name,
       icon: template.icon,
-      confirmText: "Create",
+      confirmText: t().create,
       fields: {
-        name: { type: "text", label: "Name", placeholder: template.name },
-        slug: { type: "text", label: "Public slug", placeholder: defaultSlug },
+        name: { type: "text", label: t().name, placeholder: template.name },
+        slug: { type: "text", label: t().publicSlug, placeholder: defaultSlug },
       },
     });
     if (!result) return;
@@ -141,24 +136,16 @@ export default function VenueOverview(props: Props) {
   };
 
   return (
-    <AppOverview
-      title="Venues"
-      subtitle="Staffed locations, public opening status, shifts, menus, and feedback."
-      icon="ti ti-building-carousel"
-    >
+    <AppOverview title={t().appName} subtitle={t().overviewSubtitle} icon="ti ti-building-carousel">
       <AppOverview.Main
-        title="Your venues"
-        description={
-          props.venues.length === 0
-            ? "Create your first venue to start scheduling."
-            : `${props.venues.length} venue${props.venues.length === 1 ? "" : "s"} available`
-        }
+        title={t().yourVenues}
+        description={props.venues.length === 0 ? t().createFirstVenue : t().venuesAvailable({ count: props.venues.length })}
         toolbar={
           <TextInput
             name="venue-search"
             type="search"
-            aria-label="Search venues"
-            placeholder="Search venues..."
+            aria-label={t().searchVenues}
+            placeholder={t().searchVenuesPlaceholder}
             icon="ti ti-search"
             activeIcon="ti ti-search"
             value={query}
@@ -170,8 +157,8 @@ export default function VenueOverview(props: Props) {
       >
         {props.venues.length === 0 ? (
           <AppOverview.EmptyState
-            title="No venues yet"
-            description="Create a venue for a café, service desk, office hours, or staffed location."
+            title={t().noVenues}
+            description={t().noVenuesDescription}
             icon="ti ti-building-carousel"
             class="min-h-72"
           />
@@ -179,9 +166,9 @@ export default function VenueOverview(props: Props) {
           <Show
             when={filteredVenues().length > 0}
             fallback={
-              <AppOverview.EmptyState title="No matching venues" description="Try a different name or public slug." icon="ti ti-search">
+              <AppOverview.EmptyState title={t().noMatchingVenues} description={t().noMatchingVenuesDescription} icon="ti ti-search">
                 <Button type="button" variant="secondary" size="sm" onClick={() => onSearchInput("")}>
-                  <i class="ti ti-x" /> Clear search
+                  <i class="ti ti-x" /> {t().clearSearch}
                 </Button>
               </AppOverview.EmptyState>
             }
@@ -212,7 +199,7 @@ export default function VenueOverview(props: Props) {
                       </div>
                       <p class="truncate text-xs text-dimmed">
                         {venue.description ||
-                          `${signupLabel(venue.signupMode)} · ${venue.publicEnabled ? "public page active" : "public page hidden"}`}
+                          `${signupLabel(venue.signupMode)} · ${venue.publicEnabled ? t().publicPageActive : t().publicPageHidden}`}
                       </p>
                     </div>
                     <i class="ti ti-chevron-right text-dimmed transition-transform group-hover:translate-x-0.5" />
@@ -224,7 +211,7 @@ export default function VenueOverview(props: Props) {
         )}
       </AppOverview.Main>
 
-      <AppOverview.Aside title="Create" description="Choose a useful starter, or start blank.">
+      <AppOverview.Aside title={t().create} description={t().chooseStarter}>
         <div class="grid grid-cols-1 gap-2">
           <For each={props.templates}>
             {(template) => (
@@ -261,8 +248,8 @@ export default function VenueOverview(props: Props) {
               />
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">Blank venue</span>
-              <span class="block text-xs text-dimmed leading-snug">Create an empty venue with standard scheduling settings.</span>
+              <span class="block text-sm font-semibold text-primary">{t().blankVenue}</span>
+              <span class="block text-xs text-dimmed leading-snug">{t().blankVenueDescription}</span>
             </span>
           </button>
         </div>

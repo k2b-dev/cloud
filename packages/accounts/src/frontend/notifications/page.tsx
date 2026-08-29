@@ -1,12 +1,13 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, type NotificationBatch, notificationBatches } from "@valentinkolb/cloud/services";
 import { formatNumber } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
+import { accountsMessages } from "../messages";
 import NewNotificationBatch from "./NewNotificationBatch.island";
 import NotificationBatchStatusFilters from "./NotificationBatchStatusFilters.island";
 
@@ -47,13 +48,18 @@ const statusClass = (status: NotificationBatch["status"]) => {
   return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
 };
 
-const statusLabel = (status: NotificationBatch["status"]) =>
-  status
-    .split("_")
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join(" ");
-
 export default ssr<AuthContext>(async (c) => {
+  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
+  const statusLabel = (value: NotificationBatch["status"]) =>
+    ({
+      draft: t.draft,
+      ready: t.ready,
+      running: t.running,
+      completed: t.completed,
+      completed_with_errors: t.withErrors,
+      failed: t.failed,
+      cancelled: t.cancelled,
+    })[value];
   const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 50;
@@ -69,19 +75,19 @@ export default ssr<AuthContext>(async (c) => {
     : "/app/accounts/notifications?page=";
 
   const columns: DataTableColumn<NotificationBatch>[] = [
-    { id: "subject", header: "Subject", value: (entry) => entry.subject, cellClass: "min-w-[18rem]" },
-    { id: "status", header: "Status", value: (entry) => entry.status },
-    { id: "targets", header: "Recipients", value: (entry) => entry.targetCount },
-    { id: "sent", header: "Sent", value: (entry) => entry.sentCount },
-    { id: "errors", header: "Errors", value: (entry) => entry.errorCount },
-    { id: "created", header: "Created", value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "subject", header: t.subject, value: (entry) => entry.subject, cellClass: "min-w-[18rem]" },
+    { id: "status", header: t.status, value: (entry) => entry.status },
+    { id: "targets", header: t.recipients, value: (entry) => entry.targetCount },
+    { id: "sent", header: t.sent, value: (entry) => entry.sentCount },
+    { id: "errors", header: t.errors, value: (entry) => entry.errorCount },
+    { id: "created", header: t.created, value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
   ];
 
   return () => (
     <Layout
       c={c}
       fullWidth
-      title={[{ title: "Start", href: "/" }, { title: "Accounts", href: "/app/accounts" }, { title: "Notifications" }]}
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.notifications }]}
     >
       <AccountsWorkspace
         active="notifications"
@@ -92,10 +98,8 @@ export default ssr<AuthContext>(async (c) => {
         <div class="flex flex-col gap-2">
           <div class="flex flex-wrap items-start gap-3" style="view-transition-name: accounts-notifications-title">
             <div class="min-w-0 flex-1">
-              <h1 class="text-base font-semibold text-primary">Notifications</h1>
-              <p class="mt-1 text-xs text-dimmed">
-                {batchesPage.total} {batchesPage.total === 1 ? "batch" : "batches"} for admin-created user notifications
-              </p>
+              <h1 class="text-base font-semibold text-primary">{t.notifications}</h1>
+              <p class="mt-1 text-xs text-dimmed">{t.notificationBatchCount({ count: batchesPage.total })}</p>
             </div>
             <NewNotificationBatch />
           </div>
@@ -107,9 +111,7 @@ export default ssr<AuthContext>(async (c) => {
           {batchesPage.items.length === 0 ? (
             <Placeholder
               surface="paper"
-              description={
-                <>{status ? `No ${statusLabel(status).toLowerCase()} notification batches found.` : "No notification batches found."}</>
-              }
+              description={<>{status ? t.noNotificationBatchesStatus({ status }) : t.noNotificationBatches}</>}
             />
           ) : (
             <div class="paper overflow-hidden" style="view-transition-name: accounts-notifications-table">
@@ -126,7 +128,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="block min-w-0">
                         <span class="block truncate font-medium text-primary hover:underline">{entry.subject}</span>
-                        <span class="block truncate text-[11px] text-dimmed">{entry.lastError ?? "Email batch"}</span>
+                        <span class="block truncate text-[11px] text-dimmed">{entry.lastError ?? t.emailBatch}</span>
                       </a>
                     );
                   }
@@ -140,13 +142,20 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "targets")
                     return (
                       <span class="text-dimmed">
-                        {formatNumber(entry.deliverableCount)} / {formatNumber(entry.targetCount)} deliverable
+                        {t.deliverableRatio({
+                          deliverable: formatNumber(entry.deliverableCount, { locale }),
+                          total: formatNumber(entry.targetCount, { locale }),
+                        })}
                       </span>
                     );
-                  if (col.id === "sent") return <span class="text-dimmed">{formatNumber(entry.sentCount)}</span>;
+                  if (col.id === "sent") return <span class="text-dimmed">{formatNumber(entry.sentCount, { locale })}</span>;
                   if (col.id === "errors")
-                    return <span class={entry.errorCount > 0 ? "text-red-600" : "text-dimmed"}>{formatNumber(entry.errorCount)}</span>;
-                  if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt)}</span>;
+                    return (
+                      <span class={entry.errorCount > 0 ? "text-red-600" : "text-dimmed"}>
+                        {formatNumber(entry.errorCount, { locale })}
+                      </span>
+                    );
+                  if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt, { locale })}</span>;
                   return "";
                 }}
               />

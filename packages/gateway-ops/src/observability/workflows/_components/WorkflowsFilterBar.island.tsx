@@ -1,5 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
+import { gatewayOpsMessages } from "../../../messages";
 
 type Props = {
   apps: string[];
@@ -11,36 +12,27 @@ type Props = {
   hrefFor: Record<"app" | "state" | "mode", Record<string, string>>;
 };
 
-const STATE_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All states", icon: "ti ti-list" },
-      { value: "failed", label: "Failed", icon: "ti ti-alert-triangle" },
-      { value: "needs_attention", label: "Needs attention", icon: "ti ti-hand-stop" },
-      { value: "waiting", label: "Waiting", icon: "ti ti-clock-pause" },
-      { value: "running", label: "Running", icon: "ti ti-player-play" },
-      { value: "queued", label: "Queued", icon: "ti ti-hourglass" },
-      { value: "succeeded", label: "Succeeded", icon: "ti ti-check" },
-      { value: "canceled", label: "Canceled", icon: "ti ti-ban" },
-    ],
-  },
-];
-
-const MODE_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "Any mode", icon: "ti ti-arrows-shuffle" },
-      { value: "execute", label: "Execute", icon: "ti ti-bolt" },
-      { value: "dryRun", label: "Dry run", icon: "ti ti-eye" },
-    ],
-  },
-];
-
 export default function WorkflowsFilterBar(props: Props) {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
+  const stateOptions: FilterChipSection[] = [{ options: [
+    { value: "all", label: t.allStates, icon: "ti ti-list" },
+    { value: "failed", label: t.failed, icon: "ti ti-alert-triangle" },
+    { value: "needs_attention", label: t.needsAttentionLabel, icon: "ti ti-hand-stop" },
+    { value: "waiting", label: t.waiting, icon: "ti ti-clock-pause" },
+    { value: "running", label: t.running, icon: "ti ti-player-play" },
+    { value: "queued", label: t.queued, icon: "ti ti-hourglass" },
+    { value: "succeeded", label: t.succeeded, icon: "ti ti-check" },
+    { value: "canceled", label: t.canceled, icon: "ti ti-ban" },
+  ] }];
+  const modeOptions: FilterChipSection[] = [{ options: [
+    { value: "all", label: t.anyMode, icon: "ti ti-arrows-shuffle" },
+    { value: "execute", label: t.execute, icon: "ti ti-bolt" },
+    { value: "dryRun", label: t.dryRun, icon: "ti ti-eye" },
+  ] }];
   const appOptions = (): FilterChipSection[] => [
     {
       options: [
-        { value: "", label: "All apps", icon: "ti ti-apps" },
+        { value: "", label: t.allApps, icon: "ti ti-apps" },
         ...props.apps.map((app) => ({ value: app, label: app, icon: "ti ti-app-window" })),
       ],
     },
@@ -49,7 +41,7 @@ export default function WorkflowsFilterBar(props: Props) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <FilterChip
-        label="App"
+        label={t.app}
         icon="ti ti-apps"
         options={appOptions()}
         value={props.app ? [props.app] : [""]}
@@ -60,18 +52,18 @@ export default function WorkflowsFilterBar(props: Props) {
       {props.showRunFilters !== false ? (
         <>
           <FilterChip
-            label="State"
+            label={t.state}
             icon="ti ti-activity"
-            options={STATE_OPTIONS}
+            options={stateOptions}
             value={[props.state]}
             onValueChange={(value) => navigateTo(props.hrefFor.state[value[0] ?? "all"] ?? "")}
             isActive={props.state !== "all"}
             defaultValue={["all"]}
           />
           <FilterChip
-            label="Mode"
+            label={t.mode}
             icon="ti ti-arrows-shuffle"
-            options={MODE_OPTIONS}
+            options={modeOptions}
             value={[props.mode]}
             onValueChange={(value) => navigateTo(props.hrefFor.mode[value[0] ?? "all"] ?? "")}
             isActive={props.mode !== "all"}

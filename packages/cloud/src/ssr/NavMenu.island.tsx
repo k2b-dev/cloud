@@ -1,5 +1,6 @@
-import { Dropdown, type DropdownItem } from "@k2b/ui";
+import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
 import type { Role } from "../contracts/shared";
+import { platformMessages } from "./platform-messages";
 
 /**
  * Minimal user projection for the nav menu — covers exactly what's rendered
@@ -22,6 +23,8 @@ type NavMenuProps = {
 
 /** Navigation dropdown menu - always visible, adapts to auth state. */
 export default function NavMenu(props: NavMenuProps) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const avatarName = () => props.user?.displayName || props.user?.uid || "?";
   const avatarSrc = () =>
     props.user?.id && props.user.avatarHash
@@ -42,7 +45,7 @@ export default function NavMenu(props: NavMenuProps) {
       : [
           {
             icon: "ti ti-login",
-            label: "Sign In",
+            label: t().signIn,
             href: "/auth/login",
           },
         ]),
@@ -50,7 +53,7 @@ export default function NavMenu(props: NavMenuProps) {
 
   return (
     <Dropdown.Root position="bottom-left" width="16rem" items={getItems()}>
-      <Dropdown.Trigger iconOnly label="Menu">
+      <Dropdown.Trigger iconOnly label={t().menu}>
         <i class="ti ti-menu-2 text-lg" />
       </Dropdown.Trigger>
     </Dropdown.Root>

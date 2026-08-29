@@ -1,10 +1,11 @@
-import { type AuthContext, expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { audit, get } from "@valentinkolb/cloud/services";
 import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
 import { sql } from "bun";
 import type { Context } from "hono";
 import { z } from "zod";
 import { oauth } from "../service/oauth";
+import { oauthMessages } from "./messages";
 
 export const ConsentDecisionSchema = z.object({
   request: z.uuid(),
@@ -29,14 +30,15 @@ const redirectWithDecision = (redirectUri: string, state: string | undefined, pa
 };
 
 export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.infer<typeof ConsentDecisionSchema>): Promise<Response> => {
+  const { t } = oauthMessages.resolve([getLocale(c)]);
   const { request: requestId, decision } = decisionInput;
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
-  if (requestOrigin && requestOrigin !== issuer) return localError(c, "Consent request origin is invalid");
+  if (requestOrigin && requestOrigin !== issuer) return localError(c, t.consentOriginInvalid);
 
   const request = await oauth.consent.consume(requestId);
   const user = expectUserBackedActor(c);
-  if (!request || request.userId !== user.id) return localError(c, "Consent request is invalid or expired");
+  if (!request || request.userId !== user.id) return localError(c, t.consentInvalid);
 
   const client = await oauth.clients.getByClientId({ clientId: request.clientId });
   if (
@@ -47,7 +49,7 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
     request.scopes.some((scope) => !client.scopes.includes(scope)) ||
     !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
   ) {
-    return localError(c, "Consent request is no longer valid");
+    return localError(c, t.consentNoLongerValid);
   }
 
   if (decision === "deny") {
@@ -62,7 +64,7 @@ export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.
     return c.redirect(
       redirectWithDecision(request.redirectUri, request.state, {
         error: "access_denied",
-        error_description: "The resource owner denied the request",
+        error_description: t.resourceOwnerDenied,
         iss: issuer,
       }),
     );

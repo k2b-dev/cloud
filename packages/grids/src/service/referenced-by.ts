@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import type { SqlClient } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { mapFieldRow } from "./field-read";
 import { parseJsonbRow } from "./jsonb";
 import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
@@ -182,14 +183,16 @@ export const listReferencedBy = async (params: {
   recordAccess: AuthorizedRecordAccess;
   client?: SqlClient;
   cursorSigningKey?: string;
+  locale?: string;
 }): Promise<Result<ReferencedByPage>> => {
+  const messages = getGridsCrudMessages(params.locale);
   const client = params.client ?? sql;
   const relationFieldId = params.relationFieldId ?? null;
   if (relationFieldId && !ShortIdSchema.safeParse(relationFieldId).success) {
-    return fail(err.badInput("Invalid relation field ID."));
+    return fail(err.badInput(messages.invalidReferencedByField));
   }
   if (!(await targetIsReadable(params.targetTableId, params.targetRecordId, params.recordAccess, client))) {
-    return fail(err.notFound("Record"));
+    return fail(err.notFound(messages.record));
   }
 
   const scope: ReferencedByCursorScope = {
@@ -198,13 +201,13 @@ export const listReferencedBy = async (params: {
     relationFieldId,
   };
   const cursor = params.cursor ? decodeReferencedByCursor(params.cursor, scope, params.cursorSigningKey ?? signingKey()) : null;
-  if (params.cursor && !cursor) return fail(err.badInput("Invalid referenced-by cursor."));
+  if (params.cursor && !cursor) return fail(err.badInput(messages.invalidReferencedByCursor));
   if (cursor) {
     const [boundary] = await client<Array<{ valid: boolean }>>`
       SELECT EXISTS (SELECT 1 FROM grids.fields WHERE short_id = ${cursor.fieldId})
          AND EXISTS (SELECT 1 FROM grids.records WHERE short_id = ${cursor.recordId}) AS valid
     `;
-    if (!boundary?.valid) return fail(err.badInput("Invalid referenced-by cursor."));
+    if (!boundary?.valid) return fail(err.badInput(messages.invalidReferencedByCursor));
   }
 
   const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);

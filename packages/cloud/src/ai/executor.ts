@@ -761,6 +761,8 @@ export class AiTurnExecutor {
       projectFiles,
       skillFiles,
       selectedModel: resolved,
+      locale: promptLocale,
+      timeZone,
     };
     const prepared = prepareAiTools({
       tools: activeTools,

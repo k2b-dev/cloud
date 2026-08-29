@@ -12,7 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: FileDetailPanel } = await import("./FileDetailPanel.island.tsx");
+const [{ default: FileDetailPanel }, { LocaleProvider }] = await Promise.all([import("./FileDetailPanel.island.tsx"), import("@k2b/ui")]);
 
 const bases: FileBaseInfo[] = [{ type: "home", id: "ada", name: "Ada" }];
 const file: FileInfo = {
@@ -25,17 +25,22 @@ const file: FileInfo = {
   mimeType: "application/pdf",
 };
 
-const renderPanel = (item: FileInfo, overrides: Partial<Parameters<typeof FileDetailPanel>[0]> = {}) =>
+const renderPanel = (item: FileInfo, overrides: Partial<Parameters<typeof FileDetailPanel>[0]> = {}, locale = "en") =>
   renderToString(() =>
-    createComponent(FileDetailPanel, {
-      initialFile: item,
-      initialFilePath: item.path,
-      initialBaseType: "home",
-      initialBaseId: "ada",
-      items: [item],
-      bases,
-      showEmpty: false,
-      ...overrides,
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(FileDetailPanel, {
+          initialFile: item,
+          initialFilePath: item.path,
+          initialBaseType: "home",
+          initialBaseId: "ada",
+          items: [item],
+          bases,
+          showEmpty: false,
+          ...overrides,
+        });
+      },
     }),
   );
 
@@ -99,5 +104,20 @@ describe("File detail panel", () => {
     expect(html).not.toContain("Move to...");
     expect(html).not.toContain("<dt>Size</dt>");
     expect(html).toContain("<dt>Kind</dt><dd>Folder</dd>");
+  });
+
+  test("renders the inherited German locale", () => {
+    const html = renderPanel(file, {}, "de-DE");
+
+    expect(html).toContain("PDF-Dokument");
+    expect(html).toContain("Vorschau");
+    expect(html).toContain("Herunterladen");
+    expect(html).toContain("Umbenennen");
+    expect(html).toContain("Duplizieren");
+    expect(html).toContain("Verschieben nach…");
+    expect(html).toContain("In neuem Tab öffnen");
+    expect(html).toContain("Löschen");
+    expect(html).toContain("<dt>Pfad</dt>");
+    expect(html).toContain("<dt>Typ</dt>");
   });
 });

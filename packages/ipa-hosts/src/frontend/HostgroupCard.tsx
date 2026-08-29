@@ -2,6 +2,8 @@ import type { IpaHost, IpaHostgroup } from "@/contracts";
 import EditHostgroup from "./EditHostgroup.island";
 import DeleteHostgroup from "./DeleteHostgroup.island";
 import HostsTable from "./HostsTable";
+import { hostMessages } from "./messages";
+import { useLocale } from "@k2b/ui";
 
 type Props = {
   hostgroup: IpaHostgroup;
@@ -9,6 +11,8 @@ type Props = {
 };
 
 const HostgroupCard = (props: Props) => {
+  const locale = useLocale();
+  const t = () => hostMessages.resolve([locale()]).t;
   const { hostgroup, hosts } = props;
 
   return (
@@ -33,14 +37,12 @@ const HostgroupCard = (props: Props) => {
           </div>
         )}
 
-        <span class="text-xs text-dimmed shrink-0 whitespace-nowrap">
-          {hosts.length} {hosts.length === 1 ? "host" : "hosts"}
-        </span>
+        <span class="text-xs text-dimmed shrink-0 whitespace-nowrap">{t().hostCount({ count: hosts.length })}</span>
 
         <DeleteHostgroup cn={hostgroup.cn} />
       </div>
 
-      <HostsTable hosts={hosts} currentGroup={hostgroup.cn} emptyMessage="No hosts in this group." />
+      <HostsTable hosts={hosts} currentGroup={hostgroup.cn} emptyMessage={t().noHostsInGroup} />
     </div>
   );
 };

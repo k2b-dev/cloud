@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";
 import { logAudit } from "./audit";
+import { getGridsCrudMessages } from "./crud-messages";
 import { degradeForSourceBaseChange, refreshForSourceBase } from "./federated-tables";
 import { parseJsonbRow } from "./jsonb";
 import { emitMetadataEvent } from "./metadata-events";
@@ -157,9 +158,10 @@ export const getByShortId = async (shortId: string): Promise<Base | null> => {
   return row ? mapRow(row) : null;
 };
 
-export const create = async (input: CreateBaseInput, actorId: string | null): Promise<Result<Base>> => {
+export const create = async (input: CreateBaseInput, actorId: string | null, locale?: string): Promise<Result<Base>> => {
+  const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
-  if (name.length === 0) return fail(err.badInput("name required"));
+  if (name.length === 0) return fail(err.badInput(messages.nameRequired));
 
   const row = await insertWithShortId<DbRow>(async (shortId) => {
     const [r] = await sql<DbRow[]>`
@@ -207,12 +209,13 @@ export const create = async (input: CreateBaseInput, actorId: string | null): Pr
   return ok(base);
 };
 
-export const update = async (id: string, input: UpdateBaseInput, actorId: string | null): Promise<Result<Base>> => {
+export const update = async (id: string, input: UpdateBaseInput, actorId: string | null, locale?: string): Promise<Result<Base>> => {
+  const messages = getGridsCrudMessages(locale);
   const existing = await get(id);
-  if (!existing) return fail(err.notFound("base"));
+  if (!existing) return fail(err.notFound(messages.base));
 
   const name = input.name?.trim();
-  if (name !== undefined && name.length === 0) return fail(err.badInput("name cannot be empty"));
+  if (name !== undefined && name.length === 0) return fail(err.badInput(messages.nameEmpty));
 
   const next = {
     name: name ?? existing.name,
@@ -229,7 +232,7 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
     WHERE id = ${id}::uuid AND deleted_at IS NULL
     RETURNING ${COLS}
   `;
-  if (!row) return fail(err.internal("update failed"));
+  if (!row) return fail(err.internal(messages.updateFailed));
   const base = mapRow(row);
 
   const diff: Record<string, { old: unknown; new: unknown }> = {};
@@ -260,14 +263,15 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
  * remains restorable until an explicit product action changes that
  * lifecycle.
  */
-export const remove = async (id: string, actorId: string | null): Promise<Result<void>> => {
+export const remove = async (id: string, actorId: string | null, locale?: string): Promise<Result<void>> => {
+  const messages = getGridsCrudMessages(locale);
   const removed = await sql.begin(async (tx): Promise<Result<void>> => {
     await degradeForSourceBaseChange(id, actorId, tx);
     const result = await tx`
       UPDATE grids.bases SET deleted_at = now()
       WHERE id = ${id}::uuid AND deleted_at IS NULL
     `;
-    if (result.count === 0) return fail(err.notFound("base"));
+    if (result.count === 0) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "deleted" }, tx);
     return ok();
   });
@@ -288,7 +292,8 @@ export const remove = async (id: string, actorId: string | null): Promise<Result
  * by design, matching the user's expectation of "I deleted the base by
  * accident; the table I trashed last week is unrelated".
  */
-export const restore = async (id: string, actorId: string | null): Promise<Result<Base>> => {
+export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<Base>> => {
+  const messages = getGridsCrudMessages(locale);
   const restored = await sql.begin(async (tx): Promise<Result<DbRow>> => {
     await degradeForSourceBaseChange(id, actorId, tx);
     const [row] = await tx<DbRow[]>`
@@ -296,7 +301,7 @@ export const restore = async (id: string, actorId: string | null): Promise<Resul
       WHERE id = ${id}::uuid AND deleted_at IS NOT NULL
       RETURNING ${COLS}
     `;
-    if (!row) return fail(err.notFound("base"));
+    if (!row) return fail(err.notFound(messages.base));
     await logAudit({ baseId: id, userId: actorId, action: "restored" }, tx);
     return ok(row);
   });

@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 describe("Retention policy settings contract", () => {
   test("states activation, consequences, bounds, and non-goals in user language", async () => {
-    const source = await Bun.file(new URL("./RetentionPolicySection.tsx", import.meta.url)).text();
+    const [source, messages] = await Promise.all([
+      Bun.file(new URL("./RetentionPolicySection.tsx", import.meta.url)).text(),
+      Bun.file(new URL("./messages.ts", import.meta.url)).text(),
+    ]);
     for (const text of [
       "Base retention floor",
       "This floor only delays eligibility",
@@ -20,12 +23,22 @@ describe("Retention policy settings contract", () => {
       "Review Files",
       "Protected references excluded",
     ])
-      expect(source).toContain(text);
+      expect(messages).toContain(text);
+    expect(source).toContain("useGridsSettingsMessages(locale)");
   });
 
   test("loads the File ledger through query.create and keeps filtering on the API", async () => {
     const source = await Bun.file(new URL("./RetentionFilesDialog.tsx", import.meta.url)).text();
-    for (const text of ["query.create", "DataTable", "minimumDays", "search", "status", "per_page", "Download File", "View File"])
+    for (const text of [
+      "query.create",
+      "DataTable",
+      "minimumDays",
+      "search",
+      "status",
+      "per_page",
+      "messages().downloadFile",
+      "messages().viewFile",
+    ])
       expect(source).toContain(text);
     expect(source).not.toContain(".filter(");
     expect(source).not.toContain('tone={row.status === "retained" ? "running"');
@@ -44,7 +57,7 @@ describe("Retention policy settings contract", () => {
       "search",
       "status",
       "per_page",
-      "Open in Trash",
+      "messages().openInTrash",
       "trash=1",
       "fillHeight",
     ])

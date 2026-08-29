@@ -113,7 +113,7 @@ describe("Accounts notification recipient preview", () => {
     const { default: NewNotificationBatch } = await import("../src/frontend/notifications/NewNotificationBatch.island");
     const dispose = render(() => createComponent(NewNotificationBatch, {}), dom.root);
 
-    buttonByText(dom.document, "New Notification").click();
+    buttonByText(dom.document, "New notification").click();
     buttonByText(dom.document, "Add user").click();
     buttonByText(dom.document, "Select test user").click();
     await flush();

@@ -1,5 +1,6 @@
 import type { Table } from "../../../service";
 import { gridsService } from "../../../service";
+import { resolveWorkspaceMessages } from "./messages";
 import { okState } from "./workspace-state-helpers";
 import type { GridsWorkspaceState, WorkspaceCommon } from "./workspace-state-model";
 
@@ -8,19 +9,20 @@ export const loadQueryState = async (
   activeTableFromSlug: Table | null,
   activeViewSlug?: string | null,
 ): Promise<GridsWorkspaceState> => {
+  const t = resolveWorkspaceMessages(common.params.locale);
   if (!common.canUseQueryWorkspace) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to this base" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noBaseAccess };
   }
   const queryTable = activeTableFromSlug ? (common.catalog.tables.find((table) => table.id === activeTableFromSlug.id) ?? null) : null;
   if (common.params.activeTableSlug && !queryTable) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to this table" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noTableAccess };
   }
   const queryViews = queryTable ? (common.catalog.viewsByTable[queryTable.id] ?? []) : [];
   const candidateQueryView =
     queryTable && activeViewSlug ? await gridsService.view.getByShortIdForTable(queryTable.id, activeViewSlug) : null;
   const queryView = candidateQueryView ? (queryViews.find((view) => view.id === candidateQueryView.id) ?? null) : null;
   if (activeViewSlug && !queryView) {
-    return { kind: "accessDenied", title: "Access denied", message: "No access to this view" };
+    return { kind: "accessDenied", title: t.accessDenied, message: t.noViewAccess };
   }
 
   const currentSource = queryView
@@ -52,7 +54,7 @@ export const loadQueryState = async (
               : []),
           ]
         : []),
-      { title: "Query" },
+      { title: t.query },
     ],
   );
 };

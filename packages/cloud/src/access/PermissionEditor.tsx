@@ -1,8 +1,9 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, Combobox, type ComboboxOption, IconButton, Placeholder, prompts, SelectChip, Tooltip } from "@k2b/ui";
+import { Button, Combobox, type ComboboxOption, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal } from "../contracts/shared";
+import { accessMessages } from "./messages";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public API
@@ -62,14 +63,14 @@ type PermissionEditorProps = {
 // Defaults & helpers
 // ─────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_LABELS: Record<PermissionLevel, { label: string; icon: string }> = {
-  read: { label: "View", icon: "ti-eye" },
-  write: { label: "Edit", icon: "ti-pencil" },
-  admin: { label: "Manage", icon: "ti-shield" },
+const defaultLabels = (t: ReturnType<typeof accessMessages.resolve>["t"]): Record<PermissionLevel, { label: string; icon: string }> => ({
+  read: { label: t.view, icon: "ti-eye" },
+  write: { label: t.edit, icon: "ti-pencil" },
+  admin: { label: t.manage, icon: "ti-shield" },
   // Defensive — never granted by this editor, but renders correctly if
   // a legacy entry has permission === "none".
-  none: { label: "No access", icon: "ti-ban" },
-};
+  none: { label: t.noAccess, icon: "ti-ban" },
+});
 
 type ResolvedLevel = {
   level: GrantableLevel;
@@ -80,12 +81,13 @@ type ResolvedLevel = {
 /** Resolve the AllowedLevel union into a flat shape the renderer can
  *  loop over. Falls back to the default View / Edit / Manage list when
  *  no override is given. */
-const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined): ResolvedLevel[] => {
+const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined, t: ReturnType<typeof accessMessages.resolve>["t"]): ResolvedLevel[] => {
+  const defaults = defaultLabels(t);
   const list = allowed && allowed.length > 0 ? allowed : (["read", "write", "admin"] as GrantableLevel[]);
   return list.map((entry) => {
     const level = typeof entry === "string" ? entry : entry.level;
     const override = typeof entry === "string" ? null : entry;
-    const def = DEFAULT_LABELS[level];
+    const def = defaults[level];
     return {
       level,
       label: override?.label ?? def.label,
@@ -97,16 +99,21 @@ const resolveAllowedLevels = (allowed: AllowedLevel[] | undefined): ResolvedLeve
 /** Resolve a stored entry's permission to a renderable {label,icon},
  *  preferring the caller's allowedLevels override and falling back to
  *  the platform defaults. Tolerates "none" / unknown legacy values. */
-const resolveEntryDisplay = (permission: PermissionLevel, allowed: ResolvedLevel[]): { label: string; icon: string } => {
+const resolveEntryDisplay = (
+  permission: PermissionLevel,
+  allowed: ResolvedLevel[],
+  t: ReturnType<typeof accessMessages.resolve>["t"],
+): { label: string; icon: string } => {
   const fromAllowed = allowed.find((a) => a.level === permission);
   if (fromAllowed) return fromAllowed;
-  return DEFAULT_LABELS[permission] ?? DEFAULT_LABELS.none;
+  const defaults = defaultLabels(t);
+  return defaults[permission] ?? defaults.none;
 };
 
-const getEntryDisplayName = (entry: AccessEntry): string => {
+const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"]): string => {
   if (entry.displayName) return entry.displayName;
-  if (entry.principal.type === "authenticated") return "All users (incl. guests)";
-  if (entry.principal.type === "public") return "Public";
+  if (entry.principal.type === "authenticated") return t.allUsers;
+  if (entry.principal.type === "public") return t.public;
   if (entry.principal.type === "user") return entry.principal.userId;
   if (entry.principal.type === "service_account") return entry.principal.serviceAccountId;
   return entry.principal.groupId;
@@ -148,11 +155,13 @@ type ApiEntity =
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function PermissionEditor(props: PermissionEditorProps) {
+  const locale = useLocale();
+  const t = () => accessMessages.resolve([locale()]).t;
   const [entries, setEntries] = createSignal<AccessEntry[]>([...props.initialEntries]);
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
-  const allowed = () => resolveAllowedLevels(props.allowedLevels);
+  const allowed = () => resolveAllowedLevels(props.allowedLevels, t());
   const isSinglePicker = () => allowed().length === 1;
 
   // Defensive dev-warning: an empty allowedLevels array makes the editor
@@ -203,8 +212,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
-      const displayName = getEntryDisplayName(entry);
-      const confirmed = await prompts.confirm(`Remove access for ${displayName}?`, { title: "Remove Access", variant: "danger" });
+      const displayName = getEntryDisplayName(entry, t());
+      const confirmed = await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
+        title: t().removeAccess,
+        variant: "danger",
+      });
       if (!confirmed) return null;
       await props.revokeAccess(entry.id);
       return entry.id;
@@ -234,8 +246,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       map.set("auth", { type: "authenticated" });
       opts.push({
         id: "auth",
-        label: "All users (incl. guests)",
-        description: "Anyone signed in to the cloud",
+        label: t().allUsers,
+        description: t().signedInDescription,
         icon: "ti-lock-open-2",
       });
     }
@@ -243,8 +255,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       map.set("public", { type: "public" });
       opts.push({
         id: "public",
-        label: "Public",
-        description: "Anyone with the link, even unauthenticated",
+        label: t().public,
+        description: t().publicDescription,
         icon: "ti-world",
       });
     }
@@ -292,7 +304,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
               label: item.serviceAccount.name,
               description:
                 item.serviceAccount.kind === "user_delegated"
-                  ? "User-bound service account"
+                  ? t().userBoundServiceAccount
                   : [item.serviceAccount.appId, item.serviceAccount.resourceType, item.serviceAccount.resourceId]
                       .filter(Boolean)
                       .join(" · "),
@@ -338,7 +350,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           )}
         </For>
         <Show when={entries().length === 0}>
-          <Placeholder align="left" class="px-1 py-2" description={<>No direct grants yet.</>} />
+          <Placeholder align="left" class="px-1 py-2" description={t().noDirectGrants} />
         </Show>
       </div>
 
@@ -350,11 +362,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           placeholder={
             props.allowServiceAccounts
               ? allowAuthenticated()
-                ? "Add user, group, service account or audience..."
-                : "Add user, group or service account..."
+                ? t().addAll
+                : t().addService
               : allowAuthenticated()
-                ? "Add user, group or audience..."
-                : "Add user or group..."
+                ? t().addAudience
+                : t().addBasic
           }
           fetchData={fetchPrincipals}
           onSelect={handleSelect}
@@ -380,7 +392,10 @@ function AccessEntryRow(props: {
   onUpdatePermission: (permission: GrantableLevel) => void;
   onRevoke: () => void;
 }) {
-  const display = () => resolveEntryDisplay(props.entry.permission, props.allowed);
+  const locale = useLocale();
+  const t = () => accessMessages.resolve([locale()]).t;
+  const displayName = () => getEntryDisplayName(props.entry, t());
+  const display = () => resolveEntryDisplay(props.entry.permission, props.allowed, t());
   const isInteractive = () =>
     props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.level === props.entry.permission);
 
@@ -408,7 +423,7 @@ function AccessEntryRow(props: {
         }
       >
         <CloudAvatar
-          username={getEntryDisplayName(props.entry)}
+          username={displayName()}
           userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
           avatarHash={props.entry.avatarHash}
           size="xs"
@@ -418,9 +433,9 @@ function AccessEntryRow(props: {
 
       {/* Display name */}
       <div class="min-w-0 flex-1">
-        <span class="truncate text-sm">{getEntryDisplayName(props.entry)}</span>
+        <span class="truncate text-sm">{displayName()}</span>
         <Show when={props.entry.principal.type === "public"}>
-          <span class="ml-1 text-xs text-dimmed">(Anyone with the link)</span>
+          <span class="ml-1 text-xs text-dimmed">({t().anyoneWithLink})</span>
         </Show>
       </div>
 
@@ -428,7 +443,7 @@ function AccessEntryRow(props: {
           plain span otherwise. */}
       <Show when={isInteractive()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
         <SelectChip
-          aria-label={`Permission for ${getEntryDisplayName(props.entry)}`}
+          aria-label={t().permissionFor({ name: displayName() })}
           value={() => props.entry.permission as GrantableLevel}
           options={props.allowed.map((option) => ({
             value: option.level,
@@ -447,17 +462,17 @@ function AccessEntryRow(props: {
           remain keyboard reachable and stay visible on touch-sized layouts. */}
       <Show when={props.canEdit}>
         <Tooltip.Anchor
-          content={`Remove ${getEntryDisplayName(props.entry)}`}
+          content={t().remove({ name: displayName() })}
           class="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
         >
           <IconButton
             type="button"
-            label={`Remove ${getEntryDisplayName(props.entry)}`}
+            label={t().remove({ name: displayName() })}
             variant="ghost"
             size="xs"
             onClick={props.onRevoke}
             disabled={props.disabled}
-            aria-label={`Remove ${getEntryDisplayName(props.entry)}`}
+            aria-label={t().remove({ name: displayName() })}
             class="focus-ui flex h-7 w-7 items-center justify-center rounded text-zinc-400 transition-colors hover:bg-red-500/[0.08] hover:text-red-600 focus:opacity-100 dark:hover:text-red-400"
           >
             <i class="ti ti-x text-sm" />

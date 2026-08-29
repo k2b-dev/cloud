@@ -1,5 +1,7 @@
+import { useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { getCurrentThemePreference, setThemePreference } from "../shared/theme";
+import { platformMessages } from "./platform-messages";
 
 type FooterProps = {
   isLoggedIn: boolean;
@@ -13,6 +15,8 @@ type FooterProps = {
 };
 
 export default function Footer(props: FooterProps) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   const [theme, setTheme] = createSignal(getCurrentThemePreference());
 
   const toggleTheme = () => {
@@ -34,17 +38,17 @@ export default function Footer(props: FooterProps) {
       </For>
       <button type="button" onClick={toggleTheme} class="hidden md:flex hover:text-primary transition-colors items-center gap-1">
         <i class={`ti ${theme() === "dark" ? "ti-sunset-2" : "ti-moon-stars"} text-xs`} />
-        {theme() === "dark" ? "Light" : "Dark"}
+        {theme() === "dark" ? t().light : t().dark}
       </button>
       {props.isLoggedIn ? (
         <a href="/me" class="hover:text-primary transition-colors flex items-center gap-1">
           <i class="ti ti-user text-xs" />
-          Account
+          {t().account}
         </a>
       ) : (
         <a href="/auth/login" class="hover:text-primary transition-colors flex items-center gap-1">
           <i class="ti ti-login text-xs" />
-          Login
+          {t().login}
         </a>
       )}
       {props.appName && (

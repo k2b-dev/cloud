@@ -57,7 +57,7 @@ export default function CreateItemButton(props: Props) {
             spaceId={props.spaceId}
             columns={props.columns}
             tags={props.tags}
-            quickCreate={defaultType() === "event"}
+            quickCreate
             defaults={{ type: defaultType(), columnId: props.defaultColumnId }}
             onSubmit={(data) => close(data)}
             onCancel={() => close(null)}

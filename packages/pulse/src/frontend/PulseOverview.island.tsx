@@ -4,6 +4,7 @@ import { AppOverview, Button, NoticeCard, prompts, TextInput, toast } from "@k2b
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PulseBase, PulseCapabilitySnapshot } from "../contracts";
 import { jsonFetch } from "./http";
+import { usePulseMessages } from "./use-messages";
 
 type Props = {
   bases: PulseBase[];
@@ -26,6 +27,7 @@ const matchesBase = (base: PulseBase, query: string): boolean => {
 };
 
 export default function PulseOverview(props: Props) {
+  const t = usePulseMessages();
   const [query, setQuery] = createSignal(props.initialQuery);
   let disposed = false;
   const filteredBases = createMemo(() => props.bases.filter((base) => matchesBase(base, query())));
@@ -34,10 +36,10 @@ export default function PulseOverview(props: Props) {
       jsonFetch<PulseBase>(
         "/api/pulse/bases",
         { method: "POST", body: JSON.stringify(intent), signal: abortSignal },
-        "Failed to create Pulse base",
+        t().createBaseFailed,
       ),
     onSuccess: (base) => {
-      toast.success("Pulse base created");
+      toast.success(t().baseCreated);
       navigateTo(`/app/pulse/${base.id}`);
     },
     onError: (error) => prompts.error(error.message),
@@ -54,13 +56,13 @@ export default function PulseOverview(props: Props) {
 
   const createBase = async () => {
     const result = await prompts.form({
-      title: "New Pulse base",
+      title: t().createBasePrompt,
       icon: "ti ti-database-plus",
       fields: {
-        name: { type: "text", label: "Name", required: true, placeholder: "Operations" },
-        description: { type: "text", label: "Description", multiline: true, placeholder: "Optional" },
+        name: { type: "text", label: t().name, required: true, placeholder: "Operations" },
+        description: { type: "text", label: t().description, multiline: true, placeholder: t().optional },
       },
-      confirmText: "Create",
+      confirmText: t().create,
     });
     if (disposed || !result) return;
 
@@ -70,20 +72,20 @@ export default function PulseOverview(props: Props) {
   };
 
   return (
-    <AppOverview title="Pulse" subtitle="Metrics, events, states, and realtime dashboards." icon="ti ti-activity-heartbeat">
+    <AppOverview title={t().appName} subtitle={t().appDescription} icon="ti ti-activity-heartbeat">
       <AppOverview.Main
-        title="Your Pulse bases"
+        title={t().yourBases}
         description={
           props.bases.length === 0
-            ? "Create a base for servers, websites, business metrics, or automation telemetry."
-            : `${props.bases.length} base${props.bases.length === 1 ? "" : "s"} available`
+            ? t().firstBaseDescription
+            : t().baseCount({ count: props.bases.length })
         }
         toolbar={
           <TextInput
             name="pulse-search"
             type="search"
-            aria-label="Search Pulse bases"
-            placeholder="Search bases..."
+            aria-label={t().searchBases}
+            placeholder={t().searchBasesPlaceholder}
             icon="ti ti-search"
             activeIcon="ti ti-search"
             value={query}
@@ -97,20 +99,20 @@ export default function PulseOverview(props: Props) {
           when={props.bases.length > 0}
           fallback={
             <AppOverview.EmptyState
-              title="No Pulse bases yet"
-              description="Create a base to collect, explore, and visualize related telemetry."
+              title={t().noBases}
+              description={t().noBasesDescription}
               icon="ti ti-activity-heartbeat"
               class="min-h-72"
             >
               <Button variant="secondary" size="sm" disabled={createMutation.loading()} onClick={() => void createBase()}>
-                <i class="ti ti-plus" /> Create a base
+                <i class="ti ti-plus" /> {t().createBase}
               </Button>
             </AppOverview.EmptyState>
           }
         >
           <Show
             when={filteredBases().length > 0}
-            fallback={<AppOverview.EmptyState title="No matching bases" description="Try a different search term." icon="ti ti-search" />}
+            fallback={<AppOverview.EmptyState title={t().noMatchingBases} description={t().differentSearch} icon="ti ti-search" />}
           >
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <For each={filteredBases()}>
@@ -124,7 +126,7 @@ export default function PulseOverview(props: Props) {
                     </div>
                     <div class="min-w-0 flex-1">
                       <span class="block truncate text-sm font-semibold text-primary">{base.name}</span>
-                      <p class="truncate text-xs text-dimmed">{base.description || `${base.rawRetentionDays} day raw retention`}</p>
+                      <p class="truncate text-xs text-dimmed">{base.description || t().rawRetention({ days: base.rawRetentionDays })}</p>
                     </div>
                     <i class="ti ti-chevron-right text-dimmed transition-colors group-hover:app-accent-text" />
                   </a>
@@ -135,7 +137,7 @@ export default function PulseOverview(props: Props) {
         </Show>
       </AppOverview.Main>
 
-      <AppOverview.Aside title="Create" description="Sources and dashboards are configured inside the base.">
+      <AppOverview.Aside title={t().createSection} description={t().createSectionDescription}>
         <div class="grid grid-cols-1 gap-2">
           <Button
             type="button"
@@ -148,17 +150,15 @@ export default function PulseOverview(props: Props) {
               <i class="ti ti-plus app-accent-text text-lg" />
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">New base</span>
-              <span class="block text-xs leading-snug text-dimmed">
-                Create a telemetry base for metrics, states, events, and dashboards.
-              </span>
+              <span class="block text-sm font-semibold text-primary">{t().newBase}</span>
+              <span class="block text-xs leading-snug text-dimmed">{t().createBaseDescription}</span>
             </span>
             <i class="ti ti-chevron-right mt-1 shrink-0 text-dimmed transition-colors group-hover:app-accent-text" />
           </Button>
 
           <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
             <NoticeCard tone="warning" icon={false} class="mt-2">
-              TimescaleDB is not enabled here. Pulse still works in dev, but long historical dashboards can fall back to raw samples.
+              {t().timescaleWarning}
             </NoticeCard>
           </Show>
         </div>

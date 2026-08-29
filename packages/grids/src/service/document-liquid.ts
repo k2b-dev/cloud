@@ -6,6 +6,7 @@ import {
 } from "@valentinkolb/cloud/shared";
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
+import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 
 const TEMPLATE_MAX_BYTES = 200_000;
 
@@ -128,11 +129,12 @@ const liquidExpressions = function* (source: string): Generator<{ expression: st
   }
 };
 
-export const validateLiquidRoots = (source: string, roots: ReadonlySet<string>, label: string): Result<void> => {
+export const validateLiquidRoots = (source: string, roots: ReadonlySet<string>, label: string, locale?: string): Result<void> => {
+  const t = documentServiceText(locale);
   for (const { expression, locals } of liquidExpressions(source)) {
     for (const root of collectLiquidExpressionRoots(expression)) {
       if (roots.has(root) || locals.has(root)) continue;
-      return fail(err.badInput(`${label} uses unknown Liquid variable "${root}"`));
+      return fail(err.badInput(t.liquidUnknownVariable({ label, root })));
     }
   }
   return ok();
@@ -152,9 +154,12 @@ export const datePatternContext = (date: Date, dateConfig?: DateContext) => {
   };
 };
 
-export const templatePatternContext = (template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> | null | undefined) => ({
+export const templatePatternContext = (
+  template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> | null | undefined,
+  locale?: string,
+) => ({
   id: template?.shortId ?? "draft",
-  name: template?.name ?? "Draft template",
+  name: template?.name ?? documentServiceText(locale).draftTemplate,
 });
 
 const safeDocumentNumber = (value: string): string =>
@@ -180,40 +185,49 @@ const barcodeDataUrlFilter: LiquidTemplateFilter = (value, bcid = "code128", sho
   }
 };
 
+const localizedLiquidError = (error: unknown, locale?: string): string => {
+  const t = documentServiceText(locale);
+  if (!isGermanDocumentLocale(locale)) return error instanceof Error ? error.message : t.templateRenderFailed;
+  return t.templateRenderFailed;
+};
+
 export const documentLiquidFilters: Record<string, LiquidTemplateFilter> = {
   barcode_data_url: barcodeDataUrlFilter,
   json: (value) => JSON.stringify(value ?? null),
 };
 
-export const validateLiquidTemplate = (source: string): Result<void> => {
-  if (utf8ByteLength(source) > TEMPLATE_MAX_BYTES) return fail(err.badInput("template is too large"));
+export const validateLiquidTemplate = (source: string, locale?: string): Result<void> => {
+  const t = documentServiceText(locale);
+  if (utf8ByteLength(source) > TEMPLATE_MAX_BYTES) return fail(err.badInput(t.templateTooLarge));
   const valid = validateSharedLiquidTemplate(source, { filters: documentLiquidFilters });
-  return valid.ok ? ok() : fail(err.badInput(valid.error));
+  return valid.ok ? ok() : fail(err.badInput(isGermanDocumentLocale(locale) ? t.templateInvalid : valid.error));
 };
 
 export const validateDocumentLiquidTemplate = (
   source: string,
   label: string,
   roots: ReadonlySet<string> = DOCUMENT_TEMPLATE_ROOTS,
+  locale?: string,
 ): Result<void> => {
-  const valid = validateLiquidTemplate(source);
+  const valid = validateLiquidTemplate(source, locale);
   if (!valid.ok) return valid;
-  return validateLiquidRoots(source, roots, label);
+  return validateLiquidRoots(source, roots, label, locale);
 };
 
 const renderLiquid = async (
   template: string,
   data: Record<string, unknown>,
-  options: { maxBytes?: number; escapeOutput?: boolean } = {},
+  options: { maxBytes?: number; escapeOutput?: boolean; locale?: string } = {},
 ): Promise<Result<string>> => {
-  const valid = validateLiquidTemplate(template);
+  const t = documentServiceText(options.locale);
+  const valid = validateLiquidTemplate(template, options.locale);
   if (!valid.ok) return valid;
   try {
     const rendered = renderLiquidTemplate(template, data, { filters: documentLiquidFilters, escapeOutput: options.escapeOutput });
-    if (utf8ByteLength(rendered) > (options.maxBytes ?? TEMPLATE_MAX_BYTES)) return fail(err.badInput("rendered template is too large"));
+    if (utf8ByteLength(rendered) > (options.maxBytes ?? TEMPLATE_MAX_BYTES)) return fail(err.badInput(t.renderedTemplateTooLarge));
     return ok(rendered);
   } catch (error) {
-    return fail(err.badInput(error instanceof Error ? error.message : "template render failed"));
+    return fail(err.badInput(localizedLiquidError(error, options.locale)));
   }
 };
 
@@ -221,13 +235,15 @@ export const renderLiquidText = async (
   template: string,
   data: Record<string, unknown>,
   maxBytes = TEMPLATE_MAX_BYTES,
-): Promise<Result<string>> => renderLiquid(template, data, { maxBytes });
+  locale?: string,
+): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, locale });
 
 export const renderLiquidPlainText = async (
   template: string,
   data: Record<string, unknown>,
   maxBytes = TEMPLATE_MAX_BYTES,
-): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, escapeOutput: false });
+  locale?: string,
+): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, escapeOutput: false, locale });
 
 export const documentNumberFor = (params: {
   template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> & { numberTemplate: string };
@@ -237,15 +253,16 @@ export const documentNumberFor = (params: {
   data?: Record<string, unknown>;
   series?: { id: string; value: number };
 }): Result<string> => {
+  const t = documentServiceText(params.dateConfig?.locale);
   const template = params.template.numberTemplate.trim();
-  const valid = validateDocumentLiquidTemplate(template, "document number pattern", DOCUMENT_NUMBER_ROOTS);
+  const valid = validateDocumentLiquidTemplate(template, t.documentNumberPatternLabel, DOCUMENT_NUMBER_ROOTS, params.dateConfig?.locale);
   if (!valid.ok) return valid;
   try {
     const rendered = renderLiquidTemplate(
       template,
       {
         ...(params.data ?? {}),
-        template: templatePatternContext(params.template),
+        template: templatePatternContext(params.template, params.dateConfig?.locale),
         document: {
           ...((params.data?.document && typeof params.data.document === "object" && !Array.isArray(params.data.document)
             ? params.data.document
@@ -258,8 +275,8 @@ export const documentNumberFor = (params: {
       { filters: documentLiquidFilters },
     );
     const number = safeDocumentNumber(rendered);
-    return number ? ok(number) : fail(err.badInput("document number pattern rendered an empty number"));
+    return number ? ok(number) : fail(err.badInput(t.emptyDocumentNumber));
   } catch (error) {
-    return fail(err.badInput(error instanceof Error ? error.message : "document number pattern render failed"));
+    return fail(err.badInput(localizedLiquidError(error, params.dateConfig?.locale) || t.documentNumberRenderFailed));
   }
 };

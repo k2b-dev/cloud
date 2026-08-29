@@ -135,10 +135,10 @@ const decodeNative = async (video: HTMLVideoElement, sourceWidth: number, source
   }
 };
 
-export const createScannerEngine = (): ScannerEngine => {
+export const createScannerEngine = (canvasError = "Scanner canvas could not be created."): ScannerEngine => {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Scanner canvas could not be created.");
+  if (!ctx) throw new Error(canvasError);
 
   return {
     async decodeVideoFrame(video) {

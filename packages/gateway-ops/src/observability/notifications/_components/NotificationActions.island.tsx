@@ -1,7 +1,8 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Dropdown, IconButton, prompts, Tooltip, toast } from "@k2b/ui";
+import { Button, Dropdown, IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "../api-client";
+import { gatewayOpsMessages } from "../../../messages";
 
 type NotificationActionsProps = {
   id: string;
@@ -14,6 +15,7 @@ type NotificationActionsProps = {
 };
 
 const NotificationActions = (props: NotificationActionsProps) => {
+  const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   const resendMutation = mutations.create<{ message: string }, void>({
     mutation: async () => {
       const res = await apiClient[":id"].resend.$post({
@@ -21,12 +23,12 @@ const NotificationActions = (props: NotificationActionsProps) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to resend notification.");
+        throw new Error(t.resendNotificationFailed);
       }
       return data;
     },
-    onSuccess: (data) => {
-      toast.success(data.message);
+    onSuccess: () => {
+      toast.success(t.notificationResent);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -40,12 +42,12 @@ const NotificationActions = (props: NotificationActionsProps) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to update notification.");
+        throw new Error(t.updateNotificationFailed);
       }
       return data;
     },
-    onSuccess: (data) => {
-      toast.success(data.message);
+    onSuccess: () => {
+      toast.success(t.notificationUpdated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -53,11 +55,11 @@ const NotificationActions = (props: NotificationActionsProps) => {
 
   const handleSend = async () => {
     const isPending = props.status === "pending";
-    const confirmed = await prompts.confirm(`This will ${isPending ? "send" : "resend"} the notification to "${props.recipient}".`, {
-      title: isPending ? "Send Notification?" : "Resend Notification?",
+    const confirmed = await prompts.confirm(t.sendNotificationConfirm({ resend: !isPending, recipient: props.recipient }), {
+      title: isPending ? t.sendNotificationTitle : t.resendNotificationTitle,
       icon: "ti ti-send",
-      confirmText: isPending ? "Send" : "Resend",
-      cancelText: "Cancel",
+      confirmText: isPending ? t.send : t.resend,
+      cancelText: t.cancel,
     });
     if (confirmed) {
       await resendMutation.mutate();
@@ -66,30 +68,30 @@ const NotificationActions = (props: NotificationActionsProps) => {
 
   const handleEdit = async () => {
     const result = await prompts.form({
-      title: "Edit Notification",
+      title: t.editNotification,
       icon: "ti ti-pencil",
-      confirmText: "Save",
+      confirmText: t.save,
       fields: {
         recipient: {
           type: "text" as const,
-          label: "Recipient",
-          placeholder: "Email address...",
+          label: t.recipient,
+          placeholder: t.emailAddress,
           icon: "ti ti-mail",
           required: true,
           default: props.recipient,
         },
         subject: {
           type: "text" as const,
-          label: "Subject",
-          placeholder: "Subject...",
+          label: t.subject,
+          placeholder: `${t.subject}…`,
           icon: "ti ti-heading",
           required: true,
           default: props.subject,
         },
         content: {
           type: "text" as const,
-          label: "Content (HTML)",
-          placeholder: "HTML content...",
+          label: t.contentHtml,
+          placeholder: t.htmlContent,
           multiline: true,
           required: true,
           default: props.content,
@@ -116,13 +118,13 @@ const NotificationActions = (props: NotificationActionsProps) => {
           </pre>
           <div class="flex justify-end">
             <Button type="button" variant="secondary" size="sm" onClick={() => close()}>
-              Close
+              {t.close}
             </Button>
           </div>
         </div>
       ),
       {
-        title: "Notification Error",
+        title: t.notificationError,
         icon: "ti ti-alert-circle",
       },
     );
@@ -130,7 +132,7 @@ const NotificationActions = (props: NotificationActionsProps) => {
 
   // Admins can always edit, non-admins only pending/error
   const canEdit = props.isAdmin || props.status !== "sent";
-  const sendLabel = props.status === "pending" ? "Send" : "Resend";
+  const sendLabel = props.status === "pending" ? t.send : t.resend;
 
   return (
     <Dropdown.Root
@@ -148,7 +150,7 @@ const NotificationActions = (props: NotificationActionsProps) => {
               ? [
                   {
                     icon: "ti ti-pencil",
-                    label: "Edit",
+                    label: t.edit,
                     action: handleEdit,
                   },
                 ]
@@ -157,7 +159,7 @@ const NotificationActions = (props: NotificationActionsProps) => {
               ? [
                   {
                     icon: "ti ti-alert-circle",
-                    label: "Show Error",
+                    label: t.showError,
                     action: showError,
                   },
                 ]
@@ -166,7 +168,7 @@ const NotificationActions = (props: NotificationActionsProps) => {
         },
       ]}
     >
-      <Dropdown.Trigger iconOnly type="button" size="sm" label="Notification actions" tooltip="Manage notification">
+      <Dropdown.Trigger iconOnly type="button" size="sm" label={t.notificationActions} tooltip={t.manageNotification}>
         <i class="ti ti-dots-vertical text-sm" />
       </Dropdown.Trigger>
     </Dropdown.Root>

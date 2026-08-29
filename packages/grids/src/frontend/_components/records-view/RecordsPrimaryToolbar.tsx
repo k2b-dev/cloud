@@ -1,10 +1,11 @@
-import { Button, ButtonLink, Dropdown, Tooltip } from "@k2b/ui";
+import { Button, ButtonLink, Dropdown, Tooltip, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import { CardSizeDropdown } from "../toolbar/CardSizeDropdown";
 import SearchBar from "../toolbar/SearchBar";
 import type { PublicWorkspaceBulkLauncher as WorkspaceBulkLauncher } from "../workspace/workspace-public-state-model";
 import { bulkWorkflowActionLabel } from "./bulk-selection";
+import { recordsViewMessages } from "./messages";
 import type { CardSize, RecordsState } from "./query-url";
 
 type Props = {
@@ -38,6 +39,8 @@ type Props = {
 };
 
 export default function RecordsPrimaryToolbar(props: Props) {
+  const locale = useLocale();
+  const t = () => recordsViewMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-wrap items-center gap-2 shrink-0">
       <Show when={props.searchableFields.length > 0}>
@@ -52,11 +55,11 @@ export default function RecordsPrimaryToolbar(props: Props) {
       </Show>
 
       <span class="text-xs text-dimmed whitespace-nowrap">
-        {props.trashMode && "Deleted: "}
+        {props.trashMode && `${t().deleted} `}
         {props.recordCountText}
       </span>
       <Show when={props.livePending || props.liveRefreshing}>
-        <Tooltip.Anchor content="Refresh records">
+        <Tooltip.Anchor content={t().refreshRecords}>
           <Button
             variant="secondary"
             size="sm"
@@ -66,7 +69,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
             onClick={props.onRefresh}
           >
             <i class={`ti ${props.liveRefreshing ? "ti-loader-2 animate-spin" : "ti-refresh"}`} />
-            Updates available
+            {t().updatesAvailable}
           </Button>
         </Tooltip.Anchor>
       </Show>
@@ -80,7 +83,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
           <Show when={props.canReadTable}>
             <ButtonLink variant="secondary" size="sm" href={`/app/grids/${props.baseId}/table/${props.tableId}`}>
               <i class="ti ti-arrow-back" />
-              Back to live records
+              {t().backToLive}
             </ButtonLink>
           </Show>
         }
@@ -88,13 +91,13 @@ export default function RecordsPrimaryToolbar(props: Props) {
         <Show when={props.recordMetaCount > 0}>
           <Button variant="secondary" size="sm" aria-pressed="true" type="button" onClick={props.onOpenRecordMetadata}>
             <i class="ti ti-user-search" />
-            Record info · {props.recordMetaCount}
+            {t().recordInfo} · {props.recordMetaCount}
           </Button>
         </Show>
         <Show when={props.bulkSelectionEnabled && props.selectedBulkCount > 0}>
           <Button variant="secondary" size="sm" aria-pressed="true" type="button" onClick={props.onClearBulkSelection}>
             <i class="ti ti-checklist" />
-            {props.selectedBulkCount} selected
+            {t().selected({ count: props.selectedBulkCount })}
             <i class="ti ti-x text-[10px] opacity-60" />
           </Button>
         </Show>
@@ -102,41 +105,42 @@ export default function RecordsPrimaryToolbar(props: Props) {
           position="bottom-left"
           items={[
             {
-              sectionLabel: "Records",
+              sectionLabel: t().records,
               items: [
-                { icon: "ti ti-user-search", label: "Record metadata", action: props.onOpenRecordMetadata },
-                { icon: "ti ti-download", label: "Export records", action: props.onExport },
+                { icon: "ti ti-user-search", label: t().recordMetadata, action: props.onOpenRecordMetadata },
+                { icon: "ti ti-download", label: t().exportRecords, action: props.onExport },
               ],
             },
             ...(props.bulkLaunchers.length > 0
               ? [
                   {
-                    sectionLabel: "Workflows",
+                    sectionLabel: t().workflows,
                     items: props.bulkLaunchers.map((launcher) => {
                       const label = bulkWorkflowActionLabel(
                         launcher.name,
                         props.selectedBulkCount,
                         launcher.config.kind === "bulk" && "profile" in launcher.config && launcher.config.profile === "closeSelection",
+                        locale(),
                       );
                       return props.bulkQueueing
-                        ? { icon: "ti ti-loader-2 animate-spin", label: `Preparing ${launcher.name}`, disabled: true as const }
+                        ? { icon: "ti ti-loader-2 animate-spin", label: t().preparing({ name: launcher.name }), disabled: true as const }
                         : { icon: "ti ti-route", label, action: () => props.onQueueBulkWorkflow(launcher) };
                     }),
                   },
                 ]
               : []),
             {
-              sectionLabel: "Explore",
+              sectionLabel: t().explore,
               items: [
-                { icon: "ti ti-code", label: "Open query", href: props.queryHref },
+                { icon: "ti ti-code", label: t().openQuery, href: props.queryHref },
                 ...(props.tableKind === "federated" && props.canReadTable
-                  ? [{ icon: "ti ti-history", label: "Audit trail", action: props.onOpenCombinedAudit }]
+                  ? [{ icon: "ti ti-history", label: t().auditTrail, action: props.onOpenCombinedAudit }]
                   : []),
                 ...(props.canReadTable
                   ? [
                       {
                         icon: "ti ti-archive",
-                        label: "Show deleted",
+                        label: t().showDeleted,
                         href: `/app/grids/${props.baseId}/table/${props.tableId}?trash=1`,
                       },
                     ]
@@ -146,7 +150,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
           ]}
         >
           <Dropdown.Trigger variant="secondary" size="sm">
-            Actions
+            {t().actions}
             <i class="ti ti-chevron-down text-[10px] opacity-60" />
           </Dropdown.Trigger>
         </Dropdown.Root>

@@ -1,7 +1,8 @@
-import { FileBrowserPanel, IconButton, prompts, Tooltip } from "@k2b/ui";
+import { FileBrowserPanel, IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { conversationFileSource } from "@valentinkolb/cloud/ai/solid";
 import { type Accessor, onCleanup } from "solid-js";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation } from "./assistant-live";
+import { assistantMessages } from "./messages";
 
 type AssistantFilesDialogProps = {
   conversationId: string;
@@ -12,6 +13,8 @@ type AssistantFilesDialogProps = {
 };
 
 function AssistantFilesDialog(props: AssistantFilesDialogProps) {
+  const locale = useLocale();
+  const t = () => assistantMessages.resolve([locale()]).t;
   const source = conversationFileSource("/api/ai", props.conversationId);
   let refreshVisible = async (): Promise<void> => undefined;
   const unregister = props.live.register({
@@ -22,8 +25,8 @@ function AssistantFilesDialog(props: AssistantFilesDialogProps) {
 
   return (
     <div class="dialog-fixed-frame relative flex min-h-0 flex-col overflow-hidden rounded-[var(--ui-radius-frame)] bg-[var(--k2b-surface)] [box-shadow:var(--ui-shadow-float)]">
-      <Tooltip.Anchor content="Close files" class="absolute right-3 top-3 z-20">
-        <IconButton label="Close files" onClick={props.close}>
+      <Tooltip.Anchor content={t().closeFiles} class="absolute right-3 top-3 z-20">
+        <IconButton label={t().closeFiles} onClick={props.close}>
           <i class="ti ti-x" aria-hidden="true" />
         </IconButton>
       </Tooltip.Anchor>

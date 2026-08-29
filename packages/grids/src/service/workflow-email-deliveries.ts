@@ -1,9 +1,10 @@
-import { toPgUuidArray } from "@valentinkolb/cloud/services";
 import { err } from "@k2b/stdlib";
+import { toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { GridsWorkflowEmailDelivery as WorkflowEmailDelivery } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 import { workflowConflict } from "./workflow-errors";
+import { workflowServiceText } from "./workflow-service-messages";
 
 type DeliveryStatus = "pending" | "sent" | "failed";
 
@@ -20,6 +21,7 @@ type DeliveryIntentInput = {
   idempotencyKey: string;
   subject: string;
   renderedHtml: string;
+  locale?: string;
 };
 
 type DeliveryRow = {
@@ -131,7 +133,7 @@ export const getOrCreateWorkflowEmailDeliveryIntent = async (
         FROM grids.workflow_email_deliveries
         WHERE idempotency_key = ${input.idempotencyKey}
       `;
-  if (!row) throw err.internal("workflow email delivery intent insert failed");
+  if (!row) throw err.internal(workflowServiceText(input.locale).emailIntentInsertFailed);
   if (
     row.workflow_run_id !== input.workflowRunId ||
     row.template_id !== input.templateId ||
@@ -140,7 +142,7 @@ export const getOrCreateWorkflowEmailDeliveryIntent = async (
     row.subject !== input.subject ||
     row.rendered_html !== input.renderedHtml
   ) {
-    throw workflowConflict("Workflow email delivery intent does not match the interrupted step.");
+    throw workflowConflict(workflowServiceText(input.locale).emailIntentMismatch);
   }
   return mapIntent(row);
 };
@@ -149,6 +151,7 @@ export const finishWorkflowEmailDeliveryIntent = async (
   deliveryId: string,
   input: { notificationId: string | null; providerStatus: string; status: "sent" | "failed"; error?: string | null },
   client: SqlClient = sql,
+  locale?: string,
 ): Promise<{ delivery: WorkflowEmailDeliveryIntent; transitioned: boolean }> => {
   const [row] = await client<DeliveryIntentRow[]>`
     UPDATE grids.workflow_email_deliveries
@@ -169,7 +172,7 @@ export const finishWorkflowEmailDeliveryIntent = async (
     FROM grids.workflow_email_deliveries
     WHERE id = ${deliveryId}::uuid
   `;
-  if (!existing) throw err.notFound("workflow email delivery intent");
+  if (!existing) throw { ...err.notFound("workflow email delivery intent"), message: workflowServiceText(locale).emailIntentNotFound };
   return { delivery: mapIntent(existing), transitioned: false };
 };
 

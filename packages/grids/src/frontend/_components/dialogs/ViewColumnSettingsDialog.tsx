@@ -1,10 +1,11 @@
-import { Checkbox, dialogCore, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput, Button } from "@k2b/ui";
+import { Button, Checkbox, dialogCore, NumberInput, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { FormatSpec } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import type { Field } from "../../../service";
-import { TYPE_LABELS } from "../fields/field-config-editor";
+import { fieldTypeLabel } from "../fields/field-type-meta";
 import { BARCODE_GROUPS, barcodeSelectedLabel, DEFAULT_BARCODE_BCID, searchBarcodeOptions } from "../table/barcode-options";
+import { gridsDialogMessages } from "./messages";
 
 type ViewColumnSettingsResult = { action: "save"; label: string | undefined; format: FormatSpec | undefined } | { action: "hide" };
 
@@ -27,6 +28,8 @@ export const openViewColumnSettingsDialog = (args: Args) =>
   dialogCore.open<ViewColumnSettingsResult | null>((close) => <ViewColumnSettingsDialog args={args} close={close} />, panelDialogOptions);
 
 function ViewColumnSettingsDialog(props: { args: Args; close: (result: ViewColumnSettingsResult | null) => void }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   const [label, setLabel] = createSignal(props.args.currentLabel ?? "");
   let formatControls: ColumnFormatControlsHandle | undefined;
 
@@ -39,11 +42,11 @@ function ViewColumnSettingsDialog(props: { args: Args; close: (result: ViewColum
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title={`Column — ${props.args.title}`} icon="ti ti-settings" close={() => props.close(null)} />
+      <PanelDialog.Header title={t().column({ title: props.args.title })} icon="ti ti-settings" close={() => props.close(null)} />
       <PanelDialog.Body>
         <TextInput
-          label="Column name"
-          description="Shown in this view. Empty uses the generated name."
+          label={t().columnName}
+          description={t().columnNameDescription}
           placeholder={props.args.labelPlaceholder}
           icon="ti ti-heading"
           value={label}
@@ -65,10 +68,10 @@ function ViewColumnSettingsDialog(props: { args: Args; close: (result: ViewColum
         </Button>
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={() => props.close(null)}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button variant="primary" size="sm" type="button" onClick={save}>
-            Save
+            {t().save}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -82,6 +85,15 @@ export function ColumnFormatControls(props: {
   expose?: (handle: ColumnFormatControlsHandle) => void;
   onChange?: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
+  const dateOptions = (includeDefault: boolean) => [
+    ...(includeDefault ? [{ id: "default", label: t().default, description: t().useAppDefault }] : []),
+    { id: "iso", label: "ISO", description: "2026-05-03" },
+    { id: "short", label: t().short, description: t().shortDateExample },
+    { id: "long", label: t().long, description: t().longDateExample },
+    { id: "relative", label: t().relative, description: t().relativeDateExample },
+  ];
   const displayField = () => (props.field ? effectiveDisplayField(props.field) : null);
   const fieldType = () => displayField()?.type;
   const [dateFormat, setDateFormat] = createSignal<DateFormatChoice>(
@@ -177,28 +189,22 @@ export function ColumnFormatControls(props: {
       <Show when={fieldType() === "date"}>
         <div class="flex flex-col gap-4">
           <Select
-            label="Date format"
+            label={t().dateFormat}
             value={dateFormat}
             onValueChange={(id) => touch(setDateFormat)((id as DateFormatChoice | null) ?? "default")}
-            options={[
-              { id: "default", label: "Default", description: "Use the app default." },
-              { id: "iso", label: "ISO", description: "2026-05-03" },
-              { id: "short", label: "Short", description: "May 3, 2026" },
-              { id: "long", label: "Long", description: "Sunday, May 3, 2026" },
-              { id: "relative", label: "Relative", description: "2 days ago" },
-            ]}
+            options={dateOptions(true)}
           />
-          <Checkbox label="Include time" value={includeTime} onValueChange={touch(setIncludeTime)} />
+          <Checkbox label={t().includeTime} value={includeTime} onValueChange={touch(setIncludeTime)} />
         </div>
       </Show>
       <Show when={fieldType() === "number"}>
-        <Checkbox label="Custom number format" value={customNumber} onValueChange={touch(setCustomNumber)} />
+        <Checkbox label={t().customNumber} value={customNumber} onValueChange={touch(setCustomNumber)} />
         <Show when={customNumber()}>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <NumberInput label="Decimal places" min={0} max={10} value={precision} onValueChange={touch(setPrecision)} clearable />
+            <NumberInput label={t().decimalPlaces} min={0} max={10} value={precision} onValueChange={touch(setPrecision)} clearable />
             <Checkbox
-              label="Thousands separator"
-              description="Example: 1,234,567"
+              label={t().thousandsSeparator}
+              description={t().thousandsExample}
               value={thousandsSeparator}
               onValueChange={touch(setThousandsSeparator)}
             />
@@ -207,12 +213,12 @@ export function ColumnFormatControls(props: {
       </Show>
       <Show when={canUseTextBarcode()}>
         <Select
-          label="Text format"
+          label={t().textFormat}
           value={textFormat}
           onValueChange={(v) => touch(setTextFormat)((v as TextFormatChoice | null) ?? "default")}
           options={[
-            { id: "default", label: "Default" },
-            { id: "barcode", label: "Barcode / 2D code", description: "Render the stored text as a scannable code." },
+            { id: "default", label: t().default },
+            { id: "barcode", label: t().barcode, description: t().barcodeDescription },
           ]}
         />
         <Show when={textFormat() === "barcode"}>
@@ -226,22 +232,22 @@ export function ColumnFormatControls(props: {
       </Show>
       <Show when={fieldType() === "formula"}>
         <Select
-          label="Formula format"
+          label={t().formulaFormat}
           value={formulaFormat}
           onValueChange={(v) => touch(setFormulaFormat)((v as FormulaFormatChoice | null) ?? "default")}
           options={[
-            { id: "default", label: "Default" },
-            { id: "number", label: "Number" },
-            { id: "percent", label: "Percent" },
-            { id: "date", label: "Date" },
-            { id: "progress", label: "Progress bar" },
-            { id: "barcode", label: "Barcode / 2D code" },
+            { id: "default", label: t().default },
+            { id: "number", label: t().number },
+            { id: "percent", label: t().percent },
+            { id: "date", label: t().dateFormat },
+            { id: "progress", label: t().progressBar },
+            { id: "barcode", label: t().barcode },
           ]}
         />
       </Show>
       <Show when={fieldType() === "percent"}>
         <Checkbox
-          label="Progress bar"
+          label={t().progressBar}
           value={progress}
           onValueChange={(v) => {
             setProgress(v);
@@ -252,25 +258,25 @@ export function ColumnFormatControls(props: {
       </Show>
       <Show when={(fieldType() === "percent" && progress()) || (fieldType() === "formula" && formulaFormat() === "progress")}>
         <Select
-          label="Progress label"
+          label={t().progressLabel}
           value={progressLabel}
           onValueChange={(v) => touch(setProgressLabel)((v as ProgressLabelChoice | null) ?? "percent")}
           options={[
-            { id: "percent", label: "Percent" },
-            { id: "value", label: "Value" },
-            { id: "none", label: "None" },
+            { id: "percent", label: t().percent },
+            { id: "value", label: t().value },
+            { id: "none", label: t().none },
           ]}
         />
       </Show>
       <Show when={fieldType() === "formula" && formulaFormat() === "number"}>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <NumberInput label="Decimal places" min={0} max={10} value={precision} onValueChange={touch(setPrecision)} clearable />
-          <Checkbox label="Thousands separator" value={thousandsSeparator} onValueChange={touch(setThousandsSeparator)} />
+          <NumberInput label={t().decimalPlaces} min={0} max={10} value={precision} onValueChange={touch(setPrecision)} clearable />
+          <Checkbox label={t().thousandsSeparator} value={thousandsSeparator} onValueChange={touch(setThousandsSeparator)} />
         </div>
       </Show>
       <Show when={fieldType() === "formula" && formulaFormat() === "percent"}>
         <NumberInput
-          label="Decimal places"
+          label={t().decimalPlaces}
           min={0}
           max={10}
           value={percentPrecision}
@@ -280,17 +286,12 @@ export function ColumnFormatControls(props: {
       </Show>
       <Show when={fieldType() === "formula" && formulaFormat() === "date"}>
         <Select
-          label="Date format"
+          label={t().dateFormat}
           value={dateFormat}
           onValueChange={(id) => touch(setDateFormat)((id as DateFormatChoice | null) ?? "short")}
-          options={[
-            { id: "iso", label: "ISO", description: "2026-05-03" },
-            { id: "short", label: "Short", description: "May 3, 2026" },
-            { id: "long", label: "Long", description: "Sunday, May 3, 2026" },
-            { id: "relative", label: "Relative", description: "2 days ago" },
-          ]}
+          options={dateOptions(false)}
         />
-        <Checkbox label="Include time" value={includeTime} onValueChange={touch(setIncludeTime)} />
+        <Checkbox label={t().includeTime} value={includeTime} onValueChange={touch(setIncludeTime)} />
       </Show>
       <Show when={fieldType() === "formula" && formulaFormat() === "barcode"}>
         <BarcodeFormatControls
@@ -301,10 +302,10 @@ export function ColumnFormatControls(props: {
         />
       </Show>
       <Show when={fieldType() === "percent" && !progress()}>
-        <Checkbox label="Custom percent format" value={customPercent} onValueChange={touch(setCustomPercent)} />
+        <Checkbox label={t().customPercent} value={customPercent} onValueChange={touch(setCustomPercent)} />
         <Show when={customPercent()}>
           <NumberInput
-            label="Decimal places"
+            label={t().decimalPlaces}
             min={0}
             max={10}
             value={percentPrecision}
@@ -315,7 +316,7 @@ export function ColumnFormatControls(props: {
       </Show>
       <Show when={!hasFormatOptions()}>
         <p class="text-xs leading-snug text-dimmed">
-          No format options for {fieldType() ? (TYPE_LABELS[fieldType()!] ?? fieldType()) : "this column"}.
+          {t().noFormatOptions({ type: fieldType() ? fieldTypeLabel(fieldType()!, locale()) : t().thisColumn })}
         </p>
       </Show>
     </div>
@@ -328,11 +329,13 @@ function BarcodeFormatControls(props: {
   showText: () => boolean;
   setShowText: (value: boolean) => void;
 }) {
+  const locale = useLocale();
+  const t = () => gridsDialogMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-3">
       <Select
-        label="Code type"
-        description="Common codes are shown first. Search for advanced BWIP symbol names."
+        label={t().codeType}
+        description={t().codeTypeDescription}
         value={props.bcid}
         onValueChange={(value) => {
           if (value !== null) props.setBcid(value);
@@ -341,11 +344,11 @@ function BarcodeFormatControls(props: {
         fetchData={async (query, _signal, group) => searchBarcodeOptions(query, group)}
         groups={BARCODE_GROUPS}
         defaultGroup="recommended"
-        groupsAriaLabel="Filter code types"
+        groupsAriaLabel={t().filterCodeTypes}
       />
       <Checkbox
-        label="Show encoded text"
-        description="Print the value below the code when the symbol supports it."
+        label={t().showEncodedText}
+        description={t().showEncodedTextDescription}
         value={props.showText}
         onValueChange={props.setShowText}
       />

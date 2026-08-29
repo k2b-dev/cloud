@@ -1,8 +1,10 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
+import { getLocale } from "../server/locale";
 import AdminSidebar from "./AdminSidebar";
 import Layout from "./Layout";
+import { platformMessages } from "./platform-messages";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
@@ -20,14 +22,16 @@ type Props = {
   title: string;
 };
 export default function AdminLayout({ children, c, title }: Props) {
+  const locale = getLocale(c);
+  const t = platformMessages.resolve([locale]).t;
   const url = new URL(c.req.raw.url);
   const currentPath = `${url.pathname}${url.search}`;
   const runtime = getLocalizedRuntimeContext(c);
   const breadcrumbs: Breadcrumb[] = [
-    { title: "Start", href: "/" },
-    { title: "Admin", href: "/admin" },
+    { title: t.start, href: "/" },
+    { title: t.admin, href: "/admin" },
   ];
-  if (title !== "Overview") {
+  if (title !== "Overview" && title !== t.overview) {
     breadcrumbs.push({ title });
   }
   return (

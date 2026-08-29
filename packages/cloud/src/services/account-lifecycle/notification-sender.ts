@@ -8,5 +8,6 @@ export type AccountLifecycleNotificationSender = {
     displayName: string;
     expiresAt: string;
     accountKind: "ipa" | "local-user" | "local-guest";
+    locale?: string;
   }) => Promise<Pick<TypedNotificationSendResult, "id" | "status">>;
 };

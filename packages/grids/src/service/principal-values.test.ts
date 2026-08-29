@@ -85,7 +85,7 @@ describe("principal values", () => {
     ] as EntityListItem[];
 
     const visibleDeps = deps(visible);
-    expect(await validatePrincipalValuesForActor({ [field.id]: values }, [field], actor.id, visibleDeps)).toEqual({
+    expect(await validatePrincipalValuesForActor({ [field.id]: values }, [field], actor.id, undefined, visibleDeps)).toEqual({
       ok: true,
       data: undefined,
     });
@@ -94,7 +94,7 @@ describe("principal values", () => {
     );
     expect(await buildPrincipalLabelCache(values, actor.id, deps(visible))).toEqual({ [userId]: "Guest Reader", [groupId]: "Team" });
 
-    const hidden = await validatePrincipalValuesForActor({ [field.id]: values }, [field], actor.id, deps(visible.slice(0, 1)));
+    const hidden = await validatePrincipalValuesForActor({ [field.id]: values }, [field], actor.id, undefined, deps(visible.slice(0, 1)));
     expect(hidden.ok).toBe(false);
     if (!hidden.ok) {
       expect(hidden.error.code).toBe("BAD_INPUT");
@@ -103,8 +103,21 @@ describe("principal values", () => {
   });
 
   test("requires a current user for non-empty principal values", async () => {
-    const result = await validatePrincipalValuesForActor({ [field.id]: [{ type: "user", id: uuid(4) }] }, [field], null, deps([]));
+    const result = await validatePrincipalValuesForActor(
+      { [field.id]: [{ type: "user", id: uuid(4) }] },
+      [field],
+      null,
+      undefined,
+      deps([]),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("FORBIDDEN");
+  });
+
+  test("localizes validation errors for regional German locales", async () => {
+    const result = await validatePrincipalValuesForActor({ [field.id]: [{ type: "user", id: uuid(4) }] }, [field], null, "de-CH", deps([]));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe("Melde dich an, um Benutzer oder Gruppen auszuwählen.");
   });
 });

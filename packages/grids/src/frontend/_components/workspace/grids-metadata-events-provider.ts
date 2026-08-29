@@ -1,5 +1,6 @@
 import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { gridsWorkspace, isGridsStreamCursor } from "../../../lib/workspace-events";
+import { workspaceMessages } from "./messages";
 
 type LiveProviderError = {
   code: string;
@@ -9,6 +10,7 @@ type LiveProviderError = {
 type GridsMetadataEventsProviderOptions = {
   baseId: string;
   initialCursor?: string | null;
+  locale?: string;
   onReady?: () => void;
   onEvent?: (cursor: string | null) => void;
   onError?: (error: LiveProviderError) => void;
@@ -51,6 +53,7 @@ const isMetadataEventForBase = (payload: unknown, baseId: string): boolean => {
 
 export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProviderOptions) => {
   let revoked = false;
+  const { t } = workspaceMessages.resolve([opts.locale ?? "en"]);
 
   return createLiveWebSocket<ProviderMessage>({
     url: "/api/grids/ws",
@@ -74,7 +77,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
       }
 
       if (message.type === gridsWorkspace.wsType.metadataRevoked) {
-        const error = errorFromPayload(message.payload, { code: "access_denied", message: "Access was revoked." });
+        const error = errorFromPayload(message.payload, { code: "access_denied", message: t.accessRevoked });
         revoked = true;
         try {
           opts.onRevoked?.(error);
@@ -85,7 +88,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
       }
 
       if (message.type === gridsWorkspace.wsType.metadataError) {
-        const error = errorFromPayload(message.payload, { code: "internal_error", message: "Live metadata updates failed." });
+        const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveMetadataFailed });
         if (TERMINAL_ERROR_CODES.has(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;
