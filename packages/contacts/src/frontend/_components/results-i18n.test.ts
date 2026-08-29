@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import "./ssr-test-plugin";
+import { detailMessages } from "./detail-messages";
 import { resultsMessages } from "./results-messages";
 
 const { bookUnavailableMessages } = await import("./ContactBookUnavailable.tsx");
@@ -9,7 +10,7 @@ const { spotlightMessages } = await import("./ContactsSpotlightButton.island.tsx
 
 describe("Contacts results i18n", () => {
   test("German is complete for every catalog", () => {
-    const catalogs = { resultsMessages, sidebarMessages, spotlightMessages, liveEventsMessages, bookUnavailableMessages };
+    const catalogs = { resultsMessages, detailMessages, sidebarMessages, spotlightMessages, liveEventsMessages, bookUnavailableMessages };
     for (const [name, catalog] of Object.entries(catalogs)) {
       const report = catalog.check().find((entry) => entry.locale === "de");
       expect({ name, missing: report?.missing ?? [], extra: report?.extra ?? [] }).toEqual({ name, missing: [], extra: [] });
@@ -38,6 +39,7 @@ describe("Contacts results i18n", () => {
     expect(t.selectContact({ name: "Ada Lovelace" })).toBe("Ada Lovelace auswählen");
     expect(t.openContact({ name: "Ada Lovelace" })).toBe("Ada Lovelace öffnen");
     expect(t.callContact({ name: "Ada Lovelace" })).toBe("Ada Lovelace anrufen");
+    expect(detailMessages.resolve(["de"]).t.contactUpdated).toBe("Kontakt aktualisiert");
   });
 
   test("keeps the English base wording", () => {
@@ -53,5 +55,6 @@ describe("Contacts results i18n", () => {
     expect(locale).toBe("de");
     expect(t.contactCount({ total: 2 })).toBe("2 Kontakte");
     expect(sidebarMessages.resolve(["de-CH"]).t.allContacts).toBe("Alle Kontakte");
+    expect(detailMessages.resolve(["de-CH"]).t.pickParentContact).toBe("Übergeordneten Kontakt auswählen");
   });
 });

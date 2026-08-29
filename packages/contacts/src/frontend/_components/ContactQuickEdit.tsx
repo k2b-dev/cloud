@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -9,6 +9,7 @@ import { openBookSettingsDialog } from "./BookSettingsDialog";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
 import { buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   contact: Contact;
@@ -28,6 +29,8 @@ const toContactRef = (contact: Contact): ContactRef => ({
 
 /** Focused editor for the fields users change most often on a record page. */
 export default function ContactQuickEdit(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const initial = contactToUpsertDraft(props.contact);
   const [label, setLabel] = createSignal(initial.label);
   const [firstName, setFirstName] = createSignal(initial.firstName);
@@ -48,11 +51,11 @@ export default function ContactQuickEdit(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update contact"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().updateContactFailed));
       return await response.json();
     },
     onSuccess: (contact) => {
-      toast.success("Contact updated");
+      toast.success(t().contactUpdated);
       props.onSaved(contact);
     },
     onError: (error) => prompts.error(error.message),
@@ -86,7 +89,7 @@ export default function ContactQuickEdit(props: Props) {
         payload: { ...payload, tagIds: [...(payload.tagIds ?? [])] },
       });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : "Failed to prepare contact update");
+      void prompts.error(error instanceof Error ? error.message : t().prepareContactUpdateFailed);
     }
   };
 
@@ -96,7 +99,7 @@ export default function ContactQuickEdit(props: Props) {
         <ContactSearchPicker bookId={props.contact.bookId} excludeIds={[props.contact.id]} onSelect={(contact) => close(contact)} />
       ),
       {
-        title: "Pick a parent contact",
+        title: t().pickParentContact,
         icon: "ti ti-corner-down-right",
         size: "medium",
       },
@@ -114,30 +117,25 @@ export default function ContactQuickEdit(props: Props) {
       }}
     >
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <TextInput label="First name" value={firstName} onValueChange={setFirstName} autocomplete="given-name" />
-        <TextInput label="Last name" value={lastName} onValueChange={setLastName} autocomplete="family-name" />
+        <TextInput label={t().firstName} value={firstName} onValueChange={setFirstName} autocomplete="given-name" />
+        <TextInput label={t().lastName} value={lastName} onValueChange={setLastName} autocomplete="family-name" />
         <div class="sm:col-span-2">
-          <TextInput
-            label="Display name"
-            description="Optional. Falls back to first and last name."
-            value={label}
-            onValueChange={setLabel}
-          />
+          <TextInput label={t().displayName} description={t().displayNameHint} value={label} onValueChange={setLabel} />
         </div>
-        <TextInput label="Company" value={companyName} onValueChange={setCompanyName} autocomplete="organization" />
-        <TextInput label="Job title" value={jobTitle} onValueChange={setJobTitle} autocomplete="organization-title" />
-        <TextInput label="Primary email" type="email" value={email} onValueChange={setEmail} autocomplete="email" />
-        <TextInput label="Primary phone" type="tel" value={phone} onValueChange={setPhone} autocomplete="tel" />
+        <TextInput label={t().company} value={companyName} onValueChange={setCompanyName} autocomplete="organization" />
+        <TextInput label={t().jobTitle} value={jobTitle} onValueChange={setJobTitle} autocomplete="organization-title" />
+        <TextInput label={t().primaryEmail} type="email" value={email} onValueChange={setEmail} autocomplete="email" />
+        <TextInput label={t().primaryPhone} type="tel" value={phone} onValueChange={setPhone} autocomplete="tel" />
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
-          <span class="text-label mb-1.5 block text-xs">Organization</span>
+          <span class="text-label mb-1.5 block text-xs">{t().organization}</span>
           <Show
             when={parentRef()}
             fallback={
               <Button variant="ghost" size="sm" onClick={openParentPicker}>
-                <i class="ti ti-corner-down-right" /> Choose parent
+                <i class="ti ti-corner-down-right" /> {t().chooseParent}
               </Button>
             }
           >
@@ -145,17 +143,17 @@ export default function ContactQuickEdit(props: Props) {
               <div class="flex flex-wrap items-center gap-1.5">
                 <span class="rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-primary">{resolveContactName(parent())}</span>
                 <Button variant="ghost" size="sm" onClick={openParentPicker}>
-                  Change
+                  {t().change}
                 </Button>
                 <Button variant="ghost" size="sm" class="text-dimmed" onClick={() => setParentRef(null)}>
-                  Clear
+                  {t().clear}
                 </Button>
               </div>
             )}
           </Show>
         </div>
         <div>
-          <span class="text-label mb-1.5 block text-xs">Tags</span>
+          <span class="text-label mb-1.5 block text-xs">{t().tags}</span>
           <ContactTagsPicker
             bookId={props.contact.bookId}
             selectedIds={tagIds()}
@@ -168,15 +166,15 @@ export default function ContactQuickEdit(props: Props) {
 
       <div class="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="sm" class="text-dimmed" onClick={props.onEditAll}>
-          Edit all fields <i class="ti ti-arrow-up-right" />
+          {t().editAllFields} <i class="ti ti-arrow-up-right" />
         </Button>
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={props.onCancel} disabled={saveMutation.loading()}>
-            Cancel
+            {t().cancel}
           </Button>
           <Button type="submit" size="sm" loading={saveMutation.loading()}>
             <i class="ti ti-check" />
-            Save
+            {t().save}
           </Button>
         </div>
       </div>

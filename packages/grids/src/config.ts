@@ -36,6 +36,9 @@ export const app = defineApp({
       label: "Max File Size",
       default: 10,
       description: "Maximum size per uploaded Grids file.",
+      presentation: {
+        translations: { de: { label: "Maximale Dateigröße", description: "Maximale Größe pro hochgeladener Grids-Datei." } },
+      },
     },
   },
   openapi: "/api/grids/openapi.json",

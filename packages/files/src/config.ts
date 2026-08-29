@@ -37,6 +37,9 @@ export const app = defineApp({
       default: "http://localhost:4000",
       description: "Filegate proxy URL for file operations",
       placeholder: "e.g. http://filegate:4000",
+      presentation: {
+        translations: { de: { description: "Filegate-Proxy-URL für Dateioperationen", placeholder: "z. B. http://filegate:4000" } },
+      },
       envFallback: () => envString("FILEGATE_URL"),
       envBootstrap: () => envString("FILEGATE_URL"),
     },
@@ -45,6 +48,7 @@ export const app = defineApp({
       label: "Filegate Token",
       default: "",
       description: "Filegate authentication token",
+      presentation: { translations: { de: { label: "Filegate-Token", description: "Authentifizierungstoken für Filegate" } } },
       envFallback: () => envString("FILEGATE_TOKEN"),
       envBootstrap: () => envString("FILEGATE_TOKEN"),
     },
@@ -54,6 +58,15 @@ export const app = defineApp({
       default: "/data/homes",
       description: "Home directories base path",
       placeholder: "e.g. /data/homes",
+      presentation: {
+        translations: {
+          de: {
+            label: "Basispfad für persönliche Verzeichnisse",
+            description: "Basispfad der persönlichen Verzeichnisse",
+            placeholder: "z. B. /data/homes",
+          },
+        },
+      },
     },
     "files.base_groups": {
       kind: "string",
@@ -61,6 +74,15 @@ export const app = defineApp({
       default: "/data/groups",
       description: "Group directories base path",
       placeholder: "e.g. /data/groups",
+      presentation: {
+        translations: {
+          de: {
+            label: "Basispfad für Gruppenverzeichnisse",
+            description: "Basispfad der Gruppenverzeichnisse",
+            placeholder: "z. B. /data/groups",
+          },
+        },
+      },
     },
     "files.home_dir_mode": {
       kind: "string",
@@ -68,6 +90,15 @@ export const app = defineApp({
       default: "700",
       description: "Unix permissions for user home directories (octal, e.g. 700)",
       placeholder: "e.g. 700",
+      presentation: {
+        translations: {
+          de: {
+            label: "Modus persönlicher Verzeichnisse",
+            description: "Unix-Berechtigungen für persönliche Verzeichnisse (oktal, z. B. 700)",
+            placeholder: "z. B. 700",
+          },
+        },
+      },
     },
     "files.home_file_mode": {
       kind: "string",
@@ -75,6 +106,15 @@ export const app = defineApp({
       default: "600",
       description: "Unix permissions for files in home directories (octal, e.g. 600)",
       placeholder: "e.g. 600",
+      presentation: {
+        translations: {
+          de: {
+            label: "Modus persönlicher Dateien",
+            description: "Unix-Berechtigungen für Dateien in persönlichen Verzeichnissen (oktal, z. B. 600)",
+            placeholder: "z. B. 600",
+          },
+        },
+      },
     },
     "files.group_dir_mode": {
       kind: "string",
@@ -82,6 +122,15 @@ export const app = defineApp({
       default: "2770",
       description: "Unix permissions for group directories (octal, e.g. 2770 for sticky bit)",
       placeholder: "e.g. 2770",
+      presentation: {
+        translations: {
+          de: {
+            label: "Modus von Gruppenverzeichnissen",
+            description: "Unix-Berechtigungen für Gruppenverzeichnisse (oktal, z. B. 2770 für das Sticky-Bit)",
+            placeholder: "z. B. 2770",
+          },
+        },
+      },
     },
     "files.group_file_mode": {
       kind: "string",
@@ -89,6 +138,15 @@ export const app = defineApp({
       default: "660",
       description: "Unix permissions for files in group directories (octal, e.g. 660)",
       placeholder: "e.g. 660",
+      presentation: {
+        translations: {
+          de: {
+            label: "Modus von Gruppendateien",
+            description: "Unix-Berechtigungen für Dateien in Gruppenverzeichnissen (oktal, z. B. 660)",
+            placeholder: "z. B. 660",
+          },
+        },
+      },
     },
   },
   openapi: "/api/files/openapi.json",

@@ -14,10 +14,18 @@ export const app = defineApp({
         description: "Administration für Gateway-Betrieb, Systembeobachtung und Benachrichtigungen.",
         adminGroups: { gateway: "Gateway", observability: "Systembeobachtung" },
         adminLinks: {
-          "/admin/gateway/apps": "Apps", "/admin/gateway/routes": "Routen", "/admin/observability": "Übersicht",
-          "/admin/observability/logs": "Protokolle", "/admin/observability/jobs": "Jobs", "/admin/observability/workflows": "Workflows",
-          "/admin/observability/telemetry": "Telemetrie", "/admin/observability/metrics": "Metriken", "/admin/observability/postgres": "Postgres",
-          "/admin/observability/redis": "Redis", "/admin/observability/alerts": "Webhooks", "/admin/observability/notifications": "Benachrichtigungen",
+          "/admin/gateway/apps": "Apps",
+          "/admin/gateway/routes": "Routen",
+          "/admin/observability": "Übersicht",
+          "/admin/observability/logs": "Protokolle",
+          "/admin/observability/jobs": "Jobs",
+          "/admin/observability/workflows": "Workflows",
+          "/admin/observability/telemetry": "Telemetrie",
+          "/admin/observability/metrics": "Metriken",
+          "/admin/observability/postgres": "Postgres",
+          "/admin/observability/redis": "Redis",
+          "/admin/observability/alerts": "Webhooks",
+          "/admin/observability/notifications": "Benachrichtigungen",
         },
       },
     },
@@ -64,18 +72,42 @@ export const app = defineApp({
       label: "Health Check Schedule",
       default: "*/5 * * * *",
       description: "Cron schedule for evaluating global gateway health and health webhooks. Uses app.timezone.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Health-Check-Zeitplan",
+            description: "Cron-Zeitplan zur Auswertung des globalen Gateway-Zustands und der Health-Webhooks. Verwendet app.timezone.",
+          },
+        },
+      },
     },
     "gateway.telemetry_event_retention_days": {
       kind: "number",
       label: "Request Event Retention",
       default: 14,
       description: "Days to retain individual gateway request events.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Aufbewahrung von Anfrageereignissen",
+            description: "Anzahl der Tage, für die einzelne Gateway-Anfrageereignisse aufbewahrt werden.",
+          },
+        },
+      },
     },
     "gateway.telemetry_rollup_retention_days": {
       kind: "number",
       label: "Request Rollup Retention",
       default: 90,
       description: "Days to retain minute request rollups for SLO and trend calculations.",
+      presentation: {
+        translations: {
+          de: {
+            label: "Aufbewahrung von Anfrageaggregaten",
+            description: "Anzahl der Tage, für die minutenweise Anfrageaggregate für SLO- und Trendberechnungen aufbewahrt werden.",
+          },
+        },
+      },
     },
   },
   widgets: [

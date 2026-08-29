@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { IconButton, prompts } from "@k2b/ui";
+import { IconButton, prompts, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import {
   contactFavoriteKey,
@@ -7,6 +7,7 @@ import {
   listenForContactFavoriteChanges,
   saveContactFavorite,
 } from "./contacts-favorites";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   bookId: string;
@@ -16,6 +17,8 @@ type Props = {
 };
 
 export default function ContactFavoriteButton(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const [favorite, setFavorite] = createSignal(props.initialFavorite);
   const [saving, setSaving] = createSignal(false);
   const lifecycle = createContactFavoriteMutationLifecycle(contactFavoriteKey(props.bookId, props.contactId));
@@ -34,7 +37,7 @@ export default function ContactFavoriteButton(props: Props) {
         optimisticFavorite: change.favorite,
       };
     },
-    mutation: (change, { abortSignal }) => saveContactFavorite(change, abortSignal),
+    mutation: (change, { abortSignal }) => saveContactFavorite(change, abortSignal, t().couldNotUpdateFavorite),
     onError: (error, context) => {
       if (!context || lifecycle.owns(context.sourceKey)) {
         if (context && favorite() === context.optimisticFavorite) setFavorite(context.previous);
@@ -78,7 +81,7 @@ export default function ContactFavoriteButton(props: Props) {
 
   return (
     <IconButton
-      label={favorite() ? "Remove from favorites" : "Add to favorites"}
+      label={favorite() ? t().removeFromFavorites : t().addToFavorites}
       class={props.class}
       classList={{ "app-accent-text": favorite(), "text-dimmed": !favorite() }}
       aria-pressed={favorite()}

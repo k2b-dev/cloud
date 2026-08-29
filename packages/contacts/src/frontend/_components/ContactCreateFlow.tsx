@@ -2,6 +2,7 @@ import { dialogCore, panelDialogOptions, prompts } from "@k2b/ui";
 import type { Contact } from "../../service";
 import ContactUpsertForm from "./ContactUpsertForm";
 import type { ContactUpsertInitialValues } from "./ContactUpsertForm.model";
+import { detailMessages } from "./detail-messages";
 
 export type WritableContactBook = {
   id: string;
@@ -18,10 +19,12 @@ export const openContactCreateFlow = async (options: {
   defaultBookId?: string | null;
   chooseBook?: boolean;
   initialValues?: ContactUpsertInitialValues;
+  locale: string;
 }): Promise<ContactCreateFlowResult | null> => {
+  const { t } = detailMessages.resolve([options.locale]);
   if (options.writableBooks.length === 0) {
-    await prompts.alert("You need write access to at least one contact book before you can create a contact.", {
-      title: "No writable contact book",
+    await prompts.alert(t.noWritableBookHint, {
+      title: t.noWritableBook,
       icon: "ti ti-lock",
     });
     return null;
@@ -35,14 +38,14 @@ export const openContactCreateFlow = async (options: {
   let selectedBookId = defaultBookId;
   if (options.chooseBook && options.writableBooks.length > 1) {
     const result = await prompts.form({
-      title: "Choose contact book",
+      title: t.chooseContactBook,
       icon: "ti ti-address-book",
-      confirmText: "Continue",
+      confirmText: t.continueAction,
       fields: {
         bookId: {
           type: "select",
-          label: "Contact book",
-          description: "Choose where the new contact should be stored.",
+          label: t.contactBook,
+          description: t.chooseContactBookHint,
           required: true,
           default: defaultBookId,
           options: options.writableBooks.map((book) => ({
@@ -64,7 +67,7 @@ export const openContactCreateFlow = async (options: {
         mode="create"
         bookId={selectedBookId}
         initialValues={options.initialValues}
-        title={selectedBook ? `New contact in ${selectedBook.name}` : "New contact"}
+        title={selectedBook ? t.newContactIn({ name: selectedBook.name }) : t.newContact}
         icon="ti ti-user-plus"
         onCancel={() => close(undefined)}
         onSaved={(created) => close(created)}

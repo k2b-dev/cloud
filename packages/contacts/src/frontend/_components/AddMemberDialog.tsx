@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, PanelDialog, prompts } from "@k2b/ui";
+import { Button, PanelDialog, prompts, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -7,6 +7,7 @@ import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactUpsertForm from "./ContactUpsertForm";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   parent: Contact;
@@ -24,6 +25,8 @@ type Props = {
  * has to exclude the parent itself client-side. Linking is a single PATCH.
  */
 export default function AddMemberDialog(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<"pick" | "create">("pick");
 
   const parentRef: ContactRef = {
@@ -44,7 +47,7 @@ export default function AddMemberDialog(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to link member"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().linkMemberFailed));
       return await res.json();
     },
     onSuccess: (linked) => props.close(linked),
@@ -61,8 +64,8 @@ export default function AddMemberDialog(props: Props) {
           mode="create"
           bookId={props.parent.bookId}
           defaultParent={parentRef}
-          title="New Member"
-          subtitle={`Belongs to ${resolveContactName(props.parent)}`}
+          title={t().newMember}
+          subtitle={t().belongsTo({ name: resolveContactName(props.parent) })}
           icon="ti ti-user-plus"
           onCancel={() => setMode("pick")}
           onSaved={(created) => props.close(created)}
@@ -72,17 +75,17 @@ export default function AddMemberDialog(props: Props) {
       <PanelDialog>
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
           <PanelDialog.Header
-            title={`Add member to ${resolveContactName(props.parent)}`}
-            subtitle="Link an existing contact or create a new member."
+            title={t().addMemberTo({ name: resolveContactName(props.parent) })}
+            subtitle={t().addMemberHint}
             icon="ti ti-users-plus"
             close={() => props.close(null)}
           />
           <PanelDialog.Body>
-            <PanelDialog.Section title="Existing Contact" subtitle="Search this book and attach the selected contact." icon="ti ti-search">
+            <PanelDialog.Section title={t().existingContact} subtitle={t().existingContactHint} icon="ti ti-search">
               <ContactSearchPicker
                 bookId={props.parent.bookId}
                 excludeIds={[props.parent.id]}
-                placeholder="Search contacts in this book..."
+                placeholder={t().searchContactsInBook}
                 onSelect={(contact) => {
                   if (linkMutation.loading()) return;
                   linkMutation.mutate({ bookId: contact.bookId, contactId: contact.id, parentContactId: props.parent.id });
@@ -92,10 +95,10 @@ export default function AddMemberDialog(props: Props) {
           </PanelDialog.Body>
           <PanelDialog.Footer>
             <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
-              Cancel
+              {t().cancel}
             </Button>
             <Button type="button" size="sm" onClick={() => setMode("create")}>
-              <i class="ti ti-plus" /> Create new contact
+              <i class="ti ti-plus" /> {t().createNewContact}
             </Button>
           </PanelDialog.Footer>
         </div>

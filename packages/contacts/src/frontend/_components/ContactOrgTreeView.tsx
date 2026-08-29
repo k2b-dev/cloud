@@ -1,7 +1,8 @@
-import { Button, DetailPanel } from "@k2b/ui";
+import { Button, DetailPanel, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { ContactTree, ContactTreeNode } from "../../service";
 import { resolveContactName } from "../../shared";
+import { detailMessages } from "./detail-messages";
 
 type Props = {
   tree: ContactTree;
@@ -19,6 +20,8 @@ function ContactOrgTreeNode(props: {
   isLast: boolean;
   onSelect: (node: ContactTreeNode) => void;
 }) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const selected = () => props.node.id === props.selectedId;
   const hasChildren = () => props.node.children.length > 0;
   const lineColor = "border-[var(--ui-divider)]";
@@ -58,7 +61,7 @@ function ContactOrgTreeNode(props: {
               class={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                 selected() ? "bg-[var(--ui-active)] text-primary" : "bg-[var(--ui-surface-subtle)] text-dimmed"
               }`}
-              title={`${props.node.children.length} direct report${props.node.children.length === 1 ? "" : "s"}`}
+              title={t().directReports({ count: props.node.children.length })}
             >
               {props.node.children.length}
               <i class="ti ti-users text-[10px]" aria-hidden="true" />
@@ -89,21 +92,23 @@ function ContactOrgTreeNode(props: {
 }
 
 export default function ContactOrgTreeView(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   return (
     <DetailPanel>
       <DetailPanel.Header
         icon="ti ti-hierarchy"
-        title="Org tree"
-        subtitle="Hierarchy of this contact"
+        title={t().orgTree}
+        subtitle={t().hierarchyOfThisContact}
         actions={
           <Button type="button" variant="secondary" size="sm" onClick={props.onBack}>
-            <i class="ti ti-arrow-left" aria-hidden="true" /> Details
+            <i class="ti ti-arrow-left" aria-hidden="true" /> {t().details}
           </Button>
         }
       />
       <DetailPanel.Body scrollPreserveKey="contacts-org-tree">
-        <DetailPanel.Group label="Organization context">
-          <DetailPanel.Section title="Hierarchy" icon="ti ti-sitemap" tone="accent">
+        <DetailPanel.Group label={t().organizationContext}>
+          <DetailPanel.Section title={t().hierarchy} icon="ti ti-sitemap" tone="accent">
             <ul class="flex flex-col gap-1">
               <ContactOrgTreeNode
                 node={props.tree.root}

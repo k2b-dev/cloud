@@ -1,9 +1,10 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, MultiSelectInput } from "@k2b/ui";
+import { Button, MultiSelectInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactTag } from "../../service";
 import { safeTagColor } from "../../shared";
+import { detailMessages } from "./detail-messages";
 import { currentSourceValue, type SourceTagged } from "./lazy-query-source";
 
 type Props = {
@@ -25,13 +26,15 @@ type Props = {
  * dialog — here we only assign / unassign existing ones to the current contact.
  */
 export default function ContactTagsPicker(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const [managing, setManaging] = createSignal(false);
 
   const available = query.create<string, SourceTagged<ContactTag[]>>({
     source: () => props.bookId,
     load: async (bookId, ctx) => {
       const res = await apiClient.books[":bookId"].tags.$get({ param: { bookId } }, { init: { signal: ctx.abortSignal } });
-      if (!res.ok) throw new Error("Could not load contact tags");
+      if (!res.ok) throw new Error(t().couldNotLoadTags);
       return { source: bookId, value: await res.json() };
     },
   });
@@ -61,29 +64,29 @@ export default function ContactTagsPicker(props: Props) {
   return (
     <div class="flex flex-col gap-1.5">
       <MultiSelectInput
-        label={props.compact ? undefined : "Tags"}
-        aria-label={props.compact ? "Tags" : undefined}
+        label={props.compact ? undefined : t().tags}
+        aria-label={props.compact ? t().tags : undefined}
         value={selectedIds}
         options={options()}
-        placeholder={available.loading() ? "Loading tags..." : "No tags"}
-        searchPlaceholder="Search tags..."
-        emptyLabel="No tags in this book"
+        placeholder={available.loading() ? t().loadingTags : t().noTags}
+        searchPlaceholder={t().searchTags}
+        emptyLabel={t().noTagsInBook}
         disabled={props.loading || available.loading() || !currentTags()}
         clearable
         onValueChange={props.onChange}
       />
       <Show when={available.error()}>
         <div class="flex items-center justify-between gap-2 text-xs text-red-600 dark:text-red-400">
-          <span>Could not load contact tags</span>
+          <span>{t().couldNotLoadTags}</span>
           <Button type="button" variant="ghost" size="xs" onClick={() => void available.refresh()}>
-            Retry
+            {t().retry}
           </Button>
         </div>
       </Show>
       <Show when={currentTags() && currentTags()!.length === 0 && props.onManage}>
         <Button type="button" variant="ghost" size="xs" class="w-fit" loading={managing()} onClick={() => void manageTags()}>
           <i class="ti ti-settings" aria-hidden="true" />
-          Manage tags in book settings
+          {t().manageTagsInBookSettings}
         </Button>
       </Show>
     </div>

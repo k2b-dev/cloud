@@ -42,6 +42,11 @@ export const app = defineApp({
       label: "Google OAuth client ID",
       default: "",
       description: "Enables browser OAuth for Google Mail when configured.",
+      presentation: {
+        translations: {
+          de: { label: "Google OAuth-Client-ID", description: "Aktiviert nach der Konfiguration Browser-OAuth für Google Mail." },
+        },
+      },
       envFallback: () => envString("MAIL_OAUTH_GOOGLE_CLIENT_ID"),
       envBootstrap: () => envString("MAIL_OAUTH_GOOGLE_CLIENT_ID"),
     },
@@ -50,6 +55,11 @@ export const app = defineApp({
       label: "Google OAuth client secret",
       default: "",
       description: "Optional confidential client secret for Google Mail OAuth.",
+      presentation: {
+        translations: {
+          de: { label: "Google OAuth-Client-Secret", description: "Optionales vertrauliches Client-Secret für Google-Mail-OAuth." },
+        },
+      },
       envFallback: () => envString("MAIL_OAUTH_GOOGLE_CLIENT_SECRET"),
       envBootstrap: () => envString("MAIL_OAUTH_GOOGLE_CLIENT_SECRET"),
     },
@@ -58,6 +68,11 @@ export const app = defineApp({
       label: "Microsoft OAuth client ID",
       default: "",
       description: "Enables browser OAuth for Microsoft Mail when configured.",
+      presentation: {
+        translations: {
+          de: { label: "Microsoft OAuth-Client-ID", description: "Aktiviert nach der Konfiguration Browser-OAuth für Microsoft Mail." },
+        },
+      },
       envFallback: () => envString("MAIL_OAUTH_MICROSOFT_CLIENT_ID"),
       envBootstrap: () => envString("MAIL_OAUTH_MICROSOFT_CLIENT_ID"),
     },
@@ -66,6 +81,11 @@ export const app = defineApp({
       label: "Microsoft OAuth client secret",
       default: "",
       description: "Optional confidential client secret for Microsoft Mail OAuth.",
+      presentation: {
+        translations: {
+          de: { label: "Microsoft OAuth-Client-Secret", description: "Optionales vertrauliches Client-Secret für Microsoft-Mail-OAuth." },
+        },
+      },
       envFallback: () => envString("MAIL_OAUTH_MICROSOFT_CLIENT_SECRET"),
       envBootstrap: () => envString("MAIL_OAUTH_MICROSOFT_CLIENT_SECRET"),
     },

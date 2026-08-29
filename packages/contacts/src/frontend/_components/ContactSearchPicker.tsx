@@ -1,9 +1,10 @@
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, TextInput } from "@k2b/ui";
+import { Button, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
 import { resolveContactName } from "../../shared";
+import { detailMessages } from "./detail-messages";
 import { currentDebouncedSourceValue, type SourceTagged } from "./lazy-query-source";
 
 type Props = {
@@ -26,6 +27,8 @@ type Props = {
  * with thousands of contacts.
  */
 export default function ContactSearchPicker(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const [query, setQuery] = createSignal("");
   const [committedQuery, setCommittedQuery] = createSignal("");
 
@@ -52,7 +55,7 @@ export default function ContactSearchPicker(props: Props) {
         },
         { init: { signal: ctx.abortSignal } },
       );
-      if (!res.ok) throw new Error("Could not search contacts");
+      if (!res.ok) throw new Error(t().searchContactsFailed);
       const payload = await res.json();
       const items = payload.data;
       const excludeSet = new Set(excludeIds);
@@ -82,8 +85,8 @@ export default function ContactSearchPicker(props: Props) {
   return (
     <div class="flex flex-col gap-2">
       <TextInput
-        aria-label="Search contacts"
-        placeholder={props.placeholder ?? "Search by name, email, company…"}
+        aria-label={t().searchContacts}
+        placeholder={props.placeholder ?? t().searchContactsHint}
         icon="ti ti-search"
         value={query}
         onValueChange={setQuery}
@@ -91,9 +94,9 @@ export default function ContactSearchPicker(props: Props) {
       <div class="-mx-1 flex max-h-72 flex-col overflow-y-auto px-1">
         <Show when={visibleError()}>
           <div class="flex items-center justify-between gap-2 px-2 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
-            <span>Could not search contacts</span>
+            <span>{t().searchContactsFailed}</span>
             <Button type="button" variant="ghost" size="xs" onClick={() => void results.refresh()}>
-              Retry
+              {t().retry}
             </Button>
           </div>
         </Show>
@@ -102,7 +105,7 @@ export default function ContactSearchPicker(props: Props) {
           fallback={
             <Show when={!visibleError()}>
               <p class="px-2 py-6 text-center text-xs text-dimmed">
-                {results.loading() || query() !== committedQuery() ? "Searching…" : "No matches"}
+                {results.loading() || query() !== committedQuery() ? t().searching : t().noMatches}
               </p>
             </Show>
           }

@@ -1,4 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { useLocale } from "@k2b/ui";
 import { onMount } from "solid-js";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
@@ -12,6 +13,7 @@ const consumeCreateQuery = (url: URL): void => {
 };
 
 export default function ContactCreateLauncher(props: { writableBooks: WritableContactBook[] }) {
+  const locale = useLocale();
   onMount(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("createContact") !== "1") return;
@@ -22,6 +24,7 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
       writableBooks: props.writableBooks,
       chooseBook: true,
       initialValues: { label: seed.name, email: seed.email },
+      locale: locale(),
     }).then((result) => {
       if (result) navigateTo(contactHref(result.bookId, result.contact.id));
     });

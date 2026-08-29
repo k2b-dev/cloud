@@ -14,6 +14,7 @@ export const detailMessages = i18n.define({
       retry: "Retry",
       tryAgain: "Try again",
       done: "Done",
+      save: "Save",
 
       // Detail panel states
       selectContactHint: "Select a contact to see details",
@@ -66,6 +67,42 @@ export const detailMessages = i18n.define({
       removeFromMembers: "Remove from members",
       removeMemberLabel: ({ name }: { name: string }) => `Remove ${name} from members`,
       noHierarchyYet: "No hierarchy yet.",
+
+      // Quick edit and member linking
+      updateContactFailed: "Failed to update contact",
+      contactUpdated: "Contact updated",
+      prepareContactUpdateFailed: "Failed to prepare contact update",
+      pickParentContact: "Pick a parent contact",
+      displayName: "Display name",
+      displayNameHint: "Optional. Falls back to first and last name.",
+      primaryEmail: "Primary email",
+      primaryPhone: "Primary phone",
+      chooseParent: "Choose parent",
+      change: "Change",
+      clear: "Clear",
+      newMember: "New member",
+      belongsTo: ({ name }: { name: string }) => `Belongs to ${name}`,
+      addMemberTo: ({ name }: { name: string }) => `Add member to ${name}`,
+      addMemberHint: "Link an existing contact or create a new member.",
+      existingContact: "Existing contact",
+      existingContactHint: "Search this book and attach the selected contact.",
+      searchContactsInBook: "Search contacts in this book...",
+      createNewContact: "Create new contact",
+      linkMemberFailed: "Failed to link member",
+      searchContacts: "Search contacts",
+      searchContactsHint: "Search by name, email, company…",
+      searchContactsFailed: "Could not search contacts",
+      searching: "Searching…",
+      noMatches: "No matches",
+      createContactAria: "Create new contact",
+      noWritableBook: "No writable contact book",
+      noWritableBookHint: "You need write access to at least one contact book before you can create a contact.",
+      chooseContactBook: "Choose contact book",
+      continueAction: "Continue",
+      contactBook: "Contact book",
+      chooseContactBookHint: "Choose where the new contact should be stored.",
+      newContact: "New contact",
+      newContactIn: ({ name }: { name: string }) => `New contact in ${name}`,
 
       // Detail actions
       moveContactFailed: "Failed to move contact",
@@ -144,6 +181,7 @@ export const detailMessages = i18n.define({
       // Favorites
       addToFavorites: "Add to favorites",
       removeFromFavorites: "Remove from favorites",
+      couldNotUpdateFavorite: "Could not update favorite",
 
       // Org tree
       orgTree: "Org tree",
@@ -159,6 +197,7 @@ export const detailMessages = i18n.define({
       retry: "Erneut versuchen",
       tryAgain: "Erneut versuchen",
       done: "Fertig",
+      save: "Speichern",
 
       // Detail panel states
       selectContactHint: "Wähle einen Kontakt, um Details zu sehen",
@@ -211,6 +250,42 @@ export const detailMessages = i18n.define({
       removeFromMembers: "Zuordnung entfernen",
       removeMemberLabel: ({ name }) => `Zuordnung von ${name} entfernen`,
       noHierarchyYet: "Noch keine Zuordnung.",
+
+      // Schnellbearbeitung und Mitgliederzuordnung
+      updateContactFailed: "Kontakt konnte nicht aktualisiert werden",
+      contactUpdated: "Kontakt aktualisiert",
+      prepareContactUpdateFailed: "Kontaktänderung konnte nicht vorbereitet werden",
+      pickParentContact: "Übergeordneten Kontakt auswählen",
+      displayName: "Anzeigename",
+      displayNameHint: "Optional. Wird sonst aus Vor- und Nachname gebildet.",
+      primaryEmail: "Primäre E-Mail-Adresse",
+      primaryPhone: "Primäre Telefonnummer",
+      chooseParent: "Übergeordneten Kontakt auswählen",
+      change: "Ändern",
+      clear: "Entfernen",
+      newMember: "Neues Mitglied",
+      belongsTo: ({ name }) => `Gehört zu ${name}`,
+      addMemberTo: ({ name }) => `Mitglied zu ${name} hinzufügen`,
+      addMemberHint: "Verknüpfe einen bestehenden Kontakt oder erstelle ein neues Mitglied.",
+      existingContact: "Bestehender Kontakt",
+      existingContactHint: "Durchsuche dieses Kontaktbuch und verknüpfe den ausgewählten Kontakt.",
+      searchContactsInBook: "Kontakte in diesem Kontaktbuch suchen…",
+      createNewContact: "Neuen Kontakt erstellen",
+      linkMemberFailed: "Mitglied konnte nicht verknüpft werden",
+      searchContacts: "Kontakte suchen",
+      searchContactsHint: "Nach Name, E-Mail-Adresse oder Firma suchen…",
+      searchContactsFailed: "Kontakte konnten nicht durchsucht werden",
+      searching: "Kontakte werden gesucht…",
+      noMatches: "Keine Treffer",
+      createContactAria: "Neuen Kontakt erstellen",
+      noWritableBook: "Kein beschreibbares Kontaktbuch",
+      noWritableBookHint: "Du benötigst Schreibzugriff auf mindestens ein Kontaktbuch, bevor du einen Kontakt erstellen kannst.",
+      chooseContactBook: "Kontaktbuch auswählen",
+      continueAction: "Weiter",
+      contactBook: "Kontaktbuch",
+      chooseContactBookHint: "Wähle das Kontaktbuch, in dem der neue Kontakt gespeichert werden soll.",
+      newContact: "Neuer Kontakt",
+      newContactIn: ({ name }) => `Neuer Kontakt in ${name}`,
 
       // Detail actions
       moveContactFailed: "Kontakt konnte nicht verschoben werden",
@@ -289,6 +364,7 @@ export const detailMessages = i18n.define({
       // Favorites
       addToFavorites: "Zu Favoriten hinzufügen",
       removeFromFavorites: "Aus Favoriten entfernen",
+      couldNotUpdateFavorite: "Der Favorit konnte nicht aktualisiert werden",
 
       // Org tree
       orgTree: "Hierarchie",

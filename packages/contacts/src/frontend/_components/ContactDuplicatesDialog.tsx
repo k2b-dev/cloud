@@ -1,21 +1,22 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, toast } from "@k2b/ui";
+import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactDuplicateMatch } from "../../service";
 import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
-
-const contactSummary = (contact: Contact) =>
-  [contact.companyName, contact.emails[0]?.email, contact.phones[0]?.phone].filter(Boolean).join(" · ") || "No additional contact details";
-
-const reasonLabel: Record<ContactDuplicateMatch["reasons"][number], string> = {
-  email: "same email",
-  phone: "same phone",
-  name: "same name",
-};
+import { detailMessages } from "./detail-messages";
 
 function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
+  const contactSummary = (contact: Contact) =>
+    [contact.companyName, contact.emails[0]?.email, contact.phones[0]?.phone].filter(Boolean).join(" · ") || t().noAdditionalContactDetails;
+  const reasonLabel = (reason: ContactDuplicateMatch["reasons"][number]): string => {
+    if (reason === "email") return t().reasonSameEmail;
+    if (reason === "phone") return t().reasonSamePhone;
+    return t().reasonSameName;
+  };
   const [changed, setChanged] = createSignal(false);
   const [reconcileError, setReconcileError] = createSignal<string | null>(null);
   const [reconciling, setReconciling] = createSignal(false);
@@ -26,7 +27,7 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     source: () => props.bookId,
     load: async (bookId, { abortSignal }) => {
       const response = await apiClient.books[":bookId"].contacts.duplicates.$get({ param: { bookId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Could not inspect duplicates"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().inspectDuplicatesFailed));
       return await response.json();
     },
   });
@@ -40,7 +41,7 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     } catch {
       if (disposed) return;
       setReconciling(false);
-      setReconcileError("The contacts were merged, but duplicate matches could not be reloaded.");
+      setReconcileError(t().mergedReloadFailed);
     }
   };
 
@@ -61,12 +62,12 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Could not merge contacts"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().mergeContactsFailed));
       return await response.json();
     },
     onSuccess: () => {
       setChanged(true);
-      toast.success("Contacts merged");
+      toast.success(t().contactsMerged);
       void reconcile();
     },
     onError: (error) => void prompts.error(error.message),
@@ -82,8 +83,8 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     setConfirming(true);
     try {
       const confirmed = await prompts.confirm(
-        `Keep “${resolveContactName(contact)}” and merge “${resolveContactName(duplicate)}” into it? Missing fields, unique contact methods, notes, tags, and favorites are preserved. When both records contain a different value, the kept record wins.`,
-        { title: "Merge contacts", icon: "ti ti-users-minus", confirmText: "Merge" },
+        t().mergeConfirm({ keep: resolveContactName(contact), remove: resolveContactName(duplicate) }),
+        { title: t().mergeContactsTitle, icon: "ti ti-users-minus", confirmText: t().merge },
       );
       if (!confirmed || disposed) return;
       void mergeMutation.mutate({
@@ -103,26 +104,21 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
 
   return (
     <PanelDialog>
-      <PanelDialog.Header
-        title="Review duplicates"
-        subtitle="Exact matches inside this contact book. Nothing is changed until you choose which record to keep."
-        icon="ti ti-users-group"
-        close={close}
-      />
+      <PanelDialog.Header title={t().reviewDuplicates} subtitle={t().reviewDuplicatesSubtitle} icon="ti ti-users-group" close={close} />
       <PanelDialog.Body>
-        <Show when={!matches.loading()} fallback={<Placeholder icon="ti ti-loader-2" title="Checking contacts..." variant="panel" />}>
+        <Show when={!matches.loading()} fallback={<Placeholder icon="ti ti-loader-2" title={t().checkingContacts} variant="panel" />}>
           <Show
             when={!matches.error() || matches.data() !== undefined}
             fallback={
               <div class="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
                 <Placeholder
                   icon="ti ti-alert-circle"
-                  title="Could not check duplicates"
-                  description="Try again. No contacts were changed."
+                  title={t().couldNotCheckDuplicates}
+                  description={t().duplicatesErrorRecovery}
                   variant="panel"
                 />
                 <Button variant="secondary" size="sm" onClick={() => void matches.refresh()}>
-                  <i class="ti ti-refresh" /> Retry
+                  <i class="ti ti-refresh" /> {t().retry}
                 </Button>
               </div>
             }
@@ -132,8 +128,8 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
               fallback={
                 <Placeholder
                   icon="ti ti-user-check"
-                  title="No duplicates found"
-                  description="No exact name, email, or phone matches need review."
+                  title={t().noDuplicatesFound}
+                  description={t().noDuplicatesDescription}
                   variant="panel"
                 />
               }
@@ -142,7 +138,7 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
                 <For each={matches.data() ?? []}>
                   {(match) => (
                     <section class="paper p-3">
-                      <p class="mb-2 text-xs text-dimmed">{match.reasons.map((reason) => reasonLabel[reason]).join(" · ")}</p>
+                      <p class="mb-2 text-xs text-dimmed">{match.reasons.map(reasonLabel).join(" · ")}</p>
                       <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                         <For each={[match.first, match.second]}>
                           {(contact, index) => {
@@ -158,7 +154,7 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
                                   disabled={mergeMutation.loading() || confirming() || coverageBlocked()}
                                   onClick={() => void keep(contact, other())}
                                 >
-                                  Keep this record
+                                  {t().keepThisRecord}
                                 </Button>
                               </div>
                             );
@@ -174,24 +170,22 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
         </Show>
         <Show when={reconciling()}>
           <p class="text-xs text-dimmed" role="status">
-            Reloading duplicate matches…
+            {t().reloadingMatches}
           </p>
         </Show>
         <Show when={reconcileError()}>
           <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
             <span>{reconcileError()}</span>
             <Button type="button" variant="secondary" size="xs" onClick={() => void reconcile()} disabled={reconciling()}>
-              Retry reload
+              {t().retryReload}
             </Button>
           </div>
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <span class="text-xs text-dimmed">
-          {(matches.data() ?? []).length} match{(matches.data() ?? []).length === 1 ? "" : "es"}
-        </span>
+        <span class="text-xs text-dimmed">{t().matchCount({ count: (matches.data() ?? []).length })}</span>
         <Button variant="secondary" size="sm" onClick={close} disabled={coverageBlocked()}>
-          Done
+          {t().done}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>
