@@ -5,7 +5,7 @@ section: Build an app
 order: 165
 description: Add translations and locale-aware formatting without breaking Cloud SSR, islands, errors, Help, widgets, or capabilities.
 tags: [i18n, intl, locale, ssr, errors, help, widgets]
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 # Internationalize an application
@@ -71,9 +71,11 @@ need the same wording. Do extract it when inline translations would obscure the
 component, handler, or template. Message keys are implementation details of the
 owning application; they never cross an API or capability boundary.
 
-Run `catalog.check()` in a focused test when an application ships more than its
-base locale. Missing entries can be intentional during rollout, but the test
-makes the fallback visible and catches extra or misspelled keys.
+Run `catalog.check()` in a focused test whenever an application ships more than
+its base locale. Assert an empty result for a complete release catalog and add
+one regional lookup such as `de-CH` to prove language fallback. If a staged
+rollout intentionally falls back for some keys, assert the exact known report
+instead of omitting the check.
 
 ## Resolve once at each runtime boundary
 
@@ -157,6 +159,47 @@ permissions, and link targets never change with language. Runtime navigation,
 administration, Help surfaces, API Docs, and app listings all receive the same
 request-scoped presentation.
 
+Translate an application name when it is an ordinary word that describes the
+app, such as Files, Contacts, Accounts, or Weather. Keep coined product names
+such as Grids or Spaces, established loanwords such as Mail or Gateway, and
+technical terms the audience normally uses untranslated. Record the decision
+explicitly in `presentation`, even when the localized name stays identical.
+The name and description must use the same term.
+
+### Localize declared settings
+
+Setting keys and values remain stable. Localize only the presentation attached
+to a setting; it inherits the application's `presentation.baseLocale`, so the
+base locale is not repeated on every field.
+
+```ts
+defineApp({
+  presentation: { baseLocale: "en", translations: { de: { name: "Inventar" } } },
+  settings: {
+    "inventory.endpoint": {
+      kind: "url",
+      default: "",
+      label: "Service endpoint",
+      description: "Base URL of the inventory service.",
+      placeholder: "For example, https://inventory.example",
+      presentation: {
+        translations: {
+          de: {
+            label: "Dienstendpunkt",
+            description: "Basis-URL des Inventardienstes.",
+            placeholder: "Zum Beispiel https://inventar.example",
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+Enum overlays may provide `options` keyed by the stable option value. Cloud
+resolves exact locale, language ancestors, and the application base locale on
+the server before returning the setting registry.
+
 ## Format values instead of translating them
 
 Use semantic values for numbers and time, then format at the rendering owner:
@@ -171,6 +214,11 @@ Use semantic values for numbers and time, then format at the rendering owner:
 Do not format a number in advance merely to choose `,` or `.`. `NumberInput` accepts and
 displays the separator for its inherited locale. Keep timezone separate from
 language and pass `getDateConfig(c)` when a date also needs the request timezone.
+
+Do not call `toLocaleString()`, `toLocaleDateString()`, or
+`Intl.DateTimeFormat(undefined, ...)` at a user-facing seam. The runtime default
+can differ between SSR and the browser. Use the inherited locale or an explicit
+request locale. Stable machine formats such as ISO dates are not display text.
 
 ## Keep errors useful to humans and machines
 
@@ -234,6 +282,24 @@ but do not create one file per sentence.
 Notifications and emails must contain final localized subject, body, action
 labels, and error guidance. Do not send catalog keys to another service and
 expect that service to know the application's dictionary.
+
+Pass the resolved locale as notification metadata, not as a field in the
+application payload. `render(data, context)` and `email(data, context)` receive
+the same canonical `context.locale`:
+
+```ts
+render: ({ itemName }, { locale }) => messages.resolve([locale]).t.ready({ itemName }),
+
+await notifications.send(app.notifications.itemReady, {
+  recipient: { userId },
+  data: { itemName },
+  idempotencyKey,
+  locale: getLocale(c),
+});
+```
+
+Background work without a request must deliberately pass its persisted locale
+or the operator's `app.locale` default.
 
 ## Test locale behavior
 

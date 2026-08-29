@@ -98,6 +98,9 @@ SolidJS library remains independent of Cloud and application domains.
   thread it through ordinary component props. Applications own localized
   human messages, while stable codes remain locale-independent. Transport
   final display strings across capabilities and widgets, not message keys.
+  Setting presentation inherits the application's base locale; notification
+  senders pass locale metadata so `render` and `email` produce final text from
+  the same canonical locale without adding locale to the domain payload.
   Keep product text calm, direct, and precise. Localizations preserve meaning;
   code, identifiers, paths, and exact external labels remain verbatim.
   `Layout` installs the SSR locale provider; a custom SSR root using neither

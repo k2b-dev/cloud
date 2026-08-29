@@ -5,7 +5,7 @@ section: Build an app
 order: 170
 description: Write clear English and German labels, feedback, errors, notifications, and Help without changing product meaning.
 tags: [writing, copy, tone, english, german, i18n, errors, help]
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 # Write product text
@@ -50,6 +50,10 @@ Short controls must remain clear without surrounding prose.
   action and target.
 - Use sentence case. Keep product names, abbreviations, and proper nouns in
   their established form.
+
+Settings labels follow the same sentence-case rule. Name the value, not its
+storage format: prefer “Reindex schedule” over “Reindex Cron”. Put exact
+syntax and examples in the description or example value.
 
 Avoid “OK”, “Submit”, and “Continue” when the concrete action is known. A
 destructive confirmation button names the destructive action.
@@ -105,6 +109,10 @@ internal identifiers, or operational detail as recovery guidance.
 Stable error codes remain unchanged and untranslated. Localize the human
 message, field guidance, and recovery action. Clients branch on the code, not
 on translated text.
+
+Do not show HTTP statuses, stack traces, or internal error codes as interface
+copy. They belong in structured diagnostics and logs. A person needs the
+failed object, the effect, and a safe recovery action.
 
 ## Ask for confirmation
 
@@ -196,6 +204,10 @@ For German product text:
 - Use established German terms unless the product or domain has an established
   untranslated name.
 
+The `du` form addresses the Cloud user. An artifact produced for a third party
+follows the conventions of that artifact and reader. German invoices, quotes,
+contracts, and formal external email may therefore use `Sie`.
+
 For English product text, use “you” when the reader's responsibility matters.
 Otherwise, a direct action or state is usually shorter.
 
@@ -217,11 +229,25 @@ Each catalog entry should express a complete thought. Do not concatenate
 translated fragments or rely on English word order. Pass semantic values to a
 message function and use locale-aware plural, list, number, and time formatters.
 
+Treat these shapes as translation bugs:
+
+- keys ending in `Before`, `After`, `Prefix`, `Suffix`, `Start`, or `End` that
+  split one sentence;
+- a translated value passed into another translated message;
+- a status word, adjective, or article inserted as a message argument;
+- `toLowerCase()`, `toUpperCase()`, capitalization helpers, or suffix changes
+  applied to resolved text.
+
+Case and grammatical agreement belong to each locale. German articles and
+adjectives change with gender, number, and case, so write a complete qualified
+message for each state instead of inserting an English-shaped fragment.
+
 ```ts
 saved: ({ name }: { name: string }) => `${name} was saved.`,
 ```
 
-Use separate complete messages when grammar changes by state. Accessibility
+Use separate complete messages when grammar changes by state. Branch on the
+stable state code, never on translated text. Accessibility
 labels, alternative text, validation guidance, and screen-reader-only status
 updates are product text and require the same localization as visible text.
 

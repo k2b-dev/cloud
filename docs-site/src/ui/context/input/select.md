@@ -170,6 +170,11 @@ keeps interactive choice surfaces immediate.
 Keep it for compact toolbars. It supports the same field label, description,
 reactive error, required, and disabled state, but has no clear state.
 
+Set `iconOnly` together with an `icon` and `"aria-label"` when the surrounding
+toolbar or section header already explains the control's context. The trigger
+then uses the shared icon-button treatment while the menu keeps the same radio
+selection contract. Use `size` only with this icon-only form.
+
 ```tsx
 const [permission, setPermission] = createSignal("read");
 
@@ -182,6 +187,16 @@ const [permission, setPermission] = createSignal("read");
     { value: "write", label: "Edit", icon: "ti ti-pencil" },
     { value: "admin", label: "Manage", icon: "ti ti-shield" },
   ]}
+/>;
+
+<SelectChip
+  aria-label="Sort notes"
+  icon="ti ti-arrows-sort"
+  iconOnly
+  size="xs"
+  value={sort()}
+  onValueChange={setSort}
+  options={sortOptions}
 />;
 ```
 

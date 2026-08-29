@@ -227,6 +227,20 @@ The body is:
 )
 ```
 
+By default, validation responses include the schema issue text. For a
+localized public API, let the application return one stable code and resolve
+the human-facing message from the current request:
+
+```ts
+v("json", CreateInventoryItemSchema, (c) => ({
+  code: "VALIDATION_FAILED",
+  message: inventoryMessages(c).invalidRequest,
+}))
+```
+
+The resolver runs for each failed request. Keep the code independent of the
+locale and resolve the final message in the application.
+
 `middleware.openapi()` is the middleware namespace form of
 `describeRoute()` from `hono-openapi`:
 

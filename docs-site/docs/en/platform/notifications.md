@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser]
-updated: 2026-08-28
+updated: 2026-08-29
 ---
 
 # Notifications
@@ -59,6 +59,15 @@ export const NOTIFICATIONS = {
     recipient: "user",
     label: "Low stock",
     description: "Warns inventory owners when an item falls below its threshold.",
+    presentation: {
+      baseLocale: "en",
+      translations: {
+        de: {
+          label: "Niedriger Bestand",
+          description: "Warnt Verantwortliche, wenn der Bestand eines Artikels den Grenzwert unterschreitet.",
+        },
+      },
+    },
     data: z.object({
       itemId: z.string(),
       itemName: z.string(),
@@ -67,12 +76,12 @@ export const NOTIFICATIONS = {
     delivery: {
       recommended: ["browser", "email"],
     },
-    render: ({ itemId, itemName, remaining }) => ({
+    render: ({ itemId, itemName, remaining }, { locale }) => ({
       title: `${itemName} is running low`,
       body: `${remaining} units remain.`,
       targetHref: `/app/inventory/items/${encodeURIComponent(itemId)}`,
     }),
-    email: ({ itemName, remaining }) => ({
+    email: ({ itemName, remaining }, { locale }) => ({
       subject: `${itemName} is running low`,
       content: `${remaining} units remain.`,
     }),
@@ -90,6 +99,7 @@ data at runtime.
 | `recipient` | Yes | `"user"` or `"email"`; fixes the address shape used by `send()` |
 | `label` | Yes | Non-empty name used by preference and operations surfaces |
 | `description` | Yes | Non-empty explanation of when the application emits the event |
+| `presentation` | No | Localized overlays for `label` and `description` |
 | `data` | Yes | Zod schema used for type inference and runtime parsing |
 | `delivery.recommended` | No | Ordered, preference-aware channels; defaults to `[]` |
 | `delivery.required` | No | Channels that cannot be disabled; defaults to `[]` |
@@ -97,6 +107,14 @@ data at runtime.
 | `email` | No | Builds an email-specific presentation when email is selected |
 
 `label` and `description` cannot be empty.
+
+When `presentation` is present, the complete `label` and `description`
+declaration belongs to `presentation.baseLocale`. Add partial overlays under
+`presentation.translations`. Cloud canonicalizes BCP 47 locale keys and
+resolves an exact locale, then its language ancestors, then the base
+declaration. For example, `de-CH` uses a `de` overlay when no `de-CH` overlay
+exists. Notification preferences and delivery history receive this
+request-scoped presentation; stable definition IDs and keys do not change.
 
 Channel names cannot be duplicated within a delivery list or appear in both
 lists. An email-recipient definition must include `email` in
@@ -110,7 +128,10 @@ Follow [Product language and tone](/en/docs/build/product-language-and-tone)
 for notification titles, bodies, actions, and email subjects in English and
 German.
 
-`render()` receives the parsed payload and returns:
+`render()` receives the parsed payload and a context containing the canonical
+`locale` selected for this notification. `email()` receives the same context.
+Use it to resolve final text and value formatting without adding locale to the
+domain payload schema. `render()` returns:
 
 | Field | Required | Constraint |
 | --- | --- | --- |
@@ -303,6 +324,7 @@ Build the idempotency key from the domain change.
 
 ```ts
 import { notifications } from "@valentinkolb/cloud/services";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { app } from "./config";
 
 const result = await notifications.send(app.notifications.stockLow, {
@@ -313,6 +335,7 @@ const result = await notifications.send(app.notifications.stockLow, {
     remaining,
   },
   idempotencyKey: `stock-low:${itemId}:${thresholdVersion}`,
+  locale: getLocale(c),
 });
 ```
 
@@ -324,10 +347,16 @@ const result = await notifications.send(app.notifications.stockLow, {
 | `data` | Yes | Payload parsed with the definition's Zod schema |
 | `idempotencyKey` | Yes | Stable identity for this logical event |
 | `sentBy` | No | Cloud user ID attributed as the sender |
+| `locale` | No | Intended locale for `render` and `email`; canonicalized and defaults to `en` |
 
 Omit `sentBy` for a system-generated notification. When present, it must be the
 ID of an existing Cloud user. Arbitrary actor IDs and process names are not
 valid.
+
+At a request seam, pass `getLocale(c)`. A background sender must pass the
+locale persisted with its work or deliberately use the operator's `app.locale`
+setting. Locale is delivery metadata, not part of `data` or the idempotency
+identity.
 
 ### Deduplicate retries
 

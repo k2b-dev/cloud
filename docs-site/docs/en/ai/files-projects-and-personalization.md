@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-08-22
+updated: 2026-08-29
 ---
 
 # Files, Projects, Skills, and personalization
@@ -257,7 +257,9 @@ link to the chat.
 
 Cloud composes the system prompt in this order:
 
-1. Platform identity, runtime values including the current chat ID, and global rules;
+1. Platform identity, trusted runtime values including the current chat ID and
+   request locale, and global rules. Assistant follows the language of the
+   current user message when it is clear and otherwise uses that locale;
 2. Organization instructions;
 3. Optional turn-specific instructions such as retry style;
 4. The bounded readable Skill catalog;

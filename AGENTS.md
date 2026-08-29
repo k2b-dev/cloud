@@ -98,6 +98,9 @@ Before calling a change complete, decide which of these apply:
   inherited `@k2b/ui` locale for rendering and forward locale metadata across
   capabilities and widgets. Never introduce process-global locale state,
   per-component locale plumbing, or a language picker as incidental scope.
+  Localized setting presentation inherits the application's base locale;
+  notification senders pass locale metadata to both renderers rather than
+  adding locale to application payload schemas.
 - **Data and effects:** applications own durable domain data in Postgres;
   Valkey coordinates bounded runtime work. Commit domain state before
   retryable notifications or external effects. Bound work that can grow or
