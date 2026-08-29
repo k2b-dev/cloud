@@ -1,10 +1,10 @@
 import { ephemeral } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
-import type { CapabilityManifest } from "../contracts/capabilities";
+import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
 import type { DashboardWidgetPresentation } from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
-import { parseCapabilityManifest } from "./capabilities";
+import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { validateAppRegistryEntry } from "./registry-validation";
 
 /**
@@ -15,7 +15,7 @@ import { validateAppRegistryEntry } from "./registry-validation";
  */
 export const APP_REGISTRY_TTL_MS = 180_000;
 
-export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest };
+export type CapabilityRegistryRecord = { appId: string; manifest: CapabilityManifest; presentation?: CapabilityPresentationCatalog };
 
 export const appRegistry = ephemeral<AppRegistryEntry>({
   id: "cloud-apps",
@@ -160,7 +160,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   app: AppRegistryEntry | undefined,
 ): CapabilityRegistryEntry | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (Object.keys(value).some((field) => field !== "appId" && field !== "manifest")) return null;
+  if (Object.keys(value).some((field) => field !== "appId" && field !== "manifest" && field !== "presentation")) return null;
   const record = value as Partial<CapabilityRegistryRecord>;
   if (!app || typeof record.appId !== "string" || key !== `capabilities/${record.appId}` || record.appId !== app.id) return null;
   if (!app.capabilities) return null;
@@ -168,6 +168,7 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const manifest = parseCapabilityManifest(record.manifest, app.id);
+    const presentation = compileCapabilityPresentation(manifest, record.presentation);
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;
     }
@@ -179,6 +180,7 @@ export const resolveLiveCapabilityRegistryEntry = (
       appDescription: app.description,
       endpoint,
       manifest,
+      presentation,
     };
   } catch {
     return null;

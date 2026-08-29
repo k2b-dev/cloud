@@ -425,6 +425,7 @@ export const defineApp = <
       ? {
           appId: meta.id,
           manifest: compiledCapabilities.manifest,
+          presentation: compiledCapabilities.presentation,
         }
       : undefined;
     const capabilityHeartbeat = capabilityEntry

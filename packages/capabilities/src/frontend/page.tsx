@@ -11,7 +11,7 @@ import { capabilityUiMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = capabilityUiMessages.resolve([getLocale(c)]);
-  const catalog = await loadCapabilityApps(new URL(c.req.url));
+  const catalog = await loadCapabilityApps(new URL(c.req.url), getLocale(c));
   const searchEntries: CapabilitySearchEntry[] = catalog.apps.map((app) => ({
     href: capabilityHref({ appId: app.id }),
     label: app.name,
@@ -31,13 +31,7 @@ export default ssr<AuthContext>(async (c) => {
           >
             <Show
               when={catalog.apps.length > 0}
-              fallback={
-                <AppOverview.EmptyState
-                  title={t.noLive}
-                  description={t.noLiveDescription}
-                  icon="ti ti-api-app"
-                />
-              }
+              fallback={<AppOverview.EmptyState title={t.noLive} description={t.noLiveDescription} icon="ti ti-api-app" />}
             >
               <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <For each={catalog.apps}>
@@ -71,13 +65,7 @@ export default ssr<AuthContext>(async (c) => {
             </Show>
           </AppOverview.Main>
           <AppOverview.Aside title={t.reference} description={t.referenceDescription}>
-            <LinkCard
-              href="/app/api-docs"
-              title={t.apiDocs}
-              description={t.apiDocsDescription}
-              icon="ti ti-book-2"
-              color="blue"
-            />
+            <LinkCard href="/app/api-docs" title={t.apiDocs} description={t.apiDocsDescription} icon="ti ti-book-2" color="blue" />
           </AppOverview.Aside>
         </AppOverview>
       </div>

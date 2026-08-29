@@ -178,7 +178,13 @@ function CapabilityTable(props: {
             return (
               <StatusBadge
                 tone={row.policy === "Destructive" ? "warning" : "neutral"}
-                label={row.policy === "Destructive" ? props.labels.destructive : row.policy === "Write" ? props.labels.write : props.labels.readOnly}
+                label={
+                  row.policy === "Destructive"
+                    ? props.labels.destructive
+                    : row.policy === "Write"
+                      ? props.labels.write
+                      : props.labels.readOnly
+                }
               />
             );
           }
@@ -213,7 +219,7 @@ export default ssr<AuthContext>(async (c) => {
   const appId = c.req.param("appId");
   if (!appId) return c.notFound();
 
-  const workspace = await loadCapabilityWorkspace(appId);
+  const workspace = await loadCapabilityWorkspace(appId, {}, getLocale(c));
   const loaded = workspace.selected;
   if (loaded.kind === "not-found") return c.notFound();
 
@@ -265,7 +271,9 @@ export default ssr<AuthContext>(async (c) => {
                   />
                 }
               >
-                {(ready) => <CapabilityTable app={ready().app} operations={operations} state={tableState} selection={selection} labels={t} />}
+                {(ready) => (
+                  <CapabilityTable app={ready().app} operations={operations} state={tableState} selection={selection} labels={t} />
+                )}
               </Show>
             </AppWorkspace.Main>
 

@@ -32,6 +32,7 @@ import {
   VenueStatusDataSchema,
   VenueTargetInputSchema,
 } from "./capability-contracts";
+import { venueCapabilityPresentation } from "./capability-presentation";
 import type { ShiftAssignment, Venue } from "./contracts";
 import { type UpcomingSlotSummary, venueService } from "./service";
 import { venueMessages } from "./messages";
@@ -465,6 +466,7 @@ const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSc
 
 export const venueCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: venueCapabilityPresentation,
   types: {
     venue: {
       title: "Venue",

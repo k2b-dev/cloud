@@ -34,6 +34,7 @@ import {
   TagNotesDataSchema,
   TagNotesInputSchema,
 } from "./capability-contracts";
+import { notebooksCapabilityPresentation } from "./capability-presentation";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
@@ -684,6 +685,7 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
 
 export const notebooksCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: notebooksCapabilityPresentation,
   types: {
     notebook: {
       title: "Notebook",

@@ -51,6 +51,8 @@ import {
   FavoriteSetDataSchema,
   FavoriteSetInputSchema,
 } from "./capability-contracts";
+import { contactCapabilityMessages, type ContactCapabilityMessages } from "./capability-messages";
+import { contactsCapabilityPresentation } from "./capability-presentation";
 import { type Contact, type ContactBook, type ContactNote, type ContactTag, contactsService } from "./service";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "./service/access";
 import {
@@ -229,26 +231,26 @@ const withRef = <Type extends string, Value extends { id: string }>(type: Type, 
 type ContactUpdateInput = z.infer<typeof ContactUpdateInputSchema>;
 type ContactReviewField = Exclude<keyof ContactUpdateInput, "contactId" | "expectedUpdatedAt">;
 
-const CONTACT_REVIEW_LABELS: Record<ContactReviewField, string> = {
-  label: "Display label",
-  firstName: "First name",
-  lastName: "Last name",
-  companyName: "Organization",
-  department: "Department",
-  jobTitle: "Job title",
-  vatId: "VAT ID",
-  birthday: "Birthday",
-  salutation: "Salutation",
-  pronouns: "Pronouns",
-  preferredLanguage: "Language",
-  parentContactId: "Parent contact",
-  tagIds: "Tags",
-  emails: "Email addresses",
-  phones: "Phone numbers",
-  addresses: "Postal addresses",
-  websites: "Websites",
-  bankAccounts: "Bank accounts",
-};
+const contactReviewLabels = (t: ContactCapabilityMessages): Record<ContactReviewField, string> => ({
+  label: t.displayLabel,
+  firstName: t.firstName,
+  lastName: t.lastName,
+  companyName: t.organization,
+  department: t.department,
+  jobTitle: t.jobTitle,
+  vatId: t.vatId,
+  birthday: t.birthday,
+  salutation: t.salutation,
+  pronouns: t.pronouns,
+  preferredLanguage: t.language,
+  parentContactId: t.parentContact,
+  tagIds: t.tags,
+  emails: t.emailAddresses,
+  phones: t.phoneNumbers,
+  addresses: t.postalAddresses,
+  websites: t.websites,
+  bankAccounts: t.bankAccounts,
+});
 
 const CONTACT_SUMMARY_LABELS: Record<ContactReviewField, string> = {
   label: "name",
@@ -299,18 +301,23 @@ const contactTagSummary = (before: ContactTag[], after: ContactTag[], contactNam
   return `${contactName} already had the requested tags.`;
 };
 
-const boundedReviewText = (value: unknown, limit = 240): string => {
+const boundedReviewText = (value: unknown, none = "None", limit = 240): string => {
   const text = String(value).replace(/\s+/g, " ").trim();
-  if (!text) return "None";
+  if (!text) return none;
   return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
 };
 
 const CONTACT_REVIEW_BLOCK_MAX_CHARS = 9_000;
 const CONTACT_COLLECTION_FIELDS = new Set<ContactReviewField>(["tagIds", "emails", "phones", "addresses", "websites", "bankAccounts"]);
 
-const contactReviewItem = (field: ContactReviewField, value: unknown, tagNames: ReadonlyMap<string, string>): string => {
+const contactReviewItem = (
+  field: ContactReviewField,
+  value: unknown,
+  tagNames: ReadonlyMap<string, string>,
+  t: ContactCapabilityMessages,
+): string => {
   if (field === "tagIds") return tagNames.get(String(value)) ?? String(value);
-  if (typeof value !== "object" || value === null) return boundedReviewText(value);
+  if (typeof value !== "object" || value === null) return boundedReviewText(value, t.none);
   const item = value as Record<string, unknown>;
   if (field === "emails") return [item.label, item.email].filter(Boolean).join(" — ");
   if (field === "phones") return [item.label, item.phone].filter(Boolean).join(" — ");
@@ -333,18 +340,23 @@ const contactReviewItem = (field: ContactReviewField, value: unknown, tagNames: 
     return [
       [item.label, item.accountHolderName, item.iban].filter(Boolean).join(" — "),
       item.bic ? `BIC: ${item.bic}` : null,
-      item.bankName ? `Bank: ${item.bankName}` : null,
-      item.note ? `Note: ${item.note}` : null,
+      item.bankName ? `${t.bank}: ${item.bankName}` : null,
+      item.note ? `${t.bankNote}: ${item.note}` : null,
     ]
       .filter(Boolean)
       .join("\n");
   }
-  return boundedReviewText(value);
+  return boundedReviewText(value, t.none);
 };
 
-const contactCollectionReviewValue = (field: ContactReviewField, value: unknown, tagNames: ReadonlyMap<string, string>): string => {
-  if (!Array.isArray(value) || value.length === 0) return "None";
-  return value.map((item, index) => `${index + 1}. ${contactReviewItem(field, item, tagNames)}`).join("\n\n");
+const contactCollectionReviewValue = (
+  field: ContactReviewField,
+  value: unknown,
+  tagNames: ReadonlyMap<string, string>,
+  t: ContactCapabilityMessages,
+): string => {
+  if (!Array.isArray(value) || value.length === 0) return t.none;
+  return value.map((item, index) => `${index + 1}. ${contactReviewItem(field, item, tagNames, t)}`).join("\n\n");
 };
 
 const contactCollectionReview = (
@@ -352,29 +364,36 @@ const contactCollectionReview = (
   current: unknown,
   proposed: unknown,
   tagNames: ReadonlyMap<string, string>,
+  t: ContactCapabilityMessages,
 ): NonNullable<CapabilityActionReview["details"]>[number] => {
-  const full = `Current\n${contactCollectionReviewValue(field, current, tagNames)}\n\nProposed\n${contactCollectionReviewValue(
+  const full = `${t.current}\n${contactCollectionReviewValue(field, current, tagNames, t)}\n\n${t.proposed}\n${contactCollectionReviewValue(
     field,
     proposed,
     tagNames,
+    t,
   )}`;
   const truncated = full.length > CONTACT_REVIEW_BLOCK_MAX_CHARS;
   return {
-    label: CONTACT_REVIEW_LABELS[field],
+    label: contactReviewLabels(t)[field],
     value: truncated
-      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\nPreview truncated. Review the full validated input under Details.`
+      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\n${t.previewTruncated}`
       : full,
     display: "block",
   };
 };
 
-const contactReviewValue = (field: ContactReviewField, value: unknown, tagNames: ReadonlyMap<string, string>): string => {
-  if (!Array.isArray(value)) return value === null || value === undefined ? "None" : boundedReviewText(value);
+const contactReviewValue = (
+  field: ContactReviewField,
+  value: unknown,
+  tagNames: ReadonlyMap<string, string>,
+  t: ContactCapabilityMessages,
+): string => {
+  if (!Array.isArray(value)) return value === null || value === undefined ? t.none : boundedReviewText(value, t.none);
   const preview = value
     .slice(0, 3)
-    .map((item) => contactReviewItem(field, item, tagNames))
+    .map((item) => contactReviewItem(field, item, tagNames, t))
     .join(", ");
-  return `${value.length} item${value.length === 1 ? "" : "s"}${preview ? `: ${preview}${value.length > 3 ? ", …" : ""}` : ""}`;
+  return `${t.itemCount({ count: value.length })}${preview ? `: ${preview}${value.length > 3 ? ", …" : ""}` : ""}`;
 };
 
 const currentContactReviewValue = (contact: Contact, field: ContactReviewField): unknown => {
@@ -1041,6 +1060,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
 
 export const contactsCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: contactsCapabilityPresentation,
   types: {
     contact: {
       title: "Contact",
@@ -1173,6 +1193,7 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
         const access = await requireBookPermission(input.bookId, context, "write");
         if (!access.ok) return access;
         const { bookId: _bookId, ...data } = input;
@@ -1187,26 +1208,26 @@ export const contactsCapabilities = defineCapabilities({
           for (const tag of tags) tagNames.set(tag.id, tag.name);
         }
         return ok({
-          message: `Create a contact in ${publicBook.name}.`,
+          message: t.createReview({ book: publicBook.name }),
           details: [
-            { label: "Address book", value: publicBook.name },
+            { label: t.addressBook, value: publicBook.name },
             ...fields.map((field): NonNullable<CapabilityActionReview["details"]>[number] => {
               const value = data[field];
               if (field === "birthday" && typeof value === "string") {
-                return { label: CONTACT_REVIEW_LABELS[field], value, format: "date" };
+                return { label: contactReviewLabels(t)[field], value, format: "date" };
               }
               if (CONTACT_COLLECTION_FIELDS.has(field)) {
-                const full = contactCollectionReviewValue(field, value, tagNames);
+                const full = contactCollectionReviewValue(field, value, tagNames, t);
                 return {
-                  label: CONTACT_REVIEW_LABELS[field],
+                  label: contactReviewLabels(t)[field],
                   value:
                     full.length > CONTACT_REVIEW_BLOCK_MAX_CHARS
-                      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\nPreview truncated. Review the full validated input under Details.`
+                      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\n${t.previewTruncated}`
                       : full,
                   display: "block",
                 };
               }
-              return { label: CONTACT_REVIEW_LABELS[field], value: contactReviewValue(field, value, tagNames) };
+              return { label: contactReviewLabels(t)[field], value: contactReviewValue(field, value, tagNames, t) };
             }),
           ],
           links: [{ rel: "open" as const, href: bookHref(publicBook.id) }],
@@ -1224,8 +1245,9 @@ export const contactsCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       approval: "rememberable",
-      review: (input, context) =>
-        reviewContactAction(input.contactId, context, "write", async (contact, internalContact) => {
+      review: (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
+        return reviewContactAction(input.contactId, context, "write", async (contact, internalContact) => {
           const changedFields = Object.keys(input).filter(
             (field): field is ContactReviewField => field !== "contactId" && field !== "expectedUpdatedAt",
           );
@@ -1235,40 +1257,41 @@ export const contactsCapabilities = defineCapabilities({
             for (const tag of tags) tagNames.set(tag.id, tag.name);
           }
           return {
-            message: `Update ${resolveContactName(contact)}.`,
+            message: t.updateReview({ contact: resolveContactName(contact) }),
             details: [
-              { label: "Contact", value: resolveContactName(contact) },
+              { label: t.contact, value: resolveContactName(contact) },
               ...changedFields.flatMap((field): NonNullable<CapabilityActionReview["details"]> => {
                 const current = currentContactReviewValue(contact, field);
                 const proposed = input[field];
                 if (CONTACT_COLLECTION_FIELDS.has(field)) {
-                  return [contactCollectionReview(field, current, proposed, tagNames)];
+                  return [contactCollectionReview(field, current, proposed, tagNames, t)];
                 }
                 if (field === "birthday") {
                   return [
                     {
-                      label: "Current birthday",
-                      value: typeof current === "string" ? current : "None",
+                      label: t.currentBirthday,
+                      value: typeof current === "string" ? current : t.none,
                       ...(typeof current === "string" ? { format: "date" as const } : {}),
                     },
                     {
-                      label: "New birthday",
-                      value: typeof proposed === "string" ? proposed : "None",
+                      label: t.newBirthday,
+                      value: typeof proposed === "string" ? proposed : t.none,
                       ...(typeof proposed === "string" ? { format: "date" as const } : {}),
                     },
                   ];
                 }
                 return [
                   {
-                    label: CONTACT_REVIEW_LABELS[field],
-                    value: `${contactReviewValue(field, current, tagNames)} → ${contactReviewValue(field, proposed, tagNames)}`,
+                    label: contactReviewLabels(t)[field],
+                    value: `${contactReviewValue(field, current, tagNames, t)} → ${contactReviewValue(field, proposed, tagNames, t)}`,
                   },
                 ];
               }),
             ],
             approvalScope: bookApprovalScope(contact.bookId),
           };
-        }),
+        });
+      },
       run: runContactUpdate,
     },
     "contact.move": {
@@ -1280,14 +1303,15 @@ export const contactsCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
         const target = await requireBookPermission(input.targetBookId, context, "write");
         if (!target.ok) return target;
         return reviewContactAction(input.contactId, context, "write", (contact) => ({
-          message: `Move ${resolveContactName(contact)} to ${target.data.book.name}.`,
+          message: t.moveReview({ contact: resolveContactName(contact), book: target.data.book.name }),
           details: [
-            { label: "Contact", value: resolveContactName(contact) },
-            { label: "Destination", value: target.data.book.name },
-            { label: "Consequence", value: "Book-scoped tags and hierarchy links will be removed." },
+            { label: t.contact, value: resolveContactName(contact) },
+            { label: t.destination, value: target.data.book.name },
+            { label: t.consequence, value: t.moveConsequence },
           ],
         }));
       },
@@ -1301,11 +1325,13 @@ export const contactsCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "none",
-      review: (input, context) =>
-        reviewContactAction(input.contactId, context, "write", (contact) => ({
-          message: `Permanently delete ${resolveContactName(contact)}.`,
-          details: [{ label: "Contact", value: resolveContactName(contact) }],
-        })),
+      review: (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
+        return reviewContactAction(input.contactId, context, "write", (contact) => ({
+          message: t.deleteReview({ contact: resolveContactName(contact) }),
+          details: [{ label: t.contact, value: resolveContactName(contact) }],
+        }));
+      },
       run: runContactDelete,
     },
     "favorite.set": {
@@ -1318,10 +1344,11 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
         if (!userBacked(context)) return fail(err.forbidden("Favorites require a user-backed actor"));
         return reviewContactAction(input.contactId, context, "read", (contact) => ({
-          message: `${input.favorite ? "Add" : "Remove"} ${resolveContactName(contact)} ${input.favorite ? "to" : "from"} favorites.`,
-          details: [{ label: "Contact", value: resolveContactName(contact) }],
+          message: t.favoriteReview({ contact: resolveContactName(contact), favorite: input.favorite }),
+          details: [{ label: t.contact, value: resolveContactName(contact) }],
           approvalScope: FAVORITES_APPROVAL_SCOPE,
         }));
       },
@@ -1337,6 +1364,7 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
         const resolved = await resolveContact(input.contactId, context, "write");
         if (!resolved.ok) return resolved;
         const [addTagIds, removeTagIds] = await Promise.all([
@@ -1352,11 +1380,11 @@ export const contactsCapabilities = defineCapabilities({
         if (!contact) return fail(err.notFound("Contact"));
         const names = new Map(tags.map((tag) => [tag.id, tag.name]));
         return ok({
-          message: `Change tags for ${resolveContactName(contact)}.`,
+          message: t.tagsReview({ contact: resolveContactName(contact) }),
           details: [
-            { label: "Contact", value: resolveContactName(contact) },
-            { label: "Add", value: input.addTagIds.map((id: string) => names.get(id) ?? id).join(", ") || "None" },
-            { label: "Remove", value: input.removeTagIds.map((id: string) => names.get(id) ?? id).join(", ") || "None" },
+            { label: t.contact, value: resolveContactName(contact) },
+            { label: t.add, value: input.addTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
+            { label: t.remove, value: input.removeTagIds.map((id: string) => names.get(id) ?? id).join(", ") || t.none },
           ],
           links: [{ rel: "open" as const, href: contactHref(contact) }],
           approvalScope: bookApprovalScope(contact.bookId),
@@ -1374,12 +1402,13 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "required",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = contactCapabilityMessages.resolve([context.locale]);
         if (!userBacked(context)) return fail(err.forbidden("Notes require a user-backed actor"));
         return reviewContactAction(input.contactId, context, "write", (contact) => ({
-          message: `Add a note to ${resolveContactName(contact)}.`,
+          message: t.noteReview({ contact: resolveContactName(contact) }),
           details: [
-            { label: "Contact", value: resolveContactName(contact) },
-            { label: "Note", value: input.content, display: "block" },
+            { label: t.contact, value: resolveContactName(contact) },
+            { label: t.note, value: input.content, display: "block" },
           ],
           approvalScope: contactApprovalScope(contact.id),
         }));

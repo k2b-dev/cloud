@@ -8,6 +8,7 @@ import {
   UniversalSearchInputSchema,
 } from "@valentinkolb/cloud/contracts";
 import { z } from "zod";
+import { filesCapabilityPresentation } from "./capability-presentation";
 import { filesService } from "./service";
 
 const supportsFilesApp = (user: { provider: string; profile: string }) => user.provider === "ipa" && user.profile === "user";
@@ -206,6 +207,7 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: filesCapabilityPresentation,
   types: {
     file: { title: "File", description: "A file in personal or shared storage.", icon: "ti ti-file", reader: "file.read" },
     directory: {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, getCapability } from "../_internal/registry";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import { CapabilityActionReviewSchema, capabilityResultSchema } from "../contracts/capabilities";
@@ -111,7 +112,9 @@ export const getCapabilityCatalogApp = async (appId: string, locale?: string): P
             appName: presentedApp?.name ?? capability.appName,
             appIcon: capability.appIcon,
             appDescription: presentedApp?.description ?? capability.appDescription,
-            manifest: capability.manifest,
+            manifest: locale
+              ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
+              : capability.manifest,
           }
         : null,
     };

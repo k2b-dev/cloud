@@ -253,6 +253,32 @@ export type CapabilityUniversalSearchDefinition = {
   tags: readonly CapabilitySearchTagDefinition[];
 };
 
+export type CapabilitySchemaPresentation = Readonly<Record<string, string>>;
+
+export type CapabilityOperationPresentationTranslation = {
+  title?: string;
+  description?: string;
+  /** Human descriptions keyed by a stable dotted field path such as `filter.tags[]`. */
+  input?: CapabilitySchemaPresentation;
+  /** Human descriptions keyed by a stable dotted field path such as `items[].name`. */
+  data?: CapabilitySchemaPresentation;
+  /** Search-tag presentation keyed by the stable tag token. */
+  searchTags?: Readonly<Record<string, { title?: string; description?: string }>>;
+};
+
+export type CapabilityPresentationTranslation = {
+  types?: Readonly<Record<string, { title?: string; description?: string }>>;
+  queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
+  actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
+};
+
+export type CapabilityPresentationCatalog = {
+  /** Locale of the complete Type, Query, Action, search-tag, and schema presentation. */
+  baseLocale: string;
+  /** Partial presentation overlays with exact -> ancestor -> base fallback. */
+  translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
+};
+
 export type CapabilityQueryDefinition<Input extends z.ZodType = z.ZodType<any>, Data extends z.ZodType = z.ZodType<any>> = {
   title: string;
   description: string;
@@ -292,6 +318,7 @@ type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
+  presentation?: CapabilityPresentationCatalog;
   types?: CapabilityDefinitionCatalog<CapabilityResourceTypeDefinition>;
   queries?: CapabilityDefinitionCatalog<CapabilityQueryDefinition>;
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;

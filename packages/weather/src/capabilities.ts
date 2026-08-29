@@ -13,6 +13,7 @@ import {
 } from "@valentinkolb/cloud/contracts";
 import { type AuditActor, audit, weatherService } from "@valentinkolb/cloud/services";
 import { z } from "zod";
+import { weatherCapabilityPresentation } from "./capability-presentation";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";
 import { resolveWeatherMessages, type WeatherMessages } from "./messages";
 
@@ -471,6 +472,7 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
 
 export const weatherCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: weatherCapabilityPresentation,
   types: {
     location: {
       title: "Saved location",

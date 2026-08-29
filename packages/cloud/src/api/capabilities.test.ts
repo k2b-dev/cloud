@@ -122,6 +122,34 @@ describe("capability API", () => {
     expect(catalog.apps[0]).toMatchObject({ appName: "Demo-App", appDescription: "Deutsche Beschreibung" });
   });
 
+  test("projects de-CH capability presentation without changing stable IDs or schema hashes", async () => {
+    const capability = {
+      ...entry(),
+      presentation: {
+        baseLocale: "en",
+        translations: {
+          de: {
+            types: { item: { title: "Element" } },
+            queries: { get: { title: "Element lesen", input: { id: "Stabile Element-ID." } } },
+          },
+        },
+      },
+    } satisfies CapabilityRegistryEntry;
+    const catalog = await loadCapabilityCatalogPage(
+      { limit: 10 },
+      { listApps: async () => [summary(capability)], getCapability: async () => capability },
+      "de-CH",
+    );
+    const manifest = catalog.apps[0]?.manifest;
+    expect(manifest?.types[0]).toMatchObject({ localId: "item", title: "Element" });
+    expect(manifest?.queries[0]).toMatchObject({
+      localId: "get",
+      title: "Element lesen",
+      schemaHash: compiled.manifest.queries[0]?.schemaHash,
+    });
+    expect(manifest?.queries[0]?.inputSchema).toMatchObject({ properties: { id: { description: "Stabile Element-ID." } } });
+  });
+
   test("returns a structured error for an unavailable app", async () => {
     const routes = createCapabilityRoutes({ getCapability: async () => null, authenticate });
     const response = await routes.request("/capabilities/v1/queries/missing/get", {

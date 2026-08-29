@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-08-28
+updated: 2026-08-30
 ---
 
 # App capabilities
@@ -231,6 +231,55 @@ export default await app.start({
 `app.start()` compiles the declaration before registration. The application
 service still owns durable reads and writes, permission checks, audit records,
 and any transactional idempotency claim.
+
+### Localize catalog presentation
+
+The declaration's English titles, descriptions, search-tag copy, and Zod field
+descriptions are its complete base presentation. Add locale-specific overlays
+under `presentation` when the application ships another language:
+
+```ts
+export const inventoryCapabilities = defineCapabilities({
+  protocolVersion: 1,
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        types: {
+          item: { title: "Inventarartikel", description: "Ein Artikel im Inventarkatalog." },
+        },
+        queries: {
+          "item.read": {
+            title: "Inventarartikel lesen",
+            description: "Liest einen sichtbaren Inventarartikel anhand seiner stabilen ID.",
+            input: { id: "Stabile Inventarartikel-ID." },
+          },
+        },
+        actions: {
+          "item.rename": {
+            title: "Inventarartikel umbenennen",
+            description: "Benennt einen bearbeitbaren Inventarartikel um.",
+            input: { itemId: "Stabile Inventarartikel-ID.", name: "Neuer Artikelname." },
+          },
+        },
+      },
+    },
+  },
+  // types, queries, and actions...
+});
+```
+
+Translation maps use stable local IDs, stable search-tag tokens, and dotted
+schema field paths such as `filters.tags[]`. Startup rejects unknown IDs and
+paths. A locale may override only the human presentation it owns; operation
+IDs, tag tokens and aliases, schemas, schema hashes, safety flags, and result
+data remain unchanged. Catalog requests resolve exact locale, ancestor, and
+base fallback (`de-CH` → `de` → `en`) and return final localized strings, so
+consumers never import another application's message keys.
+
+Action reviews and provider-authored summaries or errors are runtime output,
+not registry metadata. Resolve those inside the handler from
+`context.locale`; preserve their stable codes and structured values.
 
 ## Understand Types, Queries, and Actions
 

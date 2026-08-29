@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
+import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getCapability, listApps } from "../_internal/registry";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -108,7 +109,7 @@ export const loadCapabilityCatalogPage = async (
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: capability.manifest,
+      manifest: locale ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale) : capability.manifest,
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
     const separatingCommas = apps.length;

@@ -19,12 +19,16 @@ import {
   CapabilityLocalIdSchema,
   type CapabilityManifest,
   CapabilityManifestSchema,
+  type CapabilityOperationPresentationTranslation,
+  type CapabilityPresentationCatalog,
+  type CapabilityPresentationTranslation,
   type CapabilityQueryDefinition,
   type CapabilityQueryManifest,
   capabilityResultSchema,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
+import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
 
 type JsonSchema = Record<string, unknown>;
 const MAX_CAPABILITY_MANIFEST_BYTES = 256 * 1024;
@@ -43,6 +47,7 @@ export type CompiledCapabilityAction = {
 
 export type CompiledCapabilities = {
   manifest: CapabilityManifest;
+  presentation?: CapabilityPresentationCatalog;
   typeIds: ReadonlySet<string>;
   queries: ReadonlyMap<string, CompiledCapabilityQuery>;
   actions: ReadonlyMap<string, CompiledCapabilityAction>;
@@ -139,6 +144,180 @@ export const capabilityHash = (value: unknown): string =>
 const assertText = (value: string, label: string, max: number): void => {
   if (!value.trim()) throw new Error(`${label} is required`);
   if (value.length > max) throw new Error(`${label} must be at most ${max} characters`);
+};
+
+const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
+  const paths = new Set<string>();
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return paths;
+  const value = schema as Record<string, unknown>;
+  const properties = value.properties;
+  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    for (const [field, definition] of Object.entries(properties)) {
+      const path = prefix ? `${prefix}.${field}` : field;
+      paths.add(path);
+      for (const child of schemaFieldPaths(definition, path)) paths.add(child);
+    }
+  }
+  if (value.items) {
+    const arrayPrefix = `${prefix}[]`;
+    for (const child of schemaFieldPaths(value.items, arrayPrefix)) paths.add(child);
+  }
+  for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+    if (!Array.isArray(value[keyword])) continue;
+    for (const entry of value[keyword]) {
+      for (const child of schemaFieldPaths(entry, prefix)) paths.add(child);
+    }
+  }
+  return paths;
+};
+
+const compileSchemaPresentation = (
+  value: unknown,
+  schema: Record<string, unknown>,
+  label: string,
+): Readonly<Record<string, string>> | undefined => {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const paths = schemaFieldPaths(schema);
+  const entries = Object.entries(value as Record<string, unknown>).map(([path, description]) => {
+    if (!paths.has(path)) throw new Error(`${label} field path "${path}" does not exist in the projected schema`);
+    if (typeof description !== "string") throw new Error(`${label}.${path} must be text`);
+    assertText(description, `${label}.${path}`, 1000);
+    return [path, description.trim()] as const;
+  });
+  return Object.fromEntries(entries);
+};
+
+const compileOperationPresentation = (
+  value: unknown,
+  operation: CapabilityQueryManifest | CapabilityActionManifest,
+  label: string,
+): CapabilityOperationPresentationTranslation => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const translation = value as Record<string, unknown>;
+  const allowed = new Set(["title", "description", "input", "data", "searchTags"]);
+  const extra = Object.keys(translation).find((key) => !allowed.has(key));
+  if (extra) throw new Error(`${label} contains unsupported field "${extra}"`);
+  if (translation.title !== undefined) {
+    if (typeof translation.title !== "string") throw new Error(`${label}.title must be text`);
+    assertText(translation.title, `${label}.title`, 120);
+  }
+  if (translation.description !== undefined) {
+    if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
+    assertText(translation.description, `${label}.description`, 1000);
+  }
+  let searchTags: CapabilityOperationPresentationTranslation["searchTags"];
+  if (translation.searchTags !== undefined) {
+    if (!("universalSearch" in operation) || !operation.universalSearch) throw new Error(`${label}.searchTags requires Universal Search`);
+    if (!translation.searchTags || typeof translation.searchTags !== "object" || Array.isArray(translation.searchTags)) {
+      throw new Error(`${label}.searchTags must be an object`);
+    }
+    const tags = new Map(operation.universalSearch.tags.map((tag) => [tag.tag, tag]));
+    searchTags = Object.fromEntries(
+      Object.entries(translation.searchTags as Record<string, unknown>).map(([tag, presentation]) => {
+        if (!tags.has(tag)) throw new Error(`${label}.searchTags references unknown stable tag "${tag}"`);
+        if (!presentation || typeof presentation !== "object" || Array.isArray(presentation)) {
+          throw new Error(`${label}.searchTags.${tag} must be an object`);
+        }
+        const copy = presentation as Record<string, unknown>;
+        const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+        if (extraField) throw new Error(`${label}.searchTags.${tag} contains unsupported field "${extraField}"`);
+        if (copy.title !== undefined) {
+          if (typeof copy.title !== "string") throw new Error(`${label}.searchTags.${tag}.title must be text`);
+          assertText(copy.title, `${label}.searchTags.${tag}.title`, 120);
+        }
+        if (copy.description !== undefined) {
+          if (typeof copy.description !== "string") throw new Error(`${label}.searchTags.${tag}.description must be text`);
+          assertText(copy.description, `${label}.searchTags.${tag}.description`, 500);
+        }
+        return [
+          tag,
+          { ...(copy.title ? { title: copy.title.trim() } : {}), ...(copy.description ? { description: copy.description.trim() } : {}) },
+        ];
+      }),
+    );
+  }
+  const input = compileSchemaPresentation(translation.input, operation.inputSchema, `${label}.input`);
+  const data = compileSchemaPresentation(translation.data, operation.dataSchema, `${label}.data`);
+  return {
+    ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
+    ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
+    ...(input ? { input } : {}),
+    ...(data ? { data } : {}),
+    ...(searchTags ? { searchTags } : {}),
+  };
+};
+
+export const compileCapabilityPresentation = (manifest: CapabilityManifest, value: unknown): CapabilityPresentationCatalog | undefined => {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capability presentation must be an object");
+  const catalog = value as Record<string, unknown>;
+  if (Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "translations")) {
+    throw new Error("Capability presentation contains unsupported fields");
+  }
+  const baseLocale = typeof catalog.baseLocale === "string" ? canonicalLocale(catalog.baseLocale) : undefined;
+  if (!baseLocale) throw new Error("Capability presentation baseLocale must be a valid BCP 47 locale");
+  if (!catalog.translations || typeof catalog.translations !== "object" || Array.isArray(catalog.translations)) {
+    throw new Error("Capability presentation translations must be an object");
+  }
+  const types = new Map(manifest.types.map((type) => [type.localId, type]));
+  const queries = new Map(manifest.queries.map((operation) => [operation.localId, operation]));
+  const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
+  const translations: Record<string, CapabilityPresentationTranslation> = {};
+  for (const [locale, rawTranslation] of Object.entries(catalog.translations as Record<string, unknown>)) {
+    const canonical = canonicalLocale(locale);
+    if (!canonical) throw new Error(`Capability presentation locale "${locale}" is invalid`);
+    if (canonical === baseLocale) throw new Error(`Capability presentation translations must not repeat base locale ${baseLocale}`);
+    if (translations[canonical]) throw new Error(`Capability presentation locale "${locale}" duplicates ${canonical}`);
+    if (!rawTranslation || typeof rawTranslation !== "object" || Array.isArray(rawTranslation)) {
+      throw new Error(`Capability presentation translation ${canonical} must be an object`);
+    }
+    const raw = rawTranslation as Record<string, unknown>;
+    const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions");
+    if (extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
+    const compileGroup = <T>(
+      group: unknown,
+      definitions: ReadonlyMap<string, T>,
+      kind: string,
+      compile: (entry: unknown, definition: T, label: string) => unknown,
+    ): Readonly<Record<string, never>> | undefined => {
+      if (group === undefined) return undefined;
+      if (!group || typeof group !== "object" || Array.isArray(group)) throw new Error(`${kind} translations must be an object`);
+      return Object.fromEntries(
+        Object.entries(group as Record<string, unknown>).map(([localId, entry]) => {
+          const definition = definitions.get(localId);
+          if (!definition) throw new Error(`${kind} translation references unknown localId "${localId}"`);
+          return [localId, compile(entry, definition, `${kind} ${localId}`)];
+        }),
+      ) as Readonly<Record<string, never>>;
+    };
+    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
+      const copy = entry as Record<string, unknown>;
+      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+      if (extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
+      if (copy.title !== undefined) {
+        if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
+        assertText(copy.title, `${label}.title`, 120);
+      }
+      if (copy.description !== undefined) {
+        if (typeof copy.description !== "string") throw new Error(`${label}.description must be text`);
+        assertText(copy.description, `${label}.description`, 500);
+      }
+      return {
+        ...(copy.title ? { title: String(copy.title).trim() } : {}),
+        ...(copy.description ? { description: String(copy.description).trim() } : {}),
+      };
+    });
+    const translatedQueries = compileGroup(raw.queries, queries, "Query", compileOperationPresentation);
+    const translatedActions = compileGroup(raw.actions, actions, "Action", compileOperationPresentation);
+    translations[canonical] = {
+      ...(translatedTypes ? { types: translatedTypes } : {}),
+      ...(translatedQueries ? { queries: translatedQueries } : {}),
+      ...(translatedActions ? { actions: translatedActions } : {}),
+    };
+  }
+  return { baseLocale, translations };
 };
 
 const projectSchema = (schema: z.ZodType, label: string, io: "input" | "output"): JsonSchema => {
@@ -362,7 +541,106 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   if (manifestBytes > MAX_CAPABILITY_MANIFEST_BYTES) {
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
-  return { manifest, typeIds, queries, actions };
+  const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
+  return { manifest, presentation, typeIds, queries, actions };
+};
+
+const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
+  if (!descriptions || Object.keys(descriptions).length === 0) return schema;
+  const localized = structuredClone(schema);
+  const visit = (value: unknown, prefix = ""): void => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    const properties = node.properties;
+    if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+      for (const [field, definition] of Object.entries(properties)) {
+        const path = prefix ? `${prefix}.${field}` : field;
+        if (definition && typeof definition === "object" && !Array.isArray(definition) && descriptions[path]) {
+          (definition as Record<string, unknown>).description = descriptions[path];
+        }
+        visit(definition, path);
+      }
+    }
+    if (node.items) visit(node.items, `${prefix}[]`);
+    for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
+      if (Array.isArray(node[keyword])) node[keyword].forEach((entry) => visit(entry, prefix));
+    }
+  };
+  visit(localized);
+  return localized;
+};
+
+const presentationOverlays = (catalog: CapabilityPresentationCatalog, requestedLocale: string): CapabilityPresentationTranslation[] => {
+  const byLocale = new Map(
+    Object.entries(catalog.translations).flatMap(([locale, translation]) => {
+      const canonical = canonicalLocale(locale);
+      return canonical ? [[canonical, translation] as const] : [];
+    }),
+  );
+  return localeFallbackChain(requestedLocale, normalizeLocale(catalog.baseLocale))
+    .filter((locale) => locale !== normalizeLocale(catalog.baseLocale))
+    .reverse()
+    .flatMap((locale) => {
+      const translation = byLocale.get(locale);
+      return translation ? [translation] : [];
+    });
+};
+
+/** Resolve only human presentation; stable IDs, flags, tags, aliases, and data shapes stay untouched. */
+export const resolveCapabilityManifestPresentation = (
+  manifest: CapabilityManifest,
+  catalog: CapabilityPresentationCatalog | undefined,
+  requestedLocale: string,
+): CapabilityManifest => {
+  if (!catalog) return manifest;
+  let current = manifest;
+  for (const translation of presentationOverlays(catalog, requestedLocale)) {
+    const manifestBase = {
+      protocolVersion: current.protocolVersion,
+      appId: current.appId,
+      types: current.types.map((type) => {
+        const copy = translation.types?.[type.localId];
+        return copy ? { ...type, title: copy.title ?? type.title, description: copy.description ?? type.description } : type;
+      }),
+      queries: current.queries.map((operation) => {
+        const copy = translation.queries?.[operation.localId];
+        if (!copy) return operation;
+        return {
+          ...operation,
+          title: copy.title ?? operation.title,
+          description: copy.description ?? operation.description,
+          inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+          dataSchema: applySchemaPresentation(operation.dataSchema, copy.data),
+          ...(operation.universalSearch
+            ? {
+                universalSearch: {
+                  tags: operation.universalSearch.tags.map((tag) => {
+                    const tagCopy = copy.searchTags?.[tag.tag];
+                    return tagCopy
+                      ? { ...tag, title: tagCopy.title ?? tag.title, description: tagCopy.description ?? tag.description }
+                      : tag;
+                  }),
+                },
+              }
+            : {}),
+        };
+      }),
+      actions: current.actions.map((operation) => {
+        const copy = translation.actions?.[operation.localId];
+        return copy
+          ? {
+              ...operation,
+              title: copy.title ?? operation.title,
+              description: copy.description ?? operation.description,
+              inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+              dataSchema: applySchemaPresentation(operation.dataSchema, copy.data),
+            }
+          : operation;
+      }),
+    };
+    current = CapabilityManifestSchema.parse({ ...manifestBase, manifestHash: capabilityHash(manifestBase) });
+  }
+  return current;
 };
 
 /** Validates an untrusted live manifest and recomputes every integrity hash. */

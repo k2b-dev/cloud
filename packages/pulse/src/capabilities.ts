@@ -35,6 +35,7 @@ import {
   SourceListInputSchema,
   SourceReadInputSchema,
 } from "./capability-contracts";
+import { pulseCapabilityPresentation } from "./capability-presentation";
 import type { PulseBase, PulseCurrentState, PulseRecordedEvent, PulseSavedQuery, PulseSource } from "./contracts";
 import { pulseBaseHref, pulseExplorerHref, pulseResourceHref, pulseSignalHref, pulseSourceHref } from "./resource-hrefs";
 import { resolvePulseMessages } from "./messages";
@@ -549,6 +550,7 @@ const runSavedQueryExecute = async (input: z.infer<typeof SavedQueryExecuteInput
 
 export const pulseCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: pulseCapabilityPresentation,
   types: {
     base: {
       title: "Pulse Base",

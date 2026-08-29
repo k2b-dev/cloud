@@ -65,9 +65,9 @@ const parseCursor = (url: URL): string | undefined => {
   return value && value.length <= 80 ? value : undefined;
 };
 
-export async function loadCapabilityApps(url: URL): Promise<CapabilityAppsPage> {
+export async function loadCapabilityApps(url: URL, locale?: string): Promise<CapabilityAppsPage> {
   const cursor = parseCursor(url);
-  const catalog = await listCapabilityCatalog({ cursor, limit: CATALOG_PAGE_SIZE });
+  const catalog = await listCapabilityCatalog({ cursor, limit: CATALOG_PAGE_SIZE, locale });
   if (!catalog.ok) return { apps: [], cursor };
 
   return {
@@ -85,10 +85,11 @@ export type LoadedCapabilityWorkspace = {
 export async function loadCapabilityWorkspace(
   appId: string,
   readers: { list?: CatalogReader; get?: AppReader } = {},
+  locale?: string,
 ): Promise<LoadedCapabilityWorkspace> {
   const [catalog, selectedCatalog] = await Promise.all([
-    loadAllCapabilityCatalogApps(readers.list ?? listCapabilityCatalog),
-    (readers.get ?? getCapabilityCatalogApp)(appId),
+    loadAllCapabilityCatalogApps((options) => (readers.list ?? listCapabilityCatalog)({ ...options, locale })),
+    (readers.get ?? getCapabilityCatalogApp)(appId, locale),
   ]);
   const selectedEntry = selectedCatalog.ok ? selectedCatalog.data : null;
   const apps = [...catalog, ...(selectedEntry && !catalog.some((entry) => entry.appId === appId) ? [selectedEntry] : [])]

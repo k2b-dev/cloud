@@ -78,6 +78,7 @@ import {
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
 } from "./capability-contracts";
+import { spacesCapabilityPresentation } from "./capability-presentation";
 import type { MutationResult, SpaceComment, SpaceItem, SpaceItemAttachment } from "./contracts";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
@@ -1493,6 +1494,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
 
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: spacesCapabilityPresentation,
   types: {
     space: { title: "Space", description: "A permission-scoped collaboration space.", icon: "ti ti-layout-kanban", reader: "space.read" },
     item: { title: "Space item", description: "A task or event inside a space.", icon: "ti ti-checkbox", reader: "item.read" },

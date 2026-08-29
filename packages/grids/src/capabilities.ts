@@ -55,6 +55,7 @@ import {
   ViewReadInputSchema,
 } from "./capability-contracts";
 import { capabilityMessagesFor } from "./capability-messages";
+import { gridsCapabilityPresentation } from "./capability-presentation";
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { gridsService } from "./service";
@@ -920,6 +921,7 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
 
 export const gridsCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: gridsCapabilityPresentation,
   types: {
     base: { title: "Grids Base", description: "A permission-scoped Grids workspace.", icon: "ti ti-table", reader: "base.read" },
     table: {

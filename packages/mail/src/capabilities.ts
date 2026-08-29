@@ -17,6 +17,7 @@ import {
 } from "@valentinkolb/cloud/contracts";
 import type { z } from "zod";
 import { mailCapabilityMessages } from "./capability-messages";
+import { mailCapabilityPresentation } from "./capability-presentation";
 import { localizeMailError } from "./service/error-messages";
 import * as c from "./capability-contracts";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
@@ -3383,6 +3384,7 @@ const actionDefinitions = {
 
 export const mailCapabilities = localizeCapabilityErrors(defineCapabilities({
   protocolVersion: 1,
+  presentation: mailCapabilityPresentation,
   types: {
     mailbox: { title: "Mailbox", description: "A mailbox the actor may access.", icon: "ti ti-inbox", reader: "mailbox.read" },
     "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-send" },

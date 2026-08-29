@@ -1,6 +1,6 @@
 import type { HelpManifest } from "../shared/help";
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog } from "./app";
-import type { CapabilityManifest } from "./capabilities";
+import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
 
@@ -33,6 +33,7 @@ export type CapabilityRegistryEntry = {
   appDescription: string;
   endpoint: string;
   manifest: CapabilityManifest;
+  presentation?: CapabilityPresentationCatalog;
 };
 
 export type AppRegistryHelpSummary = HelpManifest;

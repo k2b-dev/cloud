@@ -491,6 +491,21 @@ describe("contacts capabilities", () => {
         links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
       },
     });
+    const localizedReview = await contactsCapabilities.actions["tag.change"].review!(
+      { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
+      { ...context, locale: "de-CH" },
+    );
+    expect(localizedReview).toMatchObject({
+      ok: true,
+      data: {
+        message: "Tags von Ada Example ändern.",
+        details: [
+          { label: "Kontakt", value: "Ada Example" },
+          { label: "Hinzufügen", value: "Customer" },
+          { label: "Entfernen", value: "Keine" },
+        ],
+      },
+    });
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;

@@ -18,6 +18,7 @@ import {
   compileCapabilities,
   invokeCompiledCapability,
   parseCapabilityManifest,
+  resolveCapabilityManifestPresentation,
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
 } from "./capabilities";
@@ -97,6 +98,62 @@ describe("capability v1 compilation", () => {
     expect(first.manifest.actions[0]?.approval).toBe("rememberable");
     expect(first.manifest.actions[0]?.review).toBe(true);
     expect(first.manifest.manifestHash).toHaveLength(64);
+  });
+
+  test("resolves localized presentation without changing stable capability semantics", () => {
+    const definitions = defineCapabilities({
+      ...example(),
+      presentation: {
+        baseLocale: "en",
+        translations: {
+          de: {
+            types: { item: { title: "Element", description: "Ein Testelement." } },
+            queries: {
+              get: {
+                title: "Element lesen",
+                description: "Liest ein Element anhand seiner stabilen ID.",
+                input: { id: "Stabile Element-ID." },
+              },
+            },
+          },
+        },
+      },
+    });
+    const compiled = compileCapabilities("example", definitions);
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-CH");
+
+    expect(localized.types[0]).toMatchObject({ localId: "item", title: "Element", reader: "get" });
+    expect(localized.queries[0]).toMatchObject({
+      localId: "get",
+      title: "Element lesen",
+      openWorld: false,
+      schemaHash: compiled.manifest.queries[0]?.schemaHash,
+    });
+    expect(localized.queries[0]?.inputSchema).toMatchObject({ properties: { id: { description: "Stabile Element-ID." } } });
+    expect(localized.actions[0]).toEqual(compiled.manifest.actions[0]);
+    expect(localized.manifestHash).not.toBe(compiled.manifest.manifestHash);
+    expect(resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "fr")).toEqual(compiled.manifest);
+  });
+
+  test("rejects presentation keys that do not exist in the stable manifest", () => {
+    expect(() =>
+      compileCapabilities(
+        "example",
+        defineCapabilities({
+          ...example(),
+          presentation: { baseLocale: "en", translations: { de: { queries: { missing: { title: "Fehlt" } } } } },
+        }),
+      ),
+    ).toThrow('unknown localId "missing"');
+    expect(() =>
+      compileCapabilities(
+        "example",
+        defineCapabilities({
+          ...example(),
+          presentation: { baseLocale: "en", translations: { de: { queries: { get: { input: { missing: "Fehlt." } } } } } },
+        }),
+      ),
+    ).toThrow('field path "missing" does not exist');
   });
 
   test("requires resource readers to be canonical Queries", () => {

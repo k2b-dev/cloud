@@ -36,6 +36,7 @@ import {
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
+import { coreCapabilityPresentation } from "./capability-presentation";
 
 const CORE_APP_ID = "core";
 const MAX_MESSAGE_TEXT_CHARS = 8_000;
@@ -483,6 +484,7 @@ const readableOwnedChat = async (chatId: string, userId: string): Promise<AiConv
 
 export const aiCapabilities = defineCapabilities({
   protocolVersion: 1,
+  presentation: coreCapabilityPresentation,
   types: {
     "ai.chat": {
       title: "AI conversation",
