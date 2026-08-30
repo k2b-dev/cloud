@@ -1,20 +1,28 @@
-import { type AuthContext, auth, jsonResponse, requiresIpaUser, respond, v } from "@valentinkolb/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
+import {
+  type AuthContext,
+  auth,
+  expectUserBackedActor,
+  getLocale,
+  jsonResponse,
+  requiresIpaUser,
+  respond,
+  v,
+} from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 import {
-  ChunkHeaderSchema,
   ChunkedUploadChunkQuerySchema,
   ChunkedUploadResponseSchema,
   ChunkedUploadStartResponseSchema,
   ChunkedUploadStartSchema,
+  ChunkHeaderSchema,
   DownloadQuerySchema,
   DuplicateRequestSchema,
   ErrorResponseSchema,
-  FileBaseParamSchema,
   FileActionQuerySchema,
   FileBaseInfoSchema,
+  FileBaseParamSchema,
   FileInfoResponseSchema,
   FileInfoSchema,
   FilePathQuerySchema,
@@ -30,6 +38,7 @@ import {
   UploadIdParamSchema,
 } from "@/contracts";
 import { filesService } from "../service";
+import { filesApiErrorMessage } from "../service/messages";
 import { signUploadTicket, verifyUploadTicket } from "../service/upload-ticket";
 
 /**
@@ -81,7 +90,30 @@ const requireBaseAccess = async (c: Context<AuthContext>) => {
 // not be IPA users) can still reach it.
 import { filesSettingsRouter } from "./settings";
 
+const localizeApiError = async (c: Context, next: () => Promise<void>) => {
+  await next();
+  if (c.res.status < 400 || !c.res.headers.get("content-type")?.includes("application/json")) return;
+  const body: unknown = await c.res
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
+  const message = filesApiErrorMessage(c.res.status, getLocale(c), body.message);
+  const errors =
+    "errors" in body && body.errors && typeof body.errors === "object"
+      ? Object.fromEntries(Object.keys(body.errors).map((key) => [key, message]))
+      : undefined;
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(JSON.stringify({ ...body, message, ...(errors ? { errors } : {}) }), {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+};
+
 const app = new Hono<AuthContext>()
+  .use(localizeApiError)
   .route("/admin/settings", filesSettingsRouter)
   .use(auth.requireAccount({ provider: "ipa", profile: "user" }))
 

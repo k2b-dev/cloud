@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type HealthWebhookInput, isHealthWebhookId, normalizeHealthWebhookInput } from "./health-webhooks";
+import { type HealthWebhookInput, HealthWebhookInputError, isHealthWebhookId, normalizeHealthWebhookInput } from "./health-webhooks";
 
 const input = (overrides: Partial<HealthWebhookInput> = {}): HealthWebhookInput => ({
   name: "Deploy alerts",
@@ -44,7 +44,12 @@ describe("normalizeHealthWebhookInput", () => {
   });
 
   test("rejects empty names and non-http URLs", () => {
-    expect(() => normalizeHealthWebhookInput(input({ name: "   " }))).toThrow("Webhook name is required.");
-    expect(() => normalizeHealthWebhookInput(input({ url: "ftp://example.com/hook" }))).toThrow("Webhook URL must use http or https.");
+    expect(() => normalizeHealthWebhookInput(input({ name: "   " }))).toThrow(
+      expect.objectContaining({ name: "HealthWebhookInputError", code: "name_required" }),
+    );
+    expect(() => normalizeHealthWebhookInput(input({ url: "ftp://example.com/hook" }))).toThrow(
+      expect.objectContaining({ name: "HealthWebhookInputError", code: "url_protocol" }),
+    );
+    expect(new HealthWebhookInputError("name_required").message).toBe("name_required");
   });
 });

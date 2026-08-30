@@ -78,7 +78,8 @@ import {
 import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, EventInvitationDraftSchema } from "../integration";
 import { spacesService } from "../service";
 import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
-import { localizeSpacesMessage } from "../service/messages";
+import { InvalidActivityCursorError } from "../service/activity";
+import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
 import {
   projectCalendarItems,
   projectColumns,
@@ -152,13 +153,14 @@ const SpaceActivitySchema = z.object({
 
 const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
   await next();
+  if (c.res.status < 400) return;
   if (!c.res.headers.get("content-type")?.includes("application/json")) return;
   const parsed: unknown = await c.res
     .clone()
     .json()
     .catch(() => null);
   if (!parsed || typeof parsed !== "object" || !("message" in parsed) || typeof parsed.message !== "string") return;
-  const message = localizeSpacesMessage(parsed.message, getLocale(c));
+  const message = spacesApiErrorMessage(c.res.status, getLocale(c), parsed.message);
   if (message === parsed.message) return;
   const headers = new Headers(c.res.headers);
   headers.delete("content-length");
@@ -172,7 +174,7 @@ const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
 const attachmentTooLarge = (c: Context) =>
   respond(c, {
     ok: false,
-    error: `File exceeds ${Math.round(MAX_TASK_ATTACHMENT_SIZE_BYTES / 1024 / 1024)} MB limit`,
+    error: spacesMessages(getLocale(c)).fileTooLarge({ megabytes: Math.round(MAX_TASK_ATTACHMENT_SIZE_BYTES / 1024 / 1024) }),
     status: 413,
   });
 
@@ -378,11 +380,13 @@ const requireExistingSpace = async (c: Context<AuthContext>, shortId: string) =>
 /**
  * Wraps mutation results and returns a standardized message payload for API handlers.
  */
-const respondMessage = async (c: Context, resultPromise: Promise<Result<void> | MutationResult<void>>, message: string) => {
+const respondMessage = async (c: Context, resultPromise: Promise<Result<void> | MutationResult<void>>, message: keyof SpacesMessages) => {
   return respond(c, async () => {
     const result = await resultPromise;
     if (!result.ok) return result;
-    return ok({ message: localizeSpacesMessage(message, getLocale(c)) });
+    const value = spacesMessages(getLocale(c))[message];
+    if (typeof value !== "string") throw new Error(`Spaces response message ${message} must be static`);
+    return ok({ message: value });
   });
 };
 
@@ -509,7 +513,7 @@ const app = new Hono<AuthContext>()
           }),
         );
       } catch (error) {
-        if (error instanceof Error && error.message === "Invalid activity cursor") return respond(c, fail(err.badInput(error.message)));
+        if (error instanceof InvalidActivityCursorError) return respond(c, fail(err.badInput(error.message)));
         throw error;
       }
     },
@@ -816,7 +820,7 @@ const app = new Hono<AuthContext>()
           itemId: item.data.id,
           spaceId: access.internalId!,
         }),
-        "Attachment deleted",
+        "attachmentDeleted",
       );
     },
   )
@@ -877,7 +881,7 @@ const app = new Hono<AuthContext>()
           blockerItemId: blocker.data.id,
           spaceId: access.internalId!,
         }),
-        "Task blocker removed",
+        "taskBlockerRemoved",
       );
     },
   )
@@ -1152,7 +1156,7 @@ const app = new Hono<AuthContext>()
 
       const { internalId, error } = await checkSpaceAccess(c, id, "admin");
       if (error) return error;
-      return respondMessage(c, spacesService.space.remove({ id: internalId! }), "Space deleted");
+      return respondMessage(c, spacesService.space.remove({ id: internalId! }), "spaceDeleted");
     },
   )
 
@@ -1262,7 +1266,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const columnCheck = await requireColumnInSpace(spaceId!, columnId);
       if (!columnCheck.ok) return respond(c, columnCheck);
-      return respondMessage(c, spacesService.column.remove({ id: columnCheck.data.id }), "Column deleted");
+      return respondMessage(c, spacesService.column.remove({ id: columnCheck.data.id }), "columnDeleted");
     },
   )
 
@@ -1290,7 +1294,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const resolvedColumnIds = await resolveSpacePublicIds("columns", spaceId!, columnIds);
       if (!resolvedColumnIds) return respond(c, fail(err.notFound("Column")));
-      return respondMessage(c, spacesService.column.reorder({ spaceId: spaceId!, columnIds: resolvedColumnIds }), "Columns reordered");
+      return respondMessage(c, spacesService.column.reorder({ spaceId: spaceId!, columnIds: resolvedColumnIds }), "columnsReordered");
     },
   )
 
@@ -1470,7 +1474,7 @@ const app = new Hono<AuthContext>()
           wormholeIds,
           actor: getWormholeActor(c),
         }),
-        "Wormholes reordered",
+        "wormholesReordered",
       );
     },
   )
@@ -1500,7 +1504,7 @@ const app = new Hono<AuthContext>()
           id: wormholeId,
           actor: getWormholeActor(c),
         }),
-        "Wormhole deleted",
+        "wormholeDeleted",
       );
     },
   )
@@ -1586,7 +1590,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const tagCheck = await requireTagInSpace(spaceId!, tagId);
       if (!tagCheck.ok) return respond(c, tagCheck);
-      return respondMessage(c, spacesService.tag.remove({ id: tagCheck.data.id }), "Tag deleted");
+      return respondMessage(c, spacesService.tag.remove({ id: tagCheck.data.id }), "tagDeleted");
     },
   )
 
@@ -1863,7 +1867,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const itemCheck = await requireItemInSpace(spaceId!, itemId);
       if (!itemCheck.ok) return respond(c, itemCheck);
-      return respondMessage(c, spacesService.item.remove({ id: itemCheck.data.id, actor: getSpaceActivityActor(c) }), "Item deleted");
+      return respondMessage(c, spacesService.item.remove({ id: itemCheck.data.id, actor: getSpaceActivityActor(c) }), "itemDeleted");
     },
   )
 
@@ -2185,7 +2189,7 @@ const app = new Hono<AuthContext>()
           id: internalCommentId,
           userId: user.id,
         }),
-        "Comment deleted",
+        "commentDeleted",
       );
     },
   )
@@ -2281,7 +2285,7 @@ const app = new Hono<AuthContext>()
 
       return respond(c, async () => {
         const result = await spacesService.access.apiKeys.revoke({ spaceId: spaceId!, credentialId, actor: user });
-        return result.ok ? ok({ message: localizeSpacesMessage(result.data.message, getLocale(c)) }) : result;
+        return result.ok ? ok({ message: spacesMessages(getLocale(c)).apiKeyRevoked }) : result;
       });
     },
   )
@@ -2373,7 +2377,7 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "Access updated");
+      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "accessUpdated");
     },
   )
 
@@ -2400,7 +2404,7 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "Access revoked");
+      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "accessRevoked");
     },
   );
 
@@ -2470,7 +2474,7 @@ const adminApp = new Hono<AuthContext>()
       if (error) return error;
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
-      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "Access updated");
+      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "accessUpdated");
     },
   )
   .delete(
@@ -2491,7 +2495,7 @@ const adminApp = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
       const accessId = c.req.param("accessId") ?? "";
-      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "Access revoked");
+      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "accessRevoked");
     },
   )
   .delete(
@@ -2510,7 +2514,7 @@ const adminApp = new Hono<AuthContext>()
     async (c) => {
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
-      return respondMessage(c, spacesService.space.remove({ id: spaceId! }), "Space deleted");
+      return respondMessage(c, spacesService.space.remove({ id: spaceId! }), "spaceDeleted");
     },
   );
 

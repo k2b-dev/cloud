@@ -1,116 +1,23 @@
 import { i18n, type ServiceError } from "@k2b/stdlib";
 
-const germanServiceErrors: Readonly<Record<string, string>> = {
-  "Access entry already exists": "Dieser Zugriffseintrag existiert bereits",
-  "Access entry for this space not found": "Der Zugriffseintrag für diesen Space wurde nicht gefunden",
-  "Space or access entry not found": "Der Space oder der Zugriffseintrag wurde nicht gefunden",
-  "Cannot remove the last access entry": "Der letzte Zugriffseintrag kann nicht entfernt werden",
-  "Cannot remove the last admin": "Die letzte Person mit Administratorrechten kann nicht entfernt werden",
-  "Failed to retrieve created access entry": "Der erstellte Zugriffseintrag konnte nicht geladen werden",
-  "Failed to project Space item": "Der Space-Eintrag konnte nicht für die Ausgabe aufbereitet werden",
-  "Failed to project Space comment": "Der Kommentar konnte nicht für die Ausgabe aufbereitet werden",
-  "Failed to project task dependency": "Die Aufgabenabhängigkeit konnte nicht für die Ausgabe aufbereitet werden",
-  "Failed to load resource service account": "Das Dienstkonto für diesen Space konnte nicht geladen werden",
-  "API key not found": "Der API-Schlüssel wurde nicht gefunden",
-  "A cancellation cannot create a new event": "Eine Absage kann keinen neuen Termin erstellen",
-  "Add at least one To or Cc recipient other than the organizer":
-    "Füge unter An oder Cc mindestens eine weitere Person als die organisierende Person hinzu",
-  "Add at least one attendee other than the organizer": "Füge mindestens eine weitere teilnehmende Person hinzu",
-  "Add this invitation to Spaces before responding": "Füge diese Einladung vor der Antwort zu Spaces hinzu",
-  "Calendar METHOD is missing or unsupported": "Die Kalendermethode fehlt oder wird nicht unterstützt",
-  "Calendar attachment contains no event": "Der Kalenderanhang enthält keinen Termin",
-  "Calendar attachment is too large": "Der Kalenderanhang ist zu groß",
-  "Calendar event is missing UID or start time": "Dem Kalendertermin fehlt die UID oder der Beginn",
-  "Calendar event must end after it starts": "Der Kalendertermin muss nach seinem Beginn enden",
-  "Cannot import a cancellation without an existing event": "Eine Absage kann ohne bestehenden Termin nicht importiert werden",
-  "Calendar invitations require an event with a start and end time": "Kalendereinladungen erfordern einen Termin mit Beginn und Ende",
-  "No invitation has been created for this event yet": "Für diesen Termin wurde noch keine Einladung erstellt",
-  "The invitation has no organizer address": "Die Einladung enthält keine Adresse der organisierenden Person",
-  "A newer invitation is already linked in Spaces": "In Spaces ist bereits eine neuere Einladung verknüpft",
-  "Calendar invitation linkage changed concurrently": "Die Verknüpfung der Kalendereinladung wurde zwischenzeitlich geändert",
-  "Created calendar event has no public ID": "Für den erstellten Kalendertermin fehlt die öffentliche ID",
-  "Invitation source could not be reserved": "Die Quelle der Einladung konnte nicht reserviert werden",
-  "Invitation is not ready to commit": "Die Einladung kann noch nicht abgeschlossen werden",
-  "Invitation preparation is incomplete; use a new idempotency key":
-    "Die Einladung wurde nicht vollständig vorbereitet; verwende einen neuen Idempotenzschlüssel",
-  "This calendar event is already linked to another Space": "Dieser Kalendertermin ist bereits mit einem anderen Space verknüpft",
-  "The selected mailbox cannot send invitations": "Das ausgewählte Postfach kann keine Einladungen senden",
-  "The selected verified sender identity is unavailable": "Die ausgewählte bestätigte Absenderidentität ist nicht verfügbar",
-  "Write access to the destination Space is required": "Für den Ziel-Space ist Schreibzugriff erforderlich",
-  "Write access to this Space is required": "Für diesen Space ist Schreibzugriff erforderlich",
-  "Prepared invitation not found": "Die vorbereitete Einladung wurde nicht gefunden",
-  "Cannot delete column with items": "Eine Spalte mit Einträgen kann nicht gelöscht werden",
-  "Failed to create column": "Die Spalte konnte nicht erstellt werden",
-  "Failed to load created column": "Die erstellte Spalte konnte nicht geladen werden",
-  "Failed to load updated column": "Die aktualisierte Spalte konnte nicht geladen werden",
-  "Failed to update column": "Die Spalte konnte nicht aktualisiert werden",
-  "Must include all columns in reorder": "Beim Neuordnen müssen alle Spalten enthalten sein",
-  "Cannot delete another user's comment": "Kommentare anderer Personen können nicht gelöscht werden",
-  "Cannot edit another user's comment": "Kommentare anderer Personen können nicht bearbeitet werden",
-  "Failed to create comment": "Der Kommentar konnte nicht erstellt werden",
-  "Comments can only be deleted within 10 minutes": "Kommentare können nur innerhalb von 10 Minuten gelöscht werden",
-  "Comments can only be edited within 10 minutes": "Kommentare können nur innerhalb von 10 Minuten bearbeitet werden",
-  "Recurring occurrence not found": "Der wiederkehrende Termin wurde nicht gefunden",
-  "Attachment metadata is invalid": "Die Metadaten des Anhangs sind ungültig",
-  "Attachments are only available for tasks": "Anhänge sind nur für Aufgaben verfügbar",
-  "File exceeds 10 MB limit": "Die Datei überschreitet das Limit von 10 MB",
-  "Task not found": "Die Aufgabe wurde nicht gefunden",
-  "A completed task cannot gain an active blocker": "Einer abgeschlossenen Aufgabe kann kein aktiver Blocker hinzugefügt werden",
-  "A task cannot block itself": "Eine Aufgabe kann sich nicht selbst blockieren",
-  "Blocker task not found in space": "Die blockierende Aufgabe wurde in diesem Space nicht gefunden",
-  "Task dependency already exists": "Diese Aufgabenabhängigkeit existiert bereits",
-  "Task dependency not found": "Die Aufgabenabhängigkeit wurde nicht gefunden",
-  "Task dependency would create a cycle": "Diese Aufgabenabhängigkeit würde einen Zyklus erzeugen",
-  "Column not found in space": "Die Spalte wurde in diesem Space nicht gefunden",
-  "Could not create the calendar event": "Der Kalendertermin konnte nicht erstellt werden",
-  "End time must be after start time": "Das Ende muss nach dem Beginn liegen",
-  "Estimated duration is only available for tasks": "Eine geschätzte Dauer ist nur für Aufgaben verfügbar",
-  "Event not found": "Der Termin wurde nicht gefunden",
-  "Failed to create item": "Der Eintrag konnte nicht erstellt werden",
-  "Failed to create split series": "Die neue Terminserie konnte nicht erstellt werden",
-  "Failed to load created item": "Der erstellte Eintrag konnte nicht geladen werden",
-  "Failed to load item": "Der Eintrag konnte nicht geladen werden",
-  "Failed to load moved item": "Der verschobene Eintrag konnte nicht geladen werden",
-  "Failed to load split series": "Die neue Terminserie konnte nicht geladen werden",
-  "Failed to load updated item": "Der aktualisierte Eintrag konnte nicht geladen werden",
-  "Failed to move item": "Der Eintrag konnte nicht verschoben werden",
-  "Failed to update item": "Der Eintrag konnte nicht aktualisiert werden",
-  "Idempotency-Key was already used with different input": "Der Idempotency-Key wurde bereits mit anderen Eingaben verwendet",
-  "Invalid rank": "Die Position ist ungültig",
-  "Item is not a recurring series": "Der Eintrag ist keine Terminserie",
-  "Parent recurring event not found in space": "Die übergeordnete Terminserie wurde in diesem Space nicht gefunden",
-  "Recurring events require start and end times": "Wiederkehrende Termine erfordern einen Beginn und ein Ende",
-  "Recurring overrides require parent event and recurrence id":
-    "Ausnahmen einer Terminserie erfordern den übergeordneten Termin und eine Wiederholungs-ID",
-  "Recurring overrides require start and end times": "Ausnahmen einer Terminserie erfordern einen Beginn und ein Ende",
-  "Recurring series cannot also be an override": "Eine Terminserie kann nicht zugleich eine Ausnahme sein",
-  "Tag not found in space": "Der Tag wurde in diesem Space nicht gefunden",
-  "The destination Space needs an open column": "Der Ziel-Space benötigt eine offene Spalte",
-  "This occurrence already has a stored override": "Für diesen Termin ist bereits eine Ausnahme gespeichert",
-  "Failed to create space": "Der Space konnte nicht erstellt werden",
-  "Failed to update space": "Der Space konnte nicht aktualisiert werden",
-  "Failed to create tag": "Der Tag konnte nicht erstellt werden",
-  "Failed to update tag": "Der Tag konnte nicht aktualisiert werden",
-  "Tag not found": "Der Tag wurde nicht gefunden",
-  "Tag with this name already exists": "Ein Tag mit diesem Namen existiert bereits",
-  "A wormhole must lead to another space": "Ein Wurmloch muss zu einem anderen Space führen",
-  "Could not create wormhole": "Das Wurmloch konnte nicht erstellt werden",
-  "Could not load created wormhole": "Das erstellte Wurmloch konnte nicht geladen werden",
-  "Could not load transferred item": "Der verschobene Eintrag konnte nicht geladen werden",
-  "Could not load updated wormhole": "Das aktualisierte Wurmloch konnte nicht geladen werden",
-  "Item or wormhole not found": "Der Eintrag oder das Wurmloch wurde nicht gefunden",
-  "Recurring items cannot move through wormholes": "Wiederkehrende Einträge können nicht durch Wurmlöcher verschoben werden",
-  "This wormhole already exists": "Dieses Wurmloch existiert bereits",
-  "Wormhole destination changed; try again": "Das Ziel des Wurmlochs wurde geändert; versuche es erneut",
-  "Wormhole order contains duplicates": "Die Reihenfolge der Wurmlöcher enthält Duplikate",
-  "Wormhole order must include every configured wormhole": "Die Reihenfolge muss alle eingerichteten Wurmlöcher enthalten",
-};
-
 const catalog = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      serviceError: ({ message }: { message: string }) => message,
+      invalidRequest: "The Spaces request is invalid",
+      resourceNotFound: "The requested Spaces resource was not found",
+      conflictingChange: "The Spaces change conflicts with the current state",
+      operationFailed: "The Spaces operation failed",
+      loginRequired: "Login required",
+      liveBackpressure: "Live updates exceeded the connection capacity",
+      liveAccessRefreshFailed: "Access refresh failed",
+      liveStreamFailed: "Space event stream failed",
+      invalidJson: "Invalid JSON payload",
+      invalidLiveSubscription: "Invalid live subscription",
+      tooManyLiveMessages: "Too many pending live messages",
+      liveSubscriptionFailed: "Live subscription failed",
+      calendarAlreadyLinked: "This calendar event is already linked to another Space",
+      cancellationNeedsEvent: "Cannot import a cancellation without an existing event",
       accessDenied: "Access denied",
       spaceNotFound: "Space not found",
       itemNotFound: "Item not found",
@@ -291,7 +198,20 @@ const catalog = i18n.define({
       starterReview: "Review",
     },
     de: {
-      serviceError: ({ message }) => germanServiceErrors[message] ?? message,
+      invalidRequest: "Die Spaces-Anfrage ist ungültig",
+      resourceNotFound: "Die angeforderte Spaces-Ressource wurde nicht gefunden",
+      conflictingChange: "Die Spaces-Änderung steht im Konflikt mit dem aktuellen Stand",
+      operationFailed: "Der Spaces-Vorgang ist fehlgeschlagen",
+      loginRequired: "Anmeldung erforderlich",
+      liveBackpressure: "Die Live-Updates haben die Kapazität der Verbindung überschritten",
+      liveAccessRefreshFailed: "Die Zugriffsprüfung ist fehlgeschlagen",
+      liveStreamFailed: "Der Space-Ereignisstrom ist fehlgeschlagen",
+      invalidJson: "Die JSON-Daten sind ungültig",
+      invalidLiveSubscription: "Die Live-Anmeldung ist ungültig",
+      tooManyLiveMessages: "Zu viele ausstehende Live-Nachrichten",
+      liveSubscriptionFailed: "Die Live-Anmeldung ist fehlgeschlagen",
+      calendarAlreadyLinked: "Dieser Kalendertermin ist bereits mit einem anderen Space verknüpft",
+      cancellationNeedsEvent: "Eine Absage kann ohne bestehenden Termin nicht importiert werden",
       accessDenied: "Zugriff verweigert",
       spaceNotFound: "Der Space wurde nicht gefunden",
       itemNotFound: "Der Eintrag wurde nicht gefunden",
@@ -475,68 +395,18 @@ export type SpacesMessages = ReturnType<(typeof catalog)["resolve"]>["t"];
 export const spacesMessages = (locale?: string | null): SpacesMessages => catalog.resolve(locale ? [locale] : []).t;
 export const checkSpacesMessages = () => catalog.check();
 
-const errorKeys = {
-  "Access denied": "accessDenied",
-  "Space not found": "spaceNotFound",
-  "Item not found": "itemNotFound",
-  "Comment not found": "commentNotFound",
-  "Column not found": "columnNotFound",
-  "Destination column not found": "destinationColumnNotFound",
-  "Wormhole not found": "wormholeNotFound",
-  "Attachment not found": "attachmentNotFound",
-  "This endpoint requires a user-backed actor": "endpointNeedsUser",
-  "Comments require a user-backed actor": "commentsNeedUser",
-  "Importing an invitation requires a user-backed actor": "invitationImportNeedsUser",
-  "Item is not a task": "itemNotTask",
-  "Item is not an event": "itemNotEvent",
-  "Task dependencies can only connect tasks": "taskDependenciesOnly",
-  "Task dependencies must stay in one Space": "taskDependenciesSameSpace",
-  "Complete all blocking tasks first": "completeBlockersFirst",
-  "Unknown Space tag": "unknownSpaceTag",
-  "Unknown Space column or tag": "unknownSpaceColumnOrTag",
-  "Idempotency-Key is required": "idempotencyKeyRequired",
-  "An idempotency key is required": "genericIdempotencyKeyRequired",
-  "Space item already has the maximum number of linked resources": "maxLinkedResources",
-  "Only the comment author may edit it": "commentAuthorEditOnly",
-  "Only the comment author may delete it": "commentAuthorDeleteOnly",
-  "Invalid cursor": "invalidCursor",
-  "The me filter requires a user-backed actor": "meFilterNeedsUser",
-  "Unknown columnIds value; use a column ID returned by Read space": "unknownColumnIds",
-  "Unknown tagIds value; use a tag ID returned by Read space": "unknownTagIds",
-  "Space deleted": "spaceDeleted",
-  "Column deleted": "columnDeleted",
-  "Columns reordered": "columnsReordered",
-  "Tag deleted": "tagDeleted",
-  "Item deleted": "itemDeleted",
-  "Attachment deleted": "attachmentDeleted",
-  "Task blocker removed": "taskBlockerRemoved",
-  "Wormholes reordered": "wormholesReordered",
-  "Wormhole deleted": "wormholeDeleted",
-  "Comment deleted": "commentDeleted",
-  "Access updated": "accessUpdated",
-  "Access revoked": "accessRevoked",
-  "API key revoked.": "apiKeyRevoked",
-} as const satisfies Readonly<Record<string, keyof SpacesMessages>>;
-
-export const localizeSpacesMessage = (message: string, locale?: string | null): string => {
-  const key = errorKeys[message as keyof typeof errorKeys];
-  const t = spacesMessages(locale);
-  const invalidQueryParameter = /^Invalid (.+) query parameter\.$/u.exec(message);
-  if (invalidQueryParameter?.[1]) return t.invalidQueryParameter({ label: invalidQueryParameter[1] });
-  const fileLimit = /^File exceeds (\d+) MB limit$/u.exec(message);
-  if (fileLimit?.[1]) return t.fileTooLarge({ megabytes: Number(fileLimit[1]) });
-  const missingColumn = /^Column (.+) not found in space$/u.exec(message);
-  if (missingColumn?.[1]) return t.columnMissingInSpace({ id: missingColumn[1] });
-  const attachmentLimit = /^A task can have at most (\d+) attachments$/u.exec(message);
-  if (attachmentLimit?.[1]) return t.taskAttachmentLimit({ count: Number(attachmentLimit[1]) });
-  const blockerLimit = /^A task can have at most (\d+) blockers$/u.exec(message);
-  if (blockerLimit?.[1]) return t.taskBlockerLimit({ count: Number(blockerLimit[1]) });
-  if (!key) return t.serviceError({ message });
-  const value = t[key];
-  return typeof value === "string" ? value : t.serviceError({ message });
+export const spacesApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string): string => {
+  const resolved = catalog.resolve(locale ? [locale] : []);
+  if (resolved.locale === "en" && baseMessage) return baseMessage;
+  const { t } = resolved;
+  if (status === 401) return t.loginRequired;
+  if (status === 403) return t.accessDenied;
+  if (status === 404) return t.resourceNotFound;
+  if (status === 409) return t.conflictingChange;
+  if (status >= 500) return t.operationFailed;
+  return t.invalidRequest;
 };
 
-export const localizeSpacesError = (error: ServiceError, locale?: string | null): ServiceError => ({
-  ...error,
-  message: localizeSpacesMessage(error.message, locale),
-});
+export const localizeSpacesError = (error: ServiceError, locale?: string | null): ServiceError => {
+  return { ...error, message: spacesApiErrorMessage(error.status, locale, error.message) };
+};

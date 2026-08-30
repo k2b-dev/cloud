@@ -1,5 +1,6 @@
 import {
   type LiquidTemplateFilter,
+  LiquidTemplateError,
   liquidTemplateVariables,
   renderLiquidTemplate,
   validateLiquidTemplate,
@@ -88,6 +89,9 @@ export const renderMailLiquidTemplate = (source: string, data: MailTemplateData,
     }
     return ok(rendered);
   } catch (error) {
+    if (error instanceof LiquidTemplateError) {
+      return fail(Object.assign(err.badInput(error.message), { reason: error.reason }));
+    }
     return fail(err.badInput(error instanceof Error ? error.message : "Mail template could not be rendered"));
   }
 };

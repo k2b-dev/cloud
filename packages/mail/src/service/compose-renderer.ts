@@ -251,7 +251,7 @@ export const renderComposeTemplateSource = (
   const valid = validateComposeTemplateSource(source);
   if (!valid.ok) return valid;
   const rendered = renderMailLiquidTemplate(source, context, "markdown");
-  if (!rendered.ok && rendered.error.message === "Rendered template is too large") {
+  if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
     return fail(err.badInput("Rendered email content exceeds the safe size limit"));
   }
   if (!rendered.ok || format === "markdown") return rendered;

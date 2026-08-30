@@ -1,5 +1,5 @@
-import { logger, trace } from "@valentinkolb/cloud/services";
 import { job } from "@k2b/sync";
+import { logger, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 
@@ -59,6 +59,13 @@ const asStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 export const isHealthWebhookId = (id: string): boolean => UUID_RE.test(id);
 
+export class HealthWebhookInputError extends Error {
+  constructor(readonly code: "url_protocol" | "name_required") {
+    super(code);
+    this.name = "HealthWebhookInputError";
+  }
+}
+
 const mapWebhook = (row: DbWebhook): HealthWebhook => ({
   id: row.id,
   name: row.name,
@@ -84,9 +91,9 @@ const mapWebhook = (row: DbWebhook): HealthWebhook => ({
 
 export const normalizeHealthWebhookInput = (input: HealthWebhookInput): HealthWebhookInput => {
   const url = new URL(input.url);
-  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Webhook URL must use http or https.");
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new HealthWebhookInputError("url_protocol");
   const name = input.name.trim();
-  if (!name) throw new Error("Webhook name is required.");
+  if (!name) throw new HealthWebhookInputError("name_required");
   const repeatIntervalMs = Number.isFinite(input.repeatIntervalMs)
     ? Math.max(60_000, Math.min(MAX_REPEAT_INTERVAL_MS, Math.trunc(input.repeatIntervalMs)))
     : 1_800_000;

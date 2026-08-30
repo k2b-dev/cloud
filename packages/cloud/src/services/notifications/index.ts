@@ -482,10 +482,10 @@ export const getById = async (id: string): Promise<NotificationMessage | null> =
 /**
  * Resend a notification (retry delivery).
  */
-export const resend = async (id: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+export const resend = async (id: string): Promise<{ ok: true } | { ok: false; code: "not_found" | "delivery_failed"; error: string }> => {
   const notification = await getById(id);
   if (!notification) {
-    return { ok: false, error: "Notification not found" };
+    return { ok: false, code: "not_found", error: "Notification not found" };
   }
 
   try {
@@ -499,7 +499,7 @@ export const resend = async (id: string): Promise<{ ok: true } | { ok: false; er
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     await sql`UPDATE notifications.messages SET error = ${error} WHERE id = ${id}`;
-    return { ok: false, error };
+    return { ok: false, code: "delivery_failed", error };
   }
 };
 
@@ -512,15 +512,15 @@ export const update = async (
   id: string,
   data: { subject?: string; content?: string; recipient?: string },
   options?: { isAdmin?: boolean },
-): Promise<{ ok: true } | { ok: false; error: string }> => {
+): Promise<{ ok: true } | { ok: false; code: "not_found" | "invalid_state"; error: string }> => {
   const notification = await getById(id);
   if (!notification) {
-    return { ok: false, error: "Notification not found" };
+    return { ok: false, code: "not_found", error: "Notification not found" };
   }
 
   // Non-admins cannot edit sent notifications
   if (!options?.isAdmin && notification.status === "sent") {
-    return { ok: false, error: "Cannot edit a sent notification" };
+    return { ok: false, code: "invalid_state", error: "Cannot edit a sent notification" };
   }
 
   if (data.subject === undefined && data.content === undefined && data.recipient === undefined) {

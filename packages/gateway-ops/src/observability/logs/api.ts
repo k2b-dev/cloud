@@ -1,9 +1,10 @@
-import { type AuthContext, auth, jsonResponse, rateLimit, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
-import { get, set } from "@valentinkolb/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
+import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
+import { get, set } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { gatewayOpsMessages } from "../../messages";
 import {
   createPagination,
   ErrorResponseSchema,
@@ -235,7 +236,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const { retentionDays } = c.req.valid("json");
       await set("logs.retention_days", retentionDays);
-      return respond(c, ok({ message: "Log retention updated." }));
+      return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.logRetentionUpdated }));
     },
   );
 

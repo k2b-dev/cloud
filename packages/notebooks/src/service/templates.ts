@@ -34,7 +34,7 @@ class TemplateError extends Error {
 }
 
 const toServiceError = (message: string, status: number): ResultError => {
-  if (status === 404) return err.notFound(message.replace(/ not found$/i, ""));
+  if (status === 404) return { code: "NOT_FOUND", message, status: 404 };
   if (status === 403) return err.forbidden(message);
   if (status === 409) return err.conflict(message);
   if (status === 500) return err.internal(message);

@@ -10,6 +10,13 @@ const AVATAR_OUTPUT_ATTEMPTS = [
   { type: "image/png", qualities: [undefined] },
 ] as const;
 
+export class AvatarUploadError extends Error {
+  constructor(readonly code: "type_invalid" | "too_large" | "empty" | "unsupported" | "compression_failed") {
+    super(code);
+    this.name = "AvatarUploadError";
+  }
+}
+
 const blobToDataUrl = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -47,10 +54,10 @@ const loadImage = async (file: File): Promise<HTMLImageElement> => {
 
 export const validateAvatarSourceFile = (file: File): void => {
   if (!ACCEPTED_AVATAR_TYPES.has(file.type)) {
-    throw new Error("Choose a PNG, JPEG, or WebP image.");
+    throw new AvatarUploadError("type_invalid");
   }
   if (file.size > MAX_SOURCE_AVATAR_BYTES) {
-    throw new Error("Choose an image smaller than 32 MB.");
+    throw new AvatarUploadError("too_large");
   }
 };
 
@@ -71,12 +78,12 @@ export const createAvatarDataUrlFromFile = async (file: File, cropState?: ImageC
       }
     }
 
-    throw new Error("Avatar image could not be compressed below 48 KB.");
+    throw new AvatarUploadError("compression_failed");
   }
 
   const image = await loadImage(file);
   const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
-  if (!sourceSize) throw new Error("Avatar image is empty.");
+  if (!sourceSize) throw new AvatarUploadError("empty");
 
   const sourceX = Math.floor((image.naturalWidth - sourceSize) / 2);
   const sourceY = Math.floor((image.naturalHeight - sourceSize) / 2);
@@ -86,7 +93,7 @@ export const createAvatarDataUrlFromFile = async (file: File, cropState?: ImageC
     canvas.width = size;
     canvas.height = size;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Avatar image processing is not supported in this browser.");
+    if (!context) throw new AvatarUploadError("unsupported");
     context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
 
     for (const attempt of AVATAR_OUTPUT_ATTEMPTS) {
@@ -99,7 +106,7 @@ export const createAvatarDataUrlFromFile = async (file: File, cropState?: ImageC
     }
   }
 
-  throw new Error("Avatar image could not be compressed below 48 KB.");
+  throw new AvatarUploadError("compression_failed");
 };
 
 export const pickAvatarDataUrl = (): Promise<string | null> =>

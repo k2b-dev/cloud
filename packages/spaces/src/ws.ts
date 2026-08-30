@@ -1,4 +1,4 @@
-import { auth, hasPermission } from "@valentinkolb/cloud/server";
+import { auth, getLocale, hasPermission } from "@valentinkolb/cloud/server";
 import { accounts, logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
@@ -6,6 +6,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { SPACE_LIVE_WS_TYPE, SpaceLiveClientMessageSchema, type SpaceLiveServerMessage } from "./live-events";
 import { spacesService } from "./service";
 import { latestSpaceEventCursor, liveSpaceEvents } from "./service/events";
+import { type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
 
 const log = logger("spaces:websocket");
@@ -18,6 +19,7 @@ type WsPhase = "open" | "subscribed" | "closing";
 type WsContext = {
   socket: ServerWebSocket<unknown>;
   sessionToken: string | null;
+  messages: SpacesMessages;
   phase: WsPhase;
   spaceId: string | null;
   spaceShortId: string | null;
@@ -27,9 +29,10 @@ type WsContext = {
 
 type AccessResult = { ok: true } | { ok: false; code: "login_required" | "not_found" | "access_denied"; message: string };
 
-const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null): WsContext => ({
+const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, locale: string): WsContext => ({
   socket,
   sessionToken,
+  messages: spacesMessages(locale),
   phase: "open",
   spaceId: null,
   spaceShortId: null,
@@ -84,20 +87,20 @@ const revoke = (ctx: WsContext, spaceShortId: string, access: Exclude<AccessResu
   ctx.socket.close(1008, access.code);
 };
 
-const evaluateAccess = async (sessionToken: string | null, spaceId: string): Promise<AccessResult> => {
-  if (!sessionToken) return { ok: false, code: "login_required", message: "Login required" };
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return { ok: false, code: "login_required", message: "Login required" };
+const evaluateAccess = async (ctx: WsContext, spaceId: string): Promise<AccessResult> => {
+  if (!ctx.sessionToken) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
+  const session = await auth.session.getData(ctx.sessionToken);
+  if (!session) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
   const user = await accounts.users.get({ id: session.userId });
-  if (!user) return { ok: false, code: "login_required", message: "Login required" };
+  if (!user) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
 
   const space = await spacesService.space.get({ id: spaceId });
-  if (!space) return { ok: false, code: "not_found", message: "Space not found" };
+  if (!space) return { ok: false, code: "not_found", message: ctx.messages.spaceNotFound };
   const permission = await spacesService.space.permission.get({
     spaceId,
     subject: { type: "user", userId: user.id },
   });
-  return hasPermission(permission, "read") ? { ok: true } : { ok: false, code: "access_denied", message: "Access denied" };
+  return hasPermission(permission, "read") ? { ok: true } : { ok: false, code: "access_denied", message: ctx.messages.accessDenied };
 };
 
 const startAccessRefresh = (ctx: WsContext, spaceId: string, spaceShortId: string) => {
@@ -105,7 +108,7 @@ const startAccessRefresh = (ctx: WsContext, spaceId: string, spaceShortId: strin
   ctx.accessRefreshTimer = setTimeout(async () => {
     if (ctx.phase !== "subscribed" || ctx.spaceId !== spaceId) return;
     try {
-      const access = await evaluateAccess(ctx.sessionToken, spaceId);
+      const access = await evaluateAccess(ctx, spaceId);
       if (ctx.phase !== "subscribed" || ctx.spaceId !== spaceId) return;
       if (!access.ok) {
         revoke(ctx, spaceShortId, access);
@@ -118,7 +121,7 @@ const startAccessRefresh = (ctx: WsContext, spaceId: string, spaceShortId: strin
         spaceId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "internal_error", "Access refresh failed", 1011);
+      closeWithError(ctx, "internal_error", ctx.messages.liveAccessRefreshFailed, 1011);
     }
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
@@ -138,18 +141,18 @@ const startStream = (ctx: WsContext, spaceId: string, spaceShortId: string, afte
             payload: { spaceId: spaceShortId, cursor: event.cursor, event: event.data.public },
           });
         if (event.data.public.type === "space.deleted") {
-          if (!sendEvent()) closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
-          else revoke(ctx, spaceShortId, { ok: false, code: "not_found", message: "Space not found" });
+          if (!sendEvent()) closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
+          else revoke(ctx, spaceShortId, { ok: false, code: "not_found", message: ctx.messages.spaceNotFound });
           break;
         }
-        const access = await evaluateAccess(ctx.sessionToken, spaceId);
+        const access = await evaluateAccess(ctx, spaceId);
         if (abort.signal.aborted || ctx.phase !== "subscribed" || ctx.spaceId !== spaceId) break;
         if (!access.ok) {
           revoke(ctx, spaceShortId, access);
           break;
         }
         if (!sendEvent()) {
-          closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
           break;
         }
       }
@@ -159,7 +162,7 @@ const startStream = (ctx: WsContext, spaceId: string, spaceShortId: string, afte
         spaceId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "stream_failed", "Space event stream failed", 1012);
+      closeWithError(ctx, "stream_failed", ctx.messages.liveStreamFailed, 1012);
     } finally {
       if (ctx.streamAbort === abort) ctx.streamAbort = null;
     }
@@ -171,10 +174,10 @@ const handleSubscribe = async (ctx: WsContext, spaceShortId: string, fromCursor:
   const spaceId = await spacesPublicResources.resolvePublicId("spaces", spaceShortId);
   if (!spaceId) {
     ctx.spaceShortId = spaceShortId;
-    revoke(ctx, spaceShortId, { ok: false, code: "not_found", message: "Space not found" });
+    revoke(ctx, spaceShortId, { ok: false, code: "not_found", message: ctx.messages.spaceNotFound });
     return;
   }
-  const access = await evaluateAccess(ctx.sessionToken, spaceId);
+  const access = await evaluateAccess(ctx, spaceId);
   if (isClosing(ctx)) return;
   if (!access.ok) {
     ctx.spaceId = spaceId;
@@ -190,7 +193,7 @@ const handleSubscribe = async (ctx: WsContext, spaceShortId: string, fromCursor:
   ctx.spaceId = spaceId;
   ctx.spaceShortId = spaceShortId;
   if (!send(ctx.socket, { type: SPACE_LIVE_WS_TYPE.ready, payload: { spaceId: spaceShortId, cursor } })) {
-    closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+    closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
     return;
   }
   startStream(ctx, spaceId, spaceShortId, cursor);
@@ -203,12 +206,12 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    closeWithError(ctx, "invalid_json", "Invalid JSON payload", 1008);
+    closeWithError(ctx, "invalid_json", ctx.messages.invalidJson, 1008);
     return;
   }
   const message = SpaceLiveClientMessageSchema.safeParse(parsed);
   if (!message.success) {
-    closeWithError(ctx, "invalid_message", "Invalid live subscription", 1008);
+    closeWithError(ctx, "invalid_message", ctx.messages.invalidLiveSubscription, 1008);
     return;
   }
   await handleSubscribe(ctx, message.data.payload.spaceId, message.data.payload.fromCursor);
@@ -218,22 +221,23 @@ const app = new Hono().get(
   "/",
   upgradeWebSocket((c) => {
     const sessionToken = auth.session.getToken(c);
+    const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
 
     return {
       onOpen(_, ws) {
-        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken);
+        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
       },
       onMessage(event) {
         if (!ctx || ctx.phase === "closing") return;
         if (typeof event.data !== "string" || event.data.length > MAX_CLIENT_MESSAGE_LENGTH) {
-          closeWithError(ctx, "invalid_message", "Invalid live subscription", 1008);
+          closeWithError(ctx, "invalid_message", ctx.messages.invalidLiveSubscription, 1008);
           return;
         }
         if (pendingMessages >= MAX_PENDING_MESSAGES) {
-          closeWithError(ctx, "backpressure", "Too many pending live messages", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.tooManyLiveMessages, 1013);
           return;
         }
 
@@ -247,7 +251,7 @@ const app = new Hono().get(
               spaceId: current.spaceId,
               error: error instanceof Error ? error.message : String(error),
             });
-            closeWithError(current, "internal_error", "Live subscription failed", 1011);
+            closeWithError(current, "internal_error", current.messages.liveSubscriptionFailed, 1011);
           })
           .finally(() => {
             pendingMessages = Math.max(0, pendingMessages - 1);

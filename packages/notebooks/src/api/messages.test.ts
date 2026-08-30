@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { z } from "zod";
-import { localizeNotebookServiceMessage, localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
+import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import { notebookApiMessages } from "./messages";
 import { localizeNotebookValidationIssue, notebookV } from "./validator";
 
@@ -13,26 +13,14 @@ describe("notebook API messages", () => {
     expect(notebookApiMessages.resolve(["fr"]).t.accessDenied).toBe("Access denied");
   });
 
-  test("projects service errors without changing embedded identifiers", () => {
-    expect(localizeNotebookServiceMessage("API key not found", "de-CH")).toBe("API-Schlüssel nicht gefunden");
-    expect(localizeNotebookServiceMessage("Note updatedAt mismatch. Expected old, got new.", "de-DE")).toBe(
-      "Die Notiz wurde zwischenzeitlich geändert. Lade sie neu und versuche es erneut.",
-    );
-    expect(
-      localizeNotebookServiceMessage(
-        "Hetzner Object Storage endpoints must include the location. Use https://nbg1.your-objectstorage.com for region nbg1.",
-        "de",
-      ),
-    ).toContain("https://nbg1.your-objectstorage.com");
-    expect(localizeNotebookServiceMessage("Unknown provider detail", "de")).toBe("Unknown provider detail");
-    expect(localizeNotebookServiceMessage("API key not found", "fr")).toBe("API key not found");
+  test("localizes stable snapshot field identifiers", () => {
     expect(localizeNotebookSnapshotField("secret access key", "de-CH")).toBe("geheimer Zugriffsschlüssel");
   });
 
   test("localizes Zod validation text at the request edge", () => {
-    expect(localizeNotebookValidationIssue("Invalid input: expected string, received undefined", "de-CH")).toBe("Angabe erforderlich");
-    expect(localizeNotebookValidationIssue("Too big: expected string to have <=100 characters", "de-DE")).toBe("Der Wert ist zu groß");
-    expect(localizeNotebookValidationIssue("Invalid UUID", "de")).toBe("Ungültiges Format");
+    expect(localizeNotebookValidationIssue("Invalid input: expected string, received undefined", "de-CH")).toBe("Ungültiger Wert");
+    expect(localizeNotebookValidationIssue("Too big: expected string to have <=100 characters", "de-DE")).toBe("Ungültiger Wert");
+    expect(localizeNotebookValidationIssue("Invalid UUID", "de")).toBe("Ungültiger Wert");
     expect(localizeNotebookValidationIssue("Invalid UUID", "en")).toBe("Invalid UUID");
   });
 
@@ -45,6 +33,6 @@ describe("notebook API messages", () => {
     });
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ message: "name: Angabe erforderlich" });
+    expect(await response.json()).toEqual({ message: "name: Ungültiger Wert" });
   });
 });

@@ -241,6 +241,14 @@ validation failures before returning them. The caller must not know the
 provider's message keys or maintain a table of its codes just to display useful
 feedback.
 
+Never infer a translation key from an English error string or a regular
+expression. Give domain failures a stable code or structured reason and select
+the final message from that value. When a legacy dependency exposes only a
+status and free-form text, preserve its base-locale message and use an
+application-owned message for that stable status in translated responses.
+Operational diagnostics remain available in logs rather than leaking into the
+localized response.
+
 ## Cross application boundaries
 
 ### Capabilities

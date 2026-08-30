@@ -39,7 +39,8 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
-import { localizeNotebookServiceMessage, localizeNotebookSnapshotField } from "../service/messages";
+import { InvalidActivityCursorError } from "../service/activity";
+import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
 import { ResourceShortIdSchema, toPublicAttachment, toPublicNote, toPublicNotebook, toPublicSnapshotLog } from "./public-resources";
@@ -529,22 +530,21 @@ const fallbackServiceMessage = (locale: string, status: number, current: string)
 
 const localizeResult = <T>(result: Result<T>, locale: string): Result<T> => {
   if (result.ok) return result;
-  const localized = localizeNotebookServiceMessage(result.error.message, locale);
-  return fail({
-    ...result.error,
-    message: localized === result.error.message ? fallbackServiceMessage(locale, result.error.status, localized) : localized,
-  });
+  return fail({ ...result.error, message: fallbackServiceMessage(locale, result.error.status, result.error.message) });
 };
 
 const localizeMutationResult = <T>(result: MutationResult<T>, locale: string): MutationResult<T> => {
   if (result.ok) return result;
-  const localized = localizeNotebookServiceMessage(result.error, locale);
-  return { ...result, error: localized === result.error ? fallbackServiceMessage(locale, result.status, localized) : localized };
+  return { ...result, error: fallbackServiceMessage(locale, result.status, result.error) };
 };
 
-const localizeMessageResult = <T extends { message: string }>(result: Result<T>, locale: string): Result<T> => {
+const localizeMessageResult = <T extends { message: string }>(
+  result: Result<T>,
+  locale: string,
+  messageKey: "apiKeyRevoked" | "snapshotUploaded",
+): Result<T> => {
   const localized = localizeResult(result, locale);
-  return localized.ok ? ok({ ...localized.data, message: localizeNotebookServiceMessage(localized.data.message, locale) }) : localized;
+  return localized.ok ? ok({ ...localized.data, message: notebookServiceMessages.resolve([locale]).t[messageKey] }) : localized;
 };
 
 const localizeSnapshotConfig = <T extends { missing: string[] }>(config: T, locale: string): T => ({
@@ -760,11 +760,11 @@ const notePdfError = (error: unknown, locale?: string): { message: string; statu
   const { t } = notebookApiMessages.resolve(locale ? [locale] : []);
   if (error instanceof MarkdownPdfError) {
     const message =
-      error.message === "Custom CSS exceeds the 32 KiB limit."
+      error.reason === "css_too_large"
         ? t.cssTooLarge
-        : error.message === "Markdown must not be empty."
+        : error.reason === "markdown_empty"
           ? t.pdfMarkdownEmpty
-          : error.message === "Unknown Markdown PDF template."
+          : error.reason === "unknown_template"
             ? t.pdfTemplateUnknown
             : error.code === "invalid_css"
               ? t.pdfCssInvalid
@@ -1006,7 +1006,7 @@ const app = new Hono<AuthContext>()
           }),
         );
       } catch (error) {
-        if (error instanceof Error && error.message === "Invalid activity cursor") {
+        if (error instanceof InvalidActivityCursorError) {
           return respond(c, fail(err.badInput(messages(c).invalidActivityCursor)));
         }
         throw error;
@@ -2145,6 +2145,7 @@ const app = new Hono<AuthContext>()
       const result = localizeMessageResult(
         await notebooksService.notebook.access.apiKeys.revoke({ notebookId: notebook!.id, credentialId, actor: user }),
         getLocale(c),
+        "apiKeyRevoked",
       );
       return respond(c, result);
     },
@@ -2652,7 +2653,7 @@ const appWithExport = appWithAttachments
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "admin");
       if (error) return error;
       notebookId = notebook!.id;
-      return respond(c, localizeMessageResult(await notebooksService.backup.runS3({ notebookId }), getLocale(c)));
+      return respond(c, localizeMessageResult(await notebooksService.backup.runS3({ notebookId }), getLocale(c), "snapshotUploaded"));
     },
   );
 
@@ -2795,7 +2796,7 @@ const appWithAdmin = appWithLimits
       if (!result.ok) {
         const message =
           key === "notebooks.snapshot_cron"
-            ? localizeNotebookServiceMessage(result.error.message, getLocale(c))
+            ? fallbackServiceMessage(getLocale(c), result.error.status, result.error.message)
             : messages(c).settingUpdateFailed;
         return respond(c, fail({ ...result.error, message }));
       }

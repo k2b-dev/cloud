@@ -15,11 +15,13 @@ export const MARKDOWN_PDF_TEMPLATE_IDS = ["document", "report", "compact"] as co
 export type MarkdownPdfTemplateId = (typeof MARKDOWN_PDF_TEMPLATE_IDS)[number];
 
 export type MarkdownPdfErrorCode = "bad_input" | "invalid_css" | "external_asset_unsupported";
+export type MarkdownPdfErrorReason = "css_too_large" | "markdown_empty" | "unknown_template";
 
 export class MarkdownPdfError extends Error {
   constructor(
     readonly code: MarkdownPdfErrorCode,
     message: string,
+    readonly reason?: MarkdownPdfErrorReason,
   ) {
     super(message);
     this.name = "MarkdownPdfError";
@@ -133,6 +135,7 @@ const renderMarkdown = (source: string): string => {
       throw new MarkdownPdfError(
         cause.code,
         cause.message.split("\nPlease report this to")[0]?.trim() || "Markdown could not be rendered.",
+        cause.reason,
       );
     }
     throw new MarkdownPdfError("bad_input", "Markdown could not be rendered.");
@@ -141,7 +144,7 @@ const renderMarkdown = (source: string): string => {
 
 const validateCustomCss = (customCss: string): string => {
   if (byteLength(customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
-    throw new MarkdownPdfError("invalid_css", "Custom CSS exceeds the 32 KiB limit.");
+    throw new MarkdownPdfError("invalid_css", "Custom CSS exceeds the 32 KiB limit.", "css_too_large");
   }
 
   let root: ReturnType<typeof postcss.parse>;
@@ -170,11 +173,11 @@ const validateCustomCss = (customCss: string): string => {
 
 export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string => {
   if (typeof input.markdown !== "string" || !input.markdown.trim()) {
-    throw new MarkdownPdfError("bad_input", "Markdown must not be empty.");
+    throw new MarkdownPdfError("bad_input", "Markdown must not be empty.", "markdown_empty");
   }
   const templateId = input.templateId;
   if (templateId !== undefined && !MARKDOWN_PDF_TEMPLATE_IDS.includes(templateId)) {
-    throw new MarkdownPdfError("bad_input", "Unknown Markdown PDF template.");
+    throw new MarkdownPdfError("bad_input", "Unknown Markdown PDF template.", "unknown_template");
   }
 
   const suppliedCustomCss = input.customCss?.trim() ?? "";

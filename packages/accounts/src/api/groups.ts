@@ -1,6 +1,6 @@
-import { type AuthContext, auth, jsonResponse, requiresAdmin, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
+import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
   UpdateGroupSchema,
 } from "@/contracts";
 import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
+import { accountsApiMessages } from "./messages";
 
 const GroupsListResponseSchema = z.object({
   groups: z.array(BaseGroupSchema),
@@ -267,7 +268,7 @@ const app = new Hono<AuthContext>()
           provider: group.provider,
         });
         if (!result.ok) return result;
-        return ok<MessageResponse>({ message: "Group deleted." });
+        return ok<MessageResponse>({ message: accountsApiMessages(getLocale(c)).groupDeleted });
       });
     },
   )
@@ -301,7 +302,7 @@ const app = new Hono<AuthContext>()
           description,
         });
         if (!result.ok) return result;
-        return ok<MessageResponse>({ message: "Group updated." });
+        return ok<MessageResponse>({ message: accountsApiMessages(getLocale(c)).groupUpdated });
       });
     },
   )
@@ -332,7 +333,7 @@ const app = new Hono<AuthContext>()
           provider: group.provider,
         });
         if (!result.ok) return result;
-        return ok({ message: "Group converted to POSIX." });
+        return ok({ message: accountsApiMessages(getLocale(c)).groupConverted });
       });
     },
   );

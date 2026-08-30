@@ -4,6 +4,12 @@ export const gatewayOpsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      apiInvalidRequest: "The Gateway request is invalid",
+      apiAccessDenied: "You do not have permission to perform this Gateway operation",
+      apiResourceNotFound: "The requested Gateway resource was not found",
+      apiConflict: "The Gateway change conflicts with the current state",
+      apiOperationFailed: "The Gateway operation failed",
+      settingUpdated: "Setting updated",
       actions: "Actions",
       all: "All",
       app: "App",
@@ -76,7 +82,8 @@ export const gatewayOpsMessages = i18n.define({
       noMatchingRoutes: ({ query }: { query: string }) => `No routes match “${query}”`,
       removeOfflineApp: "Remove offline app",
       onlyOfflineAppsRemovable: "Only offline apps can be removed",
-      removeAppConfirm: ({ name }: { name: string }) => `Remove “${name}” from the registered apps list? It will reappear if it starts and sends heartbeats again.`,
+      removeAppConfirm: ({ name }: { name: string }) =>
+        `Remove “${name}” from the registered apps list? It will reappear if it starts and sends heartbeats again.`,
       remove: "Remove",
       removeAppFailed: "Failed to remove app",
       unexpectedRemoveResponse: "Unexpected response while removing the app.",
@@ -94,7 +101,8 @@ export const gatewayOpsMessages = i18n.define({
       test: "Test",
       webhook: "Webhook",
       healthWebhooks: "Health webhooks",
-      healthWebhooksDescription: ({ schedule }: { schedule: string }) => `Gateway health checks deliver the current alerts. The schedule is ${schedule}.`,
+      healthWebhooksDescription: ({ schedule }: { schedule: string }) =>
+        `Gateway health checks deliver the current alerts. The schedule is ${schedule}.`,
       schedule: "Schedule",
       addWebhook: "Add webhook",
       editWebhook: "Edit webhook",
@@ -179,24 +187,39 @@ export const gatewayOpsMessages = i18n.define({
       postgresConnectionPressure: "Postgres connection pressure",
       connectionsInUse: ({ used, total }: { used: string; total: string }) => `${used} of ${total} connections are in use.`,
       queriesWaitingLocks: "Queries waiting on locks",
-      waitingLockDetail: ({ count, duration }: { count: string; duration: string }) => `${count} ${count === "1" ? "connection is" : "connections are"} waiting; the oldest waiting query has run for ${duration}.`,
+      waitingLockDetail: ({ count, duration }: { count: string; duration: string }) =>
+        `${count} ${count === "1" ? "connection is" : "connections are"} waiting; the oldest waiting query has run for ${duration}.`,
       longLivedTransactions: "Long-lived transactions",
-      idleTransactionDetail: ({ count, duration }: { count: string; duration: string }) => `${count} ${count === "1" ? "connection is" : "connections are"} idle in transaction; the oldest has been idle for ${duration}.`,
+      idleTransactionDetail: ({ count, duration }: { count: string; duration: string }) =>
+        `${count} ${count === "1" ? "connection is" : "connections are"} idle in transaction; the oldest has been idle for ${duration}.`,
       largePostgresTables: "Large Postgres tables",
       largeTablesDetail: ({ count }: { count: string }) => `${count} ${count === "1" ? "table exceeds" : "tables exceed"} 100 MB.`,
       missingAnalyzeTimestamps: "Missing analyze timestamps",
-      missingAnalyzeDetail: ({ count }: { count: string }) => `${count} ${count === "1" ? "table with estimated rows has" : "tables with estimated rows have"} no analyze timestamp.`,
+      missingAnalyzeDetail: ({ count }: { count: string }) =>
+        `${count} ${count === "1" ? "table with estimated rows has" : "tables with estimated rows have"} no analyze timestamp.`,
       deadRowPressure: "Dead row pressure",
-      deadRowDetail: ({ count }: { count: string }) => `${count} ${count === "1" ? "table has" : "tables have"} dead rows above 20% of estimated live rows.`,
+      deadRowDetail: ({ count }: { count: string }) =>
+        `${count} ${count === "1" ? "table has" : "tables have"} dead rows above 20% of estimated live rows.`,
       redisKeysWithoutExpiry: "Redis keys without expiry",
-      redisNoExpiryDetail: ({ count, total }: { count: string; total: string }) => `${count} of ${total} keys have no expiry in the INFO keyspace.`,
+      redisNoExpiryDetail: ({ count, total }: { count: string; total: string }) =>
+        `${count} of ${total} keys have no expiry in the INFO keyspace.`,
       dominantRedisPrefix: "Dominant Redis prefix",
       dominantPrefixDetail: ({ prefix, share }: { prefix: string; share: string }) => `${prefix} represents ${share} of the sampled keys.`,
       redisPrefixSampled: "Redis prefix data is sampled",
       sampledKeysDetail: ({ count, total }: { count: string; total: string }) => `${count} of ${total} keys were sampled.`,
       invalidTraceData: "Trace data is not valid JSON.",
       backfillRuns: ({ count }: { count: string }) => `${count} backfill ${count === "1" ? "run" : "runs"}`,
-      sourceRunCounts: ({ jobs, jobCount, schedules, scheduleCount }: { jobs: string; jobCount: number; schedules: string; scheduleCount: number }) => `${jobs} ${jobCount === 1 ? "job" : "jobs"} · ${schedules} ${scheduleCount === 1 ? "schedule" : "schedules"}`,
+      sourceRunCounts: ({
+        jobs,
+        jobCount,
+        schedules,
+        scheduleCount,
+      }: {
+        jobs: string;
+        jobCount: number;
+        schedules: string;
+        scheduleCount: number;
+      }) => `${jobs} ${jobCount === 1 ? "job" : "jobs"} · ${schedules} ${scheduleCount === 1 ? "schedule" : "schedules"}`,
       aiRunsShort: ({ count }: { count: string }) => `${count} AI`,
       customRunsShort: ({ count }: { count: string }) => `${count} custom`,
       serverErrorsOverTime: "Server errors over time",
@@ -228,9 +251,11 @@ export const gatewayOpsMessages = i18n.define({
       loggedErrorsTitle: ({ count }: { count: number }) => `${count} ${count === 1 ? "error" : "errors"} logged`,
       loggedErrorsDetail: "Across retained structured logs in the last 24h",
       needsAttention: "Needs attention",
-      criticalSignalsDetected: ({ critical, unavailable }: { critical: number; unavailable: number }) => `${critical} critical ${critical === 1 ? "signal" : "signals"} detected${unavailable > 0 ? ` · ${unavailable} ${unavailable === 1 ? "source" : "sources"} unavailable` : ""}.`,
+      criticalSignalsDetected: ({ critical, unavailable }: { critical: number; unavailable: number }) =>
+        `${critical} critical ${critical === 1 ? "signal" : "signals"} detected${unavailable > 0 ? ` · ${unavailable} ${unavailable === 1 ? "source" : "sources"} unavailable` : ""}.`,
       visibilityDegraded: "Visibility degraded",
-      unavailableSourcesDescription: ({ count }: { count: number }) => `${count} signal ${count === 1 ? "source" : "sources"} could not be read.`,
+      unavailableSourcesDescription: ({ count }: { count: number }) =>
+        `${count} signal ${count === 1 ? "source" : "sources"} could not be read.`,
       reviewSignals: "Review signals",
       warningSignalsDescription: ({ count }: { count: number }) => `${count} ${count === 1 ? "signal" : "signals"} may need investigation.`,
       noActiveIncidents: "No active incidents",
@@ -372,7 +397,8 @@ export const gatewayOpsMessages = i18n.define({
       keysSampled: ({ count, total }: { count: string; total: string }) => `${count} of ${total} keys sampled.`,
       filterSampledKeys: "Filter sampled keys by prefix",
       prefixes: "Prefixes",
-      prefixesAtDepth: ({ count, depth }: { count: string; depth: number }) => `${count} prefixes at depth ${depth}. Prefix counts come from a bounded SCAN sample.`,
+      prefixesAtDepth: ({ count, depth }: { count: string; depth: number }) =>
+        `${count} prefixes at depth ${depth}. Prefix counts come from a bounded SCAN sample.`,
       searchRedisPrefixes: "Search Redis prefixes…",
       searchRedisPrefixesLabel: "Search Redis prefixes",
       depth: "Depth",
@@ -418,7 +444,8 @@ export const gatewayOpsMessages = i18n.define({
       installedAvailable: "installed / available",
       needsReview: "needs review",
       storageView: "Storage view",
-      storageViewDescription: ({ count, total }: { count: string; total: string }) => `Search and schema update charts and table; sorting orders the table. ${count} of ${total} tables match.`,
+      storageViewDescription: ({ count, total }: { count: string; total: string }) =>
+        `Search and schema update charts and table; sorting orders the table. ${count} of ${total} tables match.`,
       searchPostgresTables: "Search tables or table signals…",
       searchPostgresTablesLabel: "Search Postgres tables",
       sizeBySchema: "Size by schema",
@@ -431,18 +458,21 @@ export const gatewayOpsMessages = i18n.define({
       plannerRowsDescription: "Planner row estimates within the current table filters.",
       sessions: "Sessions",
       noClientBackendsReported: "No client backends reported",
-      sessionSummary: ({ total, blocked, unnamed }: { total: number; blocked: number; unnamed: number }) => `${total} client backends · ${blocked} blocked · ${unnamed} unnamed`,
+      sessionSummary: ({ total, blocked, unnamed }: { total: number; blocked: number; unnamed: number }) =>
+        `${total} client backends · ${blocked} blocked · ${unnamed} unnamed`,
       noClientBackends: "No client backends are connected.",
       blockedBy: ({ pids }: { pids: string }) => `blocked by ${pids}`,
       unnamed: "unnamed",
       unnamedConnection: "Connection does not report an application_name",
-      indexesSummary: ({ count, size }: { count: number; size: string }) => `Largest ${count} by size · ${size} in indexes not scanned since the last statistics reset`,
+      indexesSummary: ({ count, size }: { count: number; size: string }) =>
+        `Largest ${count} by size · ${size} in indexes not scanned since the last statistics reset`,
       noUserIndexes: "No user indexes reported.",
       primary: "primary",
       unique: "unique",
       matchingTables: ({ count }: { count: string }) => `${count} matching tables. Row counts are planner estimates.`,
       noMatchingTables: "No matching tables.",
-      extensionSummary: ({ installed, available }: { installed: string; available: string }) => `${installed} installed, ${available} available.`,
+      extensionSummary: ({ installed, available }: { installed: string; available: string }) =>
+        `${installed} installed, ${available} available.`,
       noMatchingExtensions: "No matching extensions.",
       available: "available",
       schema: "Schema",
@@ -465,7 +495,8 @@ export const gatewayOpsMessages = i18n.define({
       openAbandoned: "open, abandoned",
       average: ({ value }: { value: string }) => `avg ${value}`,
       averageExcluded: ({ average, count }: { average: string; count: string }) => `avg ${average} · ${count} excluded`,
-      anomalousRunsExcluded: ({ count }: { count: string }) => `${count} runs lasted longer than the abandonment threshold and are excluded from these percentiles.`,
+      anomalousRunsExcluded: ({ count }: { count: string }) =>
+        `${count} runs lasted longer than the abandonment threshold and are excluded from these percentiles.`,
       scheduleSource: "Schedule / Source",
       control: "Control",
       handler: "handler",
@@ -485,11 +516,13 @@ export const gatewayOpsMessages = i18n.define({
       requestManualRun: "Request a manual scheduler run.",
       runNow: "Run now",
       schedulesAndFamilies: "Schedules and job families",
-      schedulesAndFamiliesDescription: "Schedules come from sync schedulerControl. Runtime statistics remain SQL-based and are joined by source.",
+      schedulesAndFamiliesDescription:
+        "Schedules come from sync schedulerControl. Runtime statistics remain SQL-based and are joined by source.",
       noJobSources: "No background job schedules or sources match the current filters",
       expectedAt: ({ time }: { time: string }) => `Expected at ${time}`,
       overdue: ({ duration }: { duration: string }) => `overdue ${duration}`,
-      runsCountAndDuration: ({ count, total, duration }: { count: string; total: string; duration: string }) => `${count} of ${total} runs. Duration filter: ${duration}.`,
+      runsCountAndDuration: ({ count, total, duration }: { count: string; total: string; duration: string }) =>
+        `${count} of ${total} runs. Duration filter: ${duration}.`,
       noMatchingRuns: "No runs match the current filters",
       scheduleRunRequestFailed: "Schedule run could not be requested.",
       schedulerUnavailable: ({ error }: { error: string }) => `Scheduler control is unavailable: ${error}`,
@@ -497,8 +530,10 @@ export const gatewayOpsMessages = i18n.define({
       sourceRunsDescription: ({ window }: { window: string }) => `Runs for this source in the last ${window}.`,
       jobsDescription: "Grouped trace-backed sync jobs, schedules, and manual background work.",
       runTimeline: "Run timeline",
-      runTimelineDescription: "One lane per job, busiest first. Marks show when a run started; their minimum width improves readability and does not show duration. Drag to pan. Use Ctrl/⌘ and the mouse wheel, or the controls, to zoom.",
-      timelineSample: ({ count, total }: { count: string; total: string }) => `Showing the latest ${count} of ${total} matching runs. The timeline reflects this loaded sample.`,
+      runTimelineDescription:
+        "One lane per job, busiest first. Marks show when a run started; their minimum width improves readability and does not show duration. Drag to pan. Use Ctrl/⌘ and the mouse wheel, or the controls, to zoom.",
+      timelineSample: ({ count, total }: { count: string; total: string }) =>
+        `Showing the latest ${count} of ${total} matching runs. The timeline reflects this loaded sample.`,
       noRunsWindow: "No runs recorded in this window.",
       allStates: "All states",
       allTypes: "All types",
@@ -587,7 +622,8 @@ export const gatewayOpsMessages = i18n.define({
       searchRegistryLabel: "Search notification registry",
       resend: "Resend",
       send: "Send",
-      sendNotificationConfirm: ({ resend, recipient }: { resend: boolean; recipient: string }) => `This will ${resend ? "resend" : "send"} the notification to “${recipient}”.`,
+      sendNotificationConfirm: ({ resend, recipient }: { resend: boolean; recipient: string }) =>
+        `This will ${resend ? "resend" : "send"} the notification to “${recipient}”.`,
       sendNotificationTitle: "Send notification?",
       resendNotificationTitle: "Resend notification?",
       editNotification: "Edit notification",
@@ -604,8 +640,10 @@ export const gatewayOpsMessages = i18n.define({
       notificationUpdated: "Notification updated",
       sendNotificationsFailed: "Failed to send notifications.",
       sentNotifications: ({ count }: { count: number }) => `Sent ${count} ${count === 1 ? "notification" : "notifications"}`,
-      sendResults: ({ sent, failed, errors }: { sent: number; failed: number; errors: string }) => `Sent: ${sent}, Failed: ${failed}\n\nErrors:\n${errors}`,
-      sendPendingConfirm: ({ count }: { count: number }) => `This will send ${count} pending system ${count === 1 ? "notification" : "notifications"} (welcome emails, etc.).\n\nThis action cannot be undone.`,
+      sendResults: ({ sent, failed, errors }: { sent: number; failed: number; errors: string }) =>
+        `Sent: ${sent}, Failed: ${failed}\n\nErrors:\n${errors}`,
+      sendPendingConfirm: ({ count }: { count: number }) =>
+        `This will send ${count} pending system ${count === 1 ? "notification" : "notifications"} (welcome emails, etc.).\n\nThis action cannot be undone.`,
       sendAllPendingTitle: "Send all pending system notifications?",
       sendNotificationCount: ({ count }: { count: number }) => `Send ${count} ${count === 1 ? "notification" : "notifications"}`,
       sendPendingCount: ({ count }: { count: number | null }) => `Send ${count ?? 0} pending`,
@@ -621,7 +659,8 @@ export const gatewayOpsMessages = i18n.define({
       causeToFirstAttempt: "cause to first attempt",
       openFindings: "Open findings",
       findingsSummary: ({ effects, events }: { effects: string; events: string }) => `${effects} effects · ${events} events`,
-      effectsRequireEvidence: ({ count }: { count: string }) => `${count} external ${count === "1" ? "effect requires" : "effects require"} evidence`,
+      effectsRequireEvidence: ({ count }: { count: string }) =>
+        `${count} external ${count === "1" ? "effect requires" : "effects require"} evidence`,
       effectReplayWarning: "A replay will not repeat an unsettled effect.",
       reviewEffectsQueue: "Review the effects queue",
       eventsWithoutRun: ({ count }: { count: string }) => `${count} ${count === "1" ? "event did" : "events did"} not become a run`,
@@ -642,7 +681,8 @@ export const gatewayOpsMessages = i18n.define({
       workflowsDescription: "Cross-app workflow health, runtime history, and operator findings.",
       backToWorkflows: "Back to all workflows",
       workflowView: "Workflow observability view",
-      workflowTimelineDescription: "One lane per workflow, busiest first. Completed runs use their execution time; queued and active runs extend to now. Drag to pan. Use Ctrl/⌘ and the mouse wheel, or the controls, to zoom.",
+      workflowTimelineDescription:
+        "One lane per workflow, busiest first. Completed runs use their execution time; queued and active runs extend to now. Drag to pan. Use Ctrl/⌘ and the mouse wheel, or the controls, to zoom.",
       noWorkflowRunsWindow: "No workflow runs recorded in this window.",
       workflowRunNotFound: "Workflow run not found",
       workflowNotFound: "Workflow not found",
@@ -718,7 +758,8 @@ export const gatewayOpsMessages = i18n.define({
       stepJournal: "Step journal",
       pinnedDefinition: "Pinned definition",
       needsOperatorDecision: ({ name }: { name: string }) => `${name} needs an operator decision`,
-      operatorDecisionDetail: "Check the external provider before resolving this effect. Marking success resumes the pinned plan without repeating it; marking failure ends the run.",
+      operatorDecisionDetail:
+        "Check the external provider before resolving this effect. Marking success resumes the pinned plan without repeating it; marking failure ends the run.",
       runCanRetry: "The run can retry.",
       runWillNotRetry: "The run will not retry.",
       executionSteps: "Execution steps",
@@ -762,6 +803,12 @@ export const gatewayOpsMessages = i18n.define({
       sourcesShort: "src",
     },
     de: {
+      apiInvalidRequest: "Die Gateway-Anfrage ist ungültig",
+      apiAccessDenied: "Du hast keine Berechtigung für diesen Gateway-Vorgang",
+      apiResourceNotFound: "Die angeforderte Gateway-Ressource wurde nicht gefunden",
+      apiConflict: "Die Gateway-Änderung steht im Konflikt mit dem aktuellen Stand",
+      apiOperationFailed: "Der Gateway-Vorgang ist fehlgeschlagen",
+      settingUpdated: "Einstellung aktualisiert",
       actions: "Aktionen",
       all: "Alle",
       app: "App",
@@ -834,7 +881,8 @@ export const gatewayOpsMessages = i18n.define({
       noMatchingRoutes: ({ query }) => `Keine Routen entsprechen „${query}“`,
       removeOfflineApp: "Offline-App entfernen",
       onlyOfflineAppsRemovable: "Nur Offline-Apps können entfernt werden",
-      removeAppConfirm: ({ name }) => `„${name}“ aus der Liste der registrierten Apps entfernen? Wenn die App wieder startet und Heartbeats sendet, erscheint sie erneut.`,
+      removeAppConfirm: ({ name }) =>
+        `„${name}“ aus der Liste der registrierten Apps entfernen? Wenn die App wieder startet und Heartbeats sendet, erscheint sie erneut.`,
       remove: "Entfernen",
       removeAppFailed: "App konnte nicht entfernt werden",
       unexpectedRemoveResponse: "Beim Entfernen der App wurde eine unerwartete Antwort empfangen.",
@@ -852,7 +900,8 @@ export const gatewayOpsMessages = i18n.define({
       test: "Testen",
       webhook: "Webhook",
       healthWebhooks: "Health-Webhooks",
-      healthWebhooksDescription: ({ schedule }) => `Gateway-Zustandsprüfungen versenden die aktuellen Warnungen. Der Zeitplan lautet ${schedule}.`,
+      healthWebhooksDescription: ({ schedule }) =>
+        `Gateway-Zustandsprüfungen versenden die aktuellen Warnungen. Der Zeitplan lautet ${schedule}.`,
       schedule: "Zeitplan",
       addWebhook: "Webhook hinzufügen",
       editWebhook: "Webhook bearbeiten",
@@ -938,15 +987,19 @@ export const gatewayOpsMessages = i18n.define({
       postgresConnectionPressure: "Hohe Postgres-Verbindungsauslastung",
       connectionsInUse: ({ used, total }) => `${used} von ${total} Verbindungen werden verwendet.`,
       queriesWaitingLocks: "Abfragen warten auf Sperren",
-      waitingLockDetail: ({ count, duration }) => `${count} ${count === "1" ? "Verbindung wartet" : "Verbindungen warten"}; die älteste wartende Abfrage läuft seit ${duration}.`,
+      waitingLockDetail: ({ count, duration }) =>
+        `${count} ${count === "1" ? "Verbindung wartet" : "Verbindungen warten"}; die älteste wartende Abfrage läuft seit ${duration}.`,
       longLivedTransactions: "Langlebige Transaktionen",
-      idleTransactionDetail: ({ count, duration }) => `${count} ${count === "1" ? "Verbindung ist" : "Verbindungen sind"} in einer inaktiven Transaktion; die älteste seit ${duration}.`,
+      idleTransactionDetail: ({ count, duration }) =>
+        `${count} ${count === "1" ? "Verbindung ist" : "Verbindungen sind"} in einer inaktiven Transaktion; die älteste seit ${duration}.`,
       largePostgresTables: "Große Postgres-Tabellen",
       largeTablesDetail: ({ count }) => `${count} ${count === "1" ? "Tabelle überschreitet" : "Tabellen überschreiten"} 100 MB.`,
       missingAnalyzeTimestamps: "Fehlende Analysezeitpunkte",
-      missingAnalyzeDetail: ({ count }) => `${count} ${count === "1" ? "Tabelle mit geschätzten Zeilen hat" : "Tabellen mit geschätzten Zeilen haben"} keinen Analysezeitpunkt.`,
+      missingAnalyzeDetail: ({ count }) =>
+        `${count} ${count === "1" ? "Tabelle mit geschätzten Zeilen hat" : "Tabellen mit geschätzten Zeilen haben"} keinen Analysezeitpunkt.`,
       deadRowPressure: "Hoher Anteil veralteter Zeilen",
-      deadRowDetail: ({ count }) => `${count} ${count === "1" ? "Tabelle hat" : "Tabellen haben"} mehr als 20 % veraltete Zeilen im Verhältnis zu den geschätzten aktiven Zeilen.`,
+      deadRowDetail: ({ count }) =>
+        `${count} ${count === "1" ? "Tabelle hat" : "Tabellen haben"} mehr als 20 % veraltete Zeilen im Verhältnis zu den geschätzten aktiven Zeilen.`,
       redisKeysWithoutExpiry: "Redis-Schlüssel ohne Ablaufzeit",
       redisNoExpiryDetail: ({ count, total }) => `${count} von ${total} Schlüsseln im INFO-Keyspace haben keine Ablaufzeit.`,
       dominantRedisPrefix: "Dominantes Redis-Präfix",
@@ -955,7 +1008,8 @@ export const gatewayOpsMessages = i18n.define({
       sampledKeysDetail: ({ count, total }) => `${count} von ${total} Schlüsseln wurden geprüft.`,
       invalidTraceData: "Die Trace-Daten enthalten kein gültiges JSON.",
       backfillRuns: ({ count }) => `${count} Backfill-${count === "1" ? "Lauf" : "Läufe"}`,
-      sourceRunCounts: ({ jobs, jobCount, schedules, scheduleCount }) => `${jobs} ${jobCount === 1 ? "Job" : "Jobs"} · ${schedules} ${scheduleCount === 1 ? "Zeitplan" : "Zeitpläne"}`,
+      sourceRunCounts: ({ jobs, jobCount, schedules, scheduleCount }) =>
+        `${jobs} ${jobCount === 1 ? "Job" : "Jobs"} · ${schedules} ${scheduleCount === 1 ? "Zeitplan" : "Zeitpläne"}`,
       aiRunsShort: ({ count }) => `${count} KI`,
       customRunsShort: ({ count }) => `${count} benutzerdefiniert`,
       serverErrorsOverTime: "Serverfehler im Zeitverlauf",
@@ -987,11 +1041,14 @@ export const gatewayOpsMessages = i18n.define({
       loggedErrorsTitle: ({ count }) => `${count} protokollierte ${count === 1 ? "Fehlermeldung" : "Fehlermeldungen"}`,
       loggedErrorsDetail: "In den aufbewahrten strukturierten Protokollen der letzten 24 Stunden",
       needsAttention: "Eingriff erforderlich",
-      criticalSignalsDetected: ({ critical, unavailable }) => `${critical} kritische ${critical === 1 ? "Meldung erkannt" : "Meldungen erkannt"}${unavailable > 0 ? ` · ${unavailable} ${unavailable === 1 ? "Quelle" : "Quellen"} nicht verfügbar` : ""}.`,
+      criticalSignalsDetected: ({ critical, unavailable }) =>
+        `${critical} kritische ${critical === 1 ? "Meldung erkannt" : "Meldungen erkannt"}${unavailable > 0 ? ` · ${unavailable} ${unavailable === 1 ? "Quelle" : "Quellen"} nicht verfügbar` : ""}.`,
       visibilityDegraded: "Eingeschränkte Sichtbarkeit",
-      unavailableSourcesDescription: ({ count }) => `${count} ${count === 1 ? "Signalquelle konnte" : "Signalquellen konnten"} nicht gelesen werden.`,
+      unavailableSourcesDescription: ({ count }) =>
+        `${count} ${count === 1 ? "Signalquelle konnte" : "Signalquellen konnten"} nicht gelesen werden.`,
       reviewSignals: "Meldungen prüfen",
-      warningSignalsDescription: ({ count }) => `${count} ${count === 1 ? "Meldung muss" : "Meldungen müssen"} möglicherweise untersucht werden.`,
+      warningSignalsDescription: ({ count }) =>
+        `${count} ${count === 1 ? "Meldung muss" : "Meldungen müssen"} möglicherweise untersucht werden.`,
       noActiveIncidents: "Keine aktiven Störungen",
       noActiveIncidentsDescription: "Die Apps sind online. Es sind keine kritischen Datenverkehrs- oder Hintergrundsignale aktiv.",
       metrics: "Metriken",
@@ -1014,7 +1071,8 @@ export const gatewayOpsMessages = i18n.define({
       bearerTokens: "Bearer-Token",
       bearerTokensDescription: "Ressourcengebundene Dienstkonto-Token mit dem Scope metrics:read.",
       newToken: "Neues Token",
-      storeTokenNow: "Dieses Bearer-Token jetzt sicher speichern. Es wird nur einmal angezeigt und kann später nicht wiederhergestellt werden.",
+      storeTokenNow:
+        "Dieses Bearer-Token jetzt sicher speichern. Es wird nur einmal angezeigt und kann später nicht wiederhergestellt werden.",
       copyToken: "Token kopieren",
       createMetricsTokenFailed: "Metrik-Token konnte nicht erstellt werden.",
       metricsTokenCreated: "Metrik-Token erstellt",
@@ -1049,7 +1107,8 @@ export const gatewayOpsMessages = i18n.define({
       retained: "Aufbewahrt",
       autoPruneDays: ({ days }) => `${days} Tage automatische Bereinigung`,
       volumeOverTime: "Volumen im Zeitverlauf",
-      volumeOverTimeDescription: "Protokollstufen im gewählten Zeitraum und mit den aktuellen Filtern. Exakte Werte erscheinen beim Darüberfahren oder Fokussieren.",
+      volumeOverTimeDescription:
+        "Protokollstufen im gewählten Zeitraum und mit den aktuellen Filtern. Exakte Werte erscheinen beim Darüberfahren oder Fokussieren.",
       debug: "Debug",
       info: "Info",
       warn: "Warnung",
@@ -1092,7 +1151,8 @@ export const gatewayOpsMessages = i18n.define({
       clientErrors: "Clientfehler",
       rateLimited: "Begrenzt",
       traffic: "Datenverkehr",
-      trafficDescription: "Anfragen und fehlgeschlagene Antworten im gewählten Zeitraum. Exakte Werte erscheinen beim Darüberfahren oder Fokussieren.",
+      trafficDescription:
+        "Anfragen und fehlgeschlagene Antworten im gewählten Zeitraum. Exakte Werte erscheinen beim Darüberfahren oder Fokussieren.",
       requestAvailability: "Verfügbarkeit der Anfragen",
       requestAvailabilityDescription: "HTTP-5xx- und Gateway-Fehler belasten das Verfügbarkeitsziel von 99,9 %.",
       noTraffic: "Kein Datenverkehr",
@@ -1131,7 +1191,8 @@ export const gatewayOpsMessages = i18n.define({
       keysSampled: ({ count, total }) => `${count} von ${total} Schlüsseln als Stichprobe erfasst.`,
       filterSampledKeys: "Stichprobe nach Präfix filtern",
       prefixes: "Präfixe",
-      prefixesAtDepth: ({ count, depth }) => `${count} Präfixe in Tiefe ${depth}. Die Anzahlen stammen aus einer begrenzten SCAN-Stichprobe.`,
+      prefixesAtDepth: ({ count, depth }) =>
+        `${count} Präfixe in Tiefe ${depth}. Die Anzahlen stammen aus einer begrenzten SCAN-Stichprobe.`,
       searchRedisPrefixes: "Redis-Präfixe durchsuchen…",
       searchRedisPrefixesLabel: "Redis-Präfixe durchsuchen",
       depth: "Tiefe",
@@ -1177,7 +1238,8 @@ export const gatewayOpsMessages = i18n.define({
       installedAvailable: "installiert / verfügbar",
       needsReview: "Prüfung erforderlich",
       storageView: "Speicherübersicht",
-      storageViewDescription: ({ count, total }) => `Suche und Schemafilter aktualisieren Diagramme und Tabelle; die Sortierung ordnet die Tabelle. ${count} von ${total} Tabellen passen.`,
+      storageViewDescription: ({ count, total }) =>
+        `Suche und Schemafilter aktualisieren Diagramme und Tabelle; die Sortierung ordnet die Tabelle. ${count} von ${total} Tabellen passen.`,
       searchPostgresTables: "Tabellen oder Tabellensignale durchsuchen…",
       searchPostgresTablesLabel: "Postgres-Tabellen durchsuchen",
       sizeBySchema: "Größe nach Schema",
@@ -1195,7 +1257,8 @@ export const gatewayOpsMessages = i18n.define({
       blockedBy: ({ pids }) => `blockiert durch ${pids}`,
       unnamed: "unbenannt",
       unnamedConnection: "Verbindung meldet keinen application_name",
-      indexesSummary: ({ count, size }) => `${count} größte nach Speicher · ${size} in Indizes ohne Scan seit der letzten Statistikzurücksetzung`,
+      indexesSummary: ({ count, size }) =>
+        `${count} größte nach Speicher · ${size} in Indizes ohne Scan seit der letzten Statistikzurücksetzung`,
       noUserIndexes: "Keine benutzerdefinierten Indizes gemeldet.",
       primary: "primär",
       unique: "eindeutig",
@@ -1224,7 +1287,8 @@ export const gatewayOpsMessages = i18n.define({
       openAbandoned: "offen, abgebrochen",
       average: ({ value }) => `Durchschn. ${value}`,
       averageExcluded: ({ average, count }) => `Durchschn. ${average} · ${count} ausgeschlossen`,
-      anomalousRunsExcluded: ({ count }) => `${count} Läufe dauerten länger als der Grenzwert für abgebrochene Läufe und werden in diesen Perzentilen nicht berücksichtigt.`,
+      anomalousRunsExcluded: ({ count }) =>
+        `${count} Läufe dauerten länger als der Grenzwert für abgebrochene Läufe und werden in diesen Perzentilen nicht berücksichtigt.`,
       scheduleSource: "Zeitplan / Quelle",
       control: "Steuerung",
       handler: "Handler",
@@ -1244,7 +1308,8 @@ export const gatewayOpsMessages = i18n.define({
       requestManualRun: "Manuellen Scheduler-Lauf anfordern.",
       runNow: "Jetzt ausführen",
       schedulesAndFamilies: "Zeitpläne und Jobfamilien",
-      schedulesAndFamiliesDescription: "Zeitpläne stammen aus sync schedulerControl. Laufzeitstatistiken bleiben SQL-basiert und werden über die Quelle zugeordnet.",
+      schedulesAndFamiliesDescription:
+        "Zeitpläne stammen aus sync schedulerControl. Laufzeitstatistiken bleiben SQL-basiert und werden über die Quelle zugeordnet.",
       noJobSources: "Keine Zeitpläne oder Quellen für Hintergrundjobs entsprechen den aktuellen Filtern",
       expectedAt: ({ time }) => `Erwartet um ${time}`,
       overdue: ({ duration }) => `seit ${duration} überfällig`,
@@ -1256,8 +1321,10 @@ export const gatewayOpsMessages = i18n.define({
       sourceRunsDescription: ({ window }) => `Läufe dieser Quelle in den letzten ${window}.`,
       jobsDescription: "Gruppierte Trace-basierte Sync-Jobs, Zeitpläne und manuelle Hintergrundarbeit.",
       runTimeline: "Läufe im Zeitverlauf",
-      runTimelineDescription: "Eine Spur pro Job, die aktivsten zuerst. Markierungen zeigen den Start eines Laufs; ihre Mindestbreite verbessert nur die Lesbarkeit und stellt keine Dauer dar. Zum Verschieben ziehen. Mit Strg/⌘ und Mausrad oder den Steuerelementen zoomen.",
-      timelineSample: ({ count, total }) => `Die neuesten ${count} von ${total} passenden Läufen werden angezeigt. Der Zeitverlauf basiert auf dieser geladenen Stichprobe.`,
+      runTimelineDescription:
+        "Eine Spur pro Job, die aktivsten zuerst. Markierungen zeigen den Start eines Laufs; ihre Mindestbreite verbessert nur die Lesbarkeit und stellt keine Dauer dar. Zum Verschieben ziehen. Mit Strg/⌘ und Mausrad oder den Steuerelementen zoomen.",
+      timelineSample: ({ count, total }) =>
+        `Die neuesten ${count} von ${total} passenden Läufen werden angezeigt. Der Zeitverlauf basiert auf dieser geladenen Stichprobe.`,
       noRunsWindow: "In diesem Zeitraum wurden keine Läufe erfasst.",
       allStates: "Alle Zustände",
       allTypes: "Alle Typen",
@@ -1364,7 +1431,8 @@ export const gatewayOpsMessages = i18n.define({
       sendNotificationsFailed: "Benachrichtigungen konnten nicht gesendet werden.",
       sentNotifications: ({ count }) => `${count} ${count === 1 ? "Benachrichtigung gesendet" : "Benachrichtigungen gesendet"}`,
       sendResults: ({ sent, failed, errors }) => `Gesendet: ${sent}, fehlgeschlagen: ${failed}\n\nFehler:\n${errors}`,
-      sendPendingConfirm: ({ count }) => `${count} ausstehende ${count === 1 ? "Systembenachrichtigung wird" : "Systembenachrichtigungen werden"} gesendet (Willkommens-E-Mails usw.).\n\nDiese Aktion kann nicht rückgängig gemacht werden.`,
+      sendPendingConfirm: ({ count }) =>
+        `${count} ausstehende ${count === 1 ? "Systembenachrichtigung wird" : "Systembenachrichtigungen werden"} gesendet (Willkommens-E-Mails usw.).\n\nDiese Aktion kann nicht rückgängig gemacht werden.`,
       sendAllPendingTitle: "Alle ausstehenden Systembenachrichtigungen senden?",
       sendNotificationCount: ({ count }) => `${count} ${count === 1 ? "Benachrichtigung" : "Benachrichtigungen"} senden`,
       sendPendingCount: ({ count }) => `${count ?? 0} ausstehende senden`,
@@ -1380,7 +1448,8 @@ export const gatewayOpsMessages = i18n.define({
       causeToFirstAttempt: "Auslöser bis erster Versuch",
       openFindings: "Offene Befunde",
       findingsSummary: ({ effects, events }) => `${effects} Effekte · ${events} Ereignisse`,
-      effectsRequireEvidence: ({ count }) => `${count} externe ${count === "1" ? "Auswirkung erfordert" : "Auswirkungen erfordern"} einen Nachweis`,
+      effectsRequireEvidence: ({ count }) =>
+        `${count} externe ${count === "1" ? "Auswirkung erfordert" : "Auswirkungen erfordern"} einen Nachweis`,
       effectReplayWarning: "Eine Wiederholung führt eine ungeklärte Auswirkung nicht erneut aus.",
       reviewEffectsQueue: "Auswirkungswarteschlange prüfen",
       eventsWithoutRun: ({ count }) => `${count} ${count === "1" ? "Ereignis wurde" : "Ereignisse wurden"} nicht zu einem Lauf`,
@@ -1401,7 +1470,8 @@ export const gatewayOpsMessages = i18n.define({
       workflowsDescription: "App-übergreifender Workflow-Zustand, Laufzeitverlauf und Befunde für die Administration.",
       backToWorkflows: "Zurück zu allen Workflows",
       workflowView: "Ansicht der Workflow-Überwachung",
-      workflowTimelineDescription: "Eine Spur pro Workflow, die aktivsten zuerst. Abgeschlossene Läufe zeigen ihre Ausführungszeit; wartende und aktive Läufe reichen bis jetzt. Zum Verschieben ziehen. Mit Strg/⌘ und Mausrad oder den Steuerelementen zoomen.",
+      workflowTimelineDescription:
+        "Eine Spur pro Workflow, die aktivsten zuerst. Abgeschlossene Läufe zeigen ihre Ausführungszeit; wartende und aktive Läufe reichen bis jetzt. Zum Verschieben ziehen. Mit Strg/⌘ und Mausrad oder den Steuerelementen zoomen.",
       noWorkflowRunsWindow: "In diesem Zeitraum wurden keine Workflow-Läufe erfasst.",
       workflowRunNotFound: "Workflow-Lauf nicht gefunden",
       workflowNotFound: "Workflow nicht gefunden",
@@ -1485,7 +1555,8 @@ export const gatewayOpsMessages = i18n.define({
       revision: ({ revision }) => `Revision ${revision}`,
       backToView: ({ view }) => `Zurück zu ${view}`,
       cancelRunQuestion: "Workflow-Lauf abbrechen?",
-      cancelRunWarning: "Abgeschlossene externe Auswirkungen können nicht rückgängig gemacht werden. Laufende Arbeit endet kooperativ beim nächsten Heartbeat.",
+      cancelRunWarning:
+        "Abgeschlossene externe Auswirkungen können nicht rückgängig gemacht werden. Laufende Arbeit endet kooperativ beim nächsten Heartbeat.",
       cancelRun: "Lauf abbrechen",
       cancelRunFailed: "Workflow-Lauf konnte nicht abgebrochen werden.",
       runCanceled: "Workflow-Lauf abgebrochen",
@@ -1524,3 +1595,14 @@ export const gatewayOpsMessages = i18n.define({
 });
 
 export type GatewayOpsMessages = ReturnType<typeof gatewayOpsMessages.resolve>["t"];
+
+export const gatewayOpsApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string): string => {
+  const resolved = gatewayOpsMessages.resolve(locale ? [locale] : []);
+  if (resolved.locale === "en" && baseMessage) return baseMessage;
+  const { t } = resolved;
+  if (status === 401 || status === 403) return t.apiAccessDenied;
+  if (status === 404) return t.apiResourceNotFound;
+  if (status === 409) return t.apiConflict;
+  if (status >= 500) return t.apiOperationFailed;
+  return t.apiInvalidRequest;
+};

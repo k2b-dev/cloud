@@ -23,6 +23,13 @@ export type SpaceActivityPage = { items: SpaceActivityEvent[]; nextCursor: strin
 
 type Cursor = { version: 1; lastOccurredAt: string; id: string };
 
+export class InvalidActivityCursorError extends Error {
+  constructor() {
+    super("Invalid activity cursor");
+    this.name = "InvalidActivityCursorError";
+  }
+}
+
 type ActivityRow = {
   id: string | number;
   space_id: string;
@@ -59,7 +66,7 @@ export const decodeActivityCursor = (value?: string): Cursor | null => {
       throw new Error();
     return parsed as Cursor;
   } catch {
-    throw new Error("Invalid activity cursor");
+    throw new InvalidActivityCursorError();
   }
 };
 

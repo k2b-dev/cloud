@@ -1,6 +1,6 @@
 import type { Result } from "@k2b/stdlib";
 import type { PermissionLevel } from "@valentinkolb/cloud/server";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
 import { accounts, logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
@@ -19,6 +19,7 @@ import type { MailRequestContext } from "./service/auth";
 import * as collaboration from "./service/collaboration";
 import { latestMailInvalidationCursor, liveMailInvalidations } from "./service/events";
 import { resolvePublicId } from "./service/public-resources";
+import { type MailWsMessages, mailWsMessages } from "./ws-messages";
 
 const log = logger("mail:websocket");
 const ACCESS_REFRESH_INTERVAL_MS = 8_000;
@@ -31,6 +32,8 @@ type WsContext = {
   socket: ServerWebSocket<unknown>;
   sessionToken: string | null;
   requestId: string | null;
+  locale: string;
+  messages: MailWsMessages;
   phase: WsPhase;
   mailboxId: string | null;
   internalMailboxId: string | null;
@@ -64,17 +67,18 @@ const accessDependencies: MailLiveAccessDependencies = {
 };
 
 export const evaluateMailLiveAccess = async (
-  input: { sessionToken: string | null; requestId: string | null; mailboxId: string },
+  input: { sessionToken: string | null; requestId: string | null; mailboxId: string; locale?: string | null },
   dependencies: MailLiveAccessDependencies = accessDependencies,
 ): Promise<MailLiveAccessResult> => {
   const context = await dependencies.resolveContext(input.sessionToken, input.requestId);
-  if (!context) return { ok: false, code: "login_required", message: "Login required" };
+  const messages = mailWsMessages(input.locale);
+  if (!context) return { ok: false, code: "login_required", message: messages.loginRequired };
   const allowed = await dependencies.requireRead(context, input.mailboxId);
   if (allowed.ok) return { ok: true };
   return {
     ok: false,
     code: allowed.error.status === 404 ? "not_found" : "access_denied",
-    message: allowed.error.message,
+    message: allowed.error.status === 404 ? messages.mailboxNotFound : messages.accessDenied,
   };
 };
 
@@ -91,10 +95,17 @@ export const parseMailLiveReplayEvent = (mailboxId: string, event: { cursor: str
   return { cursor: cursor.data, event: payload.data };
 };
 
-const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, requestId: string | null): WsContext => ({
+const createContext = (
+  socket: ServerWebSocket<unknown>,
+  sessionToken: string | null,
+  requestId: string | null,
+  locale: string,
+): WsContext => ({
   socket,
   sessionToken,
   requestId,
+  locale,
+  messages: mailWsMessages(locale),
   phase: "open",
   mailboxId: null,
   internalMailboxId: null,
@@ -150,7 +161,7 @@ const revoke = (ctx: WsContext, mailboxId: string, access: Exclude<MailLiveAcces
 };
 
 const currentAccess = (ctx: WsContext, internalMailboxId: string) =>
-  evaluateMailLiveAccess({ sessionToken: ctx.sessionToken, requestId: ctx.requestId, mailboxId: internalMailboxId });
+  evaluateMailLiveAccess({ sessionToken: ctx.sessionToken, requestId: ctx.requestId, mailboxId: internalMailboxId, locale: ctx.locale });
 
 const subscriptionIsCurrent = (ctx: WsContext, mailboxId: string, internalMailboxId: string, abort: AbortController): boolean =>
   !abort.signal.aborted && ctx.phase === "subscribed" && ctx.mailboxId === mailboxId && ctx.internalMailboxId === internalMailboxId;
@@ -173,7 +184,7 @@ const startAccessRefresh = (ctx: WsContext, mailboxId: string, internalMailboxId
         mailboxId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "internal_error", "Mail access refresh failed", 1011);
+      closeWithError(ctx, "internal_error", ctx.messages.accessRefreshFailed, 1011);
     }
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
@@ -196,11 +207,11 @@ const deliverReplayEvent = async (
   const replay = parseMailLiveReplayEvent(mailboxId, event);
   if (!replay) {
     log.error("Mail WebSocket received an invalid replay event", { mailboxId, cursor: event.cursor });
-    closeWithError(ctx, "internal_error", "Mail event stream contains invalid data", 1011);
+    closeWithError(ctx, "internal_error", ctx.messages.invalidStreamData, 1011);
     return false;
   }
   if (send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.event, payload: { mailboxId, ...replay } })) return true;
-  closeWithError(ctx, "backpressure", "Mail updates exceeded the connection capacity", 1013);
+  closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
   return false;
 };
 
@@ -216,7 +227,7 @@ const startStream = (ctx: WsContext, mailboxId: string, internalMailboxId: strin
       }
       if (subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) {
         log.warn("Mail WebSocket event stream ended unexpectedly", { mailboxId });
-        closeWithError(ctx, "stream_failed", "Mail event stream ended", 1012);
+        closeWithError(ctx, "stream_failed", ctx.messages.streamEnded, 1012);
       }
     } catch (error) {
       if (abort.signal.aborted || isClosing(ctx)) return;
@@ -224,7 +235,7 @@ const startStream = (ctx: WsContext, mailboxId: string, internalMailboxId: strin
         mailboxId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "stream_failed", "Mail event stream failed", 1012);
+      closeWithError(ctx, "stream_failed", ctx.messages.streamFailed, 1012);
     } finally {
       if (ctx.streamAbort === abort) ctx.streamAbort = null;
     }
@@ -236,7 +247,7 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
   const internalMailboxId = await resolvePublicId("mailboxes", mailboxId);
   if (!internalMailboxId) {
     ctx.mailboxId = mailboxId;
-    revoke(ctx, mailboxId, { ok: false, code: "not_found", message: "Mailbox not found" });
+    revoke(ctx, mailboxId, { ok: false, code: "not_found", message: ctx.messages.mailboxNotFound });
     return;
   }
   const access = await currentAccess(ctx, internalMailboxId);
@@ -256,7 +267,7 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
       error: error instanceof Error ? error.message : String(error),
     });
     ctx.mailboxId = mailboxId;
-    closeWithError(ctx, "stream_failed", "Mail event stream failed", 1012);
+    closeWithError(ctx, "stream_failed", ctx.messages.streamFailed, 1012);
     return;
   }
   if (isClosing(ctx)) return;
@@ -265,7 +276,7 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
   ctx.mailboxId = mailboxId;
   ctx.internalMailboxId = internalMailboxId;
   if (!send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId, cursor } })) {
-    closeWithError(ctx, "backpressure", "Mail updates exceeded the connection capacity", 1013);
+    closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
     return;
   }
   startStream(ctx, mailboxId, internalMailboxId, cursor);
@@ -278,12 +289,12 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    closeWithError(ctx, "invalid_json", "Invalid JSON payload", 1008);
+    closeWithError(ctx, "invalid_json", ctx.messages.invalidJson, 1008);
     return;
   }
   const message = MailLiveClientMessageSchema.safeParse(parsed);
   if (!message.success) {
-    closeWithError(ctx, "invalid_message", "Invalid Mail live subscription", 1008);
+    closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
     return;
   }
   await handleSubscribe(ctx, message.data.payload.mailboxId, message.data.payload.fromCursor);
@@ -294,22 +305,23 @@ const app = new Hono<AuthContext>().get(
   upgradeWebSocket((c) => {
     const sessionToken = getCookie(c, "session_token") ?? null;
     const requestId = c.req.header("x-request-id") ?? null;
+    const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
 
     return {
       onOpen(_, ws) {
-        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, requestId);
+        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, requestId, locale);
       },
       onMessage(event) {
         if (!ctx || isClosing(ctx)) return;
         if (typeof event.data !== "string" || event.data.length > MAX_CLIENT_MESSAGE_LENGTH) {
-          closeWithError(ctx, "invalid_message", "Invalid Mail live subscription", 1008);
+          closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
           return;
         }
         if (pendingMessages >= MAX_PENDING_MESSAGES) {
-          closeWithError(ctx, "backpressure", "Too many pending Mail live messages", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.tooManyMessages, 1013);
           return;
         }
 
@@ -323,7 +335,7 @@ const app = new Hono<AuthContext>().get(
               mailboxId: current.mailboxId,
               error: error instanceof Error ? error.message : String(error),
             });
-            closeWithError(current, "internal_error", "Mail live subscription failed", 1011);
+            closeWithError(current, "internal_error", current.messages.subscriptionFailed, 1011);
           })
           .finally(() => {
             pendingMessages = Math.max(0, pendingMessages - 1);

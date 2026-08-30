@@ -16,6 +16,7 @@ import {
 import {
   type AuthContext,
   auth,
+  getLocale,
   hasPermission,
   jsonResponse,
   rateLimit,
@@ -30,6 +31,7 @@ import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
 import { contactsService } from "../service";
 import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID } from "../service/access";
+import { contactsApiErrorMessage } from "../service/messages";
 import {
   projectBooks,
   projectContacts,
@@ -70,6 +72,23 @@ const permissionFromScopes = (scopes: string[]): PermissionLevel => {
 };
 
 const minPermission = (a: PermissionLevel, b: PermissionLevel): PermissionLevel => (PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b);
+
+const localizeApiError = async (c: Context, next: () => Promise<void>) => {
+  await next();
+  if (c.res.status < 400 || !c.res.headers.get("content-type")?.includes("application/json")) return;
+  const body: unknown = await c.res
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(JSON.stringify({ ...body, message: contactsApiErrorMessage(c.res.status, getLocale(c), body.message) }), {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+};
 
 const requireImportBodySize: MiddlewareHandler<AuthContext> = async (c, next) => {
   const rawLength = c.req.header("content-length");
@@ -651,6 +670,7 @@ const adminApi = new Hono<AuthContext>()
 const app = new Hono<AuthContext>()
   .route("/ws", wsRoutes)
   .use(rateLimit())
+  .use(localizeApiError)
   .route("/admin", adminApi)
   .use(auth.requireRole("authenticated"))
 

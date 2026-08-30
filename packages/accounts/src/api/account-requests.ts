@@ -1,9 +1,10 @@
+import { ok } from "@k2b/stdlib";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
-import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { app as accountsApp } from "@/config";
 import {
   createPagination,
   ErrorResponseSchema,
@@ -13,9 +14,9 @@ import {
   PaginationResponseSchema,
   parsePagination,
 } from "@/contracts";
-import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
-import { app as accountsApp } from "@/config";
 import { createAccountsNotificationSender } from "@/notifications";
+import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
+import { accountsApiMessages } from "./messages";
 
 const notificationSender = createAccountsNotificationSender(accountsApp.notifications);
 
@@ -154,7 +155,7 @@ const app = new Hono<AuthContext>()
           locale: getLocale(c),
         });
         if (!result.ok) return result;
-        return ok({ message: "Request denied" });
+        return ok({ message: accountsApiMessages(getLocale(c)).requestDenied });
       });
     },
   );

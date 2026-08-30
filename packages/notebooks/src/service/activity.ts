@@ -43,6 +43,13 @@ type ActivityCursor = {
   id: string;
 };
 
+export class InvalidActivityCursorError extends Error {
+  constructor() {
+    super("Invalid activity cursor");
+    this.name = "InvalidActivityCursorError";
+  }
+}
+
 type ActivityRow = {
   id: string | number;
   notebook_id: string;
@@ -90,11 +97,11 @@ export const decodeActivityCursor = (value: string | undefined): ActivityCursor 
       !/^[1-9]\d*$/.test(parsed.id) ||
       BigInt(parsed.id) > 9_223_372_036_854_775_807n
     ) {
-      throw new Error("Invalid activity cursor");
+      throw new InvalidActivityCursorError();
     }
     return parsed as ActivityCursor;
   } catch {
-    throw new Error("Invalid activity cursor");
+    throw new InvalidActivityCursorError();
   }
 };
 
@@ -256,9 +263,6 @@ export const list = async (params: {
   const last = items.at(-1);
   return {
     items,
-    nextCursor:
-      hasMore && last
-        ? encodeActivityCursor({ id: last.id, lastOccurredAt: last.lastOccurredAt })
-        : null,
+    nextCursor: hasMore && last ? encodeActivityCursor({ id: last.id, lastOccurredAt: last.lastOccurredAt }) : null,
   };
 };

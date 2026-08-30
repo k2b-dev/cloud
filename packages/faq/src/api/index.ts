@@ -1,17 +1,18 @@
-import { Hono } from "hono";
-import { rateLimit, v, jsonResponse, requiresAdmin, auth, type AuthContext, respond } from "@valentinkolb/cloud/server";
+import { ok, type Result } from "@k2b/stdlib";
+import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
+import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { ok, type Result } from "@k2b/stdlib";
-import { faqService } from "../service";
 import {
-  FaqEntrySchema,
   CreateFaqSchema,
-  UpdateFaqSchema,
-  ReorderFaqSchema,
   ErrorResponseSchema,
+  FaqEntrySchema,
   MessageResponseSchema,
+  ReorderFaqSchema,
+  UpdateFaqSchema,
 } from "@/contracts";
+import { faqService } from "../service";
+import { faqApiErrorMessage, faqServiceMessages } from "../service/messages";
 
 const withMessage = async (operation: Promise<Result<unknown>>, message: string) => {
   const result = await operation;
@@ -19,8 +20,26 @@ const withMessage = async (operation: Promise<Result<unknown>>, message: string)
   return ok({ message });
 };
 
+const localizeApiError = async (c: Context, next: () => Promise<void>) => {
+  await next();
+  if (c.res.status < 400 || !c.res.headers.get("content-type")?.includes("application/json")) return;
+  const body: unknown = await c.res
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(JSON.stringify({ ...body, message: faqApiErrorMessage(c.res.status, getLocale(c), body.message) }), {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+};
+
 const app = new Hono<AuthContext>()
   .use(rateLimit())
+  .use(localizeApiError)
   .use(auth.requireRole("admin"))
 
   // List all FAQs
@@ -52,10 +71,10 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Validation error"),
       },
     }),
-    v("json", CreateFaqSchema),
+    v("json", CreateFaqSchema, (c) => ({ code: "BAD_INPUT", message: faqServiceMessages(getLocale(c)).invalidRequest })),
     async (c) => {
       const input = c.req.valid("json");
-      return respond(c, faqService.entry.create({ data: input }), 201);
+      return respond(c, faqService.entry.create({ data: input, locale: getLocale(c) }), 201);
     },
   )
 
@@ -72,11 +91,11 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", z.object({ id: z.uuid() })),
-    v("json", UpdateFaqSchema),
+    v("json", UpdateFaqSchema, (c) => ({ code: "BAD_INPUT", message: faqServiceMessages(getLocale(c)).invalidRequest })),
     async (c) => {
       const { id } = c.req.valid("param");
       const input = c.req.valid("json");
-      return respond(c, faqService.entry.update({ id, data: input }));
+      return respond(c, faqService.entry.update({ id, data: input, locale: getLocale(c) }));
     },
   )
 
@@ -95,7 +114,8 @@ const app = new Hono<AuthContext>()
     v("param", z.object({ id: z.uuid() })),
     async (c) => {
       const { id } = c.req.valid("param");
-      return respond(c, withMessage(faqService.entry.remove({ id }), "FAQ deleted"));
+      const t = faqServiceMessages(getLocale(c));
+      return respond(c, withMessage(faqService.entry.remove({ id, locale: getLocale(c) }), t.deleted));
     },
   )
 
@@ -110,10 +130,11 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(MessageResponseSchema, "FAQs reordered"),
       },
     }),
-    v("json", ReorderFaqSchema),
+    v("json", ReorderFaqSchema, (c) => ({ code: "BAD_INPUT", message: faqServiceMessages(getLocale(c)).invalidRequest })),
     async (c) => {
       const { ids } = c.req.valid("json");
-      return respond(c, withMessage(faqService.entry.reorder({ ids }), "FAQs reordered"));
+      const t = faqServiceMessages(getLocale(c));
+      return respond(c, withMessage(faqService.entry.reorder({ ids, locale: getLocale(c) }), t.reordered));
     },
   );
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { checkSpacesMessages, localizeSpacesMessage, spacesMessages } from "./messages";
+import { err } from "@k2b/stdlib";
+import { checkSpacesMessages, localizeSpacesError, spacesApiErrorMessage, spacesMessages } from "./messages";
 
 describe("Spaces messages", () => {
   test("keeps catalogs complete and falls back from regional German locales", () => {
@@ -9,21 +10,22 @@ describe("Spaces messages", () => {
     expect(spacesMessages("fr").widgetTitle).toBe("Today");
   });
 
-  test("localizes known final API messages without changing unknown diagnostics", () => {
-    expect(localizeSpacesMessage("Item not found", "de-DE")).toBe("Der Eintrag wurde nicht gefunden");
-    expect(localizeSpacesMessage("Item deleted", "de-DE")).toBe("Eintrag gelöscht");
-    expect(localizeSpacesMessage("Task blocker removed", "de-CH")).toBe("Blockierende Aufgabe entfernt");
-    expect(localizeSpacesMessage("Column abc not found in space", "de-DE")).toBe("Die Spalte abc wurde in diesem Space nicht gefunden");
-    expect(localizeSpacesMessage("A task can have at most 20 attachments", "de-DE")).toBe("Eine Aufgabe kann höchstens 20 Anhänge haben");
-    expect(localizeSpacesMessage("A task can have at most 50 blockers", "de-DE")).toBe(
-      "Eine Aufgabe kann höchstens 50 blockierende Aufgaben haben",
-    );
-    expect(localizeSpacesMessage("Created calendar event has no public ID", "de-DE")).toBe(
-      "Für den erstellten Kalendertermin fehlt die öffentliche ID",
-    );
-    expect(localizeSpacesMessage("Invitation source could not be reserved", "de-DE")).toBe(
-      "Die Quelle der Einladung konnte nicht reserviert werden",
-    );
-    expect(localizeSpacesMessage("Database unavailable", "de-DE")).toBe("Database unavailable");
+  test("localizes errors from stable codes and statuses", () => {
+    expect(localizeSpacesError(err.notFound("Item"), "de-CH")).toEqual({
+      code: "NOT_FOUND",
+      status: 404,
+      message: "Die angeforderte Spaces-Ressource wurde nicht gefunden",
+    });
+    expect(spacesApiErrorMessage(409, "de-CH")).toBe("Die Spaces-Änderung steht im Konflikt mit dem aktuellen Stand");
+    expect(spacesApiErrorMessage(500, "en")).toBe("The Spaces operation failed");
+  });
+
+  test("keeps concurrent locale resolution isolated", async () => {
+    const [english, german] = await Promise.all([
+      Promise.resolve().then(() => spacesApiErrorMessage(404, "en")),
+      Promise.resolve().then(() => spacesApiErrorMessage(404, "de-CH")),
+    ]);
+    expect(english).toBe("The requested Spaces resource was not found");
+    expect(german).toBe("Die angeforderte Spaces-Ressource wurde nicht gefunden");
   });
 });

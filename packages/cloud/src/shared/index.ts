@@ -24,9 +24,10 @@ export type { MockCover, MockCoverIcon, MockCoverOptions, MockCoverTheme } from 
 export { createMockCover, createMockCoverSvg, parseDataUrl } from "./mock-cover";
 export * from "./network-address";
 export * from "./redirect";
-export type { LiquidTemplateFilter, LiquidTemplateOptions } from "./template-rendering";
+export type { LiquidTemplateErrorReason, LiquidTemplateFilter, LiquidTemplateOptions } from "./template-rendering";
 export {
   escapeTemplateOutput,
+  LiquidTemplateError,
   liquidTemplateVariables,
   migrateLegacyMustacheTemplate,
   renderLiquidTemplate,

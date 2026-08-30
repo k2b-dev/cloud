@@ -81,6 +81,18 @@ const catalog = i18n.define({
       loginRequired: "Login required",
       contactBookNotFound: "Contact book not found",
       liveBackpressure: "Live updates exceeded the connection capacity",
+      liveAccessRefreshFailed: "Access refresh failed",
+      liveStreamFailed: "Contact event stream failed",
+      invalidJson: "Invalid JSON payload",
+      invalidLiveSubscription: "Invalid live subscription",
+      liveSubscriptionActive: "A live subscription is already active",
+      tooManyLiveMessages: "Too many pending live messages",
+      liveSubscriptionFailed: "Live subscription failed",
+
+      invalidRequest: "The Contacts request is invalid",
+      resourceNotFound: "The requested Contacts resource was not found",
+      conflictingChange: "The Contacts change conflicts with the current state",
+      operationFailed: "The Contacts operation failed",
 
       // Success messages
       accessUpdated: "Access updated",
@@ -153,6 +165,18 @@ const catalog = i18n.define({
       loginRequired: "Anmeldung erforderlich",
       contactBookNotFound: "Das Kontaktbuch wurde nicht gefunden",
       liveBackpressure: "Die Live-Updates haben die Kapazität der Verbindung überschritten",
+      liveAccessRefreshFailed: "Die Zugriffsprüfung ist fehlgeschlagen",
+      liveStreamFailed: "Der Kontakt-Ereignisstrom ist fehlgeschlagen",
+      invalidJson: "Die JSON-Daten sind ungültig",
+      invalidLiveSubscription: "Die Live-Anmeldung ist ungültig",
+      liveSubscriptionActive: "Eine Live-Anmeldung ist bereits aktiv",
+      tooManyLiveMessages: "Zu viele ausstehende Live-Nachrichten",
+      liveSubscriptionFailed: "Die Live-Anmeldung ist fehlgeschlagen",
+
+      invalidRequest: "Die Contacts-Anfrage ist ungültig",
+      resourceNotFound: "Die angeforderte Contacts-Ressource wurde nicht gefunden",
+      conflictingChange: "Die Contacts-Änderung steht im Konflikt mit dem aktuellen Stand",
+      operationFailed: "Der Contacts-Vorgang ist fehlgeschlagen",
 
       accessUpdated: "Zugriff aktualisiert",
       accessRevoked: "Zugriff entzogen",
@@ -172,6 +196,18 @@ export type ContactsMessages = ReturnType<(typeof catalog)["resolve"]>["t"];
 export const contactsMessages = (locale?: string | null): ContactsMessages => catalog.resolve(locale ? [locale] : []).t;
 
 export const checkContactsMessages = () => catalog.check();
+
+export const contactsApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string): string => {
+  const resolved = catalog.resolve(locale ? [locale] : []);
+  if (resolved.locale === "en" && baseMessage) return baseMessage;
+  const { t } = resolved;
+  if (status === 401) return t.loginRequired;
+  if (status === 403) return t.accessDenied;
+  if (status === 404) return t.resourceNotFound;
+  if (status === 409) return t.conflictingChange;
+  if (status >= 500) return t.operationFailed;
+  return t.invalidRequest;
+};
 
 /**
  * Full-message error constructors. `err.notFound`/`err.conflict` compose an

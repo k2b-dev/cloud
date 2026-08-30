@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { IpaProfileFieldsSchema, UpdateAvatarResponseSchema, UpdateAvatarSchema, UserSchema } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, logger } from "@valentinkolb/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { app as accountsApp } from "@/config";
 import {
   BaseUserSchema,
   CreateUserResponseSchema,
@@ -18,9 +19,9 @@ import {
   parsePagination,
   SearchQuerySchema,
 } from "@/contracts";
-import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
-import { app as accountsApp } from "@/config";
 import { createAccountsNotificationSender } from "@/notifications";
+import { expectUserBackedActor, toAccountsActor } from "@/shared/actor";
+import { accountsApiMessages } from "./messages";
 
 const log = logger("accounts:admin:users");
 const notificationSender = createAccountsNotificationSender(accountsApp.notifications);
@@ -284,7 +285,7 @@ const app = new Hono<AuthContext>()
       return respond(c, async () => {
         const result = await accountsService.user.update({ actor: toAccountsActor(expectUserBackedActor(c)), id, data });
         if (!result.ok) return result;
-        return ok({ message: "User updated." });
+        return ok({ message: accountsApiMessages(getLocale(c)).userUpdated });
       });
     },
   )
@@ -315,7 +316,7 @@ const app = new Hono<AuthContext>()
           dataUrl: data.dataUrl,
         });
         if (!result.ok) return result;
-        return ok({ message: "Avatar updated.", avatarHash: result.data.avatarHash });
+        return ok({ message: accountsApiMessages(getLocale(c)).avatarUpdated, avatarHash: result.data.avatarHash });
       });
     },
   )
@@ -339,7 +340,7 @@ const app = new Hono<AuthContext>()
       return respond(c, async () => {
         const result = await accountsService.user.clearAvatar({ actor: toAccountsActor(expectUserBackedActor(c)), id });
         if (!result.ok) return result;
-        return ok({ message: "Avatar deleted." });
+        return ok({ message: accountsApiMessages(getLocale(c)).avatarDeleted });
       });
     },
   )
@@ -379,7 +380,7 @@ const app = new Hono<AuthContext>()
           targetProvider: targetUser.provider,
           targetProfile: targetUser.profile,
         });
-        return ok({ message: "Password reset.", password: result.data.password });
+        return ok({ message: accountsApiMessages(getLocale(c)).passwordReset, password: result.data.password });
       });
     },
   )
@@ -609,7 +610,7 @@ const app = new Hono<AuthContext>()
         if (result.status === "error" || result.status === "suppressed") {
           return fail(err.badInput("The notification could not be delivered"));
         }
-        return ok({ message: "Notification sent." });
+        return ok({ message: accountsApiMessages(getLocale(c)).notificationSent });
       });
     },
   )
@@ -638,7 +639,7 @@ const app = new Hono<AuthContext>()
           locale: getLocale(c),
         });
         if (!result.ok) return result;
-        return ok({ message: "Login link sent." });
+        return ok({ message: accountsApiMessages(getLocale(c)).loginLinkSent });
       });
     },
   )
@@ -670,7 +671,7 @@ const app = new Hono<AuthContext>()
           actor: toAccountsActor(actor),
         });
         if (!result.ok) return result;
-        return ok({ message: "User permanently deleted" });
+        return ok({ message: accountsApiMessages(getLocale(c)).userDeleted });
       });
     },
   )
@@ -701,7 +702,7 @@ const app = new Hono<AuthContext>()
           actor: toAccountsActor(actor),
         });
         if (!result.ok) return result;
-        return ok({ message: "User demoted to guest" });
+        return ok({ message: accountsApiMessages(getLocale(c)).userDemoted });
       });
     },
   );

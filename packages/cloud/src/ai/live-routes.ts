@@ -1,7 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
-import { type AuthContext, auth } from "../server";
+import { type AuthContext, auth, getLocale } from "../server";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
 import { logger } from "../services/logging";
@@ -15,6 +15,7 @@ import {
   type AiLiveServerMessage,
   aiTurnEventMessage,
 } from "./live-events";
+import { type AiLiveMessages, aiLiveMessages } from "./live-messages";
 import { latestAiInvalidationCursor, liveAiInvalidations } from "./live-outbox";
 import type { AiStreamEvent } from "./protocol";
 import { aiConversations } from "./store";
@@ -36,6 +37,7 @@ type WsPhase = "open" | "subscribed" | "closing";
 type WsContext = {
   socket: ServerWebSocket<unknown>;
   sessionToken: string | null;
+  messages: AiLiveMessages;
   phase: WsPhase;
   userId: string | null;
   invalidationAbort: AbortController | null;
@@ -163,7 +165,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
       if (ctx.phase !== "subscribed" || ctx.userId !== userId) return;
       try {
         if (!(await currentUser(ctx))) {
-          revoke(ctx, "login_required", "Login required");
+          revoke(ctx, "login_required", ctx.messages.loginRequired);
           return;
         }
         const activeConversationId = ctx.turnConversationId;
@@ -177,10 +179,10 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
           if (
             !sendAiLiveMessage(ctx.socket, {
               type: AI_LIVE_WS_TYPE.turnError,
-              payload: { conversationId, code: "access_denied", message: "Conversation access changed or expired" },
+              payload: { conversationId, code: "access_denied", message: ctx.messages.conversationAccessChanged },
             })
           ) {
-            closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+            closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
             return;
           }
         }
@@ -189,7 +191,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
           if (ctx.phase !== "subscribed" || ctx.userId !== userId) return;
           if (ctx.scopeVersion !== null && version !== ctx.scopeVersion) {
             if (!sendAiLiveMessage(ctx.socket, { type: AI_LIVE_WS_TYPE.scopeChanged, payload: { at: new Date().toISOString() } })) {
-              closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+              closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
               return;
             }
           }
@@ -201,7 +203,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
           userId,
           error: error instanceof Error ? error.message : String(error),
         });
-        closeWithError(ctx, "internal_error", "AI live authorization refresh failed", 1011);
+        closeWithError(ctx, "internal_error", ctx.messages.authorizationRefreshFailed, 1011);
       }
     }, AUTH_REFRESH_INTERVAL_MS);
   };
@@ -215,28 +217,29 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
         for await (const item of liveAiInvalidations({ userId, after, signal: abort.signal })) {
           if (!isAiLiveSubscriptionCurrent(ctx, userId, abort.signal)) break;
           if (!(await currentUser(ctx))) {
-            revoke(ctx, "login_required", "Login required");
+            revoke(ctx, "login_required", ctx.messages.loginRequired);
             return;
           }
           if (!isAiLiveSubscriptionCurrent(ctx, userId, abort.signal)) break;
           const replay = parseAiLiveReplayEvent(item);
           if (!replay) {
-            closeWithError(ctx, "stream_failed", "AI event stream contains invalid data", 1011);
+            closeWithError(ctx, "stream_failed", ctx.messages.invalidStreamData, 1011);
             return;
           }
           if (!sendAiLiveMessage(ctx.socket, { type: AI_LIVE_WS_TYPE.event, payload: replay })) {
-            closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+            closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
             return;
           }
         }
-        if (isAiLiveSubscriptionCurrent(ctx, userId, abort.signal)) closeWithError(ctx, "stream_failed", "AI event stream ended", 1012);
+        if (isAiLiveSubscriptionCurrent(ctx, userId, abort.signal))
+          closeWithError(ctx, "stream_failed", ctx.messages.eventStreamEnded, 1012);
       } catch (error) {
         if (abort.signal.aborted || isClosing(ctx)) return;
         log.error("AI live event stream failed", {
           userId,
           error: error instanceof Error ? error.message : String(error),
         });
-        closeWithError(ctx, "stream_failed", "AI event stream failed", 1012);
+        closeWithError(ctx, "stream_failed", ctx.messages.eventStreamFailed, 1012);
       } finally {
         if (ctx.invalidationAbort === abort) ctx.invalidationAbort = null;
       }
@@ -248,7 +251,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
     const user = await currentUser(ctx);
     if (isClosing(ctx)) return;
     if (!user) {
-      revoke(ctx, "login_required", "Login required");
+      revoke(ctx, "login_required", ctx.messages.loginRequired);
       return;
     }
     let cursor: string;
@@ -261,7 +264,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
         userId: user.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "stream_failed", "AI live subscription failed", 1012);
+      closeWithError(ctx, "stream_failed", ctx.messages.subscriptionFailed, 1012);
       return;
     }
     if (isClosing(ctx)) return;
@@ -270,7 +273,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
     ctx.userId = user.id;
     ctx.scopeVersion = scopeVersion;
     if (!sendAiLiveMessage(ctx.socket, { type: AI_LIVE_WS_TYPE.ready, payload: { cursor, recovered: recover } })) {
-      closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+      closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
       return;
     }
     startInvalidationStream(ctx, user.id, cursor);
@@ -288,12 +291,12 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
         for await (const event of streamConversation({ conversation, signal: abort.signal })) {
           if (!isAiTurnSubscriptionCurrent(ctx, conversationId, abort.signal)) return;
           if (!sendAiLiveMessage(ctx.socket, aiTurnEventMessage(conversationId, event))) {
-            closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+            closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
             return;
           }
         }
         if (isAiTurnSubscriptionCurrent(ctx, conversationId, abort.signal)) {
-          closeWithError(ctx, "stream_failed", "AI conversation stream ended", 1012);
+          closeWithError(ctx, "stream_failed", ctx.messages.conversationStreamEnded, 1012);
         }
       } catch (error) {
         if (abort.signal.aborted || isClosing(ctx)) return;
@@ -301,7 +304,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
           conversationId: conversation.id,
           error: error instanceof Error ? error.message : String(error),
         });
-        closeWithError(ctx, "stream_failed", "AI conversation stream failed", 1012);
+        closeWithError(ctx, "stream_failed", ctx.messages.conversationStreamFailed, 1012);
       } finally {
         if (ctx.turnAbort === abort) {
           ctx.turnAbort = null;
@@ -313,7 +316,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
 
   const handleTurnSubscribe = async (ctx: WsContext, conversationId: string) => {
     if (ctx.phase !== "subscribed" || !ctx.userId) {
-      closeWithError(ctx, "invalid_message", "AI live subscription required before a turn subscription", 1008);
+      closeWithError(ctx, "invalid_message", ctx.messages.liveSubscriptionRequired, 1008);
       return;
     }
     const conversation = await resolveConversation(conversationId, ctx.userId);
@@ -323,10 +326,10 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
       if (
         !sendAiLiveMessage(ctx.socket, {
           type: AI_LIVE_WS_TYPE.turnError,
-          payload: { conversationId, code: "not_found", message: "Conversation not found" },
+          payload: { conversationId, code: "not_found", message: ctx.messages.conversationNotFound },
         })
       ) {
-        closeWithError(ctx, "backpressure", "AI updates exceeded the connection capacity", 1013);
+        closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
       }
       return;
     }
@@ -342,12 +345,12 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      closeWithError(ctx, "invalid_json", "Invalid JSON payload", 1008);
+      closeWithError(ctx, "invalid_json", ctx.messages.invalidJson, 1008);
       return;
     }
     const message = AiLiveClientMessageSchema.safeParse(parsed);
     if (!message.success) {
-      closeWithError(ctx, "invalid_message", "Invalid AI live subscription", 1008);
+      closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
       return;
     }
     if (message.data.type === AI_LIVE_WS_TYPE.subscribe) {
@@ -365,6 +368,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
     "/",
     upgradeWebSocket((c) => {
       const sessionToken = auth.session.getToken(c);
+      const messages = aiLiveMessages(getLocale(c));
       let ctx: WsContext | null = null;
       let processing: Promise<void> = Promise.resolve();
       let pendingMessages = 0;
@@ -373,6 +377,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
           ctx = {
             socket: ws.raw as ServerWebSocket<unknown>,
             sessionToken,
+            messages,
             phase: "open",
             userId: null,
             invalidationAbort: null,
@@ -385,11 +390,11 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
         onMessage(event) {
           if (!ctx || isClosing(ctx)) return;
           if (!isAiLiveClientMessageFrame(event.data)) {
-            closeWithError(ctx, "invalid_message", "Invalid AI live subscription", 1008);
+            closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
             return;
           }
           if (pendingMessages >= MAX_PENDING_MESSAGES) {
-            closeWithError(ctx, "backpressure", "Too many pending AI live messages", 1013);
+            closeWithError(ctx, "backpressure", ctx.messages.tooManyMessages, 1013);
             return;
           }
           const current = ctx;
@@ -399,7 +404,7 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
             .then(() => handleMessage(current, raw))
             .catch((error) => {
               log.error("AI live message handling failed", { error: error instanceof Error ? error.message : String(error) });
-              closeWithError(current, "internal_error", "AI live subscription failed", 1011);
+              closeWithError(current, "internal_error", current.messages.subscriptionFailed, 1011);
             })
             .finally(() => {
               pendingMessages = Math.max(0, pendingMessages - 1);

@@ -1,7 +1,7 @@
 import { Button, dialogCore, FileDropzone, ImageCropper, type ImageCropState, PanelDialog, panelDialogOptions } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { CloudAvatar } from "./Avatar";
-import { createAvatarDataUrlFromFile, validateAvatarSourceFile } from "./avatar-upload";
+import { AvatarUploadError, createAvatarDataUrlFromFile, validateAvatarSourceFile } from "./avatar-upload";
 
 export type AvatarUploadDialogOptions = {
   username: string;
@@ -34,12 +34,11 @@ export type AvatarUploadDialogOptions = {
 };
 
 const avatarErrorMessage = (error: unknown, messages?: AvatarUploadDialogOptions["messages"]): string => {
-  if (!(error instanceof Error)) return messages?.processFailed ?? "Failed to process avatar image.";
-  if (error.message === "Choose a PNG, JPEG, or WebP image.") return messages?.typeInvalid ?? error.message;
-  if (error.message === "Choose an image smaller than 32 MB.") return messages?.tooLarge ?? error.message;
-  if (error.message === "Avatar image is empty.") return messages?.empty ?? error.message;
-  if (error.message === "Avatar image processing is not supported in this browser.") return messages?.unsupported ?? error.message;
-  if (error.message.includes("could not be compressed")) {
+  if (error instanceof AvatarUploadError) {
+    if (error.code === "type_invalid") return messages?.typeInvalid ?? "Choose a PNG, JPEG, or WebP image.";
+    if (error.code === "too_large") return messages?.tooLarge ?? "Choose an image smaller than 32 MB.";
+    if (error.code === "empty") return messages?.empty ?? "Avatar image is empty.";
+    if (error.code === "unsupported") return messages?.unsupported ?? "Avatar image processing is not supported in this browser.";
     return messages?.compressionFailed ?? "This image could not be prepared as a small avatar. Try a simpler image.";
   }
   return messages?.processFailed ?? "Failed to process avatar image.";

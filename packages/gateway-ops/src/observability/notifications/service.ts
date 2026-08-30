@@ -1,5 +1,5 @@
-import { notifications } from "@valentinkolb/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, paginate, tryCatch } from "@k2b/stdlib";
+import { notifications } from "@valentinkolb/cloud/services";
 
 type NotificationItem = Awaited<ReturnType<typeof notifications.list>>["notifications"][number];
 type NotificationStatus = NotificationItem["status"];
@@ -7,10 +7,8 @@ type NotificationStatus = NotificationItem["status"];
 /**
  * Translates notification mutation errors into stable API error variants.
  */
-const mapNotificationMutationError = (message: string) => {
-  if (message === "Notification not found") return err.notFound("Notification");
-  return err.badInput(message);
-};
+const mapNotificationMutationError = (failure: { code: string; error: string }) =>
+  failure.code === "not_found" ? err.notFound("Notification") : err.badInput(failure.error);
 
 /**
  * Translates send-to-user failures into domain-specific API errors.
@@ -58,7 +56,7 @@ export const notificationsService = {
       }),
     resend: async (config: { id: string }) => {
       const result = await notifications.resend(config.id);
-      if (!result.ok) return fail(mapNotificationMutationError(result.error));
+      if (!result.ok) return fail(mapNotificationMutationError(result));
       return ok();
     },
     update: async (config: {
@@ -69,7 +67,7 @@ export const notificationsService = {
       const result = await notifications.update(config.id, config.data, {
         isAdmin: config.access.isAdmin,
       });
-      if (!result.ok) return fail(mapNotificationMutationError(result.error));
+      if (!result.ok) return fail(mapNotificationMutationError(result));
       return ok();
     },
   },

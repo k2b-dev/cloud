@@ -1,11 +1,10 @@
-import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
-import { notificationBatches } from "@valentinkolb/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
+import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAdmin, respond, v } from "@valentinkolb/cloud/server";
+import { notificationBatches } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { createPagination, ErrorResponseSchema, PaginationQuerySchema, PaginationResponseSchema, parsePagination } from "@/contracts";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 
 const BatchStatusSchema = z.enum(["draft", "ready", "running", "completed", "completed_with_errors", "failed", "cancelled"]);
 const RecipientStatusSchema = z.enum(["pending", "sending", "sent", "skipped", "error"]);

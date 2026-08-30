@@ -3,11 +3,12 @@ import {
   NotificationLiveClientMessageSchema,
   type NotificationLiveServerMessage,
 } from "@valentinkolb/cloud/contracts";
-import { auth } from "@valentinkolb/cloud/server";
+import { auth, getLocale } from "@valentinkolb/cloud/server";
 import { accounts, logger, notifications } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
+import { type NotificationWsMessages, notificationWsMessages } from "./notifications-ws-messages";
 
 const log = logger("core:notification-websocket");
 const ACCESS_REFRESH_INTERVAL_MS = 8_000;
@@ -19,15 +20,17 @@ type WsPhase = "open" | "subscribed" | "closing";
 type WsContext = {
   socket: ServerWebSocket<unknown>;
   sessionToken: string | null;
+  messages: NotificationWsMessages;
   phase: WsPhase;
   userId: string | null;
   streamAbort: AbortController | null;
   accessRefreshTimer: ReturnType<typeof setTimeout> | null;
 };
 
-const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null): WsContext => ({
+const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, locale: string): WsContext => ({
   socket,
   sessionToken,
+  messages: notificationWsMessages(locale),
   phase: "open",
   userId: null,
   streamAbort: null,
@@ -60,7 +63,7 @@ const closeWithError = (ctx: WsContext, code: string, message: string, closeCode
   ctx.socket.close(closeCode, code);
 };
 
-const revoke = (ctx: WsContext, code = "login_required", message = "Login required") => {
+const revoke = (ctx: WsContext, code = "login_required", message = ctx.messages.loginRequired) => {
   if (isClosing(ctx)) return;
   ctx.phase = "closing";
   stopSubscription(ctx);
@@ -94,7 +97,7 @@ const startAccessRefresh = (ctx: WsContext, userId: string) => {
         userId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "access_check_failed", "Notification access refresh failed", 1012);
+      closeWithError(ctx, "access_check_failed", ctx.messages.accessRefreshFailed, 1012);
     }
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
@@ -115,12 +118,12 @@ const startStream = (ctx: WsContext, userId: string, after: string) => {
           break;
         }
         if (!send(ctx.socket, { type: NOTIFICATION_LIVE_WS_TYPE.event, payload: { cursor: event.cursor, event: event.data } })) {
-          closeWithError(ctx, "backpressure", "Notification updates exceeded the connection capacity", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
           break;
         }
       }
       if (!abort.signal.aborted && ctx.phase === "subscribed" && ctx.userId === userId) {
-        closeWithError(ctx, "stream_ended", "Notification event stream ended", 1012);
+        closeWithError(ctx, "stream_ended", ctx.messages.streamEnded, 1012);
       }
     } catch (error) {
       if (abort.signal.aborted || isClosing(ctx)) return;
@@ -128,7 +131,7 @@ const startStream = (ctx: WsContext, userId: string, after: string) => {
         userId,
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "stream_failed", "Notification event stream failed", 1012);
+      closeWithError(ctx, "stream_failed", ctx.messages.streamFailed, 1012);
     } finally {
       if (ctx.streamAbort === abort) ctx.streamAbort = null;
     }
@@ -150,7 +153,7 @@ const handleSubscribe = async (ctx: WsContext, fromCursor: string | null) => {
   ctx.phase = "subscribed";
   ctx.userId = userId;
   if (!send(ctx.socket, { type: NOTIFICATION_LIVE_WS_TYPE.ready, payload: { cursor } })) {
-    closeWithError(ctx, "backpressure", "Notification updates exceeded the connection capacity", 1013);
+    closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
     return;
   }
   startStream(ctx, userId, cursor);
@@ -163,12 +166,12 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    closeWithError(ctx, "invalid_json", "Invalid JSON payload", 1008);
+    closeWithError(ctx, "invalid_json", ctx.messages.invalidJson, 1008);
     return;
   }
   const message = NotificationLiveClientMessageSchema.safeParse(parsed);
   if (!message.success) {
-    closeWithError(ctx, "invalid_message", "Invalid notification subscription", 1008);
+    closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
     return;
   }
   await handleSubscribe(ctx, message.data.payload.fromCursor);
@@ -178,22 +181,23 @@ const app = new Hono().get(
   "/",
   upgradeWebSocket((c) => {
     const sessionToken = auth.session.getToken(c);
+    const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
 
     return {
       onOpen(_, ws) {
-        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken);
+        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
       },
       onMessage(event) {
         if (!ctx || isClosing(ctx)) return;
         if (typeof event.data !== "string" || event.data.length > MAX_CLIENT_MESSAGE_LENGTH) {
-          closeWithError(ctx, "invalid_message", "Invalid notification subscription", 1008);
+          closeWithError(ctx, "invalid_message", ctx.messages.invalidSubscription, 1008);
           return;
         }
         if (pendingMessages >= MAX_PENDING_MESSAGES) {
-          closeWithError(ctx, "backpressure", "Too many pending notification messages", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.tooManyMessages, 1013);
           return;
         }
 
@@ -207,7 +211,7 @@ const app = new Hono().get(
               userId: current.userId,
               error: error instanceof Error ? error.message : String(error),
             });
-            closeWithError(current, "subscription_failed", "Notification subscription failed", 1012);
+            closeWithError(current, "subscription_failed", current.messages.subscriptionFailed, 1012);
           })
           .finally(() => {
             pendingMessages = Math.max(0, pendingMessages - 1);

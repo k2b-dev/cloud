@@ -1,3 +1,4 @@
+import { err, fail, ok } from "@k2b/stdlib";
 import { listApps } from "@valentinkolb/cloud";
 import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@valentinkolb/cloud/server";
 import {
@@ -6,7 +7,6 @@ import {
   settingsListLegacyKeys,
   settingsService,
 } from "@valentinkolb/cloud/services";
-import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
 import { buildGatewayHealth } from "./health";
@@ -15,11 +15,13 @@ import {
   deleteHealthWebhook,
   getHealthWebhook,
   type HealthWebhookInput,
+  HealthWebhookInputError,
   listHealthWebhooks,
   testHealthWebhook,
   updateHealthWebhook,
 } from "./health-webhooks";
 import { updateHealthSchedule } from "./lifecycle";
+import { gatewayOpsMessages } from "./messages";
 import {
   getDataDiagnostics,
   getPostgresDiagnostics,
@@ -31,7 +33,6 @@ import { metricsApiRoutes } from "./observability/metrics/api";
 import { TELEMETRY_RANGES, type TelemetryRange } from "./observability/telemetry/contracts";
 import { getTelemetryPrefixTotals } from "./observability/telemetry/service";
 import { removeOfflineRegisteredApp } from "./registered-apps";
-import { gatewayOpsMessages } from "./messages";
 import { getTelemetrySummary, listTelemetryApps, listTelemetryEvents } from "./telemetry";
 
 const GATEWAY_SETTING_GROUP = "gateway";
@@ -90,10 +91,10 @@ const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app
 
 const healthWebhookInputError = (c: Parameters<typeof getLocale>[0], error: unknown): string => {
   const { t } = gatewayOpsMessages.resolve([getLocale(c)]);
-  const message = error instanceof Error ? error.message : String(error);
-  if (message === "Webhook URL must use http or https.") return t.webhookUrlProtocol;
-  if (message === "Webhook name is required.") return t.webhookNameRequired;
-  return message;
+  if (error instanceof HealthWebhookInputError) {
+    return error.code === "url_protocol" ? t.webhookUrlProtocol : t.webhookNameRequired;
+  }
+  return t.apiInvalidRequest;
 };
 
 export const apiRoutes = new Hono<AuthContext>()
@@ -119,7 +120,7 @@ export const apiRoutes = new Hono<AuthContext>()
     const result = await settingsService.entry.update({ key, value: body.value });
     if (!result.ok) return respond(c, result);
     if (key === "gateway.health_check_schedule" && typeof body.value === "string") await updateHealthSchedule(body.value);
-    return respond(c, ok({ message: "Setting updated" }));
+    return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.settingUpdated }));
   })
   .get("/health", async (c) => respond(c, ok(await buildGatewayHealth())))
   .get("/routes", v("query", GatewayRoutesQuerySchema), async (c) => {

@@ -1,12 +1,13 @@
 import { routes } from "@k2b/ssr/hono";
-import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
-import { Hono } from "hono";
+import { type AuthContext, auth, getLocale, middleware } from "@valentinkolb/cloud/server";
+import { type Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { apiRoutes } from "./api";
 import { app } from "./config";
 import gatewayPage from "./frontend/page";
 import { gatewayOpsHelp } from "./help";
 import { gatewayOpsLifecycle } from "./lifecycle";
+import { gatewayOpsApiErrorMessage } from "./messages";
 import alertsPage from "./observability/alerts/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
@@ -26,6 +27,23 @@ import telemetryPage from "./observability/telemetry/page";
 import workflowsApiRoutes from "./observability/workflows/api";
 import workflowsPage from "./observability/workflows/page";
 import { widgetRoutes } from "./widgets";
+
+const localizeApiError = async (c: Context, next: () => Promise<void>) => {
+  await next();
+  if (c.res.status < 400 || !c.res.headers.get("content-type")?.includes("application/json")) return;
+  const body: unknown = await c.res
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!body || typeof body !== "object" || !("message" in body) || typeof body.message !== "string") return;
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(JSON.stringify({ ...body, message: gatewayOpsApiErrorMessage(c.res.status, getLocale(c), body.message) }), {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+};
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -56,6 +74,7 @@ const router = new Hono<AuthContext>()
   .get("/admin/observability/alerts", auth.requireRole("admin", auth.redirectToLogin), ...alertsPage)
   .get("/admin/observability/notifications", auth.requireRole("admin", auth.redirectToLogin), ...notificationsPage)
   .get("/metrics", auth.requireRole("*"), metricsEndpoint)
+  .use("/api/*", localizeApiError)
   .route("/api/gateway/widget", widgetRoutes)
   .route("/api/logging/widget", loggingWidgetRoutes)
   .route("/api/logging", loggingApiRoutes)

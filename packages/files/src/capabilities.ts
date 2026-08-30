@@ -1,4 +1,4 @@
-import { err, fail, ok } from "@k2b/stdlib";
+import { fail, ok } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CloudResourceView,
@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { filesService } from "./service";
+import { filesApiErrorMessage } from "./service/messages";
 
 const supportsFilesApp = (user: { provider: string; profile: string }) => user.provider === "ipa" && user.profile === "user";
 
@@ -78,7 +79,13 @@ const DirectoryReadDataSchema = z
   })
   .strict();
 
-const parseResourceId = (id: string) => {
+const localizedError = (status: 400 | 401 | 403 | 404 | 409 | 500, baseMessage: string, locale?: string | null) => {
+  const code =
+    status === 404 ? "NOT_FOUND" : status === 409 ? "CONFLICT" : status === 500 ? "INTERNAL" : status >= 401 ? "FORBIDDEN" : "BAD_INPUT";
+  return fail({ code, status: status === 401 ? 403 : status, message: filesApiErrorMessage(status, locale, baseMessage) });
+};
+
+const parseResourceId = (id: string, locale?: string | null) => {
   const first = id.indexOf(":");
   const second = id.indexOf(":", first + 1);
   const baseType = id.slice(0, first);
@@ -86,30 +93,29 @@ const parseResourceId = (id: string) => {
   const path = id.slice(second + 1);
   return (baseType === "home" || baseType === "group") && baseId && path
     ? ok({ baseType, baseId, path })
-    : fail(err.badInput("File resource ID must be an exact typed ref returned by Search files"));
+    : localizedError(400, "File resource ID must be an exact typed ref returned by Search files", locale);
 };
 
-const serviceError = (result: { ok: false; error: string; status: 400 | 401 | 403 | 404 | 409 | 500 }) => {
-  if (result.status === 401 || result.status === 403) return fail(err.forbidden(result.error));
-  if (result.status === 404) return fail(err.notFound(result.error.replace(/ not found$/i, "")));
-  if (result.status === 409) return fail(err.conflict(result.error));
-  if (result.status === 500) return fail(err.internal(result.error));
-  return fail(err.badInput(result.error));
-};
+const serviceError = (result: { ok: false; error: string; status: 400 | 401 | 403 | 404 | 409 | 500 }, locale?: string | null) =>
+  localizedError(result.status, result.error, locale);
 
 const readResource = async (id: string, expectedType: "file" | "directory", context: CapabilityExecutionContext) => {
   const user = context.user;
-  if (!user || !supportsFilesApp(user)) return fail(err.forbidden("Files resources require a full IPA user account"));
-  const identity = parseResourceId(id);
+  if (!user || !supportsFilesApp(user)) return localizedError(403, "Files resources require a full IPA user account", context.locale);
+  const identity = parseResourceId(id, context.locale);
   if (!identity.ok) return identity;
   const base = await filesService.base.get(identity.data);
-  if (!base.ok) return serviceError(base);
+  if (!base.ok) return serviceError(base, context.locale);
   const access = await filesService.base.permission.canAccess({ user, base: base.data });
-  if (!access.ok) return serviceError(access);
+  if (!access.ok) return serviceError(access, context.locale);
   const item = await filesService.item.get({ base: base.data, path: identity.data.path, showHidden: false, computeSizes: false });
-  if (!item.ok) return serviceError(item);
+  if (!item.ok) return serviceError(item, context.locale);
   if (item.data.type !== expectedType) {
-    return fail(err.badInput(`The path is now a ${item.data.type}; use a current files.${item.data.type} ref returned by Search files`));
+    return localizedError(
+      400,
+      `The path is now a ${item.data.type}; use a current files.${item.data.type} ref returned by Search files`,
+      context.locale,
+    );
   }
   const baseInfo = filesService.base.toInfo(base.data);
   const href = buildFileHref(baseInfo.type, baseInfo.id, item.data.path);

@@ -101,7 +101,12 @@ const capabilityActorKey = (context: CapabilityExecutionContext): string =>
     : `service_account:${context.accessSubject.serviceAccountId}`;
 const EVENT_CREATE_ONCE_ACTION_ID = "spaces.event.create-once";
 
-const capabilityFail = (context: CapabilityExecutionContext, error: ServiceError) => fail(localizeSpacesError(error, context.locale));
+const capabilityFail = (context: CapabilityExecutionContext, error: ServiceError, messageKey?: keyof SpacesMessages) => {
+  if (!messageKey) return fail(localizeSpacesError(error, context.locale));
+  const message = spacesMessages(context.locale)[messageKey];
+  if (typeof message !== "string") throw new Error(`Spaces capability error message ${messageKey} must be static`);
+  return fail({ ...error, message });
+};
 
 const truncateText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return { text: value, truncated: false };
@@ -208,11 +213,13 @@ const permissionFromScopes = (scopes: string[]): PermissionLevel => resolveSpace
 
 const scopedSpaceId = (context: CapabilityExecutionContext, required: PermissionLevel): Result<string | null> => {
   if (context.actor.kind === "user") {
-    return context.accessSubject.type === "user" ? ok(null) : capabilityFail(context, err.forbidden("Access denied"));
+    return context.accessSubject.type === "user" ? ok(null) : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
   const account = context.actor.serviceAccount;
   if (account.kind === "user_delegated") {
-    return context.accessSubject.type === "user" && context.user ? ok(null) : capabilityFail(context, err.forbidden("Access denied"));
+    return context.accessSubject.type === "user" && context.user
+      ? ok(null)
+      : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
   if (
     account.appId !== SPACES_APP_ID ||
@@ -221,7 +228,7 @@ const scopedSpaceId = (context: CapabilityExecutionContext, required: Permission
     context.accessSubject.type !== "service_account" ||
     !hasPermission(permissionFromScopes(context.actor.scopes), required)
   ) {
-    return capabilityFail(context, err.forbidden("Access denied"));
+    return capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
   return ok(account.resourceId);
 };
@@ -234,35 +241,37 @@ const effectivePermission = (permission: Exclude<PermissionLevel, "none">, conte
 const requireSpaceUuid = async (spaceId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const scope = scopedSpaceId(context, required);
   if (!scope.ok) return scope;
-  if (scope.data && scope.data !== spaceId) return capabilityFail(context, err.notFound("Space"));
+  if (scope.data && scope.data !== spaceId) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const space = await spacesService.space.get({ id: spaceId });
-  if (!space) return capabilityFail(context, err.notFound("Space"));
+  if (!space) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const granted = await spacesService.space.permission.get({ spaceId, subject: context.accessSubject });
   const permission = granted === "none" ? "none" : effectivePermission(granted, context);
-  if (!hasPermission(permission, required)) return capabilityFail(context, err.notFound("Space"));
+  if (!hasPermission(permission, required)) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const [publicSpace] = await spacesPublicResources.projectSpaces([space]);
-  return publicSpace ? ok({ space: publicSpace, internalId: spaceId, permission }) : capabilityFail(context, err.notFound("Space"));
+  return publicSpace
+    ? ok({ space: publicSpace, internalId: spaceId, permission })
+    : capabilityFail(context, err.notFound("Space"), "spaceNotFound");
 };
 
 const requireSpace = async (shortId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const spaceId = await spacesPublicResources.resolvePublicId("spaces", shortId);
-  return spaceId ? requireSpaceUuid(spaceId, context, required) : capabilityFail(context, err.notFound("Space"));
+  return spaceId ? requireSpaceUuid(spaceId, context, required) : capabilityFail(context, err.notFound("Space"), "spaceNotFound");
 };
 
 const requireItemUuid = async (internalId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const item = await spacesService.item.get({ id: internalId });
-  if (!item) return capabilityFail(context, err.notFound("Item"));
+  if (!item) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const access = await requireSpaceUuid(item.spaceId, context, required);
-  if (!access.ok) return capabilityFail(context, err.notFound("Item"));
+  if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const [publicItem] = await spacesPublicResources.projectItems([item]);
   return publicItem
     ? ok({ item: publicItem, internalId, internalSpaceId: item.spaceId, permission: access.data.permission })
-    : capabilityFail(context, err.notFound("Item"));
+    : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
 const requireItem = async (itemId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const internalId = await spacesPublicResources.resolvePublicId("items", itemId);
-  return internalId ? requireItemUuid(internalId, context, required) : capabilityFail(context, err.notFound("Item"));
+  return internalId ? requireItemUuid(internalId, context, required) : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
@@ -602,13 +611,13 @@ const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context
   const access = await requireSpace(input.id, context);
   if (!access.ok) return access;
   const detail = await spacesService.space.getDetail({ id: access.data.internalId });
-  if (!detail) return capabilityFail(context, err.notFound("Space"));
+  if (!detail) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   const [publicDetail] = await spacesPublicResources.projectSpaces([detail]);
   const [columns, tags] = await Promise.all([
     spacesPublicResources.projectColumns(detail.columns),
     spacesPublicResources.projectTags(detail.tags),
   ]);
-  if (!publicDetail) return capabilityFail(context, err.notFound("Space"));
+  if (!publicDetail) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
   return ok({
     data: {
       id: publicDetail.id,
@@ -657,15 +666,16 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   const cursor = decodeSpacesCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   if (input.assignedTo === "me" && !context.user)
-    return capabilityFail(context, err.forbidden("The me filter requires a user-backed actor"));
+    return capabilityFail(context, err.forbidden("The me filter requires a user-backed actor"), "meFilterNeedsUser");
   const access = await requireSpace(input.spaceId, context);
   if (!access.ok) return access;
   const [columnIds, tagIds] = await Promise.all([
     spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, input.columnIds ?? []),
     spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, input.tagIds ?? []),
   ]);
-  if (!columnIds) return capabilityFail(context, err.badInput("Unknown columnIds value; use a column ID returned by Read space"));
-  if (!tagIds) return capabilityFail(context, err.badInput("Unknown tagIds value; use a tag ID returned by Read space"));
+  if (!columnIds)
+    return capabilityFail(context, err.badInput("Unknown columnIds value; use a column ID returned by Read space"), "unknownColumnIds");
+  if (!tagIds) return capabilityFail(context, err.badInput("Unknown tagIds value; use a tag ID returned by Read space"), "unknownTagIds");
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
@@ -751,14 +761,14 @@ const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, con
 
 const resolveComment = async (commentId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const internalId = await spacesPublicResources.resolvePublicId("comments", commentId);
-  if (!internalId) return capabilityFail(context, err.notFound("Comment"));
+  if (!internalId) return capabilityFail(context, err.notFound("Comment"), "commentNotFound");
   const comment = await spacesService.comment.get({ id: internalId, viewerUserId: context.user?.id ?? null });
-  if (!comment) return capabilityFail(context, err.notFound("Comment"));
+  if (!comment) return capabilityFail(context, err.notFound("Comment"), "commentNotFound");
   const item = await requireItemUuid(comment.itemId, context, required);
   const [publicComment] = await spacesPublicResources.projectComments([comment]);
   return item.ok && publicComment
     ? ok({ comment: publicComment, internalId, item: item.data.item, internalItemId: comment.itemId })
-    : capabilityFail(context, err.notFound("Comment"));
+    : capabilityFail(context, err.notFound("Comment"), "commentNotFound");
 };
 
 const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -905,7 +915,7 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, cont
     result.status === 403
       ? err.forbidden(result.error)
       : result.status === 404
-        ? err.notFound(result.error.replace(/ not found$/i, ""))
+        ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
         : result.status === 409
           ? err.conflict(result.error)
           : result.status === 500
@@ -921,7 +931,7 @@ const itemMutationResult = async (
 ) => {
   if (!result.ok) return mutationError(result, context);
   const [item] = await spacesPublicResources.projectItems([result.data]);
-  if (!item) return capabilityFail(context, err.internal("Failed to project Space item"));
+  if (!item) return capabilityFail(context, err.internal("Failed to project Space item"), "operationFailed");
   return ok({
     data: mapItem(item),
     summary: boundedCapabilitySummary(summary(item)),
@@ -953,7 +963,8 @@ const runItemReferenceAdd = async (input: z.infer<typeof ItemResourceReferenceAd
       spaceId: resolved.data.internalSpaceId,
       reference: input.reference,
     });
-    if (!data) return capabilityFail(context, err.conflict("Space item already has the maximum number of linked resources"));
+    if (!data)
+      return capabilityFail(context, err.conflict("Space item already has the maximum number of linked resources"), "maxLinkedResources");
     return ok({
       data,
       summary: boundedCapabilitySummary(
@@ -993,7 +1004,7 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
-    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"));
+    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
     return itemMutationResult(
       await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds }, actor: spaceActivityActor(context) }),
       (item) => tagSetSummary(resolved.data.item, item, context),
@@ -1004,7 +1015,7 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
 const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
-  if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+  if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
   const dependencies = await spacesPublicResources.projectTaskDependencies(
     await spacesService.item.dependencies.list({ itemId: resolved.data.internalId }),
   );
@@ -1021,7 +1032,7 @@ const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInp
 const runTaskDependentList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
-  if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+  if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
   const dependents = await spacesPublicResources.projectTaskDependents(
     await spacesService.item.dependencies.listBlocks({ blockerItemId: resolved.data.internalId }),
   );
@@ -1044,7 +1055,7 @@ const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSch
     if (!resolved.ok) return resolved;
     if (!blocker.ok) return blocker;
     if (isEvent(resolved.data.item) || isEvent(blocker.data.item))
-      return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"));
+      return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"), "taskDependenciesOnly");
     const result = await spacesService.item.dependencies.add({
       itemId: resolved.data.internalId,
       blockerItemId: blocker.data.internalId,
@@ -1052,7 +1063,7 @@ const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSch
     });
     if (!result.ok) return mutationError(result, context);
     const [data] = await spacesPublicResources.projectTaskDependencies([result.data]);
-    if (!data) return capabilityFail(context, err.internal("Failed to project task dependency"));
+    if (!data) return capabilityFail(context, err.internal("Failed to project task dependency"), "operationFailed");
     return ok({
       data,
       summary: boundedCapabilitySummary(
@@ -1095,7 +1106,7 @@ const commentMutationResult = async (
 ) => {
   if (!result.ok) return mutationError(result, context);
   const [comment] = await spacesPublicResources.projectComments([result.data]);
-  if (!comment) return capabilityFail(context, err.internal("Failed to project Space comment"));
+  if (!comment) return capabilityFail(context, err.internal("Failed to project Space comment"), "operationFailed");
   return ok({
     data: mapComment(comment),
     summary: boundedCapabilitySummary(summary),
@@ -1114,7 +1125,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
       spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
-    if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"));
+    if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
     return itemMutationResult(
       await spacesService.item.create({
         spaceId: access.data.internalId,
@@ -1131,10 +1142,10 @@ const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, conte
   audited(actionAudit(context, "task.update", "space_item", input.itemId), async () => {
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
-    if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+    if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
     const { itemId, ...data } = input;
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, data.tagIds ?? []);
-    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"));
+    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
@@ -1150,7 +1161,7 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
   audited(actionAudit(context, "task.set-completed", "space_item", input.itemId), async () => {
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
-    if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+    if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
     return itemMutationResult(
       await spacesService.item.setCompleted({
         id: resolved.data.internalId,
@@ -1175,7 +1186,7 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
       spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
     ]);
     const columnId = columnIds?.[0];
-    if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"));
+    if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
     return itemMutationResult(
       await spacesService.item.create({
         spaceId: access.data.internalId,
@@ -1193,7 +1204,7 @@ const runEventCreateOnce = async (input: z.infer<typeof EventCreateInputSchema>,
   return audited(
     actionAudit(context, "event.create-once", "space", input.spaceId),
     async () => {
-      if (!context.idempotencyKey) return capabilityFail(context, err.badInput("Idempotency-Key is required"));
+      if (!context.idempotencyKey) return capabilityFail(context, err.badInput("Idempotency-Key is required"), "idempotencyKeyRequired");
       const access = await requireSpace(input.spaceId, context, "write");
       if (!access.ok) return access;
       const { spaceId, ...data } = input;
@@ -1202,7 +1213,7 @@ const runEventCreateOnce = async (input: z.infer<typeof EventCreateInputSchema>,
         spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
       ]);
       const columnId = columnIds?.[0];
-      if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"));
+      if (!columnId || !tagIds) return capabilityFail(context, err.badInput("Unknown Space column or tag"), "unknownSpaceColumnOrTag");
       return itemMutationResult(
         await spacesService.item.create({
           spaceId: access.data.internalId,
@@ -1231,10 +1242,10 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
   audited(actionAudit(context, "event.update", "space_item", input.itemId), async () => {
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
-    if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"));
+    if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"), "itemNotEvent");
     const { itemId, ...data } = input;
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, data.tagIds ?? []);
-    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"));
+    if (!tagIds) return capabilityFail(context, err.badInput("Unknown Space tag"), "unknownSpaceTag");
     return itemMutationResult(
       await spacesService.item.update({
         id: resolved.data.internalId,
@@ -1266,7 +1277,7 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
 
 const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.create", "space_item", input.itemId), async () => {
-    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     return commentMutationResult(
@@ -1284,7 +1295,7 @@ const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>,
 
 const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.update", "space_comment", input.commentId), async () => {
-    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
     return commentMutationResult(
@@ -1297,7 +1308,7 @@ const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>,
 
 const runCommentDelete = async (input: z.infer<typeof CommentDeleteInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.delete", "space_comment", input.commentId), async () => {
-    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.comment.remove({ id: resolved.data.internalId, userId: context.user.id });
@@ -1394,7 +1405,8 @@ const runCalendarInvitationImport = async (
   context: CapabilityExecutionContext,
 ) =>
   audited(actionAudit(context, "calendar-invitation.import", "space", input.spaceId), async () => {
-    if (!context.user) return capabilityFail(context, err.forbidden("Importing an invitation requires a user-backed actor"));
+    if (!context.user)
+      return capabilityFail(context, err.forbidden("Importing an invitation requires a user-backed actor"), "invitationImportNeedsUser");
     const access = await requireSpace(input.spaceId, context, "write");
     if (!access.ok) return access;
     const result = await spacesService.calendarInvitations.importCalendarInvitation({
@@ -1454,10 +1466,11 @@ const runCalendarInvitationResponseCommit = async (
 
 const runEventInvitationPrepare = async (input: z.infer<typeof EventInvitationPrepareInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "event.invitation.prepare", "space_item", input.itemId), async () => {
-    if (!context.idempotencyKey) return capabilityFail(context, err.badInput("An idempotency key is required"));
+    if (!context.idempotencyKey)
+      return capabilityFail(context, err.badInput("An idempotency key is required"), "genericIdempotencyKeyRequired");
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
-    if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"));
+    if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"), "itemNotEvent");
     const result = await spacesService.calendarInvitations.prepareEventInvitationAttachment({
       ...input,
       spaceId: resolved.data.internalSpaceId,
@@ -1772,9 +1785,9 @@ export const spacesCapabilities = defineCapabilities({
         if (!resolved.ok) return resolved;
         if (!blocker.ok) return blocker;
         if (isEvent(resolved.data.item) || isEvent(blocker.data.item))
-          return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"));
+          return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"), "taskDependenciesOnly");
         if (resolved.data.item.spaceId !== blocker.data.item.spaceId)
-          return capabilityFail(context, err.badInput("Task dependencies must stay in one Space"));
+          return capabilityFail(context, err.badInput("Task dependencies must stay in one Space"), "taskDependenciesSameSpace");
         return ok({
           message: t.reviewAddBlocker({ task: resolved.data.item.title, blocker: blocker.data.item.title }),
           details: [
@@ -1805,9 +1818,9 @@ export const spacesCapabilities = defineCapabilities({
         if (!resolved.ok) return resolved;
         if (!blocker.ok) return blocker;
         if (isEvent(resolved.data.item) || isEvent(blocker.data.item))
-          return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"));
+          return capabilityFail(context, err.badInput("Task dependencies can only connect tasks"), "taskDependenciesOnly");
         if (resolved.data.item.spaceId !== blocker.data.item.spaceId)
-          return capabilityFail(context, err.badInput("Task dependencies must stay in one Space"));
+          return capabilityFail(context, err.badInput("Task dependencies must stay in one Space"), "taskDependenciesSameSpace");
         return ok({
           message: t.reviewRemoveBlocker({ task: resolved.data.item.title, blocker: blocker.data.item.title }),
           details: [
@@ -1843,7 +1856,7 @@ export const spacesCapabilities = defineCapabilities({
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
-        if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+        if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
         const relations = await relationReviewDetails(input, resolved.data.internalSpaceId, context);
         return ok({
           message: t.reviewUpdateTask({ title: resolved.data.item.title }),
@@ -1894,9 +1907,9 @@ export const spacesCapabilities = defineCapabilities({
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
-        if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"));
+        if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask");
         if (input.completed && resolved.data.item.activeBlockerCount > 0) {
-          return capabilityFail(context, err.conflict("Complete all blocking tasks first"));
+          return capabilityFail(context, err.conflict("Complete all blocking tasks first"), "completeBlockersFirst");
         }
         return ok({
           message: input.completed
@@ -1942,7 +1955,7 @@ export const spacesCapabilities = defineCapabilities({
         const t = spacesMessages(context.locale);
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
-        if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"));
+        if (!isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Item is not an event"), "itemNotEvent");
         const [relations, dateConfig] = await Promise.all([
           relationReviewDetails(input, resolved.data.internalSpaceId, context),
           input.recurrence !== undefined ? capabilityDateConfig(context) : Promise.resolve(undefined),
@@ -2077,7 +2090,7 @@ export const spacesCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
-        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         return ok({
@@ -2103,11 +2116,11 @@ export const spacesCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
-        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
         const resolved = await resolveComment(input.commentId, context, "write");
         if (!resolved.ok) return resolved;
         if (resolved.data.comment.userId !== context.user.id)
-          return capabilityFail(context, err.forbidden("Only the comment author may edit it"));
+          return capabilityFail(context, err.forbidden("Only the comment author may edit it"), "commentAuthorEditOnly");
         return ok({
           message: t.reviewUpdateComment({ title: resolved.data.item.title }),
           details: [
@@ -2131,11 +2144,11 @@ export const spacesCapabilities = defineCapabilities({
       idempotency: "none",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
-        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"));
+        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
         const resolved = await resolveComment(input.commentId, context, "write");
         if (!resolved.ok) return resolved;
         if (resolved.data.comment.userId !== context.user.id)
-          return capabilityFail(context, err.forbidden("Only the comment author may delete it"));
+          return capabilityFail(context, err.forbidden("Only the comment author may delete it"), "commentAuthorDeleteOnly");
         return ok({
           message: t.reviewDeleteComment({ title: resolved.data.item.title }),
           details: [
@@ -2158,20 +2171,25 @@ export const spacesCapabilities = defineCapabilities({
       idempotency: "none",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
-        if (!context.user) return capabilityFail(context, err.forbidden("Importing an invitation requires a user-backed actor"));
+        if (!context.user)
+          return capabilityFail(
+            context,
+            err.forbidden("Importing an invitation requires a user-backed actor"),
+            "invitationImportNeedsUser",
+          );
         const access = await requireSpace(input.spaceId, context, "write");
         if (!access.ok) return access;
         const preview = await spacesService.calendarInvitations.previewCalendarInvitation(input);
         if (!preview.ok) return preview;
         if (preview.data.existing && preview.data.existing.spaceId !== access.data.internalId) {
-          return capabilityFail(context, err.conflict("This calendar event is already linked to another Space"));
+          return capabilityFail(context, err.conflict("This calendar event is already linked to another Space"), "calendarAlreadyLinked");
         }
         const decision = spacesService.calendarInvitations.decideCalendarImport({
           existing: preview.data.existing,
           invitation: preview.data.invitation,
         });
         if (decision === "reject_cancellation")
-          return capabilityFail(context, err.badInput("Cannot import a cancellation without an existing event"));
+          return capabilityFail(context, err.badInput("Cannot import a cancellation without an existing event"), "cancellationNeedsEvent");
         const consequence = decision === "create" ? t.importCreate : decision === "unchanged" ? t.importKeep : t.importUpdate;
         return ok({
           message: t.reviewImportInvitation({ action: consequence, title: preview.data.invitation.title, space: access.data.space.name }),

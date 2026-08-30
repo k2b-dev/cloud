@@ -4,6 +4,18 @@ const TEMPLATE_MAX_BYTES = 200_000;
 const RENDER_MAX_BYTES = 300_000;
 
 type LiquidEngine = Liquid;
+export type LiquidTemplateErrorReason = "render_too_large";
+
+export class LiquidTemplateError extends Error {
+  constructor(
+    readonly reason: LiquidTemplateErrorReason,
+    message: string,
+  ) {
+    super(message);
+    this.name = "LiquidTemplateError";
+  }
+}
+
 export type LiquidTemplateFilter = Parameters<LiquidEngine["registerFilter"]>[1];
 export type LiquidTemplateOptions = {
   filters?: Record<string, LiquidTemplateFilter>;
@@ -115,7 +127,9 @@ export const renderLiquidTemplate = (template: string, data: Record<string, unkn
   const valid = validateLiquidTemplate(template, options);
   if (!valid.ok) throw new Error(valid.error);
   const rendered = engineFor(options).parseAndRenderSync(template, data);
-  if (byteLength(rendered) > (options.renderMaxBytes ?? RENDER_MAX_BYTES)) throw new Error("Rendered template is too large");
+  if (byteLength(rendered) > (options.renderMaxBytes ?? RENDER_MAX_BYTES)) {
+    throw new LiquidTemplateError("render_too_large", "Rendered template is too large");
+  }
   return rendered;
 };
 

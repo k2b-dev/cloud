@@ -1,7 +1,8 @@
-import { sql } from "bun";
+import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { logger, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
-import { err, fail, ok, paginate, type PageParams, type Paginated } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { CreateFaq, FaqEntry, UpdateFaq } from "@/contracts";
+import { faqServiceMessages } from "./messages";
 
 const log = logger("faq");
 
@@ -98,7 +99,8 @@ const get = async (config: { id: string }) => {
 /**
  * Creates a new FAQ entry and appends it to the current tail position.
  */
-const create = async (config: { data: CreateFaq }) => {
+const create = async (config: { data: CreateFaq; locale?: string | null }) => {
+  const t = faqServiceMessages(config.locale);
   try {
     const [maxRow] = await sql`SELECT COALESCE(MAX(position), -1) AS max_pos FROM faq.entries`;
     const nextPos = (maxRow as { max_pos: number }).max_pos + 1;
@@ -112,17 +114,18 @@ const create = async (config: { data: CreateFaq }) => {
     return ok(mapRow(row as DbRow));
   } catch (error) {
     log.error("Failed to create FAQ", { error: (error as Error).message });
-    return fail(err.internal("Failed to create FAQ"));
+    return fail(err.internal(t.createFailed));
   }
 };
 
 /**
  * Updates one FAQ entry in-place and keeps existing values for omitted fields.
  */
-const update = async (config: { id: string; data: UpdateFaq }) => {
+const update = async (config: { id: string; data: UpdateFaq; locale?: string | null }) => {
+  const t = faqServiceMessages(config.locale);
   try {
     const [existing] = await sql`SELECT id FROM faq.entries WHERE id = ${config.id}::uuid`;
-    if (!existing) return fail(err.notFound("FAQ"));
+    if (!existing) return fail({ code: "NOT_FOUND", status: 404, message: t.notFound });
 
     const audienceLiteral = config.data.audience ? toPgTextArray(config.data.audience) : null;
 
@@ -141,17 +144,18 @@ const update = async (config: { id: string; data: UpdateFaq }) => {
       error: (error as Error).message,
       id: config.id,
     });
-    return fail(err.internal("Failed to update FAQ"));
+    return fail(err.internal(t.updateFailed));
   }
 };
 
 /**
  * Deletes one FAQ entry and returns `NOT_FOUND` if the UUID is unknown.
  */
-const remove = async (config: { id: string }) => {
+const remove = async (config: { id: string; locale?: string | null }) => {
+  const t = faqServiceMessages(config.locale);
   try {
     const [existing] = await sql`SELECT id FROM faq.entries WHERE id = ${config.id}::uuid`;
-    if (!existing) return fail(err.notFound("FAQ"));
+    if (!existing) return fail({ code: "NOT_FOUND", status: 404, message: t.notFound });
 
     await sql`DELETE FROM faq.entries WHERE id = ${config.id}::uuid`;
     return ok();
@@ -160,26 +164,27 @@ const remove = async (config: { id: string }) => {
       error: (error as Error).message,
       id: config.id,
     });
-    return fail(err.internal("Failed to delete FAQ"));
+    return fail(err.internal(t.deleteFailed));
   }
 };
 
 /**
  * Rewrites FAQ positions in the provided order (index becomes persisted `position`).
  */
-const reorder = async (config: { ids: string[] }) => {
+const reorder = async (config: { ids: string[]; locale?: string | null }) => {
+  const t = faqServiceMessages(config.locale);
   try {
     if (config.ids.length === 0) return ok();
 
     const uniqueIds = new Set(config.ids);
-    if (uniqueIds.size !== config.ids.length) return fail(err.badInput("FAQ IDs must be unique."));
+    if (uniqueIds.size !== config.ids.length) return fail(err.badInput(t.duplicateIds));
 
     const existingRows = await sql<{ id: string }[]>`
       SELECT id
       FROM faq.entries
       WHERE id = ANY(${toPgUuidArray(config.ids)}::uuid[])
     `;
-    if (existingRows.length !== uniqueIds.size) return fail(err.notFound("FAQ"));
+    if (existingRows.length !== uniqueIds.size) return fail({ code: "NOT_FOUND", status: 404, message: t.notFound });
 
     await sql.begin(async (tx) => {
       for (const [index, id] of config.ids.entries()) {
@@ -189,7 +194,7 @@ const reorder = async (config: { ids: string[] }) => {
     return ok();
   } catch (error) {
     log.error("Failed to reorder FAQs", { error: (error as Error).message });
-    return fail(err.internal("Failed to reorder FAQs"));
+    return fail(err.internal(t.reorderFailed));
   }
 };
 

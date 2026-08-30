@@ -1,7 +1,8 @@
-import { type AuthContext, expectUserBackedActor, respond, v } from "@valentinkolb/cloud/server";
 import { ok } from "@k2b/stdlib";
+import { type AuthContext, expectUserBackedActor, getLocale, respond, v } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { z } from "zod";
+import { gatewayOpsMessages } from "../../messages";
 import { createMetricsToken, getMetricsSnapshot, listMetricsTokens, revokeMetricsToken } from "./service";
 
 const CreateMetricsTokenSchema = z.object({
@@ -28,7 +29,7 @@ export const metricsApiRoutes = new Hono<AuthContext>()
   .delete("/tokens/:id", async (c) => {
     const result = await revokeMetricsToken(c.req.param("id"), expectUserBackedActor(c));
     if (!result.ok) return respond(c, result);
-    return respond(c, ok({ message: "Metrics token revoked." }));
+    return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.metricsTokenRevoked }));
   });
 
 export type MetricsApiType = typeof metricsApiRoutes;

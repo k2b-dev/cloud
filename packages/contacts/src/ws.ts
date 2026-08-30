@@ -1,5 +1,5 @@
 import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, rateLimit } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import { accounts, logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
@@ -19,6 +19,7 @@ import {
 } from "./live-events";
 import { contactsService } from "./service";
 import { latestContactEventCursor, liveContactEvents } from "./service/events";
+import { type ContactsMessages, contactsMessages } from "./service/messages";
 import { resolvePublicId } from "./service/public-resources";
 
 const log = logger("contacts:websocket");
@@ -37,6 +38,7 @@ type WsPhase = "open" | "subscribed" | "closing";
 type WsContext = {
   socket: ServerWebSocket<unknown>;
   sessionToken: string | null;
+  messages: ContactsMessages;
   phase: WsPhase;
   scope: InternalLiveScope | null;
   userId: string | null;
@@ -45,9 +47,10 @@ type WsContext = {
   accessRefreshTimer: ReturnType<typeof setTimeout> | null;
 };
 
-const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null): WsContext => ({
+const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, locale: string): WsContext => ({
   socket,
   sessionToken,
+  messages: contactsMessages(locale),
   phase: "open",
   scope: null,
   userId: null,
@@ -97,19 +100,19 @@ const revoke = (ctx: WsContext, access: AccessFailure) => {
 
 const sameIds = (left: Set<string>, right: Set<string>): boolean => left.size === right.size && [...left].every((id) => right.has(id));
 
-const evaluateAccess = async (sessionToken: string | null, scope: InternalLiveScope): Promise<AccessResult> => {
-  if (!sessionToken) return { ok: false, code: "login_required", message: "Login required" };
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return { ok: false, code: "login_required", message: "Login required" };
+const evaluateAccess = async (ctx: WsContext, scope: InternalLiveScope): Promise<AccessResult> => {
+  if (!ctx.sessionToken) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
+  const session = await auth.session.getData(ctx.sessionToken);
+  if (!session) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
   const user = await accounts.users.get({ id: session.userId });
-  if (!user || !hasRole(user, "user")) return { ok: false, code: "access_denied", message: "Access denied" };
+  if (!user || !hasRole(user, "user")) return { ok: false, code: "access_denied", message: ctx.messages.accessDenied };
 
   const subject = { type: "user" as const, userId: user.id };
   if (scope.kind === "book") {
     const book = await contactsService.book.get({ id: scope.bookId });
-    if (!book) return { ok: false, code: "not_found", message: "Contact book not found" };
+    if (!book) return { ok: false, code: "not_found", message: ctx.messages.contactBookNotFound };
     const canRead = await contactsService.book.permission.canAccess({ bookId: scope.bookId, subject, requiredLevel: "read" });
-    if (!canRead) return { ok: false, code: "access_denied", message: "Access denied" };
+    if (!canRead) return { ok: false, code: "access_denied", message: ctx.messages.accessDenied };
     return { ok: true, userId: user.id, readableBookIds: new Set([scope.bookId]) };
   }
 
@@ -118,7 +121,7 @@ const evaluateAccess = async (sessionToken: string | null, scope: InternalLiveSc
 };
 
 const updateAccess = async (ctx: WsContext, scope: InternalLiveScope): Promise<boolean> => {
-  const access = await evaluateAccess(ctx.sessionToken, scope);
+  const access = await evaluateAccess(ctx, scope);
   if (ctx.phase !== "subscribed" || ctx.scope !== scope) return false;
   if (!access.ok) {
     revoke(ctx, access);
@@ -128,7 +131,7 @@ const updateAccess = async (ctx: WsContext, scope: InternalLiveScope): Promise<b
     const change = classifyContactScopeChange(ctx.readableBookIds, access.readableBookIds);
     ctx.readableBookIds = access.readableBookIds;
     if (!send(ctx.socket, { type: CONTACTS_LIVE_WS_TYPE.scopeChanged, payload: { change } })) {
-      closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+      closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
       return false;
     }
   } else {
@@ -145,7 +148,7 @@ const refreshAllEventAccess = async (ctx: WsContext, event: ContactServiceEvent)
   if (!ctx.sessionToken || !ctx.userId) return null;
   const session = await auth.session.getData(ctx.sessionToken);
   if (!session || session.userId !== ctx.userId) {
-    revoke(ctx, { ok: false, code: "login_required", message: "Login required" });
+    revoke(ctx, { ok: false, code: "login_required", message: ctx.messages.loginRequired });
     return null;
   }
 
@@ -165,7 +168,7 @@ const refreshAllEventAccess = async (ctx: WsContext, event: ContactServiceEvent)
         payload: { change: classifyContactScopeChange(before, ctx.readableBookIds) },
       })
     ) {
-      closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+      closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
     }
     // The replacement SSR snapshot includes both the new scope and this event.
     return null;
@@ -199,7 +202,7 @@ const startAccessRefresh = (ctx: WsContext, scope: InternalLiveScope) => {
       log.error("Contacts WebSocket access refresh failed", {
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "internal_error", "Access refresh failed", 1011);
+      closeWithError(ctx, "internal_error", ctx.messages.liveAccessRefreshFailed, 1011);
     }
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
@@ -232,7 +235,7 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
         if (!event || ctx.phase !== "subscribed") continue;
         const publicEvent = toVisiblePublicEvent(parsed.data, parsedPublic.data, event);
         if (!send(ctx.socket, { type: CONTACTS_LIVE_WS_TYPE.event, payload: { cursor: envelope.cursor, event: publicEvent } })) {
-          closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
           break;
         }
       }
@@ -241,7 +244,7 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
       log.error("Contacts WebSocket event stream failed", {
         error: error instanceof Error ? error.message : String(error),
       });
-      closeWithError(ctx, "stream_failed", "Contacts event stream failed", 1012);
+      closeWithError(ctx, "stream_failed", ctx.messages.liveStreamFailed, 1012);
     } finally {
       if (ctx.streamAbort === abort) ctx.streamAbort = null;
     }
@@ -251,16 +254,16 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
 const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fromCursor: string | null) => {
   if (isClosing(ctx)) return;
   if (ctx.phase === "subscribed") {
-    closeWithError(ctx, "already_subscribed", "A live subscription is already active", 1008);
+    closeWithError(ctx, "already_subscribed", ctx.messages.liveSubscriptionActive, 1008);
     return;
   }
   const scope: InternalLiveScope =
     publicScope.kind === "all" ? publicScope : { kind: "book", bookId: (await resolvePublicId("books", publicScope.bookId)) ?? "" };
   if (scope.kind === "book" && !scope.bookId) {
-    revoke(ctx, { ok: false, code: "not_found", message: "Contact book not found" });
+    revoke(ctx, { ok: false, code: "not_found", message: ctx.messages.contactBookNotFound });
     return;
   }
-  const access = await evaluateAccess(ctx.sessionToken, scope);
+  const access = await evaluateAccess(ctx, scope);
   if (isClosing(ctx)) return;
   if (!access.ok) {
     revoke(ctx, access);
@@ -275,7 +278,7 @@ const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fr
   ctx.userId = access.userId;
   ctx.readableBookIds = access.readableBookIds;
   if (!send(ctx.socket, { type: CONTACTS_LIVE_WS_TYPE.ready, payload: { cursor } })) {
-    closeWithError(ctx, "backpressure", "Live updates exceeded the connection capacity", 1013);
+    closeWithError(ctx, "backpressure", ctx.messages.liveBackpressure, 1013);
     return;
   }
   startStream(ctx, scope, cursor);
@@ -288,12 +291,12 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    closeWithError(ctx, "invalid_json", "Invalid JSON payload", 1008);
+    closeWithError(ctx, "invalid_json", ctx.messages.invalidJson, 1008);
     return;
   }
   const message = ContactLiveClientMessageSchema.safeParse(parsed);
   if (!message.success) {
-    closeWithError(ctx, "invalid_message", "Invalid live subscription", 1008);
+    closeWithError(ctx, "invalid_message", ctx.messages.invalidLiveSubscription, 1008);
     return;
   }
   await handleSubscribe(ctx, message.data.payload.scope, message.data.payload.fromCursor);
@@ -303,22 +306,23 @@ const app = new Hono<AuthContext>().use("*", rateLimit({ keyBy: "auto", limitPer
   "/",
   upgradeWebSocket((c) => {
     const sessionToken = auth.session.getToken(c);
+    const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
 
     return {
       onOpen(_, ws) {
-        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken);
+        ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
       },
       onMessage(event) {
         if (!ctx || ctx.phase === "closing") return;
         if (typeof event.data !== "string" || event.data.length > MAX_CLIENT_MESSAGE_LENGTH) {
-          closeWithError(ctx, "invalid_message", "Invalid live subscription", 1008);
+          closeWithError(ctx, "invalid_message", ctx.messages.invalidLiveSubscription, 1008);
           return;
         }
         if (pendingMessages >= MAX_PENDING_MESSAGES) {
-          closeWithError(ctx, "backpressure", "Too many pending live messages", 1013);
+          closeWithError(ctx, "backpressure", ctx.messages.tooManyLiveMessages, 1013);
           return;
         }
         pendingMessages++;
@@ -329,7 +333,7 @@ const app = new Hono<AuthContext>().use("*", rateLimit({ keyBy: "auto", limitPer
             log.error("Contacts WebSocket message handling failed", {
               error: error instanceof Error ? error.message : String(error),
             });
-            closeWithError(current, "internal_error", "Live subscription failed", 1011);
+            closeWithError(current, "internal_error", current.messages.liveSubscriptionFailed, 1011);
           })
           .finally(() => {
             pendingMessages = Math.max(0, pendingMessages - 1);
