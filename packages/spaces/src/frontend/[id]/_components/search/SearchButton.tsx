@@ -1,15 +1,14 @@
+import { type HotkeyMap, hotkeys } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
-  isSpotlightShortcut,
   openSpotlightSearch,
+  SPOTLIGHT_SHORTCUT,
   SPOTLIGHT_SHORTCUT_TITLE,
   SpotlightButton,
   type SpotlightButtonVariant,
 } from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ItemFilter, SpaceColumn, SpaceItem } from "@/contracts";
-import { isPlainShortcut } from "../../../lib/keyboard";
 import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -111,17 +110,26 @@ export default function SearchButton(props: Props) {
     }
   };
 
-  onMount(() => {
-    if (!props.registerShortcut) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSpotlightShortcut(event) && !isPlainShortcut(event, "/")) return;
-      event.preventDefault();
-      void openSearch();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
-  });
+  const runSearch = () => {
+    if (!document.querySelector("dialog[open]")) void openSearch();
+  };
+  hotkeys.create(
+    (): HotkeyMap =>
+      props.registerShortcut
+        ? {
+            [SPOTLIGHT_SHORTCUT]: {
+              label: t.searchItemsCommand,
+              desc: t.searchItemsCommandDescription,
+              run: runSearch,
+            },
+            "/": {
+              label: t.searchItemsCommand,
+              desc: t.searchItemsCommandDescription,
+              run: runSearch,
+            },
+          }
+        : {},
+  );
 
   if (props.variant === "icon") {
     return (

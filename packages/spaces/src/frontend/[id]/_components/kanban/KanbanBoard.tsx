@@ -4,6 +4,7 @@ import {
   type DndDraggableSnapshot,
   type DndDroppableSnapshot,
   dnd,
+  hotkeys,
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
@@ -21,7 +22,6 @@ import {
   type WormholeTransferResult,
 } from "@/contracts";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { isTypingTarget } from "../../../lib/keyboard";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -640,52 +640,113 @@ export default function KanbanBoard(props: Props) {
     card.scrollIntoView({ block: "nearest", inline: "nearest" });
   };
 
-  const handleBoardKeyDown = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
-    const target = event.target instanceof HTMLElement ? event.target : null;
-    if (target?.closest("button")) return;
+  const shortcutTarget = () => {
+    if (document.querySelector("dialog[open]")) return null;
+    const target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!target || !boardScrollContainer?.contains(target) || target.closest("button")) return null;
+    return target;
+  };
+
+  const navigateCards = (direction: "up" | "down" | "left" | "right") => {
+    const target = shortcutTarget();
+    if (!target) return;
     const cards = kanbanCards();
     const current = target?.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") ?? null;
-
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-      event.preventDefault();
-      if (!current) {
-        focusCard(cards[0]);
-        return;
-      }
-      const bucketKey = current.dataset.bucketKey;
-      const sameBucket = cards.filter((card) => card.dataset.bucketKey === bucketKey);
-      const currentIndex = sameBucket.indexOf(current);
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        const offset = event.key === "ArrowUp" ? -1 : 1;
-        focusCard(sameBucket[clamp(currentIndex + offset, 0, sameBucket.length - 1)]);
-        return;
-      }
-      const bucketKeys = buckets().map((bucket) => bucket.key);
-      const offset = event.key === "ArrowLeft" ? -1 : 1;
-      let bucketIndex = bucketKeys.indexOf(bucketKey ?? "") + offset;
-      while (bucketIndex >= 0 && bucketIndex < bucketKeys.length) {
-        const targetBucket = cards.filter((card) => card.dataset.bucketKey === bucketKeys[bucketIndex]);
-        if (targetBucket.length > 0) {
-          focusCard(targetBucket[clamp(currentIndex, 0, targetBucket.length - 1)]);
-          return;
-        }
-        bucketIndex += offset;
-      }
+    if (!current) {
+      focusCard(cards[0]);
       return;
     }
-
-    if (!current || !props.canWrite || event.repeat) return;
-    const location = findItemLocation(current.dataset.itemId ?? "");
-    if (!location) return;
-    if (event.key.toLowerCase() === "m") {
-      event.preventDefault();
-      if (!assignShortcutMutation.loading()) assignShortcutMutation.mutate(location.item);
-    } else if (event.key.toLowerCase() === "d" && !location.item.completedAt) {
-      event.preventDefault();
-      if (!completeShortcutMutation.loading()) completeShortcutMutation.mutate(location.item);
+    const bucketKey = current.dataset.bucketKey;
+    const sameBucket = cards.filter((card) => card.dataset.bucketKey === bucketKey);
+    const currentIndex = sameBucket.indexOf(current);
+    if (direction === "up" || direction === "down") {
+      const offset = direction === "up" ? -1 : 1;
+      focusCard(sameBucket[clamp(currentIndex + offset, 0, sameBucket.length - 1)]);
+      return;
+    }
+    const bucketKeys = buckets().map((bucket) => bucket.key);
+    const offset = direction === "left" ? -1 : 1;
+    let bucketIndex = bucketKeys.indexOf(bucketKey ?? "") + offset;
+    while (bucketIndex >= 0 && bucketIndex < bucketKeys.length) {
+      const targetBucket = cards.filter((card) => card.dataset.bucketKey === bucketKeys[bucketIndex]);
+      if (targetBucket.length > 0) {
+        focusCard(targetBucket[clamp(currentIndex, 0, targetBucket.length - 1)]);
+        return;
+      }
+      bucketIndex += offset;
     }
   };
+
+  const focusedLocation = () => {
+    const current = shortcutTarget()?.closest<HTMLAnchorElement>("[data-spaces-kanban-card]");
+    if (!current) return null;
+    return findItemLocation(current.dataset.itemId ?? "");
+  };
+
+  const openFocusedItem = () => {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (document.querySelector("dialog[open]") || !active || !boardScrollContainer?.contains(active)) {
+      if (active?.matches('button, a[href], [role="button"]')) active.click();
+      return;
+    }
+    const target = shortcutTarget();
+    if (!target) return;
+    const card = target.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") ?? kanbanCards()[0];
+    card?.click();
+  };
+
+  const assignFocusedItem = () => {
+    const location = focusedLocation();
+    if (!location || assignShortcutMutation.loading()) return;
+    assignShortcutMutation.mutate(location.item);
+  };
+
+  const completeFocusedItem = () => {
+    const location = focusedLocation();
+    if (!location || location.item.completedAt || completeShortcutMutation.loading()) return;
+    completeShortcutMutation.mutate(location.item);
+  };
+
+  const handleBoardKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], button')) return;
+
+    const key = event.key.toLowerCase();
+    const direction = {
+      arrowup: "up",
+      arrowdown: "down",
+      arrowleft: "left",
+      arrowright: "right",
+    }[key] as "up" | "down" | "left" | "right" | undefined;
+    if (direction) {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateCards(direction);
+    } else if (key === "m" && props.canWrite) {
+      event.preventDefault();
+      event.stopPropagation();
+      assignFocusedItem();
+    } else if (key === "d" && props.canWrite) {
+      event.preventDefault();
+      event.stopPropagation();
+      completeFocusedItem();
+    }
+  };
+
+  hotkeys.create(() => ({
+    arrowup: { label: t.focusPreviousCard, desc: t.focusPreviousCardDescription, run: () => navigateCards("up") },
+    arrowdown: { label: t.focusNextCard, desc: t.focusNextCardDescription, run: () => navigateCards("down") },
+    arrowleft: { label: t.focusPreviousColumn, desc: t.focusPreviousColumnDescription, run: () => navigateCards("left") },
+    arrowright: { label: t.focusNextColumn, desc: t.focusNextColumnDescription, run: () => navigateCards("right") },
+    enter: { label: t.openFocusedItem, desc: t.openFocusedItemDescription, run: openFocusedItem },
+    ...(props.canWrite
+      ? {
+          m: { label: t.assignFocusedItem, desc: t.assignFocusedItemDescription, run: assignFocusedItem },
+          d: { label: t.completeFocusedItem, desc: t.completeFocusedItemDescription, run: completeFocusedItem },
+        }
+      : {}),
+  }));
 
   const bucketQuery = (bucketKey: string) => bucketQueries.find(({ initialBucket }) => initialBucket.key === bucketKey)?.pages;
   const isDropIndicatorVisible = (bucketKey: string, index: number) => {

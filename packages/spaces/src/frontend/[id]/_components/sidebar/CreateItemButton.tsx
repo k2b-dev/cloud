@@ -1,10 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
-import { mutation as mutations } from "@k2b/stdlib/solid";
+import { type HotkeyMap, hotkeys, mutation as mutations } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
-import { isPlainShortcut } from "../../../lib/keyboard";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -76,16 +75,20 @@ export default function CreateItemButton(props: Props) {
   };
   const pending = () => dialogPending() || mutation.loading();
 
-  onMount(() => {
-    if (!props.registerShortcut) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!isPlainShortcut(event, "c")) return;
-      event.preventDefault();
-      void createItem();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
-  });
+  hotkeys.create(
+    (): HotkeyMap =>
+      props.registerShortcut
+        ? {
+            c: {
+              label: t.createItemCommand,
+              desc: t.createItemCommandDescription,
+              run: () => {
+                if (!document.querySelector("dialog[open]")) void createItem();
+              },
+            },
+          }
+        : {},
+  );
 
   if (props.variant === "chip") {
     return (
