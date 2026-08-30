@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { sql } from "bun";
-import { publicAttachmentRoutes } from "../frontend/public-attachments";
+import { createConfig } from "@k2b/ssr";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
@@ -16,6 +19,13 @@ import {
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 import { storeReadableBlob } from "./message-blobs";
+
+const ssrRoot = mkdtempSync(resolve(tmpdir(), "mail-attachment-link-ssr-tests-"));
+const { plugin } = createConfig({ dev: true, rootDir: ssrRoot });
+Bun.plugin(plugin());
+process.once("exit", () => rmSync(ssrRoot, { recursive: true, force: true }));
+
+const { publicAttachmentRoutes } = await import("../frontend/public-attachments");
 
 const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
 
@@ -265,7 +275,10 @@ suite("public attachment links", () => {
       headers: { "X-Forwarded-For": `203.0.113.${suffix.charCodeAt(0)}` },
     });
     expect(locked.status).toBe(200);
-    expect(await locked.text()).not.toContain("private-name.txt");
+    const lockedHtml = await locked.text();
+    expect(lockedHtml).toContain("minimal-layout-preferences--bottom-right");
+    expect(lockedHtml).toContain('name="password"');
+    expect(lockedHtml).not.toContain("private-name.txt");
 
     const wrong = await publicAttachmentRoutes.request(protectedPath, {
       method: "POST",

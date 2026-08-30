@@ -5,12 +5,12 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-08-27
+updated: 2026-08-30
 ---
 
 # Layout and navigation
 
-Wrap every application page in `Layout` or `AdminLayout`.
+Wrap a Cloud application page in `Layout`, `AdminLayout`, or `MinimalLayout`.
 
 The shared layout provides the header, breadcrumbs, app navigation, mobile
 navigation, global search, profile preferences, and footer.
@@ -42,11 +42,54 @@ surface without the footer.
 
 Do not reproduce Cloud chrome inside application content.
 
+## Render anonymous application pages
+
+`Layout` uses the same application shell for authenticated and anonymous
+requests. Anonymous pages keep the header visible at every viewport width,
+show a direct sign-in action, and expose the shared language and theme menu.
+They do not render the authenticated application rail, app launcher, global
+search, notifications, or profile actions.
+
+Use this default for public pages that should still look and navigate like a
+Cloud application, such as a utility catalog or public FAQ. The presence of
+`Layout` does not authorize the route or its data. Follow
+[Public and anonymous access](/en/docs/identity/public-and-anonymous-access)
+for route and resource policy.
+
+## Keep an app-owned public surface minimal
+
+Use `MinimalLayout` when a standalone page should keep its application-owned
+background, spacing, branding, and content geometry without Cloud header,
+rail, footer, or canvas styling:
+
+```tsx
+import { MinimalLayout } from "@valentinkolb/cloud/ssr";
+
+return () => (
+  <MinimalLayout c={c} preferences="bottom-right">
+    <PublicDocument document={document} />
+  </MinimalLayout>
+);
+```
+
+`MinimalLayout` installs the request locale, persisted theme, and browser
+timezone wiring expected by Cloud and `@k2b/ui`. Its only visible element is a
+language and theme menu. `preferences` accepts `top-left`, `top-right`,
+`bottom-left`, or `bottom-right`; it defaults to `bottom-right`. Set it to
+`false` for embeds or fixed presentation surfaces that must have no control.
+
+The layout adds no wrapper around application content. The application remains
+responsible for its one semantic `main` landmark and all page styling. Do not
+use `MinimalLayout` as an access-control signal: route middleware, public
+grants, and share-token validation remain separate server responsibilities.
+
 ## Use the responsive profile menu
 
 Authenticated users change the theme or language from the profile control and
-can open `/me` for the remaining profile settings. Applications must not add a
-second theme or language control to their own content.
+can open `/me` for the remaining profile settings. Anonymous `Layout` pages
+and opted-in `MinimalLayout` pages expose the same preferences without profile
+actions. Applications must not add a second theme or language control to their
+own content.
 
 The shared layout chooses the placement with CSS:
 

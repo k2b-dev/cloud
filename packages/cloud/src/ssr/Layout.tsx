@@ -5,24 +5,21 @@ import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } fro
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
-import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import { getDateConfig } from "../server/time";
 import { dates, resolveHelpManifest } from "../shared";
 import { readThemeFromCookieHeader } from "../shared/theme";
-import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
+import type { AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
-import { appAccentStyle, appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
+import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 import { visibleNavigationApps } from "./app-navigation";
 import BrowserNotifications from "./BrowserNotifications.island";
-import Footer from "./Footer.island";
 import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
-import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
-import HotkeysHelpRail from "./HotkeysHelpRail.island";
-import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
+import type { LayoutContext } from "./layout-context";
+import LayoutFooter from "./LayoutFooter";
+import LayoutHeader from "./LayoutHeader";
 import type { LayoutBreadcrumb } from "./layout-runtime";
-import NavMenu from "./NavMenu.island";
-import ProfilePreferences from "./ProfilePreferences.island";
+import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import { platformMessages } from "./platform-messages";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
@@ -30,22 +27,6 @@ import TimezoneCookie from "./TimezoneCookie.island";
 
 // Types
 type Breadcrumb = LayoutBreadcrumb;
-type AppLink = { id: string; iconClass: string; label: string; href: string; match: string; description?: string; accent?: string };
-type LayoutContext = {
-  get(key: "user"): User | undefined;
-  get(key: "page"): { theme?: "light" | "dark" };
-  get(key: "runtime"): RuntimeContext;
-  get(key: "announcements"): LayoutAnnouncementsState | undefined;
-  /**
-   * Per-request settings snapshot (populated by snapshot middleware in
-   * `_internal/define-app.ts`). Loose-typed at this layer so Layout can be
-   * shared across apps with different SettingsMaps; reading core keys like
-   * `app.name`/`app.copyright` is safe because every container's snapshot
-   * includes core's keys.
-   */
-  get(key: "settings"): Record<string, any>;
-  req: { raw: { headers: Headers; url: string } };
-};
 type LayoutProps = {
   children: JSX.Element;
   c: LayoutContext;
@@ -57,12 +38,11 @@ type LayoutProps = {
   workspaceSidebarCollapsible?: boolean /** Resolve persisted sidebar geometry for the page's sidebar policy during SSR. */;
 }; // ==========================
 // Helpers
-function active(pathname: string, match: string): string {
-  return pathname.startsWith(match) ? "active" : "";
-}
-const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</g, "\\u003c");
-
-function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined, locale: string): { primary: AppLink[]; more: AppLink[] } {
+function buildNavLinks(
+  apps: RuntimeContext["apps"],
+  user: User | undefined,
+  locale: string,
+): { primary: LayoutAppLink[]; more: LayoutAppLink[] } {
   const t = platformMessages.resolve([locale]).t;
   const links = visibleNavigationApps(apps, user).map((app) => ({
     section: app.nav.section,
@@ -74,7 +54,7 @@ function buildNavLinks(apps: RuntimeContext["apps"], user: User | undefined, loc
       match: resolveNavMatch(app) ?? app.nav.href.split("?")[0] ?? app.nav.href,
       description: app.description,
       accent: app.appearance?.accent,
-    } satisfies AppLink,
+    } satisfies LayoutAppLink,
   }));
   const primary = links.filter((entry) => entry.section === "primary").map((entry) => entry.link);
   const more = links.filter((entry) => entry.section === "more").map((entry) => entry.link);
@@ -200,20 +180,6 @@ export default function Layout(props: LayoutProps) {
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
-  // Project the user record down to what NavMenu actually renders. Without
-  // this, the full `User` (mail, ssh keys, phone, address, all group
-  // memberships) gets serialized into the island's data-props HTML on every
-  // authenticated page — defense-in-depth.
-  const navMenuUser = user
-    ? {
-        id: user.id,
-        uid: user.uid,
-        displayName: user.displayName,
-        profile: user.profile,
-        roles: user.roles,
-        avatarHash: user.avatarHash,
-      }
-    : undefined;
   // Aggregate legalLinks from every running app (last-wins on duplicate href).
   const legalLinks = (() => {
     const seen = new Map<string, { label: string; href: string; icon?: string }>();
@@ -269,92 +235,37 @@ export default function Layout(props: LayoutProps) {
         {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
         <AppWorkspaceController appId={currentApp?.id} />
         {user && <BrowserNotifications userId={user.id} />}
-        {showRail && <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} />}
         {showRail && (
-          <script id="cloud-app-launchpad-data" type="application/json">
-            {jsonScript({ apps: launchpadApps, legalLinks })}
-          </script>
-        )}{" "}
-        {showRail && (
-          <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
-            <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
-              <a href="/" aria-label={t.home}>
-                <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
-              </a>
-            </div>
-            <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t.apps}>
-              {primaryApps.map((app) => (
-                <a
-                  href={app.href}
-                  class={`rail-item ${active(pathname, app.match) ? "rail-item-active" : ""}`}
-                  aria-label={app.label}
-                  aria-current={active(pathname, app.match) ? "page" : undefined}
-                  title={app.label}
-                  style={appAccentStyle(app.accent)}
-                >
-                  <i class={`${app.iconClass} text-base`} />
-                </a>
-              ))}
-              <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="rail" label={t.openApps} />
-              <div class="mt-auto flex flex-col items-center gap-1">
-                <GlobalSearchTrigger variant="rail" searchHelpApps={searchHelpApps} />
-                <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={searchHelpApps} accent={currentApp?.appearance?.accent} />
-                <ProfilePreferences avatarSrc={profileAvatarSrc} initialTheme={theme} name={profileName} placement="rail" />
-              </div>
-            </nav>
-          </aside>
+          <LayoutRail
+            accent={currentApp?.appearance?.accent}
+            appsLabel={t.apps}
+            homeLabel={t.home}
+            launchpadApps={launchpadApps}
+            legalLinks={legalLinks}
+            openAppsLabel={t.openApps}
+            pathname={pathname}
+            primaryApps={primaryApps}
+            profileAvatarSrc={profileAvatarSrc}
+            profileName={profileName}
+            searchHelpApps={searchHelpApps}
+            theme={theme}
+          />
         )}
         <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
-          <header
-            class="layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 md:px-3 md:py-2"
-            style="box-shadow: var(--ui-shadow-surface)"
-          >
-            <div class="flex min-w-0 items-center gap-2">
-              {!showRail && (
-                <a href="/" class="flex shrink-0 items-center" aria-label={t.home}>
-                  <img src="/branding/logo" alt="Logo" class="h-6 w-6" />
-                </a>
-              )}
-              {showRail && (
-                <a
-                  href="/"
-                  aria-label={t.home}
-                  class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary md:hidden dark:hover:bg-zinc-800"
-                >
-                  <img src="/branding/logo" alt={t.home} class="h-4 w-4" />
-                </a>
-              )}
-              <div class="hidden min-w-0 items-center md:flex">
-                <LayoutBreadcrumbs breadcrumbs={breadcrumbs} />
-              </div>
-              <div class="flex min-w-0 items-center md:hidden">
-                <LayoutBreadcrumbs breadcrumbs={breadcrumbs} mobile />
-              </div>
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-              <div class="flex items-center gap-1 md:hidden">
-                <HotkeysHelpRail
-                  variant="header"
-                  registerHotkey={!showRail}
-                  searchHelpApps={searchHelpApps}
-                  accent={currentApp?.appearance?.accent}
-                />
-                {user && <GlobalSearchTrigger variant="header" registerHotkey searchHelpApps={searchHelpApps} />}
-              </div>
-              {user ? (
-                <>
-                  <div class="md:hidden">
-                    <div class="flex items-center gap-1">
-                      <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label={t.openApps} />
-                    </div>
-                  </div>
-                  <ProfilePreferences avatarSrc={profileAvatarSrc} initialTheme={theme} name={profileName} placement="header" />
-                </>
-              ) : (
-                <NavMenu user={navMenuUser} />
-              )}
-            </div>
-          </header>
+          <LayoutHeader
+            accent={currentApp?.appearance?.accent}
+            authenticated={showRail}
+            breadcrumbs={breadcrumbs}
+            homeLabel={t.home}
+            launchpadApps={launchpadApps}
+            legalLinks={legalLinks}
+            openAppsLabel={t.openApps}
+            profileAvatarSrc={profileAvatarSrc}
+            profileName={profileName}
+            searchHelpApps={searchHelpApps}
+            signInLabel={t.signIn}
+            theme={theme}
+          />
           {user && announcements && (
             <GlobalAnnouncements
               banners={announcements.banners}
@@ -368,11 +279,7 @@ export default function Layout(props: LayoutProps) {
           <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
             <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
           </main>
-          {!fullPage && !showRail && (
-            <div class="hidden shrink-0 md:block">
-              <Footer isLoggedIn={!!user} appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />
-            </div>
-          )}
+          {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
         </div>
       </div>
     </LocaleProvider>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { publicAttachmentMessages } from "./public-attachments";
+import { publicAttachmentMessages } from "./public-attachment-messages";
 
 describe("public attachment messages", () => {
   test("keeps German complete and inherits regional locales", () => {

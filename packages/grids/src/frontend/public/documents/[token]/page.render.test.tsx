@@ -14,6 +14,14 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { PublicDocumentShare } = await import("./page");
 
 describe("public document share page", () => {
+  test("uses the shared minimal Cloud root instead of fixing the page to light mode", async () => {
+    const source = await Bun.file(new URL("./page.tsx", import.meta.url)).text();
+
+    expect(source).toContain("<MinimalLayout c={c}>");
+    expect(source).not.toContain('c.get("page").theme = "light"');
+    expect(source).not.toContain("<LocaleProvider");
+  });
+
   test("uses shared UI without application chrome and explains expiry", () => {
     const html = renderToString(() =>
       createComponent(PublicDocumentShare, {

@@ -150,6 +150,18 @@
         "Localized Help remains one declaration and one bounded registration with exact, ancestor, and base fallback.",
         "The response does not add a language picker, settings UI, or new browser persistence."
       ]
+    },
+    {
+      "id": 14,
+      "prompt": "Build an anonymous Cloud utility page with recognizable Cloud navigation and a branded share page with no Cloud chrome. Both pages need the shared language and theme preference.",
+      "expected_output": "Uses Layout for the recognizable anonymous application page and MinimalLayout for the app-owned share surface, keeps shared preference persistence in Cloud rather than @k2b/ui, and treats route and resource authorization as separate from layout selection.",
+      "files": [],
+      "expectations": [
+        "The anonymous utility uses Layout with a visible sign-in action and no authenticated application rail.",
+        "The branded share page uses MinimalLayout while retaining application-owned styling and semantic page structure.",
+        "Language and theme persistence remain Cloud-owned and are not reimplemented in the application or moved into @k2b/ui.",
+        "The response does not treat either layout as route or resource authorization."
+      ]
     }
   ]
 }

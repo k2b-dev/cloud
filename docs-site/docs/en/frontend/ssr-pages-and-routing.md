@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-08-27
+updated: 2026-08-30
 ---
 
 # SSR pages and routing
@@ -44,11 +44,13 @@ The returned function must be synchronous. Solid SSR creates JSX inside
 `renderToString()`.
 
 The framework resolves the request locale into `c.get("page").lang` and the
-document's `<html lang>` attribute for every SSR page; `Layout` provides the
-same value to `@k2b/ui` components and browser islands inherit it from the
-document. A custom SSR root that uses neither `Layout` nor `AdminLayout` must
-wrap its returned component tree once with `LocaleProvider` from `@k2b/ui`,
-using `getLocale(c)`. See [Internationalization](/en/docs/build/internationalization)
+document's `<html lang>` attribute for every SSR page. `Layout`, `AdminLayout`,
+and `MinimalLayout` provide the same value to `@k2b/ui` components, and browser
+islands inherit it from the document. Use `MinimalLayout` for an app-styled
+standalone root that still needs Cloud's persisted locale, theme, and timezone
+wiring. A deliberately custom root that uses none of these layouts must wrap
+its returned component tree once with `LocaleProvider` from `@k2b/ui`, using
+`getLocale(c)`. See [Internationalization](/en/docs/build/internationalization)
 before formatting or translating values in a page.
 
 ## Authorize page data
@@ -105,6 +107,10 @@ registered there are not reached.
 Use `auth.requireRole("*")` when a page accepts both anonymous and signed-in
 requests. That middleware does not grant resource access. Validate the share
 token or public grant in the service.
+
+Choose `Layout` when the page should retain recognizable Cloud navigation.
+Choose `MinimalLayout` when the application owns the complete visual surface.
+Neither choice changes route or resource authorization.
 
 ## Verify the page
 

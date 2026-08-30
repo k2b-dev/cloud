@@ -5,6 +5,7 @@ export const profilePreferencesMessages = i18n.define({
   messages: {
     en: {
       menuLabel: "Profile and preferences",
+      preferencesMenuLabel: "Appearance and language",
       profileSettings: "Profile settings",
       switchToDark: "Dark mode",
       switchToLight: "Light mode",
@@ -13,6 +14,7 @@ export const profilePreferencesMessages = i18n.define({
     },
     de: {
       menuLabel: "Profil und Einstellungen",
+      preferencesMenuLabel: "Darstellung und Sprache",
       profileSettings: "Profileinstellungen",
       switchToDark: "Dunkler Modus",
       switchToLight: "Heller Modus",

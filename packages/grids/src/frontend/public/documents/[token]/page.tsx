@@ -1,5 +1,6 @@
-import { ButtonLink, LocaleProvider, NoticeCard, Paper, useLocale } from "@k2b/ui";
+import { ButtonLink, NoticeCard, Paper, useLocale } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { type JSX, Show } from "solid-js";
 import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";
@@ -29,7 +30,10 @@ export function PublicDocumentShare(props: {
   return (
     <div
       class="flex min-h-screen items-center justify-center px-4 py-8 text-primary sm:py-12"
-      style={{ background: "linear-gradient(145deg, #e8f8ef 0%, #f7fbf8 48%, #ffffff 100%)" }}
+      style={{
+        background:
+          "linear-gradient(145deg, color-mix(in srgb, #00a651 12%, var(--ui-canvas)) 0%, color-mix(in srgb, #00a651 4%, var(--ui-canvas)) 48%, var(--ui-canvas) 100%)",
+      }}
     >
       <main class="w-full max-w-xl">
         <Paper as="article" elevated class="w-full p-6 sm:p-8">
@@ -72,15 +76,13 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
   const resolved = await gridsService.document.resolveDocumentLinkDownload(token);
-  c.get("page").theme = "light";
-
   if (!resolved.ok) {
     c.status(404);
     c.get("page").title = t.linkUnavailable;
     return () => (
-      <LocaleProvider locale={locale}>
+      <MinimalLayout c={c}>
         <PublicDocumentShare />
-      </LocaleProvider>
+      </MinimalLayout>
     );
   }
 
@@ -96,13 +98,13 @@ export default ssr<AuthContext>(async (c) => {
   c.get("page").description = t.sharedPdfDescription;
 
   return () => (
-    <LocaleProvider locale={locale}>
+    <MinimalLayout c={c}>
       <PublicDocumentShare
         filename={resolved.data.document.filename}
         expiresAt={expiresAt}
         expiresAtLabel={expiresAtLabel}
         downloadHref={`/share/grids/documents/${encodeURIComponent(token)}/download`}
       />
-    </LocaleProvider>
+    </MinimalLayout>
   );
 });

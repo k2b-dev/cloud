@@ -1,12 +1,11 @@
-import { LocaleProvider } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { toPublicForm } from "../../../../api/form-api-shared";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
 import { gridsService } from "../../../../service";
 import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island";
-import PublicTimezoneCookie from "../../../_components/forms/PublicTimezoneCookie.island";
 import { resolveGridsMessages } from "../../../messages";
 
 /**
@@ -28,26 +27,20 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
 
-  // Theme: anonymous users have no cookies normally, but if they do
-  // (returning logged-in user opening a public form) honour it.
-  const cookie = c.req.raw.headers.get("Cookie") ?? "";
-  const themeMatch = cookie.match(/theme=([^;]+)/);
-  c.get("page").theme = themeMatch?.[1] === "dark" ? "dark" : "light";
-
   const legalLinks = await listLegalLinks(locale);
 
   const form = await gridsService.form.getByPublicToken(token);
   if (!form || !form.isActive) {
     c.get("page").title = t.formNotFound;
     return () => (
-      <LocaleProvider locale={locale}>
+      <MinimalLayout c={c}>
         <PublicShell legalLinks={legalLinks}>
           <div class="paper p-8 text-center text-sm text-dimmed">
             <i class="ti ti-alert-circle text-base mb-2 block" />
             {t.formUnavailable}
           </div>
         </PublicShell>
-      </LocaleProvider>
+      </MinimalLayout>
     );
   }
 
@@ -90,7 +83,7 @@ export default ssr<AuthContext>(async (c) => {
   const safeForm = await toPublicForm(form);
 
   return () => (
-    <LocaleProvider locale={locale}>
+    <MinimalLayout c={c}>
       <PublicShell legalLinks={legalLinks}>
         <PublicFormSubmit
           publicToken={token}
@@ -100,7 +93,7 @@ export default ssr<AuthContext>(async (c) => {
           dateConfig={dateConfig}
         />
       </PublicShell>
-    </LocaleProvider>
+    </MinimalLayout>
   );
 });
 
@@ -113,7 +106,6 @@ type LegalLink = { label: string; href: string; icon?: string };
 function PublicShell(props: { legalLinks: LegalLink[]; children: any }) {
   return (
     <div class="min-h-screen flex flex-col bg-[var(--ui-canvas)]">
-      <PublicTimezoneCookie />
       <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-6 sm:py-10">{props.children}</main>
       <footer class="shrink-0 w-full px-4 py-3 flex items-center justify-center flex-wrap gap-x-4 gap-y-1 text-xs text-dimmed">
         {props.legalLinks.map((link) => (

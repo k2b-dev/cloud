@@ -6,5 +6,6 @@ describe("profile preferences messages", () => {
     expect(profilePreferencesMessages.check()).toEqual([]);
     expect(profilePreferencesMessages.resolve(["en-GB"]).t.profileSettings).toBe("Profile settings");
     expect(profilePreferencesMessages.resolve(["de-CH"]).t.profileSettings).toBe("Profileinstellungen");
+    expect(profilePreferencesMessages.resolve(["de-CH"]).t.preferencesMenuLabel).toBe("Darstellung und Sprache");
   });
 });

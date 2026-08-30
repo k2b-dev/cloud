@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-08-22
+updated: 2026-08-30
 ---
 
 # API surface
@@ -29,7 +29,7 @@ should use them only when a feature guide gives the exact import.
 | `@valentinkolb/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
-| `@valentinkolb/cloud/ssr` | Supported, server-only | Layouts, runtime context, and URL filters |
+| `@valentinkolb/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, and admin layouts; runtime context; URL filters |
 | `@valentinkolb/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
 | `@valentinkolb/cloud/ai` | Supported, server-only | AI APIs named by the AI guides |
 | `@valentinkolb/cloud/cli` | Supported | Cloud CLI modules |

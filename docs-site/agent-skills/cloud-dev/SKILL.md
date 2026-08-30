@@ -103,8 +103,10 @@ SolidJS library remains independent of Cloud and application domains.
   the same canonical locale without adding locale to the domain payload.
   Keep product text calm, direct, and precise. Localizations preserve meaning;
   code, identifiers, paths, and exact external labels remain verbatim.
-  `Layout` installs the SSR locale provider; a custom SSR root using neither
-  `Layout` nor `AdminLayout` must install one provider around its returned tree.
+  `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR locale provider.
+  Use `MinimalLayout` for an app-styled standalone page that needs Cloud's
+  persisted locale and theme without Cloud chrome. A custom root using none of
+  these layouts must install one provider around its returned tree.
 
 ## Build and verify one complete slice
 

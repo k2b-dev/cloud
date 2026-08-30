@@ -93,8 +93,10 @@ router.get("/api/inventory", (c) => {
 ```
 
 Cloud SSR uses that same locale for `<html lang>` and `getDateConfig(c)`.
-`Layout` and `AdminLayout` also install the matching root `LocaleProvider`.
-If a custom SSR page deliberately uses neither layout, wrap its returned root
+`Layout`, `AdminLayout`, and `MinimalLayout` also install the matching root
+`LocaleProvider`. `MinimalLayout` is the supported root for app-styled public
+pages that need Cloud's persisted locale and theme without Cloud chrome. If a
+custom SSR page deliberately uses none of these layouts, wrap its returned root
 once with `<LocaleProvider locale={getLocale(c)}>`. This is root wiring, not a
 locale prop to pass through the component tree. Never store a current locale in
 module or process state: concurrent SSR requests must remain isolated.

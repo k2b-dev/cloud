@@ -921,6 +921,38 @@
   }
 }
 
+/* MinimalLayout owns no page geometry. Its optional preference trigger is the
+   only positioned element and respects device safe areas in every corner. */
+.minimal-layout-preferences {
+  position: fixed;
+  z-index: 50;
+}
+
+.minimal-layout-preferences--top-left {
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
+}
+
+.minimal-layout-preferences--top-right {
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.minimal-layout-preferences--bottom-left {
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(0.75rem, env(safe-area-inset-left));
+}
+
+.minimal-layout-preferences--bottom-right {
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.minimal-layout-preferences__trigger {
+  box-shadow: var(--ui-shadow-float);
+  backdrop-filter: blur(0.5rem);
+}
+
 /* Workspace navigation chrome and resource identity. */
 .workspace-sidebar-header {
   min-height: var(--ui-control-md);

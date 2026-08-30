@@ -1,10 +1,7 @@
 import { Avatar, Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { profilePreferenceLocale, setLocalePreference } from "../browser/locale-preference";
-import { type CloudTheme, getCurrentThemePreference, setThemePreference } from "../shared/theme";
-import { profilePreferencesMessages } from "./profile-preferences-messages";
-
-const THEME_PREFERENCE_EVENT = "cloud:theme-preference";
+import { createMemo } from "solid-js";
+import type { CloudTheme } from "../shared/theme";
+import { createPreferenceController } from "./preference-controller";
 
 type ProfilePreferencesProps = {
   avatarSrc?: string;
@@ -15,41 +12,14 @@ type ProfilePreferencesProps = {
 
 export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const locale = useLocale();
-  const [theme, setTheme] = createSignal(props.initialTheme);
-  const messages = () => profilePreferencesMessages.resolve([locale()]).t;
-  const language = () => profilePreferenceLocale(locale());
-  const nextLanguage = () => (language() === "de" ? "en" : "de");
-  const themeLabel = () => (theme() === "light" ? messages().switchToDark : messages().switchToLight);
-  const languageLabel = () => (nextLanguage() === "de" ? messages().switchToGerman : messages().switchToEnglish);
-
-  const toggleTheme = () => {
-    setTheme(setThemePreference(theme() === "dark" ? "light" : "dark"));
-    window.dispatchEvent(new Event(THEME_PREFERENCE_EVENT));
-  };
-  const toggleLanguage = () => setLocalePreference(nextLanguage());
-
-  onMount(() => {
-    const syncTheme = () => setTheme(getCurrentThemePreference());
-    syncTheme();
-    window.addEventListener(THEME_PREFERENCE_EVENT, syncTheme);
-    onCleanup(() => window.removeEventListener(THEME_PREFERENCE_EVENT, syncTheme));
-  });
+  const preferences = createPreferenceController(props.initialTheme, locale);
 
   const items = createMemo<DropdownItem[]>(() => [
-    {
-      action: toggleTheme,
-      icon: theme() === "light" ? "ti ti-moon" : "ti ti-sun-high",
-      label: themeLabel(),
-    },
-    {
-      action: toggleLanguage,
-      icon: "ti ti-language",
-      label: languageLabel(),
-    },
+    ...preferences.items(),
     {
       href: "/me",
       icon: "ti ti-user-circle",
-      label: messages().profileSettings,
+      label: preferences.messages().profileSettings,
     },
   ]);
 
@@ -57,27 +27,27 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
 
   return (
     <div class="layout-profile-preferences" data-placement={props.placement}>
-      <a href="/me" class="layout-profile-preferences__link" aria-label={messages().profileSettings}>
+      <a href="/me" class="layout-profile-preferences__link" aria-label={preferences.messages().profileSettings}>
         {avatar()}
       </a>
       <div class="layout-profile-preferences__panel dropdown-menu-surface">
-        <button type="button" class="menu-item" onClick={toggleTheme}>
-          <i class={`ti ${theme() === "light" ? "ti-moon" : "ti-sun-high"}`} aria-hidden="true" />
-          <span>{themeLabel()}</span>
+        <button type="button" class="menu-item" onClick={preferences.toggleTheme}>
+          <i class={`ti ${preferences.theme() === "light" ? "ti-moon" : "ti-sun-high"}`} aria-hidden="true" />
+          <span>{preferences.themeLabel()}</span>
         </button>
-        <button type="button" class="menu-item" onClick={toggleLanguage}>
+        <button type="button" class="menu-item" onClick={preferences.toggleLanguage}>
           <i class="ti ti-language" aria-hidden="true" />
-          <span>{languageLabel()}</span>
+          <span>{preferences.languageLabel()}</span>
         </button>
         <a href="/me" class="menu-item">
           <i class="ti ti-user-circle" aria-hidden="true" />
-          <span>{messages().profileSettings}</span>
+          <span>{preferences.messages().profileSettings}</span>
         </a>
       </div>
       <Dropdown.Root
         class="layout-profile-preferences__dropdown"
         items={items()}
-        label={messages().menuLabel}
+        label={preferences.messages().menuLabel}
         position={props.placement === "rail" ? "right-start" : "bottom-left"}
         width="14rem"
       >
@@ -85,7 +55,7 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
           appearance="plain"
           class="layout-profile-preferences__dropdown-trigger"
           iconOnly
-          label={messages().menuLabel}
+          label={preferences.messages().menuLabel}
           tooltip={false}
         >
           {avatar()}
