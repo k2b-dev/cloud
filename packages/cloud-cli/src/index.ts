@@ -130,25 +130,25 @@ const moduleByName = new Map(modules.map((module) => [module.name, module]));
 
 const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
 
-const germanModuleSummaries: Readonly<Record<string, string>> = {
-  account: "Eigenes Konto verwalten.",
-  accounts: "Konten, Gruppen und Zugriffe verwalten.",
-  admin: "Cloud-Betrieb verwalten.",
-  "api-docs": "Registrierte HTTP-APIs untersuchen.",
-  apps: "Installierte Anwendungen anzeigen.",
-  capabilities: "Registrierte Capabilities untersuchen und ausführen.",
-  assistant: "Mit Assistant arbeiten.",
-  contacts: "Kontakte verwalten.",
-  grids: "Grids-Daten und -Konfiguration verwalten.",
-  "ipa-hosts": "FreeIPA-Hosts verwalten.",
-  mail: "Mail verwalten.",
-  notebooks: "Notizbücher und Notizen verwalten.",
-  oauth: "OAuth-Clients verwalten.",
-  pulse: "Pulse-Daten und -Dashboards verwalten.",
-  spaces: "Spaces und Arbeitselemente verwalten.",
-  tools: "Lokale Cloud-Werkzeuge verwenden.",
-  venue: "Veranstaltungsorte verwalten.",
-};
+const germanModuleSummaries = new Map<string, string>([
+  ["account", "Eigenes Konto verwalten."],
+  ["accounts", "Konten, Gruppen und Zugriffe verwalten."],
+  ["admin", "Cloud-Betrieb verwalten."],
+  ["api-docs", "Registrierte HTTP-APIs untersuchen."],
+  ["apps", "Installierte Anwendungen anzeigen."],
+  ["capabilities", "Registrierte Capabilities untersuchen und ausführen."],
+  ["assistant", "Mit Assistant arbeiten."],
+  ["contacts", "Kontakte verwalten."],
+  ["grids", "Grids-Daten und -Konfiguration verwalten."],
+  ["ipa-hosts", "FreeIPA-Hosts verwalten."],
+  ["mail", "Mail verwalten."],
+  ["notebooks", "Notizbücher und Notizen verwalten."],
+  ["oauth", "OAuth-Clients verwalten."],
+  ["pulse", "Pulse-Daten und -Dashboards verwalten."],
+  ["spaces", "Spaces und Arbeitselemente verwalten."],
+  ["tools", "Lokale Cloud-Werkzeuge verwenden."],
+  ["venue", "Veranstaltungsorte verwalten."],
+]);
 
 class CliError extends Error {
   constructor(
@@ -890,7 +890,7 @@ Globale Optionen:
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
 
 Module:
-${modules.map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries[module.name] ?? module.summary}`).join("\n")}
+${modules.map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries.get(module.name) ?? module.summary}`).join("\n")}
 
 Beispiele:
   cld login --server http://localhost:3000
@@ -1596,7 +1596,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
     console.log(
       module.help?.() ??
-        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries[module.name] ?? module.summary) : module.summary}`,
+        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries.get(module.name) ?? module.summary) : module.summary}`,
     );
     return 0;
   }

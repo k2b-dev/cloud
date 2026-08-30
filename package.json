@@ -95,7 +95,7 @@
     "lint:fix": "bun run scripts/run-biome.ts lint:fix",
     "check:biome": "bun run scripts/run-biome.ts check:biome",
     "skills:install": "./scripts/symlink-skills.sh",
-    "typecheck": "bun run check:dependencies && bun run check:skills && bun run check:boundaries && bun run check:cycles && bun run check:service-api-contracts && bun run check:css && bun run check:biome && bun run scripts/run-package-typechecks.ts",
+    "typecheck": "bun run check:dependencies && bun run check:skills && bun run check:boundaries && bun run check:cycles && bun run check:service-api-contracts && bun run check:localization && bun run check:css && bun run check:biome && bun run scripts/run-package-typechecks.ts",
     "check": "bun run typecheck",
     "check:skills": "bun run scripts/check-skills.ts",
     "check:dependencies": "bun run scripts/check-dependencies.ts",
@@ -103,6 +103,7 @@
     "check:cycles": "CHECK_APPS_CYCLES=1 bun run scripts/check-cycles.ts",
     "check:cycles:core": "bun run scripts/check-cycles.ts",
     "check:service-api-contracts": "bun run scripts/check-service-api-contracts.ts",
+    "check:localization": "bun run scripts/check-localization.ts",
     "check:css": "bun run scripts/check-css-architecture.ts",
     "test": "bun run scripts/run-tests.ts"
   },

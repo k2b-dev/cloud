@@ -336,6 +336,12 @@ Use exact semantic assertions where possible. For `Intl` output, compare with
 the runtime formatter for the requested locale instead of hardcoding grouping
 characters that may be Unicode punctuation.
 
+Run `bun run check:localization` for repository-wide catalog structure. It
+requires every shipped `i18n.define()` catalog to declare inline English and
+German message objects with matching keys and rejects German catalogs that
+inherit English presentation through an object spread. Technical terms may
+remain identical when the owning catalog declares them explicitly.
+
 ## Review checklist
 
 - No process-global current locale.
