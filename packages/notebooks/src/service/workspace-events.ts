@@ -111,6 +111,15 @@ export const noteFavoriteChanged = async (config: {
     favorite: config.favorite,
   });
 
+export const noteCommentsChanged = async (config: { notebookId: string; noteId: string }): Promise<void> =>
+  publish({
+    v: 1,
+    type: "note.comments.changed",
+    notebookId: config.notebookId,
+    noteId: config.noteId,
+    noteShortId: await resolveNoteShortId(config.noteId),
+  });
+
 export const invalidated = (config: {
   notebookId: string;
   reason: InvalidationReason;

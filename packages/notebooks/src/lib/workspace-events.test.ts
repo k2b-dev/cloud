@@ -37,5 +37,14 @@ describe("isPermissionInvalidation", () => {
         note: { id: "n-1", notebookId: "nb-1" } as never,
       } as NotebookWorkspaceEvent),
     ).toBe(false);
+    expect(
+      isPermissionInvalidation({
+        v: 1,
+        type: "note.comments.changed",
+        notebookId: "nb-1",
+        noteId: "n-1",
+        noteShortId: "note01",
+      }),
+    ).toBe(false);
   });
 });

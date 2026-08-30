@@ -1,4 +1,4 @@
-import { type DateContext, dates, fileIcons } from "@k2b/stdlib";
+import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import {
@@ -16,6 +16,7 @@ import {
 import type { NotebookPresenceParticipant } from "@valentinkolb/cloud/contracts";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { PublicNoteComment } from "@/api/public-resources";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
 import { buildVersionsUrl } from "../../../params";
@@ -42,6 +43,7 @@ import {
   TOGGLE_RICH_MODE_EVENT,
 } from "./events";
 import { openNotePdfDialog } from "./NotePdfDialog";
+import NoteCommentsSection from "./NoteCommentsSection";
 import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 
@@ -63,6 +65,9 @@ type Props = {
   updatedAt: string;
   lockedAt: string | null;
   isLocked: boolean;
+  canWrite: boolean;
+  currentUserId: string;
+  initialCommentsPage?: Paginated<PublicNoteComment>;
   dateConfig: DateContext;
   namedBlocks: NamedBlockSummary[];
 };
@@ -128,6 +133,20 @@ const namedBlockSnippet = (block: NamedBlockSummary): string => {
 export default function NotebookDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const activityDescription = (action: string) => {
+    switch (action) {
+      case "note.edited":
+        return t().editedThisNote;
+      case "comment.created":
+        return t().commentedOnThisNote;
+      case "comment.updated":
+        return t().updatedCommentOnThisNote;
+      case "comment.deleted":
+        return t().deletedCommentOnThisNote;
+      default:
+        return action.replaceAll(".", " ");
+    }
+  };
   const [open, setOpen] = createSignal(props.initiallyOpen);
   const [tocItems, setTocItems] = createSignal<TocItem[]>(props.tocItems);
   const [tasks, setTasks] = createSignal<TaskProgress>(props.taskProgress);
@@ -537,6 +556,15 @@ export default function NotebookDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
+          <NoteCommentsSection
+            notebookId={props.notebookId}
+            noteId={noteId()}
+            currentUserId={props.currentUserId}
+            canWrite={props.canWrite}
+            initialCommentsPage={props.initialCommentsPage}
+            dateConfig={props.dateConfig}
+          />
+
           <DetailPanel.Group label={t().noteContext}>
             <Show when={props.mode === "edit" && participants().length > 0}>
               <DetailPanel.Section title={t().online} icon="ti ti-users" tone="success" meta={participants().length}>
@@ -595,7 +623,7 @@ export default function NotebookDetailPanel(props: Props) {
                           href={buildVersionsUrl(props.notebookId, noteId())}
                           leading={<Avatar name={item.actor.displayName} size="xs" />}
                           title={item.actor.displayName}
-                          description={item.action === "note.edited" ? t().editedThisNote : item.action.replaceAll(".", " ")}
+                          description={activityDescription(item.action)}
                           trailing={
                             <time datetime={item.lastOccurredAt}>
                               {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}

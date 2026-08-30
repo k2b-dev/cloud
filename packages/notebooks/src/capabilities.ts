@@ -14,6 +14,11 @@ import { hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server"
 import { type AuditActor, audit } from "@valentinkolb/cloud/services";
 import type { z } from "zod";
 import {
+  CommentCreateInputSchema,
+  CommentDataSchema,
+  CommentListDataSchema,
+  CommentListInputSchema,
+  CommentReadInputSchema,
   NotebookDataSchema,
   NotebookListDataSchema,
   NotebookListInputSchema,
@@ -39,6 +44,7 @@ import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
 import { notebookCapabilityMessages } from "./capability-messages";
+import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
 import type { Notebook, NotebookWithPermission } from "./service/notebooks";
 import * as notebookStore from "./service/notebooks";
@@ -194,6 +200,13 @@ const noteRef = (note: Pick<Note, "shortId" | "title">, notebookName?: string) =
   title: note.title,
   ...(notebookName ? { preview: notebookName } : {}),
   icon: "ti ti-file-text",
+});
+const commentRef = (comment: Pick<commentStore.NoteComment, "shortId" | "authorDisplayName" | "content">, noteTitle: string) => ({
+  type: "notebooks.comment" as const,
+  id: comment.shortId,
+  title: comment.authorDisplayName,
+  preview: `${noteTitle}: ${compactSnippet(comment.content)}`,
+  icon: "ti ti-message",
 });
 const notebookApprovalScope = (notebook: Pick<Notebook, "shortId">): string => `notebook:${notebook.shortId}`;
 
@@ -495,6 +508,65 @@ const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context
   });
 };
 
+const mapComment = (comment: commentStore.NoteComment, notebook: Notebook, note: Note) => ({
+  id: comment.shortId,
+  notebookId: notebook.shortId,
+  noteId: note.shortId,
+  authorUserId: comment.authorUserId,
+  authorDisplayName: comment.authorDisplayName,
+  content: comment.content,
+  createdAt: comment.createdAt,
+  updatedAt: comment.updatedAt,
+});
+
+const requireCommentByShortId = async (shortId: string, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
+  const comment = await commentStore.getByShortId({ shortId, viewerUserId: context.user?.id ?? null });
+  if (!comment) return capabilityNotFound(t.commentNotFound);
+  const note = await noteStore.get({ id: comment.noteId });
+  if (!note) return capabilityNotFound(t.commentNotFound);
+  const access = await requireNotebook(note.notebookId, context);
+  return access.ok ? ok({ comment, note, notebook: access.data.notebook }) : capabilityNotFound(t.commentNotFound);
+};
+
+const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, context: CapabilityExecutionContext) => {
+  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
+  if (!cursor.ok) return cursor;
+  const resolved = await requireNoteByShortId(input.noteId, context);
+  if (!resolved.ok) return resolved;
+  const page = await commentStore.listPage({
+    notebookId: resolved.data.notebook.id,
+    noteId: resolved.data.note.id,
+    viewerUserId: context.user?.id ?? null,
+    pagination: { page: cursor.data, perPage: input.limit },
+  });
+  const data = page.items.map((comment) => ({
+    ...mapComment(comment, resolved.data.notebook, resolved.data.note),
+    ref: { type: "notebooks.comment" as const, id: comment.shortId },
+  }));
+  return ok({
+    data,
+    page: capabilityPage(page.hasNext ? encodePageCursor(cursor.data + 1) : undefined),
+    refs: [
+      ...page.items.map((comment) => commentRef(comment, resolved.data.note.title)),
+      noteRef(resolved.data.note, resolved.data.notebook.name),
+    ],
+    links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+  });
+};
+
+const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
+  const resolved = await requireCommentByShortId(input.id, context);
+  if (!resolved.ok) return resolved;
+  return ok({
+    data: mapComment(resolved.data.comment, resolved.data.notebook, resolved.data.note),
+    summary: t.readComment({ author: resolved.data.comment.authorDisplayName, title: resolved.data.note.title }),
+    refs: [commentRef(resolved.data.comment, resolved.data.note.title), noteRef(resolved.data.note, resolved.data.notebook.name)],
+    links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+  });
+};
+
 const runTagList = async (input: z.infer<typeof TagListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
@@ -630,6 +702,34 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
   );
 };
 
+const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
+  if (!context.user) return fail(err.forbidden(t.userRequired));
+  const resolved = await requireNoteByShortId(input.noteId, context, "write");
+  if (!resolved.ok) return resolved;
+  return audited(actionAudit(context, "comment.create", "note", resolved.data.note.id), async () => {
+    const result = await commentStore.create({
+      notebookId: resolved.data.notebook.id,
+      noteId: resolved.data.note.id,
+      authorUserId: context.user!.id,
+      authorDisplayName: context.user!.displayName ?? context.user!.uid,
+      content: input.content,
+    });
+    if (!result.ok) {
+      if (result.error.status === 403) return fail(err.forbidden(t.commentChangeForbidden));
+      if (result.error.status === 404) return capabilityNotFound(t.noteNotFound);
+      if (result.error.status === 500) return fail(err.internal(t.commentChangeFailed));
+      return fail(err.badInput(result.error.message));
+    }
+    return ok({
+      data: mapComment(result.data, resolved.data.notebook, resolved.data.note),
+      summary: t.commentCreated({ title: resolved.data.note.title }),
+      refs: [commentRef(result.data, resolved.data.note.title), noteRef(resolved.data.note, resolved.data.notebook.name)],
+      links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+    });
+  });
+};
+
 const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireNoteByShortId(input.noteId, context, "write");
   if (!resolved.ok) return resolved;
@@ -694,6 +794,12 @@ export const notebooksCapabilities = defineCapabilities({
       reader: "notebook.read",
     },
     note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    comment: {
+      title: "Note comment",
+      description: "Durable discussion context attached to one accessible note.",
+      icon: "ti ti-message",
+      reader: "comment.read",
+    },
   },
   queries: {
     "notebook.search": {
@@ -764,6 +870,22 @@ export const notebooksCapabilities = defineCapabilities({
       openWorld: false,
       run: runNoteLinks,
     },
+    "comment.list": {
+      title: "List note comments",
+      description: "List durable Markdown discussion context for one known note, newest first.",
+      input: CommentListInputSchema,
+      data: CommentListDataSchema,
+      openWorld: false,
+      run: runCommentList,
+    },
+    "comment.read": {
+      title: "Read note comment",
+      description: "Read one notebooks.comment ref returned by comment.list after checking access to its parent note.",
+      input: CommentReadInputSchema,
+      data: CommentDataSchema,
+      openWorld: false,
+      run: runCommentRead,
+    },
     "tag.list": {
       title: "List notebook tags",
       description:
@@ -784,6 +906,32 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "comment.create": {
+      title: "Add note comment",
+      description: "Add Markdown discussion context to one writable note as the current user.",
+      input: CommentCreateInputSchema,
+      data: CommentDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
+        if (!context.user) return fail(err.forbidden(t.userRequired));
+        const resolved = await requireNoteByShortId(input.noteId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: t.commentCreateReview({ title: resolved.data.note.title }),
+          details: [
+            { label: t.note, value: resolved.data.note.title },
+            { label: t.comment, value: input.content, display: "block" as const },
+          ],
+          links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+          approvalScope: notebookApprovalScope(resolved.data.notebook),
+        });
+      },
+      run: runCommentCreate,
+    },
     "note.create": {
       title: "Create note",
       description: "Create one Markdown note in an explicitly selected writable notebook.",

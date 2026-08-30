@@ -13,8 +13,28 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Notizbuch",
           description: "Eine berechtigungsbezogene Sammlung von Markdown-Notizen.",
         },
+        comment: {
+          title: "Notizkommentar",
+          description: "Dauerhafter Diskussionskontext zu einer zugänglichen Notiz.",
+        },
       },
       queries: {
+        "comment.list": {
+          title: "Notizkommentare auflisten",
+          description: "Dauerhafte Markdown-Kommentare zu einer bekannten Notiz auflisten, neueste zuerst.",
+          input: {
+            noteId: "Notiz-ID aus Notizsuche, Notizbaum, Lesevorgang oder einem notebooks.note-Verweis.",
+            cursor: "Undurchsichtiger Cursor der vorherigen Seite.",
+            limit: "Maximale Anzahl zurückzugebender Kommentare.",
+          },
+        },
+        "comment.read": {
+          title: "Notizkommentar lesen",
+          description: "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
+          input: {
+            id: "Kommentar-ID aus comment.list oder einem notebooks.comment-Verweis.",
+          },
+        },
         "note.links": {
           title: "Notiz-Links und Backlinks auflisten",
           description:
@@ -121,6 +141,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "comment.create": {
+          title: "Notiz kommentieren",
+          description: "Als aktueller Benutzer Markdown-Diskussionskontext zu einer beschreibbaren Notiz hinzufügen.",
+          input: {
+            noteId: "Beschreibbare Notiz-ID aus Notizsuche, Notizbaum, Lesevorgang oder einem notebooks.note-Verweis.",
+            content: "Markdown-Kommentar mit höchstens 5.000 Zeichen.",
+          },
+        },
         "note.create": {
           title: "Notiz erstellen",
           description: "Erstellen Sie eine Markdown-Notiz in einem explizit ausgewählten beschreibbaren Notizbuch.",

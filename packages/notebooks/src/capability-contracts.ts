@@ -138,6 +138,36 @@ export const NoteLinksDataSchema = z
   )
   .max(100);
 
+const CommentDataShape = {
+  id: ResourceShortIdSchema,
+  notebookId: ResourceShortIdSchema,
+  noteId: ResourceShortIdSchema,
+  authorUserId: z.uuid().nullable(),
+  authorDisplayName: z.string().min(1),
+  content: z.string().max(5_000),
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+};
+
+export const CommentDataSchema = z.object(CommentDataShape).strict();
+export const CommentListInputSchema = z
+  .object({
+    noteId: ResourceShortIdSchema.describe("Note ID returned by note search/tree/read or a notebooks.note ref."),
+    cursor: CursorSchema,
+    limit: LimitSchema,
+  })
+  .strict();
+export const CommentListDataSchema = z.array(z.object({ ...CommentDataShape, ref: resourceRef("notebooks.comment") }).strict()).max(100);
+export const CommentReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Comment ID returned by comment.list or a notebooks.comment ref.") })
+  .strict();
+export const CommentCreateInputSchema = z
+  .object({
+    noteId: ResourceShortIdSchema.describe("Writable note ID returned by note search/tree/read or a notebooks.note ref."),
+    content: z.string().trim().min(1).max(5_000).describe("Markdown comment, limited to 5,000 characters."),
+  })
+  .strict();
+
 export const TagListInputSchema = z
   .object({
     notebookId: ResourceShortIdSchema.describe("Notebook ID returned by notebook search/list/read or a notebooks.notebook ref."),

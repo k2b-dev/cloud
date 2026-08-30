@@ -3,16 +3,17 @@ title: Notebooks
 navTitle: Notebooks
 section: Work
 order: 120
-description: Collaborative Markdown notebooks with structured blocks, links, files, and small tools.
+description: Collaborative Markdown notebooks with discussions, structured blocks, links, files, and small tools.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-08-20
+updated: 2026-08-30
 ---
 
 # Notebooks
 
 Notebooks keeps prose, lightweight structured data, and small interactive tools
 in one shared workspace. Notes use Markdown, synchronize in realtime, and can
-link to other notes, tags, and uploaded files.
+link to other notes, tags, and uploaded files. Page discussions keep questions,
+feedback, and decisions beside the note without mixing them into its body.
 
 The Notebooks start page keeps accessible notebooks at the top, shows recently
 edited notes across those notebooks, and provides one permission-aware activity
@@ -27,6 +28,9 @@ not replace the note list.
   lightweight task lists.
 - Organize notes in a tree and connect related knowledge with note links and
   tags.
+- Discuss a page in a durable Markdown thread. New comments appear live for
+  other readers, and authors can correct or remove their own comment for ten
+  minutes.
 - Keep small tables, lists, todos, data blocks, and sections beside the prose
   that explains them.
 - Attach images and files to the notebook and reference them from notes.
@@ -45,6 +49,7 @@ export boundary.
 | --- | --- |
 | Notebook | Permission-scoped workspace with notes, files, settings, and exports |
 | Note and note tree | Markdown document and its place in the notebook hierarchy |
+| Comment | Durable Markdown discussion attached to one note |
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named block and script | Structured Markdown data and optional code that operates inside the notebook boundary |
@@ -59,6 +64,11 @@ Realtime typing does not create one history row per keystroke. Notebooks groups
 collaborative edits by actor, note, and hour. Saved versions remain separate
 recovery snapshots and can reference every user or service account whose edits
 contributed since the preceding saved version.
+
+Comments follow the parent notebook's permissions. Readers can see existing
+discussion; users with write access can add comments, including on a locked
+note. Locking freezes the note body, not its discussion. Comment authors may
+edit or delete their own comment for ten minutes after posting.
 
 ## How Notebooks fits Cloud
 
@@ -78,12 +88,13 @@ Notebooks adopts.
 
 ## Automate Notebooks from the terminal
 
-Notebooks provides a native CLI module for notes, search, attachments, access,
-exports, and snapshots. Start with read commands:
+Notebooks provides a native CLI module for notes, discussions, search,
+attachments, access, exports, and snapshots. Start with read commands:
 
 ```bash
 cld notebooks list --json
 cld notebooks search --all --query "launch plan" --json
+cld notebooks comments --notebook abc123 --note def456 --json
 ```
 
 Run `cld notebooks help` for the available resources. Run

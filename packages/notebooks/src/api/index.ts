@@ -43,7 +43,14 @@ import { InvalidActivityCursorError } from "../service/activity";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
-import { ResourceShortIdSchema, toPublicAttachment, toPublicNote, toPublicNotebook, toPublicSnapshotLog } from "./public-resources";
+import {
+  ResourceShortIdSchema,
+  toPublicAttachment,
+  toPublicNote,
+  toPublicNoteComment,
+  toPublicNotebook,
+  toPublicSnapshotLog,
+} from "./public-resources";
 import { notebookV as v } from "./validator";
 
 // ==========================
@@ -112,6 +119,32 @@ const NoteSchema = z.object({
 
 const NoteWithContentSchema = NoteSchema.extend({
   yjsSnapshot: z.string().nullable().describe("Base64-encoded Yjs snapshot"),
+});
+
+const NoteCommentSchema = z.object({
+  id: ResourceShortIdSchema,
+  notebookId: ResourceShortIdSchema,
+  noteId: ResourceShortIdSchema,
+  authorUserId: z.uuid().nullable(),
+  authorDisplayName: z.string(),
+  authorAvatarHash: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+});
+
+const NoteCommentInputSchema = z.object({
+  content: z.string().trim().min(1).max(5_000),
+});
+
+const NoteCommentPageSchema = z.object({
+  items: z.array(NoteCommentSchema),
+  page: z.number().int().positive(),
+  perPage: z.number().int().positive(),
+  total: z.number().int().nonnegative(),
+  hasNext: z.boolean(),
 });
 
 const NotePdfRequestSchema = z
@@ -1363,6 +1396,158 @@ const app = new Hono<AuthContext>()
       if (!note.ok) return respond(c, note);
       const [data] = await toPublicNotes([note.data], notebook!.shortId);
       return respond(c, ok(data!));
+    },
+  )
+
+  .get(
+    "/:id/notes/:noteId/comments/page",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List note comments",
+      description: "List one bounded page of comments attached to a note, newest first.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteCommentPageSchema, "Paginated note discussion"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+      },
+    }),
+    v("query", PaginationQuerySchema),
+    async (c) => {
+      let notebookId = c.req.param("id")!;
+      const noteShortId = c.req.param("noteId")!;
+      const { notebook, user, error } = await checkNotebookAccess(c, notebookId);
+      if (error) return error;
+      notebookId = notebook!.id;
+      const note = await requireNoteInNotebook(notebookId, noteShortId, getLocale(c));
+      if (!note.ok) return respond(c, note);
+
+      const page = await notebooksService.note.comments.listPage({
+        notebookId,
+        noteId: note.data.id,
+        viewerUserId: user?.id ?? null,
+        pagination: parsePagination(c.req.valid("query")),
+      });
+      return respond(c, ok({ ...page, items: page.items.map((comment) => toPublicNoteComment(comment, notebook!.shortId, note.data.shortId)) }));
+    },
+  )
+
+  .post(
+    "/:id/notes/:noteId/comments",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Add a note comment",
+      description: "Add Markdown discussion context to one note. Requires notebook write permission and a user-backed actor.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteCommentSchema, "Created comment"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid comment"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+      },
+    }),
+    v("json", NoteCommentInputSchema),
+    async (c) => {
+      const userResult = requireUserBackedActor(c);
+      if (!userResult.ok) return respond(c, userResult);
+      const user = userResult.data;
+      let notebookId = c.req.param("id")!;
+      const noteShortId = c.req.param("noteId")!;
+      const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
+      if (error) return error;
+      notebookId = notebook!.id;
+      const note = await requireNoteInNotebook(notebookId, noteShortId, getLocale(c));
+      if (!note.ok) return respond(c, note);
+
+      const result = localizeResult(
+        await notebooksService.note.comments.create({
+          notebookId,
+          noteId: note.data.id,
+          authorUserId: user.id,
+          authorDisplayName: user.displayName ?? user.uid,
+          content: c.req.valid("json").content,
+        }),
+        getLocale(c),
+      );
+      return respond(c, result.ok ? ok(toPublicNoteComment(result.data, notebook!.shortId, note.data.shortId)) : result);
+    },
+  )
+
+  .patch(
+    "/:id/notes/:noteId/comments/:commentId",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Update a note comment",
+      description: "Only the original author may edit a comment within 10 minutes. Requires notebook write permission.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteCommentSchema, "Updated comment"),
+        403: jsonResponse(ErrorResponseSchema, "Not authorized"),
+        404: jsonResponse(ErrorResponseSchema, "Comment not found"),
+      },
+    }),
+    v("json", NoteCommentInputSchema),
+    async (c) => {
+      const userResult = requireUserBackedActor(c);
+      if (!userResult.ok) return respond(c, userResult);
+      const user = userResult.data;
+      let notebookId = c.req.param("id")!;
+      const noteShortId = c.req.param("noteId")!;
+      const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
+      if (error) return error;
+      notebookId = notebook!.id;
+      const note = await requireNoteInNotebook(notebookId, noteShortId, getLocale(c));
+      if (!note.ok) return respond(c, note);
+
+      const result = localizeResult(
+        await notebooksService.note.comments.update({
+          notebookId,
+          noteId: note.data.id,
+          commentId: c.req.param("commentId")!,
+          authorUserId: user.id,
+          content: c.req.valid("json").content,
+        }),
+        getLocale(c),
+      );
+      return respond(c, result.ok ? ok(toPublicNoteComment(result.data, notebook!.shortId, note.data.shortId)) : result);
+    },
+  )
+
+  .delete(
+    "/:id/notes/:noteId/comments/:commentId",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Delete a note comment",
+      description: "Only the original author may delete a comment within 10 minutes. Requires notebook write permission.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Comment deleted"),
+        403: jsonResponse(ErrorResponseSchema, "Not authorized"),
+        404: jsonResponse(ErrorResponseSchema, "Comment not found"),
+      },
+    }),
+    async (c) => {
+      const userResult = requireUserBackedActor(c);
+      if (!userResult.ok) return respond(c, userResult);
+      const user = userResult.data;
+      let notebookId = c.req.param("id")!;
+      const noteShortId = c.req.param("noteId")!;
+      const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
+      if (error) return error;
+      notebookId = notebook!.id;
+      const note = await requireNoteInNotebook(notebookId, noteShortId, getLocale(c));
+      if (!note.ok) return respond(c, note);
+
+      return respondMessage(
+        c,
+        notebooksService.note.comments.remove({
+          notebookId,
+          noteId: note.data.id,
+          commentId: c.req.param("commentId")!,
+          authorUserId: user.id,
+        }),
+        messages(c).commentDeleted,
+      );
     },
   )
 

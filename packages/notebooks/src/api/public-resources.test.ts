@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { ResourceShortIdSchema, toPublicAttachment, toPublicNote, toPublicNotebook, toPublicSnapshotLog } from "./public-resources";
+import {
+  ResourceShortIdSchema,
+  toPublicAttachment,
+  toPublicNote,
+  toPublicNoteComment,
+  toPublicNotebook,
+  toPublicSnapshotLog,
+} from "./public-resources";
 
 const createdAt = "2026-08-11T08:00:00.000Z";
 
@@ -9,7 +16,7 @@ describe("notebooks public resource projection", () => {
     expect(ResourceShortIdSchema.safeParse("11111111-1111-4111-8111-111111111111").success).toBeFalse();
   });
 
-  test("uses short IDs for notebooks, notes, parents, and attachments", () => {
+  test("uses short IDs for notebooks, notes, comments, parents, and attachments", () => {
     const notebook = toPublicNotebook({
       id: "11111111-1111-4111-8111-111111111111",
       shortId: "abc123",
@@ -65,6 +72,26 @@ describe("notebooks public resource projection", () => {
     );
     expect(attachment).toMatchObject({ id: "jkl012", notebookId: "abc123" });
     expect(attachment).not.toHaveProperty("shortId");
+
+    const comment = toPublicNoteComment(
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        shortId: "mno345",
+        noteId: "22222222-2222-4222-8222-222222222222",
+        authorUserId: "66666666-6666-4666-8666-666666666666",
+        authorDisplayName: "Ada Example",
+        authorAvatarHash: null,
+        content: "Useful context",
+        createdAt,
+        updatedAt: createdAt,
+        canEdit: true,
+        canDelete: true,
+      },
+      "abc123",
+      "def456",
+    );
+    expect(comment).toMatchObject({ id: "mno345", notebookId: "abc123", noteId: "def456" });
+    expect(comment).not.toHaveProperty("shortId");
   });
 
   test("keeps internal notebook UUIDs out of public snapshot logs", () => {

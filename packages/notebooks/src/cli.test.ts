@@ -225,3 +225,71 @@ test("update forwards the default note title template", async () => {
   expect(result.stderr).toBe("");
   expect(updateBodies).toEqual([{ defaultNoteTitleTemplate: "{{ date }} Journal" }]);
 });
+
+test("adds a comment through resolved public notebook and note ids", async () => {
+  const requests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const note = {
+    id: "note01",
+    notebookId: "wiki01",
+    parentId: null,
+    title: "Handbook",
+    position: 0,
+    hasChildren: false,
+    yjsSnapshotAt: null,
+    contentMd: "# Handbook",
+    createdBy: null,
+    createdAt: notebookFixture.createdAt,
+    updatedAt: notebookFixture.updatedAt,
+    lockedAt: null,
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      if (request.method === "GET" && url.pathname === "/api/notebooks/wiki01/notes/note01") return Response.json(note);
+      if (request.method === "POST" && url.pathname === "/api/notebooks/wiki01/notes/note01/comments") {
+        const body = await request.json();
+        requests.push({ method: request.method, path: url.pathname, body });
+        return Response.json({
+          id: "cmt001",
+          notebookId: "wiki01",
+          noteId: "note01",
+          authorUserId: "user01",
+          authorDisplayName: "Notebook User",
+          authorAvatarHash: null,
+          content: "Please clarify the escalation path.",
+          createdAt: notebookFixture.updatedAt,
+          updatedAt: notebookFixture.updatedAt,
+          canEdit: true,
+          canDelete: true,
+        });
+      }
+      return Response.json({ error: "not found" }, { status: 404 });
+    },
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "notebooks",
+    "add-comment",
+    "--notebook",
+    "wiki01",
+    "--note",
+    "note01",
+    "--content",
+    "Please clarify the escalation path.",
+  ]);
+
+  expect(result.exitCode).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(requests).toEqual([
+    {
+      method: "POST",
+      path: "/api/notebooks/wiki01/notes/note01/comments",
+      body: { content: "Please clarify the escalation path." },
+    },
+  ]);
+  expect(result.stdout).toContain('"id": "cmt001"');
+});

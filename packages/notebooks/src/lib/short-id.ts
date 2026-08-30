@@ -43,7 +43,7 @@ export const SHORT_ID_REGEX = /^[0-9a-zA-Z]{6}$/;
  * interpolate identifiers — and we want to keep the call sites
  * parameterized for the candidate value.
  */
-export type ShortIdTable = "notebook" | "note" | "attachment";
+export type ShortIdTable = "notebook" | "note" | "attachment" | "comment";
 
 /**
  * Generate a short-id that doesn't collide with an existing row in the
@@ -77,6 +77,12 @@ const isShortIdTaken = async (table: ShortIdTable, candidate: string): Promise<b
     case "attachment": {
       const [r] = await sql<{ exists: boolean }[]>`
         SELECT EXISTS (SELECT 1 FROM notebooks.attachments WHERE short_id = ${candidate}) AS "exists"
+      `;
+      return r?.exists ?? false;
+    }
+    case "comment": {
+      const [r] = await sql<{ exists: boolean }[]>`
+        SELECT EXISTS (SELECT 1 FROM notebooks.note_comments WHERE short_id = ${candidate}) AS "exists"
       `;
       return r?.exists ?? false;
     }
@@ -115,6 +121,8 @@ const selectNullShortIdRows = async (table: ShortIdTable): Promise<{ id: string 
       return sql<{ id: string }[]>`SELECT id FROM notebooks.notes WHERE short_id IS NULL`;
     case "attachment":
       return sql<{ id: string }[]>`SELECT id FROM notebooks.attachments WHERE short_id IS NULL`;
+    case "comment":
+      return sql<{ id: string }[]>`SELECT id FROM notebooks.note_comments WHERE short_id IS NULL`;
   }
 };
 
@@ -128,6 +136,9 @@ const updateShortId = async (table: ShortIdTable, id: string, shortId: string): 
       return;
     case "attachment":
       await sql`UPDATE notebooks.attachments SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
+      return;
+    case "comment":
+      await sql`UPDATE notebooks.note_comments SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
       return;
   }
 };

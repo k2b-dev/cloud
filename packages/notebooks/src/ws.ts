@@ -1042,6 +1042,14 @@ const toPublicWorkspaceEvent = async (event: NotebookWorkspaceEvent, notebookSho
     return { ...rest, notebookId: notebookShortId, noteId: shortId };
   }
 
+  if (event.type === "note.comments.changed") {
+    const { noteShortId, ...rest } = event;
+    if (!noteShortId) {
+      return { v: 1, type: "workspace.invalidated", notebookId: notebookShortId, reason: "unknown", scopes: ["tree"] };
+    }
+    return { ...rest, notebookId: notebookShortId, noteId: noteShortId };
+  }
+
   return { ...event, notebookId: notebookShortId };
 };
 

@@ -76,6 +76,27 @@ type NoteVersion = {
   createdAt: string;
 };
 
+type NoteComment = {
+  id: string;
+  notebookId: string;
+  noteId: string;
+  authorUserId: string | null;
+  authorDisplayName: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
+type NoteCommentPage = {
+  items: NoteComment[];
+  page: number;
+  perPage: number;
+  total: number;
+  hasNext: boolean;
+};
+
 type Pagination = {
   page: number;
   per_page: number;
@@ -888,6 +909,88 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     return 0;
   }
 
+  if (command === "comments") {
+    const { notebookRef, noteRef } = await resolveNoteCommandArgs(ctx, args);
+    const notebook = await resolveNotebookRef(ctx, api, notebookRef);
+    const note = await resolveNoteRef(ctx, api, notebook.id, noteRef);
+    const query = paginationQuery(ctx.flags);
+    const search = new URLSearchParams(query).toString();
+    const payload = await ctx.readJson<NoteCommentPage>(
+      await ctx.fetch(
+        `/api/notebooks/${encodeURIComponent(notebook.id)}/notes/${encodeURIComponent(note.id)}/comments/page${search ? `?${search}` : ""}`,
+      ),
+    );
+    printJsonOrTable(
+      ctx,
+      payload,
+      payload.items.map((comment) => ({
+        id: comment.id,
+        author: comment.authorDisplayName,
+        content: comment.content.replace(/\s+/g, " ").slice(0, 120),
+        createdAt: comment.createdAt,
+      })),
+      [
+        { key: "id", label: "ID" },
+        { key: "author", label: "AUTHOR" },
+        { key: "content", label: "COMMENT" },
+        { key: "createdAt", label: "CREATED" },
+      ],
+    );
+    return 0;
+  }
+
+  if (command === "add-comment") {
+    const { notebookRef, noteRef } = await resolveNoteCommandArgs(ctx, args);
+    const notebook = await resolveNotebookRef(ctx, api, notebookRef);
+    const note = await resolveNoteRef(ctx, api, notebook.id, noteRef);
+    const content = await readInputContent(ctx);
+    const payload = await ctx.readJson<NoteComment>(
+      await ctx.fetch(`/api/notebooks/${encodeURIComponent(notebook.id)}/notes/${encodeURIComponent(note.id)}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      }),
+    );
+    if (!printStructured(ctx, payload)) ctx.print(`Added comment ${payload.id} to ${note.title}.`);
+    return 0;
+  }
+
+  if (command === "update-comment") {
+    const { notebookRef, noteRef, rest } = await resolveNoteCommandArgs(ctx, args, 1);
+    const commentId = requireArg(rest, 0, "comment");
+    const notebook = await resolveNotebookRef(ctx, api, notebookRef);
+    const note = await resolveNoteRef(ctx, api, notebook.id, noteRef);
+    const content = await readInputContent(ctx);
+    const payload = await ctx.readJson<NoteComment>(
+      await ctx.fetch(
+        `/api/notebooks/${encodeURIComponent(notebook.id)}/notes/${encodeURIComponent(note.id)}/comments/${encodeURIComponent(commentId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        },
+      ),
+    );
+    if (!printStructured(ctx, payload)) ctx.print(`Updated comment ${payload.id}.`);
+    return 0;
+  }
+
+  if (command === "delete-comment") {
+    if (!booleanFlag(ctx.flags, "yes")) throw new Error("Refusing to delete a comment without --yes.");
+    const { notebookRef, noteRef, rest } = await resolveNoteCommandArgs(ctx, args, 1);
+    const commentId = requireArg(rest, 0, "comment");
+    const notebook = await resolveNotebookRef(ctx, api, notebookRef);
+    const note = await resolveNoteRef(ctx, api, notebook.id, noteRef);
+    const payload = await ctx.readJson<MessageResponse>(
+      await ctx.fetch(
+        `/api/notebooks/${encodeURIComponent(notebook.id)}/notes/${encodeURIComponent(note.id)}/comments/${encodeURIComponent(commentId)}`,
+        { method: "DELETE" },
+      ),
+    );
+    if (!printStructured(ctx, payload)) ctx.print(payload.message);
+    return 0;
+  }
+
   if (command === "graph") {
     const { notebookRef } = await resolveNotebookArg(ctx, args, 0);
     const notebook = await resolveNotebookRef(ctx, api, notebookRef);
@@ -1317,7 +1420,7 @@ const editFlags = {
 
 export default defineCliCommands({
   name: "notebooks",
-  summary: "Manage notebooks, notes, search, attachments, access, exports, and snapshots.",
+  summary: "Manage notebooks, notes, discussions, search, attachments, access, exports, and snapshots.",
   groupSummaries: {
     access: "Manage direct access to notebooks",
   },
@@ -1540,6 +1643,46 @@ export default defineCliCommands({
       args: noteArgs,
       flags: { ...notebookFlag, ...noteFlag },
       run: ({ ctx, args }) => runNotebooksCommand(ctx, "backlinks", args.args),
+    }),
+    command("comments", {
+      summary: "List comments on a note",
+      args: noteArgs,
+      flags: { ...notebookFlag, ...noteFlag, ...paginationFlagSpecs },
+      run: ({ ctx, args }) => runNotebooksCommand(ctx, "comments", args.args),
+    }),
+    command("add-comment", {
+      summary: "Add a Markdown comment to a note",
+      args: noteArgs,
+      flags: {
+        ...notebookFlag,
+        ...noteFlag,
+        content: flag.string({ description: "Comment Markdown" }),
+        file: flag.string({ aliases: ["f"], description: "Read comment Markdown from file" }),
+        stdin: flag.boolean({ description: "Read comment Markdown from stdin" }),
+      },
+      run: ({ ctx, args }) => runNotebooksCommand(ctx, "add-comment", args.args),
+    }),
+    command("update-comment", {
+      summary: "Update your recent note comment",
+      args: {
+        args: arg.rest({ valueLabel: "notebook-note-comment", description: "Optional notebook, note, and required comment id." }),
+      },
+      flags: {
+        ...notebookFlag,
+        ...noteFlag,
+        content: flag.string({ description: "Comment Markdown" }),
+        file: flag.string({ aliases: ["f"], description: "Read comment Markdown from file" }),
+        stdin: flag.boolean({ description: "Read comment Markdown from stdin" }),
+      },
+      run: ({ ctx, args }) => runNotebooksCommand(ctx, "update-comment", args.args),
+    }),
+    command("delete-comment", {
+      summary: "Delete your recent note comment",
+      args: {
+        args: arg.rest({ valueLabel: "notebook-note-comment", description: "Optional notebook, note, and required comment id." }),
+      },
+      flags: { ...notebookFlag, ...noteFlag, yes: confirmFlag("Delete this comment") },
+      run: ({ ctx, args }) => runNotebooksCommand(ctx, "delete-comment", args.args),
     }),
     command("graph", {
       summary: "Print the notebook note-link graph as JSON",

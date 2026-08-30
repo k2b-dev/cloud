@@ -82,6 +82,13 @@ export type NotebookWorkspaceEvent =
     }
   | {
       v: 1;
+      type: "note.comments.changed";
+      notebookId: string;
+      noteId: string;
+      noteShortId: string | null;
+    }
+  | {
+      v: 1;
       type: "workspace.invalidated";
       notebookId: string;
       reason: "bulk" | "template" | "permissions" | "unknown";
@@ -114,6 +121,12 @@ export type PublicNotebookWorkspaceEvent =
       noteId: string;
       userId: string;
       favorite: boolean;
+    }
+  | {
+      v: 1;
+      type: "note.comments.changed";
+      notebookId: string;
+      noteId: string;
     }
   | {
       v: 1;

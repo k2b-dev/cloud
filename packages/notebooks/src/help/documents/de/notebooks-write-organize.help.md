@@ -2,11 +2,26 @@
 id: notebooks-write-organize
 title: "Schreiben und ordnen"
 icon: "ti ti-markdown"
-description: "Lesbare Markdown-Notizen schreiben, mit Links und Tags verbinden und Dateien anhängen."
+description: "Lesbare Markdown-Notizen schreiben, Seiten diskutieren, mit Links und Tags verbinden und Dateien anhängen."
 order: 120
 ---
 
 Schreibe Notizen als lesbares Markdown. Nutze anschließend Links, Tags, Anhänge und die Seitenleiste, um dich im Notizbuch zurechtzufinden.
+
+**Zusammenarbeit**
+
+## Eine Seite diskutieren {icon="message-circle"}
+
+Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidungen, die zur Seite gehören, aber nicht ihren Markdown-Inhalt verändern sollen.
+
+:::reference
+- **Lesen:** Wer das Notizbuch lesen darf, kann auch die Diskussionen seiner Seiten verfolgen.
+- **Hinzufügen:** Nutzer mit Schreibzugriff können Markdown-Kommentare verfassen. Neue Kommentare erscheinen live bei anderen Lesern.
+- **Korrigieren:** Eigene Kommentare können nach dem Veröffentlichen zehn Minuten lang bearbeitet oder gelöscht werden.
+- **Gesperrte Notizen:** Eine Sperre schützt den Inhalt der Notiz, nicht ihre Diskussion. Nutzer mit Schreibzugriff können weiterhin kommentieren.
+:::
+
+Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um diesen Inhalt vor oder nach einer Änderung zu besprechen.
 
 **Markdown**
 

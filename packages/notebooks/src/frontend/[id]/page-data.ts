@@ -2,7 +2,7 @@ import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import type { Context } from "hono";
-import { toPublicNotebook } from "@/api/public-resources";
+import { toPublicNoteComment, toPublicNotebook } from "@/api/public-resources";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { parseNavigatorQuery } from "@/lib/navigator-url";
 import { notebooksService } from "@/service";
@@ -93,11 +93,29 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const publicVersionHistory = versionHistory
     ? { ...versionHistory, versions: versionHistory.versions.map((version) => ({ ...version, noteId: selected.note!.id })) }
     : null;
-  const [attachmentCount, tags, favoriteRows] = await Promise.all([
+  const selectedCommentNote = selected.note && !isVersionsMode && !isGraphMode
+    ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
+    : null;
+  const [attachmentCount, tags, favoriteRows, commentsPage] = await Promise.all([
     notebooksService.attachment.count({ notebookId }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
+    selectedCommentNote?.notebookId === notebookId
+      ? notebooksService.note.comments.listPage({
+          notebookId,
+          noteId: selectedCommentNote.id,
+          viewerUserId: user.id,
+          pagination: { page: 1, perPage: 30 },
+        })
+      : Promise.resolve(null),
   ]);
+  const initialCommentsPage =
+    commentsPage && selected.note
+      ? {
+          ...commentsPage,
+          items: commentsPage.items.map((comment) => toPublicNoteComment(comment, notebook.shortId, selected.note!.id)),
+        }
+      : null;
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -142,6 +160,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     showDetailPanel: !!selected.note && !isVersionsMode && !isGraphMode,
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
+    initialCommentsPage,
     dateConfig: ctx.dateConfig,
   };
 }

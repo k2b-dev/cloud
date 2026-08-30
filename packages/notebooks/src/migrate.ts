@@ -137,6 +137,24 @@ export const migrate = async (): Promise<void> => {
   }
   console.log("  ✓ notebooks.notes table");
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.note_comments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL UNIQUE,
+      note_id UUID NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+      author_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      author_display_name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_comments_note_created
+    ON notebooks.note_comments(note_id, created_at DESC, id DESC)
+  `.simple();
+  console.log("  ✓ notebooks.note_comments table");
+
   await sql`ALTER TABLE notebooks.notebooks ADD COLUMN IF NOT EXISTS homepage_note_id UUID`.simple();
   await sql`
     DO $$
@@ -352,7 +370,7 @@ export const migrate = async (): Promise<void> => {
   // The UNIQUE index above guarantees we never write duplicates.
   // Keep at the END of `migrate()` so the columns + indexes exist
   // before we try to populate them.
-  const tables: ShortIdTable[] = ["notebook", "note", "attachment"];
+  const tables: ShortIdTable[] = ["notebook", "note", "attachment", "comment"];
   for (const table of tables) {
     const filled = await backfillShortIds(table);
     if (filled > 0) console.log(`  ✓ short_id backfill: ${filled} ${table}(s)`);

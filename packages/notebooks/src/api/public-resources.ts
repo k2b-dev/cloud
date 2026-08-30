@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Attachment, Note, Notebook } from "../service";
+import type { Attachment, Note, Notebook, NoteComment } from "../service";
 
 export const ResourceShortIdSchema = z
   .string()
@@ -44,6 +44,22 @@ export const toPublicAttachment = (attachment: Attachment, notebookId: string) =
   createdBy: attachment.createdBy,
   createdAt: attachment.createdAt,
 });
+
+export const toPublicNoteComment = (comment: NoteComment, notebookId: string, noteId: string) => ({
+  id: comment.shortId,
+  notebookId,
+  noteId,
+  authorUserId: comment.authorUserId,
+  authorDisplayName: comment.authorDisplayName,
+  authorAvatarHash: comment.authorAvatarHash,
+  content: comment.content,
+  createdAt: comment.createdAt,
+  updatedAt: comment.updatedAt,
+  canEdit: comment.canEdit,
+  canDelete: comment.canDelete,
+});
+
+export type PublicNoteComment = ReturnType<typeof toPublicNoteComment>;
 
 export const toPublicSnapshotLog = <T extends { metadata: Record<string, unknown> | null }>(
   entry: T,

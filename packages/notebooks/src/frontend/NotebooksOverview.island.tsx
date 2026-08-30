@@ -96,6 +96,12 @@ const activityDescription = (item: ActivityItem, t: ReturnType<(typeof notebooks
       return t.activityRestoredNote({ target, notebook: item.notebook.name });
     case "note.edited":
       return t.activityEditedNote({ target, notebook: item.notebook.name });
+    case "comment.created":
+      return t.activityCommentedNote({ target, notebook: item.notebook.name });
+    case "comment.updated":
+      return t.activityUpdatedComment({ target, notebook: item.notebook.name });
+    case "comment.deleted":
+      return t.activityDeletedComment({ target, notebook: item.notebook.name });
     case "notebook.created":
       return t.activityCreatedNotebook({ notebook: item.notebook.name });
     case "notebook.updated":
@@ -129,6 +135,12 @@ const activityEventIcon = (action: string): string => {
       return "ti ti-history";
     case "note.edited":
       return "ti ti-pencil";
+    case "comment.created":
+      return "ti ti-message-plus";
+    case "comment.updated":
+      return "ti ti-message-pencil";
+    case "comment.deleted":
+      return "ti ti-message-x";
     case "notebook.created":
       return "ti ti-notebook";
     case "notebook.updated":

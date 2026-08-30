@@ -69,6 +69,7 @@ export default ssr<AuthContext>(async (c) => {
     showDetailPanel,
     panelAttachments,
     backlinks,
+    initialCommentsPage,
     dateConfig,
   } = data;
   const editorOwnsWorkspaceSocket = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
@@ -182,6 +183,9 @@ export default ssr<AuthContext>(async (c) => {
               updatedAt={selectedNote.updatedAt}
               lockedAt={selectedNote.lockedAt}
               isLocked={!!selectedNote.lockedAt}
+              canWrite={canWrite}
+              currentUserId={user.id}
+              initialCommentsPage={initialCommentsPage ?? undefined}
               dateConfig={dateConfig}
             />
           )}

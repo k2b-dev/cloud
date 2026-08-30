@@ -5,6 +5,7 @@ import * as activity from "./activity";
 import * as apiKeys from "./api-keys";
 import * as attachments from "./attachments";
 import * as backup from "./backup";
+import * as comments from "./comments";
 import * as exporter from "./export";
 import * as favorites from "./favorites";
 import * as links from "./links";
@@ -196,6 +197,13 @@ export const notebooksService = {
     backlinks: {
       list: links.listBacklinks,
     },
+    comments: {
+      getByShortId: comments.getByShortId,
+      listPage: comments.listPage,
+      create: comments.create,
+      update: comments.update,
+      remove: comments.remove,
+    },
     /** Pull every distinct `note://<shortId>` reference out of a markdown
      *  body. Returns short-ids (the form embedded in the body); the
      *  caller resolves to UUIDs / hrefs as needed. */
@@ -216,6 +224,7 @@ export const notebooksService = {
     noteUpdated: workspaceEvents.noteUpdated,
     noteDeleted: workspaceEvents.noteDeleted,
     noteFavoriteChanged: workspaceEvents.noteFavoriteChanged,
+    noteCommentsChanged: workspaceEvents.noteCommentsChanged,
     invalidated: workspaceEvents.invalidated,
   },
   tag: {
@@ -282,6 +291,7 @@ export const notebooksService = {
 
 export type { Attachment, AttachmentContent, AttachmentKind } from "./attachments";
 export type { NotebookActivityActor, NotebookActivityEvent, NotebookActivityPage } from "./activity";
+export type { NoteComment } from "./comments";
 export type { Backlink, GraphEdge, GraphNode, NoteGraph, NoteLink } from "./links";
 // Re-export commonly used types
 export type { CreateNotebook, Notebook, NotebookAdminListItem, UpdateNotebook } from "./notebooks";
@@ -298,6 +308,7 @@ export {
   activity,
   attachments,
   backup,
+  comments,
   exporter,
   favorites,
   links,

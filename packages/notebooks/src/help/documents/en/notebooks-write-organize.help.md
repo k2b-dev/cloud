@@ -2,11 +2,26 @@
 id: notebooks-write-organize
 title: "Write & organize"
 icon: "ti ti-markdown"
-description: "Write readable Markdown notes, connect them with links and tags, and attach files."
+description: "Write readable Markdown notes, discuss pages, connect them with links and tags, and attach files."
 order: 120
 ---
 
 Write notes as readable Markdown, then use links, tags, attachments, and the sidebar to make the notebook navigable.
+
+**Collaboration**
+
+## Discuss a page {icon="message-circle"}
+
+Use **Comments** in the note details for questions, feedback, and decisions that belong beside the page but should not change its Markdown.
+
+:::reference
+- **Read:** Anyone who can read the notebook can follow its page discussions.
+- **Add:** Writers can post Markdown comments. New comments appear live for other readers.
+- **Correct:** You can edit or delete your own comment for ten minutes after posting.
+- **Locked notes:** A lock freezes the note body, not its discussion. Writers can still comment on a locked note.
+:::
+
+Keep durable handbook content in the note itself. Use comments to discuss that content before or after it changes.
 
 **Markdown**
 

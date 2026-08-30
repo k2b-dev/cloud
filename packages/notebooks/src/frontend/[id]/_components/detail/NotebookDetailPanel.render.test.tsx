@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToString } from "solid-js/web";
+import type { PublicNoteComment } from "../../../../api/public-resources";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
 import type { Attachment } from "../editor/attachments-client";
@@ -10,6 +11,19 @@ import "./ssr-test-plugin";
 const { default: NotebookDetailPanel } = await import("./NotebookDetailPanel.island.tsx");
 
 const now = "2026-08-09T10:00:00.000Z";
+const comment: PublicNoteComment = {
+  id: "comment1",
+  notebookId: "book01",
+  noteId: "note01",
+  authorUserId: "user-id",
+  authorDisplayName: "Ada Example",
+  authorAvatarHash: null,
+  content: "**Decision:** ship the handbook update.",
+  createdAt: now,
+  updatedAt: now,
+  canEdit: true,
+  canDelete: true,
+};
 const tocItems: TocItem[] = [
   { id: "overview", level: 1, text: "Overview" },
   { id: "details", level: 2, text: "Details" },
@@ -57,6 +71,9 @@ const renderPanel = (overrides: Partial<Parameters<typeof NotebookDetailPanel>[0
       updatedAt={now}
       lockedAt={null}
       isLocked={false}
+      canWrite
+      currentUserId="user-id"
+      initialCommentsPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
       dateConfig={{ locale: "en", timeZone: "UTC" }}
       {...overrides}
     />
@@ -117,6 +134,25 @@ describe("Notebook note detail panel", () => {
     expect(html).toContain('aria-label="Close note details"');
   });
 
+  test("renders the shared discussion contract with SSR comments", () => {
+    const html = renderPanel({ initialCommentsPage: { items: [comment], page: 1, perPage: 30, total: 1, hasNext: false } });
+
+    expect(html).toContain("Comments");
+    expect(html).toContain("Add comment");
+    expect(html).toContain("Ada Example");
+    expect(html).toContain("<strong>Decision:</strong> ship the handbook update.");
+    expect(html).toContain('aria-label="Edit comment"');
+    expect(html).toContain('aria-label="Delete comment"');
+  });
+
+  test("keeps discussion writable when a note body is locked", () => {
+    const html = renderPanel({ mode: "read", lockedAt: now, isLocked: true, canWrite: true });
+
+    expect(html).toContain("Locked note");
+    expect(html).toContain("Comments");
+    expect(html).toContain("Add comment");
+  });
+
   test("keeps sparse read-only notes sparse and omits editor-only controls", () => {
     const html = renderPanel({
       mode: "read",
@@ -127,12 +163,14 @@ describe("Notebook note detail panel", () => {
       namedBlocks: [],
       lockedAt: now,
       isLocked: true,
+      canWrite: false,
     });
 
     expect(html).toContain("Locked note");
     expect(html).not.toContain("Task progress");
     expect(html).not.toContain('aria-label="Note structure"');
     expect(html).not.toContain('aria-label="Related content"');
+    expect(html).not.toContain("Comments");
     expect(html).toContain('aria-label="Note context"');
     expect(html).not.toContain('aria-label="Show Markdown source"');
     expect(html).toContain('aria-label="Copy note content"');

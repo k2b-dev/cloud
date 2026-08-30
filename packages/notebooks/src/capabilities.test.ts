@@ -10,6 +10,9 @@ import {
 import { audit } from "@valentinkolb/cloud/services";
 import { decodeNotebookCapabilityCursor, decodeNotebookTreeCursor, notebooksCapabilities, noteEditCapabilitySummary } from "./capabilities";
 import {
+  CommentCreateInputSchema,
+  CommentListInputSchema,
+  CommentReadInputSchema,
   NotebookReadInputSchema,
   NoteCreateInputSchema,
   NoteDetailDataSchema,
@@ -24,6 +27,7 @@ import {
   TagNotesInputSchema,
 } from "./capability-contracts";
 import { noteContentHash } from "./lib/note-edit";
+import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
 import * as notebookStore from "./service/notebooks";
 import * as noteStore from "./service/notes";
@@ -44,7 +48,7 @@ test("only exposes remembered approval for bounded notebook-local note changes",
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
-  expect(rememberable).toEqual(["note.create", "note.edit", "note.move"]);
+  expect(rememberable).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
 });
 
 const trackedSpy = <T extends { mockRestore(): void }>(spy: T): T => {
@@ -142,8 +146,10 @@ afterEach(() => {
 
 describe("notebooks capabilities", () => {
   test("declares the complete bounded wiki surface", () => {
-    expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["note", "notebook"]);
+    expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["comment", "note", "notebook"]);
     expect(Object.keys(notebooksCapabilities.queries).sort()).toEqual([
+      "comment.list",
+      "comment.read",
       "note.links",
       "note.read",
       "note.search",
@@ -154,13 +160,18 @@ describe("notebooks capabilities", () => {
       "tag.list",
       "tag.notes",
     ]);
-    expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual(["note.create", "note.edit", "note.move"]);
+    expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
     expect(
       Object.entries(notebooksCapabilities.actions)
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id)
         .sort(),
-    ).toEqual(["note.create", "note.edit", "note.move"]);
+    ).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
+    expect(notebooksCapabilities.actions["comment.create"]).toMatchObject({
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+    });
     expect(notebooksCapabilities.actions["note.edit"]).toMatchObject({
       destructive: true,
       openWorld: false,
@@ -178,6 +189,10 @@ describe("notebooks capabilities", () => {
   });
 
   test("keeps write schemas strict and bounded", () => {
+    expect(CommentCreateInputSchema.safeParse({ noteId: note.shortId, content: "A useful observation." }).success).toBeTrue();
+    expect(CommentCreateInputSchema.safeParse({ noteId: note.shortId, content: "   " }).success).toBeFalse();
+    expect(CommentCreateInputSchema.safeParse({ noteId: note.shortId, content: "x".repeat(5_001) }).success).toBeFalse();
+    expect(CommentCreateInputSchema.safeParse({ noteId: note.shortId, content: "Comment", unexpected: true }).success).toBeFalse();
     expect(NoteCreateInputSchema.safeParse({ notebookId: notebook.shortId, content: "# Note", unexpected: true }).success).toBeFalse();
     expect(NoteEditInputSchema.safeParse({ noteId: note.shortId, operations: [] }).success).toBeFalse();
     expect(
@@ -238,6 +253,12 @@ describe("notebooks capabilities", () => {
     expect(NoteEditInputSchema.safeParse({ noteId, operations: [{ kind: "append", content: "x" }] }).success).toBeFalse();
     expect(NoteMoveInputSchema.safeParse({ noteId: note.shortId, parentId: null, position: 0 }).success).toBeTrue();
     expect(NoteMoveInputSchema.safeParse({ noteId, parentId: null, position: 0 }).success).toBeFalse();
+    expect(CommentListInputSchema.safeParse({ noteId: note.shortId }).success).toBeTrue();
+    expect(CommentListInputSchema.safeParse({ noteId }).success).toBeFalse();
+    expect(CommentReadInputSchema.safeParse({ id: "mno345" }).success).toBeTrue();
+    expect(CommentReadInputSchema.safeParse({ id: noteId }).success).toBeFalse();
+    expect(CommentCreateInputSchema.safeParse({ noteId: note.shortId, content: "Comment" }).success).toBeTrue();
+    expect(CommentCreateInputSchema.safeParse({ noteId, content: "Comment" }).success).toBeFalse();
   });
 
   test("accepts only opaque page and stable tree cursors", () => {
@@ -432,6 +453,47 @@ describe("notebooks capabilities", () => {
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: "notebooks.capability.note.edit" }));
   });
 
+  test("adds comments as the user through the permission-aware service", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+    const createdComment = {
+      id: "66666666-6666-4666-8666-666666666666",
+      shortId: "mno345",
+      noteId,
+      authorUserId: userId,
+      authorDisplayName: user.displayName,
+      authorAvatarHash: null,
+      content: "A useful observation.",
+      createdAt,
+      updatedAt: createdAt,
+      canEdit: true,
+      canDelete: true,
+    };
+    const create = trackedSpy(spyOn(commentStore, "create")).mockResolvedValue({ ok: true, data: createdComment });
+    const record = trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+
+    const result = await notebooksCapabilities.actions["comment.create"].run(
+      { noteId: note.shortId, content: createdComment.content },
+      userContext,
+    );
+
+    expect(result.ok).toBeTrue();
+    if (result.ok) {
+      expect(result.data.summary).toBe(`Added a comment to “${note.title}”.`);
+      expect(capabilityResultSchema(notebooksCapabilities.actions["comment.create"].data).safeParse(result.data).success).toBeTrue();
+      expect(result.data.data).toMatchObject({ id: createdComment.shortId, notebookId: notebook.shortId, noteId: note.shortId });
+    }
+    expect(create).toHaveBeenCalledWith({
+      notebookId,
+      noteId,
+      authorUserId: userId,
+      authorDisplayName: user.displayName,
+      content: createdComment.content,
+    });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: "notebooks.capability.comment.create" }));
+  });
+
   test("summarizes note edits by their visible effect", () => {
     expect(noteEditCapabilitySummary([{ kind: "insert-after-line", line: 2, content: "First\nSecond" }], note.title, true)).toBe(
       `Inserted 2 lines in “${note.title}”.`,
@@ -508,6 +570,10 @@ describe("notebooks capabilities", () => {
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
 
     const results: CapabilityActionReviewResult[] = [
+      await notebooksCapabilities.actions["comment.create"].review!(
+        { noteId: note.shortId, content: "A useful observation." },
+        userContext,
+      ),
       await notebooksCapabilities.actions["note.create"].review!(
         { notebookId: notebook.shortId, parentId: note.shortId, content: "# New note" },
         userContext,

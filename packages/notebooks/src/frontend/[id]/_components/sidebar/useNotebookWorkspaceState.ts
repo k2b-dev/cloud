@@ -69,6 +69,12 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
         detail.cover(Promise.resolve());
         return;
       }
+      if (detail.event.type === "note.comments.changed") {
+        // The note-bound discussion query owns this event. Keep the workspace
+        // tree snapshot stable while still covering events for non-selected notes.
+        detail.cover(Promise.resolve());
+        return;
+      }
       const coverage = workspace.invalidate({ cursor: detail.cursor });
       detail.cover(coverage);
       if (detail.event.type === "note.updated" || detail.event.type === "workspace.invalidated") {
