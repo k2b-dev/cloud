@@ -12,6 +12,8 @@ export type CloudCliOptions = {
   server: string;
   token: string;
   output: CloudCliOutputMode;
+  /** Explicit request locale selected by the CLI entry point. */
+  locale?: string;
 };
 
 export type CloudApiClient<TApi extends Hono<any, any, any>> = ReturnType<typeof hc<TApi>>;
@@ -55,4 +57,5 @@ export type CloudCliModule = {
 
 export * from "./access";
 export * from "./commands";
+export * from "./locale";
 export * from "./output";

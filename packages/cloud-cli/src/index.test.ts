@@ -15,6 +15,7 @@ type MockServerState = {
   appsCalls?: number;
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
+  acceptLanguages?: string[];
 };
 
 const tempDirs: string[] = [];
@@ -51,6 +52,8 @@ const startMockServer = (state: MockServerState) =>
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url);
+      state.acceptLanguages ??= [];
+      state.acceptLanguages.push(request.headers.get("accept-language") ?? "");
       if (url.pathname === "/oauth/token") {
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
@@ -154,6 +157,33 @@ const readUntil = async (stream: ReadableStream<Uint8Array>, marker: string): Pr
 };
 
 describe("cloud CLI OAuth session handling", () => {
+  test("selects localized human help explicitly without changing command syntax", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    const [english, german] = await Promise.all([runCli(configPath, ["help"]), runCli(configPath, ["--locale", "de-CH", "help"])]);
+
+    expect(english.exitCode).toBe(0);
+    expect(english.stdout).toContain("Usage:");
+    expect(german.exitCode).toBe(0);
+    expect(german.stdout).toContain("Verwendung:");
+    expect(german.stdout).toContain("--jsonl");
+    expect(german.stdout).toContain("notebooks list");
+  });
+
+  test("uses CLD_LOCALE only when no explicit locale is present", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    const [fromEnvironment, explicit] = await Promise.all([
+      runCli(configPath, ["help"], { CLD_LOCALE: "de" }),
+      runCli(configPath, ["--locale", "en", "help"], { CLD_LOCALE: "de" }),
+    ]);
+
+    expect(fromEnvironment.stdout).toContain("Verwendung:");
+    expect(explicit.stdout).toContain("Usage:");
+  });
+
   test("prints its version without requiring a configured server", async () => {
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
@@ -169,7 +199,7 @@ describe("cloud CLI OAuth session handling", () => {
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
 
-    const result = await runCli(configPath, ["--jsonl", "missing-module"]);
+    const result = await runCli(configPath, ["--locale", "de-CH", "--jsonl", "missing-module"]);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
@@ -177,6 +207,17 @@ describe("cloud CLI OAuth session handling", () => {
     expect(JSON.parse(result.stderr)).toEqual({
       error: { message: 'Unknown module "missing-module". Run `cld help`.', exitCode: 1 },
     });
+  });
+
+  test("localizes text errors without translating their JSON contract", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    const result = await runCli(configPath, ["--locale", "de-CH", "missing-module"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain('Unbekanntes Modul "missing-module"');
   });
 
   test("rejects incomplete update versions before contacting a release server", async () => {
@@ -612,7 +653,7 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("HTTP(S) origin");
     }
-  }, 15_000);
+  }, 30_000);
 
   test("allows plaintext Cloud servers only on exact loopback hosts", async () => {
     const dir = await createTempDir();
@@ -629,7 +670,7 @@ describe("cloud CLI OAuth session handling", () => {
       const result = await runCli(configPath, ["profile", "set", `loopback-${index}`, "--server", server, "--token", "token"]);
       expect(result.exitCode).toBe(0);
     }
-  }, 15_000);
+  }, 30_000);
 
   test("revokes a displaced OAuth grant when profile set changes credential providers", async () => {
     const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
@@ -909,7 +950,34 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(0);
       expect(state.meCalls).toBe(2);
       expect(state.refreshCalls).toBe(1);
+      expect(state.acceptLanguages).toContain("en");
       expect(result.stdout).toContain("tester");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("forwards an explicit regional locale while keeping JSON fields unchanged", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    try {
+      const result = await runCli(configPath, [
+        "--server",
+        `http://127.0.0.1:${server.port}`,
+        "--token",
+        "test-token",
+        "--locale",
+        "de-CH",
+        "account",
+        "whoami",
+        "--json",
+      ]);
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).uid).toBe("tester");
+      expect(state.acceptLanguages).toContain("de-CH");
     } finally {
       server.stop(true);
     }

@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation]
-updated: 2026-08-19
+updated: 2026-08-30
 ---
 
 # Application CLI modules
@@ -16,6 +16,36 @@ Add a CLI module when a server operation should also be available through
 The shared CLI owns profiles, sign-in, server selection, global output flags,
 and help. An application module owns its commands and calls the same HTTP API
 as every other client.
+
+## Select a locale
+
+`cld` resolves one locale per invocation. Pass `--locale <BCP-47-tag>` before
+the module name, or set `CLD_LOCALE`; the explicit flag wins and the
+deterministic default is `en`. Regional tags use normal ancestor fallback, so
+`de-CH` uses German CLI text when no Swiss German message exists.
+
+The resolved tag is available as `ctx.options.locale` and is sent as
+`Accept-Language` with every authenticated application request. This keeps
+server-owned API messages aligned with the CLI without process-global locale
+state. For application-owned text, use `cliText(ctx, { en, de })` at the final
+`ctx.print()` or `ctx.error()` boundary.
+
+Command names, flags, argument names, examples, IDs, enum values, error codes,
+and technical product terms are stable CLI syntax and stay unchanged. JSON and
+JSONL payloads are machine contracts and are never translated. The bundled
+CLI localizes its shell help, authentication flow, profile status, and
+server-owned human messages. Existing application command descriptions and
+schema-shaped table headings remain English technical reference text until
+their owning module provides an explicit keyed catalog; do not translate them
+by inspecting or replacing the English output string.
+
+```ts
+import { cliText } from "@valentinkolb/cloud/cli";
+
+if (ctx.options.output === "text") {
+  ctx.print(cliText(ctx, { en: "Saved.", de: "Gespeichert." }));
+}
+```
 
 ## Define a module
 

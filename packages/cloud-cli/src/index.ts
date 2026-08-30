@@ -13,6 +13,7 @@ import type {
   CloudCliOptions,
   CloudCliTableColumn,
 } from "@valentinkolb/cloud/cli";
+import { localizeCloudCliText, resolveCloudCliLocale } from "@valentinkolb/cloud/cli";
 import accountCliModule from "@valentinkolb/cloud/cli/account";
 import adminCliModule from "@valentinkolb/cloud/cli/admin";
 import appsCliModule from "@valentinkolb/cloud/cli/apps";
@@ -86,6 +87,7 @@ type GlobalArgs = {
   fd0?: string;
   fd0Scope?: string;
   output: "text" | "json" | "jsonl";
+  locale: string;
   rest: string[];
 };
 
@@ -126,12 +128,39 @@ const modules: CloudCliModule[] = [
 
 const moduleByName = new Map(modules.map((module) => [module.name, module]));
 
+const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
+
+const germanModuleSummaries: Readonly<Record<string, string>> = {
+  account: "Eigenes Konto verwalten.",
+  accounts: "Konten, Gruppen und Zugriffe verwalten.",
+  admin: "Cloud-Betrieb verwalten.",
+  "api-docs": "Registrierte HTTP-APIs untersuchen.",
+  apps: "Installierte Anwendungen anzeigen.",
+  capabilities: "Registrierte Capabilities untersuchen und ausführen.",
+  assistant: "Mit Assistant arbeiten.",
+  contacts: "Kontakte verwalten.",
+  grids: "Grids-Daten und -Konfiguration verwalten.",
+  "ipa-hosts": "FreeIPA-Hosts verwalten.",
+  mail: "Mail verwalten.",
+  notebooks: "Notizbücher und Notizen verwalten.",
+  oauth: "OAuth-Clients verwalten.",
+  pulse: "Pulse-Daten und -Dashboards verwalten.",
+  spaces: "Spaces und Arbeitselemente verwalten.",
+  tools: "Lokale Cloud-Werkzeuge verwenden.",
+  venue: "Veranstaltungsorte verwalten.",
+};
+
 class CliError extends Error {
   constructor(
     message: string,
     readonly exitCode = 1,
+    readonly germanMessage?: string,
   ) {
     super(message);
+  }
+
+  localizedMessage(locale: string): string {
+    return this.germanMessage ? text(locale, this.message, this.germanMessage) : this.message;
   }
 }
 
@@ -222,7 +251,9 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
 
     global.push(current);
     const flagName = current.replace(/^-+/, "").split("=")[0]!;
-    const consumesValue = ["profile", "server", "token", "token-file", "token-command", "fd0", "fd0-scope", "config"].includes(flagName);
+    const consumesValue = ["profile", "server", "token", "token-file", "token-command", "fd0", "fd0-scope", "config", "locale"].includes(
+      flagName,
+    );
     if (consumesValue && !current.includes("=") && argv[i + 1] !== undefined) {
       global.push(argv[i + 1]!);
       i += 1;
@@ -230,6 +261,17 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
   }
 
   const parsed = parseArgs(global);
+  const requestedLocale = takeStringFlag(parsed.flags, "locale") ?? process.env.CLD_LOCALE;
+  let locale: string;
+  try {
+    locale = resolveCloudCliLocale(requestedLocale);
+  } catch {
+    throw new CliError(
+      `Invalid locale "${requestedLocale}". Pass a BCP 47 language tag such as en or de-CH.`,
+      1,
+      `Ungültige Locale "${requestedLocale}". Übergib einen BCP-47-Sprachtag wie en oder de-CH.`,
+    );
+  }
   return {
     profile: takeStringFlag(parsed.flags, "profile", "p"),
     server: takeStringFlag(parsed.flags, "server"),
@@ -239,6 +281,7 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
     fd0: takeStringFlag(parsed.flags, "fd0"),
     fd0Scope: takeStringFlag(parsed.flags, "fd0-scope"),
     output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : "text",
+    locale,
     rest,
   };
 };
@@ -599,9 +642,17 @@ const resolveAuth = async (
   if (profile.fd0) return { token: await readFd0Token(profile.fd0.name, profile.fd0.scope) };
   if (profile.tokenCommand) return { token: await readCommandToken(profile.tokenCommand) };
   if (config.profiles && Object.keys(config.profiles).length === 0) {
-    throw new CliError("No login configured. Run `cld login --server <url>`.");
+    throw new CliError(
+      "No login configured. Run `cld login --server <url>`.",
+      1,
+      "Keine Anmeldung konfiguriert. Führe `cld login --server <URL>` aus.",
+    );
   }
-  throw new CliError("No token configured. Pass --token, set CLD_TOKEN, or configure a profile.");
+  throw new CliError(
+    "No token configured. Pass --token, set CLD_TOKEN, or configure a profile.",
+    1,
+    "Kein Token konfiguriert. Übergib --token, setze CLD_TOKEN oder konfiguriere ein Profil.",
+  );
 };
 
 const resolveProfileName = (config: CloudCliConfig, requestedProfile: string | undefined): string => {
@@ -618,7 +669,12 @@ const resolveOptions = async (global: GlobalArgs): Promise<ResolvedCliOptions> =
   const profileName = resolveProfileName(config, global.profile);
   const profile = config.profiles?.[profileName] ?? {};
   const server = global.server ?? process.env.CLD_SERVER ?? profile.server;
-  if (!server) throw new CliError("No server configured. Pass --server or run `cld profile set --server <url>`.");
+  if (!server)
+    throw new CliError(
+      "No server configured. Pass --server or run `cld profile set --server <url>`.",
+      1,
+      "Kein Server konfiguriert. Übergib --server oder führe `cld profile set --server <URL>` aus.",
+    );
   const normalizedServer = canonicalServer(server);
   const auth = await resolveAuth(global, config, profileName, profile, normalizedServer);
   return {
@@ -627,6 +683,7 @@ const resolveOptions = async (global: GlobalArgs): Promise<ResolvedCliOptions> =
     token: auth.token,
     refresh: auth.refresh,
     output: global.output,
+    locale: global.locale,
   };
 };
 
@@ -640,6 +697,7 @@ const resolveOfflineOptions = async (global: GlobalArgs): Promise<ResolvedCliOpt
     server: server ? normalizeServer(server) : "",
     token: global.token ?? process.env.CLD_TOKEN ?? profile.token ?? "",
     output: global.output,
+    locale: global.locale,
   };
 };
 
@@ -700,6 +758,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
     const headers = new Headers(pathOrUrl instanceof Request ? pathOrUrl.headers : undefined);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     headers.set("authorization", `Bearer ${bearerToken}`);
+    headers.set("accept-language", options.locale ?? "en");
     const response = await fetch(url, {
       ...init,
       headers,
@@ -772,7 +831,10 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   };
 };
 
-const helpText = (): string => `cld
+const helpText = (locale: string): string =>
+  text(
+    locale,
+    `cld
 
 Usage:
   cld [global options] <module> <command> [options]
@@ -791,6 +853,7 @@ Global options:
   --fd0 <name>            Read bearer token via fd0 get <name> --raw
   --fd0-scope <scope>     fd0 scope
   --token-command <cmd>   Read bearer token from command stdout
+  --locale <tag>          Human text locale (default: CLD_LOCALE or en)
   --json                  Print JSON where supported
   --jsonl                 Stream one JSON event per line where supported
 
@@ -802,9 +865,45 @@ Examples:
   cld --server http://localhost:3000 --token cld_... notebooks list
   cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope stuve
   cld notebooks tree <notebook>
-`;
+`,
+    `cld
 
-const profileHelp = (): string => `cld profile
+Verwendung:
+  cld [globale Optionen] <Modul> <Befehl> [Optionen]
+  cld login [Profil] --server <URL>
+  cld logout [--profile <Name>]
+  cld auth status
+  cld profile <list|show|use|set> [Optionen]
+  cld update [--version <Version>] [--yes] [--no-verify]
+  cld --version
+
+Globale Optionen:
+  --profile <Name>        Profilname (Standard: aktuelles Profil)
+  --server <URL>          URL des Cloud-Servers
+  --token <Token>         Bearer-Token
+  --token-file <Pfad>     Bearer-Token aus einer Datei lesen
+  --fd0 <Name>            Bearer-Token über fd0 get <Name> --raw lesen
+  --fd0-scope <Scope>     fd0-Scope
+  --token-command <Befehl> Bearer-Token aus stdout eines Befehls lesen
+  --locale <Tag>          Sprache für menschenlesbaren Text (Standard: CLD_LOCALE oder en)
+  --json                  JSON ausgeben, sofern unterstützt
+  --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
+
+Module:
+${modules.map((module) => `  ${module.name.padEnd(12)} ${germanModuleSummaries[module.name] ?? module.summary}`).join("\n")}
+
+Beispiele:
+  cld login --server http://localhost:3000
+  cld --server http://localhost:3000 --token cld_... notebooks list
+  cld profile set --server http://localhost:3000 --fd0 cloud-local-token --fd0-scope stuve
+  cld notebooks tree <notebook>
+`,
+  );
+
+const profileHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld profile
 
 Usage:
   cld profile list
@@ -814,9 +913,24 @@ Usage:
   cld profile set [name] --server <url> --token-file <path>
   cld profile set [name] --server <url> --fd0 <secret> [--fd0-scope <scope>]
   cld profile set [name] --server <url> --token-command <command>
-`;
+`,
+    `cld profile
 
-const updateHelp = (): string => `cld update
+Verwendung:
+  cld profile list
+  cld profile show [Name]
+  cld profile use <Name>
+  cld profile set [Name] --server <URL> [--token <Token>]
+  cld profile set [Name] --server <URL> --token-file <Pfad>
+  cld profile set [Name] --server <URL> --fd0 <Secret> [--fd0-scope <Scope>]
+  cld profile set [Name] --server <URL> --token-command <Befehl>
+`,
+  );
+
+const updateHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld update
 
 Usage:
   cld update [--version <version>] [--yes] [--no-verify] [--no-skills] [--skills-dir <dir>] [--claude-symlink]
@@ -828,7 +942,21 @@ Options:
   --no-skills          Skip updating the Cloud CLI agent skill
   --skills-dir <dir>   Skill install base directory (default: ${defaultCloudCliSkillsDir()})
   --claude-symlink     Link the installed skill into ~/.claude/skills/cloud-cli
-`;
+`,
+    `cld update
+
+Verwendung:
+  cld update [--version <Version>] [--yes] [--no-verify] [--no-skills] [--skills-dir <Verzeichnis>] [--claude-symlink]
+
+Optionen:
+  --version <Version>  cli-vX.Y.Z oder X.Y.Z installieren (Standard: neuestes CLI-Release)
+  --yes                Bestätigungsabfrage überspringen
+  --no-verify          Optionale Cosign-Prüfung überspringen; SHA-256 wird immer geprüft
+  --no-skills          Aktualisierung des Cloud-CLI-Agent-Skills überspringen
+  --skills-dir <Pfad>  Basisverzeichnis für Skills (Standard: ${defaultCloudCliSkillsDir()})
+  --claude-symlink     Installierten Skill unter ~/.claude/skills/cloud-cli verlinken
+`,
+  );
 
 const confirmCliUpdate = async (message: string): Promise<boolean> => {
   if (!process.stdin.isTTY) throw new CliError("Not a terminal; pass --yes to update non-interactively.");
@@ -841,10 +969,10 @@ const confirmCliUpdate = async (message: string): Promise<boolean> => {
   }
 };
 
-const runUpdateCommand = async (args: string[]): Promise<number> => {
+const runUpdateCommand = async (args: string[], locale: string): Promise<number> => {
   const parsed = parseArgs(args);
   if (isModuleHelpRequest(parsed.args, parsed.flags)) {
-    console.log(updateHelp());
+    console.log(updateHelp(locale));
     return 0;
   }
   if (parsed.args.length > 0)
@@ -897,10 +1025,10 @@ const runUpdateCommand = async (args: string[]): Promise<number> => {
   return 0;
 };
 
-const runProfileCommand = async (args: string[]): Promise<number> => {
+const runProfileCommand = async (args: string[], locale: string): Promise<number> => {
   const [command, maybeName, ...rest] = args;
   if (!command || command === "help") {
-    console.log(profileHelp());
+    console.log(profileHelp(locale));
     return 0;
   }
 
@@ -928,7 +1056,7 @@ const runProfileCommand = async (args: string[]): Promise<number> => {
     console.log(
       renderTable(rows, [
         { key: "current", label: "" },
-        { key: "name", label: "PROFILE" },
+        { key: "name", label: text(locale, "PROFILE", "PROFIL") },
         { key: "server", label: "SERVER" },
         { key: "token", label: "TOKEN" },
       ]),
@@ -970,7 +1098,7 @@ const runProfileCommand = async (args: string[]): Promise<number> => {
       latestConfig.currentProfile = maybeName;
       await saveConfig(latestConfig);
     });
-    console.log(`Using profile "${maybeName}".`);
+    console.log(text(locale, `Using profile "${maybeName}".`, `Profil "${maybeName}" wird verwendet.`));
     return 0;
   }
 
@@ -1035,7 +1163,7 @@ const runProfileCommand = async (args: string[]): Promise<number> => {
         if (displacedFd0 && !reusesDisplacedFd0) await removeFd0Secret(displacedFd0.name, displacedFd0.scope);
       }
 
-      console.log(`Saved profile "${name}" to ${CONFIG_PATH}.`);
+      console.log(text(locale, `Saved profile "${name}" to ${CONFIG_PATH}.`, `Profil "${name}" wurde unter ${CONFIG_PATH} gespeichert.`));
       return 0;
     });
   }
@@ -1058,7 +1186,7 @@ const pkceChallenge = async (verifier: string): Promise<string> => {
   return base64UrlEncode(new Uint8Array(hash));
 };
 
-const openBrowser = async (url: string): Promise<void> => {
+const openBrowser = async (url: string, locale: string): Promise<void> => {
   const opener =
     process.platform === "darwin"
       ? { command: "open", args: [url] }
@@ -1069,20 +1197,33 @@ const openBrowser = async (url: string): Promise<void> => {
   try {
     await execFileAsync(opener.command, opener.args, { timeout: 5_000 });
   } catch {
-    console.log(`Open this URL in your browser:\n${url}`);
+    console.log(text(locale, `Open this URL in your browser:\n${url}`, `Öffne diese URL im Browser:\n${url}`));
   }
 };
 
-const promptToOpenBrowser = async (url: string, signal: AbortSignal): Promise<void> => {
+const promptToOpenBrowser = async (url: string, signal: AbortSignal, locale: string): Promise<void> => {
   if (!process.stdin.isTTY) {
-    console.log("Waiting for the OAuth callback. Open the URL above in a browser.");
+    console.log(
+      text(
+        locale,
+        "Waiting for the OAuth callback. Open the URL above in a browser.",
+        "Warte auf den OAuth-Callback. Öffne die URL oben in einem Browser.",
+      ),
+    );
     return;
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    await rl.question("Press Enter to open this URL in your browser, or copy it into another browser.\n", { signal });
-    await openBrowser(url);
+    await rl.question(
+      text(
+        locale,
+        "Press Enter to open this URL in your browser, or copy it into another browser.\n",
+        "Drücke die Eingabetaste, um diese URL im Browser zu öffnen, oder kopiere sie in einen anderen Browser.\n",
+      ),
+      { signal },
+    );
+    await openBrowser(url, locale);
   } catch (error) {
     if ((error as { name?: string }).name !== "AbortError") {
       console.error(`Warning: could not open browser: ${(error as Error).message}`);
@@ -1101,7 +1242,13 @@ const oauthCallbackResponse = (message: string, status = 200): Response =>
     },
   });
 
-const waitForOAuthCode = async (authorizationUrl: URL, expectedState: string, expectedIssuer: string, open: boolean): Promise<string> => {
+const waitForOAuthCode = async (
+  authorizationUrl: URL,
+  expectedState: string,
+  expectedIssuer: string,
+  open: boolean,
+  locale: string,
+): Promise<string> => {
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
   const codePromise = new Promise<string>((resolve, reject) => {
@@ -1115,13 +1262,20 @@ const waitForOAuthCode = async (authorizationUrl: URL, expectedState: string, ex
     fetch: (request) => {
       const url = new URL(request.url);
       if (url.pathname !== "/callback") {
-        return oauthCallbackResponse("This is not a Cloud CLI login callback.", 404);
+        return oauthCallbackResponse(
+          text(locale, "This is not a Cloud CLI login callback.", "Dies ist kein Anmelde-Callback der Cloud CLI."),
+          404,
+        );
       }
 
       const state = url.searchParams.get("state");
       if (state !== expectedState) {
         return oauthCallbackResponse(
-          "Authentication failed: the OAuth callback did not match the expected state. You may close this window.",
+          text(
+            locale,
+            "Authentication failed: the OAuth callback did not match the expected state. You may close this window.",
+            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback entsprach nicht dem erwarteten Zustand. Du kannst dieses Fenster schließen.",
+          ),
           400,
         );
       }
@@ -1129,7 +1283,11 @@ const waitForOAuthCode = async (authorizationUrl: URL, expectedState: string, ex
       if (url.searchParams.get("iss") !== expectedIssuer) {
         rejectCode(new CliError("OAuth callback did not match the expected issuer."));
         return oauthCallbackResponse(
-          "Authentication failed: the OAuth callback did not match the expected issuer. You may close this window.",
+          text(
+            locale,
+            "Authentication failed: the OAuth callback did not match the expected issuer. You may close this window.",
+            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback stammte nicht vom erwarteten Aussteller. Du kannst dieses Fenster schließen.",
+          ),
           400,
         );
       }
@@ -1138,20 +1296,36 @@ const waitForOAuthCode = async (authorizationUrl: URL, expectedState: string, ex
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
         rejectCode(new CliError(message));
-        return oauthCallbackResponse(`Authentication failed: ${message}. You may close this window.`);
+        return oauthCallbackResponse(
+          text(
+            locale,
+            `Authentication failed: ${message}. You may close this window.`,
+            `Die Anmeldung ist fehlgeschlagen: ${message}. Du kannst dieses Fenster schließen.`,
+          ),
+        );
       }
 
       const code = url.searchParams.get("code");
       if (!code) {
         rejectCode(new CliError("OAuth callback did not include an authorization code."));
         return oauthCallbackResponse(
-          "Authentication failed: the OAuth callback did not include an authorization code. You may close this window.",
+          text(
+            locale,
+            "Authentication failed: the OAuth callback did not include an authorization code. You may close this window.",
+            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback enthielt keinen Autorisierungscode. Du kannst dieses Fenster schließen.",
+          ),
           400,
         );
       }
 
       resolveCode(code);
-      return oauthCallbackResponse("Authentication complete. You may close this window.");
+      return oauthCallbackResponse(
+        text(
+          locale,
+          "Authentication complete. You may close this window.",
+          "Die Anmeldung ist abgeschlossen. Du kannst dieses Fenster schließen.",
+        ),
+      );
     },
   });
 
@@ -1161,9 +1335,16 @@ const waitForOAuthCode = async (authorizationUrl: URL, expectedState: string, ex
   const url = authorizationUrl.toString();
 
   try {
-    console.log(`Login URL:\n${url}`);
-    if (open) void promptToOpenBrowser(url, promptAbort.signal);
-    else console.log("Waiting for the OAuth callback. Open the URL above in a browser.");
+    console.log(text(locale, `Login URL:\n${url}`, `Anmelde-URL:\n${url}`));
+    if (open) void promptToOpenBrowser(url, promptAbort.signal, locale);
+    else
+      console.log(
+        text(
+          locale,
+          "Waiting for the OAuth callback. Open the URL above in a browser.",
+          "Warte auf den OAuth-Callback. Öffne die URL oben in einem Browser.",
+        ),
+      );
     return await codePromise;
   } finally {
     promptAbort.abort();
@@ -1201,8 +1382,9 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   authorizationUrl.searchParams.set("code_challenge", await pkceChallenge(verifier));
   authorizationUrl.searchParams.set("code_challenge_method", "S256");
   authorizationUrl.searchParams.set("redirect_uri", "http://127.0.0.1/callback");
+  authorizationUrl.searchParams.set("ui_locales", global.locale);
 
-  const code = await waitForOAuthCode(authorizationUrl, state, normalizedServer, !takeBooleanFlag(parsed.flags, "no-open"));
+  const code = await waitForOAuthCode(authorizationUrl, state, normalizedServer, !takeBooleanFlag(parsed.flags, "no-open"), global.locale);
 
   const body = new URLSearchParams({
     grant_type: "authorization_code",
@@ -1297,7 +1479,13 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
     }
     throw error;
   }
-  console.log(`Logged in to ${normalizedServer} as profile "${name}".`);
+  console.log(
+    text(
+      global.locale,
+      `Logged in to ${normalizedServer} as profile "${name}".`,
+      `Bei ${normalizedServer} als Profil "${name}" angemeldet.`,
+    ),
+  );
   return 0;
 };
 
@@ -1309,7 +1497,9 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
     const latestConfig = await loadConfig();
     const profile = latestConfig.profiles?.[name];
     if (!profile?.oauth) {
-      console.log(`Profile "${name}" is not logged in with OAuth.`);
+      console.log(
+        text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`),
+      );
       return 0;
     }
 
@@ -1331,7 +1521,7 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
     }
     delete profile.oauth;
     await saveConfig(latestConfig);
-    console.log(`Logged out profile "${name}".`);
+    console.log(text(global.locale, `Logged out profile "${name}".`, `Profil "${name}" wurde abgemeldet.`));
     return 0;
   });
 };
@@ -1365,11 +1555,13 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
 
   if (global.output === "json" || takeBooleanFlag(parsed.flags, "json")) console.log(JSON.stringify(payload, null, 2));
   else {
-    console.log(`Profile: ${payload.profile}`);
+    console.log(`${text(global.locale, "Profile", "Profil")}: ${payload.profile}`);
     console.log(`Server: ${payload.server || "-"}`);
-    console.log(`Auth: ${payload.kind}`);
-    if (payload.accessTokenExpiresAt) console.log(`Access token expires: ${payload.accessTokenExpiresAt}`);
-    if (payload.refreshTokenStorage) console.log(`Refresh token storage: ${payload.refreshTokenStorage}`);
+    console.log(`${text(global.locale, "Auth", "Authentifizierung")}: ${payload.kind}`);
+    if (payload.accessTokenExpiresAt)
+      console.log(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
+    if (payload.refreshTokenStorage)
+      console.log(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
   }
   return 0;
 };
@@ -1383,21 +1575,29 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   const [moduleName, ...moduleArgs] = global.rest;
 
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
-    console.log(helpText());
+    console.log(helpText(global.locale));
     return 0;
   }
 
   if (moduleName === "login") return runLoginCommand(moduleArgs, global);
   if (moduleName === "logout") return runLogoutCommand(moduleArgs, global);
   if (moduleName === "auth") return runAuthCommand(moduleArgs, global);
-  if (moduleName === "profile") return runProfileCommand(moduleArgs);
-  if (moduleName === "update") return runUpdateCommand(moduleArgs);
+  if (moduleName === "profile") return runProfileCommand(moduleArgs, global.locale);
+  if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
 
   const module = moduleByName.get(moduleName);
-  if (!module) throw new CliError(`Unknown module "${moduleName}". Run \`cld help\`.`);
+  if (!module)
+    throw new CliError(
+      `Unknown module "${moduleName}". Run \`cld help\`.`,
+      1,
+      `Unbekanntes Modul "${moduleName}". Führe \`cld help\` aus.`,
+    );
 
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    console.log(module.help?.() ?? `${module.name}: ${module.summary}`);
+    console.log(
+      module.help?.() ??
+        `${module.name}: ${global.locale.toLowerCase().startsWith("de") ? (germanModuleSummaries[module.name] ?? module.summary) : module.summary}`,
+    );
     return 0;
   }
 
@@ -1437,7 +1637,15 @@ if (import.meta.main) {
       if (wantsJsonError(Bun.argv.slice(2))) {
         const payload = errorPayload(error, exitCode);
         console.error(Bun.argv.includes("--jsonl") ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
-      } else console.error(error instanceof Error ? error.message : String(error));
+      } else {
+        let locale = "en";
+        try {
+          locale = parseGlobalArgs(Bun.argv.slice(2)).locale;
+        } catch {
+          locale = process.env.CLD_LOCALE ?? "en";
+        }
+        console.error(error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error));
+      }
       process.exitCode = exitCode;
     },
   );
