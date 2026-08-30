@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileCapabilities } from "../packages/cloud/src/_internal/capabilities";
+import { compileCapabilities, resolveCapabilityManifestPresentation } from "../packages/cloud/src/_internal/capabilities";
 import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
@@ -74,5 +74,16 @@ const missingPresentation = (appId: string, definitions: CapabilityDefinitions):
 describe("built-in Capability presentation", () => {
   test("ships complete German registry and input-schema presentation", () => {
     expect(builtIns.flatMap(([appId, definitions]) => missingPresentation(appId, definitions))).toEqual([]);
+  });
+
+  test("resolves declared German contact field descriptions through language ancestors", () => {
+    const compiled = compileCapabilities("contacts", contactsCapabilities);
+    const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-CH");
+    const action = localized.actions.find((entry) => entry.localId === "contact.create");
+    const properties = action?.inputSchema.properties as Record<string, { description?: string }> | undefined;
+
+    expect(properties?.salutation?.description).toBe("Bevorzugte Anrede.");
+    expect(properties?.pronouns?.description).toBe("Bevorzugte Pronomen.");
+    expect(properties?.preferredLanguage?.description).toBe("Bevorzugter Sprachcode.");
   });
 });
