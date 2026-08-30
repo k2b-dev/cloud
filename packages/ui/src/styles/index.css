@@ -6888,6 +6888,11 @@
   display: flex;
 }
 
+.k2b-ui .k2b-select-chip {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .k2b-ui .k2b-spotlight-button,
 .k2b-ui .k2b-select-chip {
   display: inline-flex;
@@ -6902,6 +6907,18 @@
   font-size: 0.75rem;
   line-height: 1rem;
   cursor: pointer;
+}
+
+.k2b-ui .k2b-select-chip > i,
+.k2b-ui .k2b-select-chip > img {
+  flex: 0 0 auto;
+}
+
+.k2b-ui .k2b-select-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-spotlight-button:hover,

@@ -392,6 +392,14 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain("k2b-select-chip__option");
     expect(html).toContain('<span class="k2b-dropdown__copy"><span>Comfortable</span></span><i class="ti ti-check k2b-dropdown__check"');
     expect(html).not.toContain('<i class="ti ti-check" aria-hidden="true"></i><span>Comfortable');
+
+    const chipRule = cssRule(".k2b-ui .k2b-select-chip");
+    const labelRule = cssRule(".k2b-ui .k2b-select-chip > span");
+    expect(chipRule).toContain("min-width: 0");
+    expect(chipRule).toContain("max-width: 100%");
+    expect(labelRule).toContain("overflow: hidden");
+    expect(labelRule).toContain("text-overflow: ellipsis");
+    expect(labelRule).toContain("white-space: nowrap");
   });
 
   test("renders an icon-only select chip as a labelled radio-menu trigger", () => {

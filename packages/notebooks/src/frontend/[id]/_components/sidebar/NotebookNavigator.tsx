@@ -343,11 +343,21 @@ export default function NotebookNavigator(props: Props) {
     </>
   ) : (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div class="flex shrink-0 flex-wrap items-center gap-2 pb-2">
-        <SelectChip value={treeMode()} options={treeModeOptions()} onValueChange={setTreeMode} icon="ti ti-list-tree" />
-        <SelectChip value={sortMode()} options={sortOptions()} onValueChange={changeSortMode} icon="ti ti-sort-descending" />
+      <div class="flex min-w-0 shrink-0 items-center gap-2 pb-2">
+        <SelectChip class="min-w-0" value={treeMode()} options={treeModeOptions()} onValueChange={setTreeMode} icon="ti ti-list-tree" />
+        <SelectChip
+          class="min-w-0"
+          value={sortMode()}
+          options={sortOptions()}
+          onValueChange={changeSortMode}
+          icon="ti ti-sort-descending"
+        />
         <Show when={props.canWrite}>
-          <IconButton class="ml-auto text-green-600 dark:text-green-400" label={t().newNote} onClick={() => actions.handleCreateNote()}>
+          <IconButton
+            class="ml-auto shrink-0 text-green-600 dark:text-green-400"
+            label={t().newNote}
+            onClick={() => actions.handleCreateNote()}
+          >
             <i class="ti ti-plus" />
           </IconButton>
         </Show>

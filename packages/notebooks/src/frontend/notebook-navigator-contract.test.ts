@@ -44,6 +44,15 @@ describe("Notebooks navigator hydration contract", () => {
     expect(source).not.toContain('meta={root.id === "favorites"');
   });
 
+  test("keeps navigator controls on one line while allowing both selects to shrink", async () => {
+    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookNavigator.tsx")).text();
+
+    expect(source).toContain('<div class="flex min-w-0 shrink-0 items-center gap-2 pb-2">');
+    expect(source).toContain('<SelectChip class="min-w-0" value={treeMode()}');
+    expect(source).toContain('<SelectChip\n          class="min-w-0"\n          value={sortMode()}');
+    expect(source).toContain('class="ml-auto shrink-0 text-green-600 dark:text-green-400"');
+  });
+
   test("uses shared tree rows and action visibility for note navigation", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NoteTree.tsx")).text();
 
