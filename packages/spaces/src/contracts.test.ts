@@ -3,6 +3,7 @@ import {
   CalendarQuerySchema,
   CreateItemSchema,
   CreateSpaceSchema,
+  CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
   ItemFilterSchema,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
@@ -11,6 +12,7 @@ import {
   ReorderWormholesSchema,
   SpaceItemAttachmentSchema,
   UpdateItemSchema,
+  UpdateTaskChecklistEntrySchema,
   UpdateWormholeSchema,
 } from "./contracts";
 
@@ -100,6 +102,22 @@ describe("Spaces starter contracts", () => {
 
 test("Spaces item filters default the overview to schedule grouping", () => {
   expect(ItemFilterSchema.parse({}).groupBy).toBe("deadline");
+  expect(ItemFilterSchema.parse({}).activity).toBe("all");
+  expect(ItemFilterSchema.parse({ activity: "inactive" }).activity).toBe("inactive");
+});
+
+describe("Spaces task checklist contracts", () => {
+  test("accepts only a bounded label plus completion changes", () => {
+    expect(CreateTaskChecklistEntrySchema.parse({ label: "  Review copy  " }).label).toBe("Review copy");
+    expect(UpdateTaskChecklistEntrySchema.safeParse({ completed: true }).success).toBe(true);
+    expect(UpdateTaskChecklistEntrySchema.safeParse({ label: "Rename" }).success).toBe(true);
+  });
+
+  test("rejects empty labels, empty updates, and task-like fields", () => {
+    expect(CreateTaskChecklistEntrySchema.safeParse({ label: " " }).success).toBe(false);
+    expect(UpdateTaskChecklistEntrySchema.safeParse({}).success).toBe(false);
+    expect(CreateTaskChecklistEntrySchema.safeParse({ label: "Review", deadline: START }).success).toBe(false);
+  });
 });
 
 describe("Spaces wormhole contracts", () => {

@@ -21,7 +21,8 @@ Views let the same work appear in the shape that fits the current job. The view 
 
 :::reference
 - **Search:** Use search when you remember a word in the title, notes, or visible item metadata.
-- **Chips:** Use filter chips for explicit state such as type, status, assignee, priority, deadline, tags, Kanban column, sort, or grouping.
+- **Chips:** Use filter chips for explicit state such as type, status, activity, assignee, priority, deadline, tags, Kanban column, sort, or grouping.
+- **Inactive work:** The activity filter finds open tasks whose latest activity is at least 30 days old. Comments and checklist changes count as activity; Spaces never moves or closes the task automatically.
 - **URL state:** Search and filters live in the URL, so shared links and reloads keep the same view.
 :::
 

@@ -315,6 +315,27 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ spaces.item_dependencies table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_checklist_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      completed BOOLEAN NOT NULL DEFAULT false,
+      rank BIGINT NOT NULL DEFAULT 1024,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT item_checklist_entries_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      CONSTRAINT item_checklist_entries_label_length CHECK (char_length(btrim(label)) BETWEEN 1 AND 500)
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_checklist_entries_short_id ON spaces.item_checklist_entries(short_id)`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_item_checklist_entries_item_rank
+    ON spaces.item_checklist_entries(item_id, rank, id)
+  `.simple();
+  console.log("  ✓ spaces.item_checklist_entries table");
+
+  await sql`
     CREATE TABLE IF NOT EXISTS spaces.item_attachments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL,
@@ -557,7 +578,7 @@ export const migrate = async (): Promise<void> => {
 
   await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.spaces.short-id-backfill'))`;
-    const shortIdTables: ShortIdTable[] = ["space", "column", "item", "attachment", "comment", "tag", "wormhole"];
+    const shortIdTables: ShortIdTable[] = ["space", "column", "item", "attachment", "checklist", "comment", "tag", "wormhole"];
     for (const table of shortIdTables) {
       const filled = await backfillShortIds(table, tx);
       if (filled > 0) console.log(`  ✓ spaces short_id backfill: ${filled} ${table}(s)`);

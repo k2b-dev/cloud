@@ -20,6 +20,7 @@ import type {
   SplitRecurringItem,
   UpdateItem,
 } from "@/contracts";
+import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
@@ -494,6 +495,7 @@ const mapToItem = (row: DbItem): SpaceItem => ({
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
+  lastActivityAt: row.updated_at.toISOString(),
 });
 
 /**
@@ -585,18 +587,31 @@ const getActiveBlockerCountsByItemIds = async (itemIds: string[]): Promise<Map<s
   return new Map(rows.map((row) => [row.item_id, row.count]));
 };
 
+const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, string>> => {
+  if (itemIds.length === 0) return new Map();
+  const rows = await sql<{ item_id: string; last_activity_at: Date }[]>`
+    SELECT item_id, MAX(last_occurred_at) AS last_activity_at
+    FROM spaces.activity_events
+    WHERE item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
+    GROUP BY item_id
+  `;
+  return new Map(rows.map((row) => [row.item_id, row.last_activity_at.toISOString()]));
+};
+
 const hydrateRelations = async (items: SpaceItem[]): Promise<SpaceItem[]> => {
   if (items.length === 0) return items;
   const itemIds = items.map((item) => item.id);
-  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId] = await Promise.all([
+  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId] = await Promise.all([
     getAssigneesByItemIds(itemIds),
     getTagsByItemIds(itemIds),
     getActiveBlockerCountsByItemIds(itemIds),
+    getLastActivityByItemIds(itemIds),
   ]);
   for (const item of items) {
     item.assignees = assigneesByItemId.get(item.id) ?? [];
     item.tags = tagsByItemId.get(item.id) ?? [];
     item.activeBlockerCount = blockerCountsByItemId.get(item.id) ?? 0;
+    item.lastActivityAt = lastActivityByItemId.get(item.id) ?? item.updatedAt;
   }
   return items;
 };
@@ -823,8 +838,22 @@ export const listFiltered = async (params: {
   dateConfig?: DateContext;
 }): Promise<ItemListResult> => {
   const { spaceId, filter, currentUserId } = params;
-  const { type, status, priority, tagIds, assigneeIds, assignedTo, columnIds, deadlineFilter, search, sort, sortDesc, page, pageSize } =
-    filter;
+  const {
+    type,
+    status,
+    activity: activityFilter,
+    priority,
+    tagIds,
+    assigneeIds,
+    assignedTo,
+    columnIds,
+    deadlineFilter,
+    search,
+    sort,
+    sortDesc,
+    page,
+    pageSize,
+  } = filter;
 
   // Build WHERE conditions as SQL fragments (safe from injection)
   // Base condition - always filter by space
@@ -842,6 +871,17 @@ export const listFiltered = async (params: {
     conditions = sql`${conditions} AND i.completed_at IS NULL`;
   } else if (status === "completed") {
     conditions = sql`${conditions} AND i.completed_at IS NOT NULL`;
+  }
+
+  if (activityFilter === "inactive") {
+    conditions = sql`${conditions}
+      AND i.completed_at IS NULL
+      AND i.starts_at IS NULL
+      AND i.ends_at IS NULL
+      AND COALESCE(
+        (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id),
+        i.updated_at
+      ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
   }
 
   // Priority filter - use IN with parameterized values

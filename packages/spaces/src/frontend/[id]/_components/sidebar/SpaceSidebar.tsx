@@ -103,6 +103,7 @@ export default function SpaceSidebar(props: Props) {
                   tags={props.ctx.tags}
                   dateConfig={props.dateConfig}
                   variant="icon"
+                  registerShortcut
                   defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
                 />
               </div>

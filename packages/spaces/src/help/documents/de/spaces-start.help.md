@@ -13,7 +13,7 @@ Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen P
 :::reference
 - **Space:** Ein Arbeitsbereich für ein Team, Projekt, einen Haushalt, Kurs oder wiederkehrenden Ablauf.
 - **Eintrag:** Die grundlegende Arbeitseinheit. Ein Eintrag ist entweder eine Aufgabe mit Fälligkeitsdatum oder ein Termin mit festgelegter Zeit.
-- **Aufgabe:** Arbeit mit Status, Priorität, zuständigen Personen, Fälligkeitsdatum, geschätzter Dauer, Abhängigkeiten, Tags, Beschreibung und Kommentaren.
+- **Aufgabe:** Arbeit mit Status, Priorität, zuständigen Personen, Fälligkeitsdatum, geschätzter Dauer, Abhängigkeiten, einer einfachen Checkliste, Tags, Beschreibung und Kommentaren.
 - **Termin:** Ein zeitlich geplanter Eintrag, der in Kalenderansichten und optionalen Kalenderexporten erscheint.
 - **Ansicht:** Die aktuelle Darstellung derselben Einträge als Liste, Tabelle, Kanban-Board oder Kalender.
 - **Tags:** Kurze Kennzeichnungen, mit denen sich Arbeit unabhängig von Zuständigkeiten, Fälligkeitsdaten, Terminen und Ansichten gruppieren lässt.

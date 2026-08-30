@@ -9,6 +9,7 @@ import {
 import { onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ItemFilter, SpaceColumn, SpaceItem } from "@/contracts";
+import { isPlainShortcut } from "../../../lib/keyboard";
 import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -50,6 +51,7 @@ const compactDescription = (value: string | null | undefined, query: string): st
 const searchRequest = (query: string): ItemFilter => ({
   type: "all",
   status: "all",
+  activity: "all",
   assignedTo: "all",
   deadlineFilter: "all",
   search: query,
@@ -113,7 +115,7 @@ export default function SearchButton(props: Props) {
     if (!props.registerShortcut) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isSpotlightShortcut(event)) return;
+      if (!isSpotlightShortcut(event) && !isPlainShortcut(event, "/")) return;
       event.preventDefault();
       void openSearch();
     };
@@ -125,7 +127,7 @@ export default function SearchButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon="ti ti-search"
-        label={t.searchItemsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+        label={t.searchItemsWithShortcut({ shortcut: `${SPOTLIGHT_SHORTCUT_TITLE} · /` })}
         onClick={() => void openSearch()}
       />
     );
@@ -136,7 +138,7 @@ export default function SearchButton(props: Props) {
       variant={props.variant}
       label={t.searchItemsLabel}
       onClick={openSearch}
-      title={t.searchItemsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+      title={t.searchItemsWithShortcut({ shortcut: `${SPOTLIGHT_SHORTCUT_TITLE} · /` })}
       ariaLabel={t.searchItems}
     />
   );

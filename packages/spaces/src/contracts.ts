@@ -110,11 +110,38 @@ export const SpaceItemSchema = z.object({
   createdBy: UuidSchema.nullable().describe("Creator user UUID"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
+  lastActivityAt: z.string().optional().describe("Most recent item, comment, or checklist activity timestamp (ISO)"),
   // Optional relations (loaded on demand)
   assignees: z.array(SpaceItemAssigneeSchema).optional().describe("Assigned users"),
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
 });
 export type SpaceItem = z.infer<typeof SpaceItemSchema>;
+
+export const INACTIVE_ITEM_DAYS = 30;
+
+export const MAX_TASK_CHECKLIST_ENTRIES = 100;
+export const SpaceTaskChecklistEntrySchema = z
+  .object({
+    id: ResourceShortIdSchema.describe("Checklist entry ID"),
+    label: z.string().trim().min(1).max(500).describe("Checklist entry label"),
+    completed: z.boolean().describe("Whether the checklist entry is complete"),
+    createdAt: z.string().datetime().describe("Checklist entry creation timestamp (ISO)"),
+    updatedAt: z.string().datetime().describe("Checklist entry update timestamp (ISO)"),
+  })
+  .strict();
+export type SpaceTaskChecklistEntry = z.infer<typeof SpaceTaskChecklistEntrySchema>;
+
+export const CreateTaskChecklistEntrySchema = z.object({ label: z.string().trim().min(1).max(500) }).strict();
+export type CreateTaskChecklistEntry = z.infer<typeof CreateTaskChecklistEntrySchema>;
+
+export const UpdateTaskChecklistEntrySchema = z
+  .object({
+    label: z.string().trim().min(1).max(500).optional(),
+    completed: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => value.label !== undefined || value.completed !== undefined, { message: "At least one checklist field is required" });
+export type UpdateTaskChecklistEntry = z.infer<typeof UpdateTaskChecklistEntrySchema>;
 
 export const SpaceTaskDependencyItemSchema = z
   .object({
@@ -474,6 +501,9 @@ export type ItemType = z.infer<typeof ItemTypeSchema>;
 export const ItemStatusSchema = z.enum(["active", "completed", "all"]);
 export type ItemStatus = z.infer<typeof ItemStatusSchema>;
 
+export const ItemActivityFilterSchema = z.enum(["all", "inactive"]);
+export type ItemActivityFilter = z.infer<typeof ItemActivityFilterSchema>;
+
 export const DeadlineFilterSchema = z.enum(["all", "overdue", "today", "week", "none"]);
 export type DeadlineFilter = z.infer<typeof DeadlineFilterSchema>;
 
@@ -490,6 +520,7 @@ export const ItemFilterSchema = z.object({
   // Filter options
   type: ItemTypeSchema.default("all").describe("Filter by item type"),
   status: ItemStatusSchema.default("active").describe("Filter by completion status"),
+  activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity"),
   priority: z.array(PrioritySchema).max(4).optional().describe("Filter by priorities"),
   tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Filter by tag IDs"),
   assigneeIds: z.array(UuidSchema).max(100).optional().describe("Filter by assignee IDs"),

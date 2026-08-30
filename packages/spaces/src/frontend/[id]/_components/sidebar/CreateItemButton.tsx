@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { isPlainShortcut } from "../../../lib/keyboard";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -19,6 +20,7 @@ type Props = {
   variant?: "primary" | "secondary" | "sidebar" | "chip" | "icon" | "inline";
   defaultType?: ItemType;
   defaultColumnId?: string;
+  registerShortcut?: boolean;
 };
 
 export default function CreateItemButton(props: Props) {
@@ -74,6 +76,17 @@ export default function CreateItemButton(props: Props) {
   };
   const pending = () => dialogPending() || mutation.loading();
 
+  onMount(() => {
+    if (!props.registerShortcut) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isPlainShortcut(event, "c")) return;
+      event.preventDefault();
+      void createItem();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+  });
+
   if (props.variant === "chip") {
     return (
       <Button type="button" size="sm" onClick={() => void createItem()} disabled={pending()}>
@@ -106,7 +119,7 @@ export default function CreateItemButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon={pending() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"}
-        label={label()}
+        label={t.createItemWithShortcut({ label: label(), shortcut: "C" })}
         onClick={() => void createItem()}
         disabled={pending()}
       />
@@ -130,7 +143,7 @@ export default function CreateItemButton(props: Props) {
   }
 
   return (
-    <Button type="button" onClick={() => void createItem()} disabled={pending()} class="w-full">
+    <Button type="button" onClick={() => void createItem()} disabled={pending()} class="w-full" aria-keyshortcuts="C">
       {pending() ? (
         <i class="ti ti-loader-2 animate-spin" />
       ) : (

@@ -7,14 +7,25 @@ import {
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
-import { IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
+import { IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { ItemFilter, ItemListResult, SpaceColumn, SpaceItem, SpaceTag, SpaceWormhole, WormholeTransferResult } from "@/contracts";
+import {
+  INACTIVE_ITEM_DAYS,
+  type ItemFilter,
+  type ItemListResult,
+  type SpaceColumn,
+  type SpaceItem,
+  type SpaceTag,
+  type SpaceWormhole,
+  type WormholeTransferResult,
+} from "@/contracts";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
+import { isTypingTarget } from "../../../lib/keyboard";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
@@ -30,6 +41,7 @@ type Props = {
   pageSize: number;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
   wormholes: SpaceWormhole[];
 };
 
@@ -118,6 +130,7 @@ const buildRequest = (params: { bucket: KanbanBucketInitial; page: number; pageS
   return {
     type: "all",
     status: bucket.isDone ? "completed" : "active",
+    activity: "all",
     priority: undefined,
     tagIds: undefined,
     columnIds: bucket.columnId ? [bucket.columnId] : undefined,
@@ -574,6 +587,106 @@ export default function KanbanBoard(props: Props) {
     onFinally: () => setMovingItemId(null),
   });
 
+  const assignShortcutMutation = mutations.create<SpaceItem, SpaceItem>({
+    mutation: async (item) => {
+      if (item.assignees?.some((assignee) => assignee.id === props.currentUserId)) return item;
+      const response = await apiClient[":id"].items[":itemId"].$patch({
+        param: { id: props.spaceId, itemId: item.id },
+        json: { assigneeIds: [...(item.assignees?.map((assignee) => assignee.id) ?? []), props.currentUserId] },
+      });
+      if (!response.ok) throw new Error(await readResponseError(response, t.assignToMeFailed));
+      return response.json();
+    },
+    onSuccess: (item) => {
+      const alreadyAssigned = findItemLocation(item.id)?.item.assignees?.some((assignee) => assignee.id === props.currentUserId);
+      setBuckets((current) =>
+        current.map((bucket) => ({ ...bucket, items: bucket.items.map((candidate) => (candidate.id === item.id ? item : candidate)) })),
+      );
+      const refocus = () => focusCard(kanbanCards().find((card) => card.dataset.itemId === item.id));
+      queueMicrotask(refocus);
+      toast.success(alreadyAssigned ? t.alreadyAssignedToYou : t.assignedToYou);
+      if (!alreadyAssigned) {
+        void invalidateSpacesData()
+          .then(refocus)
+          .catch(() => prompts.error(t.itemRefreshFailed));
+      }
+    },
+    onError: (error) => prompts.error(error.message),
+  });
+
+  const completeShortcutMutation = mutations.create<SpaceItem, SpaceItem>({
+    mutation: async (item) => {
+      const response = await apiClient[":id"].items[":itemId"].completed.$post({
+        param: { id: props.spaceId, itemId: item.id },
+        json: { completed: true },
+      });
+      if (!response.ok) throw new Error(await readResponseError(response, t.updateFailed));
+      return response.json();
+    },
+    onSuccess: () => {
+      setOptimisticBuckets(null);
+      toast.success(t.itemCompleted);
+      void invalidateSpacesData().catch(() => prompts.error(t.listRefreshFailed));
+    },
+    onError: (error) => prompts.error(error.message),
+  });
+
+  const kanbanCards = () =>
+    boardScrollContainer ? Array.from(boardScrollContainer.querySelectorAll<HTMLAnchorElement>("[data-spaces-kanban-card]")) : [];
+
+  const focusCard = (card: HTMLAnchorElement | undefined) => {
+    if (!card) return;
+    card.focus({ preventScroll: true });
+    card.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
+
+  const handleBoardKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest("button")) return;
+    const cards = kanbanCards();
+    const current = target?.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") ?? null;
+
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      event.preventDefault();
+      if (!current) {
+        focusCard(cards[0]);
+        return;
+      }
+      const bucketKey = current.dataset.bucketKey;
+      const sameBucket = cards.filter((card) => card.dataset.bucketKey === bucketKey);
+      const currentIndex = sameBucket.indexOf(current);
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        const offset = event.key === "ArrowUp" ? -1 : 1;
+        focusCard(sameBucket[clamp(currentIndex + offset, 0, sameBucket.length - 1)]);
+        return;
+      }
+      const bucketKeys = buckets().map((bucket) => bucket.key);
+      const offset = event.key === "ArrowLeft" ? -1 : 1;
+      let bucketIndex = bucketKeys.indexOf(bucketKey ?? "") + offset;
+      while (bucketIndex >= 0 && bucketIndex < bucketKeys.length) {
+        const targetBucket = cards.filter((card) => card.dataset.bucketKey === bucketKeys[bucketIndex]);
+        if (targetBucket.length > 0) {
+          focusCard(targetBucket[clamp(currentIndex, 0, targetBucket.length - 1)]);
+          return;
+        }
+        bucketIndex += offset;
+      }
+      return;
+    }
+
+    if (!current || !props.canWrite || event.repeat) return;
+    const location = findItemLocation(current.dataset.itemId ?? "");
+    if (!location) return;
+    if (event.key.toLowerCase() === "m") {
+      event.preventDefault();
+      if (!assignShortcutMutation.loading()) assignShortcutMutation.mutate(location.item);
+    } else if (event.key.toLowerCase() === "d" && !location.item.completedAt) {
+      event.preventDefault();
+      if (!completeShortcutMutation.loading()) completeShortcutMutation.mutate(location.item);
+    }
+  };
+
   const bucketQuery = (bucketKey: string) => bucketQueries.find(({ initialBucket }) => initialBucket.key === bucketKey)?.pages;
   const isDropIndicatorVisible = (bucketKey: string, index: number) => {
     const intent = boardDnd.intent();
@@ -590,8 +703,16 @@ export default function KanbanBoard(props: Props) {
 
   return (
     <div class="flex h-full min-h-0 flex-col gap-2">
+      <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="px-1 text-[11px] text-dimmed">
+        {t.kanbanKeyboardHelp}
+      </p>
       <div
         ref={boardScrollContainer}
+        tabIndex={0}
+        role="region"
+        aria-label={t.kanban}
+        aria-describedby={`spaces-kanban-shortcuts-${props.spaceId}`}
+        onKeyDown={handleBoardKeyDown}
         class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
@@ -698,6 +819,10 @@ export default function KanbanBoard(props: Props) {
                                   </Show>
                                 </Show>
                                 <a
+                                  data-spaces-kanban-card
+                                  data-bucket-key={bucket.key}
+                                  data-item-id={item.id}
+                                  aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
                                   href={buildItemUrl(props.baseUrl, item.id)}
                                   onClick={(event) => {
                                     if (!shouldHandleDetailClick(event, event.currentTarget)) return;
@@ -706,7 +831,7 @@ export default function KanbanBoard(props: Props) {
                                     setSelectedItemId(item.id);
                                     requestSpacesRouteNavigation(href, { scroll: "preserve" });
                                   }}
-                                  class={`block ${props.canWrite ? "pr-5" : ""}`}
+                                  class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
                                 >
                                   <div class="flex items-start gap-2">
                                     <Show when={priority}>
@@ -732,6 +857,15 @@ export default function KanbanBoard(props: Props) {
                                     </Show>
                                     <Show when={item.assignees && item.assignees.length > 0}>
                                       <AssigneeAvatars assignees={item.assignees!} max={3} />
+                                    </Show>
+                                    <Show when={isInactiveTask(item)}>
+                                      <span
+                                        class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                        title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                                      >
+                                        <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
+                                        {t.inactive}
+                                      </span>
                                     </Show>
                                   </div>
                                 </a>

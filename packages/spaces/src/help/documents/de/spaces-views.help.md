@@ -21,7 +21,8 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 
 :::reference
 - **Suche:** Verwende die Suche, wenn du dich an ein Wort im Titel, in den Notizen oder in sichtbaren Angaben zum Eintrag erinnerst.
-- **Filter-Chips:** Verwende Filter-Chips für eindeutige Merkmale wie Typ, Status, zuständige Person, Priorität, Fälligkeitsdatum, Tags, Kanban-Spalte, Sortierung oder Gruppierung.
+- **Filter-Chips:** Verwende Filter-Chips für eindeutige Merkmale wie Typ, Status, Aktivität, zuständige Person, Priorität, Fälligkeitsdatum, Tags, Kanban-Spalte, Sortierung oder Gruppierung.
+- **Inaktive Arbeit:** Der Aktivitätsfilter findet offene Aufgaben, deren letzte Aktivität mindestens 30 Tage zurückliegt. Kommentare und Änderungen an der Checkliste zählen als Aktivität; Spaces verschiebt oder schließt Aufgaben niemals automatisch.
 - **URL-Zustand:** Suche und Filter werden in der URL gespeichert. Geteilte Links und neu geladene Seiten behalten deshalb dieselbe Ansicht bei.
 :::
 

@@ -19,6 +19,7 @@ type Props = {
   selectedItemId: string;
   dateConfig?: DateContext;
   canWrite: boolean;
+  currentUserId: string;
 };
 
 export default function SpacesKanbanRoute(props: Props) {
@@ -71,6 +72,7 @@ export default function SpacesKanbanRoute(props: Props) {
             pageSize={30}
             dateConfig={props.dateConfig}
             canWrite={props.canWrite}
+            currentUserId={props.currentUserId}
             wormholes={current.wormholes}
           />
         )}

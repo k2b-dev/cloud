@@ -3,11 +3,12 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, Tag, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import { isInactiveTask } from "../shared/item-activity";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
 type ItemRowProps = {
@@ -92,6 +93,7 @@ export default function ItemRow(props: ItemRowProps) {
     (!props.agenda && isEvent()) ||
     props.item.activeBlockerCount > 0 ||
     props.item.estimatedDurationMinutes !== null ||
+    isInactiveTask(props.item) ||
     (props.item.tags?.length ?? 0) > 0;
   const titleTone = () => {
     if (isSelectedLocal()) return isCompleted() ? "app-accent-text line-through" : "app-accent-text";
@@ -198,6 +200,12 @@ export default function ItemRow(props: ItemRowProps) {
                 <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
                   <i class="ti ti-lock" aria-hidden="true" />
                   Blocked by {props.item.activeBlockerCount}
+                </span>
+              </Show>
+              <Show when={isInactiveTask(props.item)}>
+                <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
+                  <i class="ti ti-clock-pause" aria-hidden="true" />
+                  {t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
                 </span>
               </Show>
               <For each={props.item.tags?.slice(0, 2) ?? []}>

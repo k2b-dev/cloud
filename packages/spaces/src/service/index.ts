@@ -9,6 +9,7 @@ import * as columns from "./columns";
 import * as comments from "./comments";
 import * as ical from "./ical";
 import * as itemAttachments from "./item-attachments";
+import * as itemChecklist from "./item-checklist";
 import * as itemDependencies from "./item-dependencies";
 import * as itemResourceReferences from "./item-resource-references";
 import * as items from "./items";
@@ -180,6 +181,7 @@ export const spacesService = {
     references: itemResourceReferences,
     dependencies: itemDependencies,
     attachments: itemAttachments,
+    checklist: itemChecklist,
   },
   comment: {
     list: async (config: {

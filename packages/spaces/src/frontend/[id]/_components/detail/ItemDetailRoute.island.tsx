@@ -264,6 +264,7 @@ export default function ItemDetailRoute(props: Props) {
               recurringContext={current.recurringContext}
               references={current.references}
               attachments={current.attachments}
+              checklist={current.checklist}
               blockedBy={current.blockedBy}
               blocks={current.blocks}
               dateConfig={props.dateConfig}

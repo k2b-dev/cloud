@@ -2,6 +2,7 @@ import { ButtonLink, FilterChip, type FilterChipSection } from "@k2b/ui";
 import type {
   AssignedToFilter,
   DeadlineFilter,
+  ItemActivityFilter,
   ItemGroupBy,
   ItemSort,
   ItemStatus,
@@ -83,6 +84,14 @@ export default function FilterBar(props: FilterBarProps) {
         { value: "today", label: t.today, icon: "ti ti-calendar-due" },
         { value: "week", label: t.thisWeek, icon: "ti ti-calendar-week" },
         { value: "none", label: t.noDeadline, icon: "ti ti-calendar-off" },
+      ],
+    },
+  ];
+  const activityOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.all, icon: "ti ti-activity" },
+        { value: "inactive", label: t.inactive, icon: "ti ti-clock-pause" },
       ],
     },
   ];
@@ -208,6 +217,16 @@ export default function FilterBar(props: FilterBarProps) {
           onValueChange={(v) => navigate({ deadlineFilter: (v[0] ?? "all") as DeadlineFilter })}
           isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
           defaultValue={[defaultFilter.deadlineFilter]}
+        />
+
+        <FilterChip
+          label={t.activityState}
+          icon="ti ti-activity"
+          options={activityOptions}
+          value={[props.filter.activity]}
+          onValueChange={(v) => navigate({ activity: (v[0] ?? "all") as ItemActivityFilter })}
+          isActive={props.filter.activity !== defaultFilter.activity}
+          defaultValue={[defaultFilter.activity]}
         />
 
         {/* Tags */}

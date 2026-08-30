@@ -13,7 +13,7 @@ Spaces is for shared work that needs tasks, events, lists, assignees, comments, 
 :::reference
 - **Space:** One work area for a team, project, household, class, or recurring process.
 - **Item:** The basic unit of work. An item is either a task with a deadline or an event with a schedule.
-- **Task:** Work with status, priority, assignees, deadline, estimated duration, blockers, tags, description, and comments.
+- **Task:** Work with status, priority, assignees, deadline, estimated duration, blockers, a simple checklist, tags, description, and comments.
 - **Event:** A scheduled item shown in calendar views and optional calendar exports.
 - **View:** The current way to see the same items as list, table, Kanban, or calendar.
 - **Tags:** Lightweight labels for grouping work across assignees, deadlines, schedules, and views.

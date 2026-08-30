@@ -189,6 +189,7 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
   ]),
   columns: new Map([[columnUuid, columnId]]),
   items: new Map([[itemUuid, itemId]]),
+  checklist: new Map(),
   comments: new Map([[commentUuid, commentId]]),
   tags: new Map([[tagUuid, tagId]]),
   wormholes: new Map(),

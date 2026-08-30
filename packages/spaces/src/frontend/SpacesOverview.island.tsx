@@ -151,6 +151,11 @@ export const overviewMessages = i18n.define({
       activityTags: ({ title, space }: { title: string; space: string }) => `Changed tags for “${title}” in ${space}`,
       activityCommentUpdated: ({ title, space }: { title: string; space: string }) => `Updated a comment on “${title}” in ${space}`,
       activityCommentDeleted: ({ title, space }: { title: string; space: string }) => `Deleted a comment from “${title}” in ${space}`,
+      activityChecklistCreated: ({ title, space }: { title: string; space: string }) => `Added a subtask to “${title}” in ${space}`,
+      activityChecklistUpdated: ({ title, space }: { title: string; space: string }) => `Updated a subtask on “${title}” in ${space}`,
+      activityChecklistCompleted: ({ title, space }: { title: string; space: string }) => `Completed a subtask on “${title}” in ${space}`,
+      activityChecklistReopened: ({ title, space }: { title: string; space: string }) => `Reopened a subtask on “${title}” in ${space}`,
+      activityChecklistDeleted: ({ title, space }: { title: string; space: string }) => `Deleted a subtask from “${title}” in ${space}`,
       activityOther: ({ action, space }: { action: string; space: string }) => `${action} in ${space}`,
     },
     de: {
@@ -231,6 +236,11 @@ export const overviewMessages = i18n.define({
       activityTags: ({ title, space }) => `Tags für „${title}“ in ${space} geändert`,
       activityCommentUpdated: ({ title, space }) => `Kommentar zu „${title}“ in ${space} aktualisiert`,
       activityCommentDeleted: ({ title, space }) => `Kommentar zu „${title}“ in ${space} gelöscht`,
+      activityChecklistCreated: ({ title, space }) => `Unteraufgabe zu „${title}“ in ${space} hinzugefügt`,
+      activityChecklistUpdated: ({ title, space }) => `Unteraufgabe zu „${title}“ in ${space} aktualisiert`,
+      activityChecklistCompleted: ({ title, space }) => `Unteraufgabe zu „${title}“ in ${space} erledigt`,
+      activityChecklistReopened: ({ title, space }) => `Unteraufgabe zu „${title}“ in ${space} wieder geöffnet`,
+      activityChecklistDeleted: ({ title, space }) => `Unteraufgabe aus „${title}“ in ${space} gelöscht`,
       activityOther: ({ action, space }) => `${action} in ${space}`,
     },
   },
@@ -376,6 +386,11 @@ export default function SpacesOverview(props: Props) {
       "item.tags.updated": t.activityTags(params),
       "comment.updated": t.activityCommentUpdated(params),
       "comment.deleted": t.activityCommentDeleted(params),
+      "checklist.created": t.activityChecklistCreated(params),
+      "checklist.updated": t.activityChecklistUpdated(params),
+      "checklist.completed": t.activityChecklistCompleted(params),
+      "checklist.reopened": t.activityChecklistReopened(params),
+      "checklist.deleted": t.activityChecklistDeleted(params),
     };
     return labels[entry.action] ?? t.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
   };

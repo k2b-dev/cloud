@@ -15,7 +15,7 @@ import type {
 } from "../contracts";
 import { SHORT_ID_REGEX } from "../lib/short-id";
 
-export type ResourceTable = "spaces" | "columns" | "items" | "comments" | "tags" | "wormholes";
+export type ResourceTable = "spaces" | "columns" | "items" | "checklist" | "comments" | "tags" | "wormholes";
 export type SpaceOwnedResourceTable = "columns" | "items" | "tags";
 
 export const resolvePublicId = async (table: ResourceTable, shortId: string): Promise<string | null> => {
@@ -30,6 +30,9 @@ export const resolvePublicId = async (table: ResourceTable, shortId: string): Pr
       break;
     case "items":
       rows = await sql`SELECT id FROM spaces.items WHERE short_id = ${shortId}`;
+      break;
+    case "checklist":
+      rows = await sql`SELECT id FROM spaces.item_checklist_entries WHERE short_id = ${shortId}`;
       break;
     case "comments":
       rows = await sql`SELECT id FROM spaces.comments WHERE short_id = ${shortId}`;
@@ -59,6 +62,9 @@ export const resolvePublicIds = async (table: ResourceTable, values: string[]): 
       break;
     case "items":
       rows = await sql`SELECT id, short_id FROM spaces.items WHERE short_id = ANY(${array}::text[])`;
+      break;
+    case "checklist":
+      rows = await sql`SELECT id, short_id FROM spaces.item_checklist_entries WHERE short_id = ANY(${array}::text[])`;
       break;
     case "comments":
       rows = await sql`SELECT id, short_id FROM spaces.comments WHERE short_id = ANY(${array}::text[])`;
@@ -113,6 +119,9 @@ const shortIds = async (table: ResourceTable, ids: (string | null | undefined)[]
       break;
     case "items":
       rows = await sql`SELECT id, short_id FROM spaces.items WHERE id = ANY(${array}::uuid[])`;
+      break;
+    case "checklist":
+      rows = await sql`SELECT id, short_id FROM spaces.item_checklist_entries WHERE id = ANY(${array}::uuid[])`;
       break;
     case "comments":
       rows = await sql`SELECT id, short_id FROM spaces.comments WHERE id = ANY(${array}::uuid[])`;

@@ -27,6 +27,7 @@ import {
   CreateItemSchema,
   CreateSpaceSchema,
   CreateTagSchema,
+  CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
   ErrorResponseSchema,
   GrantAccessSchema,
@@ -50,6 +51,7 @@ import {
   SpaceItemSchema,
   SpaceSchema,
   SpaceTagSchema,
+  SpaceTaskChecklistEntrySchema,
   SpaceTaskDependencyInputSchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
@@ -62,6 +64,7 @@ import {
   UpdateItemSchema,
   UpdateSpaceSchema,
   UpdateTagSchema,
+  UpdateTaskChecklistEntrySchema,
   UpdateWormholeSchema,
   WormholeTransferResultSchema,
 } from "@/contracts";
@@ -109,6 +112,8 @@ const SpaceCommentListSchema = z.array(SpaceCommentSchema);
 const SpaceItemResourceReferenceListSchema = z.array(SpaceItemResourceReferenceSchema);
 const SpaceItemAttachmentListSchema = z.array(SpaceItemAttachmentSchema);
 const SpaceTaskDependencyListSchema = z.array(SpaceTaskDependencySchema);
+const SpaceTaskChecklistEntryListSchema = z.array(SpaceTaskChecklistEntrySchema);
+const ChecklistEntryDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
 const SpaceTaskDependentListSchema = z.array(SpaceTaskDependentSchema);
 const ResourceReferenceDeleteSchema = z.object({ ref: SpaceItemResourceReferenceInputSchema.shape.ref }).strict();
 const ResourceReferenceDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
@@ -671,6 +676,104 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
       return respond(c, ok(await projectTaskDependencies(await spacesService.item.dependencies.list({ itemId: item.data.id }))));
+    },
+  )
+  .get(
+    "/:id/items/:itemId/checklist",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List task checklist entries",
+      description: "List the bounded, ordered checklist attached to one task.",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceTaskChecklistEntryListSchema, "Task checklist") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      return respond(c, ok(await spacesService.item.checklist.list({ itemId: item.data.id })));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/checklist",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Add task checklist entry",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceTaskChecklistEntrySchema, "Created checklist entry"),
+        409: jsonResponse(ErrorResponseSchema, "Checklist limit reached"),
+      },
+    }),
+    v("json", CreateTaskChecklistEntrySchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      return respond(
+        c,
+        spacesService.item.checklist.create({
+          itemId: item.data.id,
+          data: c.req.valid("json"),
+          actor: getSpaceActivityActor(c),
+        }),
+      );
+    },
+  )
+  .patch(
+    "/:id/items/:itemId/checklist/:entryId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Update task checklist entry",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceTaskChecklistEntrySchema, "Updated checklist entry") },
+    }),
+    v("json", UpdateTaskChecklistEntrySchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      const entryId = await resolvePublicId("checklist", c.req.param("entryId") ?? "");
+      if (!entryId) return respond(c, fail(err.notFound("Checklist entry")));
+      return respond(
+        c,
+        spacesService.item.checklist.update({
+          itemId: item.data.id,
+          id: entryId,
+          data: c.req.valid("json"),
+          actor: getSpaceActivityActor(c),
+        }),
+      );
+    },
+  )
+  .delete(
+    "/:id/items/:itemId/checklist/:entryId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Delete task checklist entry",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(ChecklistEntryDeleteResultSchema, "Checklist entry deleted") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      const entryId = await resolvePublicId("checklist", c.req.param("entryId") ?? "");
+      if (!entryId) return respond(c, fail(err.notFound("Checklist entry")));
+      const result = await spacesService.item.checklist.remove({
+        itemId: item.data.id,
+        id: entryId,
+        actor: getSpaceActivityActor(c),
+      });
+      return respond(c, result.ok ? ok({ deleted: true }) : result);
     },
   )
   .get(

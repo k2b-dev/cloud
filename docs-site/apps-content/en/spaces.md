@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-08-20
+updated: 2026-08-30
 ---
 
 # Spaces
@@ -16,11 +16,12 @@ or calendar without copying the work into separate systems.
 
 ## Use Spaces
 
-- Track tasks with status, priority, assignees, deadlines, tags, descriptions,
-  and comments.
+- Track tasks with status, priority, assignees, deadlines, simple checklists,
+  tags, descriptions, and comments.
 - Plan events with start and end times, recurrence, and calendar views.
 - Switch between list, table, Kanban, and calendar views for the current job.
-- Filter and group the same items by state, person, priority, tag, or time.
+- Filter and group the same items by state, activity, person, priority, tag, or
+  time. The inactive filter finds open tasks without activity for 30 days.
 - Import an invitation from Mail into a chosen writable Space, or publish an
   enabled calendar feed to another calendar client.
 
@@ -44,11 +45,20 @@ when the audience or lifecycle is different.
 | Space | Permission-scoped work area with columns, tags, items, and settings |
 | Item | Task or event with shared content and workflow fields |
 | Column and tag | Ordered workflow stage and cross-cutting label |
-| Comment and assignee | Collaboration context attached to one item |
+| Comment, checklist entry, and assignee | Collaboration context attached to one item |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
+
+Task checklist entries are deliberately small: one completion state and one
+label, without separate assignees, dates, or detail pages. Checklist changes
+also count as task activity.
+
+Spaces keeps common actions keyboard-first. Outside form fields and dialogs,
+**C** creates an item and **/** opens search. A focused Kanban card supports
+arrow-key navigation, **Enter** to open, **M** to assign it to yourself, and
+**D** to complete it.
 
 ## How Spaces fits Cloud
 

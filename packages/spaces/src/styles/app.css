@@ -5,9 +5,9 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-.k2b-ui .spaces-item-create-dialog { width: min(92vw, 40rem); transition: width 160ms ease; }
-.k2b-ui .spaces-item-create-dialog:has(.spaces-item-form[data-presentation="full"]) { width: min(96vw, 72rem); }
-@media (prefers-reduced-motion: reduce) { .k2b-ui .spaces-item-create-dialog { transition: none; } }
+.k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog { width: min(92vw, 36rem); transition: width 160ms ease; }
+.k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog:has(.spaces-item-form[data-presentation="full"]) { width: min(96vw, 64rem); }
+@media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog { transition: none; } }
 
 .k2b-ui .spaces-overview-workspace { border-color: transparent; border-radius: 0; background: var(--ui-surface); box-shadow: none; }
 .k2b-ui .spaces-overview-main { gap: clamp(2rem, 4vw, 3.5rem); padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }

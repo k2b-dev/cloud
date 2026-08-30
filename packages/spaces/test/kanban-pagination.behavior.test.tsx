@@ -103,6 +103,7 @@ describe("Spaces Kanban pagination", () => {
           ],
           pageSize: 30,
           canWrite: false,
+          currentUserId: "77777777-7777-4777-8777-777777777777",
           wormholes: [],
         }),
       dom.root,

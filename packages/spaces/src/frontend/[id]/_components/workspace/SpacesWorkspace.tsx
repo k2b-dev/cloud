@@ -102,6 +102,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 selectedItemId={selectedItemId}
                 dateConfig={props.dateConfig}
                 canWrite={state.canWrite}
+                currentUserId={state.currentUserId}
               />
             )}
             {state.currentView === "calendar" && (

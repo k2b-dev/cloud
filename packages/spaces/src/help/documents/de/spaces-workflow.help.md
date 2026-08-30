@@ -21,6 +21,7 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 - **Blockiert durch:** Füge jede noch offene Aufgabe hinzu, die zuerst abgeschlossen werden muss. Eine blockierte Aufgabe kann erst abgeschlossen werden, wenn alle aktiven blockierenden Aufgaben erledigt sind. Abhängigkeiten müssen innerhalb eines Space bleiben und dürfen keinen Zyklus bilden.
 - **Blockiert:** Öffne die Aufgabendetails, um die umgekehrte Richtung zu sehen: alle Aufgaben, die derzeit von dieser Aufgabe abhängen.
 - **Verwandte Aufgaben:** Verknüpfe Aufgaben, die einen gemeinsamen Kontext haben, aber nicht voneinander abhängen. Eine solche Verknüpfung blockiert keine Aufgabe.
+- **Checkliste:** Teile eine Aufgabe in kleine Schritte auf, wenn Checkbox und Bezeichnung ausreichen. Checklistenpunkte haben bewusst keine Zuständigkeiten, Termine oder eigene Detailansicht.
 - **Anhänge:** Füge einer Aufgabe Screenshots oder andere Bilder hinzu, wenn die Arbeit visuellen Kontext benötigt, etwa bei einem Fehlerbericht. Spaces verkleinert große Ausgangsbilder vor dem Hochladen. Wähle ein vorhandenes Bild aus, um die Anhangsgalerie zu öffnen, das gespeicherte Bild herunterzuladen oder es zu entfernen. Jede Aufgabe unterstützt bis zu 20 Bilder. Für Anhänge und ihre Automatisierungsverknüpfungen gelten dieselben Lese- und Schreibrechte wie für die Aufgabe.
 - **Wiederholung:** Verwende wiederkehrende Termine für regelmäßige Besprechungen oder Abläufe. Einmalige Aufgaben bleiben normale Aufgaben.
 - **Tags:** Verwende Tags für Themen, die unabhängig von Zuständigkeiten und Status gelten, zum Beispiel Frontend, Rechtliches, Blockiert oder Besprechung.
@@ -37,3 +38,7 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 :::
 
 Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen bearbeiten oder löschen. Kommentare anderer Personen bleiben unverändert. Das gilt auch für Personen mit Adminzugriff auf den Space.
+
+## Schnell mit der Tastatur arbeiten {icon="keyboard"}
+
+Drücke außerhalb eines Eingabefelds oder Dialogs **C**, um einen Eintrag zu erstellen, und **/**, um die Suche zu öffnen. Fokussiere im Kanban-Board eine Karte und wechsle mit den Pfeiltasten zwischen Karten. Mit **Enter** öffnest du die fokussierte Karte, mit **M** weist du sie dir zu und mit **D** erledigst du sie. Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kürzel inaktiv.

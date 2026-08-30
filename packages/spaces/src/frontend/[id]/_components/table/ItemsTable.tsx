@@ -1,10 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Tag } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import { isInactiveTask, itemLastActivityAt } from "../shared/item-activity";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
 type Props = {
@@ -81,6 +82,7 @@ export default function ItemsTable(props: Props) {
       cellClass: "max-w-[12rem]",
     },
     { id: "updated", header: t.updated, value: (item) => item.updatedAt, cellClass: "whitespace-nowrap" },
+    { id: "activity", header: t.activityState, value: itemLastActivityAt, cellClass: "whitespace-nowrap" },
     { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
   ];
 
@@ -194,6 +196,18 @@ export default function ItemsTable(props: Props) {
             return (
               <CellLink href={href} class="block text-dimmed" tabIndex={-1}>
                 {dates.formatDateTime(item.updatedAt, props.dateConfig)}
+              </CellLink>
+            );
+          }
+          if (col.id === "activity") {
+            return (
+              <CellLink
+                href={href}
+                class={`block ${isInactiveTask(item) ? "text-amber-700 dark:text-amber-300" : "text-dimmed"}`}
+                title={isInactiveTask(item) ? t.inactiveFor({ days: INACTIVE_ITEM_DAYS }) : undefined}
+                tabIndex={-1}
+              >
+                {isInactiveTask(item) ? t.inactive : dates.formatDateTime(itemLastActivityAt(item), props.dateConfig)}
               </CellLink>
             );
           }

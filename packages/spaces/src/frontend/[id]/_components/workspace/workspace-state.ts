@@ -114,9 +114,10 @@ const projectItemResult = async (result: ItemListResult): Promise<ItemListResult
 });
 
 const projectItemDetail = async (
-  detail: Omit<SpaceItemDetail, "references" | "attachments" | "blockedBy" | "blocks"> & {
+  detail: Omit<SpaceItemDetail, "references" | "attachments" | "checklist" | "blockedBy" | "blocks"> & {
     references?: SpaceItemDetail["references"];
     attachments?: SpaceItemDetail["attachments"];
+    checklist?: SpaceItemDetail["checklist"];
     blockedBy?: SpaceItemDetail["blockedBy"];
     blocks?: SpaceItemDetail["blocks"];
   },
@@ -136,6 +137,7 @@ const projectItemDetail = async (
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
     references: detail.references ?? [],
     attachments: detail.attachments ?? [],
+    checklist: detail.checklist ?? [],
     blockedBy,
     blocks,
   };
@@ -162,6 +164,7 @@ const projectKanbanBuckets = async (buckets: KanbanBucketInitial[], columnIds: M
 const toListFilter = (filter: FilterState) => ({
   type: filter.type,
   status: filter.status,
+  activity: filter.activity,
   priority: nonEmpty(filter.priority),
   tagIds: nonEmpty(filter.tagIds),
   columnIds: nonEmpty(filter.columnIds),
@@ -217,6 +220,7 @@ const loadKanbanBuckets = async (params: {
       filter: {
         type: "all",
         status: config.isDone ? "completed" : "active",
+        activity: "all",
         priority: undefined,
         tagIds: undefined,
         columnIds: config.columnIds && config.columnIds.length > 0 ? config.columnIds : undefined,
@@ -486,9 +490,10 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const [references, attachments, blockedBy, blocks] = await Promise.all([
+  const [references, attachments, checklist, blockedBy, blocks] = await Promise.all([
     spacesService.item.references.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
   ]);
@@ -502,6 +507,7 @@ const loadSelectedItemState = async (params: {
       authorization: params.authorizationHeader,
     }),
     attachments,
+    checklist,
     blockedBy,
     blocks,
   });
@@ -764,9 +770,10 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const [references, attachments, blockedBy, blocks] = await Promise.all([
+  const [references, attachments, checklist, blockedBy, blocks] = await Promise.all([
     spacesService.item.references.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
   ]);
@@ -782,6 +789,7 @@ export const loadSpaceItemDetail = async (params: {
         authorization: params.authorizationHeader,
       }),
       attachments,
+      checklist,
       blockedBy,
       blocks,
     }),

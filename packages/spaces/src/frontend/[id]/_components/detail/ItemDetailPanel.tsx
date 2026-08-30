@@ -44,6 +44,7 @@ import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughW
 import CommentsSection from "./CommentsSection";
 import EventInvitations from "./EventInvitations";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
+import TaskChecklistSection from "./TaskChecklistSection";
 
 type Props = {
   item: SpaceItem;
@@ -61,6 +62,7 @@ type Props = {
   recurringContext: SpaceItemDetail["recurringContext"];
   references?: SpaceItemDetail["references"];
   attachments?: SpaceItemDetail["attachments"];
+  checklist?: SpaceItemDetail["checklist"];
   blockedBy?: SpaceTaskDependency[];
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
@@ -890,6 +892,25 @@ export default function ItemDetailPanel(props: Props) {
                   onChanged={reconcileAfterWrite}
                 />
               </Show>
+            </DetailPanel.Group>
+          </Show>
+
+          <Show when={!isEvent() && (canEditItem() || (props.checklist?.length ?? 0) > 0)}>
+            <DetailPanel.Group label={t.progress}>
+              <DetailPanel.Section
+                title={t.checklist}
+                icon="ti ti-list-check"
+                tone="neutral"
+                meta={`${(props.checklist ?? []).filter((entry) => entry.completed).length}/${props.checklist?.length ?? 0}`}
+              >
+                <TaskChecklistSection
+                  spaceId={props.spaceId}
+                  itemId={props.item.id}
+                  entries={props.checklist ?? []}
+                  canWrite={canEditItem()}
+                  onChanged={reconcileAfterWrite}
+                />
+              </DetailPanel.Section>
             </DetailPanel.Group>
           </Show>
 
