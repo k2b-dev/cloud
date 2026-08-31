@@ -122,6 +122,7 @@ describe("Notebook note detail panel", () => {
     const html = renderPanel();
 
     expect(html).toContain('aria-label="Show Markdown source"');
+    expect(html).toContain("Edit with AI");
     expect(html).toContain('aria-label="Copy note content"');
     expect(html).toContain('aria-label="Download note as Markdown"');
     expect(html).toContain('aria-label="Download note as PDF"');
@@ -151,6 +152,7 @@ describe("Notebook note detail panel", () => {
     expect(html).toContain("Locked note");
     expect(html).toContain("Comments");
     expect(html).toContain("Add comment");
+    expect(html).not.toContain("Edit with AI");
   });
 
   test("keeps sparse read-only notes sparse and omits editor-only controls", () => {
@@ -173,6 +175,7 @@ describe("Notebook note detail panel", () => {
     expect(html).not.toContain("Comments");
     expect(html).toContain('aria-label="Note context"');
     expect(html).not.toContain('aria-label="Show Markdown source"');
+    expect(html).not.toContain("Edit with AI");
     expect(html).toContain('aria-label="Copy note content"');
     expect(html).toContain('aria-label="Download note as Markdown"');
     expect(html).toContain('aria-label="Download note as PDF"');

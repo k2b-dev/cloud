@@ -19,7 +19,7 @@ import { buildNotebookVisibleAccessCondition } from "./access";
 import * as activity from "./activity";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
-import { createYjsTopic, NODE_ID, parseStreamCursor, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
+import { compareStreamCursor, createYjsTopic, NODE_ID, parseStreamCursor, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
 // ==========================
 // Types
@@ -628,17 +628,59 @@ export const resolveIdsToShortIds = async (params: { ids: string[] }): Promise<M
 /**
  * Get a note with its Yjs content.
  */
-export const getWithContent = async (params: { id: string }): Promise<NoteWithContent | null> => {
+const getWithContentRow = async (id: string): Promise<DbNote | null> => {
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_snapshot, n.yjs_stream_ms, n.yjs_stream_seq, n.yjs_snapshot_at,
+      n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
-    WHERE n.id = ${params.id}::uuid
+    WHERE n.id = ${id}::uuid
   `;
 
+  return row ?? null;
+};
+
+export const getWithContent = async (params: { id: string }): Promise<NoteWithContent | null> => {
+  const row = await getWithContentRow(params.id);
+
   return row ? mapToNoteWithContent(row) : null;
+};
+
+/**
+ * Read a note after replaying every collaborative update published before the
+ * returned snapshot marker. This is the authoritative read for consumers that
+ * must act on current content rather than the latest persisted snapshot.
+ */
+export const getCurrentWithContent = async (params: { id: string }): Promise<NoteWithContent | null> => {
+  const row = await getWithContentRow(params.id);
+  if (!row) return null;
+
+  const streamCursor =
+    row.yjs_stream_ms !== null && row.yjs_stream_ms !== undefined && row.yjs_stream_seq !== null && row.yjs_stream_seq !== undefined
+      ? `${row.yjs_stream_ms}-${row.yjs_stream_seq}`
+      : "0-0";
+  const noteTopic = createYjsTopic(params.id);
+  const targetCursor = await noteTopic.latestCursor();
+  if (!targetCursor || compareStreamCursor(targetCursor, streamCursor) <= 0) return mapToNoteWithContent(row);
+
+  const doc = createDocFromState(row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null, row.content_md);
+  try {
+    await replayYjsTopicToCursor({
+      noteId: params.id,
+      after: streamCursor,
+      targetCursor,
+      doc,
+    });
+    return {
+      ...mapToNote(row),
+      contentMd: doc.getText(NOTE_TEXT_NAME).toString(),
+      yjsSnapshot: toBase64(Y.encodeStateAsUpdate(doc)),
+    };
+  } finally {
+    doc.destroy();
+  }
 };
 
 /**

@@ -29,6 +29,7 @@ describe("Notebooks internationalization", () => {
     expect(notebookCapabilityMessages.resolve(["de-CH"]).t.note).toBe("Notiz");
     expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.sortNotes).toBe("Notizen sortieren");
     expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.updatedSort).toBe("Zuletzt geändert");
+    expect(notebookWorkspaceMessages.resolve(["de-CH"]).t.editWithAi).toBe("Mit KI bearbeiten");
     expect(notebooksPageMessages.resolve(["fr"]).t.newNotebook).toBe("New notebook");
   });
 

@@ -276,7 +276,7 @@ describe("notebooks capabilities", () => {
     const getByShortId = trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
     trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
-    trackedSpy(spyOn(noteStore, "getWithContent")).mockResolvedValue({
+    const getCurrentWithContent = trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
       ...note,
       yjsSnapshot: "private-snapshot",
     });
@@ -288,6 +288,7 @@ describe("notebooks capabilities", () => {
     expect(result.ok).toBeTrue();
     if (!result.ok) return;
     expect(getByShortId).toHaveBeenCalledWith({ shortId: note.shortId });
+    expect(getCurrentWithContent).toHaveBeenCalledWith({ id: note.id });
     expect(result.data.refs).toEqual([
       { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
       {

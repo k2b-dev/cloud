@@ -1,14 +1,17 @@
+import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
-import { query } from "@k2b/stdlib/solid";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Avatar,
+  Button,
   DescriptionList,
   DetailPanel,
   IconButton,
   IconButtonLink,
   ProgressBar,
+  prompts,
   Tooltip,
   toast,
   useLocale,
@@ -42,8 +45,9 @@ import {
   TOC_UPDATE_EVENT,
   TOGGLE_RICH_MODE_EVENT,
 } from "./events";
-import { openNotePdfDialog } from "./NotePdfDialog";
 import NoteCommentsSection from "./NoteCommentsSection";
+import { openNotePdfDialog } from "./NotePdfDialog";
+import { launchNotebookNoteAssistant } from "./notebook-assistant-launch";
 import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 
@@ -209,6 +213,17 @@ export default function NotebookDetailPanel(props: Props) {
   // Default `true` matches the editor's initial state, so SSR and the first
   // client render agree even if the editor's broadcast hasn't arrived yet.
   const [isRich, setIsRich] = createSignal(true);
+  const editWithAi = mutations.create<void, void>({
+    mutation: async () => {
+      const launch = await launchNotebookNoteAssistant({
+        notebookId: props.notebookId,
+        noteId: noteId(),
+        noteTitle: noteTitle(),
+      });
+      navigateTo(launch.href);
+    },
+    onError: (error) => prompts.error(error.message || t().assistantLaunchFailed),
+  });
 
   const downloadFilename = () => `${(noteTitle() || "note").trim() || "note"}.md`;
 
@@ -378,6 +393,18 @@ export default function NotebookDetailPanel(props: Props) {
           subtitle={lockedAt() ? t().lockedNote : props.mode === "edit" ? t().collaborativeNote : t().readOnlyNote}
           primaryActions={
             <nav aria-label={t().noteActionsLabel} class="flex flex-wrap items-center gap-1">
+              <Show when={props.mode === "edit" && props.canWrite && !lockedAt()}>
+                <Button
+                  size="sm"
+                  variant="ai"
+                  type="button"
+                  loading={editWithAi.loading()}
+                  disabled={editWithAi.loading()}
+                  onClick={() => void editWithAi.mutate()}
+                >
+                  <i class="ti ti-sparkles" aria-hidden="true" /> {t().editWithAi}
+                </Button>
+              </Show>
               <Show when={props.mode === "edit"}>
                 <Tooltip.Anchor content={isRich() ? t().showMarkdown : t().showRichText}>
                   <IconButton label={isRich() ? t().showMarkdown : t().showRichText} size="sm" onClick={toggleRichMode}>

@@ -165,6 +165,7 @@ export const notebooksService = {
     get: notes.get,
     getByShortId: notes.getByShortId,
     getWithContent: notes.getWithContent,
+    getCurrentWithContent: notes.getCurrentWithContent,
     getWithContentByShortId: notes.getWithContentByShortId,
     resolveIdsToShortIds: notes.resolveIdsToShortIds,
     resolveShortIdsToNotebookShortIds: notes.resolveShortIdsToNotebookShortIds,

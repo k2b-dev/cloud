@@ -34,6 +34,9 @@ not replace the note list.
 - Keep small tables, lists, todos, data blocks, and sections beside the prose
   that explains them.
 - Attach images and files to the notebook and reference them from notes.
+- Open **Edit with AI** from a writable note's detail panel to start an
+  Assistant chat with the current page and its discussion. Notebooks reviews
+  and authorizes every proposed page change before it is applied.
 - Download the current note as Markdown or as an A4 PDF using the Document,
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy.

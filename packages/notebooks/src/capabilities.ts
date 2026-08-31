@@ -437,7 +437,7 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const resolved = await requireNoteByShortId(input.id, context);
   if (!resolved.ok) return resolved;
-  const note = await noteStore.getWithContent({ id: resolved.data.note.id });
+  const note = await noteStore.getCurrentWithContent({ id: resolved.data.note.id });
   if (!note) return capabilityNotFound(t.noteNotFound);
   const content = note.contentMd ?? "";
   if (input.contentOffset > content.length) return fail(err.badInput(t.contentOffsetOutside));
