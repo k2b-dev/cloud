@@ -63,6 +63,7 @@ export const migrate = async (): Promise<void> => {
       yjs_stream_seq BIGINT,
       yjs_snapshot_at TIMESTAMPTZ,
       content_md TEXT,
+      data_properties JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -85,6 +86,24 @@ export const migrate = async (): Promise<void> => {
   await sql`
     ALTER TABLE notebooks.notes
     ADD COLUMN IF NOT EXISTS title_projection_version SMALLINT NOT NULL DEFAULT 0
+  `.simple();
+  await sql`
+    ALTER TABLE notebooks.notes
+    ADD COLUMN IF NOT EXISTS data_properties JSONB NOT NULL DEFAULT '{}'::jsonb
+  `.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'notes_data_properties_object_chk'
+          AND conrelid = 'notebooks.notes'::regclass
+      ) THEN
+        ALTER TABLE notebooks.notes
+        ADD CONSTRAINT notes_data_properties_object_chk
+        CHECK (jsonb_typeof(data_properties) = 'object');
+      END IF;
+    END $$
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_short_id ON notebooks.notes(short_id)`.simple();
 

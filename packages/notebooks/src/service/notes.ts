@@ -17,6 +17,7 @@ import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/n
 import { generateUniqueShortId } from "../lib/short-id";
 import { buildNotebookVisibleAccessCondition } from "./access";
 import * as activity from "./activity";
+import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
 import { compareStreamCursor, createYjsTopic, NODE_ID, parseStreamCursor, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
@@ -787,13 +788,14 @@ export const create = async (params: {
       dateConfig: params.dateConfig,
     });
     const title = deriveNoteTitle(contentMd);
+    const dataProperties = dataPropertiesForContent(contentMd);
     const doc = createDocFromState(null, contentMd);
     const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc));
     doc.destroy();
     const [row] = await sql<DbNote[]>`
       INSERT INTO notebooks.notes (
         short_id, notebook_id, parent_id, title, title_projection_version, position,
-        yjs_snapshot, yjs_snapshot_at, content_md, created_by
+        yjs_snapshot, yjs_snapshot_at, content_md, data_properties, created_by
       )
       VALUES (
         ${shortId},
@@ -805,6 +807,7 @@ export const create = async (params: {
         ${snapshot},
         now(),
         ${contentMd},
+        ${dataProperties}::jsonb,
         ${creatorId}::uuid
       )
       RETURNING id, short_id, notebook_id, parent_id, title, position,
@@ -967,6 +970,7 @@ export const save = async (params: {
 
   const yjsBuffer = Buffer.from(yjsState);
   const title = deriveNoteTitle(contentMd);
+  const dataProperties = dataPropertiesForContent(contentMd);
 
   const parsedCursor = parseStreamCursor(streamCursor);
   const requestedAtSeconds = (requestedAt ?? Date.now()) / 1000;
@@ -979,6 +983,7 @@ export const save = async (params: {
             yjs_stream_seq = ${parsedCursor.seq},
             yjs_snapshot_at = now(),
             content_md = ${contentMd},
+            data_properties = ${dataProperties}::jsonb,
             title = ${title},
             title_projection_version = 1,
             updated_at = now()
@@ -995,6 +1000,7 @@ export const save = async (params: {
         SET yjs_snapshot = ${yjsBuffer},
             yjs_snapshot_at = now(),
             content_md = ${contentMd},
+            data_properties = ${dataProperties}::jsonb,
             title = ${title},
             title_projection_version = 1,
             updated_at = now()
@@ -1437,6 +1443,7 @@ export const restoreFromSnapshot = async (params: {
   // Keep restore cursor dominant even on same-ms collisions with stream entries.
   const restoreStreamSeq = Number.MAX_SAFE_INTEGER;
   const restoredTitle = deriveNoteTitle(restoredContentMd);
+  const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
 
   const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
     const result = await tx`
@@ -1446,6 +1453,7 @@ export const restoreFromSnapshot = async (params: {
           yjs_stream_seq = ${restoreStreamSeq},
           yjs_snapshot_at = now(),
           content_md = ${restoredContentMd},
+          data_properties = ${restoredDataProperties}::jsonb,
           title = ${restoredTitle},
           title_projection_version = 1,
           updated_at = now()

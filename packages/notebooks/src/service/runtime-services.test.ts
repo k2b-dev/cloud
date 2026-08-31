@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { ok } from "@k2b/stdlib";
 import type { PermissionLevel, User } from "@valentinkolb/cloud/contracts";
 import type { ServiceAccount } from "@valentinkolb/cloud/services";
-import { ok } from "@k2b/stdlib";
 
 const cloudServices = await import("@valentinkolb/cloud/services");
 const sync = await import("@k2b/sync");
@@ -244,7 +244,7 @@ describe("notebook reindex runtime", () => {
       cron: "0 */12 * * *",
       tz: "Europe/Berlin",
     });
-    expect(submittedJobs).toEqual([{ key: "startup", input: { trigger: "startup" } }]);
+    expect(submittedJobs).toEqual([{ key: "startup:derived-v1", input: { trigger: "startup" } }]);
     expect(reindexRuns).toBe(0);
 
     await createdSchedules[0]!.process({ ctx: { slotTs: 12345 } });

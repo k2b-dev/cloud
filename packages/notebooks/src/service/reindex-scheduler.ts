@@ -1,5 +1,5 @@
 /**
- * Periodic note-refs reindex scheduler.
+ * Periodic derived-data reindex scheduler.
  *
  * Re-derives `note_links`, `note_tags`, and `note_attachments` for every
  * note across every notebook on a configurable cron schedule (default
@@ -19,8 +19,8 @@
  * without waiting up to 12h for the first scheduled tick.
  */
 
-import { logger, get as settingsGet, trace } from "@valentinkolb/cloud/services";
 import { job, scheduler } from "@k2b/sync";
+import { logger, get as settingsGet, trace } from "@valentinkolb/cloud/services";
 import { reindexAll } from "./note-refs";
 
 const log = logger("notebooks:reindex");
@@ -41,12 +41,12 @@ const getTimezone = async (): Promise<string> => {
 /** Run a single reindex pass with start/end logging + duration metric. */
 const runReindex = async (params: { trigger: "scheduler" | "startup"; onProgress?: () => Promise<void> }): Promise<void> => {
   const startedAt = Date.now();
-  log.info("Note-refs reindex started", { trigger: params.trigger });
+  log.info("Notebook derived-data reindex started", { trigger: params.trigger });
   try {
     const summary = await reindexAll({ onProgress: params.onProgress });
     const durationMs = Date.now() - startedAt;
     if (summary.failed > 0) {
-      log.warn("Note-refs reindex finished with partial failures", {
+      log.warn("Notebook derived-data reindex finished with partial failures", {
         trigger: params.trigger,
         durationMs,
         notebooks: summary.notebooks,
@@ -54,7 +54,7 @@ const runReindex = async (params: { trigger: "scheduler" | "startup"; onProgress
         failed: summary.failed,
       });
     } else {
-      log.info("Note-refs reindex finished", {
+      log.info("Notebook derived-data reindex finished", {
         trigger: params.trigger,
         durationMs,
         notebooks: summary.notebooks,
@@ -62,7 +62,7 @@ const runReindex = async (params: { trigger: "scheduler" | "startup"; onProgress
       });
     }
   } catch (error) {
-    log.error("Note-refs reindex crashed", {
+    log.error("Notebook derived-data reindex crashed", {
       trigger: params.trigger,
       durationMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
@@ -177,8 +177,8 @@ export const reindexRuntime = {
 
     // Fire-and-forget startup backfill via the distributed job. Don't await:
     // app boot stays snappy and only one container owns the job key.
-    void reindexJob.submit({ key: "startup", input: { trigger: "startup" } }).catch((error) => {
-      log.error("Failed to submit startup note-refs reindex", {
+    void reindexJob.submit({ key: "startup:derived-v1", input: { trigger: "startup" } }).catch((error) => {
+      log.error("Failed to submit startup derived-data reindex", {
         error: error instanceof Error ? error.message : String(error),
       });
     });

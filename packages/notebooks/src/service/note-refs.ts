@@ -17,6 +17,7 @@
 import { logger } from "@valentinkolb/cloud/services";
 import * as attachments from "./attachments";
 import * as links from "./links";
+import { repairNoteDataProperties } from "./note-properties";
 import * as tags from "./tags";
 
 const log = logger("notebooks:note-refs");
@@ -45,7 +46,7 @@ export const reindexNoteRefsSafe = async (params: { noteId: string; notebookId: 
 
 /**
  * Notebook-wide reindex — used by the scheduled job. Walks every note,
- * applies the three reindex primitives. Returns counts so the scheduler
+ * applies the reference indexes and rebuildable data projection. Returns counts so the scheduler
  * can log a summary.
  */
 export const reindexNotebook = async (params: {
@@ -58,16 +59,28 @@ export const reindexNotebook = async (params: {
   `;
   let failed = 0;
   for (const note of notes) {
+    let noteFailed = false;
     try {
       await reindexNoteRefs({ noteId: note.id, notebookId: params.notebookId, contentMd: note.content_md });
     } catch (error) {
-      failed += 1;
+      noteFailed = true;
       log.warn("Failed to reindex note during notebook walk", {
         noteId: note.id,
         notebookId: params.notebookId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    try {
+      await repairNoteDataProperties({ noteId: note.id, contentMd: note.content_md });
+    } catch (error) {
+      noteFailed = true;
+      log.warn("Failed to repair note data properties", {
+        noteId: note.id,
+        notebookId: params.notebookId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (noteFailed) failed += 1;
     await params.onProgress?.();
   }
   return { notes: notes.length, failed };
