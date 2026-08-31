@@ -1,4 +1,4 @@
-import { extractNamedBlocks, type NamedBlock, type NamedBlockType, namedBlockBody } from "../../../lib/named-blocks";
+import { extractNamedBlocks, type NamedBlock, type NamedBlockType, namedBlockBody, parseNamedDataBlock } from "../../../lib/named-blocks";
 import type {
   KitContext,
   KitDataView,
@@ -50,36 +50,8 @@ const normalizeMarkdownValue = (value: unknown, header?: string): string => {
   return String(value);
 };
 
-const parseScalar = (value: string): unknown => {
-  const trimmed = value.trim();
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
-  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  return trimmed.replace(/^["']|["']$/g, "");
-};
-
 const parseDataBlock = (src: string): Record<string, unknown> => {
-  const out: Record<string, unknown> = {};
-  let activeArrayKey: string | null = null;
-  for (const line of src.split("\n")) {
-    const arrayItem = line.match(/^\s*-\s+(.+)$/);
-    if (activeArrayKey && arrayItem?.[1]) {
-      (out[activeArrayKey] as unknown[]).push(parseScalar(arrayItem[1]));
-      continue;
-    }
-    const kv = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-    if (!kv?.[1]) continue;
-    const key = kv[1];
-    const value = kv[2] ?? "";
-    if (value.trim() === "") {
-      out[key] = [];
-      activeArrayKey = key;
-    } else {
-      out[key] = parseScalar(value);
-      activeArrayKey = null;
-    }
-  }
-  return out;
+  return Object.fromEntries(parseNamedDataBlock(src).map(({ key, value }) => [key, value]));
 };
 
 const stringifyDataBlock = (value: Record<string, unknown>): string =>

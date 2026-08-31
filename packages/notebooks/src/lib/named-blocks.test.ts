@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { extractDataBlocks, extractNamedBlocks, renderNamedBlockHandlesMarkdown } from "./named-blocks";
+import {
+  extractDataBlocks,
+  extractNamedBlocks,
+  extractNamedDataProperties,
+  parseNamedDataBlockResult,
+  renderNamedBlockHandlesMarkdown,
+} from "./named-blocks";
 
 describe("named blocks", () => {
   test("detects named block types in the current note", () => {
@@ -41,6 +47,16 @@ Wood
 `);
 
     expect(blocks.map((block) => block.name)).toEqual(["outside"]);
+  });
+
+  test("does not extract data blocks inside tilde fences", () => {
+    expect(
+      extractDataBlocks(`~~~md
+:::data
+status: hidden
+:::
+~~~`),
+    ).toEqual([]);
   });
 
   test("detects nested handles inside named sections", () => {
@@ -111,5 +127,70 @@ water: 20
     expect(rendered).toContain("Flour");
     expect(rendered).toContain("Water");
     expect(rendered).not.toContain(":::data");
+  });
+
+  test("parses typed flat data without executing YAML features", () => {
+    const result = parseNamedDataBlockResult(`title: "Handbook"
+priority: 3
+published: true
+tags:
+  - wiki
+  - 2026
+  - false
+unsafe: !include secrets.md`);
+
+    expect(result.entries).toEqual([
+      { key: "title", value: "Handbook" },
+      { key: "priority", value: 3 },
+      { key: "published", value: true },
+      { key: "tags", value: ["wiki", 2026, false] },
+    ]);
+    expect(result.diagnostics).toEqual([{ code: "invalid-value", line: 8, path: "unsafe" }]);
+  });
+
+  test("keeps the first duplicate data key and reports malformed nesting", () => {
+    const result = parseNamedDataBlockResult(`status: draft
+status: published
+nested:
+  child: value`);
+
+    expect(result.entries).toEqual([
+      { key: "status", value: "draft" },
+      { key: "nested", value: [] },
+    ]);
+    expect(result.diagnostics).toEqual([
+      { code: "duplicate-key", line: 2, path: "status" },
+      { code: "unexpected-line", line: 4, path: "data" },
+    ]);
+  });
+
+  test("projects only valid, uniquely named data blocks deterministically", () => {
+    const source = `@meta
+:::data
+status: reviewed
+priority: 3
+:::
+
+@meta
+:::data
+status: draft
+:::
+
+@book
+:::data
+published: true
+authors:
+  - Ada
+  - Grace
+:::
+
+:::data
+ignored: unnamed
+:::`;
+    const first = extractNamedDataProperties(source);
+
+    expect(first.properties).toEqual({ book: { published: true, authors: ["Ada", "Grace"] } });
+    expect(first.diagnostics).toEqual([{ code: "duplicate-block", line: 1, path: "meta" }]);
+    expect(extractNamedDataProperties(source)).toEqual(first);
   });
 });

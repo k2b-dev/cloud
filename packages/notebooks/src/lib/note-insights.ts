@@ -20,19 +20,42 @@ const slugify = (text: string): string =>
 const HEADING_LINE_REGEX = /^(#{1,6})\s+(.+?)\s*$/;
 const INLINE_MARKUP_REGEX = /[*_`~]/g;
 
-export const extractTocFromMarkdown = (md: string | null): TocItem[] => {
+export const extractTocFromMarkdown = (md: string | null, options: { minDepth?: number; maxDepth?: number } = {}): TocItem[] => {
   if (!md) return [];
   const items: TocItem[] = [];
   const seen = new Map<string, number>();
+  const minDepth = options.minDepth ?? 1;
+  const maxDepth = options.maxDepth ?? 6;
+  let codeFence: { marker: string; length: number } | null = null;
+  let directiveFence = false;
   for (const line of md.split("\n")) {
+    const trimmed = line.trim();
+    const fence = trimmed.match(/^(`{3,}|~{3,})/);
+    if (fence?.[1]) {
+      const marker = fence[1][0]!;
+      if (!codeFence) codeFence = { marker, length: fence[1].length };
+      else if (marker === codeFence.marker && fence[1].length >= codeFence.length) codeFence = null;
+      continue;
+    }
+    if (codeFence) continue;
+    if (trimmed.startsWith(":::") && trimmed !== ":::") {
+      directiveFence = true;
+      continue;
+    }
+    if (directiveFence) {
+      if (trimmed === ":::") directiveFence = false;
+      continue;
+    }
     const match = line.match(HEADING_LINE_REGEX);
     if (!match) continue;
+    const level = match[1]!.length;
+    if (level < minDepth || level > maxDepth) continue;
     const text = match[2]!.replace(INLINE_MARKUP_REGEX, "");
     const baseSlug = slugify(text) || "section";
     const n = seen.get(baseSlug) ?? 0;
     seen.set(baseSlug, n + 1);
     const id = n === 0 ? baseSlug : `${baseSlug}-${n}`;
-    items.push({ level: match[1]!.length, text, id });
+    items.push({ level, text, id });
   }
   return items;
 };
