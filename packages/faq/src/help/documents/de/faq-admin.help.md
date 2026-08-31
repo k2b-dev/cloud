@@ -39,3 +39,11 @@ Speichere keine Geheimnisse oder privaten Betriebsdaten in einer FAQ-Antwort. De
 - Aktualisiere Bezeichnungen und Anleitungen, wenn sich die zugehörige Oberfläche ändert.
 - Entferne Duplikate, indem du die klarste Frage behältst und bei Bedarf auf ein längeres Hilfethema verweist.
 - Lösche einen Eintrag nur, wenn die Antwort für keine ausgewählte Zielgruppe mehr gültig oder nützlich ist.
+
+## Mit der CLI automatisieren {icon="terminal"}
+
+Administratoren können dieselben Einträge mit `cld faq` auflisten, erstellen,
+aktualisieren, sortieren und löschen. `cld faq help` zeigt alle Befehle.
+Übergib lokalisiertes Markdown als Übersetzungs-JSON-Datei oder über die
+Standardeingabe. Jedes Übersetzungsobjekt muss Englisch enthalten und darf
+weitere gültige Locales enthalten.

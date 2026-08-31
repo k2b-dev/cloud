@@ -5,7 +5,7 @@ section: Everyday
 order: 220
 description: Short audience-aware answers for visitors, guests, and signed-in users.
 tags: [faq, help, audiences, markdown]
-updated: 2026-08-30
+updated: 2026-09-01
 ---
 
 # FAQ
@@ -60,16 +60,22 @@ read [Authentication](/en/docs/identity/authentication),
 [Public API surface](/en/docs/reference/api-surface) for the shared boundaries
 FAQ uses.
 
-## Inspect FAQ from the terminal
+## Manage FAQ from the terminal
 
-FAQ does not register a dedicated CLI module. Its generated API contract is
-available through API Docs for administrators and integrations:
+Administrators can manage the same entries and ordering through the dedicated
+FAQ CLI. Put the localized Markdown in JSON so shell quoting stays simple:
 
 ```bash
-cld api-docs operations faq --json
-cld api-docs spec faq > faq.openapi.json
+cld faq list
+cld faq get <id> --json
+cld faq create --translations-file ./translations.json --audience anonymous,guest
+cld faq update <id> --translations-file ./translations.json --audience user
+cld faq reorder <id> <id> <id>
+cld faq delete <id> --yes
 ```
 
-Run `cld api-docs help` for schema search and operation details. FAQ API
-operations require an administrator; the public FAQ page performs its own
-audience filtering.
+Each translations object must include `en`; it may contain any additional
+valid locale. Run `cld faq help` for file, standard-input, and structured-output
+options.
+FAQ CLI operations require an administrator; the public FAQ page performs its
+own audience filtering.

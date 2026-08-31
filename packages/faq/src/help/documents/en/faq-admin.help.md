@@ -39,3 +39,10 @@ Do not place secrets or private operational data in an FAQ answer. Audience filt
 - Update names and instructions when the corresponding UI changes.
 - Remove duplicate entries by keeping the clearest question and linking to a longer Help topic when needed.
 - Delete an entry only when the answer is no longer valid or useful to any selected audience.
+
+## Automate with the CLI {icon="terminal"}
+
+Administrators can list, create, update, reorder, and delete the same entries
+with `cld faq`. Run `cld faq help` for commands and pass localized Markdown as
+a translations JSON file or through standard input. Every translations object
+must include English and may include any additional valid locale.

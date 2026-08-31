@@ -1,6 +1,6 @@
 ---
 name: cloud-cli
-description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
+description: Use the Cloud CLI (`cld`) to work with a user's Cloud content from a terminal. Use this skill whenever an agent needs to use installed Cloud app commands, sign in or select a Cloud profile, choose safe CLI input/output, inspect Cloud API documentation, or complete Assistant, Contacts, FAQ, Grids, Mail, Notebooks, Pulse, Spaces, or Tools workflows for the user.
 ---
 
 # Cloud CLI
@@ -33,6 +33,7 @@ Read the app reference for the current task. Follow specialized links inside it 
 - Read [Capabilities](references/capabilities.md) to discover and invoke live typed app Queries and Actions through the generic CLI.
 - Read [Assistant](references/assistant.md) for one-shot streaming chat, chat history, approvals, files, personalization, and Projects.
 - Read [Contacts](references/contacts.md) for contact books, contacts, tags, notes, exports, and access grants.
+- Read [FAQ](references/faq.md) to list and manage localized, audience-aware FAQ entries as an administrator.
 - Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.
 - Read [Mail](references/mail.md) to configure and share mailboxes, search and collaborate on conversations, then follow its compose, automation, and operations references for the complete Mail CLI.
 - Read [Notebooks](references/notebooks.md) for collaborative notes, knowledge search, safe Markdown editing, attachments, scripts, formulas, exports, and access.

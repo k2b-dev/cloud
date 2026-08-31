@@ -18,6 +18,7 @@
     "@valentinkolb/cloud-app-api-docs": "workspace:*",
     "@valentinkolb/cloud-app-assistant": "workspace:*",
     "@valentinkolb/cloud-app-contacts": "workspace:*",
+    "@valentinkolb/cloud-app-faq": "workspace:*",
     "@valentinkolb/cloud-app-grids": "workspace:*",
     "@valentinkolb/cloud-app-ipa-hosts": "workspace:*",
     "@valentinkolb/cloud-app-mail": "workspace:*",

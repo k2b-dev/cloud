@@ -3,6 +3,7 @@ import type { CloudCliContext, CloudCliModule } from "@valentinkolb/cloud/cli";
 import accountsCliModule from "@valentinkolb/cloud-app-accounts/cli";
 import apiDocsCliModule from "@valentinkolb/cloud-app-api-docs/cli";
 import contactsCliModule from "@valentinkolb/cloud-app-contacts/cli";
+import faqCliModule from "@valentinkolb/cloud-app-faq/cli";
 import gridsCliModule from "@valentinkolb/cloud-app-grids/cli";
 import ipaHostsCliModule from "@valentinkolb/cloud-app-ipa-hosts/cli";
 import mailCliModule from "@valentinkolb/cloud-app-mail/cli";
@@ -17,6 +18,7 @@ const appModules = [
   accountsCliModule,
   apiDocsCliModule,
   contactsCliModule,
+  faqCliModule,
   gridsCliModule,
   ipaHostsCliModule,
   mailCliModule,
