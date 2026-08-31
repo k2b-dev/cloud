@@ -7,7 +7,7 @@ describe("faqHelp", () => {
 
     expect(faqHelp.getMarkdown("faq-start")).toContain("FAQ publishes short answers");
     expect(faqHelp.getMarkdown("faq-start")).toContain("Logged-out visitors see anonymous entries.");
-    expect(faqHelp.getMarkdown("faq-admin")).toContain("Use the user's wording for the question");
+    expect(faqHelp.getMarkdown("faq-admin")).toContain("Write the complete English question and answer");
   });
 
   test("translates every article to German with regional fallback", () => {

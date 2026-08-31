@@ -34,18 +34,29 @@ export default function CreateFaqButton() {
       icon: "ti ti-plus",
       confirmText: t().create,
       fields: {
-        question: {
+        questionEn: {
           type: "text" as const,
-          label: t().question,
+          label: t().questionEn,
           placeholder: t().questionPlaceholder,
           required: true,
         },
-        answer: {
+        answerEn: {
           type: "text" as const,
-          label: t().answer,
+          label: t().answerEn,
           placeholder: t().answerPlaceholder,
           multiline: true,
           required: true,
+        },
+        questionDe: {
+          type: "text" as const,
+          label: t().questionDe,
+          placeholder: t().questionPlaceholder,
+        },
+        answerDe: {
+          type: "text" as const,
+          label: t().answerDe,
+          placeholder: t().answerPlaceholder,
+          multiline: true,
         },
         audienceAnonymous: {
           type: "boolean" as const,
@@ -80,9 +91,18 @@ export default function CreateFaqButton() {
       return;
     }
 
+    const questionDe = (result.questionDe ?? "").trim();
+    const answerDe = (result.answerDe ?? "").trim();
+    if ((questionDe && !answerDe) || (!questionDe && answerDe)) {
+      prompts.error(t().completeTranslation);
+      return;
+    }
+
     mutation.mutate({
-      question: result.question.trim(),
-      answer: result.answer.trim(),
+      translations: {
+        en: { question: result.questionEn.trim(), answer: result.answerEn.trim() },
+        ...(questionDe && answerDe ? { de: { question: questionDe, answer: answerDe } } : {}),
+      },
       audience,
     });
   };

@@ -5,7 +5,7 @@ section: Everyday
 order: 220
 description: Short audience-aware answers for visitors, guests, and signed-in users.
 tags: [faq, help, audiences, markdown]
-updated: 2026-08-02
+updated: 2026-08-30
 ---
 
 # FAQ
@@ -19,7 +19,8 @@ their audience, while administrators maintain the complete list.
 - Scan the public FAQ for a question that matches the current task or problem.
 - Open one answer at a time and follow links to longer app-specific Help when
   needed.
-- Write one direct question and Markdown answer for each reusable topic.
+- Write one direct question and Markdown answer in English, then add a German
+  translation when the topic should be available in German.
 - Choose whether an entry is visible to anonymous visitors, guests, users, or
   more than one audience.
 - Update or remove entries when the owning product behavior changes.
@@ -31,13 +32,17 @@ private operational data.
 
 | Resource or surface | Responsibility |
 | --- | --- |
-| Entry | One question, one Markdown answer, its audiences, and list position |
+| Entry | One logical question with localized Markdown answers, shared audiences, and one list position |
 | Audience | Anonymous visitor, guest account, full user, or a combination |
-| Public FAQ | Shows the ordered entries that match the current visitor |
-| Admin page | Lets administrators create, edit, reorder, and delete all entries |
+| Public FAQ | Shows the ordered entries that match the current visitor, resolved to their request locale |
+| Admin page | Lets administrators maintain English and optional German content, then reorder or delete entries |
 
 FAQ is for compact cross-cutting answers. Detailed product procedures stay in
 the Help surface owned by the relevant application.
+
+English is the complete base content. Locale resolution uses an exact locale,
+then its language ancestor, then English for each entry. For example, `de-CH`
+uses `de` when present and otherwise falls back to `en`.
 
 ## How FAQ fits Cloud
 

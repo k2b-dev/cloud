@@ -11,12 +11,17 @@ Jeder FAQ-Eintrag sollte eine Frage beantworten, die Leserinnen und Leser wieder
 ## Einen Eintrag schreiben {icon="pencil"}
 
 :::steps
-1. Formuliere die Frage mit den Worten der Zielgruppe.
-2. Gib die direkte Antwort im ersten Satz.
-3. Ergänze nur die Schritte, Bedingungen oder Links, die zum Handeln nötig sind.
-4. Wähle alle Zielgruppen, für die die Antwort sichtbar sein soll.
-5. Speichere und prüfe das Ergebnis in der öffentlichen FAQ mit einem Konto der vorgesehenen Zielgruppe.
+1. Schreibe die englische Frage und Antwort vollständig.
+2. Fülle beide deutschen Felder aus, wenn der Eintrag auf Deutsch verfügbar sein soll; lasse sonst beide leer.
+3. Gib die direkte Antwort im ersten Satz.
+4. Ergänze nur die Schritte, Bedingungen oder Links, die zum Handeln nötig sind.
+5. Wähle alle Zielgruppen, für die die Antwort sichtbar sein soll.
+6. Speichere und prüfe beide Sprachvarianten in der öffentlichen FAQ.
 :::
+
+Englisch ist die verpflichtende Rückfallsprache jedes Eintrags. Die öffentliche
+FAQ verwendet zuerst die genaue Locale, dann deren Sprache und schließlich
+Englisch. Zielgruppe und Listenposition gelten für den gesamten Eintrag.
 
 ## Eine Zielgruppe wählen {icon="shield-lock"}
 

@@ -1,12 +1,39 @@
+import { canonicalLocale } from "@valentinkolb/cloud/shared";
 import { z } from "zod";
+
+export const FAQ_BASE_LOCALE = "en";
 
 export const FaqAudienceSchema = z.enum(["user", "guest", "anonymous"]);
 export type FaqAudience = z.infer<typeof FaqAudienceSchema>;
 
+export const FaqTranslationSchema = z
+  .object({
+    question: z.string().trim().min(1).max(500),
+    answer: z.string().trim().min(1).max(5000),
+  })
+  .strict();
+export type FaqTranslation = z.infer<typeof FaqTranslationSchema>;
+
+export const FaqTranslationsSchema = z.record(z.string(), FaqTranslationSchema).superRefine((translations, context) => {
+  const canonical = new Set<string>();
+  for (const locale of Object.keys(translations)) {
+    const normalized = canonicalLocale(locale);
+    if (!normalized) {
+      context.addIssue({ code: "custom", message: `Invalid locale: ${locale}` });
+      continue;
+    }
+    if (canonical.has(normalized)) context.addIssue({ code: "custom", message: `Duplicate locale: ${normalized}` });
+    canonical.add(normalized);
+  }
+  if (!canonical.has(FAQ_BASE_LOCALE)) {
+    context.addIssue({ code: "custom", message: `Base locale ${FAQ_BASE_LOCALE} is required` });
+  }
+});
+export type FaqTranslations = z.infer<typeof FaqTranslationsSchema>;
+
 export const FaqEntrySchema = z.object({
   id: z.uuid(),
-  question: z.string(),
-  answer: z.string(),
+  translations: FaqTranslationsSchema,
   audience: z.array(FaqAudienceSchema),
   position: z.number().int(),
   createdAt: z.string(),
@@ -14,19 +41,17 @@ export const FaqEntrySchema = z.object({
 export type FaqEntry = z.infer<typeof FaqEntrySchema>;
 
 export const CreateFaqSchema = z.object({
-  question: z.string().min(1).max(500),
-  answer: z.string().min(1).max(5000),
+  translations: FaqTranslationsSchema,
   audience: z.array(FaqAudienceSchema).min(1),
 });
 export type CreateFaq = z.infer<typeof CreateFaqSchema>;
 
 export const UpdateFaqSchema = z
   .object({
-    question: z.string().min(1).max(500).optional(),
-    answer: z.string().min(1).max(5000).optional(),
+    translations: FaqTranslationsSchema.optional(),
     audience: z.array(FaqAudienceSchema).min(1).optional(),
   })
-  .refine((value) => value.question !== undefined || value.answer !== undefined || value.audience !== undefined, {
+  .refine((value) => value.translations !== undefined || value.audience !== undefined, {
     message: "At least one field must be provided",
   });
 export type UpdateFaq = z.infer<typeof UpdateFaqSchema>;
@@ -41,4 +66,4 @@ export const ReorderFaqSchema = z
   });
 export type ReorderFaq = z.infer<typeof ReorderFaqSchema>;
 
-export { ErrorResponseSchema, MessageResponseSchema, hasRole } from "@valentinkolb/cloud/contracts";
+export { ErrorResponseSchema, hasRole, MessageResponseSchema } from "@valentinkolb/cloud/contracts";

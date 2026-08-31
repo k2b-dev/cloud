@@ -7,8 +7,10 @@ export const migrate = async (): Promise<void> => {
   await sql`
     CREATE TABLE IF NOT EXISTS faq.entries (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      question TEXT NOT NULL,
-      answer TEXT NOT NULL,
+      translations JSONB NOT NULL CHECK (
+        jsonb_typeof(translations) = 'object'
+        AND translations ? 'en'
+      ),
       audience TEXT[] NOT NULL,
       position INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()

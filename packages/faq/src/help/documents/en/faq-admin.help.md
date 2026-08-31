@@ -11,12 +11,17 @@ Each FAQ entry should answer one question a reader is likely to recognize. Keep 
 ## Write an entry {icon="pencil"}
 
 :::steps
-1. Use the user's wording for the question.
-2. Put the direct answer in the first sentence.
-3. Add only the steps, conditions, or links needed to act.
-4. Select every audience that should see the answer.
-5. Save and verify the result on the public FAQ with an account from the intended audience.
+1. Write the complete English question and answer.
+2. Add both German fields when the entry should be available in German; otherwise leave both empty.
+3. Put the direct answer in the first sentence.
+4. Add only the steps, conditions, or links needed to act.
+5. Select every audience that should see the answer.
+6. Save and verify both language variants on the public FAQ.
 :::
+
+English is the required fallback for every entry. The public FAQ uses the
+visitor's exact locale, then its language, then English. Audience and list
+position apply to the complete entry, not to one translation.
 
 ## Choose an audience {icon="shield-lock"}
 

@@ -7,12 +7,13 @@ import { faqService } from "../service";
 import { faqMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
-  const { t } = faqMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = faqMessages.resolve([locale]);
   const user = getUserBackedActor(c);
 
   const audience = !user ? "anonymous" : user.profile === "guest" ? "guest" : "user";
 
-  const entries = (await faqService.entry.list({ filter: { audience } })).items;
+  const entries = (await faqService.entry.listResolved({ filter: { audience }, locale })).items;
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "FAQ" }]}>

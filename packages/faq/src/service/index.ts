@@ -1,15 +1,15 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { logger, toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
-import type { CreateFaq, FaqEntry, UpdateFaq } from "@/contracts";
+import { normalizeFaqTranslations, resolveFaqEntry } from "@/content";
+import { type CreateFaq, type FaqEntry, FaqTranslationsSchema, type UpdateFaq } from "@/contracts";
 import { faqServiceMessages } from "./messages";
 
 const log = logger("faq");
 
 type DbRow = {
   id: string;
-  question: string;
-  answer: string;
+  translations: unknown;
   audience: string[];
   position: number;
   created_at: string | Date;
@@ -28,8 +28,7 @@ type ListConfig = {
  */
 const mapRow = (row: DbRow): FaqEntry => ({
   id: row.id,
-  question: row.question,
-  answer: row.answer,
+  translations: FaqTranslationsSchema.parse(row.translations),
   audience: row.audience as FaqEntry["audience"],
   position: row.position,
   createdAt: new Date(row.created_at).toISOString(),
@@ -59,7 +58,9 @@ const paginateItems = <T>(items: T[], pagination?: PageParams): Paginated<T> => 
 
 const matchesQuery = (entry: FaqEntry, query: string): boolean => {
   const normalized = query.toLowerCase();
-  return entry.question.toLowerCase().includes(normalized) || entry.answer.toLowerCase().includes(normalized);
+  return Object.values(entry.translations).some(
+    (translation) => translation.question.toLowerCase().includes(normalized) || translation.answer.toLowerCase().includes(normalized),
+  );
 };
 
 /**
@@ -85,6 +86,11 @@ const list = async (config: ListConfig = {}) => {
   return paginateItems(filtered, config?.pagination);
 };
 
+const listResolved = async (config: ListConfig & { locale?: string | null } = {}) => {
+  const page = await list(config);
+  return { ...page, items: page.items.map((entry) => resolveFaqEntry(entry, config.locale)) };
+};
+
 /**
  * Returns one FAQ entry by UUID, or `null` when it does not exist.
  */
@@ -105,9 +111,10 @@ const create = async (config: { data: CreateFaq; locale?: string | null }) => {
     const [maxRow] = await sql`SELECT COALESCE(MAX(position), -1) AS max_pos FROM faq.entries`;
     const nextPos = (maxRow as { max_pos: number }).max_pos + 1;
 
+    const translations = normalizeFaqTranslations(config.data.translations);
     const [row] = await sql`
-      INSERT INTO faq.entries (question, answer, audience, position)
-      VALUES (${config.data.question}, ${config.data.answer}, ${toPgTextArray(config.data.audience)}::text[], ${nextPos})
+      INSERT INTO faq.entries (translations, audience, position)
+      VALUES ((${JSON.stringify(translations)}::text)::jsonb, ${toPgTextArray(config.data.audience)}::text[], ${nextPos})
       RETURNING *
     `;
 
@@ -128,11 +135,11 @@ const update = async (config: { id: string; data: UpdateFaq; locale?: string | n
     if (!existing) return fail({ code: "NOT_FOUND", status: 404, message: t.notFound });
 
     const audienceLiteral = config.data.audience ? toPgTextArray(config.data.audience) : null;
+    const translations = config.data.translations ? JSON.stringify(normalizeFaqTranslations(config.data.translations)) : null;
 
     const [row] = await sql`
       UPDATE faq.entries SET
-        question = COALESCE(${config.data.question ?? null}, question),
-        answer = COALESCE(${config.data.answer ?? null}, answer),
+        translations = COALESCE((${translations}::text)::jsonb, translations),
         audience = COALESCE(${audienceLiteral}::text[], audience)
       WHERE id = ${config.id}::uuid
       RETURNING *
@@ -201,6 +208,7 @@ const reorder = async (config: { ids: string[]; locale?: string | null }) => {
 export const faqService = {
   entry: {
     list,
+    listResolved,
     get,
     create,
     update,

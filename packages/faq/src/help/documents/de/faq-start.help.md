@@ -11,7 +11,7 @@ FAQ veröffentlicht kurze Antworten für die aktuelle Person. Öffne eine Frage 
 ## Überblick {icon="layout-grid"}
 
 :::reference
-- **Eintrag:** Eine Frage mit einer Markdown-Antwort.
+- **Eintrag:** Eine logische Frage mit lokalisierten Markdown-Antworten.
 - **Zielgruppe:** Einträge können sich an abgemeldete Personen, Gastkonten, vollständige Benutzerkonten oder eine Kombination dieser Gruppen richten.
 - **Öffentliche Seite:** `/faq` zeigt nur Einträge, deren Zielgruppe zur aktuellen Person passt.
 - **Administrationsseite:** `/admin/faq` ist Personen mit Administratorrechten vorbehalten und listet alle Einträge mit Aktionen zum Erstellen, Bearbeiten und Löschen.
@@ -23,6 +23,10 @@ FAQ veröffentlicht kurze Antworten für die aktuelle Person. Öffne eine Frage 
 - Öffne jeweils eine Frage, damit die Seite übersichtlich bleibt.
 - Folge Links zur Hilfe einer App, wenn die Antwort einen längeren Ablauf oder eine Referenz erfordert.
 - Wenn keine Einträge erscheinen, gibt es derzeit keine FAQ-Inhalte für deinen Besuchertyp.
+
+Die Seite verwendet die Locale der aktuellen Anfrage. Eine regionale Locale
+wie `de-CH` verwendet vorhandene deutsche Inhalte; Einträge ohne deutsche
+Übersetzung fallen auf Englisch zurück.
 
 :::info Zielgruppenfilter
 Abgemeldete Personen sehen anonyme Einträge. Gast- und vollständige Benutzerkonten sehen Einträge für ihre jeweilige Zielgruppe.
