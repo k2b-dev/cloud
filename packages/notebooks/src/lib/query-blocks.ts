@@ -97,6 +97,7 @@ const OPERATORS = new Set<QueryOperator>([
   "contains-all",
 ]);
 const PROPERTY_FIELD_RE = /^[A-Za-z][A-Za-z0-9_-]{0,63}\.[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const RFC3339_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 const diagnostic = (code: NotebookBlockDiagnosticCode, line: number, path: string): NotebookBlockDiagnostic => ({
   code,
@@ -193,10 +194,51 @@ const parseValue = (raw: string): ParsedValue | null => {
   return parseScalar(raw);
 };
 
+export const isQueryField = (value: unknown): value is QueryField =>
+  typeof value === "string" && (SYSTEM_FIELDS.has(value as QuerySystemField) || PROPERTY_FIELD_RE.test(value));
+
 const parseField = (raw: string): QueryField | null => {
   const value = raw.trim();
-  if (SYSTEM_FIELDS.has(value as QuerySystemField)) return value as QuerySystemField;
-  return PROPERTY_FIELD_RE.test(value) ? (value as QueryField) : null;
+  return isQueryField(value) ? value : null;
+};
+
+const isQueryScalar = (value: unknown): value is QueryScalar =>
+  typeof value === "boolean" ||
+  (typeof value === "number" && Number.isFinite(value)) ||
+  (typeof value === "string" && value.length <= QUERY_MAX_STRING_LENGTH);
+
+const isIsoInstant = (value: unknown): value is string =>
+  typeof value === "string" && RFC3339_RE.test(value) && Number.isFinite(Date.parse(value));
+
+export const isQueryFilter = (value: unknown): value is QueryFilter => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const filter = value as Record<string, unknown>;
+  if (!Object.keys(filter).every((key) => ["field", "op", "value"].includes(key))) return false;
+  if (!isQueryField(filter.field) || !OPERATORS.has(filter.op as QueryOperator)) return false;
+  const field = filter.field;
+  const op = filter.op as QueryOperator;
+  const operand = filter.value;
+  const hasValue = Object.hasOwn(filter, "value");
+  const list = Array.isArray(operand) && operand.length > 0 && operand.length <= QUERY_MAX_VALUES && operand.every(isQueryScalar);
+  const property = !SYSTEM_FIELDS.has(field as QuerySystemField);
+
+  if (op === "exists" || op === "missing") return !hasValue && (property || field === "$tags");
+  if (field === "$tags") {
+    if (op === "contains") return typeof operand === "string";
+    return (op === "contains-any" || op === "contains-all") && list && operand.every((item) => typeof item === "string");
+  }
+  if (field === "$title") {
+    if (op === "eq" || op === "ne" || op === "contains" || op === "starts-with") return typeof operand === "string";
+    return (op === "in" || op === "not-in") && list && operand.every((item) => typeof item === "string");
+  }
+  if (field === "$created" || field === "$updated") {
+    if (op === "eq" || op === "ne") return isIsoInstant(operand);
+    return (op === "in" || op === "not-in") && list && operand.every(isIsoInstant);
+  }
+  if ((op === "eq" || op === "ne") && isQueryScalar(operand)) return true;
+  if ((op === "in" || op === "not-in" || op === "contains-any" || op === "contains-all") && list) return true;
+  if ((op === "contains" || op === "starts-with") && typeof operand === "string") return true;
+  return (op === "gt" || op === "gte" || op === "lt" || op === "lte") && typeof operand === "number" && Number.isFinite(operand);
 };
 
 type RawItem = { values: Map<string, { value: string; line: number }>; line: number };
@@ -294,6 +336,7 @@ const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: No
   const parsedFilters: QueryFilter[] = [];
   if (filters.length > QUERY_MAX_FILTERS) diagnostics.push(diagnostic("too-many-items", filters[QUERY_MAX_FILTERS]!.line, "query.where"));
   for (const [index, item] of filters.slice(0, QUERY_MAX_FILTERS).entries()) {
+    const diagnosticsBeforeFilter = diagnostics.length;
     for (const [key, entry] of item.values) {
       if (!["field", "op", "value"].includes(key)) diagnostics.push(diagnostic("unknown-key", entry.line, `query.where.${index}.${key}`));
     }
@@ -321,8 +364,10 @@ const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: No
     } else if ((op === "contains" || op === "starts-with") && typeof value !== "string") {
       diagnostics.push(diagnostic("invalid-type", rawValue?.line ?? item.line, `query.where.${index}.value`));
     }
-    if (field && op && OPERATORS.has(op) && (needsNoValue || value !== null)) {
-      parsedFilters.push(needsNoValue ? { field, op } : { field, op, value: value! });
+    if (field && op && OPERATORS.has(op) && (needsNoValue || value !== null) && diagnostics.length === diagnosticsBeforeFilter) {
+      const filter = needsNoValue ? { field, op } : { field, op, value: value! };
+      if (isQueryFilter(filter)) parsedFilters.push(filter);
+      else diagnostics.push(diagnostic("invalid-type", rawOp?.line ?? item.line, `query.where.${index}.op`));
     }
   }
 
@@ -342,10 +387,15 @@ const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: No
 
   if (columns.length > QUERY_MAX_COLUMNS) diagnostics.push(diagnostic("too-many-items", columns[QUERY_MAX_COLUMNS]!.line, "query.columns"));
   const parsedColumns: QueryField[] = [];
+  const seenColumns = new Set<QueryField>();
   for (const [index, column] of columns.slice(0, QUERY_MAX_COLUMNS).entries()) {
     const field = parseField(column.value);
     if (!field) diagnostics.push(diagnostic("invalid-field", column.line, `query.columns.${index}`));
-    else parsedColumns.push(field);
+    else if (seenColumns.has(field)) diagnostics.push(diagnostic("duplicate-key", column.line, `query.columns.${index}`));
+    else {
+      seenColumns.add(field);
+      parsedColumns.push(field);
+    }
   }
 
   const limitEntry = top.get("limit");

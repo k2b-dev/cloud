@@ -59,6 +59,25 @@ formula: score * 2
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ path: "query.where.0.op", code: "invalid-type" }));
   });
 
+  test("rejects unsupported field and operator combinations", () => {
+    const result = parseNotebookQueryBlocks(`:::query
+source: notes
+where:
+  - field: $title
+    op: gt
+    value: 2
+  - field: $tags
+    op: in
+    value: [wiki]
+  - field: $updated
+    op: eq
+    value: tomorrow
+:::`);
+
+    expect(result.blocks).toEqual([]);
+    expect(result.diagnostics.filter((entry) => entry.path.endsWith(".op"))).toHaveLength(3);
+  });
+
   test("reports duplicate keys, invalid bounds and unclosed blocks", () => {
     const result = parseNotebookQueryBlocks(`:::query
 source: notes
@@ -69,6 +88,17 @@ limit: 101`);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "duplicate-key", path: "query.source" }));
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "invalid-type", path: "query.limit" }));
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "unclosed-block", path: "query" }));
+  });
+
+  test("rejects duplicate selected columns", () => {
+    const result = parseNotebookQueryBlocks(`:::query
+source: notes
+columns:
+  - $title
+  - $title
+:::`);
+    expect(result.blocks).toEqual([]);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "duplicate-key", path: "query.columns.1" }));
   });
 
   test("bounds filters and columns", () => {

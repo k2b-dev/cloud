@@ -9,6 +9,7 @@ import * as comments from "./comments";
 import * as exporter from "./export";
 import * as favorites from "./favorites";
 import * as links from "./links";
+import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
@@ -187,6 +188,7 @@ export const notebooksService = {
     },
     copyToNotebook: notes.copyToNotebook,
     search: search.searchInNotebook,
+    query: noteQuery.resolveNoteQuery,
     /** ACL-safe cross-notebook search used by app search, REST, and the CLI. */
     searchAcross: search.searchAcross,
     recentForUser: notes.recentForUser,
