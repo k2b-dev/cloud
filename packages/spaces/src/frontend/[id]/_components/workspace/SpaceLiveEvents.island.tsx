@@ -28,7 +28,7 @@ export default function SpaceLiveEvents(props: Props) {
       onMessage: (message, controls) => {
         if (message.payload.spaceId && message.payload.spaceId !== props.spaceId) return;
         if (message.type === SPACE_LIVE_WS_TYPE.ready) {
-          void applyCursor(["view", "detail", "wormholes"], message.payload.cursor);
+          void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.event) {
@@ -38,7 +38,11 @@ export default function SpaceLiveEvents(props: Props) {
             return;
           }
           const domains = eventType.startsWith("item.") ? (["view", "detail"] as const) : (["view", "wormholes"] as const);
-          void applyCursor([...domains], message.payload.cursor);
+          void applyCursor(
+            [...domains],
+            message.payload.cursor,
+            "itemId" in message.payload.event ? message.payload.event.itemId : null,
+          );
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.revoked) {

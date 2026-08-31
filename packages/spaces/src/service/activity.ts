@@ -2,6 +2,8 @@ import type { AccessSubject } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
 import { buildSpacePrincipalCondition } from "./access";
 
+type SqlExecutor = typeof sql;
+
 export type SpaceActivityIdentity = {
   kind: "user" | "service_account" | "system";
   id: string | null;
@@ -82,12 +84,12 @@ export const record = async (params: {
   metadata?: Record<string, unknown>;
   bucketStartedAt?: Date | null;
   occurredAt?: Date;
-}): Promise<string> => {
+}, db: SqlExecutor = sql): Promise<string> => {
   actorShape(params.actor);
   const action = params.action.trim();
   if (!action || action.length > 200) throw new Error("Activity action must be between 1 and 200 characters");
   const occurredAt = params.occurredAt ?? new Date();
-  const [row] = await sql<{ id: string | number }[]>`
+  const [row] = await db<{ id: string | number }[]>`
     INSERT INTO spaces.activity_events (
       space_id, item_id, actor_kind, actor_id, action, metadata,
       bucket_started_at, created_at, last_occurred_at

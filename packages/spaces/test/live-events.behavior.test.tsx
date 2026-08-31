@@ -74,4 +74,28 @@ describe("Spaces live events", () => {
     stops.forEach((stop) => stop());
     dom.cleanup();
   });
+
+  test("carries the changed item into detail invalidations", async () => {
+    transport.applied.length = 0;
+    const dom = createDomTestHarness();
+    const detailItems: Array<string | null> = [];
+    const stop = subscribeToSpacesDataInvalidation(["detail"], async (invalidation) => void detailItems.push(invalidation.itemId));
+    const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
+    const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+
+    options.onMessage(
+      {
+        type: "spaces.live.event",
+        payload: { spaceId: "space-1", cursor: "4-0", event: { type: "item.updated", spaceId: "space-1", itemId: "Item01", at: "" } },
+      } as never,
+      { markApplied: () => undefined, terminate: () => undefined },
+    );
+    await flush();
+    expect(detailItems).toEqual(["Item01"]);
+    expect(transport.applied).toEqual(["4-0"]);
+
+    dispose();
+    stop();
+    dom.cleanup();
+  });
 });

@@ -1,6 +1,6 @@
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { type AccessSubject, hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { serviceAccounts } from "@valentinkolb/cloud/services";
+import { logger, serviceAccounts } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { CreateSpace, MutationResult, Space, SpaceDetail, UpdateSpace } from "@/contracts";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
@@ -21,6 +21,8 @@ import { rank } from "./rank";
 // ==========================
 // Spaces Service
 // ==========================
+
+const log = logger("spaces:spaces");
 
 type DbSpace = {
   id: string;
@@ -435,11 +437,15 @@ export const create = async (params: {
   }
 
   const space = mapToSpace(row);
-  await activity.record({
-    spaceId: space.id,
-    actor: params.actor ?? { kind: "user", id: creatorId },
-    action: "space.created",
-  });
+  try {
+    await activity.record({
+      spaceId: space.id,
+      actor: params.actor ?? { kind: "user", id: creatorId },
+      action: "space.created",
+    });
+  } catch (error) {
+    log.warn("Failed to record activity for created space", { spaceId: space.id, error });
+  }
   return { ok: true, data: space };
 };
 
@@ -458,24 +464,31 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
   const description = data.description === undefined ? existing.description : data.description;
   const color = data.color ?? existing.color;
 
-  const [row] = await sql<DbSpace[]>`
-    UPDATE spaces.spaces
-    SET name = ${name}, description = ${description}, color = ${color}, updated_at = now()
-    WHERE id = ${id}
-    RETURNING id, name, description, color, ical_token, created_at, updated_at
-  `;
+  const row = await sql.begin(async (tx) => {
+    const [updated] = await tx<DbSpace[]>`
+      UPDATE spaces.spaces
+      SET name = ${name}, description = ${description}, color = ${color}, updated_at = now()
+      WHERE id = ${id}
+      RETURNING id, name, description, color, ical_token, created_at, updated_at
+    `;
+    if (!updated) return null;
+    await activity.record(
+      {
+        spaceId: id,
+        actor: params.actor ?? { kind: "system", id: null },
+        action: "space.updated",
+        bucketStartedAt: new Date(new Date().setUTCMinutes(0, 0, 0)),
+      },
+      tx,
+    );
+    return updated;
+  });
 
   if (!row) {
     return { ok: false, error: "Failed to update space", status: 500 };
   }
 
   await publishSpaceEvent({ type: "space.updated", spaceId: id });
-  await activity.record({
-    spaceId: id,
-    actor: params.actor ?? { kind: "system", id: null },
-    action: "space.updated",
-    bucketStartedAt: new Date(new Date().setUTCMinutes(0, 0, 0)),
-  });
   return { ok: true, data: mapToSpace(row) };
 };
 

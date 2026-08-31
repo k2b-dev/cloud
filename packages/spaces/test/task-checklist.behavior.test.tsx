@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
@@ -108,6 +108,35 @@ describe("Spaces task checklist", () => {
     dom.root.querySelector<HTMLButtonElement>('[aria-label="Delete Review final copy"]')!.click();
     await flush();
     expect(entries.map((entry) => entry.label)).toEqual(["Publish"]);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("preserves an unfinished subtask draft while live entries refresh", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { default: TaskChecklistSection } = await import("../src/frontend/[id]/_components/detail/TaskChecklistSection");
+    const [liveEntries, setLiveEntries] = createSignal(entries);
+    const dispose = render(
+      () =>
+        createComponent(TaskChecklistSection, {
+          spaceId: "Space1",
+          itemId: "Item01",
+          get entries() {
+            return liveEntries();
+          },
+          canWrite: true,
+          onChanged: () => undefined,
+        }),
+      dom.root,
+    );
+    const add = dom.root.querySelector<HTMLInputElement>('[aria-label="Add subtask…"]')!;
+    add.value = "Unfinished draft";
+    add.dispatchEvent(new Event("input", { bubbles: true }));
+    setLiveEntries([...entries]);
+    await flush();
+    expect(add.value).toBe("Unfinished draft");
 
     dispose();
     dom.cleanup();

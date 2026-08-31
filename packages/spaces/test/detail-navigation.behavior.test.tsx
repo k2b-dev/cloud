@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, onCleanup } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
@@ -22,6 +22,8 @@ const flush = async () => {
 };
 
 let detailGet: () => Promise<Response> = async () => new Response(null, { status: 500 });
+let panelMounts = 0;
+let panelDisposals = 0;
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
@@ -30,7 +32,13 @@ if (!isServer) {
       },
     },
   }));
-  mock.module("../src/frontend/[id]/_components/detail/ItemDetailPanel", () => ({ default: () => null }));
+  mock.module("../src/frontend/[id]/_components/detail/ItemDetailPanel", () => ({
+    default: () => {
+      panelMounts += 1;
+      onCleanup(() => (panelDisposals += 1));
+      return null;
+    },
+  }));
 }
 let ItemDetailRoute: typeof import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island").default;
 
@@ -182,6 +190,42 @@ describe("Spaces detail navigation", () => {
     expect(panel.hidden).toBe(true);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("refreshes the selected item without remounting its detail editor", async () => {
+    panelMounts = 0;
+    panelDisposals = 0;
+    detailGet = async () => Response.json(detail(SERIES_ID));
+    const dom = createDomTestHarness();
+    ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
+    const href = `${BASE}&item=${SERIES_ID}`;
+    dom.window.history.replaceState(null, "", href);
+    const dispose = render(
+      () =>
+        createComponent(ItemDetailRoute, {
+          spaceId: SPACE_ID,
+          initialSource: href,
+          currentUserId: "user",
+          columns: [],
+          tags: [],
+          wormholes: [],
+          initialDetail: detail(SERIES_ID),
+          canWrite: false,
+          mailIntegrationAvailable: false,
+        }),
+      dom.root,
+    );
+    expect(panelMounts).toBe(1);
+
+    const { invalidateSpacesData } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
+    await invalidateSpacesData(["detail"], "5-0", SERIES_ID);
+    await flush();
+    expect(panelMounts).toBe(1);
+    expect(panelDisposals).toBe(0);
+
+    dispose();
+    expect(panelDisposals).toBe(1);
     dom.cleanup();
   });
 });

@@ -385,7 +385,7 @@ const validateRecurrenceInput = async (params: {
   recurringEventId: string | null | undefined;
   recurrenceId: string | null | undefined;
   dateConfig?: DateContext;
-}): Promise<MutationResult<void>> => {
+}, db: SqlExecutor = sql): Promise<MutationResult<void>> => {
   const isSeries = !!params.recurrence?.rrule;
   const isOverride = !!params.recurringEventId || !!params.recurrenceId;
 
@@ -409,7 +409,7 @@ const validateRecurrenceInput = async (params: {
     if (!params.startsAt || !params.endsAt) {
       return { ok: false, error: "Recurring overrides require start and end times", status: 400 };
     }
-    const [parent] = await sql<
+    const [parent] = await db<
       {
         id: string;
         title: string;
@@ -1395,6 +1395,17 @@ export const create = async (params: {
         await insertItemResourceReferences(tx, created.id, data.references);
       }
 
+      await activity.record(
+        {
+          spaceId,
+          itemId: created.id,
+          actor: params.actor ?? (createdBy ? { kind: "user", id: createdBy } : systemActor),
+          action: data.startsAt && data.endsAt ? "event.created" : "task.created",
+          metadata: { itemTitle: data.title },
+        },
+        tx,
+      );
+
       return { id: created.id, replayed: false };
     }),
   );
@@ -1415,13 +1426,6 @@ export const create = async (params: {
   if (row.replayed) params.idempotency?.onReplay?.();
   else {
     await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
-    await activity.record({
-      spaceId,
-      itemId: item.id,
-      actor: params.actor ?? (createdBy ? { kind: "user", id: createdBy } : systemActor),
-      action: item.startsAt && item.endsAt ? "event.created" : "task.created",
-      metadata: { itemTitle: item.title },
-    });
   }
   return { ok: true, data: item };
 };
@@ -1441,81 +1445,86 @@ export const update = async (params: {
   if (!existing) {
     return { ok: false, error: "Item not found", status: 404 };
   }
-
-  // Build update values
-  const columnId = data.columnId ?? existing.columnId;
-  const title = data.title ?? existing.title;
-  const description = data.description === undefined ? existing.description : data.description;
-  const location = data.location === undefined ? existing.location : data.location;
-  const url = data.url === undefined ? existing.url : data.url;
-  const startsAt = data.startsAt === undefined ? existing.startsAt : data.startsAt;
-  const endsAt = data.endsAt === undefined ? existing.endsAt : data.endsAt;
-  const allDay = data.allDay === undefined ? existing.allDay : data.allDay;
-  const deadline = data.deadline === undefined ? existing.deadline : data.deadline;
-  const estimatedDurationMinutes =
-    data.estimatedDurationMinutes === undefined ? existing.estimatedDurationMinutes : data.estimatedDurationMinutes;
-  const priority = data.priority === undefined ? existing.priority : data.priority;
-  let recurrence = data.recurrence === undefined ? existing.recurrence : data.recurrence;
-  const recurringEventId = data.recurringEventId === undefined ? existing.recurringEventId : data.recurringEventId;
-  const recurrenceId = data.recurrenceId === undefined ? existing.recurrenceId : data.recurrenceId;
-  const changingColumn = !!(data.columnId && data.columnId !== existing.columnId);
-  const seriesShiftMilliseconds =
-    existing.recurrence && recurrence && !existing.recurringEventId && existing.startsAt && startsAt
-      ? new Date(startsAt).getTime() - new Date(existing.startsAt).getTime()
-      : 0;
-  if (seriesShiftMilliseconds !== 0 && recurrence && data.recurrence === undefined) {
-    recurrence = {
-      ...recurrence,
-      rrule: shiftRecurrenceRule(recurrence.rrule, seriesShiftMilliseconds),
-      dtstart: startsAt,
-      exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
-    };
-  }
-
-  if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
-    return { ok: false, error: "End time must be after start time", status: 400 };
-  }
-  if (estimatedDurationMinutes !== null && (startsAt || endsAt)) {
-    return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
-  }
-
-  // If moving to a different column, prepend item to the top of the target column.
-  let targetRank: bigint | null = null;
-  if (changingColumn && data.columnId) {
-    const [newColumn] = await sql<{ space_id: string }[]>`
-      SELECT space_id
-      FROM spaces.columns
-      WHERE id = ${data.columnId}
-    `;
-    if (!newColumn || newColumn.space_id !== existing.spaceId) {
-      return { ok: false, error: "Column not found in space", status: 400 };
-    }
-
-    const [minRow] = await sql<{ min: string | null }[]>`
-      SELECT MIN(rank)::text AS min
-      FROM spaces.items
-      WHERE column_id = ${data.columnId} AND id <> ${id}
-    `;
-    const minRank = minRow?.min ? rank.parse(minRow.min) : null;
-    targetRank = minRank !== null ? minRank - rank.step() : rank.step();
-  }
-  const recurrenceCheck = await validateRecurrenceInput({
-    spaceId: existing.spaceId,
-    startsAt,
-    endsAt,
-    recurrence,
-    recurringEventId,
-    recurrenceId,
-    dateConfig: params.dateConfig,
-  });
-  if (!recurrenceCheck.ok) return recurrenceCheck;
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
   const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, data.assigneeIds);
   if (!assigneeCheck.ok) return assigneeCheck;
-  const recurrenceDb = recurrenceValues(recurrence);
 
-  const row = await sql.begin(async (tx): Promise<{ id: string } | null> => {
+  const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
+    const [locked] = await tx<DbItem[]>`
+      SELECT id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline,
+        estimated_duration_minutes, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
+        recurring_event_id, recurrence_id, rank::text AS rank, completed_at, created_by, created_at, updated_at
+      FROM spaces.items
+      WHERE id = ${id}
+      FOR UPDATE
+    `;
+    if (!locked) return { ok: false, error: "Item not found", status: 404 };
+
+    const current = mapToItem(locked);
+    const columnId = data.columnId ?? current.columnId;
+    const title = data.title ?? current.title;
+    const description = data.description === undefined ? current.description : data.description;
+    const location = data.location === undefined ? current.location : data.location;
+    const url = data.url === undefined ? current.url : data.url;
+    const startsAt = data.startsAt === undefined ? current.startsAt : data.startsAt;
+    const endsAt = data.endsAt === undefined ? current.endsAt : data.endsAt;
+    const allDay = data.allDay === undefined ? current.allDay : data.allDay;
+    const deadline = data.deadline === undefined ? current.deadline : data.deadline;
+    const estimatedDurationMinutes =
+      data.estimatedDurationMinutes === undefined ? current.estimatedDurationMinutes : data.estimatedDurationMinutes;
+    const priority = data.priority === undefined ? current.priority : data.priority;
+    let recurrence = data.recurrence === undefined ? current.recurrence : data.recurrence;
+    const recurringEventId = data.recurringEventId === undefined ? current.recurringEventId : data.recurringEventId;
+    const recurrenceId = data.recurrenceId === undefined ? current.recurrenceId : data.recurrenceId;
+    const changingColumn = columnId !== current.columnId;
+    const seriesShiftMilliseconds =
+      current.recurrence && recurrence && !current.recurringEventId && current.startsAt && startsAt
+        ? new Date(startsAt).getTime() - new Date(current.startsAt).getTime()
+        : 0;
+    if (seriesShiftMilliseconds !== 0 && recurrence && data.recurrence === undefined) {
+      recurrence = {
+        ...recurrence,
+        rrule: shiftRecurrenceRule(recurrence.rrule, seriesShiftMilliseconds),
+        dtstart: startsAt,
+        exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
+      };
+    }
+    if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+      return { ok: false, error: "End time must be after start time", status: 400 };
+    }
+    if (estimatedDurationMinutes !== null && (startsAt || endsAt)) {
+      return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
+    }
+
+    let targetRank: bigint | null = null;
+    if (changingColumn) {
+      const [newColumn] = await tx<{ space_id: string }[]>`
+        SELECT space_id FROM spaces.columns WHERE id = ${columnId}
+      `;
+      if (!newColumn || newColumn.space_id !== current.spaceId) {
+        return { ok: false, error: "Column not found in space", status: 400 };
+      }
+      const [minRow] = await tx<{ min: string | null }[]>`
+        SELECT MIN(rank)::text AS min FROM spaces.items WHERE column_id = ${columnId} AND id <> ${id}
+      `;
+      const minRank = minRow?.min ? rank.parse(minRow.min) : null;
+      targetRank = minRank !== null ? minRank - rank.step() : rank.step();
+    }
+    const recurrenceCheck = await validateRecurrenceInput(
+      {
+        spaceId: current.spaceId,
+        startsAt,
+        endsAt,
+        recurrence,
+        recurringEventId,
+        recurrenceId,
+        dateConfig: params.dateConfig,
+      },
+      tx,
+    );
+    if (!recurrenceCheck.ok) return recurrenceCheck;
+    const recurrenceDb = recurrenceValues(recurrence);
     const [updated] = changingColumn
       ? await tx<{ id: string }[]>`
           UPDATE spaces.items
@@ -1562,7 +1571,7 @@ export const update = async (params: {
           RETURNING id
         `;
 
-    if (!updated) return null;
+    if (!updated) return { ok: false, error: "Item not found", status: 404 };
 
     if (data.assigneeIds !== undefined) {
       await replaceItemAssignees(tx, id, data.assigneeIds);
@@ -1590,27 +1599,27 @@ export const update = async (params: {
       `;
     }
 
-    return updated;
+    await activity.record(
+      {
+        spaceId: current.spaceId,
+        itemId: id,
+        actor: params.actor ?? systemActor,
+        action: startsAt && endsAt ? "event.updated" : "task.updated",
+        metadata: { itemTitle: title },
+        bucketStartedAt: hourBucket(),
+      },
+      tx,
+    );
+    return { ok: true, data: updated };
   });
+  if (!result.ok) return result;
 
-  if (!row) {
-    return { ok: false, error: "Failed to update item", status: 500 };
-  }
-
-  const item = await get({ id: row.id });
+  const item = await get({ id: result.data.id });
   if (!item) {
     return { ok: false, error: "Failed to load updated item", status: 500 };
   }
 
   await publishSpaceEvent({ type: "item.updated", spaceId: item.spaceId, itemId: item.id });
-  await activity.record({
-    spaceId: item.spaceId,
-    itemId: item.id,
-    actor: params.actor ?? systemActor,
-    action: item.startsAt && item.endsAt ? "event.updated" : "task.updated",
-    metadata: { itemTitle: item.title },
-    bucketStartedAt: hourBucket(),
-  });
   return { ok: true, data: item };
 };
 
@@ -1795,27 +1804,28 @@ export const splitRecurring = async (params: {
  * Delete an item
  */
 export const remove = async (params: { id: string; actor?: SpaceActivityIdentity }): Promise<MutationResult<void>> => {
-  const existing = await get({ id: params.id });
-  const rows = await sql<{ short_id: string }[]>`
-    DELETE FROM spaces.items
-    WHERE id = ${params.id}
-    RETURNING short_id
-  `;
-
-  const deleted = rows[0];
-  if (!deleted) {
-    return { ok: false, error: "Item not found", status: 404 };
-  }
-
-  if (existing) {
-    await activity.record({
-      spaceId: existing.spaceId,
-      actor: params.actor ?? systemActor,
-      action: existing.startsAt && existing.endsAt ? "event.deleted" : "task.deleted",
-      metadata: { itemTitle: existing.title },
-    });
-    await publishSpaceEvent({ type: "item.deleted", spaceId: existing.spaceId, itemId: existing.id }, { itemId: deleted.short_id });
-  }
+  const result = await sql.begin(async (tx): Promise<MutationResult<{ shortId: string; spaceId: string }>> => {
+    const [existing] = await tx<{ short_id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null }[]>`
+      SELECT short_id, space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${params.id} FOR UPDATE
+    `;
+    if (!existing) return { ok: false, error: "Item not found", status: 404 };
+    await activity.record(
+      {
+        spaceId: existing.space_id,
+        actor: params.actor ?? systemActor,
+        action: existing.starts_at && existing.ends_at ? "event.deleted" : "task.deleted",
+        metadata: { itemTitle: existing.title },
+      },
+      tx,
+    );
+    await tx`DELETE FROM spaces.items WHERE id = ${params.id}`;
+    return { ok: true, data: { shortId: existing.short_id, spaceId: existing.space_id } };
+  });
+  if (!result.ok) return result;
+  await publishSpaceEvent(
+    { type: "item.deleted", spaceId: result.data.spaceId, itemId: params.id },
+    { itemId: result.data.shortId },
+  );
   return { ok: true, data: undefined };
 };
 
@@ -1837,39 +1847,18 @@ export const move = async (params: {
     return { ok: false, error: "Invalid rank", status: 400 };
   }
 
-  const [existing] = await sql<
-    {
-      id: string;
-      space_id: string;
-      column_id: string;
-      rank: string;
-      completed_at: Date | null;
-    }[]
-  >`
-    SELECT id, space_id, column_id, rank::text AS rank, completed_at
-    FROM spaces.items
-    WHERE id = ${id}
-  `;
-
-  if (!existing) {
-    return { ok: false, error: "Item not found", status: 404 };
-  }
-
-  // Verify column belongs to same space
-  const [column] = await sql<{ id: string; space_id: string }[]>`
-    SELECT id, space_id FROM spaces.columns WHERE id = ${columnId}
-  `;
-
-  if (!column || column.space_id !== existing.space_id) {
-    return { ok: false, error: "Column not found in space", status: 400 };
-  }
-
   const completedAt = typeof params.completed === "boolean" ? (params.completed ? new Date() : null) : undefined;
-
-  // Move the item (and optionally align completion state atomically in the same update).
-  const [row] =
-    completedAt === undefined
-      ? await sql<{ id: string }[]>`
+  const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
+    const [existing] = await tx<{ id: string; space_id: string; title: string }[]>`
+      SELECT id, space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
+    `;
+    if (!existing) return { ok: false, error: "Item not found", status: 404 };
+    const [column] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.columns WHERE id = ${columnId}`;
+    if (!column || column.space_id !== existing.space_id) {
+      return { ok: false, error: "Column not found in space", status: 400 };
+    }
+    const [row] = completedAt === undefined
+      ? await tx<{ id: string }[]>`
           UPDATE spaces.items
           SET column_id = ${columnId},
               rank = ${rank.toDb(targetRank)}::bigint,
@@ -1877,7 +1866,7 @@ export const move = async (params: {
           WHERE id = ${id}
           RETURNING id
         `
-      : await sql<{ id: string }[]>`
+      : await tx<{ id: string }[]>`
           UPDATE spaces.items
           SET column_id = ${columnId},
               rank = ${rank.toDb(targetRank)}::bigint,
@@ -1886,25 +1875,28 @@ export const move = async (params: {
           WHERE id = ${id}
           RETURNING id
         `;
+    if (!row) return { ok: false, error: "Failed to move item", status: 500 };
+    await activity.record(
+      {
+        spaceId: existing.space_id,
+        itemId: id,
+        actor: params.actor ?? systemActor,
+        action: "item.moved",
+        metadata: { itemTitle: existing.title },
+        bucketStartedAt: hourBucket(),
+      },
+      tx,
+    );
+    return { ok: true, data: row };
+  });
+  if (!result.ok) return result;
 
-  if (!row) {
-    return { ok: false, error: "Failed to move item", status: 500 };
-  }
-
-  const item = await get({ id: row.id });
+  const item = await get({ id: result.data.id });
   if (!item) {
     return { ok: false, error: "Failed to load moved item", status: 500 };
   }
 
   await publishSpaceEvent({ type: "item.moved", spaceId: item.spaceId, itemId: item.id });
-  await activity.record({
-    spaceId: item.spaceId,
-    itemId: item.id,
-    actor: params.actor ?? systemActor,
-    action: "item.moved",
-    metadata: { itemTitle: item.title },
-    bucketStartedAt: hourBucket(),
-  });
   return { ok: true, data: item };
 };
 
@@ -1919,12 +1911,16 @@ export const setCompleted = async (params: {
   const { id, completed } = params;
   const completedAt = completed ? new Date() : null;
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
-    const [current] = await tx<{ id: string; space_id: string }[]>`
-      SELECT id, space_id FROM spaces.items WHERE id = ${id}::uuid
+    const [located] = await tx<{ space_id: string }[]>`
+      SELECT space_id FROM spaces.items WHERE id = ${id}::uuid
+    `;
+    if (!located) return { ok: false, error: "Item not found", status: 404 };
+
+    await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${located.space_id}))`;
+    const [current] = await tx<{ id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null }[]>`
+      SELECT id, space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${id}::uuid FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
-
-    await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${current.space_id}))`;
     if (completed) {
       const [blockers] = await tx<{ count: number }[]>`
         SELECT COUNT(*)::int AS count
@@ -1976,7 +1972,19 @@ export const setCompleted = async (params: {
       WHERE item.id = ${id}::uuid
       RETURNING item.id
     `;
-    return row ? { ok: true, data: row } : { ok: false, error: "Item not found", status: 404 };
+    if (!row) return { ok: false, error: "Item not found", status: 404 };
+    const activityKind = current.starts_at && current.ends_at ? "event" : "task";
+    await activity.record(
+      {
+        spaceId: current.space_id,
+        itemId: id,
+        actor: params.actor ?? systemActor,
+        action: `${activityKind}.${completed ? "completed" : "reopened"}`,
+        metadata: { itemTitle: current.title },
+      },
+      tx,
+    );
+    return { ok: true, data: row };
   });
   if (!result.ok) return result;
 
@@ -1986,14 +1994,6 @@ export const setCompleted = async (params: {
   }
 
   await publishSpaceEvent({ type: "item.completed", spaceId: item.spaceId, itemId: item.id });
-  const activityKind = item.startsAt && item.endsAt ? "event" : "task";
-  await activity.record({
-    spaceId: item.spaceId,
-    itemId: item.id,
-    actor: params.actor ?? systemActor,
-    action: `${activityKind}.${completed ? "completed" : "reopened"}`,
-    metadata: { itemTitle: item.title },
-  });
   return { ok: true, data: item };
 };
 
@@ -2016,16 +2016,27 @@ export const setAssignees = async (params: {
   const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, userIds);
   if (!assigneeCheck.ok) return assigneeCheck;
 
-  await sql.begin((tx) => replaceItemAssignees(tx, id, userIds));
+  const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
+    const [current] = await tx<{ space_id: string; title: string }[]>`
+      SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
+    `;
+    if (!current) return { ok: false, error: "Item not found", status: 404 };
+    await replaceItemAssignees(tx, id, userIds);
+    await activity.record(
+      {
+        spaceId: current.space_id,
+        itemId: id,
+        actor: params.actor ?? systemActor,
+        action: "item.assignees.updated",
+        metadata: { itemTitle: current.title },
+      },
+      tx,
+    );
+    return { ok: true, data: undefined };
+  });
+  if (!result.ok) return result;
 
   await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
-  await activity.record({
-    spaceId: existing.spaceId,
-    itemId: existing.id,
-    actor: params.actor ?? systemActor,
-    action: "item.assignees.updated",
-    metadata: { itemTitle: existing.title },
-  });
   return { ok: true, data: undefined };
 };
 
@@ -2043,16 +2054,27 @@ export const setTags = async (params: { id: string; tagIds: string[]; actor?: Sp
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, tagIds);
   if (!tagCheck.ok) return tagCheck;
 
-  await sql.begin((tx) => replaceItemTags(tx, id, tagIds));
+  const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
+    const [current] = await tx<{ space_id: string; title: string }[]>`
+      SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
+    `;
+    if (!current) return { ok: false, error: "Item not found", status: 404 };
+    await replaceItemTags(tx, id, tagIds);
+    await activity.record(
+      {
+        spaceId: current.space_id,
+        itemId: id,
+        actor: params.actor ?? systemActor,
+        action: "item.tags.updated",
+        metadata: { itemTitle: current.title },
+      },
+      tx,
+    );
+    return { ok: true, data: undefined };
+  });
+  if (!result.ok) return result;
 
   await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
-  await activity.record({
-    spaceId: existing.spaceId,
-    itemId: existing.id,
-    actor: params.actor ?? systemActor,
-    action: "item.tags.updated",
-    metadata: { itemTitle: existing.title },
-  });
   return { ok: true, data: undefined };
 };
 

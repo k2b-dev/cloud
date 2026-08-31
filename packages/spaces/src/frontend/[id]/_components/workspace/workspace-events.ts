@@ -19,6 +19,7 @@ export type SpacesDataDomain = "view" | "detail" | "wormholes";
 export type SpacesDataInvalidation = {
   domains: SpacesDataDomain[];
   cursor: string | null;
+  itemId: string | null;
   cover: (promise: Promise<void>) => void;
 };
 
@@ -50,11 +51,19 @@ export const publishSpacesDetailState = (detail: SpacesDetailState) => {
   window.dispatchEvent(new CustomEvent<SpacesDetailState>(SPACES_DETAIL_STATE_EVENT, { detail }));
 };
 
-export const invalidateSpacesData = (domains: SpacesDataDomain[] = ["view", "detail"], cursor: string | null = null) => {
+export const shouldInvalidateSpacesDetail = (selectedItemId: string | null, invalidatedItemId: string | null) =>
+  invalidatedItemId === null || selectedItemId === invalidatedItemId;
+
+export const invalidateSpacesData = (
+  domains: SpacesDataDomain[] = ["view", "detail"],
+  cursor: string | null = null,
+  itemId: string | null = null,
+) => {
   const coverage: Promise<void>[] = [];
   const detail: SpacesDataInvalidation = {
     domains,
     cursor,
+    itemId,
     cover: (promise) => coverage.push(promise),
   };
   window.dispatchEvent(new CustomEvent<SpacesDataInvalidation>(SPACES_DATA_INVALIDATED_EVENT, { detail }));
@@ -62,18 +71,18 @@ export const invalidateSpacesData = (domains: SpacesDataDomain[] = ["view", "det
 };
 
 export const createSpacesLiveCursorQueue = (options: {
-  invalidate: (domains: SpacesDataDomain[], cursor: string | null) => Promise<void>;
+  invalidate: (domains: SpacesDataDomain[], cursor: string | null, itemId: string | null) => Promise<void>;
   markApplied: (cursor: string | null) => void;
   onFailure: (error: Error) => void;
 }) => {
   let queue = Promise.resolve();
   let failed = false;
 
-  return (domains: SpacesDataDomain[], cursor: string | null) => {
+  return (domains: SpacesDataDomain[], cursor: string | null, itemId: string | null = null) => {
     queue = queue
       .then(async () => {
         if (failed) return;
-        await options.invalidate(domains, cursor);
+        await options.invalidate(domains, cursor, itemId);
         if (!failed) options.markApplied(cursor);
       })
       .catch((error) => {
@@ -87,12 +96,12 @@ export const createSpacesLiveCursorQueue = (options: {
 
 export const subscribeToSpacesDataInvalidation = (
   domains: SpacesDataDomain[],
-  invalidate: (invalidation: { cursor: string | null }) => Promise<void>,
+  invalidate: (invalidation: { cursor: string | null; itemId: string | null }) => Promise<void>,
 ) => {
   const onInvalidated = (event: Event) => {
     const detail = (event as CustomEvent<SpacesDataInvalidation>).detail;
     if (!detail || !domains.some((domain) => detail.domains.includes(domain))) return;
-    detail.cover(invalidate({ cursor: detail.cursor }));
+    detail.cover(invalidate({ cursor: detail.cursor, itemId: detail.itemId }));
   };
   window.addEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);
   return () => window.removeEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);

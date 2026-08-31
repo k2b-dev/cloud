@@ -3,6 +3,7 @@ import { toPgTextArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { create as createComment, list, remove as removeComment, update as updateComment } from "./comments";
+import { latestSpaceEventCursor, liveSpaceEvents } from "./events";
 import { create, splitRecurring, update } from "./items";
 
 const canUseDatabase = async () => {
@@ -43,9 +44,20 @@ suite("Spaces comment pagination", () => {
         VALUES (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Review policy', 1024)
         RETURNING id
       `;
+      const eventAbort = new AbortController();
+      const cursor = (await latestSpaceEventCursor(space!.id)) ?? "0-0";
+      const nextEvent = liveSpaceEvents({ spaceId: space!.id, after: cursor, signal: eventAbort.signal })[Symbol.asyncIterator]().next();
       const created = await createComment({ itemId: item!.id, userId: user!.id, content: "Initial context" });
       expect(created).toMatchObject({ ok: true, data: { canEdit: true, canDelete: true } });
       if (!created.ok) return;
+      const live = await Promise.race([
+        nextEvent,
+        Bun.sleep(2_000).then(() => {
+          throw new Error("Timed out waiting for comment live event");
+        }),
+      ]);
+      eventAbort.abort();
+      expect(live.value?.data.public).toMatchObject({ type: "item.updated", itemId: expect.any(String) });
 
       const otherView = await list({ itemId: item!.id, viewerUserId: otherUser!.id });
       expect(otherView.items[0]).toMatchObject({ canEdit: false, canDelete: false });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isDetailOnlySpacesNavigation, resolveCalendarNavigationHref } from "./workspace-events";
+import { isDetailOnlySpacesNavigation, resolveCalendarNavigationHref, shouldInvalidateSpacesDetail } from "./workspace-events";
 import { parseSpacesWorkspaceHref } from "./workspace-types";
 
 const ORIGIN = "https://cloud.example";
@@ -38,6 +38,18 @@ describe("Spaces workspace route parsing", () => {
   test("rejects malformed identifiers and unsupported nested routes", () => {
     expect(parseSpacesWorkspaceHref("/app/spaces/not-a-short-id")).toBeNull();
     expect(parseSpacesWorkspaceHref("/app/spaces/Space1/unknown")).toBeNull();
+  });
+});
+
+describe("Spaces detail live invalidation", () => {
+  test("refreshes only the selected item for item-scoped events", () => {
+    expect(shouldInvalidateSpacesDetail("Item01", "Item01")).toBe(true);
+    expect(shouldInvalidateSpacesDetail("Item01", "Item02")).toBe(false);
+  });
+
+  test("keeps full and local invalidations unscoped", () => {
+    expect(shouldInvalidateSpacesDetail("Item01", null)).toBe(true);
+    expect(shouldInvalidateSpacesDetail(null, null)).toBe(true);
   });
 });
 

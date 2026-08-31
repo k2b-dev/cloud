@@ -11,6 +11,7 @@ import {
   SPACES_DETAIL_NAVIGATION_EVENT,
   type SpacesDetailNavigation,
   subscribeToSpacesDataInvalidation,
+  shouldInvalidateSpacesDetail,
 } from "../workspace/workspace-events";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 import ItemDetailPanel from "./ItemDetailPanel";
@@ -123,7 +124,9 @@ export default function ItemDetailRoute(props: Props) {
     },
     subscribe: ({ invalidate }) =>
       subscribeToSpacesDataInvalidation(["detail"], (invalidation) =>
-        detailRequest(source()).itemId ? invalidate(invalidation) : Promise.resolve(),
+        shouldInvalidateSpacesDetail(detailRequest(source()).itemId, invalidation.itemId)
+          ? invalidate(invalidation)
+          : Promise.resolve(),
       ),
   });
 
@@ -230,7 +233,6 @@ export default function ItemDetailRoute(props: Props) {
       <div class="h-full min-h-0 flex-1">
         <Show
           when={detail()}
-          keyed
           fallback={
             detailQuery.error() ? (
               <Placeholder
@@ -252,21 +254,21 @@ export default function ItemDetailRoute(props: Props) {
         >
           {(current) => (
             <ItemDetailPanel
-              item={current.item}
+              item={current().item}
               columns={props.columns}
               tags={props.tags}
               wormholes={wormholesQuery.data() ?? props.wormholes}
               spaceId={props.spaceId}
               baseUrl={detailBaseHref(source())}
               currentUserId={props.currentUserId}
-              initialCommentsPage={current.comments}
-              commentTarget={current.commentTarget}
-              recurringContext={current.recurringContext}
-              references={current.references}
-              attachments={current.attachments}
-              checklist={current.checklist}
-              blockedBy={current.blockedBy}
-              blocks={current.blocks}
+              initialCommentsPage={current().comments}
+              commentTarget={current().commentTarget}
+              recurringContext={current().recurringContext}
+              references={current().references}
+              attachments={current().attachments}
+              checklist={current().checklist}
+              blockedBy={current().blockedBy}
+              blocks={current().blocks}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
               mailIntegrationAvailable={props.mailIntegrationAvailable}

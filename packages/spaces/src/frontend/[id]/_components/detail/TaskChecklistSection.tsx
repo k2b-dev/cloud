@@ -18,11 +18,15 @@ export default function TaskChecklistSection(props: Props) {
   const t = useSpaceMessages();
   const [entries, setEntries] = createSignal([...props.entries]);
   const [newLabel, setNewLabel] = createSignal("");
+  let currentItemId = props.itemId;
 
   createEffect(() => {
     const snapshot = { itemId: props.itemId, entries: props.entries };
     setEntries([...snapshot.entries]);
-    setNewLabel("");
+    if (snapshot.itemId !== currentItemId) {
+      currentItemId = snapshot.itemId;
+      setNewLabel("");
+    }
   });
 
   const createEntry = mutations.create<SpaceTaskChecklistEntry, string>({

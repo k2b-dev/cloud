@@ -144,7 +144,6 @@ export default function ItemDetailPanel(props: Props) {
   const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
   const [selectedPriorityValue, setSelectedPriorityValue] = createSignal<string | null>(props.item.priority);
   const [selectedTagIds, setSelectedTagIds] = createSignal(props.item.tags?.map((tag) => tag.id) ?? []);
-  let selectedItemId = props.item.id;
 
   const unlinkReference = mutations.create<void, { type: string; id: string }>({
     mutation: async (ref, { abortSignal }) => {
@@ -234,8 +233,6 @@ export default function ItemDetailPanel(props: Props) {
   };
 
   createEffect(() => {
-    if (props.item.id === selectedItemId) return;
-    selectedItemId = props.item.id;
     setSelectedPriorityValue(props.item.priority);
     setSelectedTagIds(props.item.tags?.map((tag) => tag.id) ?? []);
   });
