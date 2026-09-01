@@ -8,6 +8,7 @@
 import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@valentinkolb/cloud/api";
 import { aiLiveRoutes } from "@valentinkolb/cloud/ai/live";
 import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { createIdentityPublicRoutes } from "@valentinkolb/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { app } from "./config";
@@ -28,12 +29,14 @@ const aiNotifications = createAiNotificationService(app.notifications);
 const { api } = createCoreApiRouter({ notifications: notificationSender });
 const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
+const identityPublicRoutes = createIdentityPublicRoutes();
 
 const coreApi = new Hono().route("/ai", aiChatTaskRoutes).route("/", api);
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
+  .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/me/notifications/ws", notificationWebSocketRoutes)
   .route("/api/ai/live", aiLiveRoutes)

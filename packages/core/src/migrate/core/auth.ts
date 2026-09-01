@@ -57,7 +57,132 @@ export const migrate = async (): Promise<void> => {
     ON auth.users(mail)
     WHERE mail IS NOT NULL
   `.simple();
+  await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS auth_epoch BIGINT NOT NULL DEFAULT 0`.simple();
+  await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS legacy_session_generation BIGINT NOT NULL DEFAULT 0`.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'users_auth_epoch_nonnegative_check'
+          AND conrelid = 'auth.users'::regclass
+      ) THEN
+        ALTER TABLE auth.users
+          ADD CONSTRAINT users_auth_epoch_nonnegative_check
+          CHECK (auth_epoch >= 0) NOT VALID;
+      END IF;
+    END $$;
+  `.simple();
+  await sql`ALTER TABLE auth.users VALIDATE CONSTRAINT users_auth_epoch_nonnegative_check`.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'users_legacy_session_generation_nonnegative_check'
+          AND conrelid = 'auth.users'::regclass
+      ) THEN
+        ALTER TABLE auth.users
+          ADD CONSTRAINT users_legacy_session_generation_nonnegative_check
+          CHECK (legacy_session_generation >= 0) NOT VALID;
+      END IF;
+    END $$;
+  `.simple();
+  await sql`ALTER TABLE auth.users VALIDATE CONSTRAINT users_legacy_session_generation_nonnegative_check`.simple();
   console.log("  ✓ auth.users table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.signing_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      purpose TEXT NOT NULL,
+      state TEXT NOT NULL,
+      kid TEXT NOT NULL UNIQUE,
+      alg TEXT NOT NULL DEFAULT 'RS256',
+      public_jwk JSONB NOT NULL,
+      encrypted_private_jwk TEXT NOT NULL,
+      encryption_key_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      activate_at TIMESTAMPTZ NOT NULL,
+      activated_at TIMESTAMPTZ,
+      sign_until TIMESTAMPTZ NOT NULL,
+      retired_at TIMESTAMPTZ,
+      verify_until TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      revoke_reason TEXT,
+      CONSTRAINT signing_keys_purpose_check CHECK (purpose IN ('session', 'invocation', 'oauth')),
+      CONSTRAINT signing_keys_state_check CHECK (state IN ('pending', 'active', 'retired', 'revoked')),
+      CONSTRAINT signing_keys_alg_check CHECK (alg = 'RS256'),
+      CONSTRAINT signing_keys_kid_check CHECK (kid ~ '^[0-9a-f-]{36}$'),
+      CONSTRAINT signing_keys_public_jwk_size_check CHECK (octet_length(public_jwk::text) <= 16384),
+      CONSTRAINT signing_keys_private_jwk_size_check CHECK (octet_length(encrypted_private_jwk) <= 32768),
+      CONSTRAINT signing_keys_lifecycle_check CHECK (
+        sign_until >= activate_at
+        AND verify_until >= sign_until
+        AND (state <> 'active' OR activated_at IS NOT NULL)
+        AND (state <> 'retired' OR retired_at IS NOT NULL)
+        AND (state <> 'revoked' OR revoked_at IS NOT NULL)
+      )
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_signing_keys_one_pending_per_purpose
+    ON auth.signing_keys(purpose)
+    WHERE state = 'pending'
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_signing_keys_one_active_per_purpose
+    ON auth.signing_keys(purpose)
+    WHERE state = 'active'
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_signing_keys_publishable
+    ON auth.signing_keys(purpose, state, verify_until)
+  `.simple();
+  console.log("  ✓ auth.signing_keys table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.session_families (
+      sid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      auth_epoch BIGINT NOT NULL,
+      signing_kid TEXT NOT NULL REFERENCES auth.signing_keys(kid) ON DELETE RESTRICT,
+      issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      revocation_reason TEXT,
+      created_request_id TEXT,
+      created_user_agent TEXT,
+      revoked_request_id TEXT,
+      CONSTRAINT session_families_auth_epoch_nonnegative_check CHECK (auth_epoch >= 0),
+      CONSTRAINT session_families_expiry_check CHECK (expires_at > issued_at),
+      CONSTRAINT session_families_revocation_check CHECK (
+        (revoked_at IS NULL AND revocation_reason IS NULL)
+        OR revoked_at IS NOT NULL
+      ),
+      CONSTRAINT session_families_request_id_size_check CHECK (
+        (created_request_id IS NULL OR octet_length(created_request_id) <= 256)
+        AND (revoked_request_id IS NULL OR octet_length(revoked_request_id) <= 256)
+      ),
+      CONSTRAINT session_families_user_agent_size_check CHECK (
+        created_user_agent IS NULL OR octet_length(created_user_agent) <= 1024
+      )
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_session_families_active_sid_user_expiry
+    ON auth.session_families(sid, user_id, expires_at)
+    WHERE revoked_at IS NULL
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_session_families_user_active
+    ON auth.session_families(user_id, expires_at DESC)
+    WHERE revoked_at IS NULL
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_session_families_signing_kid_expiry
+    ON auth.session_families(signing_kid, expires_at DESC)
+  `.simple();
+  console.log("  ✓ auth.session_families table");
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.user_ipa_data (

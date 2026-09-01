@@ -58,6 +58,7 @@ export const app = defineApp({
     "/api/admin/account-lifecycle",
     "/api/admin/core",
     "/api/openapi.json",
+    "/.well-known/cloud-identity-jwks.json",
     "/.well-known/oauth-protected-resource/api/mcp/v1",
     "/branding",
     "/_ssr",

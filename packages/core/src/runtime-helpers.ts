@@ -12,6 +12,10 @@ import {
   startNotificationRuntime,
   stopNotificationRuntime,
 } from "@valentinkolb/cloud/services";
+import {
+  initializeIdentityAuthority,
+  startIdentityKeyMaintenance,
+} from "@valentinkolb/cloud/services/identity";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
@@ -25,6 +29,7 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 
 let stopCloudAiRuntime: (() => void) | null = null;
+let stopIdentityMaintenance: (() => void) | null = null;
 
 /** Run all core database migrations (auth, notifications, settings, logging). */
 export const runCoreSetup = async (): Promise<void> => {
@@ -52,6 +57,8 @@ export const startCoreServices = async (
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
   try {
+    await initializeIdentityAuthority();
+    stopIdentityMaintenance = startIdentityKeyMaintenance();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -70,6 +77,8 @@ export const startCoreServices = async (
     await startNotificationRuntime();
     await lifecycleJobs.start({ notificationSender });
   } catch (error) {
+    stopIdentityMaintenance?.();
+    stopIdentityMaintenance = null;
     stopCloudAiRuntime?.();
     stopCloudAiRuntime = null;
     await Promise.allSettled([
@@ -87,6 +96,8 @@ export const startCoreServices = async (
 /** Stop core background services. */
 export const stopCoreServices = async (aiNotifications?: ReturnType<typeof createAiNotificationService>): Promise<void> => {
   try {
+    stopIdentityMaintenance?.();
+    stopIdentityMaintenance = null;
     await lifecycleJobs.stop();
   } finally {
     try {

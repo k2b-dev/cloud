@@ -15,6 +15,7 @@ x-env: &env
   DATABASE_URL: postgresql://ipa:ipa@ipa_postgres:5432/ipa
   REDIS_URL: redis://ipa_valkey:6379
   APP_SECRET: dev-secret-change-me-in-production
+  CLOUD_IDENTITY_DEV_JWKS_ORIGIN: http://app-core:3000
 
 x-app: &app
   build:
@@ -66,7 +67,12 @@ services:
   app-core:
     <<: *app
     container_name: app-core
-    environment: { <<: *env, APP_ID: core, ADMIN_LOGIN_TOKEN: dev-admin }
+    environment:
+      <<: *env
+      APP_ID: core
+      ADMIN_LOGIN_TOKEN: dev-admin
+      CLOUD_SESSION_ISSUANCE_MODE: jwt
+      CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
       - ./packages/cloud/scripts:/app/packages/cloud/scripts

@@ -1,7 +1,7 @@
 import type { TopicLiveEvent } from "@k2b/sync";
 import type { NotebookPresenceParticipant, User } from "@valentinkolb/cloud/contracts";
 import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -459,9 +459,7 @@ const ensureValidBase64 = (payload: string): boolean => payload.length > 0 && pa
 
 const resolveSessionUser = async (sessionToken: string | null): Promise<User | null> => {
   if (!sessionToken) return null;
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return null;
-  return accounts.users.get({ id: session.userId });
+  return (await auth.session.authenticate(sessionToken))?.user ?? null;
 };
 
 type ResolvedNote = NonNullable<Awaited<ReturnType<typeof notebooksService.note.get>>>;

@@ -1,6 +1,6 @@
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -102,9 +102,8 @@ const sameIds = (left: Set<string>, right: Set<string>): boolean => left.size ==
 
 const evaluateAccess = async (ctx: WsContext, scope: InternalLiveScope): Promise<AccessResult> => {
   if (!ctx.sessionToken) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
-  const session = await auth.session.getData(ctx.sessionToken);
-  if (!session) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
-  const user = await accounts.users.get({ id: session.userId });
+  const authenticated = await auth.session.authenticate(ctx.sessionToken);
+  const user = authenticated?.user;
   if (!user || !hasRole(user, "user")) return { ok: false, code: "access_denied", message: ctx.messages.accessDenied };
 
   const subject = { type: "user" as const, userId: user.id };
@@ -146,8 +145,8 @@ const refreshAllEventAccess = async (ctx: WsContext, event: ContactServiceEvent)
   const mayExpandScope = event.type === "book.created" || event.type === "access.changed";
   if (!mayExpandScope && !affectedBookIds.some((bookId) => ctx.readableBookIds.has(bookId))) return null;
   if (!ctx.sessionToken || !ctx.userId) return null;
-  const session = await auth.session.getData(ctx.sessionToken);
-  if (!session || session.userId !== ctx.userId) {
+  const authenticated = await auth.session.authenticate(ctx.sessionToken);
+  if (!authenticated || authenticated.user.id !== ctx.userId) {
     revoke(ctx, { ok: false, code: "login_required", message: ctx.messages.loginRequired });
     return null;
   }

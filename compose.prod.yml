@@ -46,6 +46,13 @@ services:
   app-core:
     <<: *app-defaults
     image: ghcr.io/valentinkolb/cloud-core:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      APP_ID: core
+      CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: ${CLOUD_IDENTITY_KEY_ENCRYPTION_KEY:?CLOUD_IDENTITY_KEY_ENCRYPTION_KEY is required}
+      CLOUD_IDENTITY_NEXT_KEY: ${CLOUD_IDENTITY_NEXT_KEY:-}
+      CLOUD_IDENTITY_PREVIOUS_KEY: ${CLOUD_IDENTITY_PREVIOUS_KEY:-}
+      CLOUD_SESSION_ISSUANCE_MODE: ${CLOUD_SESSION_ISSUANCE_MODE:-legacy}
 
   app-accounts:
     <<: *app-defaults

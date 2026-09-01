@@ -1,7 +1,7 @@
 import type { Result } from "@k2b/stdlib";
 import type { PermissionLevel } from "@valentinkolb/cloud/server";
 import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -50,10 +50,9 @@ export type MailLiveAccessDependencies = {
 
 const resolveCurrentContext = async (sessionToken: string | null, requestId: string | null): Promise<MailRequestContext | null> => {
   if (!sessionToken) return null;
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return null;
-  const user = await accounts.users.get({ id: session.userId });
-  if (!user) return null;
+  const authenticated = await auth.session.authenticate(sessionToken);
+  if (!authenticated) return null;
+  const { user } = authenticated;
   return {
     actor: { kind: "user", user },
     accessSubject: { type: "user", userId: user.id },

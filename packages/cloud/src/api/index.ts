@@ -23,6 +23,7 @@ import accountsEntitiesRoutes from "./accounts-entities";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminCoreSettingsRoutes from "./admin-core-settings";
+import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { appDiscoveryRoutes } from "./apps";
@@ -59,6 +60,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/ai-skills", adminAiSkillsRoutes)
     .route("/admin/core/announcements", adminAnnouncementRoutes)
     .route("/admin/core/settings", adminCoreSettingsRoutes)
+    .route("/admin/identity", adminIdentityRoutes)
     .route("/admin/lifecycle", adminLifecycleRoutes)
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
     .route("/ai/projects", aiProjectsRoutes)

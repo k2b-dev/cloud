@@ -63,6 +63,10 @@ export const resolveAiLiveSessionUser = async (
   } = {},
 ): Promise<LiveUser | null> => {
   if (!sessionToken) return null;
+  if (!dependencies.getSession && !dependencies.getUser && !dependencies.revokeAllForUser) {
+    const authenticated = await auth.session.authenticate(sessionToken);
+    return authenticated ? { id: authenticated.user.id } : null;
+  }
   const session = await (dependencies.getSession ?? auth.session.getData)(sessionToken);
   if (!session) return null;
   const user = await (dependencies.getUser ?? accounts.users.get)({ id: session.userId });

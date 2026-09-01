@@ -1,6 +1,6 @@
 import type { User } from "@valentinkolb/cloud/contracts";
 import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -229,9 +229,7 @@ const revokeAccess = (
 
 const resolveSessionUser = async (sessionToken: string | null): Promise<User | null> => {
   if (!sessionToken) return null;
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return null;
-  return accounts.users.get({ id: session.userId });
+  return (await auth.session.authenticate(sessionToken))?.user ?? null;
 };
 
 const evaluateTableAccess = async (tableId: string, sessionToken: string | null, locale: string): Promise<AccessResult> => {

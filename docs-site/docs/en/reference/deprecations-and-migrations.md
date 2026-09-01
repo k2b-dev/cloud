@@ -5,10 +5,30 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-07-27
+updated: 2026-09-01
 ---
 
 # Deprecations and migrations
+
+## Browser sessions move from Valkey to JWT families
+
+The release initially keeps `CLOUD_SESSION_ISSUANCE_MODE=legacy`. Deploy that
+dual-read release to every application first. Then change only Core to
+`CLOUD_SESSION_ISSUANCE_MODE=jwt`; new logins use signed
+`cloud-session+jwt` credentials backed by PostgreSQL session families.
+Existing opaque `userId:random` credentials remain readable from Valkey until
+their configured original expiry, so the rollout does not log users out.
+
+During this compatibility window, revoke-all updates both the PostgreSQL
+`auth_epoch` and the legacy Valkey generation. Individual logout revokes the
+JWT family or deletes the opaque session as appropriate. Operators should use
+the bounded `legacy_session_use` process metric and the durable sampled
+`Legacy session compatibility path used` log to establish a zero-use grace
+period before removing the legacy reader in a later release.
+
+Applications do not need to change cookie or Bearer handling. Code that parsed
+the old opaque value was never a supported contract and must switch to the
+request `actor` and `accessSubject`.
 
 ## Conversation files use one namespace
 

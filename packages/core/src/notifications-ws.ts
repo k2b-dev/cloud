@@ -4,7 +4,7 @@ import {
   type NotificationLiveServerMessage,
 } from "@valentinkolb/cloud/contracts";
 import { auth, getLocale } from "@valentinkolb/cloud/server";
-import { accounts, logger, notifications } from "@valentinkolb/cloud/services";
+import { logger, notifications } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -73,10 +73,7 @@ const revoke = (ctx: WsContext, code = "login_required", message = ctx.messages.
 
 const resolveUserId = async (sessionToken: string | null): Promise<string | null> => {
   if (!sessionToken) return null;
-  const session = await auth.session.getData(sessionToken);
-  if (!session) return null;
-  const user = await accounts.users.get({ id: session.userId });
-  return user?.id ?? null;
+  return (await auth.session.authenticate(sessionToken))?.user.id ?? null;
 };
 
 const startAccessRefresh = (ctx: WsContext, userId: string) => {

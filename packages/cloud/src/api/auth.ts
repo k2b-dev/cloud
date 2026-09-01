@@ -60,7 +60,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
           return c.json({ message: loginResult.message }, loginResult.status);
         }
 
-        // Store minimal session in Redis
+        // Issue through the configured migration gate (legacy opaque or JWT family).
         const sessionToken = await auth.session.create(c, loginResult.userId);
 
         log.info("Login successful", { uid: loginResult.user.uid });
@@ -115,7 +115,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Logout",
         description:
-          "Idempotent: clears the session cookie and deletes the session key if present. No authentication required — logout must always succeed.",
+          "Idempotent: clears the session cookie and revokes the current credential if present. No authentication required — logout must always succeed.",
         responses: {
           200: jsonResponse(MessageResponseSchema, "Session invalidated"),
         },

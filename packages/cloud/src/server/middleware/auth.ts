@@ -2,7 +2,6 @@ import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { MessageResponse, Role, RoleOrSpecial, User, UserProfile, UserProvider } from "../../contracts/shared";
 import { isAccountExpired } from "../../services/account-model";
-import { accounts } from "../../services/accounts";
 import { oauthTokens } from "../../services/oauth-tokens";
 import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import type { ServiceAccount } from "../../services/service-accounts";
@@ -82,21 +81,21 @@ const handleReject = (c: Context, options: RoleOptions, reason: "unauthenticated
   return c.json({ message: "Insufficient permissions" } as MessageResponse, 403);
 };
 
-const loadAuthenticatedActor = async (
-  c: Context<AuthContext>,
-  options: Pick<RoleOptions, "oauthAudience"> = {},
-): Promise<{
+type AuthenticatedActorResult = {
   token: string | null;
   user: User | null;
   actor: RequestActor | null;
-}> => {
+};
+
+const actorResolutionByRequest = new WeakMap<Context, Promise<AuthenticatedActorResult>>();
+
+const loadAuthenticatedActorUncached = async (
+  c: Context<AuthContext>,
+  options: Pick<RoleOptions, "oauthAudience"> = {},
+): Promise<AuthenticatedActorResult> => {
   const token = session.getToken(c);
-  const data = token ? await session.getData(token) : null;
-  let user = data ? await accounts.users.get({ id: data.userId }) : null;
-  if (user && isAccountExpired(user.accountExpires)) {
-    await session.revokeAllForUser(user.id);
-    user = null;
-  }
+  const authenticatedSession = token ? await session.authenticateRequest(c, token) : null;
+  const user = authenticatedSession?.user ?? null;
 
   if (user && token) {
     c.set("actor", { kind: "user", user });
@@ -171,6 +170,18 @@ const loadAuthenticatedActor = async (
   }
 
   return { token: null, user: null, actor: null };
+};
+
+const loadAuthenticatedActor = (
+  c: Context<AuthContext>,
+  options: Pick<RoleOptions, "oauthAudience"> = {},
+): Promise<AuthenticatedActorResult> => {
+  if (options.oauthAudience) return loadAuthenticatedActorUncached(c, options);
+  const existing = actorResolutionByRequest.get(c);
+  if (existing) return existing;
+  const pending = loadAuthenticatedActorUncached(c, options);
+  actorResolutionByRequest.set(c, pending);
+  return pending;
 };
 
 /**

@@ -419,15 +419,11 @@ const app = new Hono<AuthContext>()
         return c.redirect(buildLoginRedirect());
       }
 
-      const sessionData = await auth.session.getData(token);
-      if (!sessionData) {
+      const authenticatedSession = await auth.session.authenticate(token);
+      if (!authenticatedSession) {
         return c.redirect(buildLoginRedirect());
       }
-
-      const user = await accounts.users.get({ id: sessionData.userId });
-      if (!user || isAccountExpired(user.accountExpires)) {
-        return c.redirect(buildLoginRedirect());
-      }
+      const { user } = authenticatedSession;
 
       if (!(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))) {
         return redirectAuthorizationError(c, redirect_uri, issuer, state, "access_denied", "You do not have access to this application");

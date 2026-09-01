@@ -1,5 +1,5 @@
 import { auth, getLocale, hasPermission } from "@valentinkolb/cloud/server";
-import { accounts, logger } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
@@ -89,9 +89,7 @@ const revoke = (ctx: WsContext, spaceShortId: string, access: Exclude<AccessResu
 
 const evaluateAccess = async (ctx: WsContext, spaceId: string): Promise<AccessResult> => {
   if (!ctx.sessionToken) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
-  const session = await auth.session.getData(ctx.sessionToken);
-  if (!session) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
-  const user = await accounts.users.get({ id: session.userId });
+  const user = (await auth.session.authenticate(ctx.sessionToken))?.user;
   if (!user) return { ok: false, code: "login_required", message: ctx.messages.loginRequired };
 
   const space = await spacesService.space.get({ id: spaceId });

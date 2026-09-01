@@ -88,10 +88,10 @@ const resolveIdentifier = async (c: Context<AuthContext>, keyBy: RateLimitConfig
   const token = auth.session.getToken(c);
   if (!token) return `ip:${getClientIp(c)}`;
 
-  const data = await auth.session.getData(token);
-  if (!data) return `ip:${getClientIp(c)}`;
+  const userId = await auth.session.getRequestSubject(c, token);
+  if (!userId) return `ip:${getClientIp(c)}`;
 
-  return `user:${data.userId}`;
+  return `user:${userId}`;
 };
 
 /**

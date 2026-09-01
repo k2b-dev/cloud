@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-08-07
+updated: 2026-09-01
 ---
 
 # Request identity
@@ -32,13 +32,11 @@ order.
 
 ## Accepted credentials
 
-Cloud resolves credentials in this order:
-
-1. `session_token` cookie;
-2. a `cld_<prefix>_<secret>` API key in `Authorization: Bearer`;
-3. any other bearer token as an OAuth access token.
-
-The first valid credential becomes the request actor.
+An explicit `Authorization: Bearer` credential takes precedence over the
+browser cookie. A `cld_<prefix>_<secret>` bearer is resolved as an API key. Any
+other bearer is checked first as a session credential and then as an OAuth
+access token. Without a bearer, Cloud uses the `session_token` cookie. An
+invalid explicit bearer does not silently fall back to the cookie.
 
 | Credential | Typical caller | Actor |
 | --- | --- | --- |
@@ -133,7 +131,12 @@ for the response behavior.
 
 ## Browser sessions
 
-Cloud creates and removes browser sessions. The cookie is:
+Core creates a short, signed JWT and stores it in the existing
+`session_token` cookie. The JWT contains only identity and lifecycle claims:
+`iss`, `aud=cloud`, `token_use=session`, `sub`, `sid`, `auth_epoch`, `iat`, and
+`exp`. It does not contain roles, groups, grants, profile data, or other PII.
+
+The cookie remains:
 
 - HTTP-only;
 - `SameSite=Lax`;
@@ -143,8 +146,25 @@ Cloud creates and removes browser sessions. The cookie is:
 Signing out removes the current session. Revoking all sessions for a user
 invalidates every older session.
 
+An application verifies the JWT signature from Core's public JWKS, then makes
+one PostgreSQL query that resolves the live session family, user, account
+expiry, epoch, roles, groups, and managed groups. Revoking a family or changing
+the user's authentication epoch therefore takes effect without waiting for the
+JWT to expire. Normal authenticated requests do not read a session or
+generation from Valkey.
+
+During the migration window, Cloud also accepts existing opaque
+`userId:random` sessions from Valkey until their original expiry. Operators
+first deploy JWT verification everywhere, then set
+`CLOUD_SESSION_ISSUANCE_MODE=jwt` on Core so new logins receive JWT sessions.
+This avoids a forced login wave and keeps mixed-version deployments safe.
+
 An application should not read the cookie value or use `sessionToken` as a
 domain identifier.
+
+The browser session JWT is not a delegation credential. Background work and
+application-to-application calls use operation-bound invocation credentials;
+they must not persist or replay a browser cookie.
 
 ## Bearer authentication
 

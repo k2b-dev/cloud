@@ -117,6 +117,11 @@ Give it:
 - the deployment-wide `APP_SECRET`;
 - application-specific bootstrap values when needed.
 
+Core additionally requires the Core-only
+`CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Do not add that variable to the shared
+application environment. All other applications obtain public verification
+keys from Core and keep no shared signing secret.
+
 Do not expose the application directly. The gateway discovers its registered
 prefixes and proxies public traffic.
 
@@ -150,9 +155,13 @@ After deployment:
 3. inspect skipped or duplicate route warnings;
 4. request one route through the gateway;
 5. verify migrations and background workers;
-6. confirm the app reports its expected release and Sync version in Admin → Apps;
-7. for a platform release, run `bun run prod:preflight` again;
-8. stop one application instance and confirm registry cleanup.
+6. verify Core identity key readiness and the internal JWKS response;
+7. confirm the app reports its expected release and Sync version in Admin → Apps;
+8. for a platform release, run `bun run prod:preflight` again;
+9. stop one application instance and confirm registry cleanup.
+
+See [Identity key operations](/en/docs/operations/identity-key-operations) for
+normal signing-key rotation, KEK rewrap, and emergency revocation.
 
 See [Runtime configuration](/en/docs/operations/runtime-configuration) before
 setting container values.
