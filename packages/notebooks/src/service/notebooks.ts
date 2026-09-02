@@ -4,6 +4,7 @@ import { deleteAccess, hasPermission, type PermissionLevel } from "@valentinkolb
 import { get as settingsGet, logger, serviceAccounts } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
+import { isPresentationMode, type PresentationMode } from "../lib/presentation-mode";
 import { generateUniqueShortId } from "../lib/short-id";
 import {
   buildNotebookVisibleAccessCondition,
@@ -34,6 +35,7 @@ export type Notebook = {
    *  Only notebook admins can flip this; the editor consults this flag
    *  before evaluating any `\`\`\`script` blocks. */
   scriptsEnabled: boolean;
+  defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
   createdAt: string;
@@ -52,6 +54,7 @@ export type UpdateNotebook = {
   icon?: string | null;
   homepageNoteId?: string | null;
   scriptsEnabled?: boolean;
+  defaultPresentationMode?: PresentationMode;
   defaultNoteTitleTemplate?: string;
 };
 
@@ -64,6 +67,7 @@ type DbNotebook = {
   homepage_note_id: string | null;
   homepage_note_short_id: string | null;
   scripts_enabled: boolean;
+  default_presentation_mode: PresentationMode;
   default_note_title_template: string;
   created_by: string | null;
   created_at: Date;
@@ -104,6 +108,7 @@ const mapToNotebook = (row: DbNotebook): Notebook => ({
   homepageNoteId: row.homepage_note_id,
   homepageNoteShortId: row.homepage_note_short_id,
   scriptsEnabled: row.scripts_enabled,
+  defaultPresentationMode: row.default_presentation_mode,
   defaultNoteTitleTemplate: row.default_note_title_template,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
@@ -212,6 +217,7 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             n.homepage_note_id,
             h.short_id AS homepage_note_short_id,
             n.scripts_enabled,
+            n.default_presentation_mode,
             n.default_note_title_template,
             n.created_by,
             n.created_at,
@@ -244,6 +250,7 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             n.homepage_note_id,
             h.short_id AS homepage_note_short_id,
             n.scripts_enabled,
+            n.default_presentation_mode,
             n.default_note_title_template,
             n.created_by,
             n.created_at,
@@ -322,6 +329,7 @@ export const listAdmin = async (params: {
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
       n.scripts_enabled,
+      n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
       n.created_at,
@@ -335,7 +343,7 @@ export const listAdmin = async (params: {
       OR LOWER(n.name) LIKE ${pattern}
     )
     GROUP BY n.id, n.short_id, n.name, n.description, n.icon, n.homepage_note_id, h.short_id, n.scripts_enabled,
-             n.default_note_title_template, n.created_by, n.created_at, n.updated_at
+             n.default_presentation_mode, n.default_note_title_template, n.created_by, n.created_at, n.updated_at
     ORDER BY LOWER(n.name) ASC, n.created_at ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
@@ -406,6 +414,7 @@ export const get = async (params: { id: string }): Promise<Notebook | null> => {
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
       n.scripts_enabled,
+      n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
       n.created_at,
@@ -429,6 +438,7 @@ export const getByShortId = async (params: { shortId: string }): Promise<Noteboo
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
       n.scripts_enabled,
+      n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
       n.created_at,
@@ -465,6 +475,7 @@ export const create = async (params: {
       homepage_note_id,
       NULL::text AS homepage_note_short_id,
       scripts_enabled,
+      default_presentation_mode,
       default_note_title_template,
       created_by,
       created_at,
@@ -531,6 +542,10 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   const icon = data.icon === undefined ? existing.icon : data.icon;
   const homepageNoteId = data.homepageNoteId === undefined ? existing.homepageNoteId : data.homepageNoteId;
   const scriptsEnabled = data.scriptsEnabled ?? existing.scriptsEnabled;
+  const defaultPresentationMode = data.defaultPresentationMode ?? existing.defaultPresentationMode;
+  if (!isPresentationMode(defaultPresentationMode)) {
+    return { ok: false, error: "Invalid default presentation mode", status: 400 };
+  }
   const defaultNoteTitleTemplate = data.defaultNoteTitleTemplate ?? existing.defaultNoteTitleTemplate;
 
   const syntax = validateNoteTitleTemplate(defaultNoteTitleTemplate);
@@ -566,6 +581,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
         icon = ${icon},
         homepage_note_id = ${homepageNoteId}::uuid,
         scripts_enabled = ${scriptsEnabled},
+        default_presentation_mode = ${defaultPresentationMode},
         default_note_title_template = ${defaultNoteTitleTemplate},
         updated_at = now()
     WHERE id = ${id}::uuid
@@ -578,6 +594,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
       homepage_note_id,
       NULL::text AS homepage_note_short_id,
       scripts_enabled,
+      default_presentation_mode,
       default_note_title_template,
       created_by,
       created_at,

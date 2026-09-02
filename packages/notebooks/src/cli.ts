@@ -23,6 +23,7 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "./lib/note-edit";
+import type { PresentationMode } from "./lib/presentation-mode";
 
 type Notebook = {
   id: string;
@@ -31,6 +32,7 @@ type Notebook = {
   icon: string | null;
   homepageNoteId: string | null;
   scriptsEnabled: boolean;
+  defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
   createdAt: string;

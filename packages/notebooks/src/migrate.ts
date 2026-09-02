@@ -33,6 +33,11 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE notebooks.notebooks ADD COLUMN IF NOT EXISTS scripts_enabled BOOLEAN NOT NULL DEFAULT FALSE`.simple();
   await sql`
     ALTER TABLE notebooks.notebooks
+    ADD COLUMN IF NOT EXISTS default_presentation_mode TEXT NOT NULL DEFAULT 'write'
+      CHECK (default_presentation_mode IN ('book', 'write', 'readonly'))
+  `.simple();
+  await sql`
+    ALTER TABLE notebooks.notebooks
     ADD COLUMN IF NOT EXISTS default_note_title_template TEXT NOT NULL DEFAULT 'New Document'
   `.simple();
   console.log("  ✓ notebooks.notebooks table");

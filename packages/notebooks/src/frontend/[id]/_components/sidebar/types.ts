@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { NavigatorQuery } from "../../../../lib/navigator-url";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NotebookSettings } from "../settings/NotebookSettingsStore";
 
 /** Notebook metadata (matches backend NotebookSchema) */
@@ -11,6 +12,7 @@ export type Notebook = {
   homepageNoteId: string | null;
   /** Per-notebook opt-in for `\`\`\`script` block execution. */
   scriptsEnabled: boolean;
+  defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
   createdAt: string;

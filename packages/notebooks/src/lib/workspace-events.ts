@@ -1,3 +1,4 @@
+import type { PresentationMode } from "./presentation-mode";
 import { STREAM_CURSOR_PATTERN } from "./yjs";
 
 export const NOTEBOOKS_WORKSPACE_WS_TYPE = {
@@ -17,6 +18,7 @@ export type NotebookWorkspaceNotebook = {
   homepageNoteId: string | null;
   homepageNoteShortId: string | null;
   scriptsEnabled: boolean;
+  defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
   createdAt: string;

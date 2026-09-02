@@ -13,6 +13,7 @@ const notebook: Notebook = {
   homepageNoteId: null,
   homepageNoteShortId: null,
   scriptsEnabled: false,
+  defaultPresentationMode: "book",
   defaultNoteTitleTemplate: "New Document",
   createdBy: "22222222-2222-4222-8222-222222222222",
   createdAt: "2026-05-01T00:00:00.000Z",
@@ -95,7 +96,10 @@ describe("notebook export", () => {
     expect(details).toContain('parentId: "noteA1"');
 
     const notebookJson = String(files.find((file) => file.path === "notebook.json")?.content);
-    expect(JSON.parse(notebookJson)).toMatchObject({ version: 2, notebook: { id: "nb1234", homepageNoteId: null, name: "Tech Docs" } });
+    expect(JSON.parse(notebookJson)).toMatchObject({
+      version: 2,
+      notebook: { id: "nb1234", homepageNoteId: null, name: "Tech Docs", defaultPresentationMode: "book" },
+    });
     expect(notebookJson).not.toContain(notebook.id);
     expect(notebookJson).not.toContain('"shortId"');
 

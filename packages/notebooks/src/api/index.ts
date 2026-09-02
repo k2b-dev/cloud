@@ -37,6 +37,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { PRESENTATION_MODES } from "../lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
@@ -65,6 +66,7 @@ const NotebookSchema = z.object({
   homepageNoteId: ResourceShortIdSchema.nullable(),
   scriptsEnabled: z.boolean().describe("Per-notebook opt-in for `\`\`\`script` block execution"),
   defaultNoteTitleTemplate: z.string().describe("Liquid template used to initialize the H1 of new notes"),
+  defaultPresentationMode: z.enum(PRESENTATION_MODES).describe("Default view for notebook editors and admins; readers always use Book"),
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -85,6 +87,7 @@ const UpdateNotebookSchema = z.object({
   // for the role check. Schema-level it's just a boolean field.
   scriptsEnabled: z.boolean().optional(),
   defaultNoteTitleTemplate: z.string().min(1).max(2_000).optional(),
+  defaultPresentationMode: z.enum(PRESENTATION_MODES).optional(),
 });
 
 const NotebookApiKeySchema = ServiceAccountCredentialSchema.extend({
@@ -1077,7 +1080,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Update notebook",
-      description: "Update notebook name, description, or icon. Requires write permission.",
+      description:
+        "Update notebook settings. Requires write permission; scripting and the default presentation mode require admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NotebookSchema, "Updated notebook"),
@@ -1089,9 +1093,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const data = c.req.valid("json");
 
-      // Toggling `scriptsEnabled` requires admin (it gates execution
-      // of arbitrary JS in the editor). Other fields only need write.
-      const requiredLevel = data.scriptsEnabled !== undefined ? "admin" : "write";
+      const requiredLevel = data.scriptsEnabled !== undefined || data.defaultPresentationMode !== undefined ? "admin" : "write";
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, requiredLevel);
       if (error) return error;
 
@@ -1235,6 +1237,7 @@ const app = new Hono<AuthContext>()
         href: c.req.valid("query").href,
         origin: new URL(c.req.url).origin,
         canWrite: permission === "write" || permission === "admin",
+        defaultPresentationMode: notebook!.defaultPresentationMode,
         userId: user.id,
         bypassAccess: hasRole(user, "admin"),
       });

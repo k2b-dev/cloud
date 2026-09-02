@@ -1,13 +1,14 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { CheckboxCard, NoticeCard, prompts, SettingsGroup, useLocale } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { CheckboxCard, NoticeCard, prompts, Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
+import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
+import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mode";
 import type { Notebook } from "../sidebar/types";
+import { notebookSettingsMessages } from "./messages";
 import { readSettings, writeSettings } from "./NotebookSettingsStore";
 import { SaveStatus, settingsChoiceClass } from "./shared";
 import { readErrorMessage } from "./utils";
-import { notebookSettingsMessages } from "./messages";
 
 function ViewSection(props: { notebook: Notebook }) {
   const locale = useLocale();
@@ -63,6 +64,52 @@ function ViewSection(props: { notebook: Notebook }) {
   );
 }
 
+export function DefaultPresentationSection(props: {
+  notebook: Notebook;
+  isAdmin: boolean;
+  onNotebookChange: (notebook: Notebook) => void;
+}) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
+  const mutation = mutations.create<Notebook, PresentationMode>({
+    mutation: async (next, { abortSignal }) => {
+      const res = await apiClient[":id"].$patch(
+        { param: { id: props.notebook.id }, json: { defaultPresentationMode: next } },
+        { init: { signal: abortSignal } },
+      );
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().updateFailed));
+      return res.json();
+    },
+    onSuccess: (next) => props.onNotebookChange(next),
+  });
+  onCleanup(mutation.abort);
+
+  return (
+    <SettingsGroup title={t().defaultView} description={t().defaultViewDescription}>
+      <SettingsField label={t().defaultView} description={t().defaultViewHelp} error={() => undefined}>
+        <Select
+          aria-label={t().defaultView}
+          value={() => props.notebook.defaultPresentationMode}
+          onValueChange={(next) => {
+            if (props.isAdmin && !mutation.loading() && isPresentationMode(next) && next !== props.notebook.defaultPresentationMode) {
+              void mutation.mutate(next);
+            }
+          }}
+          options={[
+            { value: "write", label: t().writeView, icon: "ti ti-pencil" },
+            { value: "book", label: t().bookView, icon: "ti ti-book" },
+            { value: "readonly", label: t().readonlyView, icon: "ti ti-eye" },
+          ]}
+          searchable={false}
+          clearable={false}
+          disabled={!props.isAdmin || mutation.loading()}
+        />
+      </SettingsField>
+      <SaveStatus loading={mutation.loading()} saved={!mutation.error()} error={mutation.error()?.message ?? null} />
+    </SettingsGroup>
+  );
+}
+
 export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; onNotebookChange: (notebook: Notebook) => void }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
@@ -95,15 +142,12 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
 
   const setScriptsEnabled = async (next: boolean) => {
     if (next && !enabled()) {
-      const confirmed = await prompts.confirm(
-        t().scriptingConfirm({ name: props.notebook.name }),
-        {
-          title: t().enableScripting,
-          icon: "ti ti-alert-triangle",
-          variant: "danger",
-          confirmText: t().enable,
-        },
-      );
+      const confirmed = await prompts.confirm(t().scriptingConfirm({ name: props.notebook.name }), {
+        title: t().enableScripting,
+        icon: "ti ti-alert-triangle",
+        variant: "danger",
+        confirmText: t().enable,
+      });
       if (!confirmed) return;
     }
     setEnabled(next);
@@ -114,6 +158,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
 
   return (
     <>
+      <DefaultPresentationSection notebook={props.notebook} isAdmin={props.isAdmin} onNotebookChange={props.onNotebookChange} />
       <SettingsGroup title={t().yourView} description={t().yourViewDescription}>
         <ViewSection notebook={props.notebook} />
         <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
@@ -130,9 +175,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
         />
         <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
           <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-          <span>
-            {t().scriptWarning}
-          </span>
+          <span>{t().scriptWarning}</span>
         </NoticeCard>
         <SaveStatus loading={mutation.loading()} saved={saved()} error={error()} />
       </SettingsGroup>

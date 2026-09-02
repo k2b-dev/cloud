@@ -5,6 +5,8 @@ import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
 import type { Backlink } from "./links";
 import type { NoteWithContent } from "./notes";
+import { resolvePresentationMode, type PresentationMode } from "../lib/presentation-mode";
+import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
 
 type PublicAttachment = Omit<Attachment, "shortId">;
 
@@ -127,14 +129,18 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
 type ResolveEditableRouteParams = Omit<LoadSelectedNoteParams, "noteId"> & {
   href: string;
   origin: string;
+  defaultPresentationMode: PresentationMode;
 };
 
 const parseSameNotebookNoteHref = (
   params: ResolveEditableRouteParams,
-): { noteId: string; hrefQuery: ReturnType<typeof parseNavigatorQuery> } | null => {
+): { noteId: string; hrefQuery: ReturnType<typeof parseNavigatorQuery>; requestedMode?: PresentationMode } | null => {
   try {
     const url = new URL(params.href, params.origin);
-    if (url.origin !== params.origin || url.hash || !hasOnlyNavigatorQuery(url.searchParams)) return null;
+    const requestedMode = requestedPresentationMode(url.searchParams);
+    const navigatorParams = new URLSearchParams(url.searchParams);
+    if (requestedMode) navigatorParams.delete("mode");
+    if (url.origin !== params.origin || url.hash || !hasOnlyNavigatorQuery(navigatorParams)) return null;
     const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
     if (!match || decodeURIComponent(match[1]!) !== params.notebookShortId) return null;
     const noteId = decodeURIComponent(match[2]!);
@@ -142,6 +148,7 @@ const parseSameNotebookNoteHref = (
     return {
       noteId,
       hrefQuery: parseNavigatorQuery(url.searchParams),
+      requestedMode,
     };
   } catch {
     return null;
@@ -152,14 +159,28 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
   const target = parseSameNotebookNoteHref(params);
   if (!target) return { kind: "fallback", reason: "invalid-target" };
 
+  // Only the existing Write workspace can apply this payload. Book and Read-only
+  // fall back to a full server load instead of mounting into an editable owner.
+  if (
+    resolvePresentationMode({
+      permission: params.canWrite ? "write" : "read",
+      requestedMode: target.requestedMode,
+      defaultPresentationMode: params.defaultPresentationMode,
+      locked: false,
+    }) !== "write"
+  ) {
+    return { kind: "fallback", reason: "readonly" };
+  }
+
   const state = await loadSelectedNoteRouteState({ ...params, noteId: target.noteId });
   if (!state) return { kind: "fallback", reason: "not-found" };
   if (state.readonlyMode) return { kind: "fallback", reason: "readonly" };
 
-  const href = withNavigatorQuery(
+  const noteHref = withNavigatorQuery(
     `/app/notebooks/${encodeURIComponent(params.notebookShortId)}/notes/${encodeURIComponent(state.note.id)}`,
     target.hrefQuery,
   );
+  const href = target.requestedMode ? withPresentationMode(noteHref, target.requestedMode) : noteHref;
   return {
     kind: "ok",
     state: {

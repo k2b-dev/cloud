@@ -254,6 +254,7 @@ export default function NoteEditor(props: Props) {
   });
 
   const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
+    if (props.readOnly) return { kind: "fallback" };
     const target = parseSameNotebookEditNoteUrl(href, props.notebookId);
     if (!target) return { kind: "fallback" };
     return await navigation.navigate(target, push);

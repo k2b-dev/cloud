@@ -26,12 +26,13 @@ describe("notebooks public resource projection", () => {
       homepageNoteId: "22222222-2222-4222-8222-222222222222",
       homepageNoteShortId: "def456",
       scriptsEnabled: false,
+      defaultPresentationMode: "book",
       defaultNoteTitleTemplate: "Untitled",
       createdBy: null,
       createdAt,
       updatedAt: createdAt,
     });
-    expect(notebook).toMatchObject({ id: "abc123", homepageNoteId: "def456" });
+    expect(notebook).toMatchObject({ id: "abc123", homepageNoteId: "def456", defaultPresentationMode: "book" });
     expect(notebook).not.toHaveProperty("shortId");
 
     const note = toPublicNote(

@@ -13,6 +13,7 @@ export const toPublicNotebook = (notebook: Notebook) => ({
   icon: notebook.icon,
   homepageNoteId: notebook.homepageNoteShortId,
   scriptsEnabled: notebook.scriptsEnabled,
+  defaultPresentationMode: notebook.defaultPresentationMode,
   defaultNoteTitleTemplate: notebook.defaultNoteTitleTemplate,
   createdBy: notebook.createdBy,
   createdAt: notebook.createdAt,

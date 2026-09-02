@@ -24,6 +24,7 @@ const notebookFixture = {
   icon: null,
   homepageNoteId: null,
   scriptsEnabled: false,
+  defaultPresentationMode: "write",
   defaultNoteTitleTemplate: "New Document",
   createdBy: null,
   createdAt: "2026-07-01T00:00:00.000Z",

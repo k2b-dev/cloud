@@ -3,9 +3,10 @@ import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@va
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { PRESENTATION_MODES } from "../lib/presentation-mode";
 import { notebooksService } from "../service";
-import { ResourceShortIdSchema, toPublicNotebook } from "./public-resources";
 import { notebookApiMessages } from "./messages";
+import { ResourceShortIdSchema, toPublicNotebook } from "./public-resources";
 
 const TemplateSummarySchema = z.object({
   id: z.string(),
@@ -23,6 +24,7 @@ const CreatedNotebookSchema = z.object({
   icon: z.string().nullable(),
   homepageNoteId: ResourceShortIdSchema.nullable(),
   scriptsEnabled: z.boolean(),
+  defaultPresentationMode: z.enum(PRESENTATION_MODES),
   defaultNoteTitleTemplate: z.string(),
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
@@ -70,7 +72,12 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         async () => {
-          const result = await notebooksService.template.instantiate(c.req.param("templateId")!, { name: body.name }, user.id, getLocale(c));
+          const result = await notebooksService.template.instantiate(
+            c.req.param("templateId")!,
+            { name: body.name },
+            user.id,
+            getLocale(c),
+          );
           return result.ok ? { ...result, data: toPublicNotebook(result.data) } : result;
         },
         201,

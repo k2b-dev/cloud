@@ -118,6 +118,7 @@ const notebook = {
   homepageNoteId: noteId,
   homepageNoteShortId: "def456",
   scriptsEnabled: false,
+  defaultPresentationMode: "write" as const,
   defaultNoteTitleTemplate: "Untitled",
   createdBy: userId,
   createdAt,
