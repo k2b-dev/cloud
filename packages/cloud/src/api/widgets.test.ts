@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import type { DashboardWidget } from "../_internal/registry";
@@ -55,7 +56,10 @@ const widget: DashboardWidget = {
 let signerKey: CryptoKey | undefined;
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
   signerKey ??= (await generateKeyPair("RS256")).privateKey;
-  return callback({ kid: "33333333-3333-4333-8333-333333333333", key: signerKey, signUntil: new Date(Date.now() + 60_000) });
+  return callback(
+    { kid: "33333333-3333-4333-8333-333333333333", key: signerKey, issuer: "https://cloud.test", signUntil: new Date(Date.now() + 60_000) },
+    sql,
+  );
 };
 
 const withInvocationMode = async (mode: "legacy" | "jwt", run: () => Promise<void>) => {
@@ -70,6 +74,31 @@ const withInvocationMode = async (mode: "legacy" | "jwt", run: () => Promise<voi
 };
 
 describe("Core widget proxy", () => {
+  test("drops invalid optional request ids before signing and forwarding", async () => {
+    await withInvocationMode("jwt", async () => {
+      for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {
+        let called = false;
+        const routes = createWidgetRoutes({
+          authenticate,
+          listWidgets: async () => [widget],
+          withActiveSigner,
+          signInvocation: async (params) => {
+            called = true;
+            expect(params.requestId).toBeUndefined();
+            return { token: "target-token" } as Awaited<ReturnType<typeof signInvocationToken>>;
+          },
+          fetch: async (_input, init) => {
+            expect(new Headers(init?.headers).has("x-request-id")).toBeFalse();
+            return Response.json({ title: "Weather", blocks: [] });
+          },
+        });
+        const response = await routes.request("/widgets/v1/weather/current", { headers: { "x-request-id": requestId } });
+        expect(response.status).toBe(200);
+        expect(called).toBeTrue();
+      }
+    });
+  });
+
   test("legacy mode preserves the public target during the rolling migration", async () => {
     await withInvocationMode("legacy", async () => {
       const captured: { target?: URL; headers?: Headers } = {};

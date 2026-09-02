@@ -17,6 +17,7 @@ export {
   clearInvocationVerifierCachesForTest,
   type InvocationAuthority,
   isInvocationJwtCandidate,
+  normalizeInvocationRequestId,
   signInvocationToken,
   verifyInvocationToken,
 } from "./invocation-token";

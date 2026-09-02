@@ -296,14 +296,18 @@ const auditedMutation = <T>(
 const changedRow = async (
   mandateId: string,
   expectedRevision: number,
+  authority: MandateMutationAuthority,
   db: SQL,
-  update: (mandate: Mandate) => Promise<MandateRow | Mandate | null>,
+  update: (mandate: Mandate) => Promise<Result<MandateRow | Mandate | null>>,
 ): Promise<Result<Mandate>> => {
   const current = await load(mandateId, db);
   if (!current) return fail(err.notFound("Mandate"));
+  if (!mutationAccess(current, authority)) return fail(err.forbidden("Cannot change this mandate"));
   if (current.revision !== expectedRevision) return fail(err.conflict("Mandate revision changed"));
   if (current.state === "revoked") return fail(err.conflict("Mandate is revoked"));
-  const row = await update(current);
+  const result = await update(current);
+  if (!result.ok) return result;
+  const row = result.data;
   if (row) return ok("ownerAppId" in row ? row : mapMandate(row));
   return fail(err.conflict("Mandate changed; read it and retry"));
 };
@@ -512,25 +516,24 @@ const updateMandatePolicyInDb = async (
   },
   db: SQL,
 ): Promise<Result<Mandate>> => {
-  const existing = await load(input.mandateId, db);
-  if (!existing) return fail(err.notFound("Mandate"));
-  const policy = parsePolicyForWorkload(input.policy, {
-    subject: existing.subject,
-    ownerAppId: existing.ownerAppId,
-    workloadType: existing.workloadType,
-  });
-  if (!policy.ok) return policy;
-  return changedRow(input.mandateId, input.expectedRevision, db, async (current) => {
-    if (!mutationAccess(current, input.authority)) return null;
-    if (input.authority.kind === "workload" && !isMandatePolicyNarrowing(current.policy, policy.data)) return null;
-    if (JSON.stringify(current.policy) === JSON.stringify(policy.data)) return current;
+  return changedRow(input.mandateId, input.expectedRevision, input.authority, db, async (current) => {
+    const policy = parsePolicyForWorkload(input.policy, {
+      subject: current.subject,
+      ownerAppId: current.ownerAppId,
+      workloadType: current.workloadType,
+    });
+    if (!policy.ok) return policy;
+    if (input.authority.kind === "workload" && !isMandatePolicyNarrowing(current.policy, policy.data)) {
+      return fail(err.forbidden("Workloads may only narrow mandate policy"));
+    }
+    if (JSON.stringify(current.policy) === JSON.stringify(policy.data)) return ok(current);
     const [row] = await db<MandateRow[]>`
       UPDATE auth.mandates
       SET policy = ${policy.data}::jsonb, revision = revision + 1, updated_at = now()
       WHERE id = ${current.id}::uuid AND revision = ${input.expectedRevision}::bigint AND state <> 'revoked'
       RETURNING *
     `;
-    return row ?? null;
+    return ok(row ?? null);
   });
 };
 
@@ -555,20 +558,19 @@ const setMandateState = async (
   options: { db?: SQL } = {},
 ): Promise<Result<Mandate>> => {
   const db = options.db ?? sql;
-  return changedRow(input.mandateId, input.expectedRevision, db, async (current) => {
-    if (!mutationAccess(current, input.authority)) return null;
-    if (state === "active" && input.authority.kind === "workload") return null;
-    if (state === "active" && !(await validSubject(current.subject, db))) return null;
-    if (current.state === state) return current;
-    if (state === "paused" && current.state !== "active") return null;
-    if (state === "active" && current.state !== "paused") return null;
+  return changedRow(input.mandateId, input.expectedRevision, input.authority, db, async (current) => {
+    if (state === "active" && input.authority.kind === "workload") return fail(err.forbidden("Workloads cannot resume mandates"));
+    if (state === "active" && !(await validSubject(current.subject, db))) return ok(null);
+    if (current.state === state) return ok(current);
+    if (state === "paused" && current.state !== "active") return ok(null);
+    if (state === "active" && current.state !== "paused") return ok(null);
     const [row] = await db<MandateRow[]>`
       UPDATE auth.mandates
       SET state = ${state}, revision = revision + 1, updated_at = now()
       WHERE id = ${current.id}::uuid AND revision = ${input.expectedRevision}::bigint AND state = ${current.state}
       RETURNING *
     `;
-    return row ?? null;
+    return ok(row ?? null);
   });
 };
 
@@ -757,36 +759,27 @@ export const withMandateIssueAuthority = <T>(
   use: (authority: MandateIssueAuthority) => Promise<T>,
   options: { db?: SQL } = {},
 ): Promise<Result<T>> => {
-  type RunOutcome = { result: Result<T>; callbackFailed: false } | { result: Result<T>; callbackFailed: true; callbackError: unknown };
-  const run = async (db: SQL): Promise<RunOutcome> => {
+  const run = async (db: SQL): Promise<Result<T>> => {
     const authority = await validateMandateIssueAuthority(input, { db });
     if (!authority.ok) {
       mandateMetrics.increment(metricForIssueDenial(authority.error));
-      return {
-        result: await audit.recordResult(issueAuditParams(input, authority, input.expectedRevision ?? null, db)),
-        callbackFailed: false,
-      };
+      return audit.recordResult(issueAuditParams(input, authority, input.expectedRevision ?? null, db));
     }
     let issued: Result<T>;
-    let callbackError: unknown;
     let callbackFailed = false;
     try {
       issued = ok(await use(authority.data));
-    } catch (error) {
+    } catch {
       callbackFailed = true;
-      callbackError = error;
       issued = fail(err.internal("Mandate invocation issuance failed"));
     }
     const audited = await audit.recordResult(issueAuditParams(input, issued, authority.data.mandateRevision, db));
     mandateMetrics.increment(callbackFailed ? "issue_failed_internal" : "issue_allowed");
-    return callbackFailed ? { result: audited, callbackFailed: true, callbackError } : { result: audited, callbackFailed: false };
+    return audited;
   };
-  const finish = async (): Promise<Result<T>> => {
-    const outcome = options.db ? await run(options.db) : await sql.begin(run);
-    if (outcome.callbackFailed) throw outcome.callbackError;
-    return outcome.result;
-  };
-  return finish();
+  // Return failures as data so an enclosing key-lock transaction can commit
+  // the failure audit before its caller maps the Result to an HTTP error.
+  return options.db ? run(options.db) : sql.begin(run);
 };
 
 const ORPHAN_RECONCILE_LIMIT = 100;

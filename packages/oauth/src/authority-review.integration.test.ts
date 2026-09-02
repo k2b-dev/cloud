@@ -51,16 +51,17 @@ const coreRoutes = async (options: { beforeSign?: () => Promise<void>; onTransac
       scope: "identity:oauth-issue",
     }),
     issuer: async () => "https://cloud.test",
-    transaction: (callback) =>
+    withActiveSigner: (_purpose, callback) =>
       sql.begin(async (db) => {
         const [row] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
         options.onTransaction?.(row!.pid);
-        return callback(db);
+        const result = await callback(
+          { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
+          db,
+        );
+        await options.beforeSign?.();
+        return result;
       }),
-    withActiveSigner: async (_purpose, callback) => {
-      await options.beforeSign?.();
-      return callback({ kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000) });
-    },
   });
 };
 const issue = (routes: Awaited<ReturnType<typeof coreRoutes>>, grant: OAuthUserGrantReference) =>

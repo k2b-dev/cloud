@@ -141,6 +141,7 @@ const mandateAuthority = (context: MailRequestContext) => {
   const user = context.actor.user;
   return { kind: "interactive" as const, userId: user.id };
 };
+const mandateWorkloadAuthority = { kind: "workload" as const, ownerAppId: "mail" };
 
 const createAutomationMandate = async (context: MailRequestContext, automationId: string, steps: MailAutomationStep[], db: SqlClient) => {
   const authority = mandateAuthority(context);
@@ -165,20 +166,18 @@ const updateAutomationMandate = async (context: MailRequestContext, mandateId: s
   if (!authority || !policy) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
   const current = await mandates.get(mandateId, { db });
   if (!current) return fail(err.forbidden("This automation has no active Spaces authorization"));
+  // An equal operation allowlist does not prove that new targets or payloads
+  // stay within the original user's approval of this automation definition.
+  if (current.subject.type !== "user" || current.subject.id !== authority.userId) {
+    return fail(err.forbidden("Changing this automation's Spaces configuration requires reauthorization by the user who authorized it"));
+  }
   return mandates.updatePolicy({ mandateId, expectedRevision: current.revision, authority, policy }, { db });
 };
 
-const revokeAutomationMandate = async (
-  context: MailRequestContext,
-  mandateId: string,
-  reason: string,
-  db: SqlClient,
-): Promise<Result<unknown>> => {
-  const authority = mandateAuthority(context);
-  if (!authority) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
+const revokeAutomationMandate = async (mandateId: string, reason: string, db: SqlClient): Promise<Result<unknown>> => {
   const current = await mandates.get(mandateId, { db });
   if (!current) return ok(null);
-  return mandates.revoke({ mandateId, expectedRevision: current.revision, authority, reason }, { db });
+  return mandates.revoke({ mandateId, expectedRevision: current.revision, authority: mandateWorkloadAuthority, reason }, { db });
 };
 
 const syncAutomationMandateEnabled = async (
@@ -187,15 +186,19 @@ const syncAutomationMandateEnabled = async (
   enabled: boolean,
   db: SqlClient,
 ): Promise<Result<unknown>> => {
-  const authority = mandateAuthority(context);
-  if (!authority) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
   const current = await mandates.get(mandateId, { db });
   if (!current) return fail(err.forbidden("This automation has no Spaces authorization"));
-  if (current.state === "revoked") return fail(err.conflict("This automation's Spaces authorization is revoked"));
   if (enabled) {
+    const authority = mandateAuthority(context);
+    if (!authority || current.subject.type !== "user" || current.subject.id !== authority.userId) {
+      return fail(err.forbidden("Enabling this automation requires reauthorization by the user who authorized its Spaces access"));
+    }
+    if (current.state === "revoked") return fail(err.conflict("This automation's Spaces authorization is revoked"));
     return current.state === "active" ? ok(current) : mandates.resume({ mandateId, expectedRevision: current.revision, authority }, { db });
   }
-  return current.state === "paused" ? ok(current) : mandates.pause({ mandateId, expectedRevision: current.revision, authority }, { db });
+  return current.state === "paused" || current.state === "revoked"
+    ? ok(current)
+    : mandates.pause({ mandateId, expectedRevision: current.revision, authority: mandateWorkloadAuthority }, { db });
 };
 
 const createIntegrationCredential = async (context: MailRequestContext, automationId: string): Promise<Result<IntegrationCredential>> => {
@@ -1525,7 +1528,6 @@ export const updateIncomingAutomation = async (params: {
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const changed = current.name !== name || definitionChanged || enabledChanged;
       if (!changed) {
-        if (current.mandateId) unwrap(await syncAutomationMandateEnabled(params.context, current.mandateId, current.enabled, tx));
         return { automation: current, activityId: null as string | null };
       }
       if (definitionChanged && (current.mandateId || current.integrationCredentialId) && !userBackedActor(params.context)) {
@@ -1547,11 +1549,13 @@ export const updateIncomingAutomation = async (params: {
         createdIntegrationCredentialId = createdIntegration.credentialId;
         revokeCredentialId = current.integrationCredentialId;
       } else if (!needsSpaces) {
-        if (current.mandateId) unwrap(await revokeAutomationMandate(params.context, current.mandateId, "Spaces actions removed", tx));
+        if (current.mandateId) unwrap(await revokeAutomationMandate(current.mandateId, "Spaces actions removed", tx));
         mandateId = null;
         revokeCredentialId = current.integrationCredentialId;
       }
-      if (mandateId) unwrap(await syncAutomationMandateEnabled(params.context, mandateId, parsed.data.enabled, tx));
+      if (mandateId && (enabledChanged || mandateId !== current.mandateId)) {
+        unwrap(await syncAutomationMandateEnabled(params.context, mandateId, parsed.data.enabled, tx));
+      }
       if (definitionChanged || enabledChanged) unwrap(await rejectActiveBackfillMutation(current));
       if (definitionChanged) {
         unwrap(
@@ -1643,7 +1647,6 @@ export const setIncomingAutomationEnabled = async (params: {
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
       if (current.enabled === parsed.data.enabled) {
-        if (current.mandateId) unwrap(await syncAutomationMandateEnabled(params.context, current.mandateId, current.enabled, tx));
         return { automation: current, activityId: null as string | null };
       }
       unwrap(await rejectActiveBackfillMutation(current));
@@ -1737,7 +1740,7 @@ export const deleteIncomingAutomation = async (params: {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
       if (current.mandateId) {
-        unwrap(await revokeAutomationMandate(params.context, current.mandateId, "Incoming automation deleted", tx));
+        unwrap(await revokeAutomationMandate(current.mandateId, "Incoming automation deleted", tx));
       }
       if (current.integrationCredentialId) {
         unwrap(await revokeIntegrationCredential(params.context, current.integrationCredentialId, tx));

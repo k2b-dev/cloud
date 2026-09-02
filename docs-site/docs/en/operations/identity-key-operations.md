@@ -5,7 +5,7 @@ section: Operations
 order: 1145
 description: Operate Core-owned signing keys, rotation, rewrap, and emergency revocation.
 tags: [identity, jwt, keys, rotation, recovery]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Identity key operations
@@ -138,6 +138,23 @@ release a new invocation or OAuth token under that `kid`; a replica with a
 stale signer cache refreshes once and otherwise fails closed. This guarantee
 does not invalidate tokens that were already released, so their normal token
 and verifier-cache windows still apply.
+
+Core prepares the signer and issuer before reserving the issuance transaction.
+Key checks, mandate validation or OAuth grant consumption, and signing then
+share one connection. A cold cache or concurrent fan-out does not require a
+second connection while holding the first. Mandate signing failures return as
+results so their failure audit commits with that transaction before Core returns
+an error. Signing callbacks must not start another pool transaction or reload
+configuration through the pool.
+
+Each batch also sets a transaction-local PostgreSQL statement timeout using
+the remaining issuance budget. This adds one database round trip per batch,
+including one for an entire Universal Search fan-out, not one per provider.
+The database timeout bounds blocked statements and lock waits; it is not an
+instant cancellation of the whole transaction. Core checks the request deadline
+before using a queued connection and after commit, and never returns a token
+after that deadline. A database failure can roll back the transaction's audit;
+the failed-signing audit guarantee assumes the database can commit it.
 
 Do not rotate `APP_SECRET` as a substitute. It encrypts settings and
 credentials and is deliberately not a signing-key or KEK fallback.

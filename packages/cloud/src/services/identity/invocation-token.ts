@@ -35,6 +35,12 @@ const BoundedIdentifierSchema = z
   .max(200)
   .regex(/^[\x21-\x7e]+$/);
 
+/** Optional transport metadata must not prevent issuance of valid authority. */
+export const normalizeInvocationRequestId = (value: unknown): string | undefined => {
+  const parsed = BoundedIdentifierSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+};
+
 const InvocationPayloadSchema = z
   .object({
     iss: z.string().url(),
@@ -169,11 +175,13 @@ export const signInvocationToken = async (params: {
   issuedAt?: Date;
   jti?: string;
   signer?: PreparedIdentitySigner;
+  issuer?: string;
 }): Promise<{ token: string; kid: string; claims: CloudInvocationClaims }> => {
-  const { issuer } = await getIdentityRuntimeConfig();
+  const issuer = params.issuer ?? (await getIdentityRuntimeConfig()).issuer;
   const signer = params.signer ?? (await prepareIdentitySigner("invocation"));
   const issuedAt = params.issuedAt ?? new Date();
   const issuedAtSeconds = Math.floor(issuedAt.getTime() / 1_000);
+  const requestId = normalizeInvocationRequestId(params.requestId);
   const claims = InvocationPayloadSchema.parse({
     ...params.authority,
     iss: issuer,
@@ -183,7 +191,7 @@ export const signInvocationToken = async (params: {
     op: params.operation,
     schema_hash: params.schemaHash,
     ver: CLOUD_INVOCATION_PROTOCOL_VERSION,
-    ...(params.requestId ? { request_id: params.requestId } : {}),
+    ...(requestId ? { request_id: requestId } : {}),
     jti: params.jti ?? crypto.randomUUID(),
     iat: issuedAtSeconds,
     nbf: issuedAtSeconds,
@@ -205,10 +213,11 @@ export const signInvocationToken = async (params: {
   }
 };
 
+/** With deferSchemaBinding, the caller must compare schema_hash after resolving live authority. */
 export const verifyInvocationToken = async (
   token: string,
   expected: { targetAppId: string; operation: string; schemaHash: string | null },
-  options: { issuer?: string; key?: JWTVerifyGetKey; jwksUrl?: URL; now?: Date } = {},
+  options: { issuer?: string; key?: JWTVerifyGetKey; jwksUrl?: URL; now?: Date; deferSchemaBinding?: boolean } = {},
 ): Promise<CloudInvocationClaims | null> => {
   if (new TextEncoder().encode(token).byteLength > IDENTITY_MAX_COMPACT_TOKEN_BYTES) return null;
   let remote: { url: URL; state: RemoteSetState } | null = null;
@@ -247,7 +256,7 @@ export const verifyInvocationToken = async (
       verified = await verify(key);
     }
     const parsed = InvocationPayloadSchema.safeParse(verified.payload);
-    if (!parsed.success || parsed.data.op !== operation || parsed.data.schema_hash !== schemaHash) {
+    if (!parsed.success || parsed.data.op !== operation || (!options.deferSchemaBinding && parsed.data.schema_hash !== schemaHash)) {
       throw new Error("Cloud invocation JWT claims do not match the target operation");
     }
     identityMetrics.increment("verify_success");

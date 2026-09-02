@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # App capabilities
@@ -829,6 +829,12 @@ hash. The target verifies that token locally, reloads the current principal,
 reconstructs the normal actor and access subject, validates the input, and
 authorizes the resource. Cookies, API keys, and OAuth tokens never reach the
 target app. Reviewing an Action never authorizes its later invocation.
+
+A valid invocation for an outdated provider schema returns HTTP 409
+`SCHEMA_MISMATCH`, not a login failure. Invalid JWTs or unavailable live authority
+still return HTTP 401. Core includes `x-request-id` only when it is 1–200 visible
+ASCII characters; invalid optional tracing metadata is dropped rather than
+preventing a capability, search, or widget call.
 
 Core also forwards the caller's resolved locale as invocation metadata in the
 internal `x-cloud-locale` header, next to authorization and tracing. Query,

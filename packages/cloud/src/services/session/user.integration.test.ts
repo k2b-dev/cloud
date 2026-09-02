@@ -68,5 +68,11 @@ suite("session family actor resolution", () => {
 
     expect(await loadLegacySessionUser({ userId, sessionGeneration: 3, groupsAdmin: ["admins"] })).toBeNull();
     expect((await loadLegacySessionUser({ userId, sessionGeneration: 4, groupsAdmin: ["admins"] }))?.id).toBe(userId);
+    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 2, groupsAdmin: [] })).toBeNull();
+    await sql`UPDATE auth.users SET legacy_session_generation = ${Number.MAX_SAFE_INTEGER} WHERE id = ${userId}`;
+    expect(await loadLegacySessionUser({ userId, sessionGeneration: 4, authEpoch: 2, groupsAdmin: [] })).toBeNull();
+    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, groupsAdmin: [] })).toBeNull();
+    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 1, groupsAdmin: [] })).toBeNull();
+    expect((await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 2, groupsAdmin: [] }))?.id).toBe(userId);
   });
 });

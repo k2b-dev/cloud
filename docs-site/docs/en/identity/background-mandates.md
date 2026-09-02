@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Background authority mandates
@@ -137,6 +137,13 @@ silently resume a separately paused mandate.
 Terminal occurrence bookkeeping does not require live authority. Recovery
 handles each occurrence independently so one broken task cannot block others.
 
+Scheduled turns also require `CLOUD_INVOCATION_ISSUANCE_MODE=jwt` on Core.
+While the gate is `legacy`, occurrences remain queued and delivery retries on
+the normal reconciliation cadence. No background turn starts and no user-session
+fallback is created. Existing terminal turns can still finish their bookkeeping.
+Direct mandate-backed AI execution returns `INVOCATION_JWT_DISABLED` until the
+gate opens.
+
 Migration authority is a separate system-only service contract, not a caller
 supplied administrator flag. It is restricted to the exact built-in workload
 family and stored sponsor. Migration audit events have no interactive actor and
@@ -180,6 +187,11 @@ user authority, broaden policy, or resume a paused mandate. Core derives the
 owner from the authenticated credential; an app ID in a request body is never
 trusted as owner authority.
 
+Lifecycle request bodies are limited to 256 KiB, including streamed requests
+without a reliable `Content-Length`. Oversized bodies return HTTP 413. Missing
+mutation authority returns HTTP 403; an authorized but stale revision returns
+HTTP 409.
+
 Use the server capability helper with the current mandate revision:
 
 ```ts
@@ -216,8 +228,13 @@ route to bypass the mandate.
 ## Handle lifecycle and retries
 
 Persist the mandate ID and revision with the workload. A policy update,
-pause, resume, or revocation increments the revision, so a stale queued run is
-rejected until it reloads current workload state.
+pause, resume, or revocation increments the revision. Core rejects requests
+carrying an old revision; the worker must reload current workload state before
+trying again. This does not require freezing the revision when work is queued.
+Mail checks the automation's enabled state and active workflow version at
+execution time, then loads its current mandate binding and revision for Spaces
+actions. Its activation snapshot represents mailbox authority; `activatedBy`
+records provenance, not a delegated request actor.
 
 Pause the mandate when the workload pauses. Revoke it when the workload is
 deleted or permanently disabled. Revocation blocks new issuance immediately;
@@ -237,7 +254,7 @@ records include subject and workload provenance, target application, operation,
 revision, and outcome, but never a JWT, app credential, policy body, or
 capability payload.
 
-A signing failure is recorded as a failed issuance before the original error is
+A signing failure is recorded as a failed issuance before an internal error is
 returned, and no target request is sent. When Mail runs with
 `CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE=mandate`, it migrates legacy incoming
 automation credentials in bounded batches. Mail creates the replacement mandate,
@@ -247,6 +264,20 @@ Failed rows retain their previous credential and remain visible in the fixed
 migration counters and logs until repaired. Mail durably claims unattempted or
 least-recently attempted rows first, with a 60-second retry cooldown. Failing
 rows and process restarts therefore do not starve later migration candidates.
+
+Mail mailbox administrators may pause or delete another user's automation,
+remove all Spaces actions, or make cosmetic changes. Pause and revocation use
+Mail's workload authority after mailbox permission checks. Changing a definition
+that retains Spaces actions, or enabling it again, requires the mandate's
+original user; another mailbox administrator receives HTTP 403 and must obtain
+explicit reauthorization. Equal application/operation lists alone do not prove
+that a changed definition preserves the same authority. Cosmetic changes do not
+reactivate separately paused or revoked mandates.
+
+Mail's credential migration is one-way. Setting its authority mode back to
+`legacy` neither recreates erased credentials nor makes migrated automations
+fall back to them. Keep the mandate-capable Mail version and Core broker available
+for migrated rows; changing the flag alone is not a data rollback.
 
 ## What still authorizes the effect
 

@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Dashboard widgets
@@ -156,6 +156,11 @@ and visual styling.
 Cloud authenticates the invocation, but it does not authorize application
 data. The handler must use the normal request identity and resource permission
 checks.
+
+Framework-owned internal widget routes provide the same request runtime,
+settings, actor, access subject, and resolved locale as public application
+routes. Handlers can use the normal runtime context; they do not need a separate
+internal-route initialization path.
 
 Return:
 

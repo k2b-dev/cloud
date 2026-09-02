@@ -92,8 +92,8 @@ suite("Core identity key ring", () => {
   test("fails closed after exactly one stale-signer retry", async () => {
     let checks = 0;
     let callbacks = 0;
-    const neverActive = ((_strings: TemplateStringsArray, ..._values: unknown[]) => {
-      checks += 1;
+    const neverActive = ((strings: TemplateStringsArray, ..._values: unknown[]) => {
+      if (strings.join("").includes("FROM auth.signing_keys")) checks += 1;
       return Promise.resolve([]);
     }) as unknown as typeof sql;
 
@@ -104,7 +104,7 @@ suite("Core identity key ring", () => {
           callbacks += 1;
           return "unexpected";
         },
-        { db: neverActive },
+        { pool: { begin: async (run: (db: typeof sql) => Promise<unknown>) => run(neverActive) } as typeof sql },
       ),
     ).rejects.toThrow("No active oauth identity signer is available");
     expect(checks).toBe(2);

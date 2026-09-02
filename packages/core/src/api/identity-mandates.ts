@@ -1,4 +1,4 @@
-import { CapabilityAppIdSchema } from "@valentinkolb/cloud/contracts";
+import { CAPABILITY_MAX_REQUEST_BYTES, CapabilityAppIdSchema } from "@valentinkolb/cloud/contracts";
 import { respond } from "@valentinkolb/cloud/server";
 import { mandates } from "@valentinkolb/cloud/services";
 import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@valentinkolb/cloud/services/identity";
@@ -34,12 +34,42 @@ const authenticateOwner = async (
   return authenticate({ token: bearerToken(c.req.header("Authorization")), appId: appId.data, scope: "identity:invoke" });
 };
 
-const body = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.output<T> | null> => {
+const body = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.output<T> | Response | null> => {
+  const tooLarge = () => c.json({ code: "PAYLOAD_TOO_LARGE", message: "Mandate request exceeds the byte limit" }, 413);
+  const request = c.req.raw;
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > CAPABILITY_MAX_REQUEST_BYTES) {
+    await request.body?.cancel().catch(() => undefined);
+    return tooLarge();
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
   try {
-    const parsed = schema.safeParse(await c.req.json());
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      byteLength += chunk.value.byteLength;
+      if (byteLength > CAPABILITY_MAX_REQUEST_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        return tooLarge();
+      }
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(byteLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const parsed = schema.safeParse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
     return parsed.success ? parsed.data : null;
   } catch {
+    await reader.cancel().catch(() => undefined);
     return null;
+  } finally {
+    reader.releaseLock();
   }
 };
 
@@ -68,6 +98,7 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
       const owned = await ownerMandate(c);
       if ("error" in owned) return owned.error;
       const input = await body(c, ExpectedRevisionSchema);
+      if (input instanceof Response) return input;
       if (!input) return c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate confirmation" }, 400);
       return respond(c, () =>
         service.confirm({
@@ -81,6 +112,7 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
       const owned = await ownerMandate(c);
       if ("error" in owned) return owned.error;
       const input = await body(c, NarrowPolicySchema);
+      if (input instanceof Response) return input;
       if (!input) return c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate policy update" }, 400);
       return respond(c, () =>
         service.updatePolicy({
@@ -95,6 +127,7 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
       const owned = await ownerMandate(c);
       if ("error" in owned) return owned.error;
       const input = await body(c, ExpectedRevisionSchema);
+      if (input instanceof Response) return input;
       if (!input) return c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate pause" }, 400);
       return respond(c, () =>
         service.pause({
@@ -108,6 +141,7 @@ export const createIdentityMandateRoutes = (overrides: Partial<OwnerMandateDepen
       const owned = await ownerMandate(c);
       if ("error" in owned) return owned.error;
       const input = await body(c, RevokeSchema);
+      if (input instanceof Response) return input;
       if (!input) return c.json({ code: "VALIDATION_FAILED", message: "Invalid mandate revocation" }, 400);
       return respond(c, () =>
         service.revoke({

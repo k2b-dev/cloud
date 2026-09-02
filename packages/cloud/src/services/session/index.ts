@@ -1,22 +1,22 @@
 import { redis, sql } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import type { User } from "../../contracts/shared";
 import { env } from "../../config/env";
+import type { User } from "../../contracts/shared";
 import { isAccountExpired } from "../account-model";
 import {
-  isSessionJwtCandidate,
+  type CloudSessionClaims,
   invalidateIdentitySignerCache,
+  isSessionJwtCandidate,
   prepareIdentitySigner,
   signSessionToken,
-  type CloudSessionClaims,
   verifySessionToken,
 } from "../identity";
 import { identityMetrics } from "../identity/metrics";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import { logger } from "../logging";
 import * as settings from "../settings";
-import { loadJwtSessionUser, loadLegacySessionUser } from "./user";
+import { LEGACY_EPOCH_SESSION_GENERATION, LEGACY_SESSION_EPOCH_FLOOR, loadJwtSessionUser, loadLegacySessionUser } from "./user";
 
 export type SessionData = {
   userId: string;
@@ -30,16 +30,31 @@ export type SessionData = {
 
 export type AuthenticatedSession = { data: SessionData; user: User };
 
-type LegacyStoredSession = { userId: string; gen: number };
-type VerifiedCredential =
-  | { kind: "jwt"; claims: CloudSessionClaims }
-  | { kind: "legacy"; data: LegacyStoredSession };
+/** gen=-1 requires authEpoch and the durable epoch-only bridge floor. */
+type LegacyStoredSession = { userId: string; gen: number; authEpoch?: number };
+type VerifiedCredential = { kind: "jwt"; claims: CloudSessionClaims } | { kind: "legacy"; data: LegacyStoredSession };
 
 const sessionKey = (userId: string, randomToken: string) => `session:${userId}:${randomToken}`;
 const genKey = (userId: string) => `session:gen:${userId}`;
 const log = logger("cloud:session");
-const DISABLE_LEGACY_GENERATION = Number.MAX_SAFE_INTEGER;
+// Match the internal authority request budget; legacy Redis work must not hold a
+// user row / pool connection indefinitely while Redis is unavailable.
+const LEGACY_REDIS_BUDGET_MS = 5_000;
 let lastLegacyUseLogAt = 0;
+
+const boundedLegacyRedis = async <T>(pending: Promise<T>, deadline = Date.now() + LEGACY_REDIS_BUDGET_MS): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Legacy session Redis operation timed out")), Math.max(0, deadline - Date.now()));
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
 
 const sessionIssuanceMode = (): "legacy" | "jwt" => {
   const value = (process.env.CLOUD_SESSION_ISSUANCE_MODE ?? "legacy").trim().toLowerCase();
@@ -51,7 +66,35 @@ const readGen = async (userId: string): Promise<number> => {
   const raw = await redis.get(genKey(userId));
   if (!raw) return 0;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error("Legacy Redis generation is invalid");
+  return n;
+};
+
+/** Monotonic only: a delayed command after timeout can never restore an older generation. */
+const synchronizeLegacyGeneration = async (userId: string, floor: number, deadline?: number): Promise<number> => {
+  const value = await boundedLegacyRedis(
+    redis.send("EVAL", [
+      `local raw = redis.call('GET', KEYS[1]) or '0'
+       local current = tonumber(raw)
+       local target = tonumber(ARGV[1])
+       if not current or current < 0 or current > tonumber(ARGV[2]) or current % 1 ~= 0 then
+         return redis.error_reply('Invalid legacy session generation')
+       end
+       if current < target then
+         redis.call('SET', KEYS[1], ARGV[1])
+         return ARGV[1]
+       end
+       return raw`,
+      "1",
+      genKey(userId),
+      String(floor),
+      String(LEGACY_SESSION_EPOCH_FLOOR),
+    ]),
+    deadline,
+  );
+  const generation = Number(value);
+  if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Legacy Redis generation is invalid");
+  return generation;
 };
 
 const parseToken = (token: string): { userId: string; randomToken: string } | null => {
@@ -73,9 +116,29 @@ const isCloudApiToken = (token: string | null): boolean => Boolean(token?.starts
 
 const createLegacyToken = async (userId: string, ttlSeconds: number): Promise<string> => {
   const randomToken = crypto.randomUUID();
-  const gen = await readGen(userId);
-  const data: LegacyStoredSession = { userId, gen };
-  await redis.set(sessionKey(userId, randomToken), JSON.stringify(data), "EX", ttlSeconds);
+  await sql.begin(async (tx) => {
+    const [user] = await tx<Array<{ auth_epoch: string | number | bigint; legacy_session_generation: string | number | bigint }>>`
+      SELECT auth_epoch, legacy_session_generation FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
+    `;
+    if (!user) throw new Error("Cannot create a session for an unknown user");
+    const authEpoch = Number(user.auth_epoch);
+    if (!Number.isSafeInteger(authEpoch) || authEpoch < 0) throw new Error("User auth_epoch is invalid");
+    const floor = Number(user.legacy_session_generation);
+    const deadline = Date.now() + LEGACY_REDIS_BUDGET_MS;
+    let gen = LEGACY_EPOCH_SESSION_GENERATION;
+    if (floor < LEGACY_SESSION_EPOCH_FLOOR) {
+      gen = await synchronizeLegacyGeneration(userId, floor, deadline);
+      // Persist observed Redis high-water before releasing the same lock used by
+      // revoke-all. A revoke that read Redis before us cannot miss this issuance.
+      if (gen > floor) await tx`UPDATE auth.users SET legacy_session_generation = ${gen} WHERE id = ${userId}::uuid`;
+      if (gen >= LEGACY_SESSION_EPOCH_FLOOR) gen = LEGACY_EPOCH_SESSION_GENERATION;
+    }
+    const data: LegacyStoredSession = { userId, gen, authEpoch };
+    await boundedLegacyRedis(
+      redis.send("SET", [sessionKey(userId, randomToken), JSON.stringify(data), "EX", String(ttlSeconds)]),
+      deadline,
+    );
+  });
   return `${userId}:${randomToken}`;
 };
 
@@ -90,9 +153,15 @@ const readLegacyCredential = async (token: string): Promise<VerifiedCredential |
   } catch {
     return null;
   }
-  if (data.userId !== parsed.userId || !Number.isFinite(data.gen)) return null;
-  const currentGen = await readGen(parsed.userId);
-  if (data.gen < currentGen) return null;
+  if (data.userId !== parsed.userId || !Number.isSafeInteger(data.gen)) return null;
+  if (data.authEpoch !== undefined && (!Number.isSafeInteger(data.authEpoch) || data.authEpoch < 0)) return null;
+  if (data.gen === LEGACY_EPOCH_SESSION_GENERATION) {
+    if (data.authEpoch === undefined) return null;
+  } else {
+    if (data.gen < 0 || data.gen >= LEGACY_SESSION_EPOCH_FLOOR) return null;
+    const currentGen = await readGen(parsed.userId);
+    if (data.gen < currentGen) return null;
+  }
   identityMetrics.increment("legacy_session_use");
   if (Date.now() - lastLegacyUseLogAt >= 60_000) {
     lastLegacyUseLogAt = Date.now();
@@ -112,7 +181,12 @@ const verifyCredential = async (token: string): Promise<VerifiedCredential | nul
 const verificationByRequest = new WeakMap<Context, Map<string, Promise<VerifiedCredential | null>>>();
 const authenticationByRequest = new WeakMap<Context, Map<string, Promise<AuthenticatedSession | null>>>();
 
-const requestCached = <T>(cache: WeakMap<Context, Map<string, Promise<T>>>, c: Context, token: string, load: () => Promise<T>): Promise<T> => {
+const requestCached = <T>(
+  cache: WeakMap<Context, Map<string, Promise<T>>>,
+  c: Context,
+  token: string,
+  load: () => Promise<T>,
+): Promise<T> => {
   let requests = cache.get(c);
   if (!requests) {
     requests = new Map();
@@ -158,6 +232,7 @@ const authenticateVerified = async (credential: VerifiedCredential): Promise<Aut
   const user = await loadLegacySessionUser({
     userId: credential.data.userId,
     sessionGeneration: credential.data.gen,
+    authEpoch: credential.data.authEpoch,
     groupsAdmin,
   });
   if (!user) return null;
@@ -172,7 +247,7 @@ const authenticateVerified = async (credential: VerifiedCredential): Promise<Aut
       gen: credential.data.gen,
       kind: "legacy",
       sid: null,
-      authEpoch: null,
+      authEpoch: credential.data.authEpoch ?? null,
       expiresAt: null,
     },
   };
@@ -320,7 +395,7 @@ export const session = {
   revokeAllForUser: async (userId: string): Promise<void> => {
     let observedLegacyGeneration: number | null = null;
     try {
-      observedLegacyGeneration = await readGen(userId);
+      observedLegacyGeneration = await boundedLegacyRedis(readGen(userId));
     } catch (error) {
       log.warn("Legacy session generation unavailable during durable revoke-all", {
         userId,
@@ -328,11 +403,15 @@ export const session = {
       });
     }
 
-    const requestedFloor = observedLegacyGeneration === null ? DISABLE_LEGACY_GENERATION : observedLegacyGeneration + 1;
+    const requestedFloor =
+      observedLegacyGeneration === null ? LEGACY_SESSION_EPOCH_FLOOR : Math.min(LEGACY_SESSION_EPOCH_FLOOR, observedLegacyGeneration + 1);
     const [updated] = await sql<Array<{ legacy_session_generation: string | number | bigint }>>`
       UPDATE auth.users
       SET auth_epoch = auth_epoch + 1,
-          legacy_session_generation = GREATEST(legacy_session_generation + 1, ${requestedFloor})
+          legacy_session_generation = CASE
+            WHEN legacy_session_generation >= ${LEGACY_SESSION_EPOCH_FLOOR} THEN ${LEGACY_SESSION_EPOCH_FLOOR}
+            ELSE LEAST(${LEGACY_SESSION_EPOCH_FLOOR}, GREATEST(legacy_session_generation + 1, ${requestedFloor}))
+          END
       WHERE id = ${userId}::uuid
       RETURNING legacy_session_generation
     `;
@@ -342,15 +421,10 @@ export const session = {
     if (!Number.isSafeInteger(durableFloor) || durableFloor < 0) {
       throw new Error("Durable legacy session generation is invalid");
     }
-    if (durableFloor === DISABLE_LEGACY_GENERATION) return;
+    if (durableFloor === LEGACY_SESSION_EPOCH_FLOOR) return;
 
     try {
-      await redis.send("EVAL", [
-        "local current = tonumber(redis.call('GET', KEYS[1]) or '0'); local target = tonumber(ARGV[1]); if current < target then redis.call('SET', KEYS[1], ARGV[1]); return target end; return current",
-        "1",
-        genKey(userId),
-        String(durableFloor),
-      ]);
+      await synchronizeLegacyGeneration(userId, durableFloor);
     } catch (error) {
       log.warn("Legacy Redis generation could not be synchronized after durable revoke-all", {
         userId,

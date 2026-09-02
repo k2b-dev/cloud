@@ -1,5 +1,6 @@
 import type { Message } from "@k2b/nessi";
 import { type SQL, sql } from "bun";
+import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { logger } from "../services/logging";
 import {
   createMandate,
@@ -760,6 +761,7 @@ export const aiChatTasks = {
   },
 
   listQueuedOccurrences: async (limit = 100): Promise<Array<{ occurrence: AiChatTaskOccurrence; task: AiChatTask }>> => {
+    if (invocationIssuanceMode() !== "jwt") return [];
     try {
       await aiChatTasks.prepareLegacyMandates(limit);
     } catch (error) {
@@ -805,6 +807,7 @@ export const aiChatTasks = {
   },
 
   getQueuedOccurrence: async (occurrenceId: string): Promise<{ occurrence: AiChatTaskOccurrence; task: AiChatTask } | null> => {
+    if (invocationIssuanceMode() !== "jwt") return null;
     return sql.begin(async (tx) => {
       const occurrences = await tx<OccurrenceRow[]>`
         SELECT * FROM ai.chat_task_occurrences WHERE id = ${occurrenceId}::uuid AND state = 'queued' LIMIT 1
@@ -870,8 +873,11 @@ export const aiChatTasks = {
     runConfig: AiChatTurnRunConfig;
     userMessage: Message;
     expectedRevision: number;
-  }): Promise<{ delivered: true; conversationId: string; turnId: string } | { delivered: false; reason: "not_found" | "busy" | "stale" }> =>
+  }): Promise<
+    { delivered: true; conversationId: string; turnId: string } | { delivered: false; reason: "not_found" | "busy" | "stale" | "held" }
+  > =>
     sql.begin(async (tx) => {
+      if (invocationIssuanceMode() !== "jwt") return { delivered: false as const, reason: "held" as const };
       const current = await loadOccurrenceTask(input.occurrenceId, tx);
       const task = current ? await prepareTaskForExecution(current, tx) : null;
       if (!task) {

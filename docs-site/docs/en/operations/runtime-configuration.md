@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # Runtime configuration
@@ -122,6 +122,10 @@ provider routes first, then change only Core to
 allows two additional seconds for clock skew. Keep the legacy mode only for the rolling
 upgrade; it is not a second long-term authorization model.
 
+Scheduled chat-task occurrences remain queued while this invocation gate is
+`legacy`. Delivery resumes after it changes to `jwt`; Core does not substitute
+a user's session for background mandate authority.
+
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.
 
@@ -147,6 +151,11 @@ Mail migrates them in bounded batches; newly created or interactively updated
 Spaces automations use a mandate immediately. Each batch atomically links the
 mandate and retires the previous credential. Check that the remaining count is
 zero and keep a verification window before removing the legacy read path.
+
+Enable invocation JWT issuance before enabling Mail's mandate mode. Successful
+Mail migration removes the old encrypted credential; switching the Mail flag
+back to `legacy` does not restore it. Keep compatible Mail and Core versions
+available for already-migrated automations.
 
 Do not enable `ADMIN_LOGIN_TOKEN` in production.
 

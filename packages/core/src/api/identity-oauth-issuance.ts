@@ -234,7 +234,6 @@ type Dependencies = {
   withActiveSigner: typeof withActiveIdentitySigner;
   issuer: () => Promise<string>;
   resolve: typeof resolveAuthorityState;
-  transaction: <T>(callback: (db: typeof sql) => Promise<T>) => Promise<T>;
   now: () => number;
 };
 
@@ -243,7 +242,6 @@ const defaultDependencies: Dependencies = {
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
-  transaction: (callback) => sql.begin((transaction) => callback(transaction as typeof sql)),
   now: () => Math.floor(Date.now() / 1_000),
 };
 
@@ -403,7 +401,7 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
       scope: "identity:oauth-issue",
     });
     if (!workload) return c.json({ message: "Unauthorized" }, 401);
-    await dependencies.transaction((db) => dependencies.withActiveSigner("oauth", async () => undefined, { db }));
+    await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
   });
   routes.post("/oauth/token", async (c) => {
@@ -432,23 +430,22 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
     const first = parsed.data.tokens[0];
     if (!first) return c.json({ message: "Invalid request" }, 400);
     const issuer = await dependencies.issuer();
-    const now = dependencies.now();
     try {
-      const tokens = await dependencies.transaction(async (db) => {
-        const state = await dependencies.resolve({ request: first, db });
-        if (!state || !validateAuthority(parsed.data.tokens, state, issuer, now)) throw new InvalidOAuthGrantAuthorityError();
-        const accessRequest = parsed.data.tokens.find((request) => request.kind === "user_access" || request.kind === "service_access");
-        if (!accessRequest) throw new InvalidOAuthGrantAuthorityError();
-        const grantedScopes = state.grantedScopes;
-        return dependencies.withActiveSigner(
-          "oauth",
-          (signer) =>
-            Promise.all(
-              parsed.data.tokens.map((request) => sign(request, state, grantedScopes, { issuer, kid: signer.kid, key: signer.key, now })),
-            ),
-          { db },
-        );
-      });
+      const tokens = await dependencies.withActiveSigner(
+        "oauth",
+        async (signer, db) => {
+          const state = await dependencies.resolve({ request: first, db });
+          const now = dependencies.now();
+          if (!state || !validateAuthority(parsed.data.tokens, state, issuer, now)) throw new InvalidOAuthGrantAuthorityError();
+          const accessRequest = parsed.data.tokens.find((request) => request.kind === "user_access" || request.kind === "service_access");
+          if (!accessRequest) throw new InvalidOAuthGrantAuthorityError();
+          const grantedScopes = state.grantedScopes;
+          return Promise.all(
+            parsed.data.tokens.map((request) => sign(request, state, grantedScopes, { issuer, kid: signer.kid, key: signer.key, now })),
+          );
+        },
+        { timeoutMs: 5_000 },
+      );
       return c.json({ tokens });
     } catch (error) {
       if (error instanceof InvalidOAuthGrantAuthorityError) return c.json({ message: "Forbidden" }, 403);

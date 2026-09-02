@@ -43,10 +43,13 @@ export const requireInvocation = (
     const expectation = expected(c);
     if (!token || !expectation || !isInvocationJwtCandidate(token)) return reject(c);
 
-    const claims = await (dependencies.verify ?? verifyInvocationToken)(token, expectation);
+    const claims = await (dependencies.verify ?? verifyInvocationToken)(token, expectation, { deferSchemaBinding: true });
     if (!claims) return reject(c);
     const authority = await (dependencies.resolve ?? resolveInvocationAuthority)(claims);
     if (!authority) return reject(c);
+    if (claims.schema_hash !== expectation.schemaHash) {
+      return c.json({ code: "SCHEMA_MISMATCH", message: "The invocation schema no longer matches the target" }, 409);
+    }
     installAuthority(c, claims, authority);
     return next();
   });

@@ -35,7 +35,7 @@ import { invocationAuthorityFromRequest } from "../services/identity/invocation-
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { withMandateIssueAuthority } from "../services/mandates";
 import { resolveAppPresentation } from "../shared/app-presentation";
@@ -340,19 +340,20 @@ export const dispatchCapability = async (params: {
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
-  const timeout = AbortSignal.timeout(
+  const timeoutMs =
     params.kind === "queries" || params.review
       ? (params.dependencies?.queryTimeoutMs ?? QUERY_TIMEOUT_MS)
-      : (params.dependencies?.actionTimeoutMs ?? ACTION_TIMEOUT_MS),
-  );
+      : (params.dependencies?.actionTimeoutMs ?? ACTION_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(timeoutMs);
   const signal = AbortSignal.any([params.request.signal, timeout]);
   let headers: Headers;
   try {
     headers = mandate
       ? await (async () => {
           const issued = await waitWithin(
-            (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
-              waitWithin(
+            (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+              "invocation",
+              (signer, db) =>
                 (params.dependencies?.withMandateIssueAuthority ?? withMandateIssueAuthority)(
                   {
                     mandateId: mandate.mandateId,
@@ -361,25 +362,31 @@ export const dispatchCapability = async (params: {
                     targetAppId: params.appId,
                     operation: invocationOperation,
                     actionApproval: mandate.actionApproval ?? "none",
-                    requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                    requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
                   },
-                  async (mandateAuthority) =>
-                    (params.dependencies?.signInvocation ?? signInvocationToken)({
+                  async (mandateAuthority) => {
+                    signal.throwIfAborted();
+                    return (params.dependencies?.signInvocation ?? signInvocationToken)({
                       targetAppId: params.appId,
                       callingAppId: mandate.ownerAppId,
                       operation: invocationOperation,
                       schemaHash: operation.schemaHash,
                       authority: invocationAuthorityFromMandate(mandateAuthority),
-                      requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                      requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
                       signer,
-                    }),
+                      issuer: signer.issuer,
+                    });
+                  },
+                  { db },
                 ),
-                signal,
-              ),
+              { signal, timeoutMs },
             ),
             signal,
           );
-          if (!issued.ok) throw new MandateDispatchError(issued.error.code === "CONFLICT" ? 409 : 403);
+          if (!issued.ok) {
+            if (issued.error.code === "INTERNAL") throw new Error("Mandate invocation issuance failed");
+            throw new MandateDispatchError(issued.error.code === "CONFLICT" ? 409 : 403);
+          }
           return new Headers({
             "content-type": "application/json",
             accept: "application/json",
@@ -391,19 +398,20 @@ export const dispatchCapability = async (params: {
             if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
             const authority = params.authority;
             const signed = await waitWithin(
-              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
-                waitWithin(
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+                "invocation",
+                (signer) =>
                   (params.dependencies?.signInvocation ?? signInvocationToken)({
                     targetAppId: params.appId,
                     callingAppId: params.callingAppId ?? "core",
                     operation: invocationOperation,
                     schemaHash: operation.schemaHash,
                     authority: invocationAuthorityFromRequest(authority),
-                    requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                    requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
                     signer,
+                    issuer: signer.issuer,
                   }),
-                  signal,
-                ),
+                { signal, timeoutMs },
               ),
               signal,
             );
@@ -433,10 +441,13 @@ export const dispatchCapability = async (params: {
       );
       return capabilityJsonResponse(failure.body, failure.status);
     }
-    throw error;
+    console.error("[capabilities] Invocation issuance failed", { appId: params.appId, operation: invocationOperation });
+    const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
+    return capabilityJsonResponse(failure.body, failure.status);
   }
   for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
-    const value = params.request.headers.get(name);
+    const value =
+      name === "x-request-id" ? normalizeInvocationRequestId(params.request.headers.get(name)) : params.request.headers.get(name);
     if (value) headers.set(name, value);
   }
   const invocationLocale = preferredLocale(params.request.headers);

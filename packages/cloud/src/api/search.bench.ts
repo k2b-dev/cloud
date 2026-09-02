@@ -1,4 +1,5 @@
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair, jwtVerify, SignJWT } from "jose";
 import { compileCapabilities } from "../_internal/capabilities";
@@ -55,11 +56,15 @@ const providers = (count: number): CapabilityRegistryEntry[] =>
 
 const { privateKey, publicKey } = await generateKeyPair("RS256");
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) =>
-  callback({
-    kid: "22222222-2222-4222-8222-222222222222",
-    key: privateKey,
-    signUntil: new Date(Date.now() + 60_000),
-  });
+  callback(
+    {
+      kid: "22222222-2222-4222-8222-222222222222",
+      key: privateKey,
+      issuer: ISSUER,
+      signUntil: new Date(Date.now() + 60_000),
+    },
+    sql,
+  );
 
 const signInvocation: typeof signInvocationToken = async (params) => {
   const issuedAt = Math.floor(Date.now() / 1_000);

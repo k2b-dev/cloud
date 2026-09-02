@@ -12,6 +12,7 @@ import {
 } from "./constants";
 import { type IdentityKeyEncryptionConfig, readIdentityKeyEncryptionConfig } from "./key-config";
 import { identityMetrics } from "./metrics";
+import { getIdentityRuntimeConfig } from "./runtime-config";
 import { SignerRefreshes } from "./signer-refresh";
 
 export type SigningKeyPurpose = "session" | "invocation" | "oauth";
@@ -303,12 +304,28 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
  */
 export const withActiveIdentitySigner = async <T>(
   purpose: SigningKeyPurpose,
-  callback: (signer: PreparedIdentitySigner) => Promise<T>,
-  options: { db?: typeof sql } = {},
+  callback: (signer: PreparedIdentitySigner & { issuer: string }, db: typeof sql) => Promise<T>,
+  options: { pool?: typeof sql; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<T> => {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Identity issuance timeout must be positive");
+  const deadline = Date.now() + timeoutMs;
+  const checkDeadline = () => {
+    options.signal?.throwIfAborted();
+    if (Date.now() >= deadline) throw new DOMException("Identity issuance deadline exceeded", "TimeoutError");
+  };
+  // Preparation can refresh/rotate keys using the pool. Never do it while
+  // holding a caller's transaction: every issuance needs just one connection.
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    checkDeadline();
     const signer = await prepareIdentitySigner(purpose);
+    const { issuer } = await getIdentityRuntimeConfig();
+    checkDeadline();
     const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
+      checkDeadline();
+      // A JS deadline alone cannot cancel a blocked PostgreSQL query. Bound
+      // each statement (including lock waits) on this connection, transaction-local.
+      await db`SELECT set_config('statement_timeout', ${`${Math.max(1, Math.floor(deadline - Date.now()))}ms`}, true)`;
       const [active] = await db<Array<{ kid: string }>>`
         SELECT kid
         FROM auth.signing_keys
@@ -318,10 +335,13 @@ export const withActiveIdentitySigner = async <T>(
           AND sign_until > now()
         FOR SHARE
       `;
+      checkDeadline();
       if (!active) return { active: false };
-      return { active: true, result: await callback(signer) };
+      const result = await callback({ ...signer, issuer }, db);
+      return { active: true, result };
     };
-    const checked = options.db ? await run(options.db) : await sql.begin((transaction) => run(transaction as typeof sql));
+    const checked = await (options.pool ?? sql).begin(run);
+    checkDeadline();
     if (checked.active) return checked.result;
     invalidateIdentitySignerCache(purpose, signer.kid);
   }

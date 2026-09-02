@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mandates, toPgUuidArray } from "@valentinkolb/cloud/services";
+import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
 import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
 import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
@@ -49,6 +50,7 @@ suite("incoming automations", () => {
   let mailboxId = "";
   let ownerContext: MailRequestContext;
   let writerContext: MailRequestContext;
+  let sharedAdminContext: MailRequestContext;
 
   beforeAll(async () => {
     await migrate();
@@ -66,8 +68,10 @@ suite("incoming automations", () => {
     };
     const owner = await createUser("owner");
     const writer = await createUser("writer");
+    const sharedAdmin = await createUser("shared-admin");
     ownerContext = contextFor(owner);
     writerContext = contextFor(writer);
+    sharedAdminContext = contextFor(sharedAdmin);
     const mailbox = await createMailbox(ownerContext, { name: `Incoming automations ${suffix}` });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
@@ -78,6 +82,13 @@ suite("incoming automations", () => {
       permission: "write",
     });
     if (!access.ok) throw new Error(access.error.message);
+    const sharedAccess = await grantMailboxAccess({
+      context: ownerContext,
+      mailboxId,
+      principal: { type: "user", userId: sharedAdmin.id },
+      permission: "admin",
+    });
+    if (!sharedAccess.ok) throw new Error(sharedAccess.error.message);
     const scopeFingerprint = `${"e".repeat(56)}${suffix}`;
     const [connection] = await sql<{ id: string }[]>`
       INSERT INTO mail.provider_connections (
@@ -597,6 +608,202 @@ suite("incoming automations", () => {
         WHERE id = ${stored?.mandate_id ?? null}::uuid
       `;
       expect(revoked).toEqual({ state: "revoked", revoke_reason: "Incoming automation deleted" });
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
+    }
+  });
+
+  test("lets a shared mailbox admin stop but not repurpose or resume another user's mandate", async () => {
+    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
+    try {
+      const created = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: "Shared mailbox authority",
+          enabled: true,
+          scope: { mode: "all" },
+          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        },
+      });
+      if (!created.ok) throw new Error(created.error.message);
+      let current = created.data;
+      const [binding] = await sql<
+        { mandate_id: string }[]
+      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${current.id}::uuid`;
+      const originalMandate = await mandates.get(binding!.mandate_id);
+      if (!originalMandate) throw new Error("Expected mandate");
+      const update = (context: MailRequestContext, patch: Partial<Parameters<typeof updateIncomingAutomation>[0]["input"]>) =>
+        updateIncomingAutomation({
+          context,
+          mailboxId,
+          automationId: current.id,
+          input: {
+            expectedRevision: current.revision,
+            name: current.name,
+            enabled: current.enabled,
+            scope: current.scope,
+            steps: current.steps,
+            ...patch,
+          },
+        });
+
+      const renamed = await update(sharedAdminContext, { name: "Renamed by shared admin" });
+      if (!renamed.ok) throw new Error(renamed.error.message);
+      current = renamed.data;
+      expect(current.workflowVersionId).toBe(created.data.workflowVersionId);
+      expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
+      const unchanged = await update(sharedAdminContext, {});
+      expect(unchanged.ok && unchanged.data.revision).toBe(current.revision);
+
+      const targetChange = await update(sharedAdminContext, {
+        steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+      });
+      expect(targetChange.ok ? null : targetChange.error.code).toBe("FORBIDDEN");
+      expect(targetChange.ok ? null : targetChange.error.message).toContain("reauthorization");
+      const scopeChange = await update(sharedAdminContext, {
+        scope: {
+          mode: "matching",
+          conditions: {
+            mode: "all",
+            items: [{ field: "sender_address", operator: "is", value: "only@example.test" }],
+          },
+        },
+      });
+      expect(scopeChange.ok ? null : scopeChange.error.code).toBe("FORBIDDEN");
+      expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
+
+      const paused = await setIncomingAutomationEnabled({
+        context: sharedAdminContext,
+        mailboxId,
+        automationId: current.id,
+        input: { expectedRevision: current.revision, enabled: false },
+      });
+      if (!paused.ok) throw new Error(paused.error.message);
+      current = paused.data;
+      expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
+      const pausedNoop = await setIncomingAutomationEnabled({
+        context: sharedAdminContext,
+        mailboxId,
+        automationId: current.id,
+        input: { expectedRevision: current.revision, enabled: false },
+      });
+      expect(pausedNoop.ok && pausedNoop.data.revision).toBe(current.revision);
+      const pausedRename = await update(sharedAdminContext, { name: "Still paused" });
+      if (!pausedRename.ok) throw new Error(pausedRename.error.message);
+      current = pausedRename.data;
+      const resume = await setIncomingAutomationEnabled({
+        context: sharedAdminContext,
+        mailboxId,
+        automationId: current.id,
+        input: { expectedRevision: current.revision, enabled: true },
+      });
+      expect(resume.ok ? null : resume.error.code).toBe("FORBIDDEN");
+      const updateResume = await update(sharedAdminContext, { enabled: true });
+      expect(updateResume.ok ? null : updateResume.error.code).toBe("FORBIDDEN");
+      expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
+
+      const ownerUpdate = await update(ownerContext, {
+        enabled: true,
+        steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+      });
+      if (!ownerUpdate.ok) throw new Error(ownerUpdate.error.message);
+      current = ownerUpdate.data;
+      expect((await mandates.get(originalMandate.id))?.state).toBe("active");
+      expect((await mandates.get(originalMandate.id))?.subject).toEqual(originalMandate.subject);
+      const deleted = await deleteIncomingAutomation({
+        context: sharedAdminContext,
+        mailboxId,
+        automationId: current.id,
+        input: { expectedRevision: current.revision },
+      });
+      expect(deleted.ok).toBe(true);
+      expect((await mandates.get(originalMandate.id))?.state).toBe("revoked");
+      const lifecycleAudit = await sql<{ action: string; actor_user_id: string | null; metadata: unknown }[]>`
+        SELECT action, actor_user_id, metadata FROM audit.events
+        WHERE target_type = 'mandate' AND target_id = ${originalMandate.id} AND action IN ('mandate.pause', 'mandate.revoke')
+        ORDER BY id
+      `;
+      expect(
+        lifecycleAudit.map((event) => ({
+          action: event.action,
+          actor_user_id: event.actor_user_id,
+          owner_app_id: parsePgJsonRecord(event.metadata)?.ownerAppId,
+        })),
+      ).toEqual([
+        { action: "mandate.pause", actor_user_id: null, owner_app_id: "mail" },
+        { action: "mandate.revoke", actor_user_id: null, owner_app_id: "mail" },
+      ]);
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
+    }
+  });
+
+  test("lets a shared mailbox admin remove all Spaces effects and disable revoked authority", async () => {
+    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
+    try {
+      for (const externallyRevoked of [false, true]) {
+        const created = await createIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          input: {
+            name: `Remove shared Spaces ${externallyRevoked}`,
+            enabled: true,
+            scope: { mode: "all" },
+            steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+          },
+        });
+        if (!created.ok) throw new Error(created.error.message);
+        const [binding] = await sql<
+          { mandate_id: string }[]
+        >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+        const mandate = await mandates.get(binding!.mandate_id);
+        if (!mandate) throw new Error("Expected mandate");
+        if (externallyRevoked) {
+          const revoked = await mandates.revoke({
+            mandateId: mandate.id,
+            expectedRevision: mandate.revision,
+            authority: { kind: "workload", ownerAppId: "mail" },
+            reason: "External revocation test",
+          });
+          if (!revoked.ok) throw new Error(revoked.error.message);
+        }
+        const updated = await updateIncomingAutomation({
+          context: sharedAdminContext,
+          mailboxId,
+          automationId: created.data.id,
+          input: {
+            expectedRevision: created.data.revision,
+            name: created.data.name,
+            enabled: false,
+            scope: created.data.scope,
+            steps: externallyRevoked
+              ? created.data.steps
+              : [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+          },
+        });
+        expect(updated.ok).toBe(true);
+        expect((await mandates.get(mandate.id))?.state).toBe("revoked");
+        const [after] = await sql<
+          { mandate_id: string | null }[]
+        >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+        expect(after?.mandate_id).toBe(externallyRevoked ? mandate.id : null);
+        if (updated.ok)
+          expect(
+            (
+              await deleteIncomingAutomation({
+                context: sharedAdminContext,
+                mailboxId,
+                automationId: created.data.id,
+                input: { expectedRevision: updated.data.revision },
+              })
+            ).ok,
+          ).toBe(true);
+      }
     } finally {
       if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
       else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;

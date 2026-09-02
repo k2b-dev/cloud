@@ -6,7 +6,7 @@ import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredenti
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
 import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -65,6 +65,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
       const signal = AbortSignal.any([c.req.raw.signal, timeout]);
       const appId = c.req.param("appId");
       const widgetId = c.req.param("widgetId");
+      const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
       let phase: "registry" | "signing" | "provider" | "response" = "registry";
       const reject = (reason: WidgetRejectionReason, message: string, status: 502 | 504, upstreamStatus?: number): Response => {
         log.warn("Widget proxy rejected response", {
@@ -85,16 +86,20 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         const headers = useInvocation
           ? await (async () => {
               const signed = await waitWithin(
-                (dependencies.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
-                  (dependencies.signInvocation ?? signInvocationToken)({
-                    targetAppId: widget.appId,
-                    callingAppId: "core",
-                    operation: widgetInvocationOperation(widget.widgetId),
-                    schemaHash: null,
-                    authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
-                    requestId: c.req.header("x-request-id")?.slice(0, 200),
-                    signer,
-                  }),
+                (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
+                  "invocation",
+                  (signer) =>
+                    (dependencies.signInvocation ?? signInvocationToken)({
+                      targetAppId: widget.appId,
+                      callingAppId: "core",
+                      operation: widgetInvocationOperation(widget.widgetId),
+                      schemaHash: null,
+                      authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+                      requestId,
+                      signer,
+                      issuer: signer.issuer,
+                    }),
+                  { signal, timeoutMs: dependencies.timeoutMs ?? WIDGET_PROXY_TIMEOUT_MS },
                 ),
                 signal,
               );
@@ -102,7 +107,8 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
             })()
           : capabilityCredentialHeaders(c.req.raw);
 
-        for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
+        if (requestId) headers.set("x-request-id", requestId);
+        for (const name of ["traceparent", "tracestate"] as const) {
           const value = c.req.header(name);
           if (value) headers.set(name, value);
         }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
@@ -81,6 +81,15 @@ const app = () => {
 };
 
 describe("AI capability authority", () => {
+  let previousIssuanceMode: string | undefined;
+  beforeEach(() => {
+    previousIssuanceMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "legacy";
+  });
+  afterEach(() => {
+    if (previousIssuanceMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousIssuanceMode;
+  });
   test("refreshes the conversation owner and rejects mismatched or non-user actors", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     const store = { getConversation: async () => conversation(current.id) };
@@ -243,6 +252,12 @@ describe("AI capability authority", () => {
       dependencies,
     };
 
+    const disabled = new AiCapabilityExecutionError("INVOCATION_JWT_DISABLED", 503, "Mandate invocations require JWT issuance");
+    await expect(reviewAiCapability(base)).rejects.toEqual(disabled);
+    await expect(executeAiCapability({ ...base, actionApproval: "approved" })).rejects.toEqual(disabled);
+    expect(seen).toEqual([]);
+
+    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
     await reviewAiCapability(base);
     await expect(executeAiCapability(base)).rejects.toEqual(
       new AiCapabilityExecutionError("MANDATE_FORBIDDEN", 403, "Action approval is required"),

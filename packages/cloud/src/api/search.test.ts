@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
@@ -103,14 +104,43 @@ const fakeInvocation = (
 let signerKey: CryptoKey | undefined;
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
   signerKey ??= (await generateKeyPair("RS256")).privateKey;
-  return callback({
-    kid: "22222222-2222-4222-8222-222222222222",
-    key: signerKey,
-    signUntil: new Date(Date.now() + 60_000),
-  });
+  return callback(
+    {
+      kid: "22222222-2222-4222-8222-222222222222",
+      key: signerKey,
+      issuer: "https://cloud.test",
+      signUntil: new Date(Date.now() + 60_000),
+    },
+    sql,
+  );
 };
 
 describe("global capability search", () => {
+  test("drops invalid optional request ids without suppressing provider results", async () => {
+    await withInvocationMode("jwt", async () => {
+      for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {
+        let called = false;
+        const routes = createSearchRoutes({
+          authenticate,
+          listCapabilities: async () => [app],
+          withActiveSigner,
+          signInvocation: async (params) => {
+            called = true;
+            expect(params.requestId).toBeUndefined();
+            return fakeInvocation(params);
+          },
+          fetch: async (_input, init) => {
+            expect(new Headers(init?.headers).has("x-request-id")).toBeFalse();
+            return Response.json({ data: [] });
+          },
+        });
+        const response = await routes.request("/search?q=test", { headers: { "x-request-id": requestId } });
+        expect(response.status).toBe(200);
+        expect(called).toBeTrue();
+      }
+    });
+  });
+
   test("returns a structured unavailable error when capability discovery fails", async () => {
     const routes = createSearchRoutes({
       authenticate,
@@ -468,9 +498,9 @@ describe("global capability search", () => {
           guardCalls += 1;
           return withActiveSigner(
             purpose,
-            async (signer) => {
+            async (signer, db) => {
               preparedSigner = signer;
-              return callback(signer);
+              return callback(signer, db);
             },
             options,
           );

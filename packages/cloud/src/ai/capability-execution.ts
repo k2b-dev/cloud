@@ -93,13 +93,17 @@ type AiCapabilityCall = {
 };
 
 const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): Promise<unknown> => {
+  const issuanceMode = invocationIssuanceMode();
+  if (input.mandate && issuanceMode !== "jwt") {
+    throw new AiCapabilityExecutionError("INVOCATION_JWT_DISABLED", 503, "Mandate invocations require JWT issuance");
+  }
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
   const createDelegation = input.dependencies?.createDelegation ?? session.createDelegation;
   const revokeDelegation = input.dependencies?.revokeDelegation ?? session.revoke;
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
-  const useInvocation = input.mandate !== undefined || invocationIssuanceMode() === "jwt";
+  const useInvocation = issuanceMode === "jwt";
   const token = useInvocation ? null : await createDelegation(input.authority.actor.user.id, 60);
   try {
     const headers = new Headers(token ? { authorization: `Bearer ${token}` } : undefined);

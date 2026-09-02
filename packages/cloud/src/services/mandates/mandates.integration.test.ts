@@ -159,7 +159,7 @@ suite("mandates", () => {
       authority: workload,
       policy: exactPolicy(),
     });
-    expect(broadened.ok).toBe(false);
+    expect(broadened.ok ? null : broadened.error.status).toBe(403);
     const wildcard = await mandates.updatePolicy({
       mandateId: narrowed.data.id,
       expectedRevision: narrowed.data.revision,
@@ -172,7 +172,7 @@ suite("mandates", () => {
     expect(paused.ok).toBe(true);
     if (!paused.ok) return;
     const resumed = await mandates.resume({ mandateId: paused.data.id, expectedRevision: paused.data.revision, authority: interactive() });
-    expect(resumed.ok).toBe(false);
+    expect(resumed.ok ? null : resumed.error.status).toBe(403);
     const adminResumed = await mandates.resume({
       mandateId: paused.data.id,
       expectedRevision: paused.data.revision,
@@ -187,6 +187,49 @@ suite("mandates", () => {
       reason: "Admin cleanup",
     });
     expect(adminRevoked.ok && adminRevoked.data.revokedByUserId).toBe(ownerUserId);
+  });
+
+  test("denies unauthorized mutations before policy parsing or revision details", async () => {
+    const created = await mandates.create({
+      authority: interactive(),
+      subject: { type: "user", id: ownerUserId },
+      ownerAppId: "mail",
+      workloadType: "incoming.automation",
+      workloadId: `denied-mutation-${suffix}`,
+      policy: exactPolicy(),
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    createdMandateIds.push(created.data.id);
+    for (const authority of [
+      { kind: "interactive" as const, userId: expiredUserId },
+      { kind: "workload" as const, ownerAppId: "oauth" },
+    ]) {
+      for (const expectedRevision of [created.data.revision, created.data.revision + 1]) {
+        const updated = await mandates.updatePolicy({
+          mandateId: created.data.id,
+          expectedRevision,
+          authority,
+          policy: { invalid: true },
+        });
+        expect(updated.ok ? null : updated.error.status).toBe(403);
+        const paused = await mandates.pause({ mandateId: created.data.id, expectedRevision, authority });
+        expect(paused.ok ? null : paused.error.status).toBe(403);
+      }
+    }
+    const stale = await mandates.pause({
+      mandateId: created.data.id,
+      expectedRevision: created.data.revision + 1,
+      authority: interactive(),
+    });
+    expect(stale.ok ? null : stale.error.status).toBe(409);
+    const current = await mandates.get(created.data.id);
+    expect(current?.revision).toBe(created.data.revision);
+    expect(current?.state).toBe("active");
+    const auditRows = await sql<{ outcome: string }[]>`
+      SELECT outcome FROM audit.events WHERE target_type = 'mandate' AND target_id = ${created.data.id}
+      AND action IN ('mandate.policy.update', 'mandate.pause') ORDER BY id
+    `;
+    expect(auditRows.map((row) => row.outcome)).toEqual([...Array(8).fill("denied"), "failed"]);
   });
 
   test("validates issue authority and makes revocation terminal", async () => {
@@ -316,21 +359,20 @@ suite("mandates", () => {
     expect(deniedCallbackCalled).toBe(false);
 
     const signingFailure = new Error("fixture signer unavailable");
-    await expect(
-      mandates.withIssueAuthority(
-        {
-          mandateId: created.data.id,
-          expectedRevision: created.data.revision,
-          ownerAppId: "mail",
-          targetAppId: "spaces",
-          operation: "capability.query:space.read",
-          requestId: `issue-failed-${suffix}`,
-        },
-        async () => {
-          throw signingFailure;
-        },
-      ),
-    ).rejects.toBe(signingFailure);
+    const failed = await mandates.withIssueAuthority(
+      {
+        mandateId: created.data.id,
+        expectedRevision: created.data.revision,
+        ownerAppId: "mail",
+        targetAppId: "spaces",
+        operation: "capability.query:space.read",
+        requestId: `issue-failed-${suffix}`,
+      },
+      async () => {
+        throw signingFailure;
+      },
+    );
+    expect(failed.ok ? null : failed.error.code).toBe("INTERNAL");
 
     const events = await sql<Array<{ outcome: string; request_id: string | null; metadata: unknown }>>`
       SELECT outcome, request_id, metadata

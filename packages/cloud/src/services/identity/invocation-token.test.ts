@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTVerifyGetKey, SignJWT } from "jose";
 import {
   CLOUD_IDENTITY_ALGORITHM,
@@ -6,7 +6,14 @@ import {
   CLOUD_INVOCATION_TOKEN_TYPE,
   IDENTITY_MAX_COMPACT_TOKEN_BYTES,
 } from "./constants";
-import { type CloudInvocationClaims, isInvocationJwtCandidate, verifyInvocationToken } from "./invocation-token";
+import {
+  type CloudInvocationClaims,
+  isInvocationJwtCandidate,
+  normalizeInvocationRequestId,
+  signInvocationToken,
+  verifyInvocationToken,
+} from "./invocation-token";
+import * as runtimeConfig from "./runtime-config";
 
 const issuer = "https://cloud.example";
 const targetAppId = "mail";
@@ -80,6 +87,75 @@ const verify = (value: string, expected: { targetAppId?: string; operation?: str
   );
 
 describe("Cloud invocation JWT", () => {
+  test("uses the guarded issuer without another runtime configuration read", async () => {
+    const config = spyOn(runtimeConfig, "getIdentityRuntimeConfig").mockRejectedValue(new Error("unexpected settings read"));
+    try {
+      const signed = await signInvocationToken({
+        issuer,
+        targetAppId,
+        callingAppId,
+        operation,
+        schemaHash,
+        issuedAt: now,
+        authority: {
+          sub: userId,
+          principal_type: "user",
+          access_subject_type: "user",
+          access_subject_id: userId,
+          credential_kind: "session",
+          scopes: [],
+        },
+        signer: { key: privateKey, kid, signUntil: new Date(now.getTime() + 60_000) },
+      });
+      expect(config).not.toHaveBeenCalled();
+      expect(await verify(signed.token)).not.toBeNull();
+    } finally {
+      config.mockRestore();
+    }
+  });
+
+  test("normalizes optional request metadata before signing, but verifies signed claims strictly", async () => {
+    const config = spyOn(runtimeConfig, "getIdentityRuntimeConfig").mockResolvedValue({
+      issuer,
+      jwksUrl: new URL(issuer),
+      sessionJwksUrl: new URL(issuer),
+      invocationJwksUrl: new URL(issuer),
+      oauthJwksUrl: new URL(issuer),
+      groupsAdmin: [],
+    });
+    try {
+      expect(normalizeInvocationRequestId("request-1")).toBe("request-1");
+      expect(normalizeInvocationRequestId("x".repeat(200))).toHaveLength(200);
+      for (const requestId of ["", "two words", "ümlaut", "x".repeat(201), "line\nbreak"]) {
+        expect(normalizeInvocationRequestId(requestId)).toBeUndefined();
+        const signed = await signInvocationToken({
+          targetAppId,
+          callingAppId,
+          operation,
+          schemaHash,
+          requestId,
+          issuedAt: now,
+          authority: {
+            sub: userId,
+            principal_type: "user",
+            access_subject_type: "user",
+            access_subject_id: userId,
+            credential_kind: "session",
+            scopes: [],
+          },
+          signer: { key: privateKey, kid, signUntil: new Date(now.getTime() + 60_000) },
+        });
+        expect(signed.claims.request_id).toBeUndefined();
+        expect(await verify(signed.token)).not.toBeNull();
+        expect(await verify(await token({ ...baseClaims(), request_id: requestId }))).toBeNull();
+      }
+      expect(normalizeInvocationRequestId(undefined)).toBeUndefined();
+      expect(normalizeInvocationRequestId(123)).toBeUndefined();
+    } finally {
+      config.mockRestore();
+    }
+  });
+
   test("accepts the minimal strict user-session contract", async () => {
     const signed = await token();
     expect(isInvocationJwtCandidate(signed)).toBe(true);
@@ -148,6 +224,21 @@ describe("Cloud invocation JWT", () => {
     expect(await verify(signed, { operation: "capability.action.run:message.read" })).toBeNull();
     expect(await verify(signed, { schemaHash: "b".repeat(64) })).toBeNull();
     expect(await verify(signed, { schemaHash: null })).toBeNull();
+  });
+
+  test("can defer only schema comparison for an authenticated mismatch response", async () => {
+    const signed = await token();
+    const options = { issuer, key: keySet, now, deferSchemaBinding: true };
+    expect(await verifyInvocationToken(signed, { targetAppId, operation, schemaHash: "b".repeat(64) }, options)).toEqual(baseClaims());
+    expect(await verifyInvocationToken(signed, { targetAppId: "spaces", operation, schemaHash }, options)).toBeNull();
+    expect(await verifyInvocationToken(signed, { targetAppId, operation: "capability.query:other", schemaHash }, options)).toBeNull();
+    expect(
+      await verifyInvocationToken(
+        await token({ ...baseClaims(), request_id: "invalid metadata" }),
+        { targetAppId, operation, schemaHash },
+        options,
+      ),
+    ).toBeNull();
   });
 
   test("rejects inconsistent actor and access-subject combinations", async () => {

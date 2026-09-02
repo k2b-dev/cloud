@@ -50,10 +50,17 @@ const setup = async (authenticated = true, state = authorityState()) => {
         : null;
     },
     withActiveSigner: async (_purpose, callback) =>
-      callback({ kid: "70eb97eb-a2a4-4454-aca5-d1d84af1239c", key: privateKey, signUntil: new Date(Date.now() + 60_000) }),
+      callback(
+        {
+          kid: "70eb97eb-a2a4-4454-aca5-d1d84af1239c",
+          key: privateKey,
+          signUntil: new Date(Date.now() + 60_000),
+          issuer: "https://cloud.example.test",
+        },
+        sql,
+      ),
     issuer: async () => "https://cloud.example.test",
     resolve: async () => state,
-    transaction: async (callback) => callback(sql),
     now: () => 1_788_220_800,
   });
   return { routes, publicKey, authCalls: () => authCalls };
@@ -212,6 +219,35 @@ describe("Core OAuth issuance authority", () => {
       expect(response.status).toBe(403);
     }
   });
+
+  test("checks account expiry after waiting for the signer and resolving authority", async () => {
+    const { privateKey } = await generateKeyPair("RS256");
+    let now = 1_788_220_800;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      authenticate: async () => ({
+        appId: "oauth",
+        serviceAccountId: crypto.randomUUID(),
+        credentialId: crypto.randomUUID(),
+        scope: "identity:oauth-issue",
+      }),
+      issuer: async () => "https://cloud.example.test",
+      now: () => now,
+      withActiveSigner: async (_purpose, callback) => {
+        now += 10;
+        return callback(
+          { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
+          sql,
+        );
+      },
+      resolve: async () => authorityState({ user: { ...authorityState().user, accountExpires: new Date(1_788_220_805_000) } }),
+    });
+    const response = await routes.request("/oauth/token", {
+      method: "POST",
+      headers: { authorization: "Bearer workload", "content-type": "application/json" },
+      body: JSON.stringify({ tokens: [userAccess] }),
+    });
+    expect(response.status).toBe(403);
+  });
 });
 
 const canUseDatabase = async (): Promise<boolean> => {
@@ -259,7 +295,12 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
           scope: "identity:oauth-issue",
         }),
         withActiveSigner: async (_purpose, callback) =>
-          callback({ kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000) }),
+          sql.begin((db) =>
+            callback(
+              { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
+              db,
+            ),
+          ),
         issuer: async () => "https://cloud.example.test",
       });
       const response = await routes.request("/oauth/token", {
@@ -350,7 +391,12 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
           scope: "identity:oauth-issue",
         }),
         withActiveSigner: async (_purpose, callback) =>
-          callback({ kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000) }),
+          sql.begin((db) =>
+            callback(
+              { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
+              db,
+            ),
+          ),
         issuer: async () => "https://cloud.example.test",
       });
       const response = await routes.request("/oauth/token", {
@@ -449,7 +495,12 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
           scope: "identity:oauth-issue",
         }),
         withActiveSigner: async (_purpose, callback) =>
-          callback({ kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000) }),
+          sql.begin((db) =>
+            callback(
+              { kid: crypto.randomUUID(), key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.example.test" },
+              db,
+            ),
+          ),
         issuer: async () => "https://cloud.example.test",
       });
       await sql`UPDATE oauth.clients SET audiences = ARRAY['cloud', 'https://new.example.test'] WHERE client_id = ${clientId}`;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
@@ -75,7 +76,15 @@ const authenticate = async (_c: unknown, next: () => Promise<void>) => next();
 let signerKey: CryptoKey | undefined;
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
   signerKey ??= (await generateKeyPair("RS256")).privateKey;
-  return callback({ kid: "33333333-3333-4333-8333-333333333333", key: signerKey, signUntil: new Date(Date.now() + 60_000) });
+  return callback(
+    {
+      kid: "33333333-3333-4333-8333-333333333333",
+      key: signerKey,
+      signUntil: new Date(Date.now() + 60_000),
+      issuer: "https://cloud.example.test",
+    },
+    sql,
+  );
 };
 
 const resourceAuthority: RequestAuthority = {
@@ -362,6 +371,38 @@ describe("capability API", () => {
       expect(response.status).toBe(504);
       expect(fetched).toBeFalse();
       expect(await response.json()).toMatchObject({ code: "DEADLINE_EXCEEDED", details: { retrySafe: true } });
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
+    }
+  });
+
+  test("drops malformed optional request IDs before real invocation signing and forwarding", async () => {
+    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
+    try {
+      for (const requestId of ["contains spaces", "non-ascii-é", "x".repeat(201)]) {
+        let forwarded: Headers | undefined;
+        const response = await dispatchCapability({
+          request: new Request("http://cloud.internal/api/capabilities/v1", { headers: { "x-request-id": requestId } }),
+          kind: "queries",
+          appId: "demo",
+          capabilityId: "get",
+          input: { id: "one" },
+          authority: resourceAuthority,
+          dependencies: {
+            getCapability: async () => entry(),
+            withActiveSigner,
+            fetch: async (_input, init) => {
+              forwarded = new Headers(init?.headers);
+              return Response.json({ data: { id: "one" } });
+            },
+          },
+        });
+        expect(response.status).toBe(200);
+        expect(forwarded?.get("x-request-id")).toBeNull();
+        expect(forwarded?.get("authorization")).toStartWith("Bearer ey");
+      }
     } finally {
       if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
       else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;

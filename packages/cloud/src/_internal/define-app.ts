@@ -30,6 +30,7 @@ import { getLocale, resolveLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocationOrLegacy } from "../server/middleware/invocation";
 import { routeTemplate } from "../server/middleware/route-template";
+import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { settings as settingsMiddleware } from "../server/middleware/settings";
 import { legacyCredentialBoundary } from "../server/middleware/workload";
 import {
@@ -638,6 +639,7 @@ export const defineApp = <
           if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
           return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
         }, legacyWidgetAuth),
+        runtimeMiddleware(),
         settingsMiddleware(),
         async (c) => {
           const handler = startOpts.widgets?.[c.req.param("widgetId") ?? ""];

@@ -15,7 +15,7 @@ import { logger } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { capabilityCredentialHeaders } from "./capabilities";
@@ -169,6 +169,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       expectUserBackedActor(c);
 
       const query = c.req.valid("query");
+      const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
       const useInvocation = invocationIssuanceMode() === "jwt";
       const invocationAuthority = useInvocation ? invocationAuthorityFromRequest(auth.getAuthority(c)) : null;
       let entries: CapabilityRegistryEntry[];
@@ -235,24 +236,28 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       try {
         if (useInvocation && invocationAuthority && active.length > 0) {
           signedInvocations = await waitWithin(
-            (dependencies.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
-              Promise.all(
-                startBounded(
-                  active,
-                  PROVIDER_CONCURRENCY,
-                  (provider) =>
-                    (dependencies.signInvocation ?? signInvocationToken)({
-                      targetAppId: provider.appId,
-                      callingAppId: "core",
-                      operation: searchInvocationOperation,
-                      schemaHash: provider.schemaHash,
-                      authority: invocationAuthority,
-                      requestId: c.req.header("x-request-id")?.slice(0, 200),
-                      signer,
-                    }),
-                  signingSignal,
+            (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
+              "invocation",
+              (signer) =>
+                Promise.all(
+                  startBounded(
+                    active,
+                    PROVIDER_CONCURRENCY,
+                    (provider) =>
+                      (dependencies.signInvocation ?? signInvocationToken)({
+                        targetAppId: provider.appId,
+                        callingAppId: "core",
+                        operation: searchInvocationOperation,
+                        schemaHash: provider.schemaHash,
+                        authority: invocationAuthority,
+                        requestId,
+                        signer,
+                        issuer: signer.issuer,
+                      }),
+                    signingSignal,
+                  ),
                 ),
-              ),
+              { signal: signingSignal, timeoutMs: SIGNING_TIMEOUT_MS },
             ),
             signingSignal,
           );
@@ -288,7 +293,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
               });
             })()
           : capabilityCredentialHeaders(c.req.raw);
-        for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
+        if (requestId) headers.set("x-request-id", requestId);
+        for (const name of ["traceparent", "tracestate"] as const) {
           const value = c.req.header(name);
           if (value) headers.set(name, value);
         }

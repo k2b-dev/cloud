@@ -3,6 +3,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import type { CapabilityRegistryEntry } from "@valentinkolb/cloud/contracts/registry";
 import type { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
 import { generateKeyPair } from "jose";
+import { sql } from "bun";
 import { z } from "zod";
 import { createIdentityInvocationRoutes } from "./identity-invocation";
 
@@ -72,7 +73,15 @@ const authenticateWorkload = async (input: { token: string | null | undefined; a
 let signerKey: CryptoKey | undefined;
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
   signerKey ??= (await generateKeyPair("RS256")).privateKey;
-  return callback({ kid: "44444444-4444-4444-8444-444444444444", key: signerKey, signUntil: new Date(Date.now() + 60_000) });
+  return callback(
+    {
+      kid: "44444444-4444-4444-8444-444444444444",
+      key: signerKey,
+      signUntil: new Date(Date.now() + 60_000),
+      issuer: "https://cloud.example.test",
+    },
+    sql,
+  );
 };
 
 describe("identity invocation broker", () => {
