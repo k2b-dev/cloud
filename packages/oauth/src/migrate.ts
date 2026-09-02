@@ -141,6 +141,7 @@ export const migrate = async (): Promise<void> => {
       user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
       redirect_uri TEXT NOT NULL,
       scopes TEXT[] NOT NULL DEFAULT ARRAY['openid', 'profile', 'email'],
+      audiences TEXT[] NOT NULL DEFAULT ARRAY['cloud'],
       resource TEXT,
       nonce TEXT,
       code_challenge TEXT,
@@ -161,6 +162,25 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE oauth.codes
     ADD COLUMN IF NOT EXISTS resource TEXT
   `.simple();
+  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS audiences TEXT[]`.simple();
+  await sql`
+    UPDATE oauth.codes code
+    SET audiences = CASE
+      WHEN code.resource IS NOT NULL THEN ARRAY[code.resource]
+      ELSE ARRAY(
+        SELECT audience
+        FROM unnest(ARRAY['cloud', code.client_id]::text[] || client.audiences) WITH ORDINALITY AS value(audience, position)
+        GROUP BY audience
+        ORDER BY min(position)
+      )
+    END
+    FROM oauth.clients client
+    WHERE client.client_id = code.client_id AND code.audiences IS NULL
+  `.simple();
+  await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET DEFAULT ARRAY['cloud']::text[]`.simple();
+  await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET NOT NULL`.simple();
+  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
+  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_oauth_codes_expires
     ON oauth.codes(expires_at)
@@ -230,9 +250,27 @@ export const migrate = async (): Promise<void> => {
       expires_at TIMESTAMPTZ NOT NULL,
       used_at TIMESTAMPTZ,
       rotated_at TIMESTAMPTZ,
+      authority_nonce UUID,
+      authority_reserved_at TIMESTAMPTZ,
+      authority_issued_at TIMESTAMPTZ,
+      authority_scopes TEXT[],
+      authority_audiences TEXT[],
+      authority_resource TEXT,
       revoked_at TIMESTAMPTZ,
-      CONSTRAINT oauth_refresh_tokens_status_check CHECK (status IN ('active', 'rotated', 'revoked', 'reused'))
+      CONSTRAINT oauth_refresh_tokens_status_check CHECK (status IN ('active', 'issuing', 'rotated', 'revoked', 'reused'))
     )
+  `.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_reserved_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_scopes TEXT[]`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_audiences TEXT[]`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens ADD COLUMN IF NOT EXISTS authority_resource TEXT`.simple();
+  await sql`ALTER TABLE oauth.refresh_tokens DROP CONSTRAINT IF EXISTS oauth_refresh_tokens_status_check`.simple();
+  await sql`
+    ALTER TABLE oauth.refresh_tokens
+    ADD CONSTRAINT oauth_refresh_tokens_status_check
+    CHECK (status IN ('active', 'issuing', 'rotated', 'revoked', 'reused'))
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_oauth_refresh_tokens_family
@@ -252,6 +290,25 @@ export const migrate = async (): Promise<void> => {
       AND token.status = 'active'
   `.simple();
   console.log("  ✓ oauth refresh token tables");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS oauth.client_credentials_authority_grants (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      nonce UUID NOT NULL DEFAULT gen_random_uuid(),
+      client_id TEXT NOT NULL REFERENCES oauth.clients(client_id) ON DELETE CASCADE,
+      scopes TEXT[] NOT NULL,
+      audiences TEXT[] NOT NULL,
+      resource TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '1 minute',
+      consumed_at TIMESTAMPTZ
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_oauth_client_credentials_authority_grants_expires
+    ON oauth.client_credentials_authority_grants(expires_at)
+  `.simple();
+  console.log("  ✓ oauth client credentials authority grants");
 
   await sql`
     DO $$
@@ -351,5 +408,25 @@ export const migrate = async (): Promise<void> => {
     ON oauth.keys(retired_at)
     WHERE retired_at IS NOT NULL
   `.simple();
-  console.log("  ✓ oauth.keys table");
+  await sql`UPDATE oauth.keys SET private_key = '' WHERE retired_at IS NOT NULL AND private_key <> ''`.simple();
+  await sql`
+    COMMENT ON TABLE oauth.keys IS
+      'Legacy OAuth signing keys retained only for rolling issuance and token verification grace; Core owns new OAuth keys'
+  `.simple();
+  console.log("  ✓ oauth.keys legacy verification table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS oauth.issuance_state (
+      singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+      mode TEXT NOT NULL DEFAULT 'legacy' CHECK (mode IN ('legacy', 'core')),
+      cutover_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await sql`
+    INSERT INTO oauth.issuance_state (singleton, mode)
+    VALUES (true, 'legacy')
+    ON CONFLICT (singleton) DO NOTHING
+  `.simple();
+  console.log("  ✓ oauth issuance state");
 };

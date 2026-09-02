@@ -1,6 +1,7 @@
 import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
+import { ipaSyncWidgetHandler } from "./api/widgets";
 import { ipaHosts } from "./backend";
 import { app } from "./config";
 import adminPageRoutes from "./frontend";
@@ -18,6 +19,7 @@ export default await app.start({
   fetch: router.fetch,
   help: ipaHostsHelp,
   openapi: apiRoutes,
+  widgets: { sync: ipaSyncWidgetHandler },
   lifecycle: {
     setup: async () => {
       await migrate();

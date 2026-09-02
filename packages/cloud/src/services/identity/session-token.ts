@@ -1,11 +1,4 @@
-import {
-  createRemoteJWKSet,
-  decodeProtectedHeader,
-  errors,
-  jwtVerify,
-  SignJWT,
-  type JWTVerifyGetKey,
-} from "jose";
+import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTVerifyGetKey, jwtVerify, SignJWT } from "jose";
 import { z } from "zod";
 import {
   CLOUD_IDENTITY_ALGORITHM,
@@ -15,8 +8,8 @@ import {
   IDENTITY_JWKS_MAX_AGE_SECONDS,
   IDENTITY_MAX_COMPACT_TOKEN_BYTES,
 } from "./constants";
-import { prepareIdentitySigner } from "./key-ring";
 import type { PreparedIdentitySigner } from "./key-ring";
+import { prepareIdentitySigner } from "./key-ring";
 import { identityMetrics } from "./metrics";
 import { getIdentityRuntimeConfig } from "./runtime-config";
 
@@ -115,7 +108,7 @@ export const verifySessionToken = async (
   try {
     const runtime = options.issuer && (options.key || options.jwksUrl) ? null : await getIdentityRuntimeConfig();
     const issuer = options.issuer ?? runtime!.issuer;
-    const jwksUrl = options.jwksUrl ?? runtime?.jwksUrl;
+    const jwksUrl = options.jwksUrl ?? runtime?.sessionJwksUrl;
     const state = options.key || !jwksUrl ? null : remoteSet(jwksUrl);
     if (state && jwksUrl) remote = { url: jwksUrl, state };
     let key = options.key ?? state?.key;
@@ -130,7 +123,7 @@ export const verifySessionToken = async (
         clockTolerance: IDENTITY_CLOCK_TOLERANCE_SECONDS,
         currentDate: options.now,
       });
-    let verified;
+    let verified: Awaited<ReturnType<typeof jwtVerify>>;
     try {
       verified = await verify(key);
     } catch (error) {

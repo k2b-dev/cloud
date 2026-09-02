@@ -2,7 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { ipaHostsService } from "../service";
 
 const widgetMessages = i18n.define({
@@ -79,7 +79,7 @@ export const ipaHostsWidgetBody = (stats: IpaHostsWidgetStats, requestedLocale: 
  * mirrored host has at least one hostgroup membership; pills carry the raw
  * counts so the admin can decide whether to dive into /admin/ipa-hosts.
  */
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/sync", async (c) => {
+export const ipaSyncWidgetHandler = async (c: Context<AuthContext>) => {
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
   const user = actor?.kind === "user" ? actor.user : actor?.delegatedUser;
   // 403 = admin-only widget.
@@ -87,6 +87,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/sync", asyn
 
   const stats = await ipaHostsService.stats();
   return c.json(ipaHostsWidgetBody(stats, getLocale(c)));
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/sync", ipaSyncWidgetHandler);
 
 export default app;

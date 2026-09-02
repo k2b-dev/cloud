@@ -377,7 +377,19 @@ export type SettingEntry = {
 // "whose grants should be checked?". They differ for a user-bound credential:
 // the actor is a service account, the subject is its user.
 
-export type UserRequestActor = { kind: "user"; user: User };
+export type InvocationProvenance = {
+  kind: "invocation";
+  callingAppId: string;
+  credentialKind: "session" | "oauth" | "api_key" | "mandate";
+  invocationId: string;
+  requestId?: string | null;
+  mandateId?: string;
+  mandateRevision?: number;
+  workloadType?: string;
+  workloadId?: string;
+};
+
+export type UserRequestActor = { kind: "user"; user: User; delegation?: InvocationProvenance };
 
 export type ServiceAccountRequestActor = {
   kind: "service_account";
@@ -386,6 +398,7 @@ export type ServiceAccountRequestActor = {
   scopes: string[];
   credentialId?: string | null;
   credentialExpiresAt?: string | null;
+  delegation?: InvocationProvenance;
 };
 
 export type RequestActor = UserRequestActor | ServiceAccountRequestActor;

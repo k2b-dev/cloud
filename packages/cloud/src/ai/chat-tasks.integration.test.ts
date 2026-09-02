@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
+import { mandates } from "../services/mandates";
+import { toPgTextArray } from "../services/postgres";
 import { AiChatTaskIdempotencyConflictError, aiChatTasks } from "./chat-tasks";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
@@ -19,6 +21,144 @@ const canUseAiDatabase = async (): Promise<boolean> => {
 const suite = (await canUseAiDatabase()) ? describe : describe.skip;
 
 suite("AI chat tasks", () => {
+  test("upgrades one legacy task exactly once before it can run", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`ai-task-legacy-${suffix}`}, 'local', 'user', 'Legacy Task', ${`ai-task-legacy-${suffix}@example.test`}, 'Legacy', 'Task')
+      RETURNING id
+    `;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Legacy scheduled work" });
+    const [task] = await sql<{ id: string; short_id: string }[]>`
+      INSERT INTO ai.chat_tasks (
+        short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, cron, timezone, mandate_id, mandate_revision
+      )
+      VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${user!.id}::uuid, 'Legacy run', 'cron', '0 9 * * *', 'UTC', NULL, NULL)
+      RETURNING id, short_id
+    `;
+
+    try {
+      await Promise.all([aiChatTasks.prepareLegacyMandates(1), aiChatTasks.prepareLegacyMandates(1)]);
+      const mandates = await sql<{ id: string }[]>`
+        SELECT id FROM auth.mandates
+        WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND workload_id = ${task!.id}
+      `;
+      expect(mandates).toHaveLength(1);
+      const upgraded = await aiChatTasks.get({ userId: user!.id, taskId: task!.short_id });
+      expect(upgraded?.mandateId).toBe(mandates[0]!.id);
+      expect(upgraded?.mandateRevision).toBeGreaterThan(0);
+
+      const occurrence = await aiChatTasks.createOccurrence({
+        taskId: task!.id,
+        scheduledFor: new Date().toISOString(),
+        trigger: "manual",
+        requestKey: `legacy:${suffix}`,
+      });
+      expect(occurrence?.state).toBe("queued");
+      expect((await aiChatTasks.getQueuedOccurrence(occurrence!.id))?.task.mandateId).toBe(mandates[0]!.id);
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+      expect(
+        (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.chat_tasks WHERE id = ${task!.id}::uuid`)[0]?.count,
+      ).toBe(0);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("fails legacy recovery closed for pending, mismatched, and paused mandates", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`ai-task-recovery-${suffix}`}, 'local', 'user', 'Legacy Recovery', ${`ai-task-recovery-${suffix}@example.test`}, 'Legacy', 'Recovery')
+      RETURNING id
+    `;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Legacy recovery conflicts" });
+    const tasks: Array<{ id: string; short_id: string }> = [];
+    const mandateIds: string[] = [];
+    try {
+      for (const prompt of ["Pending mandate", "Wrong policy", "Paused mandate"]) {
+        const [task] = await sql<{ id: string; short_id: string }[]>`
+          INSERT INTO ai.chat_tasks (
+            short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, cron, timezone, mandate_id, mandate_revision
+          )
+          VALUES (${createAiShortId()}, ${conversation.id}::uuid, ${user!.id}::uuid, ${prompt}, 'cron', '0 9 * * *', 'UTC', NULL, NULL)
+          RETURNING id, short_id
+        `;
+        tasks.push(task!);
+      }
+      const authority = { kind: "interactive" as const, userId: user!.id };
+      const subject = { type: "user" as const, id: user!.id };
+      const expectedPolicy = { version: 1 as const, apps: "*" as const, operations: "*" as const, actions: "require_approval" as const };
+      const pending = await mandates.createPending({
+        authority,
+        subject,
+        ownerAppId: "core",
+        workloadType: "ai.chat-task",
+        workloadId: tasks[0]!.id,
+        policy: expectedPolicy,
+      });
+      if (!pending.ok) throw new Error(pending.error.message);
+      mandateIds.push(pending.data.id);
+      const mismatched = await mandates.create({
+        authority,
+        subject,
+        ownerAppId: "core",
+        workloadType: "ai.chat-task",
+        workloadId: tasks[1]!.id,
+        policy: {
+          version: 1,
+          apps: ["spaces"],
+          operations: ["capability.query:space.read"],
+          actions: "deny",
+        },
+      });
+      if (!mismatched.ok) throw new Error(mismatched.error.message);
+      mandateIds.push(mismatched.data.id);
+      const active = await mandates.create({
+        authority,
+        subject,
+        ownerAppId: "core",
+        workloadType: "ai.chat-task",
+        workloadId: tasks[2]!.id,
+        policy: expectedPolicy,
+      });
+      if (!active.ok) throw new Error(active.error.message);
+      mandateIds.push(active.data.id);
+      const paused = await mandates.pause({
+        mandateId: active.data.id,
+        expectedRevision: active.data.revision,
+        authority,
+      });
+      if (!paused.ok) throw new Error(paused.error.message);
+
+      expect(await aiChatTasks.prepareLegacyMandates(100)).toEqual({ prepared: 0, remaining: false });
+      const recovered = await sql<{ id: string; state: string; mandate_id: string | null; mandate_revision: number | null }[]>`
+        SELECT id, state, mandate_id, mandate_revision
+        FROM ai.chat_tasks
+        WHERE id IN (${tasks[0]!.id}::uuid, ${tasks[1]!.id}::uuid, ${tasks[2]!.id}::uuid)
+        ORDER BY id
+      `;
+      expect(recovered).toHaveLength(3);
+      expect(recovered.every((task) => task.state === "needs_attention" && !task.mandate_id && task.mandate_revision === null)).toBe(true);
+      expect((await mandates.get(pending.data.id))?.confirmedAt).toBeNull();
+      expect((await mandates.get(mismatched.data.id))?.policy).toEqual(mismatched.data.policy);
+      expect((await mandates.get(paused.data.id))?.state).toBe("paused");
+      const [resumeAudit] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count
+        FROM audit.events
+        WHERE action = 'mandate.resume' AND target_type = 'mandate' AND target_id = ${paused.data.id}
+      `;
+      expect(resumeAudit?.count).toBe(0);
+    } finally {
+      if (mandateIds.length) {
+        await sql`DELETE FROM audit.events WHERE target_type = 'mandate' AND target_id = ANY(${toPgTextArray(mandateIds)}::text[])`;
+      }
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("runs in its chat and is removed with the chat", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
@@ -43,6 +183,19 @@ suite("AI chat tasks", () => {
       });
       expect(task?.shortId).toMatch(AI_SHORT_ID_PATTERN);
       expect(task?.chatId).toBe(conversation.shortId);
+      expect(
+        await sql<
+          Array<{ owner_app_id: string; workload_type: string; workload_id: string; state: string; policy: unknown }>
+        >`SELECT owner_app_id, workload_type, workload_id, state, policy FROM auth.mandates WHERE id = ${task!.mandateId}::uuid`,
+      ).toEqual([
+        {
+          owner_app_id: "core",
+          workload_type: "ai.chat-task",
+          workload_id: task!.id,
+          state: "active",
+          policy: { version: 1, apps: "*", operations: "*", actions: "require_approval" },
+        },
+      ]);
       expect((await aiChatTasks.list({ userId: user!.id })).map((entry) => entry.shortId)).toEqual([task!.shortId]);
 
       const manualAt = new Date().toISOString();
@@ -53,11 +206,13 @@ suite("AI chat tasks", () => {
         requestKey: `manual:${task!.id}:${suffix}`,
       });
       expect(manual?.shortId).toMatch(AI_SHORT_ID_PATTERN);
-      expect((await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "paused" }))?.state).toBe(
+      expect((await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "paused" }))?.state).toBe("paused");
+      expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id = ${task!.mandateId}::uuid`)[0]?.state).toBe(
         "paused",
       );
       expect((await aiChatTasks.listQueuedOccurrences()).some((entry) => entry.occurrence.id === manual!.id)).toBe(false);
-      expect((await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "active" }))?.state).toBe(
+      expect((await aiChatTasks.setState({ userId: user!.id, taskId: task!.shortId, state: "active" }))?.state).toBe("active");
+      expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id = ${task!.mandateId}::uuid`)[0]?.state).toBe(
         "active",
       );
       expect((await aiChatTasks.listQueuedOccurrences()).find((entry) => entry.occurrence.id === manual!.id)?.task.shortId).toBe(
@@ -119,6 +274,9 @@ suite("AI chat tasks", () => {
         failed: false,
       });
       expect((await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))?.state).toBe("completed");
+      expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id = ${task!.mandateId}::uuid`)[0]?.state).toBe(
+        "paused",
+      );
 
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       const [counts] = await sql<{ tasks: number; occurrences: number }[]>`
@@ -127,6 +285,28 @@ suite("AI chat tasks", () => {
           (SELECT count(*)::int FROM ai.chat_task_occurrences WHERE id IN (${manual!.id}::uuid, ${occurrence!.id}::uuid)) AS occurrences
       `;
       expect(counts).toEqual({ tasks: 0, occurrences: 0 });
+      expect((await sql<{ state: string }[]>`SELECT state FROM auth.mandates WHERE id = ${task!.mandateId}::uuid`)[0]?.state).toBe(
+        "revoked",
+      );
+      const cascadeAudit = await sql<{ action: string; outcome: string; reason: string | null; metadata: unknown }[]>`
+        SELECT action, outcome, reason, metadata
+        FROM audit.events
+        WHERE target_type = 'mandate' AND target_id = ${task!.mandateId}
+          AND metadata->>'provenance' = 'ai.chat-task-cascade'
+      `;
+      expect(cascadeAudit).toEqual([
+        {
+          action: "mandate.revoke",
+          outcome: "allowed",
+          reason: "Scheduled chat task deleted",
+          metadata: {
+            ownerAppId: "core",
+            workloadType: "ai.chat-task",
+            workloadId: task!.id,
+            provenance: "ai.chat-task-cascade",
+          },
+        },
+      ]);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
@@ -183,9 +363,7 @@ suite("AI chat tasks", () => {
       ).toBe("paused");
       await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" });
       const activeRevision = (await aiChatTasks.get({ userId: owner.id, taskId: task!.shortId }))!.revision;
-      expect((await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" }))?.revision).toBe(
-        activeRevision,
-      );
+      expect((await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" }))?.revision).toBe(activeRevision);
 
       const stale = await aiChatTasks.createOccurrence({
         taskId: task!.id,
@@ -199,15 +377,11 @@ suite("AI chat tasks", () => {
         schedule: { kind: "cron", cron: "0 9 * * 1" },
         timezone: "Europe/Berlin",
       });
-      expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe(
-        "queued",
-      );
+      expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe("queued");
       await aiChatTasks.getQueuedOccurrence(stale!.id);
       await aiChatTasks.update({ userId: owner.id, taskId: task!.shortId, prompt: "Updated before preflight failed." });
       expect(await aiChatTasks.failOccurrence({ occurrenceId: stale!.id, error: "Stale preflight" })).toBe("stale");
-      expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe(
-        "queued",
-      );
+      expect((await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId }))?.[0]?.state).toBe("queued");
       const rebound = await aiChatTasks.getQueuedOccurrence(stale!.id);
       const staleDelivery = await aiChatTasks.deliverOccurrence({
         occurrenceId: stale!.id,
@@ -251,14 +425,10 @@ suite("AI chat tasks", () => {
       const detail = await aiChatTasks.listOccurrences({ userId: owner.id, taskId: task!.shortId });
       expect(detail?.find((entry) => entry.id === failed!.id)?.error).toBe("Model unavailable");
       expect((await aiChatTasks.get({ userId: owner.id, taskId: task!.shortId }))?.state).toBe("needs_attention");
-      expect((await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" }))?.state).toBe(
-        "active",
-      );
+      expect((await aiChatTasks.setState({ userId: owner.id, taskId: task!.shortId, state: "active" }))?.state).toBe("active");
 
       await sql`UPDATE ai.chat_tasks SET state = 'completed' WHERE id = ${task!.id}::uuid`;
-      expect(
-        (await aiChatTasks.update({ userId: owner.id, taskId: task!.shortId, prompt: "Still complete." }))?.state,
-      ).toBe("completed");
+      expect((await aiChatTasks.update({ userId: owner.id, taskId: task!.shortId, prompt: "Still complete." }))?.state).toBe("completed");
       expect(
         (
           await aiChatTasks.update({

@@ -15,6 +15,19 @@ describe("readBoundedJson", () => {
     });
   });
 
+  test("cancels a body rejected from its declared size", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const response = new Response(body, { headers: { "content-length": "100" } });
+
+    expect(await readBoundedJson(response, 32)).toEqual({ ok: false, reason: "too_large" });
+    expect(cancelled).toBeTrue();
+  });
+
   test("rejects invalid UTF-8 and body stream failures", async () => {
     expect(await readBoundedJson(new Response(new Uint8Array([0x7b, 0xff, 0x7d])), 32)).toEqual({
       ok: false,

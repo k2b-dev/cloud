@@ -13,6 +13,7 @@ type DbCode = {
   user_id: string;
   redirect_uri: string;
   scopes: string[];
+  audiences: string[];
   resource: string | null;
   nonce: string | null;
   code_challenge: string | null;
@@ -40,21 +41,32 @@ export const create = async (params: {
   const { clientId, userId, redirectUri, scopes, resource, nonce, codeChallenge, codeChallengeMethod, db = sql } = params;
 
   const [row] = await db<{ code: string }[]>`
-    INSERT INTO oauth.codes (client_id, user_id, redirect_uri, scopes, resource, nonce, code_challenge, code_challenge_method)
-    VALUES (
-      ${clientId},
-      ${userId},
+    INSERT INTO oauth.codes (client_id, user_id, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method)
+    SELECT
+      client.client_id,
+      ${userId}::uuid,
       ${redirectUri},
       ${toPgTextArray(scopes)}::text[],
+      CASE
+        WHEN ${resource ?? null}::text IS NOT NULL THEN ARRAY[${resource ?? null}::text]
+        ELSE ARRAY(
+          SELECT audience
+          FROM unnest(ARRAY['cloud', client.client_id]::text[] || client.audiences) WITH ORDINALITY AS value(audience, position)
+          GROUP BY audience
+          ORDER BY min(position)
+        )
+      END,
       ${resource ?? null},
       ${nonce ?? null},
       ${codeChallenge ?? null},
       ${codeChallengeMethod ?? null}
-    )
+    FROM oauth.clients client
+    WHERE client.client_id = ${clientId}
     RETURNING code
   `;
 
-  return row!.code;
+  if (!row) throw new Error("OAuth client no longer exists");
+  return row.code;
 };
 
 /**
@@ -68,12 +80,19 @@ export const consume = async (params: {
   redirectUri: string;
   resource?: string;
   codeVerifier?: string;
-}): Promise<{ userId: string; client: OAuthClient; scopes: OAuthScope[]; resource: string | null; nonce: string | null } | null> => {
+}): Promise<{
+  userId: string;
+  client: OAuthClient;
+  scopes: OAuthScope[];
+  resource: string | null;
+  nonce: string | null;
+  authorityGrant: { kind: "authorization_code"; code: string; nonce: string };
+} | null> => {
   const { code, clientId, redirectUri, resource, codeVerifier } = params;
 
   // Get and validate code
   const [row] = await sql<DbCode[]>`
-    SELECT code, client_id, user_id, redirect_uri, scopes, resource, nonce, code_challenge, code_challenge_method, expires_at, used
+    SELECT code, client_id, user_id, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method, expires_at, used
     FROM oauth.codes
     WHERE code = ${code}
   `;
@@ -107,9 +126,10 @@ export const consume = async (params: {
   }
 
   // Mark as used atomically so concurrent token exchanges cannot consume the same code twice.
+  const authorityNonce = crypto.randomUUID();
   const [usedRow] = await sql<{ code: string }[]>`
     UPDATE oauth.codes
-    SET used = true
+    SET used = true, authority_nonce = ${authorityNonce}::uuid
     WHERE code = ${code}
       AND used = false
       AND expires_at >= now()
@@ -121,7 +141,14 @@ export const consume = async (params: {
   const client = params.client ?? (await clients.getByClientId({ clientId }));
   if (!client) return null;
 
-  return { userId: row.user_id, client, scopes: row.scopes as OAuthScope[], resource: row.resource, nonce: row.nonce };
+  return {
+    userId: row.user_id,
+    client,
+    scopes: row.scopes as OAuthScope[],
+    resource: row.resource,
+    nonce: row.nonce,
+    authorityGrant: { kind: "authorization_code", code, nonce: authorityNonce },
+  };
 };
 
 /**
@@ -130,7 +157,7 @@ export const consume = async (params: {
 export const cleanup = async (): Promise<number> => {
   const result = await sql`
     DELETE FROM oauth.codes
-    WHERE expires_at < now() OR used = true
+    WHERE expires_at < now() OR (used = true AND authority_issued_at IS NOT NULL)
   `;
   return result.count;
 };

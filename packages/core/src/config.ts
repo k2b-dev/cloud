@@ -1,7 +1,7 @@
 import { defineApp } from "@valentinkolb/cloud";
 import { CORE_SETTINGS } from "./_settings";
-import { NOTIFICATIONS } from "./notifications";
 import { AI_NOTIFICATIONS } from "./ai-notifications";
+import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
@@ -59,6 +59,8 @@ export const app = defineApp({
     "/api/admin/core",
     "/api/openapi.json",
     "/.well-known/cloud-identity-jwks.json",
+    "/.well-known/cloud-session-jwks.json",
+    "/.well-known/cloud-invocation-jwks.json",
     "/.well-known/oauth-protected-resource/api/mcp/v1",
     "/branding",
     "/_ssr",

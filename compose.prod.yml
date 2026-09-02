@@ -12,6 +12,9 @@ x-shared-env: &shared-env
   REDIS_URL: redis://valkey:6379
   APP_SECRET: ${APP_SECRET}
   APP_URL: https://${CLOUD_HOST}
+  CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
+  CLOUD_OAUTH_JWKS_ORIGIN: http://app-oauth:3000
+  CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
 
 x-app-defaults: &app-defaults
   restart: unless-stopped
@@ -53,6 +56,7 @@ services:
       CLOUD_IDENTITY_NEXT_KEY: ${CLOUD_IDENTITY_NEXT_KEY:-}
       CLOUD_IDENTITY_PREVIOUS_KEY: ${CLOUD_IDENTITY_PREVIOUS_KEY:-}
       CLOUD_SESSION_ISSUANCE_MODE: ${CLOUD_SESSION_ISSUANCE_MODE:-legacy}
+      CLOUD_INVOCATION_ISSUANCE_MODE: ${CLOUD_INVOCATION_ISSUANCE_MODE:-legacy}
 
   app-accounts:
     <<: *app-defaults
@@ -97,6 +101,10 @@ services:
   app-mail:
     <<: *app-defaults
     image: ghcr.io/valentinkolb/cloud-app-mail:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
+      CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE: ${CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE:-legacy}
 
   app-notebooks:
     <<: *app-defaults
@@ -105,6 +113,10 @@ services:
   app-oauth:
     <<: *app-defaults
     image: ghcr.io/valentinkolb/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      CLOUD_APP_CREDENTIAL: ${CLOUD_OAUTH_APP_CREDENTIAL:-}
+      CLOUD_OAUTH_ISSUANCE_MODE: ${CLOUD_OAUTH_ISSUANCE_MODE:-legacy}
 
   app-proxy-auth:
     <<: *app-defaults

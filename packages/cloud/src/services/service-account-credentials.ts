@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { crypto, err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import type { User } from "../contracts/shared";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
@@ -87,7 +87,7 @@ type DbCredentialServiceAccountFields = {
   service_account_created_at: Date;
 };
 
-type SqlRunner = typeof sql;
+type SqlRunner = SQL;
 type DbCredentialOverviewRow = DbCredentialRow &
   DbCredentialServiceAccountFields & {
     delegated_uid: string | null;
@@ -638,31 +638,48 @@ export const revokeForDelegatedUser = async (params: { credentialId: string; use
   });
 };
 
-export const revoke = async (params: { credentialId: string; actor: User }): Promise<Result<void>> => {
+type RevokeCredentialInput =
+  | { credentialId: string; actor: User; system?: never }
+  | { credentialId: string; actor?: never; system: { service: string; reason: string } };
+
+export const revoke = async (params: RevokeCredentialInput, options: { db?: SQL } = {}): Promise<Result<void>> => {
   if (!UUID_PATTERN.test(params.credentialId)) return fail(err.notFound("API key"));
 
-  return sql.begin(async (tx) => {
-    const [row] = await tx<DbCredentialRow[]>`
+  const run = async (db: SQL): Promise<Result<void>> => {
+    const [row] = await db<DbCredentialRow[]>`
       UPDATE auth.service_account_credentials
       SET status = 'revoked',
         revoked_at = now(),
-        revoked_by = ${params.actor.id}::uuid
+        revoked_by = ${params.actor?.id ?? null}::uuid
       WHERE id = ${params.credentialId}::uuid
         AND status = 'active'
       RETURNING id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
         last_used_at, created_by, created_at, revoked_at, revoked_by
     `;
 
-    const result = row ? ok() : fail(err.notFound("API key"));
+    const [existing] = row
+      ? [row]
+      : await db<DbCredentialRow[]>`
+          SELECT id, service_account_id, name, kind, status, token_prefix, scopes, expires_at,
+            last_used_at, created_by, created_at, revoked_at, revoked_by
+          FROM auth.service_account_credentials
+          WHERE id = ${params.credentialId}::uuid
+          LIMIT 1
+        `;
+    const result = row || existing?.status === "revoked" ? ok() : fail(err.notFound("API key"));
     return audit.recordResult({
       action: "service_account_credential.revoke",
-      actor: actorForUser(params.actor),
-      target: { type: "service_account_credential", id: params.credentialId, label: row?.name ?? null },
-      metadata: { serviceAccountId: row?.service_account_id ?? null, adminAction: true },
+      actor: params.actor ? actorForUser(params.actor) : null,
+      target: { type: "service_account_credential", id: params.credentialId, label: row?.name ?? existing?.name ?? null },
+      metadata: {
+        serviceAccountId: row?.service_account_id ?? existing?.service_account_id ?? null,
+        ...(params.actor ? { adminAction: true } : { provenance: "system", service: params.system.service, reason: params.system.reason }),
+      },
       result,
-      db: tx,
+      db,
     });
-  });
+  };
+  return options.db ? run(options.db) : sql.begin(run);
 };
 
 const findActiveByTokenPrefix = async (tokenPrefix: string): Promise<DbCredentialWithSecretRow | null> => {

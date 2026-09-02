@@ -2,9 +2,9 @@ import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts"
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
 import { formatNumber } from "@valentinkolb/cloud/shared";
-import { Hono } from "hono";
-import { loggingService } from "./service";
+import { type Context, Hono } from "hono";
 import { gatewayOpsMessages } from "../../messages";
+import { loggingService } from "./service";
 
 /**
  * Widget endpoints for the dashboard.
@@ -19,7 +19,7 @@ import { gatewayOpsMessages } from "../../messages";
  * `requireRole("*")` loads the session without enforcing it — we need the user
  * to decide between 403 and 200 ourselves.
  */
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/errors", async (c) => {
+export const loggingErrorsWidgetHandler = async (c: Context<AuthContext>) => {
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
   const user = actor?.kind === "user" ? actor.user : actor?.delegatedUser;
   if (!user || !hasRole(user, "admin")) return c.body(null, 403);
@@ -56,6 +56,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/errors", as
     blocks,
   };
   return c.json(body);
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/errors", loggingErrorsWidgetHandler);
 
 export default app;

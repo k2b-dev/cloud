@@ -1,5 +1,14 @@
 import type { Message } from "@k2b/nessi";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
+import {
+  createMandate,
+  getMandate,
+  type Mandate,
+  type MandatePolicyV1,
+  pauseMandate,
+  resumeMandate,
+  revokeMandate,
+} from "../services/mandates";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import type { AiChatTurnRunConfig, AiStoredMessage, AiTurnStatus } from "./types";
 
@@ -12,6 +21,8 @@ export type AiChatTask = {
   chatTitle: string;
   conversationId: string;
   sponsorUserId: string;
+  mandateId: string | null;
+  mandateRevision: number | null;
   prompt: string;
   schedule: AiChatTaskSchedule;
   timezone: string;
@@ -44,6 +55,8 @@ type TaskRow = {
   conversation_short_id: string;
   conversation_title: string;
   sponsor_user_id: string;
+  mandate_id: string | null;
+  mandate_revision: number | bigint | null;
   prompt: string;
   schedule_kind: "once" | "cron";
   run_at: Date | string | null;
@@ -63,6 +76,8 @@ export class AiChatTaskIdempotencyConflictError extends Error {
   }
 }
 
+class AiChatTaskCreateRace extends Error {}
+
 type OccurrenceRow = {
   id: string;
   short_id: string;
@@ -80,15 +95,117 @@ type OccurrenceRow = {
 const iso = (value: Date | string): string => new Date(value).toISOString();
 const nullableIso = (value: Date | string | null): string | null => (value === null ? null : iso(value));
 const taskIdempotencyKey = (key: string): string => `task.create:${key}`;
-const taskFingerprint = (input: {
-  chatId: string;
-  prompt: string;
-  schedule: AiChatTaskSchedule;
-  timezone: string;
-}): string =>
-  new Bun.CryptoHasher("sha256")
-    .update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone]))
-    .digest("hex");
+const CHAT_TASK_MANDATE_POLICY = {
+  version: 1,
+  apps: "*",
+  operations: "*",
+  actions: "require_approval",
+} as const satisfies MandatePolicyV1;
+const mandateAuthority = (userId: string) => ({ kind: "interactive" as const, userId });
+const mandateMigrationAuthority = (sponsorUserId: string) => ({
+  kind: "system" as const,
+  migration: "ai.chat-task" as const,
+  sponsorUserId,
+});
+const mandateWorkloadAuthority = { kind: "workload" as const, ownerAppId: "core" };
+const mandateError = (operation: string, result: { ok: false; error: { message: string } }): Error =>
+  new Error(`Could not ${operation} scheduled task mandate: ${result.error.message}`);
+const isChatTaskMandatePolicy = (policy: MandatePolicyV1): boolean =>
+  policy.version === CHAT_TASK_MANDATE_POLICY.version &&
+  policy.apps === CHAT_TASK_MANDATE_POLICY.apps &&
+  policy.operations === CHAT_TASK_MANDATE_POLICY.operations &&
+  policy.actions === CHAT_TASK_MANDATE_POLICY.actions;
+const mandateRevision = async (
+  task: { mandate_id: string; mandate_revision: number | bigint },
+  state: "active" | "paused",
+  userId: string,
+  db: SQL,
+): Promise<number> => {
+  const input = {
+    mandateId: task.mandate_id,
+    expectedRevision: Number(task.mandate_revision),
+    authority: mandateAuthority(userId),
+  };
+  const result = state === "active" ? await resumeMandate(input, { db }) : await pauseMandate(input, { db });
+  if (!result.ok) throw mandateError(state === "active" ? "resume" : "pause", result);
+  return result.data.revision;
+};
+const pauseTaskMandate = async (task: { mandate_id: string; mandate_revision: number | bigint }, db: SQL): Promise<number> => {
+  const result = await pauseMandate(
+    {
+      mandateId: task.mandate_id,
+      expectedRevision: Number(task.mandate_revision),
+      authority: mandateWorkloadAuthority,
+    },
+    { db },
+  );
+  if (!result.ok) throw mandateError("pause", result);
+  return result.data.revision;
+};
+const requireTaskMandate = (
+  task: Pick<TaskRow, "mandate_id" | "mandate_revision">,
+): { mandate_id: string; mandate_revision: number | bigint } => {
+  if (!task.mandate_id || task.mandate_revision === null) throw new Error("Scheduled task mandate is unavailable");
+  return { mandate_id: task.mandate_id, mandate_revision: task.mandate_revision };
+};
+const ensureTaskMandate = async (task: TaskRow, db: SQL): Promise<TaskRow> => {
+  if (task.mandate_id && task.mandate_revision !== null) return task;
+  if (task.mandate_id || task.mandate_revision !== null) throw new Error("Scheduled task mandate state is inconsistent");
+
+  const created = await createMandate(
+    {
+      authority: mandateMigrationAuthority(task.sponsor_user_id),
+      subject: { type: "user", id: task.sponsor_user_id },
+      ownerAppId: "core",
+      workloadType: "ai.chat-task",
+      workloadId: task.id,
+      policy: CHAT_TASK_MANDATE_POLICY,
+    },
+    { db },
+  );
+  let mandate: Pick<Mandate, "id" | "revision" | "state">;
+  if (created.ok) {
+    mandate = created.data;
+  } else {
+    const [candidate] = await db<{ id: string }[]>`
+      SELECT id FROM auth.mandates
+      WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND workload_id = ${task.id}
+        AND state IN ('active', 'paused')
+      LIMIT 1
+      FOR UPDATE
+    `;
+    const existing = candidate ? await getMandate(candidate.id, { db }) : null;
+    if (
+      !existing ||
+      existing.subject.type !== "user" ||
+      existing.subject.id !== task.sponsor_user_id ||
+      existing.ownerAppId !== "core" ||
+      existing.workloadType !== "ai.chat-task" ||
+      existing.workloadId !== task.id ||
+      !existing.confirmedAt ||
+      !isChatTaskMandatePolicy(existing.policy)
+    ) {
+      throw mandateError("recover", created);
+    }
+    mandate = existing;
+  }
+
+  let revision = mandate.revision;
+  if (task.state === "active" && mandate.state === "paused") {
+    throw new Error("Could not recover scheduled task mandate: active legacy task has a paused mandate");
+  } else if (task.state !== "active" && mandate.state === "active") {
+    const paused = await pauseMandate({ mandateId: mandate.id, expectedRevision: revision, authority: mandateWorkloadAuthority }, { db });
+    if (!paused.ok) throw mandateError("pause", paused);
+    revision = paused.data.revision;
+  }
+  await db`
+    UPDATE ai.chat_tasks SET mandate_id = ${mandate.id}::uuid, mandate_revision = ${revision}
+    WHERE id = ${task.id}::uuid AND mandate_id IS NULL AND mandate_revision IS NULL
+  `;
+  return { ...task, mandate_id: mandate.id, mandate_revision: revision };
+};
+const taskFingerprint = (input: { chatId: string; prompt: string; schedule: AiChatTaskSchedule; timezone: string }): string =>
+  new Bun.CryptoHasher("sha256").update(JSON.stringify([input.chatId, input.prompt.trim(), input.schedule, input.timezone])).digest("hex");
 const taskSelect = sql`
   SELECT task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
   FROM ai.chat_tasks task
@@ -102,6 +219,8 @@ const toTask = (row: TaskRow): AiChatTask => ({
   chatTitle: row.conversation_title,
   conversationId: row.conversation_id,
   sponsorUserId: row.sponsor_user_id,
+  mandateId: row.mandate_id,
+  mandateRevision: row.mandate_revision === null ? null : Number(row.mandate_revision),
   prompt: row.prompt,
   schedule: row.schedule_kind === "once" ? { kind: "once", runAt: iso(row.run_at!) } : { kind: "cron", cron: row.cron! },
   timezone: row.timezone,
@@ -126,7 +245,73 @@ const toOccurrence = (row: OccurrenceRow): AiChatTaskOccurrence => ({
   completedAt: nullableIso(row.completed_at),
 });
 
+const ensureMandateByTaskId = (taskId: string): Promise<AiChatTask | null> =>
+  sql.begin(async (tx) => {
+    const [task] = await tx<TaskRow[]>`
+      ${taskSelect}
+      WHERE task.id = ${taskId}::uuid
+      FOR UPDATE OF task
+    `;
+    return task ? toTask(await ensureTaskMandate(task, tx)) : null;
+  });
+const ensureOccurrenceTaskMandate = async (occurrenceId: string, db: SQL): Promise<boolean> => {
+  const [task] = await db<TaskRow[]>`
+    ${taskSelect}
+    WHERE EXISTS (
+      SELECT 1 FROM ai.chat_task_occurrences occurrence
+      WHERE occurrence.id = ${occurrenceId}::uuid AND occurrence.task_id = task.id
+    )
+    FOR UPDATE OF task
+  `;
+  if (!task) return false;
+  await ensureTaskMandate(task, db);
+  return true;
+};
+const ensureTurnTaskMandate = async (turnId: string, db: SQL): Promise<boolean> => {
+  const [task] = await db<TaskRow[]>`
+    ${taskSelect}
+    WHERE EXISTS (
+      SELECT 1 FROM ai.chat_task_occurrences occurrence
+      WHERE occurrence.turn_id = ${turnId}::uuid AND occurrence.task_id = task.id
+    )
+    FOR UPDATE OF task
+  `;
+  if (!task) return false;
+  await ensureTaskMandate(task, db);
+  return true;
+};
+
 export const aiChatTasks = {
+  prepareLegacyMandates: async (limit = 100): Promise<{ prepared: number; remaining: boolean }> => {
+    const boundedLimit = Math.min(Math.max(limit, 1), 500);
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM ai.chat_tasks
+      WHERE state = 'active' AND mandate_id IS NULL AND mandate_revision IS NULL
+      ORDER BY created_at, id
+      LIMIT ${boundedLimit}
+    `;
+    let prepared = 0;
+    for (const row of rows) {
+      try {
+        if (await ensureMandateByTaskId(row.id)) prepared += 1;
+      } catch (error) {
+        await sql`
+          UPDATE ai.chat_tasks
+          SET state = 'needs_attention', last_error = ${error instanceof Error ? error.message : "Mandate recovery failed"},
+              revision = revision + 1, updated_at = now()
+          WHERE id = ${row.id}::uuid AND mandate_id IS NULL AND state = 'active'
+        `;
+      }
+    }
+    const [remaining] = await sql<{ present: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM ai.chat_tasks
+        WHERE state = 'active' AND mandate_id IS NULL AND mandate_revision IS NULL
+      ) AS present
+    `;
+    return { prepared, remaining: remaining?.present === true };
+  },
+
   list: async (input: {
     userId: string;
     chatId?: string;
@@ -179,25 +364,57 @@ export const aiChatTasks = {
         return toTask(existing[0]);
       }
     }
-    const rows = await withAiShortId(
-      "ai_chat_tasks_short_id_unique",
-      (shortId) => sql<TaskRow[]>`
-      INSERT INTO ai.chat_tasks (
-        short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, run_at, cron, timezone,
-        idempotency_key, idempotency_fingerprint
-      )
-      SELECT ${shortId}, conversation.id, ${input.userId}::uuid, ${input.prompt.trim()}, ${input.schedule.kind},
-        ${input.schedule.kind === "once" ? input.schedule.runAt : null}::timestamptz,
-        ${input.schedule.kind === "cron" ? input.schedule.cron : null}, ${input.timezone}, ${scopedKey}, ${fingerprint}
-      FROM ai.conversations conversation
-      WHERE conversation.short_id = ${input.chatId}
-        AND conversation.created_by_user_id = ${input.userId}::uuid
-        AND conversation.archived_at IS NULL
-      ON CONFLICT (sponsor_user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-      RETURNING *, ${input.chatId} AS conversation_short_id,
-        (SELECT title FROM ai.conversations WHERE short_id = ${input.chatId}) AS conversation_title
-    `,
-    );
+    let rows: TaskRow[];
+    try {
+      rows = await sql.begin(async (tx) => {
+        const conversations = await tx<{ id: string; title: string }[]>`
+        SELECT id, title FROM ai.conversations
+        WHERE short_id = ${input.chatId}
+          AND created_by_user_id = ${input.userId}::uuid
+          AND archived_at IS NULL
+        LIMIT 1
+      `;
+        const conversation = conversations[0];
+        if (!conversation) return [];
+        const taskId = crypto.randomUUID();
+        const mandate = await createMandate(
+          {
+            authority: mandateAuthority(input.userId),
+            subject: { type: "user", id: input.userId },
+            ownerAppId: "core",
+            workloadType: "ai.chat-task",
+            workloadId: taskId,
+            policy: CHAT_TASK_MANDATE_POLICY,
+          },
+          { db: tx },
+        );
+        if (!mandate.ok) throw mandateError("create", mandate);
+        const inserted = await withAiShortIdForDb(
+          tx,
+          "ai_chat_tasks_short_id_unique",
+          (attempt, shortId) => attempt<TaskRow[]>`
+          INSERT INTO ai.chat_tasks (
+            id, short_id, conversation_id, sponsor_user_id, prompt, schedule_kind, run_at, cron, timezone,
+            mandate_id, mandate_revision, idempotency_key, idempotency_fingerprint
+          )
+          VALUES (
+            ${taskId}::uuid, ${shortId}, ${conversation.id}::uuid, ${input.userId}::uuid, ${input.prompt.trim()}, ${input.schedule.kind},
+            ${input.schedule.kind === "once" ? input.schedule.runAt : null}::timestamptz,
+            ${input.schedule.kind === "cron" ? input.schedule.cron : null}, ${input.timezone},
+            ${mandate.data.id}::uuid, ${mandate.data.revision}, ${scopedKey}, ${fingerprint}
+          )
+          ON CONFLICT (sponsor_user_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+          RETURNING *, ${input.chatId} AS conversation_short_id, ${conversation.title} AS conversation_title
+        `,
+        );
+        const task = inserted[0];
+        if (!task) throw new AiChatTaskCreateRace();
+        return inserted;
+      });
+    } catch (error) {
+      if (!(error instanceof AiChatTaskCreateRace)) throw error;
+      rows = [];
+    }
     if (rows[0]) return toTask(rows[0]);
     if (!input.idempotencyKey) return null;
     const existing = await sql<(TaskRow & { idempotency_fingerprint: string | null })[]>`
@@ -241,8 +458,9 @@ export const aiChatTasks = {
           AND task.short_id = ${input.taskId}
         FOR UPDATE OF task
       `;
-      const current = rows[0];
+      let current = rows[0];
       if (!current) return null;
+      current = await ensureTaskMandate(current, tx);
       const nextTimezone = input.timezone ?? current.timezone;
       const scheduleChanged = input.schedule
         ? input.schedule.kind !== current.schedule_kind ||
@@ -279,48 +497,75 @@ export const aiChatTasks = {
         `;
       }
       const updated = await tx<TaskRow[]>`${taskSelect} WHERE task.id = ${current.id}::uuid`;
-      return toTask(updated[0]!);
+      const next = updated[0]!;
+      if (next.state === "active") {
+        const revision = await mandateRevision(requireTaskMandate(next), "active", input.userId, tx);
+        if (revision !== Number(next.mandate_revision)) {
+          next.mandate_revision = revision;
+          await tx`UPDATE ai.chat_tasks SET mandate_revision = ${revision} WHERE id = ${next.id}::uuid`;
+        }
+      }
+      return toTask(next);
     }),
 
   setState: async (input: { userId: string; taskId: string; state: "active" | "paused" }): Promise<AiChatTask | null> => {
-    const rows = await sql<TaskRow[]>`
-      UPDATE ai.chat_tasks task
-      SET state = ${input.state},
-          last_error = CASE WHEN task.state = ${input.state} THEN task.last_error ELSE NULL END,
-          revision = CASE WHEN task.state = ${input.state} THEN task.revision ELSE task.revision + 1 END,
-          updated_at = CASE WHEN task.state = ${input.state} THEN task.updated_at ELSE now() END
-      FROM ai.conversations conversation
-      WHERE conversation.id = task.conversation_id
-        AND task.sponsor_user_id = ${input.userId}::uuid
-        AND task.short_id = ${input.taskId}
-        AND (
-          task.state = ${input.state}
-          OR (task.state = 'active' AND ${input.state} = 'paused')
-          OR (task.state = 'paused' AND ${input.state} = 'active')
-          OR (task.state = 'needs_attention' AND task.schedule_kind = 'cron' AND ${input.state} = 'active')
-        )
-      RETURNING task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
-    `;
-    return rows[0] ? toTask(rows[0]) : null;
+    return sql.begin(async (tx) => {
+      const rows = await tx<TaskRow[]>`
+        ${taskSelect}
+        WHERE task.sponsor_user_id = ${input.userId}::uuid AND task.short_id = ${input.taskId}
+        FOR UPDATE OF task
+      `;
+      let current = rows[0];
+      if (!current) return null;
+      current = await ensureTaskMandate(current, tx);
+      const allowed =
+        current.state === input.state ||
+        (current.state === "active" && input.state === "paused") ||
+        (current.state === "paused" && input.state === "active") ||
+        (current.state === "needs_attention" && current.schedule_kind === "cron" && input.state === "active");
+      if (!allowed) return null;
+      const revision = await mandateRevision(requireTaskMandate(current), input.state, input.userId, tx);
+      const updated = await tx<TaskRow[]>`
+        UPDATE ai.chat_tasks task
+        SET state = ${input.state}, mandate_revision = ${revision},
+            last_error = CASE WHEN task.state = ${input.state} THEN task.last_error ELSE NULL END,
+            revision = CASE WHEN task.state = ${input.state} THEN task.revision ELSE task.revision + 1 END,
+            updated_at = CASE WHEN task.state = ${input.state} THEN task.updated_at ELSE now() END
+        FROM ai.conversations conversation
+        WHERE conversation.id = task.conversation_id AND task.id = ${current.id}::uuid
+        RETURNING task.*, conversation.short_id AS conversation_short_id, conversation.title AS conversation_title
+      `;
+      return updated[0] ? toTask(updated[0]) : null;
+    });
   },
 
   delete: async (input: { userId: string; taskId: string }): Promise<boolean> => {
-    const rows = await sql<{ id: string }[]>`
-      DELETE FROM ai.chat_tasks task
-      USING ai.conversations conversation
-      WHERE conversation.id = task.conversation_id
-        AND task.sponsor_user_id = ${input.userId}::uuid
-        AND task.short_id = ${input.taskId}
-      RETURNING task.id
-    `;
-    return Boolean(rows[0]);
+    return sql.begin(async (tx) => {
+      const rows = await tx<TaskRow[]>`
+        ${taskSelect}
+        WHERE task.sponsor_user_id = ${input.userId}::uuid AND task.short_id = ${input.taskId}
+        FOR UPDATE OF task
+      `;
+      let current = rows[0];
+      if (!current) return false;
+      current = await ensureTaskMandate(current, tx);
+      const mandate = requireTaskMandate(current);
+      const revoked = await revokeMandate(
+        {
+          mandateId: mandate.mandate_id,
+          expectedRevision: Number(mandate.mandate_revision),
+          authority: mandateAuthority(input.userId),
+          reason: "Scheduled chat task deleted",
+        },
+        { db: tx },
+      );
+      if (!revoked.ok) throw mandateError("revoke", revoked);
+      await tx`DELETE FROM ai.chat_tasks WHERE id = ${current.id}::uuid`;
+      return true;
+    });
   },
 
-  listOccurrences: async (input: {
-    userId: string;
-    taskId: string;
-    limit?: number;
-  }): Promise<AiChatTaskOccurrence[] | null> => {
+  listOccurrences: async (input: { userId: string; taskId: string; limit?: number }): Promise<AiChatTaskOccurrence[] | null> => {
     const task = await aiChatTasks.get(input);
     if (!task) return null;
     const rows = await sql<OccurrenceRow[]>`
@@ -336,6 +581,7 @@ export const aiChatTasks = {
     const rows = await sql<TaskRow[]>`
       ${taskSelect}
       WHERE task.state = 'active' AND task.schedule_kind = 'cron'
+        AND task.mandate_id IS NOT NULL AND task.mandate_revision IS NOT NULL
     `;
     return rows.map(toTask);
   },
@@ -347,6 +593,7 @@ export const aiChatTasks = {
     requestKey: string;
     expectedRevision?: number;
   }): Promise<AiChatTaskOccurrence | null> => {
+    if (!(await ensureMandateByTaskId(input.taskId))) return null;
     const rows = await withAiShortId(
       "ai_chat_task_occurrences_short_id_unique",
       (shortId) => sql<OccurrenceRow[]>`
@@ -393,11 +640,13 @@ export const aiChatTasks = {
   },
 
   listQueuedOccurrences: async (limit = 100): Promise<Array<{ occurrence: AiChatTaskOccurrence; task: AiChatTask }>> => {
+    await aiChatTasks.prepareLegacyMandates(limit);
     const rows = await sql<(OccurrenceRow & TaskRow)[]>`
       SELECT occurrence.id, occurrence.short_id, occurrence.task_id, occurrence.scheduled_for, occurrence.trigger,
         occurrence.state, occurrence.turn_id, occurrence.error, occurrence.created_at, occurrence.started_at, occurrence.completed_at,
         task.id AS task_row_id, task.short_id AS task_short_id, task.conversation_id, conversation.short_id AS conversation_short_id,
-        conversation.title AS conversation_title, task.sponsor_user_id, task.prompt, task.schedule_kind, task.run_at, task.cron,
+        conversation.title AS conversation_title, task.sponsor_user_id, task.mandate_id, task.mandate_revision,
+        task.prompt, task.schedule_kind, task.run_at, task.cron,
         task.timezone, task.state AS task_state, task.revision, task.last_error, task.created_at AS task_created_at, task.updated_at
       FROM (
         SELECT candidate.*,
@@ -406,6 +655,7 @@ export const aiChatTasks = {
         JOIN ai.chat_tasks task ON task.id = candidate.task_id
         JOIN ai.conversations conversation ON conversation.id = task.conversation_id
         WHERE candidate.state = 'queued' AND task.state = 'active'
+          AND task.mandate_id IS NOT NULL AND task.mandate_revision IS NOT NULL
           AND NOT EXISTS (
             SELECT 1 FROM ai.turns turn
             WHERE turn.conversation_id = task.conversation_id
@@ -443,17 +693,19 @@ export const aiChatTasks = {
         LIMIT 1
       `;
       if (!tasks[0]) return null;
+      const task = await ensureTaskMandate(tasks[0], tx);
       await tx`
-        UPDATE ai.chat_task_occurrences SET task_revision = ${tasks[0].revision}::bigint
+        UPDATE ai.chat_task_occurrences SET task_revision = ${task.revision}::bigint
         WHERE id = ${occurrence.id}::uuid AND state = 'queued'
       `;
-      return { occurrence: toOccurrence(occurrence), task: toTask(tasks[0]) };
+      return { occurrence: toOccurrence(occurrence), task: toTask(task) };
     });
   },
 
   failOccurrence: async (input: { occurrenceId: string; error: string }): Promise<"failed" | "stale" | "gone"> =>
     sql.begin(async (tx) => {
-      const rows = await tx<{ task_id: string; task_revision: number | bigint }[]>`
+      if (!(await ensureOccurrenceTaskMandate(input.occurrenceId, tx))) return "gone" as const;
+      const rows = await tx<{ task_id: string; task_revision: number | bigint; mandate_id: string; mandate_revision: number | bigint }[]>`
         UPDATE ai.chat_task_occurrences occurrence
         SET state = 'failed', error = ${input.error}, completed_at = now()
         FROM ai.chat_tasks task
@@ -461,11 +713,14 @@ export const aiChatTasks = {
           AND occurrence.id = ${input.occurrenceId}::uuid
           AND occurrence.state IN ('queued', 'running')
           AND occurrence.task_revision = task.revision
-        RETURNING occurrence.task_id, occurrence.task_revision
+        RETURNING occurrence.task_id, occurrence.task_revision, task.mandate_id, task.mandate_revision
       `;
       if (rows[0]) {
+        const revision = await pauseTaskMandate(rows[0], tx);
         await tx`
-          UPDATE ai.chat_tasks SET state = 'needs_attention', last_error = ${input.error}, revision = revision + 1, updated_at = now()
+          UPDATE ai.chat_tasks
+          SET state = 'needs_attention', last_error = ${input.error}, mandate_revision = ${revision},
+              revision = revision + 1, updated_at = now()
           WHERE id = ${rows[0].task_id}::uuid AND revision = ${rows[0].task_revision}::bigint
         `;
         return "failed" as const;
@@ -490,6 +745,9 @@ export const aiChatTasks = {
     expectedRevision: number;
   }): Promise<{ delivered: true; conversationId: string; turnId: string } | { delivered: false; reason: "not_found" | "busy" | "stale" }> =>
     sql.begin(async (tx) => {
+      if (!(await ensureOccurrenceTaskMandate(input.occurrenceId, tx))) {
+        return { delivered: false as const, reason: "not_found" as const };
+      }
       const rows = await tx<
         {
           id: string;
@@ -570,6 +828,7 @@ export const aiChatTasks = {
     error?: string | null;
   }): Promise<{ occurrenceId: string; failed: boolean } | null> =>
     sql.begin(async (tx) => {
+      if (!(await ensureTurnTaskMandate(input.turnId, tx))) return null;
       const rows = await tx<
         {
           occurrence_id: string;
@@ -580,6 +839,8 @@ export const aiChatTasks = {
           run_at: Date | string | null;
           task_revision: number | bigint;
           current_revision: number | bigint;
+          mandate_id: string;
+          mandate_revision: number | bigint;
           turn_error: string | null;
         }[]
       >`
@@ -594,7 +855,8 @@ export const aiChatTasks = {
         WHERE occurrence.task_id = task.id AND occurrence.turn_id = ${input.turnId}::uuid AND turn.id = occurrence.turn_id
           AND occurrence.state = 'running'
         RETURNING occurrence.id AS occurrence_id, occurrence.task_id, task.schedule_kind, occurrence.trigger,
-          occurrence.scheduled_for, task.run_at, occurrence.task_revision, task.revision AS current_revision, turn.error AS turn_error
+          occurrence.scheduled_for, task.run_at, occurrence.task_revision, task.revision AS current_revision,
+          task.mandate_id, task.mandate_revision, turn.error AS turn_error
       `;
       const row = rows[0];
       if (!row) return null;
@@ -607,14 +869,18 @@ export const aiChatTasks = {
         row.trigger === "scheduled" &&
         currentOnceSlot
       ) {
+        const revision = await pauseTaskMandate(row, tx);
         await tx`
-          UPDATE ai.chat_tasks SET state = 'completed', last_error = NULL, revision = revision + 1, updated_at = now()
+          UPDATE ai.chat_tasks
+          SET state = 'completed', last_error = NULL, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
           WHERE id = ${row.task_id}::uuid AND revision = ${row.task_revision}::bigint
         `;
       } else if (unchangedSinceStart && input.status !== "completed") {
         const error = input.error || row.turn_error || `Scheduled turn ${input.status}`;
+        const revision = await pauseTaskMandate(row, tx);
         await tx`
-          UPDATE ai.chat_tasks SET state = 'needs_attention', last_error = ${error}, revision = revision + 1, updated_at = now()
+          UPDATE ai.chat_tasks
+          SET state = 'needs_attention', last_error = ${error}, mandate_revision = ${revision}, revision = revision + 1, updated_at = now()
           WHERE id = ${row.task_id}::uuid AND revision = ${row.task_revision}::bigint
         `;
       }

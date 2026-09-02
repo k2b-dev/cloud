@@ -11,11 +11,18 @@ import {
   type WidgetStatusTone,
 } from "@k2b/ui";
 import { type DashboardWidget, listLegalLinks, listWidgets } from "@valentinkolb/cloud";
-import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { hasRole, type Role, type RuntimeAppMeta, type User } from "@valentinkolb/cloud/contracts";
+import {
+  hasRole,
+  type Role,
+  type RuntimeAppMeta,
+  type User,
+  type WidgetBlock,
+  type WidgetResponse,
+  WidgetResponseSchema,
+} from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { logger } from "@valentinkolb/cloud/services";
+import { get, logger } from "@valentinkolb/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../config";
@@ -31,10 +38,14 @@ import {
 } from "../shared";
 import DashboardControls, { DashboardEditButton } from "./EditDashboard.island";
 import { type DashboardMessages, dashboardMessages } from "./messages";
-import { dashboardWidgetRequestHeaders } from "./widget-request";
+import {
+  DASHBOARD_WIDGET_DEADLINE_MS,
+  dashboardWidgetProxyUrl,
+  dashboardWidgetRequestHeaders,
+  mapDashboardWidgetsBounded,
+} from "./widget-request";
 
 const log = logger("dashboard");
-const WIDGET_TIMEOUT_MS = 500;
 const SLOW_WIDGET_MS = 250;
 
 const widgetStatusTone = (tone: "ok" | "warn" | "error" | "info"): WidgetStatusTone => {
@@ -96,15 +107,15 @@ const fetchWidget = async (
   cookie: string,
   locale: string,
   t: DashboardMessages,
+  signal: AbortSignal,
+  coreOrigin: string,
 ): Promise<WidgetFetchResult | null> => {
-  const controller = new AbortController();
   const startedAt = performance.now();
-  const timeout = setTimeout(() => controller.abort(), WIDGET_TIMEOUT_MS);
 
   try {
-    const resp = await fetch(widget.url, {
+    const resp = await fetch(dashboardWidgetProxyUrl(coreOrigin, widget.appId, widget.widgetId), {
       headers: dashboardWidgetRequestHeaders(cookie, locale),
-      signal: controller.signal,
+      signal,
     });
     const durationMs = Math.round(performance.now() - startedAt);
     logSlowWidget(widget, durationMs, resp.status);
@@ -124,8 +135,9 @@ const fetchWidget = async (
         data: widgetErrorResponse(widget, t.widgetUnavailable, t.widgetEndpointError),
       };
     }
-    const data = (await resp.json()) as WidgetResponse;
-    return { source: widget, status: 200, data };
+    const data = WidgetResponseSchema.safeParse(await resp.json());
+    if (!data.success) throw new Error("Core returned an invalid widget response");
+    return { source: widget, status: 200, data: data.data };
   } catch (err) {
     const durationMs = Math.round(performance.now() - startedAt);
     const isTimeout = err instanceof Error && err.name === "AbortError";
@@ -135,15 +147,13 @@ const fetchWidget = async (
       widgetId: widget.widgetId,
       error: err instanceof Error ? err.message : String(err),
       durationMs,
-      timeoutMs: WIDGET_TIMEOUT_MS,
+      timeoutMs: DASHBOARD_WIDGET_DEADLINE_MS,
     });
     return {
       source: widget,
       status: "error",
       data: widgetErrorResponse(widget, t.widgetUnavailable, isTimeout ? t.widgetTimeout : t.widgetLoadFailed),
     };
-  } finally {
-    clearTimeout(timeout);
   }
 };
 
@@ -251,7 +261,13 @@ export default ssr<AuthContext>(async (c) => {
   const settings = legacySettings ?? storedSettings.settings;
   const gradient = gradients.getGradientById(settings.gradient);
 
-  const [widgets, legalLinks] = await Promise.all([listWidgets(), listLegalLinks(locale)]);
+  const configuredCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  const [widgets, legalLinks, fallbackCoreOrigin] = await Promise.all([
+    listWidgets(),
+    listLegalLinks(locale),
+    configuredCoreOrigin ? Promise.resolve(configuredCoreOrigin) : get<string>("app.url"),
+  ]);
+  const coreOrigin = configuredCoreOrigin || fallbackCoreOrigin;
   const apps = getLocalizedRuntimeContext(c).apps;
   const availableApps: DashboardAppSummary[] = [
     ...apps
@@ -286,8 +302,11 @@ export default ssr<AuthContext>(async (c) => {
       presentation: w.presentation,
     }));
 
-  // Pull visible widget endpoints, fetch in parallel, classify by status.
-  const results = await Promise.all(widgetsToFetch.map((w) => fetchWidget(w, cookie, locale, t)));
+  // Keep both connection fan-out and total SSR latency bounded as app count grows.
+  const widgetDeadline = AbortSignal.timeout(DASHBOARD_WIDGET_DEADLINE_MS);
+  const results = await mapDashboardWidgetsBounded(widgetsToFetch, widgetDeadline, (widget, signal) =>
+    fetchWidget(widget, cookie, locale, t, signal, coreOrigin),
+  );
 
   const visible = results.filter((r): r is Extract<typeof r, { status: 200 }> => r?.status === 200);
   const inaccessible = results.filter((r): r is Extract<typeof r, { status: 403 }> => r?.status === 403);
@@ -370,11 +389,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           {rendered.length === 0 ? (
-            <Placeholder
-              surface="paper"
-              variant="panel"
-              description={t.emptyDescription}
-            />
+            <Placeholder surface="paper" variant="panel" description={t.emptyDescription} />
           ) : (
             <div class={`dashboard-briefing-grid ${contextWidgets.length > 0 ? "has-context" : ""}`}>
               <div class="dashboard-primary-column">

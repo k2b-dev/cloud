@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
+import type { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -207,6 +208,52 @@ describe("AI capability authority", () => {
     });
     expect(review).toBe(true);
     expect(result).toEqual({ message: "Create Ada.", details: [{ label: "Name", value: "Ada" }] });
+  });
+
+  test("uses mandate authority for scheduled review and approved Action execution", async () => {
+    const current = user("11111111-1111-4111-8111-111111111111");
+    const entry = buildAiCapabilityCatalog([app()])[0]!;
+    const mandate = { id: "33333333-3333-4333-8333-333333333333", revision: 4 };
+    const seen: Array<{ review: boolean; actionApproval?: "approved" }> = [];
+    const dependencies = {
+      createDelegation: async () => {
+        throw new Error("Scheduled tasks must not create interactive delegations");
+      },
+      revokeDelegation: async () => undefined,
+      dispatch: async (input: Parameters<typeof dispatchCapability>[0]) => {
+        seen.push({ review: input.review === true, actionApproval: input.mandate?.actionApproval });
+        if (!input.review && input.mandate?.actionApproval !== "approved") {
+          return Response.json({ code: "MANDATE_FORBIDDEN", message: "Action approval is required" }, { status: 403 });
+        }
+        return input.review ? Response.json({ message: "Create Ada." }) : Response.json({ data: { id: "created" } });
+      },
+    };
+    const base = {
+      conversationId: "conversation-1",
+      authority: { actor: { kind: "user" as const, user: current }, accessSubject: { type: "user" as const, userId: current.id } },
+      mandate,
+      entry,
+      args: { title: "Ada" },
+      context: {
+        callId: "call-1",
+        signal: AbortSignal.timeout(1_000),
+        requestApproval: async () => true,
+        requestClientTool: async <T>() => undefined as T,
+      },
+      dependencies,
+    };
+
+    await reviewAiCapability(base);
+    await expect(executeAiCapability(base)).rejects.toEqual(
+      new AiCapabilityExecutionError("MANDATE_FORBIDDEN", 403, "Action approval is required"),
+    );
+    await executeAiCapability({ ...base, actionApproval: "approved" });
+
+    expect(seen).toEqual([
+      { review: true, actionApproval: undefined },
+      { review: false, actionApproval: undefined },
+      { review: false, actionApproval: "approved" },
+    ]);
   });
 
   test("preserves target authorization errors without leaking or retaining the delegation", async () => {

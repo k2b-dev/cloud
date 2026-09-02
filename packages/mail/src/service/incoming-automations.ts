@@ -1,6 +1,15 @@
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import { type PumpHandle, type PumpState, pump } from "@k2b/sync";
-import { audit, encryptSecret, serviceAccountCredentials, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
+import {
+  audit,
+  encryptSecret,
+  logger,
+  mandates,
+  serviceAccountCredentials,
+  toPgTextArray,
+  toPgUuidArray,
+  trace,
+} from "@valentinkolb/cloud/services";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
 import { sql } from "bun";
@@ -35,6 +44,7 @@ import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, us
 import { sha256Json } from "./canonical";
 import { databaseErrorCode } from "./database-errors";
 import { publishMailMailboxEvent } from "./events";
+import { incomingAutomationAuthorityMode, incomingAutomationMandatePolicy } from "./incoming-automation-authority";
 import {
   buildIncomingAutomationWorkflowSource,
   incomingAutomationActions,
@@ -67,6 +77,7 @@ export type IncomingAutomation = {
   updatedAt: string;
 };
 type StoredIncomingAutomation = IncomingAutomation & {
+  mandateId: string | null;
   integrationCredentialId: string | null;
   encryptedIntegrationToken: string | null;
 };
@@ -87,6 +98,7 @@ type IncomingAutomationRow = {
   revision: string | number;
   created_at: Date | string;
   updated_at: Date | string;
+  mandate_id: string | null;
   integration_credential_id: string | null;
   encrypted_integration_token: string | null;
 };
@@ -117,11 +129,75 @@ const incomingAutomationColumns = sql`
   automation.revision,
   automation.created_at,
   automation.updated_at
+  , automation.mandate_id
   , automation.integration_credential_id
   , automation.encrypted_integration_token
 `;
 
 type IntegrationCredential = { credentialId: string; encryptedToken: string };
+
+const mandateAuthority = (context: MailRequestContext) => {
+  if (context.actor.kind !== "user") return null;
+  const user = context.actor.user;
+  return { kind: "interactive" as const, userId: user.id };
+};
+
+const createAutomationMandate = async (context: MailRequestContext, automationId: string, steps: MailAutomationStep[], db: SqlClient) => {
+  const authority = mandateAuthority(context);
+  const policy = incomingAutomationMandatePolicy(steps);
+  if (!authority || !policy) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
+  return mandates.create(
+    {
+      authority,
+      subject: { type: "user", id: authority.userId },
+      ownerAppId: "mail",
+      workloadType: "incoming.automation",
+      workloadId: automationId,
+      policy,
+    },
+    { db },
+  );
+};
+
+const updateAutomationMandate = async (context: MailRequestContext, mandateId: string, steps: MailAutomationStep[], db: SqlClient) => {
+  const authority = mandateAuthority(context);
+  const policy = incomingAutomationMandatePolicy(steps);
+  if (!authority || !policy) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
+  const current = await mandates.get(mandateId, { db });
+  if (!current) return fail(err.forbidden("This automation has no active Spaces authorization"));
+  return mandates.updatePolicy({ mandateId, expectedRevision: current.revision, authority, policy }, { db });
+};
+
+const revokeAutomationMandate = async (
+  context: MailRequestContext,
+  mandateId: string,
+  reason: string,
+  db: SqlClient,
+): Promise<Result<unknown>> => {
+  const authority = mandateAuthority(context);
+  if (!authority) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
+  const current = await mandates.get(mandateId, { db });
+  if (!current) return ok(null);
+  return mandates.revoke({ mandateId, expectedRevision: current.revision, authority, reason }, { db });
+};
+
+const syncAutomationMandateEnabled = async (
+  context: MailRequestContext,
+  mandateId: string,
+  enabled: boolean,
+  db: SqlClient,
+): Promise<Result<unknown>> => {
+  const authority = mandateAuthority(context);
+  if (!authority) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
+  const current = await mandates.get(mandateId, { db });
+  if (!current) return fail(err.forbidden("This automation has no Spaces authorization"));
+  if (current.state === "revoked") return fail(err.conflict("This automation's Spaces authorization is revoked"));
+  if (enabled) {
+    return current.state === "active" ? ok(current) : mandates.resume({ mandateId, expectedRevision: current.revision, authority }, { db });
+  }
+  return current.state === "paused" ? ok(current) : mandates.pause({ mandateId, expectedRevision: current.revision, authority }, { db });
+};
+
 const createIntegrationCredential = async (context: MailRequestContext, automationId: string): Promise<Result<IntegrationCredential>> => {
   const user = userBackedActor(context);
   if (!user) return fail(err.forbidden("Spaces automation actions require a user-backed actor"));
@@ -133,11 +209,15 @@ const createIntegrationCredential = async (context: MailRequestContext, automati
   return ok({ credentialId: created.data.credential.id, encryptedToken: await encryptSecret(created.data.token) });
 };
 
-const revokeIntegrationCredential = async (context: MailRequestContext, credentialId: string | null): Promise<void> => {
-  if (!credentialId) return;
+const revokeIntegrationCredential = async (
+  context: MailRequestContext,
+  credentialId: string | null,
+  db?: SqlClient,
+): Promise<Result<void>> => {
+  if (!credentialId) return ok();
   const user = userBackedActor(context);
   if (!user) throw new TypeError("Spaces automation credentials require a user-backed actor");
-  await serviceAccountCredentials.revoke({ credentialId, actor: user });
+  return serviceAccountCredentials.revoke({ credentialId, actor: user }, { db });
 };
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
@@ -146,6 +226,16 @@ const parseJson = <T>(value: T | string): T => (typeof value === "string" ? (JSO
 const internalWorkflowName = (id: string): string => `Mail incoming automation ${id}`;
 const EXISTING_MESSAGE_APPLICATION_LIMIT = 100;
 const MAX_INCOMING_AUTOMATIONS = 500;
+const AUTHORITY_MIGRATION_LIMIT = 100;
+const AUTHORITY_MIGRATION_INTERVAL_MS = 60_000;
+const authorityMigrationLog = logger("mail:incoming-automation-authority-migration");
+const authorityMigrationCounters = { migrated: 0, retired: 0, failed: 0, remaining: 0 };
+let authorityMigrationTimer: ReturnType<typeof setInterval> | null = null;
+let authorityMigrationRunning = false;
+
+export const incomingAutomationAuthorityMigrationMetrics = {
+  snapshot: () => Object.freeze({ ...authorityMigrationCounters }),
+};
 const activeIncomingAutomationBackfillStates = new Set(["queued", "running", "waiting"]);
 const isSameOrSubdomain = (candidate: string, domain: string): boolean => candidate === domain || candidate.endsWith(`.${domain}`);
 const incomingAutomationExistingDedupePrefix = (automationId: string, workflowVersionId: string): string =>
@@ -203,10 +293,212 @@ const mapIncomingAutomation = (row: IncomingAutomationRow): StoredIncomingAutoma
       updatedAt: toIso(row.updated_at),
     } as StoredIncomingAutomation,
     {
+      mandateId: { value: row.mandate_id, enumerable: false },
       integrationCredentialId: { value: row.integration_credential_id, enumerable: false },
       encryptedIntegrationToken: { value: row.encrypted_integration_token, enumerable: false },
     },
   );
+
+type LegacyAutomationAuthorityRow = {
+  id: string;
+  enabled: boolean;
+  deleted_at: Date | string | null;
+  steps: MailAutomationStep[] | string;
+  integration_credential_id: string;
+  delegated_user_id: string | null;
+};
+
+const migrateLegacyAutomationAuthority = async (automationId: string): Promise<"migrated" | "retired" | "gone"> =>
+  sql.begin(async (tx) => {
+    const [row] = await tx<LegacyAutomationAuthorityRow[]>`
+      SELECT automation.id, automation.enabled, automation.deleted_at, automation.steps,
+        automation.integration_credential_id, account.delegated_user_id
+      FROM mail.incoming_automations automation
+      JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
+      JOIN auth.service_accounts account ON account.id = credential.service_account_id
+      WHERE automation.id = ${automationId}::uuid
+        AND automation.integration_credential_id IS NOT NULL
+      LIMIT 1
+      FOR UPDATE OF automation, credential
+    `;
+    if (!row) return "gone" as const;
+
+    const steps = parseJson<MailAutomationStep[]>(row.steps);
+    const policy = incomingAutomationMandatePolicy(steps);
+    let mandateId: string | null = null;
+    if (!row.deleted_at && policy) {
+      if (!row.delegated_user_id) throw new Error("Legacy automation credential has no delegated user");
+      const created = await mandates.create(
+        {
+          authority: {
+            kind: "system",
+            migration: "mail.incoming-automation",
+            sponsorUserId: row.delegated_user_id,
+          },
+          subject: { type: "user", id: row.delegated_user_id },
+          ownerAppId: "mail",
+          workloadType: "incoming.automation",
+          workloadId: row.id,
+          policy,
+        },
+        { db: tx },
+      );
+      if (created.ok) {
+        mandateId = created.data.id;
+        if (!row.enabled && created.data.state === "active") {
+          const paused = await mandates.pause(
+            {
+              mandateId,
+              expectedRevision: created.data.revision,
+              authority: { kind: "workload", ownerAppId: "mail" },
+            },
+            { db: tx },
+          );
+          if (!paused.ok) throw new Error(`Could not pause migrated automation mandate: ${paused.error.message}`);
+        }
+      } else {
+        const [existing] = await tx<{ id: string; subject_user_id: string | null }[]>`
+          SELECT id, subject_user_id
+          FROM auth.mandates
+          WHERE owner_app_id = 'mail'
+            AND workload_type = 'incoming.automation'
+            AND workload_id = ${row.id}
+            AND state IN ('active', 'paused')
+          LIMIT 1
+          FOR UPDATE
+        `;
+        if (!existing || existing.subject_user_id !== row.delegated_user_id) {
+          throw new Error(`Could not migrate automation mandate: ${created.error.message}`);
+        }
+        const existingMandate = await mandates.get(existing.id, { db: tx });
+        if (
+          !existingMandate ||
+          !existingMandate.confirmedAt ||
+          sha256Json(existingMandate.policy) !== sha256Json(policy) ||
+          (row.enabled && existingMandate.state !== "active")
+        ) {
+          throw new Error(`Existing automation mandate does not match the legacy authority: ${created.error.message}`);
+        }
+        mandateId = existingMandate.id;
+        if (!row.enabled && existingMandate.state === "active") {
+          const paused = await mandates.pause(
+            {
+              mandateId,
+              expectedRevision: existingMandate.revision,
+              authority: { kind: "workload", ownerAppId: "mail" },
+            },
+            { db: tx },
+          );
+          if (!paused.ok) throw new Error(`Could not pause recovered automation mandate: ${paused.error.message}`);
+        }
+      }
+    }
+
+    const revoked = await serviceAccountCredentials.revoke(
+      {
+        credentialId: row.integration_credential_id,
+        system: { service: "mail", reason: "Incoming automation migrated to mandate authority" },
+      },
+      { db: tx },
+    );
+    if (!revoked.ok) throw new Error(`Could not retire legacy automation credential: ${revoked.error.message}`);
+
+    const updated = await tx<{ id: string }[]>`
+      UPDATE mail.incoming_automations
+      SET mandate_id = ${mandateId}::uuid,
+          integration_credential_id = NULL,
+          encrypted_integration_token = NULL,
+          revision = revision + 1
+      WHERE id = ${row.id}::uuid
+        AND integration_credential_id = ${row.integration_credential_id}::uuid
+      RETURNING id
+    `;
+    if (!updated[0]) throw new Error("Legacy automation authority changed during migration");
+    await audit.record(
+      {
+        action: "mail.incoming_automation.authority.migrate",
+        outcome: "allowed",
+        target: { type: "incoming_automation", id: row.id },
+        metadata: {
+          provenance: "system-migration",
+          sponsorUserId: row.delegated_user_id,
+          retiredCredentialId: row.integration_credential_id,
+          mandateId,
+          result: mandateId ? "migrated" : "retired",
+        },
+      },
+      tx,
+    );
+    return mandateId ? ("migrated" as const) : ("retired" as const);
+  });
+
+export const migrateLegacyIncomingAutomationAuthorities = async (
+  limit = AUTHORITY_MIGRATION_LIMIT,
+): Promise<{ migrated: number; retired: number; failed: number; remaining: number }> => {
+  const boundedLimit = Math.max(1, Math.min(AUTHORITY_MIGRATION_LIMIT, Math.floor(limit)));
+  const rows = await sql<{ id: string }[]>`
+    SELECT id
+    FROM mail.incoming_automations
+    WHERE integration_credential_id IS NOT NULL
+    ORDER BY created_at, id
+    LIMIT ${boundedLimit}
+  `;
+  let migrated = 0;
+  let retired = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      const result = await migrateLegacyAutomationAuthority(row.id);
+      if (result === "migrated") migrated += 1;
+      if (result === "retired") retired += 1;
+    } catch (error) {
+      failed += 1;
+      authorityMigrationLog.error("Legacy automation authority migration failed", {
+        automationId: row.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  const [remainingRow] = await sql<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count
+    FROM mail.incoming_automations
+    WHERE integration_credential_id IS NOT NULL
+  `;
+  const remaining = remainingRow?.count ?? 0;
+  authorityMigrationCounters.migrated += migrated;
+  authorityMigrationCounters.retired += retired;
+  authorityMigrationCounters.failed += failed;
+  authorityMigrationCounters.remaining = remaining;
+  return { migrated, retired, failed, remaining };
+};
+
+export const startIncomingAutomationAuthorityMigrationRuntime = (): void => {
+  if (incomingAutomationAuthorityMode() !== "mandate" || authorityMigrationTimer) return;
+  const reconcile = async (): Promise<void> => {
+    if (authorityMigrationRunning) return;
+    authorityMigrationRunning = true;
+    try {
+      const result = await migrateLegacyIncomingAutomationAuthorities();
+      if (result.migrated || result.retired || result.failed || result.remaining) {
+        authorityMigrationLog.info("Legacy automation authority migration batch", result);
+      }
+    } catch (error) {
+      authorityMigrationLog.error("Legacy automation authority reconciliation failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      authorityMigrationRunning = false;
+    }
+  };
+  void reconcile();
+  authorityMigrationTimer = setInterval(() => void reconcile(), AUTHORITY_MIGRATION_INTERVAL_MS);
+  authorityMigrationTimer.unref?.();
+};
+
+export const stopIncomingAutomationAuthorityMigrationRuntime = (): void => {
+  if (authorityMigrationTimer) clearInterval(authorityMigrationTimer);
+  authorityMigrationTimer = null;
+};
 
 const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
   const normalized = kind === "sender" ? normalizeEmailAddress(value) : normalizeEmailDomain(value);
@@ -1054,9 +1346,11 @@ export const createIncomingAutomation = async (params: {
   if (!scope.ok) return scope;
   const actions = incomingAutomationActions(parsed.data.steps);
   const conditions = scopeConditions(scope.data);
-  const integration = incomingAutomationHasSpaces(parsed.data.steps)
-    ? await createIntegrationCredential(params.context, automationId)
-    : ok<IntegrationCredential | null>(null);
+  const useMandate = incomingAutomationHasSpaces(parsed.data.steps) && incomingAutomationAuthorityMode() === "mandate";
+  const integration =
+    incomingAutomationHasSpaces(parsed.data.steps) && !useMandate
+      ? await createIntegrationCredential(params.context, automationId)
+      : ok<IntegrationCredential | null>(null);
   if (!integration.ok) return integration;
   let committed = false;
   try {
@@ -1095,6 +1389,8 @@ export const createIncomingAutomation = async (params: {
         }),
       );
       const actor = requestActor(params.context);
+      const mandate = useMandate ? unwrap(await createAutomationMandate(params.context, automationId, parsed.data.steps, tx)) : null;
+      if (mandate && !parsed.data.enabled) unwrap(await syncAutomationMandateEnabled(params.context, mandate.id, false, tx));
       const workflow = unwrap(
         await replaceManagedWorkflowInTransaction({
           db: tx,
@@ -1117,7 +1413,7 @@ export const createIncomingAutomation = async (params: {
         INSERT INTO mail.incoming_automations AS automation (
           id, short_id, mailbox_id, workflow_id, name, normalized_name, scope,
           steps, enabled, created_by_actor_kind, created_by_actor_id,
-          integration_credential_id, encrypted_integration_token
+          mandate_id, integration_credential_id, encrypted_integration_token
         ) VALUES (
           ${automationId}::uuid,
           ${shortId},
@@ -1130,6 +1426,7 @@ export const createIncomingAutomation = async (params: {
           ${parsed.data.enabled},
           ${actor.kind},
           ${actor.id}::uuid,
+          ${mandate?.id ?? null}::uuid,
           ${integration.data?.credentialId ?? null}::uuid,
           ${integration.data?.encryptedToken ?? null}
         )
@@ -1177,7 +1474,7 @@ export const updateIncomingAutomation = async (params: {
   const conditions = scopeConditions(scope.data);
   let createdIntegration: IntegrationCredential | null = null;
   let createdIntegrationCredentialId: string | null = null;
-  let revokeAfterCommit: string | null = null;
+  let revokeCredentialId: string | null = null;
   let committed = false;
   try {
     const result = await sql.begin(async (tx) => {
@@ -1213,18 +1510,34 @@ export const updateIncomingAutomation = async (params: {
         sha256Json(current.scope) !== sha256Json(scope.data) || sha256Json(current.steps) !== sha256Json(parsed.data.steps);
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const changed = current.name !== name || definitionChanged || enabledChanged;
-      if (!changed) return { automation: current, activityId: null as string | null };
-      if (definitionChanged && current.integrationCredentialId && !userBackedActor(params.context)) {
+      if (!changed) {
+        if (current.mandateId) unwrap(await syncAutomationMandateEnabled(params.context, current.mandateId, current.enabled, tx));
+        return { automation: current, activityId: null as string | null };
+      }
+      if (definitionChanged && (current.mandateId || current.integrationCredentialId) && !userBackedActor(params.context)) {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
       }
       const needsSpaces = incomingAutomationHasSpaces(parsed.data.steps);
-      if (needsSpaces && (definitionChanged || !current.integrationCredentialId)) {
+      let mandateId = current.mandateId;
+      if (needsSpaces && current.mandateId) {
+        if (definitionChanged) unwrap(await updateAutomationMandate(params.context, current.mandateId, parsed.data.steps, tx));
+      } else if (
+        needsSpaces &&
+        incomingAutomationAuthorityMode() === "mandate" &&
+        (definitionChanged || !current.integrationCredentialId)
+      ) {
+        mandateId = unwrap(await createAutomationMandate(params.context, params.automationId, parsed.data.steps, tx)).id;
+        revokeCredentialId = current.integrationCredentialId;
+      } else if (needsSpaces && (definitionChanged || !current.integrationCredentialId)) {
         createdIntegration = unwrap(await createIntegrationCredential(params.context, params.automationId));
         createdIntegrationCredentialId = createdIntegration.credentialId;
-        revokeAfterCommit = current.integrationCredentialId;
-      } else if (!needsSpaces && current.integrationCredentialId) {
-        revokeAfterCommit = current.integrationCredentialId;
+        revokeCredentialId = current.integrationCredentialId;
+      } else if (!needsSpaces) {
+        if (current.mandateId) unwrap(await revokeAutomationMandate(params.context, current.mandateId, "Spaces actions removed", tx));
+        mandateId = null;
+        revokeCredentialId = current.integrationCredentialId;
       }
+      if (mandateId) unwrap(await syncAutomationMandateEnabled(params.context, mandateId, parsed.data.enabled, tx));
       if (definitionChanged || enabledChanged) unwrap(await rejectActiveBackfillMutation(current));
       if (definitionChanged) {
         unwrap(
@@ -1253,6 +1566,7 @@ export const updateIncomingAutomation = async (params: {
           }),
         );
       }
+      if (revokeCredentialId) unwrap(await revokeIntegrationCredential(params.context, revokeCredentialId, tx));
       await tx`
         UPDATE mail.incoming_automations
         SET
@@ -1262,8 +1576,13 @@ export const updateIncomingAutomation = async (params: {
           steps = ${parsed.data.steps}::jsonb,
           enabled = ${parsed.data.enabled},
           latest_backfill_operation_id = CASE WHEN ${definitionChanged} THEN NULL ELSE latest_backfill_operation_id END,
-          integration_credential_id = ${createdIntegration?.credentialId ?? (needsSpaces ? current.integrationCredentialId : null)}::uuid,
-          encrypted_integration_token = ${createdIntegration?.encryptedToken ?? (needsSpaces ? current.encryptedIntegrationToken : null)},
+          mandate_id = ${needsSpaces ? mandateId : null}::uuid,
+          integration_credential_id = ${
+            mandateId ? null : (createdIntegration?.credentialId ?? (needsSpaces ? current.integrationCredentialId : null))
+          }::uuid,
+          encrypted_integration_token = ${
+            mandateId ? null : (createdIntegration?.encryptedToken ?? (needsSpaces ? current.encryptedIntegrationToken : null))
+          },
           revision = revision + 1
         WHERE id = ${params.automationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
       `;
@@ -1288,12 +1607,10 @@ export const updateIncomingAutomation = async (params: {
       return { automation, activityId };
     });
     committed = true;
-    await revokeIntegrationCredential(params.context, revokeAfterCommit);
     if (result.activityId) await publishAutomationChange(result.automation, result.activityId);
     return ok(result.automation);
   } catch (error) {
     if (!committed) await revokeIntegrationCredential(params.context, createdIntegrationCredentialId);
-    else await revokeIntegrationCredential(params.context, revokeAfterCommit);
     return mutationFailure(error, "Failed to update incoming automation");
   }
 };
@@ -1311,7 +1628,10 @@ export const setIncomingAutomationEnabled = async (params: {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
-      if (current.enabled === parsed.data.enabled) return { automation: current, activityId: null as string | null };
+      if (current.enabled === parsed.data.enabled) {
+        if (current.mandateId) unwrap(await syncAutomationMandateEnabled(params.context, current.mandateId, current.enabled, tx));
+        return { automation: current, activityId: null as string | null };
+      }
       unwrap(await rejectActiveBackfillMutation(current));
       if (parsed.data.enabled) {
         const validation = await validateMailWorkflowSource({
@@ -1341,6 +1661,9 @@ export const setIncomingAutomationEnabled = async (params: {
             db: tx,
           }),
         );
+      }
+      if (current.mandateId) {
+        unwrap(await syncAutomationMandateEnabled(params.context, current.mandateId, parsed.data.enabled, tx));
       }
       unwrap(
         await setManagedWorkflowEnabledInTransaction({
@@ -1391,14 +1714,19 @@ export const deleteIncomingAutomation = async (params: {
 }): Promise<Result<IncomingAutomation>> => {
   const parsed = deleteIncomingAutomationSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid incoming automation deletion"));
-  let committedCredentialId: string | null = null;
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
-      if (current.integrationCredentialId && !userBackedActor(params.context)) {
+      if ((current.mandateId || current.integrationCredentialId) && !userBackedActor(params.context)) {
         unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
+      }
+      if (current.mandateId) {
+        unwrap(await revokeAutomationMandate(params.context, current.mandateId, "Incoming automation deleted", tx));
+      }
+      if (current.integrationCredentialId) {
+        unwrap(await revokeIntegrationCredential(params.context, current.integrationCredentialId, tx));
       }
       unwrap(await rejectActiveBackfillMutation(current));
       unwrap(
@@ -1412,7 +1740,7 @@ export const deleteIncomingAutomation = async (params: {
       );
       const [row] = await tx<IncomingAutomationRow[]>`
         UPDATE mail.incoming_automations AS automation
-        SET enabled = false, revision = revision + 1, deleted_at = now()
+        SET enabled = false, mandate_id = NULL, revision = revision + 1, deleted_at = now()
         WHERE automation.id = ${params.automationId}::uuid AND automation.mailbox_id = ${params.mailboxId}::uuid
         RETURNING ${incomingAutomationColumns}
       `;
@@ -1432,12 +1760,9 @@ export const deleteIncomingAutomation = async (params: {
       );
       return { automation, activityId, integrationCredentialId: current.integrationCredentialId };
     });
-    committedCredentialId = result.integrationCredentialId;
-    await revokeIntegrationCredential(params.context, result.integrationCredentialId);
     await publishAutomationChange(result.automation, result.activityId);
     return ok(result.automation);
   } catch (error) {
-    await revokeIntegrationCredential(params.context, committedCredentialId);
     return mutationFailure(error, "Failed to delete incoming automation");
   }
 };

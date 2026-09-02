@@ -14,7 +14,7 @@ import jobsApiRoutes from "./observability/jobs/api";
 import jobsPage from "./observability/jobs/page";
 import loggingApiRoutes from "./observability/logs/api";
 import logsPage from "./observability/logs/page";
-import loggingWidgetRoutes from "./observability/logs/widgets";
+import loggingWidgetRoutes, { loggingErrorsWidgetHandler } from "./observability/logs/widgets";
 import { metricsEndpoint } from "./observability/metrics/endpoint";
 import metricsPage from "./observability/metrics/page";
 import notificationsApiRoutes from "./observability/notifications/api";
@@ -26,7 +26,7 @@ import telemetryApiRoutes from "./observability/telemetry/api";
 import telemetryPage from "./observability/telemetry/page";
 import workflowsApiRoutes from "./observability/workflows/api";
 import workflowsPage from "./observability/workflows/page";
-import { widgetRoutes } from "./widgets";
+import { gatewayHealthWidgetHandler, widgetRoutes } from "./widgets";
 
 const localizeApiError = async (c: Context, next: () => Promise<void>) => {
   await next();
@@ -90,6 +90,7 @@ export default await app.start({
   fetch: router.fetch,
   help: gatewayOpsHelp,
   openapi: apiRoutes,
+  widgets: { health: gatewayHealthWidgetHandler, errors: loggingErrorsWidgetHandler },
   lifecycle: gatewayOpsLifecycle,
 });
 

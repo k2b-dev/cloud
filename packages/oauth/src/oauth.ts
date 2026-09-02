@@ -260,6 +260,10 @@ const app = new Hono<AuthContext>()
   .get("/.well-known/jwks.json", async (c) => {
     try {
       const jwks = await oauth.tokens.getJwks();
+      const etag = `"${new Bun.CryptoHasher("sha256").update(JSON.stringify(jwks)).digest("hex").slice(0, 32)}"`;
+      c.header("Cache-Control", "public, max-age=300, must-revalidate");
+      c.header("ETag", etag);
+      if (c.req.header("if-none-match") === etag) return c.body(null, 304);
       return c.json(jwks);
     } catch (err) {
       log.error("Failed to get JWKS", {
@@ -527,6 +531,9 @@ const app = new Hono<AuthContext>()
           if (err instanceof oauth.tokens.InvalidOAuthResourceError) {
             return tokenError(c, "invalid_target", err.message);
           }
+          if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
+            return tokenError(c, "invalid_grant", "Client credentials grant is no longer allowed");
+          }
 
           log.error("Failed to generate client credentials token", {
             error: err instanceof Error ? err.message : String(err),
@@ -560,19 +567,33 @@ const app = new Hono<AuthContext>()
               !audiencesAllowed ||
               !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
             ) {
-              throw new InvalidRefreshGrantError();
+              throw new oauth.refreshTokens.SafeRefreshIssuanceRejectionError();
             }
-            issued.value = await oauth.tokens.createTokens({
-              userId: grant.userId,
-              client,
-              issuer,
-              scopes: grant.scopes,
-              audiences: grant.resource ? grant.audiences : Array.from(new Set(["cloud", client.clientId, ...grant.audiences])),
-              resource: grant.resource,
-            });
+            try {
+              issued.value = await oauth.tokens.createTokens({
+                userId: grant.userId,
+                client,
+                issuer,
+                scopes: grant.scopes,
+                audiences: grant.resource ? grant.audiences : Array.from(new Set(["cloud", client.clientId, ...grant.audiences])),
+                resource: grant.resource,
+                authorityGrant: grant.authorityGrant,
+              });
+              return issued.value.authorityMode;
+            } catch (error) {
+              if (error instanceof oauth.tokens.InactiveOAuthUserError) throw new oauth.refreshTokens.SafeRefreshIssuanceRejectionError();
+              if (error instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
+                throw new oauth.refreshTokens.SafeRefreshIssuanceRejectionError();
+              }
+              throw error;
+            }
           });
         } catch (err) {
-          if (err instanceof InvalidRefreshGrantError || err instanceof oauth.tokens.InactiveOAuthUserError) {
+          if (
+            err instanceof InvalidRefreshGrantError ||
+            err instanceof oauth.refreshTokens.SafeRefreshIssuanceRejectionError ||
+            err instanceof oauth.tokens.InactiveOAuthUserError
+          ) {
             return tokenError(c, "invalid_grant", "Refresh token grant is no longer allowed");
           }
           log.error("Failed to generate refreshed access token", {
@@ -638,6 +659,7 @@ const app = new Hono<AuthContext>()
           scopes: result.scopes,
           audiences: result.resource ? [result.resource] : undefined,
           resource: result.resource,
+          authorityGrant: result.authorityGrant,
           issueRefreshToken: true,
           nonce: result.nonce,
         });
@@ -653,6 +675,9 @@ const app = new Hono<AuthContext>()
       } catch (err) {
         if (err instanceof oauth.tokens.InactiveOAuthUserError) {
           return tokenError(c, "access_denied", "User account is missing or expired", 403);
+        }
+        if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
+          return tokenError(c, "invalid_grant", "Authorization code grant is no longer allowed");
         }
         log.error("Failed to generate tokens", {
           error: err instanceof Error ? err.message : String(err),

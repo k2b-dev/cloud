@@ -549,6 +549,11 @@ export type AiChatTurnRunConfig = {
   toolApprovalContext?: {
     actorUserId: string;
   };
+  /** Durable Core-owned authority for a scheduled chat task. */
+  mandate?: {
+    id: string;
+    revision: number;
+  };
 };
 
 export type AiCompactionTurnRunConfig = {

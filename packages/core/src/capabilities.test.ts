@@ -77,6 +77,8 @@ const scheduledTask: AiChatTask = {
   chatTitle: chat.title,
   conversationId: chat.id,
   sponsorUserId: user.id,
+  mandateId: null,
+  mandateRevision: null,
   prompt: "Prepare the release report.",
   schedule: { kind: "cron", cron: "0 9 * * 1" },
   timezone: "Europe/Berlin",

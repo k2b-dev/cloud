@@ -142,11 +142,27 @@ suite("serviceAccountCredentials", () => {
       });
       expect(await serviceAccountCredentials.getOverview({ id: "not-a-uuid" })).toBeNull();
 
+      await expect(
+        sql.begin(async (tx) => {
+          const rolledBack = await serviceAccountCredentials.revoke(
+            {
+              credentialId: created.data.credential.id,
+              actor: user,
+            },
+            { db: tx },
+          );
+          expect(rolledBack.ok).toBe(true);
+          throw new Error("roll back credential revocation fixture");
+        }),
+      ).rejects.toThrow("roll back credential revocation fixture");
+      expect((await serviceAccountCredentials.authenticateApiToken(created.data.token))?.delegatedUser?.id).toBe(user.id);
+
       const adminRevoked = await serviceAccountCredentials.revoke({
         credentialId: created.data.credential.id,
         actor: user,
       });
       expect(adminRevoked.ok).toBe(true);
+      expect((await serviceAccountCredentials.revoke({ credentialId: created.data.credential.id, actor: user })).ok).toBe(true);
 
       const afterAdminRevoke = await serviceAccountCredentials.authenticateApiToken(created.data.token);
       expect(afterAdminRevoke).toBeNull();

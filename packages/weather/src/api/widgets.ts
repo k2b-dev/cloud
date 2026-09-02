@@ -1,7 +1,7 @@
 import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { logger, weatherService } from "@valentinkolb/cloud/services";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { type WeatherMessages, weatherConditionLabel, weatherMessages } from "../messages";
 
 const log = logger("weather");
@@ -76,7 +76,7 @@ export const weatherWidgetEmptyBody = (locale: string): WidgetResponse => {
   };
 };
 
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", async (c) => {
+export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
   const { locale, t } = weatherMessages.resolve([getLocale(c)]);
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
@@ -193,6 +193,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", a
     blocks: [{ kind: "list", items, grow: true }],
   };
   return c.json(body);
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", currentWeatherWidgetHandler);
 
 export default app;

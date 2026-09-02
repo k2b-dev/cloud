@@ -1,11 +1,11 @@
 import { sql } from "bun";
 import type { User } from "../../contracts/shared";
-import { toPgTextArray } from "../postgres";
 import { buildRoles } from "../accounts/authz";
+import { resolveProviderProfile } from "../accounts/base-user";
 import { managedGroupIdsSubquery, managedGroupsNamesSubquery } from "../accounts/group-sql";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "../accounts/ipa-data";
 import { resolveAccountExpires } from "../accounts/model";
-import { resolveProviderProfile } from "../accounts/base-user";
+import { toPgTextArray } from "../postgres";
 
 type DbRow = Record<string, unknown>;
 
@@ -44,7 +44,7 @@ const stringArray = (value: unknown): string[] => {
   return [];
 };
 
-const buildUser = (row: DbRow): User => {
+export const buildProjectedUser = (row: DbRow): User => {
   const { provider, profile } = resolveProviderProfile(row);
   const mail = (row.mail as string | null | undefined) ?? null;
   const displayName = (row.display_name as string | null | undefined) ?? "";
@@ -74,7 +74,7 @@ const buildUser = (row: DbRow): User => {
     : { ...common, provider: "local", ipa: null };
 };
 
-const userProjection = (groupsAdmin: string[]) => sql`
+export const userProjectionSql = (groupsAdmin: string[]) => sql`
   u.*,
   ${userIpaDataColumns},
   CASE
@@ -103,14 +103,17 @@ const userProjection = (groupsAdmin: string[]) => sql`
   COALESCE(ARRAY(${managedGroupIdsSubquery(sql`u.id`)}), '{}') AS manages_group_ids
 `;
 
-export const loadJwtSessionUser = async (params: {
-  userId: string;
-  sid: string;
-  authEpoch: number;
-  groupsAdmin: string[];
-}, query: typeof sql = sql): Promise<User | null> => {
+export const loadJwtSessionUser = async (
+  params: {
+    userId: string;
+    sid: string;
+    authEpoch: number;
+    groupsAdmin: string[];
+  },
+  query: typeof sql = sql,
+): Promise<User | null> => {
   const rows = await query<DbRow[]>`
-    SELECT ${userProjection(params.groupsAdmin)}
+    SELECT ${userProjectionSql(params.groupsAdmin)}
     FROM auth.session_families sf
     JOIN auth.users u ON u.id = sf.user_id
     JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
@@ -122,20 +125,33 @@ export const loadJwtSessionUser = async (params: {
       AND sf.revoked_at IS NULL
       AND sf.expires_at > now()
   `;
-  return rows[0] ? buildUser(rows[0]) : null;
+  return rows[0] ? buildProjectedUser(rows[0]) : null;
 };
 
-export const loadLegacySessionUser = async (params: {
-  userId: string;
-  sessionGeneration: number;
-  groupsAdmin: string[];
-}, query: typeof sql = sql): Promise<User | null> => {
+export const loadLegacySessionUser = async (
+  params: {
+    userId: string;
+    sessionGeneration: number;
+    groupsAdmin: string[];
+  },
+  query: typeof sql = sql,
+): Promise<User | null> => {
   const rows = await query<DbRow[]>`
-    SELECT ${userProjection(params.groupsAdmin)}
+    SELECT ${userProjectionSql(params.groupsAdmin)}
     FROM auth.users u
     ${userIpaDataJoin}
     WHERE u.id = ${params.userId}::uuid
       AND u.legacy_session_generation <= ${params.sessionGeneration}
   `;
-  return rows[0] ? buildUser(rows[0]) : null;
+  return rows[0] ? buildProjectedUser(rows[0]) : null;
+};
+
+export const loadCurrentUser = async (params: { userId: string; groupsAdmin: string[] }, query: typeof sql = sql): Promise<User | null> => {
+  const rows = await query<DbRow[]>`
+    SELECT ${userProjectionSql(params.groupsAdmin)}
+    FROM auth.users u
+    ${userIpaDataJoin}
+    WHERE u.id = ${params.userId}::uuid
+  `;
+  return rows[0] ? buildProjectedUser(rows[0]) : null;
 };

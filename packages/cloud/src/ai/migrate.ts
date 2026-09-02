@@ -741,6 +741,8 @@ export const migrateCloudAi = async (): Promise<void> => {
       timezone TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'active',
       revision BIGINT NOT NULL DEFAULT 0,
+      mandate_id UUID,
+      mandate_revision BIGINT,
       last_error TEXT,
       idempotency_key TEXT,
       idempotency_fingerprint TEXT,
@@ -759,6 +761,77 @@ export const migrateCloudAi = async (): Promise<void> => {
 
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0`.simple();
+  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_id UUID`.simple();
+  await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_revision BIGINT`.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ai_chat_tasks_mandate_fkey' AND confdeltype <> 'n'
+      ) THEN
+        ALTER TABLE ai.chat_tasks DROP CONSTRAINT ai_chat_tasks_mandate_fkey;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_tasks_mandate_fkey'
+      ) THEN
+        ALTER TABLE ai.chat_tasks ADD CONSTRAINT ai_chat_tasks_mandate_fkey
+          FOREIGN KEY (mandate_id) REFERENCES auth.mandates(id) ON DELETE SET NULL;
+      END IF;
+    END $$
+  `.simple();
+  // Existing tasks are upgraded under a row lock when first reconciled or run.
+  // Avoid an unbounded migration and never fall back to an interactive session.
+  await sql`ALTER TABLE ai.chat_tasks ALTER COLUMN mandate_id DROP NOT NULL`.simple();
+  await sql`ALTER TABLE ai.chat_tasks ALTER COLUMN mandate_revision DROP NOT NULL`.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION ai.clear_chat_task_mandate_revision() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.mandate_id IS NULL THEN NEW.mandate_revision := NULL; END IF;
+      RETURN NEW;
+    END
+    $$ LANGUAGE plpgsql
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_chat_task_mandate_clear ON ai.chat_tasks`.simple();
+  await sql`
+    CREATE TRIGGER ai_chat_task_mandate_clear
+    BEFORE UPDATE OF mandate_id ON ai.chat_tasks
+    FOR EACH ROW EXECUTE FUNCTION ai.clear_chat_task_mandate_revision()
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION ai.revoke_chat_task_mandate() RETURNS trigger AS $$
+    DECLARE
+      revoked_count INTEGER;
+    BEGIN
+      UPDATE auth.mandates
+      SET state = 'revoked', revision = revision + 1, updated_at = now(), revoked_at = now(),
+          revoked_by_app_id = 'core', revoke_reason = 'Scheduled chat task deleted'
+      WHERE id = OLD.mandate_id AND state <> 'revoked';
+      GET DIAGNOSTICS revoked_count = ROW_COUNT;
+      IF revoked_count = 1 THEN
+        INSERT INTO audit.events (
+          action, outcome, target_type, target_id, reason, metadata
+        ) VALUES (
+          'mandate.revoke', 'allowed', 'mandate', OLD.mandate_id::text,
+          'Scheduled chat task deleted',
+          jsonb_build_object(
+            'ownerAppId', 'core',
+            'workloadType', 'ai.chat-task',
+            'workloadId', OLD.id::text,
+            'provenance', 'ai.chat-task-cascade'
+          )
+        );
+      END IF;
+      RETURN OLD;
+    END
+    $$ LANGUAGE plpgsql
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_chat_task_mandate_revoke ON ai.chat_tasks`.simple();
+  await sql`
+    CREATE TRIGGER ai_chat_task_mandate_revoke
+    BEFORE DELETE ON ai.chat_tasks
+    FOR EACH ROW EXECUTE FUNCTION ai.revoke_chat_task_mandate()
+  `.simple();
   await sql`ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS chat_tasks_idempotency_key_key`.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_chat_tasks_owner_idempotency

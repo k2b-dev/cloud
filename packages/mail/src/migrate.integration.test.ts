@@ -203,6 +203,8 @@ suite("mail migrations", () => {
         live_invalidation_applied_count: number;
         integration_credentials_applied_count: number;
         integration_credential_columns_present: boolean;
+        mandates_applied_count: number;
+        mandate_column_present: boolean;
         summary_columns_present: boolean;
         live_invalidation_table_present: boolean;
         live_invalidation_trigger_present: boolean;
@@ -223,6 +225,7 @@ suite("mail migrations", () => {
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 114 AND name = 'conversation_summaries') AS summaries_applied_count,
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 115 AND name = 'live_invalidation_outbox') AS live_invalidation_applied_count,
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 120 AND name = 'incoming_automation_integration_credentials') AS integration_credentials_applied_count,
+        (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 121 AND name = 'incoming_automation_mandates') AS mandates_applied_count,
         (
           SELECT COUNT(*) = 2
           FROM information_schema.columns
@@ -230,6 +233,13 @@ suite("mail migrations", () => {
             AND table_name = 'incoming_automations'
             AND column_name IN ('integration_credential_id', 'encrypted_integration_token')
         ) AS integration_credential_columns_present,
+        (
+          SELECT COUNT(*) = 1
+          FROM information_schema.columns
+          WHERE table_schema = 'mail'
+            AND table_name = 'incoming_automations'
+            AND column_name = 'mandate_id'
+        ) AS mandate_column_present,
         (
           SELECT COUNT(*) = 2
           FROM information_schema.columns
@@ -282,6 +292,8 @@ suite("mail migrations", () => {
       live_invalidation_applied_count: 1,
       integration_credentials_applied_count: 1,
       integration_credential_columns_present: true,
+      mandates_applied_count: 1,
+      mandate_column_present: true,
       summary_columns_present: true,
       live_invalidation_table_present: true,
       live_invalidation_trigger_present: true,

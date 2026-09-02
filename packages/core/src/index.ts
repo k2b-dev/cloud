@@ -5,21 +5,24 @@
  * cross-app imports.
  */
 
-import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@valentinkolb/cloud/api";
 import { aiLiveRoutes } from "@valentinkolb/cloud/ai/live";
+import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@valentinkolb/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
 import { createIdentityPublicRoutes } from "@valentinkolb/cloud/services/identity";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
+import { aiChatTaskRoutes } from "./ai-chat-task-routes";
+import { createAiNotificationService } from "./ai-notifications";
+import identityInvocationRoutes from "./api/identity-invocation";
+import identityMandateRoutes from "./api/identity-mandates";
+import identityOAuthIssuanceRoutes from "./api/identity-oauth-issuance";
+import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
 import { coreHelp } from "./help";
 import { createCoreNotificationSender } from "./notifications";
 import notificationWebSocketRoutes from "./notifications-ws";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
-import { aiCapabilities } from "./capabilities";
-import { aiChatTaskRoutes } from "./ai-chat-task-routes";
-import { createAiNotificationService } from "./ai-notifications";
 
 /** Per-app Hono context: AuthContext + typed core settings snapshot. */
 export type CoreAppContext = AppContext<typeof app>;
@@ -40,6 +43,9 @@ const router = new Hono<AuthContext>()
   .route("/", mcpProtectedResource)
   .route("/api/me/notifications/ws", notificationWebSocketRoutes)
   .route("/api/ai/live", aiLiveRoutes)
+  .route("/api/_internal/identity/v1", identityInvocationRoutes)
+  .route("/api/_internal/identity/v1", identityMandateRoutes)
+  .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
   .route("/api", coreApi)
   .route("/", pages);
 

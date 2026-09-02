@@ -1,11 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import type { MiddlewareHandler } from "hono";
+import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
+import { searchInvocationOperation } from "../services/identity/invocation-operations";
+import type { signInvocationToken } from "../services/identity/invocation-token";
+import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createSearchRoutes } from "./search";
 
 const capabilities = defineCapabilities({
@@ -43,7 +47,67 @@ const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId: user.id });
   c.set("user", user);
+  c.set("credentialKind", "session");
+  c.set("credentialScopes", []);
   await next();
+};
+
+const withInvocationMode = async <T>(mode: "legacy" | "jwt", run: () => Promise<T>): Promise<T> => {
+  const previous = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+  process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previous;
+  }
+};
+
+const provider = (index: number): CapabilityRegistryEntry => {
+  const appId = `search-${String(index).padStart(2, "0")}`;
+  return {
+    ...app,
+    appId,
+    appName: `Search ${index}`,
+    endpoint: `http://${appId}:3000/api/_internal/capabilities/v1`,
+    manifest: compileCapabilities(appId, capabilities).manifest,
+  };
+};
+
+const fakeInvocation = (
+  params: Parameters<typeof signInvocationToken>[0],
+  token = `invocation:${params.targetAppId}:${params.operation}:${params.schemaHash}`,
+): Awaited<ReturnType<typeof signInvocationToken>> => {
+  const issuedAt = 1_700_000_000;
+  return {
+    token,
+    kid: "22222222-2222-4222-8222-222222222222",
+    claims: {
+      ...params.authority,
+      iss: "https://cloud.test",
+      aud: `app:${params.targetAppId}`,
+      token_use: "invocation",
+      act: { sub: `app:${params.callingAppId}` },
+      op: params.operation,
+      schema_hash: params.schemaHash,
+      ver: 1,
+      ...(params.requestId ? { request_id: params.requestId } : {}),
+      jti: "33333333-3333-4333-8333-333333333333",
+      iat: issuedAt,
+      nbf: issuedAt,
+      exp: issuedAt + 30,
+    },
+  };
+};
+
+let signerKey: CryptoKey | undefined;
+const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
+  signerKey ??= (await generateKeyPair("RS256")).privateKey;
+  return callback({
+    kid: "22222222-2222-4222-8222-222222222222",
+    key: signerKey,
+    signUntil: new Date(Date.now() + 60_000),
+  });
 };
 
 describe("global capability search", () => {
@@ -334,5 +398,263 @@ describe("global capability search", () => {
     const response = await routes.request("/search?q=item&provider_limit=2");
     expect(response.status).toBe(200);
     expect(((await response.json()) as { items: unknown[] }).items).toHaveLength(6);
+  });
+
+  test("issues one target, operation, and schema-bound JWT per started provider without forwarding the source credential", async () => {
+    await withInvocationMode("jwt", async () => {
+      const providers = [provider(1), provider(2), provider(3)];
+      const signed: Parameters<typeof signInvocationToken>[0][] = [];
+      const forwarded = new Map<string, Headers>();
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        withActiveSigner,
+        signInvocation: async (params) => {
+          signed.push(params);
+          return fakeInvocation(params);
+        },
+        fetch: async (url, init) => {
+          forwarded.set(String(url), new Headers(init?.headers));
+          return Response.json({ data: [] });
+        },
+      });
+
+      const response = await routes.request("/search?q=needle", {
+        headers: {
+          authorization: "Bearer source-oauth-token",
+          cookie: "session_token=source-session; analytics=private",
+          "x-request-id": "search-request",
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(signed).toHaveLength(providers.length);
+      for (const entry of providers) {
+        const call = signed.find((candidate) => candidate.targetAppId === entry.appId);
+        expect(call).toMatchObject({
+          targetAppId: entry.appId,
+          callingAppId: "core",
+          operation: searchInvocationOperation,
+          schemaHash: entry.manifest.queries[0]?.schemaHash,
+          requestId: "search-request",
+          authority: {
+            sub: "11111111-1111-4111-8111-111111111111",
+            principal_type: "user",
+            credential_kind: "session",
+            scopes: [],
+          },
+        });
+        const headers = forwarded.get(`${entry.endpoint}/queries/search`);
+        expect(headers?.get("authorization")).toBe(
+          `Bearer invocation:${entry.appId}:${searchInvocationOperation}:${entry.manifest.queries[0]?.schemaHash}`,
+        );
+        expect(headers?.get("authorization")).not.toContain("source-oauth-token");
+        expect(headers?.get("cookie")).toBeNull();
+        expect(headers?.get("x-cloud-invocation-operation")).toBe(searchInvocationOperation);
+        expect(headers?.get("x-cloud-capability-schema-hash")).toBe(entry.manifest.queries[0]?.schemaHash);
+      }
+    });
+  });
+
+  test("guards one prepared signer for a thirty-target JWT fan-out", async () => {
+    await withInvocationMode("jwt", async () => {
+      const providers = Array.from({ length: 30 }, (_, index) => provider(index));
+      let guardCalls = 0;
+      let preparedSigner: Parameters<typeof signInvocationToken>[0]["signer"];
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        withActiveSigner: async (purpose, callback, options) => {
+          guardCalls += 1;
+          return withActiveSigner(
+            purpose,
+            async (signer) => {
+              preparedSigner = signer;
+              return callback(signer);
+            },
+            options,
+          );
+        },
+        signInvocation: async (params) => {
+          expect(params.signer).toBe(preparedSigner);
+          return fakeInvocation(params);
+        },
+        fetch: async () => Response.json({ data: [] }),
+      });
+
+      expect((await routes.request("/search?q=needle")).status).toBe(200);
+      expect(guardCalls).toBe(1);
+    });
+  });
+
+  test("keeps JWT fan-out at eight concurrent providers and merges partial successes", async () => {
+    await withInvocationMode("jwt", async () => {
+      const providers = Array.from({ length: 17 }, (_, index) => provider(index));
+      let active = 0;
+      let maximumActive = 0;
+      let signed = 0;
+      let providerSettled = false;
+      let signedBeforeProviderSettled = 0;
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        withActiveSigner,
+        signInvocation: async (params) => {
+          signed += 1;
+          if (!providerSettled) signedBeforeProviderSettled += 1;
+          return fakeInvocation(params);
+        },
+        fetch: async (url) => {
+          active += 1;
+          maximumActive = Math.max(maximumActive, active);
+          await Bun.sleep(5);
+          providerSettled = true;
+          active -= 1;
+          const appId = new URL(String(url)).hostname;
+          if (appId === "search-09") return Response.json({ code: "UNAVAILABLE", message: "offline" }, { status: 503 });
+          return Response.json({
+            data: [
+              {
+                ref: { type: `${appId}.item`, id: appId },
+                title: appId,
+                links: [{ rel: "open", href: `/app/${appId}` }],
+              },
+            ],
+          });
+        },
+      });
+
+      const response = await routes.request("/search?q=needle");
+      const body = (await response.json()) as { count: number; items: Array<{ appId: string }> };
+      expect(response.status).toBe(200);
+      expect(maximumActive).toBe(8);
+      expect(signed).toBe(providers.length);
+      expect(signedBeforeProviderSettled).toBeGreaterThan(8);
+      expect(body.count).toBe(16);
+      expect(body.items.some((item) => item.appId === "search-09")).toBeFalse();
+    });
+  });
+
+  test("uses one common JWT fan-out deadline, including providers queued behind the first worker batch", async () => {
+    await withInvocationMode("jwt", async () => {
+      const deadline = new AbortController();
+      const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
+      const providers = Array.from({ length: 9 }, (_, index) => provider(index));
+      const started: Array<{ appId: string; alreadyAborted: boolean }> = [];
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        withActiveSigner,
+        signInvocation: async (params) => fakeInvocation(params),
+        fetch: async (url, init) => {
+          const appId = new URL(String(url)).hostname;
+          const signal = init?.signal;
+          started.push({ appId, alreadyAborted: signal?.aborted ?? false });
+          if (appId === "search-00") {
+            queueMicrotask(() => deadline.abort());
+            return Response.json({
+              data: [
+                {
+                  ref: { type: `${appId}.item`, id: appId },
+                  title: appId,
+                  links: [{ rel: "open", href: `/app/${appId}` }],
+                },
+              ],
+            });
+          }
+          if (signal?.aborted) throw signal.reason;
+          await new Promise<void>((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+          return Response.json({ data: [] });
+        },
+      });
+
+      try {
+        const response = await routes.request("/search?q=needle");
+        const body = (await response.json()) as { count: number; items: Array<{ appId: string }> };
+        expect(response.status).toBe(200);
+        expect(timeout).toHaveBeenCalledTimes(2);
+        expect(timeout).toHaveBeenCalledWith(500);
+        expect(timeout).toHaveBeenCalledWith(8_000);
+        expect(started).toHaveLength(providers.length);
+        expect(started.find((entry) => entry.appId === "search-08")?.alreadyAborted).toBeTrue();
+        expect(body.count).toBe(1);
+        expect(body.items[0]?.appId).toBe("search-00");
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+  });
+
+  test("bounds a stuck signer and does not start queued signing after the common deadline", async () => {
+    await withInvocationMode("jwt", async () => {
+      const deadline = new AbortController();
+      const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
+      const providers = Array.from({ length: 9 }, (_, index) => provider(index));
+      let signed = 0;
+      let fetched = 0;
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => providers,
+        withActiveSigner,
+        signInvocation: async () => {
+          signed += 1;
+          if (signed === 8) queueMicrotask(() => deadline.abort());
+          return new Promise<never>(() => undefined);
+        },
+        fetch: async () => {
+          fetched += 1;
+          return Response.json({ data: [] });
+        },
+      });
+
+      try {
+        const response = await routes.request("/search?q=needle");
+        expect(response.status).toBe(200);
+        expect(timeout).toHaveBeenCalledTimes(2);
+        expect(timeout).toHaveBeenCalledWith(500);
+        expect(timeout).toHaveBeenCalledWith(8_000);
+        expect(signed).toBe(8);
+        expect(fetched).toBe(0);
+        expect((await response.json()) as { count: number }).toMatchObject({ count: 0 });
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+  });
+
+  test("bounds a stuck active-signer guard before signing or provider fetch", async () => {
+    await withInvocationMode("jwt", async () => {
+      const deadline = new AbortController();
+      const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
+      let signed = 0;
+      let fetched = 0;
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [provider(1)],
+        withActiveSigner: async () => {
+          queueMicrotask(() => deadline.abort());
+          return new Promise<never>(() => undefined);
+        },
+        signInvocation: async (params) => {
+          signed += 1;
+          return fakeInvocation(params);
+        },
+        fetch: async () => {
+          fetched += 1;
+          return Response.json({ data: [] });
+        },
+      });
+
+      try {
+        const response = await routes.request("/search?q=needle");
+        expect(response.status).toBe(200);
+        expect(timeout).toHaveBeenCalledTimes(2);
+        expect(signed).toBe(0);
+        expect(fetched).toBe(0);
+        expect(await response.json()).toMatchObject({ count: 0 });
+      } finally {
+        timeout.mockRestore();
+      }
+    });
   });
 });

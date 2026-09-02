@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-08-30
+updated: 2026-09-02
 ---
 
 # App capabilities
@@ -822,11 +822,13 @@ The optional review route accepts the same body and is available only when the
 Action manifest advertises `review: true`. It performs no mutation and needs no
 `Idempotency-Key`.
 
-Send `Idempotency-Key` only when invoking an Action whose manifest requires it. Core
-pins the registered schema, forwards the caller credential and trace context,
-and rejects invalid app responses. The app authenticates again, reconstructs
-the actor and access subject, validates the input, and authorizes the resource.
-Reviewing an Action never authorizes its later invocation.
+Send `Idempotency-Key` only when invoking an Action whose manifest requires it.
+Core pins the registered schema and replaces the source credential with a
+30-second invocation JWT bound to the target app, operation, mode, and schema
+hash. The target verifies that token locally, reloads the current principal,
+reconstructs the normal actor and access subject, validates the input, and
+authorizes the resource. Cookies, API keys, and OAuth tokens never reach the
+target app. Reviewing an Action never authorizes its later invocation.
 
 Core also forwards the caller's resolved locale as invocation metadata in the
 internal `x-cloud-locale` header, next to authorization and tracing. Query,
@@ -859,9 +861,11 @@ const result = await invokeCapabilityWithDataSchema(
 if (!result.ok) throw new Error(result.error.message);
 ```
 
-Server-side app code uses the registry-backed adapter. Pass only credentials
-and trace data from the current request; the adapter dispatches through Core
-without making an HTTP loop through Gateway:
+Server-side app code uses the Core-backed adapter. Pass only credentials and
+trace data from the current request. The adapter sends them to Core's private
+origin, where Core resolves the authority and dispatches a target-bound
+invocation. Configure `CLOUD_CORE_INTERNAL_ORIGIN` to avoid a public
+Gateway/ingress round trip:
 
 ```ts
 import { invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities/server";
@@ -893,6 +897,14 @@ review. App tests may compile a declaration without importing Cloud internals:
 ```ts
 import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 ```
+
+A durable worker uses the same server helper with an app workload credential
+and its persisted mandate ID/revision. The helper sends both only to Core;
+Core validates the current mandate, signs and dispatches the exact capability,
+and returns the bounded result. It never returns the invocation JWT to the
+worker. See
+[Background authority mandates](/en/docs/identity/background-mandates) for the
+complete lifecycle and example.
 
 The generic CLI uses the same dispatcher:
 

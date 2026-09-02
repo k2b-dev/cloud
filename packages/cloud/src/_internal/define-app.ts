@@ -8,7 +8,7 @@
 import type { SsrConfig } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
-import { type Context, Hono } from "hono";
+import { type Context, type Handler, Hono } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { env } from "../config/env";
 import type {
@@ -28,7 +28,15 @@ import type { Role } from "../contracts/shared";
 import type { HelpDefinition } from "../server/help";
 import { getLocale, resolveLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
+import { requireInvocationOrLegacy } from "../server/middleware/invocation";
 import { routeTemplate } from "../server/middleware/route-template";
+import { settings as settingsMiddleware } from "../server/middleware/settings";
+import { legacyCredentialBoundary } from "../server/middleware/workload";
+import {
+  capabilityInvocationOperation,
+  searchInvocationOperation,
+  widgetInvocationOperation,
+} from "../services/identity/invocation-operations";
 import { logger } from "../services/logging";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
@@ -125,9 +133,9 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP path on this app that returns a `WidgetResponse`. The dashboard
-   * fetches them with the user's cookie forwarded; the endpoint is
-   * responsible for permission gating (200 = render, 403 = unavailable at the
-   * user's access level, 204 = no content).
+   * reaches the declared handler through Core; the endpoint remains
+   * responsible for permission gating (200 = render, 403 = unavailable at
+   * the user's access level, 204 = no content).
    */
   widgets?: ReadonlyArray<WidgetEndpoint>;
   /**
@@ -184,9 +192,9 @@ export type StartOptions = {
    *   app.start({ fetch: router.fetch });
    *
    * The framework owns `/_ssr/*`, `/public/*`, and the versioned internal
-   * capability endpoints when capabilities are declared, and registers them
-   * before this fetch — they take precedence over any catch-all the app
-   * might register.
+   * capability and widget endpoints when their handlers are declared, and
+   * registers them before this fetch — they take precedence over any
+   * catch-all the app might register.
    */
   fetch: (req: Request, env?: unknown) => Response | Promise<Response>;
   /**
@@ -203,6 +211,13 @@ export type StartOptions = {
   openapi?: Hono<any>;
   lifecycle?: AppLifecycle;
   capabilities?: CapabilityDefinitions;
+  /**
+   * Handlers for declared dashboard widgets, keyed by widget id. The
+   * framework exposes these only on its invocation-authenticated internal
+   * route; applications may keep mounting the same handlers on their public
+   * compatibility paths during the rolling migration.
+   */
+  widgets?: Readonly<Record<string, Handler<AuthContext>>>;
   help?: HelpDefinition;
   port?: number;
   skipSetup?: boolean;
@@ -487,6 +502,7 @@ export const defineApp = <
     //   /_ssr/*                 island chunks (SSR adapter)
     //   /public/*               serveStatic + terminal 404
     //   /api/_internal/capabilities/v1/* when capabilities are declared
+    //   /api/_internal/widgets/v1/*     when widget handlers are bound
     //   <opts.openapi>          OpenAPI JSON spec, when both opts.openapi
     //                            and startOpts.openapi are set
     const ssrMountPath = config.basePath ? `${config.basePath}/_ssr` : "/_ssr";
@@ -569,15 +585,64 @@ export const defineApp = <
           headers: { "content-type": "application/json" },
         });
       };
-      const capabilityAuth = auth.requireRole("authenticated", {
-        oauthAudience: async () => ["cloud", cloudMcpResourceUri(await get<string>("app.url"))],
-      });
+      const legacyCapabilityAuth = legacyCredentialBoundary(
+        auth.requireRole("authenticated", {
+          oauthAudience: async () => ["cloud", cloudMcpResourceUri(await get<string>("app.url"))],
+        }),
+      );
+      const capabilityAuth = (kind: "queries" | "actions", review = false) =>
+        requireInvocationOrLegacy((c) => {
+          const localId = c.req.param("capabilityId") ?? "";
+          const operation = kind === "queries" ? compiledCapabilities.queries.get(localId) : compiledCapabilities.actions.get(localId);
+          if (!operation) return null;
+          const requestedOperation = c.req.header("x-cloud-invocation-operation");
+          const invocationOperation =
+            kind === "queries" &&
+            requestedOperation === searchInvocationOperation &&
+            "universalSearch" in operation.manifest &&
+            operation.manifest.universalSearch
+              ? searchInvocationOperation
+              : capabilityInvocationOperation(kind, localId, review);
+          return {
+            targetAppId: meta.id,
+            operation: invocationOperation,
+            schemaHash: operation.manifest.schemaHash,
+          };
+        }, legacyCapabilityAuth);
       const capabilityReadScope = auth.requireOAuthScope("read", "admin");
       const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
-      server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth, capabilityReadScope, (c) => invoke(c, "query"));
-      server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth, capabilityWriteScope, (c) => invoke(c, "action"));
-      server.post("/api/_internal/capabilities/v1/actions/:capabilityId/review", capabilityAuth, capabilityReadScope, (c) =>
-        invoke(c, "review"),
+      server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
+        invoke(c, "query"),
+      );
+      server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth("actions"), capabilityWriteScope, (c) =>
+        invoke(c, "action"),
+      );
+      server.post(
+        "/api/_internal/capabilities/v1/actions/:capabilityId/review",
+        capabilityAuth("actions", true),
+        capabilityReadScope,
+        (c) => invoke(c, "review"),
+      );
+    }
+
+    if (startOpts.widgets) {
+      const declaredWidgetIds = new Set(meta.widgets?.map((widget) => widget.id) ?? []);
+      for (const widgetId of Object.keys(startOpts.widgets)) {
+        if (!declaredWidgetIds.has(widgetId)) throw new Error(`Widget handler "${widgetId}" is not declared by app "${meta.id}"`);
+      }
+      const legacyWidgetAuth = legacyCredentialBoundary(auth.requireRole("authenticated"));
+      server.get(
+        "/api/_internal/widgets/v1/:widgetId",
+        requireInvocationOrLegacy((c) => {
+          const widgetId = c.req.param("widgetId") ?? "";
+          if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
+          return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
+        }, legacyWidgetAuth),
+        settingsMiddleware(),
+        async (c) => {
+          const handler = startOpts.widgets?.[c.req.param("widgetId") ?? ""];
+          return handler ? handler(c, async () => {}) : c.json({ message: "Widget not found" }, 404);
+        },
       );
     }
 

@@ -26,6 +26,7 @@ import { createWorkflowCommand, createWorkflowCommandInTransaction, enqueueCreat
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateConversationSummaryInTransaction, updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
+import { incomingAutomationMandateCaller } from "../service/incoming-automation-workload";
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
 import { type MailboxOwnedPublicResourceTable, publicIds, requirePublicId, resolveMailboxPublicId } from "../service/public-resources";
@@ -247,13 +248,24 @@ const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: st
   throw new Error(`${key} must resolve to an object`);
 };
 const workflowIntegrationRequest = async (ctx: WorkflowActionContext) => {
-  const [row] = await sql<{ encrypted_integration_token: string | null }[]>`
-    SELECT automation.encrypted_integration_token
+  const [row] = await sql<
+    { mandate_id: string | null; mandate_revision: string | number | null; encrypted_integration_token: string | null }[]
+  >`
+    SELECT automation.mandate_id,
+           mandate.revision AS mandate_revision,
+           automation.encrypted_integration_token
     FROM workflows.run run
     JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
+    LEFT JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
     WHERE run.id = ${ctx.runId}::uuid
       AND automation.deleted_at IS NULL
   `;
+  if (row?.mandate_id) {
+    return {
+      ...incomingAutomationMandateCaller({ id: row.mandate_id, revision: Number(row.mandate_revision) }),
+      requestId: ctx.runId,
+    };
+  }
   if (!row?.encrypted_integration_token) {
     throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
   }

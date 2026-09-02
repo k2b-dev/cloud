@@ -50,6 +50,12 @@ and durable data.
   concrete resource permissions in every service path. Use `actor` for
   identity and audit context and `accessSubject` for grants. UI visibility is
   not authorization.
+- Send an interactive credential only to Core. Framework-owned cross-app calls
+  exchange it for a short-lived target- and operation-bound invocation; never
+  forward a cookie, OAuth token, or API key directly to another application.
+- Durable background work that calls another application stores one revocable
+  mandate for the workload. It authenticates to Core with its app-bound
+  workload credential and never stores the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application.
 - Store durable state explicitly, never in process memory or container files.
   Use Valkey only for bounded coordination. Commit state before retryable

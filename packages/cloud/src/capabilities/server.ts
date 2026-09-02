@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { getApp, getCapability } from "../_internal/registry";
-import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
-import { CapabilityActionReviewSchema, capabilityResultSchema } from "../contracts/capabilities";
+import { loadCapabilityCatalogPage } from "../api/capabilities";
+import { CAPABILITY_FRAMEWORK_ERROR_CODES, CapabilityActionReviewSchema, capabilityResultSchema } from "../contracts/capabilities";
+import { get } from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
+import { publicCloudOrigin } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
 import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
@@ -11,6 +13,7 @@ import { combineCapabilitySignals } from "./signals";
 import type {
   CapabilityCatalogAppClientResult,
   CapabilityCatalogClientResult,
+  CapabilityClientError,
   CapabilityClientResult,
   CapabilityInvocation,
   CapabilityReviewClientResult,
@@ -34,20 +37,66 @@ export type CapabilityCaller = {
   /** BCP 47 locale of the originating request, forwarded as invocation metadata. */
   locale?: string | null;
   signal?: AbortSignal;
+  /** Durable background authority. `authorization` must be the owning app's workload credential. */
+  mandate?: { id: string; revision: number; callingAppId: string };
 };
 
-const callerRequest = (caller: CapabilityCaller, idempotencyKey?: string, invocationSignal?: AbortSignal): Request => {
+const coreOrigin = async (): Promise<string> => {
+  const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  const origin = configured || publicCloudOrigin(await get<string>("app.url"));
+  const url = new URL(origin);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("CLOUD_CORE_INTERNAL_ORIGIN must use http or https");
+  return url.origin;
+};
+
+const callerRequest = async (
+  caller: CapabilityCaller,
+  path: string,
+  idempotencyKey?: string,
+  invocationSignal?: AbortSignal,
+): Promise<Request> => {
   const headers = new Headers();
   if (caller.authorization) headers.set("authorization", caller.authorization);
-  if (caller.cookie) headers.set("cookie", caller.cookie);
-  if (caller.requestId) headers.set("x-request-id", caller.requestId);
-  if (caller.traceparent) headers.set("traceparent", caller.traceparent);
-  if (caller.tracestate) headers.set("tracestate", caller.tracestate);
-  if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
-  if (idempotencyKey) headers.set("idempotency-key", idempotencyKey);
+  if (!caller.mandate) {
+    if (caller.cookie) headers.set("cookie", caller.cookie);
+    if (caller.requestId) headers.set("x-request-id", caller.requestId);
+    if (caller.traceparent) headers.set("traceparent", caller.traceparent);
+    if (caller.tracestate) headers.set("tracestate", caller.tracestate);
+    if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
+    if (idempotencyKey) headers.set("idempotency-key", idempotencyKey);
+  } else {
+    headers.set("x-cloud-app-id", caller.mandate.callingAppId);
+  }
   const signal = combineCapabilitySignals(caller.signal, invocationSignal);
-  return new Request("http://cloud.internal/api/capabilities/v1", { headers, signal });
+  return new Request(new URL(path, await coreOrigin()), { method: "POST", headers, signal });
 };
+
+const unavailable = (
+  cause: unknown,
+  invocation?: Pick<CapabilityInvocation, "kind" | "idempotencyKey">,
+  locale?: string,
+): { ok: false; error: CapabilityClientError } => ({
+  ok: false,
+  error:
+    invocation?.kind === "action" && !invocation.idempotencyKey
+      ? {
+          code: CAPABILITY_FRAMEWORK_ERROR_CODES.actionOutcomeUnknown,
+          message: capabilityMessages(locale).actionOutcomeUnknown,
+          status: 502,
+          details: { retrySafe: false },
+        }
+      : cause instanceof Error && cause.name === "AbortError"
+        ? {
+            code: CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled,
+            message: capabilityMessages(locale).requestCancelled,
+            status: 499,
+          }
+        : {
+            code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable,
+            message: capabilityMessages(locale).cloudUnavailable,
+            status: 503,
+          },
+});
 
 const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, TInput = unknown>(
   invocation: CapabilityInvocation<TInput>,
@@ -55,16 +104,37 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
   caller: CapabilityCaller,
 ): Promise<CapabilityClientResult<z.output<TDataSchema>>> => {
   try {
-    const response = await dispatchCapability({
-      request: callerRequest(caller, invocation.idempotencyKey, invocation.signal),
-      kind: invocation.kind === "query" ? "queries" : "actions",
-      appId: invocation.appId,
-      capabilityId: invocation.capabilityId,
-      input: invocation.input,
+    const path = caller.mandate
+      ? "/api/_internal/identity/v1/invoke"
+      : `/api/capabilities/v1/${invocation.kind === "query" ? "queries" : "actions"}/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}`;
+    const response = await fetch(await callerRequest(caller, path, invocation.idempotencyKey, invocation.signal), {
+      body: JSON.stringify(
+        caller.mandate
+          ? {
+              kind: invocation.kind,
+              targetApp: invocation.appId,
+              capabilityId: invocation.capabilityId,
+              input: invocation.input,
+              mandateId: caller.mandate.id,
+              mandateRevision: caller.mandate.revision,
+              ...(invocation.idempotencyKey ? { idempotencyKey: invocation.idempotencyKey } : {}),
+              ...(caller.requestId || caller.traceparent || caller.tracestate || caller.locale
+                ? {
+                    metadata: {
+                      ...(caller.requestId ? { requestId: caller.requestId } : {}),
+                      ...(caller.traceparent ? { traceparent: caller.traceparent } : {}),
+                      ...(caller.tracestate ? { tracestate: caller.tracestate } : {}),
+                      ...(caller.locale ? { locale: caller.locale } : {}),
+                    },
+                  }
+                : {}),
+            }
+          : { input: invocation.input },
+      ),
     });
     return readCapabilityResponse(response, capabilityResultSchema(dataSchema));
-  } catch {
-    return { ok: false, error: { code: "APP_UNAVAILABLE", message: capabilityMessages(caller.locale).cloudUnavailable, status: 503 } };
+  } catch (cause) {
+    return unavailable(cause, invocation, caller.locale ?? undefined);
   }
 };
 
@@ -128,16 +198,17 @@ export const reviewCapabilityAction = async <TInput = unknown>(
   caller: CapabilityCaller,
 ): Promise<CapabilityReviewClientResult> => {
   try {
-    const response = await dispatchCapability({
-      request: callerRequest(caller, undefined, invocation.signal),
-      kind: "actions",
-      review: true,
-      appId: invocation.appId,
-      capabilityId: invocation.capabilityId,
-      input: invocation.input,
-    });
+    const response = await fetch(
+      await callerRequest(
+        caller,
+        `/api/capabilities/v1/actions/${encodeURIComponent(invocation.appId)}/${encodeURIComponent(invocation.capabilityId)}/review`,
+        undefined,
+        invocation.signal,
+      ),
+      { body: JSON.stringify({ input: invocation.input }) },
+    );
     return readCapabilityResponse(response, CapabilityActionReviewSchema);
-  } catch {
-    return { ok: false, error: { code: "APP_UNAVAILABLE", message: capabilityMessages(caller.locale).cloudUnavailable, status: 503 } };
+  } catch (cause) {
+    return unavailable(cause, undefined, caller.locale ?? undefined);
   }
 };

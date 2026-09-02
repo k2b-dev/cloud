@@ -1,13 +1,6 @@
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
-import {
-  CompactSign,
-  compactVerify,
-  exportJWK,
-  generateKeyPair,
-  importJWK,
-  type JWK,
-} from "jose";
+import { CompactSign, compactVerify, exportJWK, generateKeyPair, importJWK, type JWK } from "jose";
 import { logger } from "../logging";
 import {
   CLOUD_IDENTITY_ALGORITHM,
@@ -17,11 +10,13 @@ import {
   IDENTITY_ROTATION_AGE_MS,
   IDENTITY_SIGNING_CACHE_MS,
 } from "./constants";
-import { readIdentityKeyEncryptionConfig, type IdentityKeyEncryptionConfig } from "./key-config";
+import { type IdentityKeyEncryptionConfig, readIdentityKeyEncryptionConfig } from "./key-config";
 import { identityMetrics } from "./metrics";
+import { SignerRefreshes } from "./signer-refresh";
 
 export type SigningKeyPurpose = "session" | "invocation" | "oauth";
 export type SigningKeyState = "pending" | "active" | "retired" | "revoked";
+const SIGNING_KEY_PURPOSES = ["session", "invocation", "oauth"] as const satisfies readonly SigningKeyPurpose[];
 
 type SigningKeyRow = {
   id: string;
@@ -150,6 +145,7 @@ const signingDeadline = (activateAt: Date): Date =>
   new Date(activateAt.getTime() + IDENTITY_ROTATION_AGE_MS + IDENTITY_ACTIVATION_LEAD_MS + IDENTITY_SIGNING_CACHE_MS);
 
 const cache = new Map<SigningKeyPurpose, { signer: PreparedIdentitySigner; expiresAt: number }>();
+const signerRefreshes = new SignerRefreshes<SigningKeyPurpose, PreparedIdentitySigner>();
 let maintenanceTimer: ReturnType<typeof setInterval> | null = null;
 
 const importRow = async (row: SigningKeyRow, keys: IdentityKeyEncryptionConfig): Promise<PreparedIdentitySigner> => {
@@ -277,45 +273,87 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
   const now = Date.now();
   const cached = cache.get(purpose);
   if (cached && cached.expiresAt > now && cached.signer.signUntil.getTime() > now) return cached.signer;
-  try {
-    const keys = await readIdentityKeyEncryptionConfig();
-    const row = await maintainPurpose(purpose);
-    const signer = await importRow(row, keys);
-    if (signer.signUntil.getTime() <= now) throw new Error(`Active ${purpose} signing key is past sign_until`);
-    cache.set(purpose, { signer, expiresAt: Math.min(now + IDENTITY_SIGNING_CACHE_MS, signer.signUntil.getTime()) });
-    return signer;
-  } catch (error) {
-    identityMetrics.increment("rotation_failure");
-    log.error("Cloud identity signer refresh failed", { purpose, error: error instanceof Error ? error.message : String(error) });
-    if (cached && cached.signer.signUntil.getTime() > now) return cached.signer;
-    throw error;
+  return signerRefreshes.run(
+    purpose,
+    async () => {
+      try {
+        const keys = await readIdentityKeyEncryptionConfig();
+        const row = await maintainPurpose(purpose);
+        const signer = await importRow(row, keys);
+        if (signer.signUntil.getTime() <= now) throw new Error(`Active ${purpose} signing key is past sign_until`);
+        return signer;
+      } catch (error) {
+        identityMetrics.increment("rotation_failure");
+        log.error("Cloud identity signer refresh failed", { purpose, error: error instanceof Error ? error.message : String(error) });
+        if (cached && cached.signer.signUntil.getTime() > now) return cached.signer;
+        throw error;
+      }
+    },
+    (signer) => {
+      cache.set(purpose, { signer, expiresAt: Math.min(Date.now() + IDENTITY_SIGNING_CACHE_MS, signer.signUntil.getTime()) });
+    },
+  );
+};
+
+/**
+ * Derives a local result while the selected key is still active in Postgres.
+ * The shared row lock makes emergency revocation wait for already-started
+ * issuance and prevents replicas from releasing a new result under that key
+ * after the revocation commits.
+ */
+export const withActiveIdentitySigner = async <T>(
+  purpose: SigningKeyPurpose,
+  callback: (signer: PreparedIdentitySigner) => Promise<T>,
+  options: { db?: typeof sql } = {},
+): Promise<T> => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const signer = await prepareIdentitySigner(purpose);
+    const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
+      const [active] = await db<Array<{ kid: string }>>`
+        SELECT kid
+        FROM auth.signing_keys
+        WHERE kid = ${signer.kid}
+          AND purpose = ${purpose}
+          AND state = 'active'
+          AND sign_until > now()
+        FOR SHARE
+      `;
+      if (!active) return { active: false };
+      return { active: true, result: await callback(signer) };
+    };
+    const checked = options.db ? await run(options.db) : await sql.begin((transaction) => run(transaction as typeof sql));
+    if (checked.active) return checked.result;
+    invalidateIdentitySignerCache(purpose, signer.kid);
   }
+  throw new Error(`No active ${purpose} identity signer is available`);
 };
 
 export const initializeIdentityAuthority = async (): Promise<void> => {
+  for (const purpose of SIGNING_KEY_PURPOSES) await prepareIdentitySigner(purpose);
   const keys = await readIdentityKeyEncryptionConfig();
-  for (const purpose of ["session", "invocation"] as const) {
-    const row = await maintainPurpose(purpose);
-    const signer = await importRow(row, keys);
-    cache.set(purpose, {
-      signer,
-      expiresAt: Math.min(Date.now() + IDENTITY_SIGNING_CACHE_MS, signer.signUntil.getTime()),
-    });
-  }
   if (keys.previous) await rewrapIdentitySigningKeys();
 };
 
-export const listIdentityJwks = async (): Promise<{ keys: JWK[]; etag: string }> => {
-  const rows = await sql<Array<{ public_jwk: JWK | string }>>`
-    SELECT public_jwk
-    FROM auth.signing_keys
-    WHERE purpose IN ('session', 'invocation')
-      AND state IN ('pending', 'active', 'retired')
-      AND verify_until > now()
-    ORDER BY purpose, created_at
-  `;
+export const listIdentityJwks = async (purpose?: "session" | "invocation"): Promise<{ keys: JWK[]; etag: string }> => {
+  const rows = purpose
+    ? await sql<Array<{ public_jwk: JWK | string }>>`
+        SELECT public_jwk
+        FROM auth.signing_keys
+        WHERE purpose = ${purpose}
+          AND state IN ('pending', 'active', 'retired')
+          AND verify_until > now()
+        ORDER BY created_at
+      `
+    : await sql<Array<{ public_jwk: JWK | string }>>`
+        SELECT public_jwk
+        FROM auth.signing_keys
+        WHERE purpose IN ('session', 'invocation')
+          AND state IN ('pending', 'active', 'retired')
+          AND verify_until > now()
+        ORDER BY purpose, created_at
+      `;
   const keys = rows.map((row) => publicJwk(row.public_jwk));
-  return { keys, etag: `"${(await crypto.common.hash(JSON.stringify(keys))).slice(0, 32)}"` };
+  return { keys, etag: `"${(await crypto.common.hash(JSON.stringify({ purpose: purpose ?? "combined", keys }))).slice(0, 32)}"` };
 };
 
 export const revokeIdentitySigningKey = async (params: { kid: string; reason: string }): Promise<boolean> => {
@@ -327,7 +365,7 @@ export const revokeIdentitySigningKey = async (params: { kid: string; reason: st
     WHERE kid = ${params.kid} AND state <> 'revoked'
     RETURNING purpose
   `;
-  for (const row of rows) cache.delete(row.purpose);
+  for (const row of rows) invalidateIdentitySignerCache(row.purpose);
   if (rows.length > 0) {
     const purpose = rows[0]!.purpose;
     log.warn("Cloud identity signing key revoked", { kid: params.kid, purpose, reason });
@@ -389,6 +427,7 @@ export const rewrapIdentitySigningKeys = async (): Promise<number> => {
     }
   });
   cache.clear();
+  signerRefreshes.invalidateAll();
   log.info("Cloud identity signing keys rewrapped", { count: replacements.length, encryptionKeyId: keys.current.id });
   return replacements.length;
 };
@@ -412,7 +451,7 @@ const maintainVerificationWindows = async (): Promise<void> => {
 };
 
 export const runIdentityKeyMaintenance = async (): Promise<void> => {
-  for (const purpose of ["session", "invocation"] as const) await maintainPurpose(purpose);
+  for (const purpose of SIGNING_KEY_PURPOSES) await maintainPurpose(purpose);
   await maintainVerificationWindows();
   await sql`
     DELETE FROM auth.session_families
@@ -456,9 +495,13 @@ export const startIdentityKeyMaintenance = (): (() => void) => {
 
 export const clearIdentityKeyCachesForTest = (): void => {
   cache.clear();
+  signerRefreshes.invalidateAll();
 };
 
 export const invalidateIdentitySignerCache = (purpose: SigningKeyPurpose, kid?: string): void => {
   const cached = cache.get(purpose);
-  if (!kid || cached?.signer.kid === kid) cache.delete(purpose);
+  if (!kid || cached?.signer.kid === kid) {
+    cache.delete(purpose);
+    signerRefreshes.invalidate(purpose);
+  }
 };

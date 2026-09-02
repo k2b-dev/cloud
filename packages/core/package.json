@@ -16,6 +16,7 @@
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
+    "jose": "catalog:",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

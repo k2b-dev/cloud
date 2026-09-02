@@ -5,7 +5,10 @@ export const readBoundedJson = async (message: Request | Response, maxBytes: num
   const declared = message.headers.get("content-length");
   if (declared !== null) {
     const bytes = Number(declared);
-    if (Number.isFinite(bytes) && bytes > maxBytes) return { ok: false, reason: "too_large" };
+    if (Number.isFinite(bytes) && bytes > maxBytes) {
+      await message.body?.cancel().catch(() => undefined);
+      return { ok: false, reason: "too_large" };
+    }
   }
 
   const reader = message.body?.getReader();

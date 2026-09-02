@@ -23,8 +23,8 @@ import * as drafts from "./drafts";
 import * as events from "./events";
 import { startMailInvalidationRuntime, stopMailInvalidationRuntime } from "./events";
 import * as execution from "./execution";
-import * as folders from "./folders";
 import * as focus from "./focus";
+import * as folders from "./folders";
 import * as health from "./health";
 import { imapPushRuntime } from "./imap-push-runtime";
 import * as incomingAutomations from "./incoming-automations";
@@ -65,10 +65,12 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     await scheduledMailRuntime.start();
     await imapPushRuntime.start();
     incomingAutomations.startIncomingAutomationBackfillRuntime();
+    incomingAutomations.startIncomingAutomationAuthorityMigrationRuntime();
   },
   stop: () =>
     stopRuntimeResources([
       incomingAutomations.stopIncomingAutomationBackfillRuntime,
+      incomingAutomations.stopIncomingAutomationAuthorityMigrationRuntime,
       () => imapPushRuntime.stop(),
       () => scheduledMailRuntime.stop(),
       () => attachmentExtractionRuntime.stop(),

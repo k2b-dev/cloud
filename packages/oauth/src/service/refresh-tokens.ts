@@ -1,8 +1,9 @@
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
+import type { OAuthIssuanceMode } from "./token-authority";
 
-type RefreshTokenStatus = "active" | "rotated" | "revoked" | "reused";
+type RefreshTokenStatus = "active" | "issuing" | "rotated" | "revoked" | "reused";
 type RefreshTokenFamilyStatus = "active" | "revoked";
 
 type DbRefreshTokenGrant = {
@@ -19,6 +20,9 @@ type DbRefreshTokenGrant = {
   resource: string | null;
   family_status: RefreshTokenFamilyStatus;
   family_expires_at: Date;
+  authority_nonce: string | null;
+  authority_reserved_at: Date | null;
+  authority_issued_at: Date | null;
 };
 
 type ParsedRefreshToken = {
@@ -42,6 +46,9 @@ export type RefreshTokenRotationResult =
       ok: false;
       error: "invalid_grant" | "invalid_scope" | "reuse_detected";
     };
+
+/** A local policy rejection proven to happen before the Core authority was called. */
+export class SafeRefreshIssuanceRejectionError extends Error {}
 
 const TOKEN_PREFIX = "cld_rt";
 const TOKEN_PATTERN = /^cld_rt_([0-9a-f]{24})_([0-9a-f]{64})$/i;
@@ -166,7 +173,7 @@ const revokeFamily = async (familyId: string, reason: string): Promise<void> => 
     SET status = 'revoked',
       revoked_at = COALESCE(revoked_at, now())
     WHERE family_id = ${familyId}::uuid
-      AND status = 'active'
+      AND status IN ('active', 'issuing')
   `;
 };
 
@@ -175,12 +182,18 @@ export const rotate = async (
   client: OAuthClient,
   expectedAudience?: string,
   requestedScopes?: OAuthScope[],
-  beforeRotation?: (grant: { userId: string; scopes: OAuthScope[]; audiences: string[]; resource: string | null }) => Promise<void>,
+  beforeRotation?: (grant: {
+    userId: string;
+    scopes: OAuthScope[];
+    audiences: string[];
+    resource: string | null;
+    authorityGrant: { kind: "refresh_token"; tokenId: string; nonce: string };
+  }) => Promise<OAuthIssuanceMode>,
 ): Promise<RefreshTokenRotationResult> => {
   const parsed = parseRefreshToken(refreshToken);
   if (!parsed) return { ok: false, error: "invalid_grant" };
 
-  const rotated = await sql.begin(async (tx) => {
+  const reserved = await sql.begin(async (tx) => {
     const [row] = await tx<DbRefreshTokenGrant[]>`
       SELECT
         rt.id,
@@ -195,7 +208,10 @@ export const rotate = async (
         f.audiences,
         f.resource,
         f.status AS family_status,
-        f.expires_at AS family_expires_at
+        f.expires_at AS family_expires_at,
+        rt.authority_nonce,
+        rt.authority_reserved_at,
+        rt.authority_issued_at
       FROM oauth.refresh_tokens rt
       JOIN oauth.refresh_token_families f ON f.id = rt.family_id
       WHERE rt.token_prefix = ${parsed.tokenPrefix}
@@ -209,7 +225,7 @@ export const rotate = async (
     if (row.resource && expectedAudience !== row.resource) return { ok: false as const, error: "invalid_grant" as const };
     if (expectedAudience && !row.audiences.includes(expectedAudience)) return { ok: false as const, error: "invalid_grant" as const };
     if (row.status !== "active") {
-      if (row.status === "rotated") {
+      if (row.status === "rotated" || row.status === "issuing") {
         await tx`
           UPDATE oauth.refresh_tokens
           SET status = 'reused',
@@ -228,7 +244,7 @@ export const rotate = async (
           SET status = 'revoked',
             revoked_at = COALESCE(revoked_at, now())
           WHERE family_id = ${row.family_id}::uuid
-            AND status = 'active'
+            AND status IN ('active', 'issuing')
         `;
         return { ok: false as const, error: "reuse_detected" as const };
       }
@@ -244,54 +260,115 @@ export const rotate = async (
     const scopes = requestedScopes ?? (row.scopes as OAuthScope[]);
     const audiences = expectedAudience ? [expectedAudience] : row.audiences;
     const resource = row.resource ?? expectedAudience ?? null;
-    await beforeRotation?.({ userId: row.user_id, scopes, audiences, resource });
-
-    const next = await insertRefreshToken({
-      db: tx,
-      familyId: row.family_id,
-      generation: row.generation + 1,
-      previousTokenId: row.id,
-      expiresAt: row.family_expires_at,
-    });
-
+    const authorityNonce = crypto.randomUUID();
     await tx`
       UPDATE oauth.refresh_tokens
-      SET status = 'rotated',
-        used_at = now(),
-        rotated_at = now()
-      WHERE id = ${row.id}::uuid
+      SET status = 'issuing', authority_nonce = ${authorityNonce}::uuid, authority_reserved_at = now(),
+        authority_scopes = ${toPgTextArray(scopes)}::text[], authority_audiences = ${toPgTextArray(audiences)}::text[],
+        authority_resource = ${resource}
+      WHERE id = ${row.id}::uuid AND status = 'active'
     `;
-    await tx`
-      UPDATE oauth.refresh_token_families
-      SET scopes = ${toPgTextArray(scopes)}::text[],
-        audiences = ${toPgTextArray(audiences)}::text[],
-        resource = ${resource},
-        last_used_at = now()
-      WHERE id = ${row.family_id}::uuid
-    `;
-
     return {
       ok: true as const,
+      tokenId: row.id,
+      familyId: row.family_id,
+      generation: row.generation,
+      familyExpiresAt: row.family_expires_at,
       userId: row.user_id,
       scopes,
       audiences,
       resource,
-      refreshToken: next.token,
-      refreshTokenExpiresAt: row.family_expires_at.toISOString(),
+      authorityGrant: { kind: "refresh_token" as const, tokenId: row.id, nonce: authorityNonce },
     };
   });
 
-  if (!rotated.ok) return rotated;
+  if (!reserved.ok) return reserved;
+
+  try {
+    await beforeRotation?.({
+      userId: reserved.userId,
+      scopes: reserved.scopes,
+      audiences: reserved.audiences,
+      resource: reserved.resource,
+      authorityGrant: reserved.authorityGrant,
+    });
+  } catch (error) {
+    if (error instanceof SafeRefreshIssuanceRejectionError) {
+      const released = await sql<{ id: string }[]>`
+        UPDATE oauth.refresh_tokens
+        SET status = 'active', authority_nonce = NULL, authority_reserved_at = NULL,
+          authority_scopes = NULL, authority_audiences = NULL, authority_resource = NULL
+        WHERE id = ${reserved.tokenId}::uuid
+          AND status = 'issuing'
+          AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
+          AND authority_issued_at IS NULL
+        RETURNING id
+      `;
+      if (released.length === 1) throw error;
+    }
+    await revokeFamily(reserved.familyId, "authority_issuance_failed");
+    throw error;
+  }
+  const finalized = await sql.begin(async (tx) => {
+    const [family] = await tx<{ id: string }[]>`
+      SELECT id
+      FROM oauth.refresh_token_families
+      WHERE id = ${reserved.familyId}::uuid
+        AND status = 'active'
+        AND expires_at > now()
+      FOR UPDATE
+    `;
+    if (!family) return null;
+    const [current] = await tx<{ id: string }[]>`
+      SELECT id
+      FROM oauth.refresh_tokens
+      WHERE id = ${reserved.tokenId}::uuid
+        AND status = 'issuing'
+        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
+        AND authority_issued_at IS NOT NULL
+      FOR UPDATE
+    `;
+    if (!current) return null;
+    const next = await insertRefreshToken({
+      db: tx,
+      familyId: reserved.familyId,
+      generation: reserved.generation + 1,
+      previousTokenId: reserved.tokenId,
+      expiresAt: reserved.familyExpiresAt,
+    });
+    const rotated = await tx<{ id: string }[]>`
+      UPDATE oauth.refresh_tokens
+      SET status = 'rotated', used_at = now(), rotated_at = now()
+      WHERE id = ${reserved.tokenId}::uuid
+        AND status = 'issuing'
+        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
+      RETURNING id
+    `;
+    if (rotated.length !== 1) throw new Error("OAuth refresh reservation changed during finalization");
+    const updatedFamily = await tx<{ id: string }[]>`
+      UPDATE oauth.refresh_token_families
+      SET scopes = ${toPgTextArray(reserved.scopes)}::text[], audiences = ${toPgTextArray(reserved.audiences)}::text[],
+        resource = ${reserved.resource}, last_used_at = now()
+      WHERE id = ${reserved.familyId}::uuid AND status = 'active'
+      RETURNING id
+    `;
+    if (updatedFamily.length !== 1) throw new Error("OAuth refresh family changed during finalization");
+    return next;
+  });
+  if (!finalized) {
+    await revokeFamily(reserved.familyId, "authority_issuance_finalize_failed");
+    throw new Error("OAuth refresh issuance could not be finalized");
+  }
 
   return {
     ok: true,
-    userId: rotated.userId,
+    userId: reserved.userId,
     client,
-    scopes: rotated.scopes,
-    audiences: rotated.audiences,
-    resource: rotated.resource,
-    refreshToken: rotated.refreshToken,
-    refreshTokenExpiresAt: rotated.refreshTokenExpiresAt,
+    scopes: reserved.scopes,
+    audiences: reserved.audiences,
+    resource: reserved.resource,
+    refreshToken: finalized.token,
+    refreshTokenExpiresAt: finalized.expiresAt.toISOString(),
   };
 };
 
@@ -316,6 +393,19 @@ export const revoke = async (refreshToken: string, clientId?: string): Promise<v
 
 /** Remove grants that can no longer authorize or detect a relevant replay. */
 export const cleanup = async (): Promise<number> => {
+  const stranded = await sql<{ family_id: string }[]>`
+    UPDATE oauth.refresh_tokens
+    SET status = 'revoked', revoked_at = COALESCE(revoked_at, now())
+    WHERE status = 'issuing' AND authority_reserved_at < now() - INTERVAL '5 minutes'
+    RETURNING family_id
+  `;
+  if (stranded.length > 0) {
+    await sql`
+      UPDATE oauth.refresh_token_families
+      SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), revoked_reason = 'authority_issuance_stranded'
+      WHERE id = ANY(${toPgUuidArray(stranded.map((row) => row.family_id))}::uuid[]) AND status = 'active'
+    `;
+  }
   const result = await sql`
     DELETE FROM oauth.refresh_token_families
     WHERE expires_at < now()

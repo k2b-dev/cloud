@@ -512,6 +512,121 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ auth.service_accounts table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS auth.mandates (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      subject_kind TEXT NOT NULL,
+      subject_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      subject_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      owner_app_id TEXT NOT NULL,
+      workload_type TEXT NOT NULL,
+      workload_id TEXT NOT NULL,
+      policy JSONB NOT NULL,
+      state TEXT NOT NULL DEFAULT 'active',
+      revision BIGINT NOT NULL DEFAULT 1,
+      expires_at TIMESTAMPTZ,
+      confirmed_at TIMESTAMPTZ DEFAULT now(),
+      confirmation_deadline TIMESTAMPTZ,
+      created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      revoked_at TIMESTAMPTZ,
+      revoked_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      revoked_by_app_id TEXT,
+      revoke_reason TEXT,
+      CONSTRAINT mandates_subject_kind_check CHECK (subject_kind IN ('user', 'service_account')),
+      CONSTRAINT mandates_subject_shape_check CHECK (
+        (subject_kind = 'user' AND subject_user_id IS NOT NULL AND subject_service_account_id IS NULL)
+        OR
+        (subject_kind = 'service_account' AND subject_user_id IS NULL AND subject_service_account_id IS NOT NULL)
+      ),
+      CONSTRAINT mandates_owner_app_id_check CHECK (
+        char_length(owner_app_id) BETWEEN 1 AND 80
+        AND owner_app_id ~ '^[a-z][a-z0-9-]*$'
+      ),
+      CONSTRAINT mandates_workload_type_check CHECK (
+        char_length(workload_type) BETWEEN 1 AND 120
+        AND workload_type ~ '^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$'
+      ),
+      CONSTRAINT mandates_workload_id_check CHECK (char_length(workload_id) BETWEEN 1 AND 200),
+      CONSTRAINT mandates_policy_size_check CHECK (octet_length(policy::text) <= 16384),
+      CONSTRAINT mandates_policy_version_check CHECK (policy->>'version' = '1'),
+      CONSTRAINT mandates_state_check CHECK (state IN ('active', 'paused', 'revoked')),
+      CONSTRAINT mandates_revision_check CHECK (revision > 0),
+      CONSTRAINT mandates_expiry_check CHECK (expires_at IS NULL OR expires_at > created_at),
+      CONSTRAINT mandates_confirmation_check CHECK (
+        (confirmed_at IS NOT NULL AND confirmation_deadline IS NULL)
+        OR
+        (confirmed_at IS NULL AND confirmation_deadline IS NOT NULL AND confirmation_deadline > created_at)
+      ),
+      CONSTRAINT mandates_revocation_check CHECK (
+        (state = 'revoked' AND revoked_at IS NOT NULL AND revoke_reason IS NOT NULL)
+        OR
+        (state <> 'revoked' AND revoked_at IS NULL AND revoked_by_user_id IS NULL AND revoked_by_app_id IS NULL AND revoke_reason IS NULL)
+      ),
+      CONSTRAINT mandates_revoked_by_app_id_check CHECK (
+        revoked_by_app_id IS NULL OR (
+          char_length(revoked_by_app_id) BETWEEN 1 AND 80
+          AND revoked_by_app_id ~ '^[a-z][a-z0-9-]*$'
+        )
+      ),
+      CONSTRAINT mandates_revoke_reason_check CHECK (revoke_reason IS NULL OR char_length(revoke_reason) BETWEEN 1 AND 500)
+    )
+  `.simple();
+  await sql`ALTER TABLE auth.mandates ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ DEFAULT now()`.simple();
+  await sql`ALTER TABLE auth.mandates ADD COLUMN IF NOT EXISTS confirmation_deadline TIMESTAMPTZ`.simple();
+  await sql`
+    UPDATE auth.mandates
+    SET confirmed_at = COALESCE(confirmed_at, created_at)
+    WHERE confirmed_at IS NULL AND confirmation_deadline IS NULL
+  `.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'auth.mandates'::regclass
+          AND conname = 'mandates_confirmation_check'
+      ) THEN
+        ALTER TABLE auth.mandates
+        ADD CONSTRAINT mandates_confirmation_check CHECK (
+          (confirmed_at IS NOT NULL AND confirmation_deadline IS NULL)
+          OR
+          (confirmed_at IS NULL AND confirmation_deadline IS NOT NULL AND confirmation_deadline > created_at)
+        );
+      END IF;
+    END
+    $$
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_mandates_live_owner_workload
+    ON auth.mandates(owner_app_id, workload_type, workload_id)
+    WHERE state IN ('active', 'paused')
+  `.simple();
+  await sql`DROP INDEX IF EXISTS auth.uq_mandates_owner_workload`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_mandates_subject_user
+    ON auth.mandates(subject_user_id)
+    WHERE subject_user_id IS NOT NULL
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_mandates_subject_service_account
+    ON auth.mandates(subject_service_account_id)
+    WHERE subject_service_account_id IS NOT NULL
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_mandates_active_expiry
+    ON auth.mandates(expires_at)
+    WHERE state = 'active' AND expires_at IS NOT NULL
+  `.simple();
+  await sql`DROP INDEX IF EXISTS auth.idx_mandates_unconfirmed_deadline`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_mandates_unconfirmed_deadline
+    ON auth.mandates(confirmation_deadline)
+    WHERE state IN ('active', 'paused') AND confirmed_at IS NULL
+  `.simple();
+  console.log("  ✓ auth.mandates table");
+
+  await sql`
     CREATE TABLE IF NOT EXISTS auth.service_account_credentials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       service_account_id UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,

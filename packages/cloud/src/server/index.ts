@@ -8,9 +8,12 @@ export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinit
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {
   AuthContext,
+  InvocationProvenance,
   RateLimitConfig,
   RateLimitRouteOverride,
   RequestActor,
+  RequestAuthority,
+  RequestCredentialKind,
   ServiceAccountRequestActor,
   UserRequestActor,
 } from "./middleware";
@@ -21,6 +24,7 @@ export {
   middleware,
   openApiMeta,
   rateLimit,
+  rejectReservedWorkloadCredential,
   requestLogger,
   requiresAdmin,
   requiresAuth,

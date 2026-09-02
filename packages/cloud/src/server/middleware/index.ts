@@ -1,6 +1,16 @@
 export type { AccessSubject } from "../services/access";
 
-export { type AuthContext, auth, type RequestActor, type ServiceAccountRequestActor, type UserRequestActor } from "./auth";
+export {
+  type AuthContext,
+  auth,
+  type InvocationProvenance,
+  type RequestActor,
+  type RequestAuthority,
+  type RequestCredentialKind,
+  type ServiceAccountRequestActor,
+  type UserRequestActor,
+} from "./auth";
+export { type InvocationExpectation, requireInvocation, requireInvocationOrLegacy } from "./invocation";
 export { middleware } from "./middleware";
 export {
   imageResponse,
@@ -15,3 +25,4 @@ export {
 export { type RateLimitConfig, type RateLimitRouteOverride, rateLimit } from "./rate-limit";
 export { requestLogger } from "./request-logger";
 export { type ValidatorError, type ValidatorErrorResolver, v, validator } from "./validator";
+export { isReservedWorkloadCredential, legacyCredentialBoundary, rejectReservedWorkloadCredential } from "./workload";

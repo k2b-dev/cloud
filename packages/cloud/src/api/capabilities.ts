@@ -18,8 +18,26 @@ import {
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, getLocale, jsonResponse, LOCALE_HEADER, preferredLocale, requiresAuth, v } from "../server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  jsonResponse,
+  LOCALE_HEADER,
+  preferredLocale,
+  type RequestAuthority,
+  rejectReservedWorkloadCredential,
+  requiresAuth,
+  v,
+} from "../server";
 import { logger } from "../services";
+import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
+import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
+import type { InvocationAuthority } from "../services/identity/invocation-token";
+import { signInvocationToken } from "../services/identity/invocation-token";
+import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { withMandateIssueAuthority } from "../services/mandates";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 
@@ -61,14 +79,44 @@ export type CapabilityRouteDependencies = {
   getCapability?: (appId: string) => Promise<CapabilityRegistryEntry | null>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
+  signInvocation?: typeof signInvocationToken;
+  withActiveSigner?: typeof withActiveIdentitySigner;
+  withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
 };
 
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
-  "getCapability" | "fetch" | "queryTimeoutMs" | "actionTimeoutMs"
+  "getCapability" | "fetch" | "queryTimeoutMs" | "actionTimeoutMs" | "signInvocation" | "withActiveSigner" | "withMandateIssueAuthority"
 >;
+
+type MandatedCapabilityAuthority = {
+  mandateId: string;
+  mandateRevision: number;
+  ownerAppId: string;
+  /** Internal proof from a completed approval flow. Public broker input cannot set this. */
+  actionApproval?: "approved";
+};
+
+const invocationAuthorityFromMandate = (authority: {
+  mandateId: string;
+  mandateRevision: number;
+  subject: { type: "user" | "service_account"; id: string };
+  workloadType: string;
+  workloadId: string;
+}): InvocationAuthority => ({
+  sub: authority.subject.id,
+  principal_type: authority.subject.type,
+  access_subject_type: authority.subject.type,
+  access_subject_id: authority.subject.id,
+  credential_kind: "mandate",
+  scopes: [],
+  mandate_id: authority.mandateId,
+  mandate_revision: authority.mandateRevision,
+  workload_type: authority.workloadType,
+  workload_id: authority.workloadId,
+});
 
 export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
@@ -168,6 +216,23 @@ const capabilityJsonResponse = (body: unknown, status: number): Response =>
     headers: { "content-type": "application/json" },
   });
 
+const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    if (signal.aborted) return aborted();
+    signal.addEventListener("abort", aborted, { once: true });
+    value.then(
+      (result) => {
+        signal.removeEventListener("abort", aborted);
+        resolve(result);
+      },
+      (error) => {
+        signal.removeEventListener("abort", aborted);
+        reject(error);
+      },
+    );
+  });
+
 /**
  * Dispatch one already-parsed capability invocation through the live registry.
  * HTTP, CLI, and MCP callers share this exact app lookup, credential forwarding,
@@ -181,6 +246,9 @@ export const dispatchCapability = async (params: {
   capabilityId: string;
   input: unknown;
   locale?: string;
+  authority?: RequestAuthority;
+  mandate?: MandatedCapabilityAuthority;
+  callingAppId?: string;
   dependencies?: CapabilityDispatchDependencies;
 }): Promise<Response> => {
   const messages = capabilityMessages(params.locale ?? preferredLocale(params.request.headers));
@@ -270,15 +338,111 @@ export const dispatchCapability = async (params: {
     return capabilityJsonResponse(invalid.body, invalid.status);
   }
 
-  const headers = capabilityCredentialHeaders(params.request);
-  if (idempotencyKey?.success) headers.set("idempotency-key", idempotencyKey.data);
-  headers.set("x-cloud-capability-schema-hash", operation.schemaHash);
+  const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
+  const mandate = params.mandate;
   const timeout = AbortSignal.timeout(
     params.kind === "queries" || params.review
       ? (params.dependencies?.queryTimeoutMs ?? QUERY_TIMEOUT_MS)
       : (params.dependencies?.actionTimeoutMs ?? ACTION_TIMEOUT_MS),
   );
   const signal = AbortSignal.any([params.request.signal, timeout]);
+  let headers: Headers;
+  try {
+    headers = mandate
+      ? await (async () => {
+          const issued = await waitWithin(
+            (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
+              waitWithin(
+                (params.dependencies?.withMandateIssueAuthority ?? withMandateIssueAuthority)(
+                  {
+                    mandateId: mandate.mandateId,
+                    expectedRevision: mandate.mandateRevision,
+                    ownerAppId: mandate.ownerAppId,
+                    targetAppId: params.appId,
+                    operation: invocationOperation,
+                    actionApproval: mandate.actionApproval ?? "none",
+                    requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                  },
+                  async (mandateAuthority) =>
+                    (params.dependencies?.signInvocation ?? signInvocationToken)({
+                      targetAppId: params.appId,
+                      callingAppId: mandate.ownerAppId,
+                      operation: invocationOperation,
+                      schemaHash: operation.schemaHash,
+                      authority: invocationAuthorityFromMandate(mandateAuthority),
+                      requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                      signer,
+                    }),
+                ),
+                signal,
+              ),
+            ),
+            signal,
+          );
+          if (!issued.ok) throw new MandateDispatchError(issued.error.code === "CONFLICT" ? 409 : 403);
+          return new Headers({
+            "content-type": "application/json",
+            accept: "application/json",
+            authorization: `Bearer ${issued.data.token}`,
+          });
+        })()
+      : invocationIssuanceMode() === "jwt"
+        ? await (async () => {
+            if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
+            const authority = params.authority;
+            const signed = await waitWithin(
+              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
+                waitWithin(
+                  (params.dependencies?.signInvocation ?? signInvocationToken)({
+                    targetAppId: params.appId,
+                    callingAppId: params.callingAppId ?? "core",
+                    operation: invocationOperation,
+                    schemaHash: operation.schemaHash,
+                    authority: invocationAuthorityFromRequest(authority),
+                    requestId: params.request.headers.get("x-request-id")?.slice(0, 200) || undefined,
+                    signer,
+                  }),
+                  signal,
+                ),
+              ),
+              signal,
+            );
+            return new Headers({
+              "content-type": "application/json",
+              accept: "application/json",
+              authorization: `Bearer ${signed.token}`,
+            });
+          })()
+        : capabilityCredentialHeaders(params.request);
+  } catch (error) {
+    if (error instanceof MandateDispatchError) {
+      const denied = errorResponse(
+        error.status === 409 ? "MANDATE_REVISION_CHANGED" : "MANDATE_FORBIDDEN",
+        error.status === 409 ? "Mandate revision changed" : "Mandate does not authorize this capability invocation",
+        error.status,
+      );
+      return capabilityJsonResponse(denied.body, denied.status);
+    }
+    if (params.request.signal.aborted || timeout.aborted) {
+      const cancelled = params.request.signal.aborted;
+      const failure = errorResponse(
+        cancelled ? CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled : CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded,
+        cancelled ? messages.requestCancelled : messages.deadlineExceeded,
+        cancelled ? 499 : 504,
+        { retrySafe: true },
+      );
+      return capabilityJsonResponse(failure.body, failure.status);
+    }
+    throw error;
+  }
+  for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
+    const value = params.request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  const invocationLocale = preferredLocale(params.request.headers);
+  if (invocationLocale) headers.set(LOCALE_HEADER, invocationLocale);
+  if (idempotencyKey?.success) headers.set("idempotency-key", idempotencyKey.data);
+  headers.set("x-cloud-capability-schema-hash", operation.schemaHash);
   const actionWithoutRetrySafety =
     params.kind === "actions" && !params.review && "idempotency" in operation && operation.idempotency === "none";
   const outcomeUnknown = (): Response => {
@@ -368,6 +532,12 @@ export const dispatchCapability = async (params: {
   return capabilityJsonResponse(upstreamBody.data, 200);
 };
 
+class MandateDispatchError extends Error {
+  constructor(readonly status: 403 | 409) {
+    super("Mandate does not authorize this capability invocation");
+  }
+}
+
 export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) => {
   const requireReadScope = auth.requireOAuthScope("read", "admin");
   const requireWriteScope = auth.requireOAuthScope("write", "admin");
@@ -376,6 +546,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
 
   return new Hono<AuthContext>()
     .use("/capabilities/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
+    .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .get(
       "/capabilities/v1/catalog",
       describeRoute({
@@ -447,6 +618,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,
+          authority: invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
           locale,
           dependencies,
         });
@@ -496,6 +668,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,
+          authority: invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
           locale,
           dependencies,
         });

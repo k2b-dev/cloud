@@ -1,9 +1,9 @@
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
-import { formatDurationMs, formatNumber } from "@valentinkolb/cloud/shared";
 import { latestGatewayRouteSnapshot } from "@valentinkolb/cloud/services";
-import { Hono } from "hono";
+import { formatDurationMs, formatNumber } from "@valentinkolb/cloud/shared";
+import { type Context, Hono } from "hono";
 import { buildGatewayHealth } from "./health";
 import { gatewayOpsMessages } from "./messages";
 
@@ -11,7 +11,7 @@ import { gatewayOpsMessages } from "./messages";
  * Platform health widget — admin only. Status includes app liveness and the
  * operational signals evaluated by the central health service.
  */
-export const widgetRoutes = new Hono<AuthContext>().use(auth.requireRole("*")).get("/health", async (c) => {
+export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
   const actor = c.get("actor") as AuthContext["Variables"]["actor"] | undefined;
   const user = actor?.kind === "user" ? actor.user : actor?.delegatedUser;
   // 403 = admin-only widget; non-admins see it as locked in the dashboard modal.
@@ -28,7 +28,10 @@ export const widgetRoutes = new Hono<AuthContext>().use(auth.requireRole("*")).g
       kind: "status",
       grow: true,
       tone: health.status,
-      title: unhealthy === 0 ? t.allSystemsOperational : t.appsNeedAttention({ unhealthy: formatNumber(unhealthy, { locale }), total: formatNumber(total, { locale }) }),
+      title:
+        unhealthy === 0
+          ? t.allSystemsOperational
+          : t.appsNeedAttention({ unhealthy: formatNumber(unhealthy, { locale }), total: formatNumber(total, { locale }) }),
       message: snapshot
         ? t.gatewayUptime({ uptime: formatDurationMs(Date.now() - snapshot.startedAt, { locale }), total: formatNumber(total, { locale }) })
         : t.widgetNoRouterSnapshot({ total: formatNumber(total, { locale }) }),
@@ -36,7 +39,11 @@ export const widgetRoutes = new Hono<AuthContext>().use(auth.requireRole("*")).g
     {
       kind: "pills",
       pills: [
-        { label: t.apps, value: `${formatNumber(healthy, { locale })}/${formatNumber(total, { locale })}`, tone: unhealthy === 0 ? "emerald" : health.status === "error" ? "red" : "amber" },
+        {
+          label: t.apps,
+          value: `${formatNumber(healthy, { locale })}/${formatNumber(total, { locale })}`,
+          tone: unhealthy === 0 ? "emerald" : health.status === "error" ? "red" : "amber",
+        },
         { label: t.routes, value: formatNumber(snapshot?.routeCount ?? 0, { locale }) },
         { label: t.requestsShort, value: formatNumber(snapshot?.stats.totalRequests ?? 0, { locale }) },
         ...(snapshot && snapshot.stats.noRouteCount > 0
@@ -53,4 +60,6 @@ export const widgetRoutes = new Hono<AuthContext>().use(auth.requireRole("*")).g
     blocks,
   };
   return c.json(body);
-});
+};
+
+export const widgetRoutes = new Hono<AuthContext>().use(auth.requireRole("*")).get("/health", gatewayHealthWidgetHandler);

@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
+import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
-import { auth } from "../server";
+import { auth, type RequestAuthority } from "../server";
+import type { signInvocationToken } from "../services/identity/invocation-token";
+import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
   type CapabilityRouteDependencies,
   capabilityCredentialHeaders,
@@ -68,6 +71,36 @@ const summary = (capability: CapabilityRegistryEntry): AppRegistryEntry => ({
 });
 
 const authenticate = async (_c: unknown, next: () => Promise<void>) => next();
+
+let signerKey: CryptoKey | undefined;
+const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
+  signerKey ??= (await generateKeyPair("RS256")).privateKey;
+  return callback({ kid: "33333333-3333-4333-8333-333333333333", key: signerKey, signUntil: new Date(Date.now() + 60_000) });
+};
+
+const resourceAuthority: RequestAuthority = {
+  actor: {
+    kind: "service_account",
+    serviceAccount: {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Caller",
+      kind: "resource_bound",
+      status: "active",
+      delegatedUserId: null,
+      appId: "core",
+      resourceType: "cloud.app",
+      resourceId: "core",
+      createdBy: null,
+      createdAt: "2026-09-02T00:00:00.000Z",
+    },
+    delegatedUser: null,
+    scopes: ["read"],
+    credentialId: "22222222-2222-4222-8222-222222222222",
+  },
+  accessSubject: { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" },
+  credentialKind: "api_key",
+  scopes: ["read"],
+};
 
 const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authenticate"]> = async (c, next) => {
   const token = auth.session.getToken(c);
@@ -227,6 +260,132 @@ describe("capability API", () => {
     expect(forwarded?.get("tracestate")).toBe("cloud=test");
     expect(forwarded?.get("x-request-id")).toBe("request-123");
     expect(forwarded?.get("x-cloud-capability-schema-hash")).toBe(compiled.manifest.queries[0]?.schemaHash);
+  });
+
+  test("exchanges the source credential for one exact target invocation in jwt mode", async () => {
+    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
+    let forwarded: Headers | undefined;
+    let signed: Parameters<typeof signInvocationToken>[0] | null = null;
+    let guardCalls = 0;
+    try {
+      const response = await dispatchCapability({
+        request: new Request("http://cloud.internal/api/capabilities/v1", {
+          headers: {
+            authorization: "Bearer cld_source-secret",
+            cookie: "session_token=source-session",
+            "x-request-id": "request-123",
+          },
+        }),
+        kind: "queries",
+        appId: "demo",
+        capabilityId: "get",
+        input: { id: "one" },
+        authority: resourceAuthority,
+        dependencies: {
+          getCapability: async () => entry(),
+          withActiveSigner: async (purpose, callback, options) => {
+            guardCalls += 1;
+            return withActiveSigner(purpose, callback, options);
+          },
+          signInvocation: async (params) => {
+            signed = params;
+            const iat = 100;
+            return {
+              token: "target-invocation",
+              kid: "33333333-3333-4333-8333-333333333333",
+              claims: {
+                ...params.authority,
+                iss: "https://cloud.example",
+                aud: `app:${params.targetAppId}`,
+                token_use: "invocation",
+                act: { sub: `app:${params.callingAppId}` },
+                op: params.operation,
+                schema_hash: params.schemaHash,
+                ver: 1,
+                ...(params.requestId ? { request_id: params.requestId } : {}),
+                jti: "44444444-4444-4444-8444-444444444444",
+                iat,
+                nbf: iat,
+                exp: iat + 30,
+              },
+            };
+          },
+          fetch: async (_input, init) => {
+            forwarded = new Headers(init?.headers);
+            return Response.json({ data: { id: "one" } });
+          },
+        },
+      });
+
+      expect(response.status).toBe(200);
+      expect(guardCalls).toBe(1);
+      expect(signed).toMatchObject({
+        targetAppId: "demo",
+        callingAppId: "core",
+        operation: "capability.query:get",
+        schemaHash: compiled.manifest.queries[0]?.schemaHash,
+      });
+      expect(forwarded?.get("authorization")).toBe("Bearer target-invocation");
+      expect(forwarded?.get("cookie")).toBeNull();
+      expect(forwarded?.get("authorization")).not.toContain("cld_source-secret");
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
+    }
+  });
+
+  test("bounds invocation signing inside the capability deadline", async () => {
+    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
+    let fetched = false;
+    try {
+      const response = await dispatchCapability({
+        request: new Request("http://cloud.internal/api/capabilities/v1"),
+        kind: "queries",
+        appId: "demo",
+        capabilityId: "get",
+        input: { id: "one" },
+        authority: resourceAuthority,
+        dependencies: {
+          getCapability: async () => entry(),
+          queryTimeoutMs: 5,
+          withActiveSigner,
+          signInvocation: () => new Promise(() => undefined),
+          fetch: async () => {
+            fetched = true;
+            return Response.json({ data: { id: "one" } });
+          },
+        },
+      });
+
+      expect(response.status).toBe(504);
+      expect(fetched).toBeFalse();
+      expect(await response.json()).toMatchObject({ code: "DEADLINE_EXCEEDED", details: { retrySafe: true } });
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
+      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
+    }
+  });
+
+  test("does not let an app workload credential bypass mandates through ordinary capability routes", async () => {
+    const routes = createCapabilityRoutes({
+      authenticate: async (c, next) => {
+        c.set("credentialKind", "api_key");
+        c.set("credentialScopes", ["identity:invoke"]);
+        c.set("actor", resourceAuthority.actor);
+        c.set("accessSubject", resourceAuthority.accessSubject);
+        return next();
+      },
+      getCapability: async () => entry(),
+    });
+    const response = await routes.request("/capabilities/v1/queries/demo/get", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { id: "one" } }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "FORBIDDEN" });
   });
 
   test("folds the caller's locale preference into one metadata header", async () => {

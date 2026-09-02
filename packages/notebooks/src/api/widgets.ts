@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import type { WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { notebooksService } from "../service";
 import { notebookApiMessages } from "./messages";
 
@@ -15,7 +15,7 @@ const RECENT_LIMIT = 5;
  * The list block uses each note's parent-notebook icon so the widget
  * visually echoes the user's notebook palette.
  */
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", async (c) => {
+export const recentNotesWidgetHandler = async (c: Context<AuthContext>) => {
   const { t } = notebookApiMessages.resolve([getLocale(c)]);
   const user = getUserBackedActor(c);
   // Anonymous dashboard probes should silently skip this widget.
@@ -64,6 +64,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", as
     blocks: [{ kind: "list", items, grow: true }],
   };
   return c.json(body);
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", recentNotesWidgetHandler);
 
 export default app;

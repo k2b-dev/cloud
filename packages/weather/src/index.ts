@@ -1,6 +1,7 @@
 import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
+import { currentWeatherWidgetHandler } from "./api/widgets";
 import { weatherCapabilities } from "./capabilities";
 import { app } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
@@ -25,5 +26,6 @@ export default await app.start({
   fetch: router.fetch,
   help: weatherHelp,
   openapi: apiRoutes,
+  widgets: { current: currentWeatherWidgetHandler },
 });
 export type { ApiType } from "./api";

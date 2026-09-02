@@ -1,7 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { WidgetBlock, WidgetListItem, WidgetResponse, WidgetTone } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { buildSpaceItemHref } from "../routes";
 import { spacesService } from "../service";
 import { type SpacesMessages, spacesMessages } from "../service/messages";
@@ -51,7 +51,7 @@ const formatTimeRange = (startsAt: string | null, endsAt: string | null, t: Spac
   return t.widgetToday;
 };
 
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", async (c) => {
+export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const user = getUserBackedActor(c);
   // 403 = unauthenticated; signed-in users always have access (data may be empty → 204).
   if (!user) return c.body(null, 403);
@@ -129,6 +129,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", asy
     blocks,
   };
   return c.json(body);
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", spacesTodayWidgetHandler);
 
 export default app;

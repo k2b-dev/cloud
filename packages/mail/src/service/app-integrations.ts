@@ -53,6 +53,7 @@ export type AppIntegrationRequest = {
   traceparent?: string | null;
   tracestate?: string | null;
   signal?: AbortSignal;
+  mandate?: { id: string; revision: number; callingAppId: string };
 };
 
 export type AppIntegrationFailure = { ok: false; code: string; message: string; status: number };

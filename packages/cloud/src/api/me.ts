@@ -5,7 +5,7 @@
  */
 
 import { ok } from "@k2b/stdlib";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -35,16 +35,19 @@ import {
   UserSchema,
   WebAuthnPasskeySchema,
 } from "../contracts";
+import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
   audit,
   browserNotifications,
+  mandates,
   notifications,
   serviceAccountCredentials,
   webauthn,
 } from "../services";
+import { MandatePolicyV1Schema } from "../services/mandates";
 
 const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
@@ -102,6 +105,71 @@ const AccountActivityQuerySchema = z.object({
     .optional()
     .default(30),
 });
+const MandateListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    perPage: z.coerce.number().int().min(1).max(100).default(50),
+    state: z.enum(["active", "paused", "revoked"]).optional(),
+  })
+  .strict();
+const CreatePendingMandateSchema = z
+  .object({
+    ownerAppId: CapabilityAppIdSchema,
+    workloadType: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/),
+    workloadId: z.string().trim().min(1).max(200),
+    policy: MandatePolicyV1Schema,
+    expiresAt: z.iso.datetime().nullable().optional(),
+  })
+  .strict();
+
+const requireSessionMandateCreation = createMiddleware<AuthContext>(async (c, next) => {
+  if (c.get("credentialKind") !== "session" || c.get("actor")?.kind !== "user") {
+    return c.json({ code: "FORBIDDEN", message: "Sign in with a browser session to create background authority" }, 403);
+  }
+  return next();
+});
+
+type MeMandateDependencies = Pick<typeof mandates, "createPending" | "list">;
+
+export const createMeMandateRoutes = (
+  service: MeMandateDependencies = mandates,
+  contextSetup: MiddlewareHandler<AuthContext> = async (_c, next) => next(),
+) =>
+  new Hono<AuthContext>()
+    .use("*", contextSetup)
+    .get("/mandates", v("query", MandateListQuerySchema), async (c) => {
+      const query = c.req.valid("query");
+      return c.json(
+        await service.list({
+          scope: { kind: "user", userId: c.get("user").id },
+          pagination: { page: query.page, perPage: query.perPage },
+          filter: { state: query.state },
+        }),
+      );
+    })
+    .post("/mandates", requireSessionMandateCreation, v("json", CreatePendingMandateSchema), async (c) => {
+      const user = c.get("user");
+      const input = c.req.valid("json");
+      return respond(
+        c,
+        () =>
+          service.createPending({
+            authority: { kind: "interactive", userId: user.id },
+            subject: { type: "user", id: user.id },
+            ownerAppId: input.ownerAppId,
+            workloadType: input.workloadType,
+            workloadId: input.workloadId,
+            policy: input.policy,
+            expiresAt: input.expiresAt,
+          }),
+        201,
+      );
+    });
 
 const NotificationDefinitionParamSchema = z.object({ definitionId: z.string().min(1).max(200) });
 const DisableBrowserNotificationEndpointSchema = z.object({ subscription: BrowserPushSubscriptionSchema });
@@ -110,10 +178,12 @@ const NotificationHistoryQuerySchema = z.object({
   perPage: z.coerce.number().int().min(1).max(100).optional().default(25),
   status: NotificationDeliveryStatusSchema.optional(),
 });
+const mandateRoutes = createMeMandateRoutes();
 const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .use(auth.requireUser())
+  .route("/", mandateRoutes)
 
   .get(
     "/activity",

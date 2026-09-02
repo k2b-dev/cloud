@@ -7,6 +7,7 @@ import {
   prepareIdentitySigner,
   revokeIdentitySigningKey,
   runIdentityKeyMaintenance,
+  withActiveIdentitySigner,
 } from "@valentinkolb/cloud/services/identity";
 import { readIdentityKeyEncryptionConfig } from "@valentinkolb/cloud/services/identity/key-config";
 import { sql } from "bun";
@@ -45,10 +46,110 @@ suite("Core identity key ring", () => {
     clearIdentityKeyCachesForTest();
   });
 
+  test("keeps the mandate workload index stable across idempotent migrations", async () => {
+    const readIndex = async () => {
+      const [index] = await sql<
+        Array<{
+          oid: number;
+          definition: string;
+        }>
+      >`
+        SELECT
+          index_state.indexrelid::oid::int AS oid,
+          pg_get_indexdef(index_state.indexrelid) AS definition
+        FROM pg_index AS index_state
+        WHERE index_state.indexrelid = 'auth.uq_mandates_live_owner_workload'::regclass
+      `;
+      return index;
+    };
+
+    const before = await readIndex();
+    await migrate();
+    const after = await readIndex();
+
+    expect(after).toEqual(before);
+    expect(after?.definition).toContain("WHERE (state = ANY (ARRAY['active'::text, 'paused'::text]))");
+  }, 30_000);
+
+  test("invalidates a replica-stale signer and retries once with its replacement", async () => {
+    clearIdentityKeyCachesForTest();
+    const stale = await prepareIdentitySigner("oauth");
+    await sql`
+      UPDATE auth.signing_keys
+      SET state = 'revoked', revoked_at = now(), revoke_reason = 'remote replica integration test'
+      WHERE kid = ${stale.kid}
+    `;
+
+    const replacementKid = await withActiveIdentitySigner("oauth", async (signer) => signer.kid);
+
+    expect(replacementKid).not.toBe(stale.kid);
+    const [replacement] = await sql<Array<{ state: string }>>`
+      SELECT state FROM auth.signing_keys WHERE kid = ${replacementKid}
+    `;
+    expect(replacement?.state).toBe("active");
+  });
+
+  test("fails closed after exactly one stale-signer retry", async () => {
+    let checks = 0;
+    let callbacks = 0;
+    const neverActive = ((_strings: TemplateStringsArray, ..._values: unknown[]) => {
+      checks += 1;
+      return Promise.resolve([]);
+    }) as unknown as typeof sql;
+
+    await expect(
+      withActiveIdentitySigner(
+        "oauth",
+        async () => {
+          callbacks += 1;
+          return "unexpected";
+        },
+        { db: neverActive },
+      ),
+    ).rejects.toThrow("No active oauth identity signer is available");
+    expect(checks).toBe(2);
+    expect(callbacks).toBe(0);
+  });
+
+  test("serializes emergency revocation behind in-flight issuance", async () => {
+    clearIdentityKeyCachesForTest();
+    const active = await prepareIdentitySigner("oauth");
+    let release!: () => void;
+    let entered!: () => void;
+    const callbackEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const callbackRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const issuance = withActiveIdentitySigner("oauth", async (signer) => {
+      entered();
+      await callbackRelease;
+      return signer.kid;
+    });
+    await callbackEntered;
+
+    let revocationSettled = false;
+    const revocation = sql`
+      UPDATE auth.signing_keys
+      SET state = 'revoked', revoked_at = now(), revoke_reason = 'FOR SHARE integration test'
+      WHERE kid = ${active.kid}
+    `.then(() => {
+      revocationSettled = true;
+    });
+    await Bun.sleep(25);
+    expect(revocationSettled).toBeFalse();
+
+    release();
+    expect(await issuance).toBe(active.kid);
+    await revocation;
+    expect(revocationSettled).toBeTrue();
+  });
+
   test("rotates concurrently, fails closed, revokes, cleans up, and rolling-rewraps", async () => {
     await Promise.all(Array.from({ length: 8 }, () => initializeIdentityAuthority()));
     let status = await getIdentitySigningKeyStatus();
-    for (const purpose of ["session", "invocation"] as const) {
+    for (const purpose of ["session", "invocation", "oauth"] as const) {
       expect(status.filter((key) => key.purpose === purpose && key.state === "active")).toHaveLength(1);
       expect(status.filter((key) => key.purpose === purpose && key.state === "pending").length).toBeLessThanOrEqual(1);
     }
@@ -60,9 +161,15 @@ suite("Core identity key ring", () => {
       RETURNING kid
     `;
     expect(invocation).toBeDefined();
+    await sql`
+      UPDATE auth.signing_keys
+      SET created_at = now() - INTERVAL '31 days'
+      WHERE purpose = 'oauth' AND state = 'active'
+    `;
     await Promise.all(Array.from({ length: 6 }, () => runIdentityKeyMaintenance()));
     status = await getIdentitySigningKeyStatus();
     expect(status.filter((key) => key.purpose === "invocation" && key.state === "pending")).toHaveLength(1);
+    expect(status.filter((key) => key.purpose === "oauth" && key.state === "pending")).toHaveLength(1);
 
     await sql`UPDATE auth.signing_keys SET activate_at = now() - INTERVAL '1 second' WHERE purpose = 'invocation' AND state = 'pending'`;
     await Promise.all(Array.from({ length: 6 }, () => runIdentityKeyMaintenance()));
@@ -70,6 +177,8 @@ suite("Core identity key ring", () => {
     expect(status.filter((key) => key.purpose === "invocation" && key.state === "active")).toHaveLength(1);
     expect(status.find((key) => key.kid === invocation!.kid)?.state).toBe("retired");
     expect((await listIdentityJwks()).keys.some((key) => key.kid === invocation!.kid)).toBe(true);
+    expect((await listIdentityJwks("invocation")).keys.some((key) => key.kid === invocation!.kid)).toBe(true);
+    expect((await listIdentityJwks("session")).keys.some((key) => key.kid === invocation!.kid)).toBe(false);
 
     const activeInvocation = status.find((key) => key.purpose === "invocation" && key.state === "active")!;
     const [backup] = await sql<Array<{ encrypted_private_jwk: string; public_jwk: unknown }>>`
@@ -115,14 +224,10 @@ suite("Core identity key ring", () => {
     clearIdentityKeyCachesForTest();
     await initializeIdentityAuthority();
 
-    const activeAfterRewrap = (await getIdentitySigningKeyStatus()).find(
-      (key) => key.purpose === "invocation" && key.state === "active",
-    )!;
+    const activeAfterRewrap = (await getIdentitySigningKeyStatus()).find((key) => key.purpose === "invocation" && key.state === "active")!;
     expect(await revokeIdentitySigningKey({ kid: activeAfterRewrap.kid, reason: "integration test" })).toBe(true);
     expect((await listIdentityJwks()).keys.some((key) => key.kid === activeAfterRewrap.kid)).toBe(false);
-    expect(
-      (await getIdentitySigningKeyStatus()).filter((key) => key.purpose === "invocation" && key.state === "active"),
-    ).toHaveLength(1);
+    expect((await getIdentitySigningKeyStatus()).filter((key) => key.purpose === "invocation" && key.state === "active")).toHaveLength(1);
 
     await sql`
       UPDATE auth.signing_keys

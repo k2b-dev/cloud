@@ -16,6 +16,7 @@ const cleanupOAuthStorage = async (): Promise<void> => {
     oauth.refreshTokens.cleanup(),
     oauth.clients.cleanupUnusedDynamic(),
     oauth.tokens.cleanupSigningKeys(),
+    oauth.tokens.cleanupAuthorityGrants(),
   ]);
 };
 
@@ -31,6 +32,7 @@ export default await app.start({
   lifecycle: {
     setup: async () => {
       await migrate();
+      await oauth.tokens.ensureConfiguredIssuanceMode();
     },
     start: async (ctx) => {
       await cleanupOAuthStorage().catch((error) => {

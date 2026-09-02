@@ -10,6 +10,11 @@ const RECOVERY_ID = "core:ai-chat-tasks:recover";
 const SCHEDULE_PREFIX = "task:";
 const log = logger("core:ai-chat-tasks");
 
+const taskMandate = (task: { mandateId: string | null; mandateRevision: number | null }): { id: string; revision: number } => {
+  if (!task.mandateId || task.mandateRevision === null) throw new Error("Scheduled task mandate is unavailable");
+  return { id: task.mandateId, revision: task.mandateRevision };
+};
+
 const taskScheduler = scheduler({ id: "core-ai-chat-tasks" });
 const reconcileMutex = mutex({ id: "core:ai-chat-tasks:reconcile", defaultTtl: 60_000, retryCount: 0 });
 let started = false;
@@ -54,6 +59,7 @@ const taskJob = job<{ occurrenceId: string }, { status: "gone" | "failed" | "not
           project: project ?? undefined,
           toolSource: { kind: "default", appTools: true },
           toolApprovalContext: { actorUserId: user.id },
+          mandate: taskMandate(task),
         },
         userMessage: { role: "user", content: [{ type: "text", text }] },
         expectedRevision: task.revision,
@@ -117,11 +123,14 @@ export const reconcileAiChatTasks = async (): Promise<void> => {
   const lock = await reconcileMutex.acquire(APP_ID, 60_000);
   if (!lock) return;
   try {
+    const mandatePreparation = await aiChatTasks.prepareLegacyMandates();
     const tasks = await aiChatTasks.listActiveCron();
     const desired = new Set(tasks.map((task) => `${SCHEDULE_PREFIX}${task.id}`));
     for (const task of tasks) await registerRecurringTask(task);
-    for (const current of await taskScheduler.list()) {
-      if (current.id.startsWith(SCHEDULE_PREFIX) && !desired.has(current.id)) await taskScheduler.delete({ id: current.id });
+    if (!mandatePreparation.remaining) {
+      for (const current of await taskScheduler.list()) {
+        if (current.id.startsWith(SCHEDULE_PREFIX) && !desired.has(current.id)) await taskScheduler.delete({ id: current.id });
+      }
     }
   } finally {
     await reconcileMutex.release(lock).catch(() => undefined);

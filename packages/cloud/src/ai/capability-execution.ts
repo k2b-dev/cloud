@@ -6,6 +6,7 @@ import type { RequestActor } from "../server";
 import type { AccessSubject } from "../server/services/access";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
+import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { session } from "../services/session";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
@@ -81,6 +82,9 @@ type AiCapabilityCall = {
   entry: AiCapabilityCatalogEntry;
   args: unknown;
   context: ToolContext;
+  mandate?: { id: string; revision: number };
+  /** Set only by the capability tool after its explicit approval request resolved true. */
+  actionApproval?: "approved";
   dependencies?: CapabilityDispatchDependencies & {
     createDelegation?: (userId: string, ttlSeconds?: number) => Promise<string>;
     revokeDelegation?: (token: string) => Promise<void>;
@@ -95,9 +99,10 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
   const createDelegation = input.dependencies?.createDelegation ?? session.createDelegation;
   const revokeDelegation = input.dependencies?.revokeDelegation ?? session.revoke;
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
-  const token = await createDelegation(input.authority.actor.user.id, 60);
+  const useInvocation = input.mandate !== undefined || invocationIssuanceMode() === "jwt";
+  const token = useInvocation ? null : await createDelegation(input.authority.actor.user.id, 60);
   try {
-    const headers = new Headers({ authorization: `Bearer ${token}` });
+    const headers = new Headers(token ? { authorization: `Bearer ${token}` } : undefined);
     if (input.locale) headers.set(LOCALE_HEADER, input.locale);
     const action = input.entry.kind === "action" ? (input.entry.operation as CapabilityActionManifest) : null;
     if (!review && action?.idempotency === "required" && input.context.callId) {
@@ -126,11 +131,27 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
         appId: input.entry.appId,
         capabilityId: input.entry.operation.localId,
         input: input.args,
+        authority: useInvocation
+          ? {
+              actor: input.authority.actor,
+              accessSubject: input.authority.accessSubject,
+              credentialKind: "session",
+              scopes: [],
+            }
+          : undefined,
+        mandate: input.mandate
+          ? {
+              mandateId: input.mandate.id,
+              mandateRevision: input.mandate.revision,
+              ownerAppId: "core",
+              ...(!review && input.actionApproval ? { actionApproval: input.actionApproval } : {}),
+            }
+          : undefined,
         dependencies: input.dependencies,
       }),
     );
   } finally {
-    await revokeDelegation(token).catch(() => undefined);
+    if (token) await revokeDelegation(token).catch(() => undefined);
   }
 };
 

@@ -3,7 +3,7 @@ import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts"
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { accountsAppService } from "@valentinkolb/cloud/services";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 
 const widgetMessages = i18n.define({
   baseLocale: "en",
@@ -49,7 +49,7 @@ const widgetMessages = i18n.define({
  * Admin queue widget — pending account requests + accounts expiring soon.
  * Hidden (204) for non-admins; vanishes entirely if there's nothing to act on.
  */
-const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/admin-queue", async (c) => {
+export const adminQueueWidgetHandler = async (c: Context<AuthContext>) => {
   const { t } = widgetMessages.resolve([getLocale(c)]);
   const user = getUserBackedActor(c);
   // 403 = no access (modal shows under "not available at your access level").
@@ -112,6 +112,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/admin-queue
     blocks,
   };
   return c.json(body);
-});
+};
+
+const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/admin-queue", adminQueueWidgetHandler);
 
 export default app;

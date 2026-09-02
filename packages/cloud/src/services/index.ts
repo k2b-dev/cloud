@@ -71,6 +71,18 @@ export { announcements } from "./announcements";
 export type { AnnouncementsService } from "./announcements";
 
 export { session } from "./session";
+export { mandateMetrics, mandates, startMandateMaintenance } from "./mandates";
+export type {
+  Mandate,
+  MandateInteractiveAuthority,
+  MandateIssueAuthority,
+  MandateListScope,
+  MandateMetricName,
+  MandateMutationAuthority,
+  MandatePolicyV1,
+  MandateState,
+  MandateSubject,
+} from "./mandates";
 export { serviceAccounts } from "./service-accounts";
 export type { ServiceAccount, ServiceAccountKind, ServiceAccountStatus } from "./service-accounts";
 export { serviceAccountCredentials } from "./service-account-credentials";

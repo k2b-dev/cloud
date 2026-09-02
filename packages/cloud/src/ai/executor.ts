@@ -858,6 +858,7 @@ export class AiTurnExecutor {
                   reviewAiCapability({
                     conversationId,
                     authority: capabilityAuthority!,
+                    mandate: config.mandate,
                     locale: promptLocale,
                     entry,
                     args,
@@ -877,6 +878,8 @@ export class AiTurnExecutor {
                       conversationId,
                       turnId,
                       authority: capabilityAuthority!,
+                      mandate: config.mandate,
+                      actionApproval: entry.kind === "action" ? "approved" : undefined,
                       locale: promptLocale,
                       entry,
                       args,

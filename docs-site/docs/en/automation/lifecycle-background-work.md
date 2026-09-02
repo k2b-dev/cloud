@@ -5,7 +5,7 @@ section: Automation
 order: 610
 description: Start and stop simple background work with the application process.
 tags: [lifecycle, background, shutdown]
-updated: 2026-07-27
+updated: 2026-09-02
 ---
 
 # Lifecycle background work
@@ -15,6 +15,11 @@ application process.
 
 Examples include a local polling loop, a topic reader, or a scheduler instance.
 Use a durable job or queue when the work itself must survive a process restart.
+
+If that durable work calls another Cloud application after the originating
+session may have expired, persist a revocable
+[background mandate](/en/docs/identity/background-mandates). Never persist the
+session cookie or a personal API key with the job.
 
 Read [Application lifecycle](/en/docs/build/lifecycle) for hook order, setup,
 failed-start cleanup, lifecycle context, and shutdown order. This page only

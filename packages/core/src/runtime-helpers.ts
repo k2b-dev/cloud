@@ -9,13 +9,11 @@ import {
   browserNotifications,
   lifecycleJobs,
   migrateWeather,
+  startMandateMaintenance,
   startNotificationRuntime,
   stopNotificationRuntime,
 } from "@valentinkolb/cloud/services";
-import {
-  initializeIdentityAuthority,
-  startIdentityKeyMaintenance,
-} from "@valentinkolb/cloud/services/identity";
+import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@valentinkolb/cloud/services/identity";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
@@ -30,6 +28,7 @@ import type { CoreNotificationSender } from "./notifications";
 
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopIdentityMaintenance: (() => void) | null = null;
+let stopMandateMaintenance: (() => void) | null = null;
 
 /** Run all core database migrations (auth, notifications, settings, logging). */
 export const runCoreSetup = async (): Promise<void> => {
@@ -59,6 +58,7 @@ export const startCoreServices = async (
   try {
     await initializeIdentityAuthority();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
+    stopMandateMaintenance = startMandateMaintenance();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
@@ -79,6 +79,8 @@ export const startCoreServices = async (
   } catch (error) {
     stopIdentityMaintenance?.();
     stopIdentityMaintenance = null;
+    stopMandateMaintenance?.();
+    stopMandateMaintenance = null;
     stopCloudAiRuntime?.();
     stopCloudAiRuntime = null;
     await Promise.allSettled([
@@ -98,6 +100,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     stopIdentityMaintenance?.();
     stopIdentityMaintenance = null;
+    stopMandateMaintenance?.();
+    stopMandateMaintenance = null;
     await lifecycleJobs.stop();
   } finally {
     try {

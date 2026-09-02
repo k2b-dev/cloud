@@ -2,6 +2,7 @@ import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
+import { recentNotesWidgetHandler } from "./api/widgets";
 import { notebooksCapabilities } from "./capabilities";
 import { app } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
@@ -21,6 +22,7 @@ const result = await app.start({
   fetch: router.fetch,
   help: notebookHelp,
   openapi: apiRoutes,
+  widgets: { recent: recentNotesWidgetHandler },
   lifecycle: {
     setup: async () => {
       await migrate();

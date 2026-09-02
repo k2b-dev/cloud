@@ -1,11 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWK, type JWTVerifyGetKey } from "jose";
-import {
-  CLOUD_IDENTITY_ALGORITHM,
-  CLOUD_SESSION_AUDIENCE,
-  CLOUD_SESSION_TOKEN_TYPE,
-  IDENTITY_MAX_COMPACT_TOKEN_BYTES,
-} from "./constants";
+import { createLocalJWKSet, exportJWK, generateKeyPair, type JWK, type JWTVerifyGetKey, SignJWT } from "jose";
+import { CLOUD_IDENTITY_ALGORITHM, CLOUD_SESSION_AUDIENCE, CLOUD_SESSION_TOKEN_TYPE, IDENTITY_MAX_COMPACT_TOKEN_BYTES } from "./constants";
 import { readIdentityKeyEncryptionConfig } from "./key-config";
 import { clearSessionVerifierCachesForTest, verifySessionToken } from "./session-token";
 
@@ -15,23 +10,20 @@ const sid = "1e9e8ee1-8295-4820-b46f-7655fea86c9f";
 const kid = "bd5e8d90-d2f1-48cb-9c5b-1b657165b8c5";
 const now = new Date("2026-09-01T10:00:00.000Z");
 let privateKey: CryptoKey;
+let invocationPrivateKey: CryptoKey;
 let keySet: JWTVerifyGetKey;
 
 beforeAll(async () => {
   const pair = await generateKeyPair(CLOUD_IDENTITY_ALGORITHM, { extractable: true });
   privateKey = pair.privateKey;
+  invocationPrivateKey = (await generateKeyPair(CLOUD_IDENTITY_ALGORITHM)).privateKey;
   const publicKey: JWK = { ...(await exportJWK(pair.publicKey)), alg: CLOUD_IDENTITY_ALGORITHM, kid, use: "sig" };
   keySet = createLocalJWKSet({ keys: [publicKey] });
 });
 
-const token = (params: {
-  typ?: string;
-  aud?: string;
-  tokenUse?: string;
-  issuedAt?: number;
-  expiresAt?: number;
-  extra?: Record<string, unknown>;
-} = {}) => {
+const token = (
+  params: { typ?: string; aud?: string; tokenUse?: string; issuedAt?: number; expiresAt?: number; extra?: Record<string, unknown> } = {},
+) => {
   const issuedAt = params.issuedAt ?? Math.floor(now.getTime() / 1_000);
   return new SignJWT({
     token_use: params.tokenUse ?? "session",
@@ -59,6 +51,23 @@ describe("Cloud session JWT", () => {
     expect(await verifySessionToken(await token({ aud: "app:mail" }), { issuer, key: keySet, now })).toBeNull();
     expect(await verifySessionToken(await token({ tokenUse: "access" }), { issuer, key: keySet, now })).toBeNull();
     expect(await verifySessionToken(await token({ extra: { roles: ["admin"] } }), { issuer, key: keySet, now })).toBeNull();
+  });
+
+  test("rejects a session-shaped token signed by an invocation key", async () => {
+    const issuedAt = Math.floor(now.getTime() / 1_000);
+    const wrongPurpose = await new SignJWT({ token_use: "session", sid, auth_epoch: 3 })
+      .setProtectedHeader({
+        alg: CLOUD_IDENTITY_ALGORITHM,
+        typ: CLOUD_SESSION_TOKEN_TYPE,
+        kid: "4ae78c04-dfc7-4c82-84e0-67471b665812",
+      })
+      .setIssuer(issuer)
+      .setAudience(CLOUD_SESSION_AUDIENCE)
+      .setSubject(userId)
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(issuedAt + 3_600)
+      .sign(invocationPrivateKey);
+    expect(await verifySessionToken(wrongPurpose, { issuer, key: keySet, now })).toBeNull();
   });
 
   test("enforces expiry, not-before tolerance, and the compact size bound", async () => {

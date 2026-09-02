@@ -33,6 +33,9 @@ import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
 import { createSearchRoutes } from "./search";
+import { createWidgetRoutes } from "./widgets";
+
+export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 
 /**
  * Single-expression chain so `typeof buildCoreApi()` captures every route's
@@ -49,6 +52,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const mcpRoutes = createMcpRoutes();
   const helpRoutes = createHelpRoutes();
   const approvalPreferenceRoutes = createAiApprovalPreferenceRoutes();
+  const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
     .route("/auth", createAuthRoutes(options.notifications))
@@ -69,6 +73,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/", helpRoutes)
     .route("/", capabilityRoutes)
     .route("/", mcpRoutes)
+    .route("/", widgetRoutes)
     .route("/", searchRoutes);
 };
 

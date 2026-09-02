@@ -3,7 +3,7 @@ import { ok } from "@k2b/stdlib";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
@@ -35,9 +35,7 @@ const compiled = compileCapabilities(
         data: z
           .object({
             id: z.string(),
-            links: z
-              .array(z.object({ rel: z.enum(["open", "edit"]), href: z.string(), title: z.string().optional() }).strict())
-              .optional(),
+            links: z.array(z.object({ rel: z.enum(["open", "edit"]), href: z.string(), title: z.string().optional() }).strict()).optional(),
           })
           .strict(),
         destructive: false,
@@ -133,6 +131,32 @@ const helpSummary = (): AppRegistryEntry => ({
 
 type McpTestDependencies = NonNullable<Parameters<typeof createMcpRoutesBase>[0]>;
 const passThrough: NonNullable<McpTestDependencies["limit"]> = async (_c, next) => next();
+const workloadAuthentication =
+  (scope: "identity:invoke" | "identity:oauth-issue"): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    const serviceAccountId = "11111111-1111-4111-8111-111111111111";
+    c.set("actor", {
+      kind: "service_account",
+      serviceAccount: {
+        id: serviceAccountId,
+        name: "App workload",
+        kind: "resource_bound",
+        status: "active",
+        delegatedUserId: null,
+        appId: "assistant",
+        resourceType: "cloud.app",
+        resourceId: "assistant",
+        createdBy: null,
+        createdAt: "2026-09-02T00:00:00.000Z",
+      },
+      delegatedUser: null,
+      scopes: [scope],
+    });
+    c.set("accessSubject", { type: "service_account", serviceAccountId });
+    c.set("credentialKind", "api_key");
+    c.set("credentialScopes", [scope]);
+    await next();
+  };
 const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
   createMcpRoutesBase({
     listApps: async () => [summary(app)],
@@ -162,6 +186,22 @@ const rpc = (
   });
 
 describe("capability MCP projection", () => {
+  for (const scope of ["identity:invoke", "identity:oauth-issue"] as const) {
+    test(`rejects ${scope} before MCP catalog projection`, async () => {
+      let projected = false;
+      const routes = createMcpRoutes({
+        authenticate: workloadAuthentication(scope),
+        listApps: async () => {
+          projected = true;
+          return [summary(app)];
+        },
+      });
+      const response = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} });
+      expect(response.status).toBe(403);
+      expect(projected).toBeFalse();
+    });
+  }
+
   test("works through the official Streamable HTTP client", async () => {
     const routes = createMcpRoutes({
       listApps: async () => [helpSummary()],

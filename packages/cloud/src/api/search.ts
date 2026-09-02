@@ -10,8 +10,14 @@ import {
   ErrorResponseSchema,
   UniversalSearchDataSchema,
 } from "../contracts";
-import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAuth, v } from "../server";
+import { type AuthContext, auth, expectUserBackedActor, jsonResponse, preferredLocale, requiresAuth, v } from "../server";
 import { logger } from "../services";
+import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { searchInvocationOperation } from "../services/identity/invocation-operations";
+import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
+import { signInvocationToken } from "../services/identity/invocation-token";
+import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { LOCALE_HEADER } from "../shared/locale";
 import { capabilityCredentialHeaders } from "./capabilities";
 import { type SearchItem, SearchItemSchema, SearchQuerySchema, SearchResponseSchema } from "./search/schemas";
 
@@ -24,6 +30,7 @@ const log = logger("search");
 const GLOBAL_RESULT_LIMIT = 30;
 const PROVIDER_CONCURRENCY = 8;
 const PROVIDER_TIMEOUT_MS = 8_000;
+const SIGNING_TIMEOUT_MS = 500;
 
 type HttpSearchProvider = {
   appId: string;
@@ -63,31 +70,76 @@ type SearchRouteDependencies = {
   listCapabilities?: () => Promise<CapabilityRegistryEntry[]>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
+  signInvocation?: typeof signInvocationToken;
+  withActiveSigner?: typeof withActiveIdentitySigner;
 };
 
-const settleBounded = async <T, R>(items: readonly T[], concurrency: number, run: (item: T, index: number) => Promise<R>) => {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
+const startBounded = <T, R>(
+  items: readonly T[],
+  concurrency: number,
+  run: (item: T, index: number) => Promise<R>,
+  signal?: AbortSignal,
+) => {
+  const deferred = items.map(() => {
+    let settled = false;
+    let resolve!: (result: PromiseSettledResult<R>) => void;
+    const promise = new Promise<PromiseSettledResult<R>>((done) => {
+      resolve = (result) => {
+        if (settled) return;
+        settled = true;
+        done(result);
+      };
+    });
+    return { promise, resolve };
+  });
+  const abort = () => {
+    const reason = signal?.reason ?? new Error("Search fan-out deadline exceeded");
+    for (const entry of deferred) entry.resolve({ status: "rejected", reason });
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   let next = 0;
-  await Promise.all(
+  void Promise.all(
     Array.from({ length: Math.min(concurrency, items.length) }, async () => {
       while (true) {
+        if (signal?.aborted) return;
         const index = next;
         next += 1;
         const item = items[index];
         if (item === undefined) return;
         try {
-          results[index] = {
+          deferred[index]?.resolve({
             status: "fulfilled",
             value: await run(item, index),
-          };
+          });
         } catch (reason) {
-          results[index] = { status: "rejected", reason };
+          deferred[index]?.resolve({ status: "rejected", reason });
         }
       }
     }),
-  );
-  return results;
+  ).then(() => signal?.removeEventListener("abort", abort));
+  return deferred.map((entry) => entry.promise);
 };
+
+const settleBounded = async <T, R>(items: readonly T[], concurrency: number, run: (item: T, index: number) => Promise<R>) =>
+  Promise.all(startBounded(items, concurrency, run));
+
+const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const aborted = () => reject(signal.reason);
+    if (signal.aborted) return aborted();
+    signal.addEventListener("abort", aborted, { once: true });
+    value.then(
+      (result) => {
+        signal.removeEventListener("abort", aborted);
+        resolve(result);
+      },
+      (error) => {
+        signal.removeEventListener("abort", aborted);
+        reject(error);
+      },
+    );
+  });
 
 /**
  * Creates the global search route.
@@ -117,6 +169,8 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       expectUserBackedActor(c);
 
       const query = c.req.valid("query");
+      const useInvocation = invocationIssuanceMode() === "jwt";
+      const invocationAuthority = useInvocation ? invocationAuthorityFromRequest(auth.getAuthority(c)) : null;
       let entries: CapabilityRegistryEntry[];
       try {
         entries = await registry();
@@ -170,23 +224,72 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // at GLOBAL_RESULT_LIMIT so a single app can saturate the response
       // but no more.
       const effectiveProviderLimit = active.length === 1 ? Math.min(GLOBAL_RESULT_LIMIT, query.provider_limit * 3) : query.provider_limit;
+      // The same request-wide budget covers signing and provider I/O.
+      const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
+      const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline]);
+      const signingSignal = useInvocation ? AbortSignal.any([fanoutSignal, AbortSignal.timeout(SIGNING_TIMEOUT_MS)]) : fanoutSignal;
+      // Guard the whole issuance batch once, then reuse the prepared signer for
+      // every target. This is one Postgres check per outer search request, not
+      // one check per provider.
+      const signedInvocations =
+        useInvocation && invocationAuthority
+          ? await waitWithin(
+              (dependencies.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
+                Promise.all(
+                  startBounded(
+                    active,
+                    PROVIDER_CONCURRENCY,
+                    (provider) =>
+                      (dependencies.signInvocation ?? signInvocationToken)({
+                        targetAppId: provider.appId,
+                        callingAppId: "core",
+                        operation: searchInvocationOperation,
+                        schemaHash: provider.schemaHash,
+                        authority: invocationAuthority,
+                        requestId: c.req.header("x-request-id")?.slice(0, 200),
+                        signer,
+                      }),
+                    signingSignal,
+                  ),
+                ),
+              ),
+              signingSignal,
+            ).catch((reason) => active.map((): PromiseRejectedResult => ({ status: "rejected", reason })))
+          : null;
       // One request-wide budget keeps latency flat as the number of apps grows.
       // Workers that have not started when the deadline expires fail fast on
       // the already-aborted signal instead of opening a fresh timeout window.
-      const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
-      const settled = await settleBounded(active, PROVIDER_CONCURRENCY, async (provider) => {
+      const settled = await settleBounded(active, PROVIDER_CONCURRENCY, async (provider, index) => {
         // Scope tags to those this provider declared. Apps no longer need
         // their own gate — the framework guarantees they only see tags
         // they understand.
         const scopedTags = query.tag.filter((t) => provider.tags.includes(t));
 
+        const headers = useInvocation
+          ? await (async () => {
+              const signed = await signedInvocations?.[index];
+              if (!signed || signed.status === "rejected") {
+                throw signed?.reason ?? new Error("Resolved request authority is required for search invocation issuance");
+              }
+              return new Headers({
+                "content-type": "application/json",
+                accept: "application/json",
+                authorization: `Bearer ${signed.value.token}`,
+              });
+            })()
+          : capabilityCredentialHeaders(c.req.raw);
+        for (const name of ["x-request-id", "traceparent", "tracestate"] as const) {
+          const value = c.req.header(name);
+          if (value) headers.set(name, value);
+        }
+        const requestLocale = preferredLocale(c.req.raw.headers);
+        if (requestLocale) headers.set(LOCALE_HEADER, requestLocale);
+        headers.set("x-cloud-capability-schema-hash", provider.schemaHash);
+        headers.set("x-cloud-invocation-operation", searchInvocationOperation);
+
         const res = await fetchProvider(provider.endpoint, {
           method: "POST",
-          headers: (() => {
-            const headers = capabilityCredentialHeaders(c.req.raw);
-            headers.set("x-cloud-capability-schema-hash", provider.schemaHash);
-            return headers;
-          })(),
+          headers,
           body: JSON.stringify({
             input: {
               query: query.q,
@@ -194,7 +297,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
               limit: effectiveProviderLimit,
             },
           }),
-          signal: AbortSignal.any([c.req.raw.signal, providerDeadline]),
+          signal: fanoutSignal,
         });
 
         if (!res.ok) {

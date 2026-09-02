@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-08-07
+updated: 2026-09-02
 ---
 
 # OAuth clients and flows
@@ -232,6 +232,44 @@ signing out an OAuth client prevents future refreshes but does not revoke an
 already issued access token. That token can remain valid until its one-hour
 expiry. Current-client validation and domain authorization still apply on each
 request.
+
+The OAuth application still owns the public protocol, clients, consent,
+authorization codes, refresh families, discovery, and token response. It does
+not hold a platform signing private key. After it validates the grant, it asks
+Core's closed OAuth authority to construct and sign the permitted access and ID
+token shapes. Core reloads the current client and principal before signing.
+The OAuth workload credential is bound to the `oauth` application and the
+`identity:oauth-issue` scope; it is not user authority and cannot submit an
+arbitrary JWT claim set.
+
+Create that credential once through
+`POST /api/admin/identity/workloads/oauth/credentials` with
+`{"name":"OAuth Core issuance","scopes":["identity:oauth-issue"]}`. Put the
+one-time returned token in the OAuth app's `CLOUD_APP_CREDENTIAL`; do not give
+it to Core, another app, or a browser.
+
+During a rolling migration, `CLOUD_OAUTH_ISSUANCE_MODE=legacy` keeps signing
+with the existing `oauth.keys` key while all verifiers gain dual-read support.
+After the Core authority and OAuth workload credential are deployed, set the
+mode to `core`. During OAuth setup, the application first calls Core's closed
+readiness endpoint with its workload credential. Core confirms that the exact
+workload binding and an active OAuth signer are available. Only then does OAuth
+atomically record the one-way cutover in PostgreSQL and erase legacy private
+key material. A failed readiness check leaves both the database mode and the
+legacy key unchanged. Once cut over, the shared database state prevents another
+updated OAuth replica from resuming legacy issuance even if its local setting
+still says `legacy`.
+
+Existing client IDs, secrets, routes, claims, issuer, audiences, one-hour
+access-token lifetime, authorization codes, and refresh families remain
+unchanged. Authorization-code, refresh, and client-credentials exchanges use
+one-shot internal grant reservations; arbitrary claims or client assertions do
+not cross the authority boundary. A definitive Core grant rejection remains a
+public `invalid_grant` response. An unknown transport or server outcome remains
+`server_error` and is not retried automatically. Verifiers continue accepting
+an already issued legacy token for the existing two-hour public-key grace. A
+`kid` present in Core's authority never falls back to a same-named legacy key
+when the Core key is revoked or expired.
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

@@ -47,8 +47,8 @@ import {
   VenueTemplateCreateInputSchema,
   VenueTemplateSummarySchema,
 } from "../contracts";
-import { venueService } from "../service";
 import { venueMessages } from "../messages";
+import { venueService } from "../service";
 
 const VenueIdParamSchema = z.object({ id: VenueResourceIdSchema });
 const AccessParamSchema = z.object({ id: VenueResourceIdSchema, accessId: z.string().uuid() });
@@ -166,7 +166,7 @@ const root = new Hono<AuthContext>();
 root
   .use(rateLimit());
 
-const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("authenticated"), async (c) => {
+export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const { locale, t } = venueMessages.resolve([getLocale(c)]);
   const userResult = requireUserBackedActor(c);
   if (!userResult.ok) return c.body(null, 403);
@@ -217,7 +217,9 @@ const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("aut
     ],
   };
   return respond(c, ok(response));
-});
+};
+
+const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("authenticated"), venueTodayWidgetHandler);
 
 const calendarRoutes = new Hono<AuthContext>()
   .get("/my", auth.requireRole("authenticated"), async (c) => {

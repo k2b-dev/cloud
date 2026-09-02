@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-08-26
+updated: 2026-09-02
 ---
 
 # Dashboard widgets
@@ -13,15 +13,17 @@ updated: 2026-08-26
 A widget shows a small, current summary from an application on the shared
 dashboard.
 
-The application owns an authenticated JSON endpoint. Cloud discovers the
-endpoint, fetches it with the user's session, and renders the shared widget
-blocks.
+The application owns one authenticated handler. Cloud discovers its declared
+widget, sends the user's session only to Core, and renders the shared widget
+blocks. Core exchanges that session for a 30-second invocation JWT bound to the
+target app and exact widget ID. The provider reloads the current actor and
+performs its normal authorization; it never receives the source cookie.
 
 Cloud also forwards the Dashboard request's resolved locale in the
 `x-cloud-locale` header. Resolve it with `getLocale(c)` in the endpoint; do not
 rely on `Accept-Language` surviving the server-side fan-out.
 
-## Register an endpoint
+## Register a handler
 
 ```ts
 export const app = defineApp({
@@ -41,10 +43,33 @@ export const app = defineApp({
 ```
 
 The ID must be unique inside the application. The path must be an absolute
-route served by that application.
+public compatibility route served by that application.
 
 `defaultZone` is `focus`, `overview`, or `context`. `defaultSpan` is `standard`
 or `wide`. These are initial recommendations. A user's saved layout wins.
+
+Export the Hono handler used by that route and register the same function with
+`app.start()`:
+
+```ts
+import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { Context } from "hono";
+
+export const stockWidgetHandler = async (c: Context<AuthContext>) => {
+  // Load and authorize c.get("accessSubject"), then return WidgetResponse.
+};
+
+export default await app.start({
+  fetch: router.fetch,
+  widgets: { stock: stockWidgetHandler },
+});
+```
+
+The declaration is the discovery contract; the `app.start({ widgets })` map is
+the framework-owned internal invocation contract. Startup rejects an internal
+handler whose ID was not declared. Keep the public route during the rolling
+migration. Invocation JWTs are accepted only by the generated internal widget
+route, never by the public application route.
 
 ## Return widget data
 
@@ -79,7 +104,10 @@ return c.json(body);
 ```
 
 The top-level response requires `title` and `blocks`. It also accepts `icon`,
-`href`, and `meta`.
+`href`, and `meta`. The complete serialized response is limited to 128 KiB.
+Cloud validates and reserializes it before the dashboard sees it; unknown
+fields, oversized strings or collections, malformed JSON, and non-finite
+numbers are rejected.
 
 ## Choose a block
 
@@ -102,6 +130,10 @@ Each list item requires `label`. It can contain `icon`, `iconTone`, `sub`,
 
 Each pill requires `label` and `value`. It can contain `tone` and `href`.
 
+Every `href`, including links inside list items and pills, must be a safe
+root-relative Cloud path such as `/app/inventory/items/42`. Absolute URLs,
+protocol-relative URLs, backslashes, and control characters are rejected.
+
 `WidgetResponse` contains final display strings, never catalog keys. Numeric
 `stat.value` and `pill.value` fields are formatted automatically by `@k2b/ui`
 for the inherited locale; string values remain byte-for-byte unchanged. Return
@@ -120,8 +152,8 @@ and visual styling.
 
 ## Enforce access in the endpoint
 
-Cloud forwards the user's session, but it does not authorize application data.
-The endpoint must use the normal request identity and resource permission
+Cloud authenticates the invocation, but it does not authorize application
+data. The handler must use the normal request identity and resource permission
 checks.
 
 Return:
@@ -134,9 +166,12 @@ Cloud lists a `403` widget as unavailable at the user's access level. It skips
 `204` without a message. A timeout or another non-success response is logged
 and rendered as a small error state.
 
-Keep widget queries bounded. A dashboard may load widgets from many
-applications at once. Link to the application for detailed work instead of
-turning the widget into a full page.
+Keep widget queries bounded. Dashboard runs at most eight widget requests
+concurrently under one 500 ms page budget and preserves registry order. Core
+also applies a 500 ms deadline to the complete proxy operation, including
+registry lookup, invocation signing, provider fetch, and response validation;
+a slow or unavailable app must not block the others. Link to the application
+for detailed work instead of turning the widget into a full page.
 
 See [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

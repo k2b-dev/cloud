@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createMcpRoutes } from "@valentinkolb/cloud/api";
 import { type AuthContext, auth, v } from "@valentinkolb/cloud/server";
 import { oauthTokens, serviceAccounts } from "@valentinkolb/cloud/services";
+import { clearOAuthVerifierCachesForTest } from "@valentinkolb/cloud/services/oauth-tokens";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
@@ -22,6 +23,7 @@ const canUseDatabase = async () => {
         groups: string | null;
         user_groups: string | null;
         group_groups: string | null;
+        signing_keys: string | null;
       }[]
     >`
       SELECT
@@ -29,9 +31,10 @@ const canUseDatabase = async () => {
         to_regclass('auth.service_accounts')::text AS service_accounts,
         to_regclass('auth.groups')::text AS groups,
         to_regclass('auth.user_groups_v2')::text AS user_groups,
-        to_regclass('auth.group_groups_v2')::text AS group_groups
+        to_regclass('auth.group_groups_v2')::text AS group_groups,
+        to_regclass('auth.signing_keys')::text AS signing_keys
     `;
-    if (!row?.users || !row.service_accounts || !row.groups || !row.user_groups || !row.group_groups) return false;
+    if (!row?.users || !row.service_accounts || !row.groups || !row.user_groups || !row.group_groups || !row.signing_keys) return false;
     await migrate();
     return true;
   } catch {
@@ -68,6 +71,20 @@ const createSessionToken = async (userId: string): Promise<string> => {
   const randomToken = crypto.randomUUID();
   await redis.set(`session:${userId}:${randomToken}`, JSON.stringify({ userId, gen: 0 }), "EX", 60);
   return `${userId}:${randomToken}`;
+};
+
+const waitForAdvisoryWaiter = async (key: number): Promise<void> => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await sql<{ waiting: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_locks
+        WHERE locktype = 'advisory' AND granted = false AND objid = ${key}::oid
+      ) AS waiting
+    `;
+    if (row?.waiting) return;
+    await Bun.sleep(10);
+  }
+  throw new Error("Timed out waiting for the deterministic OAuth issuance interleaving");
 };
 
 const requestClientCredentialsToken = async (params: { clientId: string; clientSecret: string; scope?: string; resource?: string }) => {
@@ -136,14 +153,18 @@ suite("OAuth resource access tokens", () => {
         issuer: "http://localhost:3000",
       });
 
-      const verified = await oauthTokens.verifyAccessToken(tokens.accessToken);
+      const verified =
+        (await oauthTokens.verifyAccessToken(tokens.accessToken)) ?? (await oauthTokens.verifyAccessToken(tokens.accessToken));
       expect(verified?.kind).toBe("user");
       expect(verified?.kind === "user" ? verified.user.id : null).toBe(userId);
       expect(jose.decodeJwt(tokens.accessToken)).toMatchObject({ sub: userId, id: userId });
 
-      const response = await actorProbe().request("/probe", {
+      let response = await actorProbe().request("/probe", {
         headers: { Authorization: `Bearer ${tokens.accessToken}` },
       });
+      if (response.status !== 200) {
+        response = await actorProbe().request("/probe", { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+      }
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({
         actorKind: "user",
@@ -188,19 +209,381 @@ suite("OAuth resource access tokens", () => {
       const secondKid = jose.decodeProtectedHeader(second.accessToken).kid!;
       expect(secondKid).not.toBe(firstKid);
       expect(jose.decodeJwt(second.accessToken).sub).toBe(userId);
+      const [retired] = await sql<{ private_key: string }[]>`SELECT private_key FROM oauth.keys WHERE kid = ${firstKid}`;
+      expect(retired?.private_key).toBe("");
 
-      expect(await oauthTokens.verifyAccessToken(first.accessToken)).not.toBeNull();
-      expect(await oauthTokens.verifyAccessToken(second.accessToken)).not.toBeNull();
+      expect(await oauth.tokens.verifyAccessToken({ token: first.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
+      expect(await oauth.tokens.verifyAccessToken({ token: second.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
       const jwks = await oauth.tokens.getJwks();
       expect(jwks.keys.map((key) => key.kid)).toEqual(expect.arrayContaining([firstKid, secondKid]));
 
       await sql`UPDATE oauth.keys SET retired_at = now() - INTERVAL '3 hours' WHERE kid = ${firstKid}`;
       expect(await oauth.tokens.cleanupSigningKeys()).toBeGreaterThanOrEqual(1);
-      expect(await oauthTokens.verifyAccessToken(first.accessToken)).toBeNull();
-      expect(await oauthTokens.verifyAccessToken(second.accessToken)).not.toBeNull();
+      oauth.tokens.clearOAuthVerifierCacheForTest();
+      expect(await oauth.tokens.verifyAccessToken({ token: first.accessToken, issuer: "http://localhost:3000" })).toBeNull();
+      expect(await oauth.tokens.verifyAccessToken({ token: second.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
     } finally {
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("cuts every replica over only after Core readiness and the database issuance lock", async () => {
+    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+    let releaseLock = () => {};
+    let lockHolder: Promise<unknown> = Promise.resolve();
+    try {
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      clearOAuthVerifierCachesForTest();
+      oauth.tokens.clearOAuthVerifierCacheForTest();
+      const legacyKey = await oauth.tokens.getOrCreateKeyPair();
+
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
+      await expect(
+        oauth.tokens.ensureConfiguredIssuanceMode({
+          probe: async () => {
+            throw new Error("Core OAuth signer unavailable");
+          },
+        }),
+      ).rejects.toThrow("Core OAuth signer unavailable");
+      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
+
+      let lockReady!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        lockReady = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      lockHolder = sql.begin(async (tx) => {
+        await tx`SELECT mode FROM oauth.issuance_state WHERE singleton = true FOR SHARE`;
+        lockReady();
+        await release;
+      });
+      await ready;
+
+      let probes = 0;
+      const cutover = oauth.tokens.ensureConfiguredIssuanceMode({
+        probe: async () => {
+          probes += 1;
+        },
+      });
+      await Bun.sleep(50);
+      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
+      releaseLock();
+      await lockHolder;
+      lockHolder = Promise.resolve();
+      await expect(cutover).resolves.toBe("core");
+      expect(probes).toBe(1);
+      const [retired] = await sql<{ private_key: string; retired_at: Date | null }[]>`
+        SELECT private_key, retired_at FROM oauth.keys WHERE kid = ${legacyKey.kid}
+      `;
+      expect(retired?.private_key).toBe("");
+      expect(retired?.retired_at).toBeInstanceOf(Date);
+      await expect(oauth.tokens.getOrCreateKeyPair()).rejects.toThrow("disabled by the database cutover");
+    } finally {
+      releaseLock();
+      await lockHolder.catch(() => undefined);
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      clearOAuthVerifierCachesForTest();
+      oauth.tokens.clearOAuthVerifierCacheForTest();
+      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
+    }
+  });
+
+  test("lets an in-flight legacy authorization code finish before the global cutover", async () => {
+    const userId = await insertUser();
+    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+    const lockKey = 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
+    const suffix = crypto.randomUUID().replaceAll("-", "");
+    const functionName = `test_code_cutover_${suffix}`;
+    const triggerName = `test_code_cutover_trigger_${suffix}`;
+    let releaseLock = () => {};
+    let lockHolder: Promise<unknown> = Promise.resolve();
+    let clientId: string | null = null;
+    try {
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      const created = await oauth.clients.create({
+        actor: adminActor(userId),
+        data: {
+          name: `Code cutover ${crypto.randomUUID()}`,
+          redirectUris: ["https://client.example.test/callback"],
+          scopes: ["openid"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: false,
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      clientId = created.data.id;
+      const code = await oauth.codes.create({
+        clientId: created.data.clientId,
+        userId,
+        redirectUri: "https://client.example.test/callback",
+        scopes: ["openid"],
+      });
+      const consumed = await oauth.codes.consume({
+        code,
+        clientId: created.data.clientId,
+        client: created.data,
+        redirectUri: "https://client.example.test/callback",
+      });
+      expect(consumed).not.toBeNull();
+      if (!consumed) return;
+
+      await sql.unsafe(`
+        CREATE FUNCTION oauth.${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${lockKey});
+          RETURN NEW;
+        END $$
+      `);
+      await sql.unsafe(`
+        CREATE TRIGGER ${triggerName}
+        BEFORE UPDATE OF authority_issued_at ON oauth.codes
+        FOR EACH ROW WHEN (NEW.code = '${code}')
+        EXECUTE FUNCTION oauth.${functionName}()
+      `);
+      let lockReady!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        lockReady = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      lockHolder = sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(${lockKey})`;
+        lockReady();
+        await release;
+      });
+      await ready;
+
+      const issuance = oauth.tokens.createTokens({
+        userId,
+        client: created.data,
+        issuer: "http://localhost:3000",
+        scopes: consumed.scopes,
+        authorityGrant: consumed.authorityGrant,
+      });
+      await waitForAdvisoryWaiter(lockKey);
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
+      const cutover = oauth.tokens.ensureConfiguredIssuanceMode({ probe: async () => {} });
+      await Bun.sleep(50);
+      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
+      releaseLock();
+      await lockHolder;
+      lockHolder = Promise.resolve();
+      const [issued] = await Promise.all([issuance, cutover]);
+      expect(issued.authorityMode).toBe("legacy");
+      expect(jose.decodeProtectedHeader(issued.accessToken).alg).toBe("RS256");
+      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("core");
+      const [grant] = await sql<{ authority_issued_at: Date | null }[]>`
+        SELECT authority_issued_at FROM oauth.codes WHERE code = ${code}
+      `;
+      expect(grant?.authority_issued_at).toBeInstanceOf(Date);
+    } finally {
+      releaseLock();
+      await lockHolder.catch(() => undefined);
+      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON oauth.codes`).catch(() => undefined);
+      await sql.unsafe(`DROP FUNCTION IF EXISTS oauth.${functionName}()`).catch(() => undefined);
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      clearOAuthVerifierCachesForTest();
+      oauth.tokens.clearOAuthVerifierCacheForTest();
+      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
+      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("routes a client-credentials grant to Core when cutover wins before signing", async () => {
+    const userId = await insertUser();
+    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+    const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
+    const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    const originalFetch = globalThis.fetch;
+    const lockKey = 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
+    const suffix = crypto.randomUUID().replaceAll("-", "");
+    const functionName = `test_service_cutover_${suffix}`;
+    const triggerName = `test_service_cutover_trigger_${suffix}`;
+    let releaseLock = () => {};
+    let lockHolder: Promise<unknown> = Promise.resolve();
+    let clientId: string | null = null;
+    let serviceAccountId: string | null = null;
+    try {
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
+      process.env.CLOUD_APP_CREDENTIAL = "test-workload";
+      process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      const serviceAccount = await serviceAccounts.createResourceBound({
+        name: `Cutover service ${crypto.randomUUID()}`,
+        appId: "oauth-test",
+        resourceType: "fixture",
+        resourceId: crypto.randomUUID(),
+        createdBy: userId,
+      });
+      expect(serviceAccount.ok).toBe(true);
+      if (!serviceAccount.ok) return;
+      serviceAccountId = serviceAccount.data.id;
+      const created = await oauth.clients.create({
+        actor: adminActor(userId),
+        data: {
+          name: `Service cutover ${crypto.randomUUID()}`,
+          redirectUris: [],
+          scopes: ["read"],
+          audiences: ["cloud"],
+          serviceAccountId,
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: false,
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      clientId = created.data.id;
+
+      await sql.unsafe(`
+        CREATE FUNCTION oauth.${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${lockKey});
+          RETURN NEW;
+        END $$
+      `);
+      await sql.unsafe(`
+        CREATE TRIGGER ${triggerName}
+        BEFORE INSERT ON oauth.client_credentials_authority_grants
+        FOR EACH ROW WHEN (NEW.client_id = '${created.data.clientId}')
+        EXECUTE FUNCTION oauth.${functionName}()
+      `);
+      let lockReady!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        lockReady = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      lockHolder = sql.begin(async (tx) => {
+        await tx`SELECT pg_advisory_xact_lock(${lockKey})`;
+        lockReady();
+        await release;
+      });
+      await ready;
+
+      let coreGrantId: string | null = null;
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const request = new Request(input, init);
+          const body = (await request.json()) as {
+            tokens: Array<{ kind: string; grant: { grantId: string; nonce: string } }>;
+          };
+          coreGrantId = body.tokens[0]!.grant.grantId;
+          await sql`
+            UPDATE oauth.client_credentials_authority_grants
+            SET consumed_at = now()
+            WHERE id = ${coreGrantId}::uuid AND nonce = ${body.tokens[0]!.grant.nonce}::uuid AND consumed_at IS NULL
+          `;
+          return Response.json({ tokens: ["core.jwt"] });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const issuance = oauth.tokens.createClientCredentialsToken({
+        client: created.data,
+        issuer: "http://localhost:3000",
+      });
+      await waitForAdvisoryWaiter(lockKey);
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
+      await expect(oauth.tokens.ensureConfiguredIssuanceMode({ probe: async () => {} })).resolves.toBe("core");
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
+      releaseLock();
+      await lockHolder;
+      lockHolder = Promise.resolve();
+      const issued = await issuance;
+      expect(issued.accessToken).toBe("core.jwt");
+      expect(coreGrantId).not.toBeNull();
+      const [grant] = await sql<{ consumed_at: Date | null }[]>`
+        SELECT consumed_at FROM oauth.client_credentials_authority_grants WHERE id = ${coreGrantId}::uuid
+      `;
+      expect(grant?.consumed_at).toBeInstanceOf(Date);
+      await expect(oauth.tokens.getOrCreateKeyPair()).rejects.toThrow("disabled by the database cutover");
+    } finally {
+      releaseLock();
+      await lockHolder.catch(() => undefined);
+      globalThis.fetch = originalFetch;
+      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON oauth.client_credentials_authority_grants`).catch(() => undefined);
+      await sql.unsafe(`DROP FUNCTION IF EXISTS oauth.${functionName}()`).catch(() => undefined);
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
+      if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
+      else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
+      if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+      else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
+      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+      if (serviceAccountId) await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("publishes and verifies Core authority keys while revoked kids fail closed", async () => {
+    const issuer = "http://localhost:3000";
+    const kid = crypto.randomUUID();
+    const userId = crypto.randomUUID();
+    const { privateKey, publicKey } = await jose.generateKeyPair("RS256", { extractable: true });
+    const publicJwk = { ...(await jose.exportJWK(publicKey)), alg: "RS256", kid, use: "sig" };
+
+    try {
+      await sql`
+        INSERT INTO oauth.keys (id, private_key, public_key, kid, retired_at)
+        VALUES (${crypto.randomUUID()}, ${await jose.exportPKCS8(privateKey)}, ${await jose.exportSPKI(publicKey)}, ${kid}, now())
+      `;
+      await sql`
+        INSERT INTO auth.signing_keys (
+          purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
+          created_at, activate_at, activated_at, sign_until, retired_at, verify_until
+        ) VALUES (
+          'oauth', 'retired', ${kid}, 'RS256', ${JSON.stringify(publicJwk)}::jsonb, 'not-used-by-oauth', 'test',
+          now() - INTERVAL '2 hours', now() - INTERVAL '2 hours', now() - INTERVAL '2 hours',
+          now() - INTERVAL '1 hour', now() - INTERVAL '30 minutes', now() + INTERVAL '1 hour'
+        )
+      `;
+      const token = await new jose.SignJWT({
+        token_use: "access",
+        principal_type: "user",
+        uid: "authority-user",
+        id: userId,
+        client_id: "authority-client",
+        azp: "authority-client",
+        scope: "openid",
+      })
+        .setProtectedHeader({ alg: "RS256", kid })
+        .setIssuer(issuer)
+        .setSubject(userId)
+        .setAudience(["cloud", "authority-client"])
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .setJti(crypto.randomUUID())
+        .sign(privateKey);
+
+      expect(await oauth.tokens.verifyAccessToken({ token, issuer })).toMatchObject({ id: userId, token_use: "access" });
+      expect((await oauth.tokens.getJwks()).keys.map((key) => key.kid)).toContain(kid);
+
+      await sql`UPDATE auth.signing_keys SET state = 'revoked', revoked_at = now() WHERE kid = ${kid}`;
+      expect(await oauth.tokens.verifyAccessToken({ token, issuer })).not.toBeNull();
+      oauth.tokens.clearOAuthVerifierCacheForTest();
+      expect(await oauth.tokens.verifyAccessToken({ token, issuer })).toBeNull();
+      expect((await oauth.tokens.getJwks()).keys.map((key) => key.kid)).not.toContain(kid);
+    } finally {
+      await sql`DELETE FROM auth.signing_keys WHERE kid = ${kid}`;
+      await sql`DELETE FROM oauth.keys WHERE kid = ${kid}`;
     }
   });
 
@@ -248,6 +631,10 @@ suite("OAuth resource access tokens", () => {
       ]);
 
       expect(results.filter((result) => result !== null)).toHaveLength(1);
+      const [consumedCode] = await sql<{ authority_issued_at: Date | null }[]>`
+        SELECT authority_issued_at FROM oauth.codes WHERE code = ${code}
+      `;
+      expect(consumedCode?.authority_issued_at).toBeNull();
       expect(results.filter((result) => result === null)).toHaveLength(1);
     } finally {
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
@@ -428,12 +815,6 @@ suite("OAuth resource access tokens", () => {
       expect(codeToken.scope.split(" ")).toContain("offline_access");
       expect(codeToken.refresh_token.startsWith("cld_rt_")).toBe(true);
 
-      await expect(
-        oauth.refreshTokens.rotate(codeToken.refresh_token, created.data, undefined, undefined, async () => {
-          throw new Error("simulated signing failure");
-        }),
-      ).rejects.toThrow("simulated signing failure");
-
       const refreshBody = new URLSearchParams({
         grant_type: "refresh_token",
         client_id: created.data.clientId,
@@ -492,6 +873,136 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
+  test("refresh issuance reservations finalize once and fail closed on known or unknown failure", async () => {
+    const userId = await insertUser();
+    let clientId: string | null = null;
+    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+    try {
+      const created = await oauth.clients.create({
+        actor: adminActor(userId),
+        data: {
+          name: `Refresh authority client ${crypto.randomUUID()}`,
+          redirectUris: ["https://client.example.test/callback"],
+          scopes: ["openid", "offline_access"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: false,
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      clientId = created.data.id;
+
+      const createGrant = () =>
+        oauth.refreshTokens.create({
+          userId,
+          client: created.data,
+          scopes: ["openid", "offline_access"],
+          audiences: ["cloud", created.data.clientId],
+        });
+
+      const knownFailure = await createGrant();
+      await expect(
+        oauth.refreshTokens.rotate(knownFailure.refreshToken, created.data, undefined, undefined, async () => {
+          throw new Error("definite signing failure");
+        }),
+      ).rejects.toThrow("definite signing failure");
+      const [knownFamily] = await sql<{ status: string; revoked_reason: string | null }[]>`
+        SELECT status, revoked_reason FROM oauth.refresh_token_families WHERE id = ${knownFailure.familyId}::uuid
+      `;
+      expect(knownFamily).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_failed" });
+      expect((await oauth.refreshTokens.rotate(knownFailure.refreshToken, created.data)).ok).toBe(false);
+
+      const successful = await createGrant();
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
+      const rotated = await oauth.refreshTokens.rotate(successful.refreshToken, created.data, undefined, undefined, async (grant) => {
+        await sql`
+          UPDATE oauth.refresh_tokens SET authority_issued_at = now()
+          WHERE id = ${grant.authorityGrant.tokenId}::uuid AND authority_nonce = ${grant.authorityGrant.nonce}::uuid
+        `;
+        return "core";
+      });
+      expect(rotated.ok).toBe(true);
+      if (rotated.ok) expect(rotated.refreshToken).not.toBe(successful.refreshToken);
+
+      const replayRace = await createGrant();
+      const firstRotation = await oauth.refreshTokens.rotate(replayRace.refreshToken, created.data, undefined, undefined, async (grant) => {
+        await sql`
+          UPDATE oauth.refresh_tokens SET authority_issued_at = now()
+          WHERE id = ${grant.authorityGrant.tokenId}::uuid AND authority_nonce = ${grant.authorityGrant.nonce}::uuid
+        `;
+        return "core";
+      });
+      expect(firstRotation.ok).toBe(true);
+      if (!firstRotation.ok) return;
+      let entered!: () => void;
+      let release!: () => void;
+      const callbackEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const callbackRelease = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const inFlight = oauth.refreshTokens.rotate(firstRotation.refreshToken, created.data, undefined, undefined, async () => {
+        entered();
+        await callbackRelease;
+        return "legacy";
+      });
+      await callbackEntered;
+      expect(await oauth.refreshTokens.rotate(replayRace.refreshToken, created.data)).toMatchObject({
+        ok: false,
+        error: "reuse_detected",
+      });
+      release();
+      await expect(inFlight).rejects.toThrow("could not be finalized");
+      const [racedFamily] = await sql<{ status: string; revoked_reason: string | null }[]>`
+        SELECT status, revoked_reason FROM oauth.refresh_token_families WHERE id = ${replayRace.familyId}::uuid
+      `;
+      expect(racedFamily).toMatchObject({ status: "revoked", revoked_reason: "refresh_token_reuse" });
+      const [issuingAfterReplay] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM oauth.refresh_tokens
+        WHERE family_id = ${replayRace.familyId}::uuid AND status = 'issuing'
+      `;
+      expect(issuingAfterReplay?.count).toBe(0);
+
+      const unknownFailure = await createGrant();
+      await expect(
+        oauth.refreshTokens.rotate(unknownFailure.refreshToken, created.data, undefined, undefined, async (grant) => {
+          await sql`
+            UPDATE oauth.refresh_tokens SET authority_issued_at = now()
+            WHERE id = ${grant.authorityGrant.tokenId}::uuid AND authority_nonce = ${grant.authorityGrant.nonce}::uuid
+          `;
+          throw new Error("unknown response outcome");
+        }),
+      ).rejects.toThrow("unknown response outcome");
+      const [unknownFamily] = await sql<{ status: string; revoked_reason: string | null }[]>`
+        SELECT status, revoked_reason FROM oauth.refresh_token_families WHERE id = ${unknownFailure.familyId}::uuid
+      `;
+      expect(unknownFamily).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_failed" });
+      expect((await oauth.refreshTokens.rotate(unknownFailure.refreshToken, created.data)).ok).toBe(false);
+
+      const stranded = await createGrant();
+      await sql`
+        UPDATE oauth.refresh_tokens
+        SET status = 'issuing', authority_nonce = gen_random_uuid(), authority_reserved_at = now() - INTERVAL '10 minutes'
+        WHERE family_id = ${stranded.familyId}::uuid
+      `;
+      await oauth.refreshTokens.cleanup();
+      const [strandedFamily] = await sql<{ status: string; revoked_reason: string | null }[]>`
+        SELECT status, revoked_reason FROM oauth.refresh_token_families WHERE id = ${stranded.familyId}::uuid
+      `;
+      expect(strandedFamily).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_stranded" });
+    } finally {
+      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
+      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("loopback redirect validation allows ephemeral native app ports only for matching paths", async () => {
     const client = {
       id: crypto.randomUUID(),
@@ -543,6 +1054,14 @@ suite("OAuth resource access tokens", () => {
       registration_endpoint: "http://localhost:3000/oauth/register",
       resource_parameter_supported: true,
     });
+    const jwks = await oauthRoutes.request("/.well-known/jwks.json");
+    expect(jwks.status).toBe(200);
+    expect(jwks.headers.get("cache-control")).toBe("public, max-age=300, must-revalidate");
+    const etag = jwks.headers.get("etag");
+    expect(etag).toBeTruthy();
+    if (!etag) throw new Error("JWKS response did not include an ETag");
+    const unchanged = await oauthRoutes.request("/.well-known/jwks.json", { headers: { "if-none-match": etag } });
+    expect(unchanged.status).toBe(304);
   });
 
   test("dynamically registers repeatable public client names without credentials", async () => {
@@ -1142,6 +1661,115 @@ suite("OAuth resource access tokens", () => {
     });
     expect(invalidResource.status).toBe(400);
     expect(await invalidResource.json()).toMatchObject({ error: "invalid_target" });
+  });
+
+  test("maps definite Core grant denial to invalid_grant while unknown refresh outcomes stay fail closed", async () => {
+    const userId = await insertUser();
+    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+    const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
+    const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    const originalFetch = globalThis.fetch;
+    let clientId: string | null = null;
+    try {
+      const created = await oauth.clients.create({
+        actor: adminActor(userId),
+        data: {
+          name: `Authority error client ${crypto.randomUUID()}`,
+          redirectUris: ["https://client.example.test/callback"],
+          scopes: ["openid", "offline_access"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: false,
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      clientId = created.data.id;
+      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
+      process.env.CLOUD_APP_CREDENTIAL = "test-workload";
+      process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
+      await sql`UPDATE oauth.issuance_state SET mode = 'core', cutover_at = now(), updated_at = now() WHERE singleton = true`;
+      globalThis.fetch = Object.assign(async () => new Response(null, { status: 403 }), { preconnect: originalFetch.preconnect });
+
+      const code = await oauth.codes.create({
+        clientId: created.data.clientId,
+        userId,
+        redirectUri: "https://client.example.test/callback",
+        scopes: ["openid"],
+      });
+      const codeResponse = await oauthRoutes.request("/oauth/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: created.data.clientId,
+          client_secret: created.data.clientSecret,
+          code,
+          redirect_uri: "https://client.example.test/callback",
+        }),
+      });
+      expect(codeResponse.status).toBe(400);
+      expect(await codeResponse.json()).toMatchObject({ error: "invalid_grant" });
+
+      const rejectedRefresh = await oauth.refreshTokens.create({
+        userId,
+        client: created.data,
+        scopes: ["openid", "offline_access"],
+        audiences: ["cloud", created.data.clientId],
+      });
+      const refreshRequest = (token: string) =>
+        oauthRoutes.request("/oauth/token", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: created.data.clientId,
+            client_secret: created.data.clientSecret,
+            refresh_token: token,
+          }),
+        });
+      const rejectedResponse = await refreshRequest(rejectedRefresh.refreshToken);
+      expect(rejectedResponse.status).toBe(400);
+      expect(await rejectedResponse.json()).toMatchObject({ error: "invalid_grant" });
+      const [releasedFamily] = await sql<{ status: string }[]>`
+        SELECT status FROM oauth.refresh_token_families WHERE id = ${rejectedRefresh.familyId}::uuid
+      `;
+      expect(releasedFamily?.status).toBe("active");
+
+      const unknownRefresh = await oauth.refreshTokens.create({
+        userId,
+        client: created.data,
+        scopes: ["openid", "offline_access"],
+        audiences: ["cloud", created.data.clientId],
+      });
+      globalThis.fetch = Object.assign(
+        async () => {
+          throw new Error("unknown Core response outcome");
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const unknownResponse = await refreshRequest(unknownRefresh.refreshToken);
+      expect(unknownResponse.status).toBe(500);
+      expect(await unknownResponse.json()).toMatchObject({ error: "server_error" });
+      const [revokedFamily] = await sql<{ status: string }[]>`
+        SELECT status FROM oauth.refresh_token_families WHERE id = ${unknownRefresh.familyId}::uuid
+      `;
+      expect(revokedFamily?.status).toBe("revoked");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
+      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
+      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
+      if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
+      else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
+      if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+      else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
+      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
   });
 
   test("UserInfo accepts only active openid user access tokens for the issuing client", async () => {

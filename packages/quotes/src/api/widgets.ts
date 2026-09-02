@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { getLocale } from "@valentinkolb/cloud/server";
-import { Hono } from "hono";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
+import { type Context, Hono } from "hono";
 import { quotesService } from "../service";
 
 const widgetMessages = i18n.define({
@@ -38,9 +38,11 @@ export const quoteWidgetBody = (result: QuoteWidgetResult, locale: string): Widg
  * normal quote endpoint. Returns 200 with a `WidgetResponse` payload that
  * the dashboard renders into a `<Widget>` with one Status block.
  */
-const app = new Hono().get("/quote", async (c) => {
+export const quoteWidgetHandler = async (c: Context<AuthContext>) => {
   const result = await quotesService.quote.get();
   return c.json(quoteWidgetBody(result, getLocale(c)));
-});
+};
+
+const app = new Hono<AuthContext>().get("/quote", quoteWidgetHandler);
 
 export default app;

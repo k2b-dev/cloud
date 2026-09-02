@@ -89,9 +89,9 @@ export type AppMeta = {
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP endpoint that returns a `WidgetResponse` (see `contracts/widgets.ts`).
-   * The dashboard app fetches these with the user's session forwarded; the
-   * endpoint is responsible for permission / role gating and returns 204 to
-   * silently skip rendering for the current user.
+   * Core resolves the initiating user before dispatching these; the endpoint
+   * is responsible for permission / role gating and returns 204 to silently
+   * skip rendering for the current user.
    */
   widgets?: WidgetEndpoint[];
   /** Setting keys declared by this app. Used by admin tooling to protect active app-owned settings. */

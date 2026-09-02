@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 # Request identity
@@ -47,6 +47,13 @@ invalid explicit bearer does not silently fall back to the cookie.
 | OAuth client-credentials token | Service integration | Resource-bound service account |
 
 All branches produce the same `actor` and `accessSubject` contract.
+
+For a framework-owned internal capability request, Core replaces the incoming
+credential with a short-lived `cloud-invocation+jwt`. Applications do not parse
+that JWT. Cloud verifies its exact target and operation, reloads the current
+principal, and exposes the same `actor` and `accessSubject` values to the
+provider. Optional `actor.delegation` records the calling app, original
+credential kind, and invocation ID for audit context; it grants no permission.
 
 ## Use actor and access subject
 
@@ -146,7 +153,8 @@ The cookie remains:
 Signing out removes the current session. Revoking all sessions for a user
 invalidates every older session.
 
-An application verifies the JWT signature from Core's public JWKS, then makes
+An application verifies the JWT signature from Core's session-only public
+JWKS, then makes
 one PostgreSQL query that resolves the live session family, user, account
 expiry, epoch, roles, groups, and managed groups. Revoking a family or changing
 the user's authentication epoch therefore takes effect without waiting for the

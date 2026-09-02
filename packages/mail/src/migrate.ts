@@ -3959,6 +3959,24 @@ const addIncomingAutomationIntegrationCredentials = async (db: SqlClient): Promi
   `;
 };
 
+const addIncomingAutomationMandates = async (db: SqlClient): Promise<void> => {
+  await db`
+    ALTER TABLE mail.incoming_automations
+    ADD COLUMN mandate_id UUID REFERENCES auth.mandates(id) ON DELETE SET NULL,
+    ADD CONSTRAINT incoming_automations_authority_shape CHECK (
+      mandate_id IS NULL OR (integration_credential_id IS NULL AND encrypted_integration_token IS NULL)
+    )
+  `;
+};
+
+const indexIncomingAutomationAuthorityMigration = async (db: SqlClient): Promise<void> => {
+  await db`
+    CREATE INDEX IF NOT EXISTS incoming_automations_legacy_authority_idx
+    ON mail.incoming_automations (created_at, id)
+    WHERE integration_credential_id IS NOT NULL
+  `;
+};
+
 const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   await db`
     CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(
@@ -4326,6 +4344,8 @@ const migrations: readonly MailMigration[] = [
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
   { version: 120, name: "incoming_automation_integration_credentials", run: addIncomingAutomationIntegrationCredentials },
+  { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
+  { version: 122, name: "incoming_automation_authority_migration_index", run: indexIncomingAutomationAuthorityMigration },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

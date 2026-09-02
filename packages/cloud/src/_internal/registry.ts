@@ -276,8 +276,8 @@ export const listLegalLinks = async (locale?: string): Promise<Array<{ label: st
 
 /**
  * Aggregate every running app's widget endpoints into one flat list. Used by
- * the dashboard app to build the widget grid: it fetches each widget URL
- * with the user's session forwarded and renders the response.
+ * the dashboard app to build the widget grid and for Core to resolve the
+ * exact target before proxying a widget request.
  *
  * Order = registration order across apps.
  */

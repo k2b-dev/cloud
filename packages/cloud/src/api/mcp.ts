@@ -40,7 +40,8 @@ import {
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, rateLimit, resolveLocale } from "../server";
+import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
@@ -473,7 +474,12 @@ const callHelpTool = async (name: string, argsValue: unknown, catalog: readonly 
   return null;
 };
 
-const createMcpServer = (request: Request, dependencies: McpRouteDependencies, oauthScopes: string[] | null): Server => {
+const createMcpServer = (
+  request: Request,
+  dependencies: McpRouteDependencies,
+  oauthScopes: string[] | null,
+  authority?: RequestAuthority,
+): Server => {
   const registry = dependencies.listApps ?? listApps;
   const capabilityLookup = dependencies.getCapability ?? getCapability;
   let helpLocale: Promise<string> | undefined;
@@ -624,6 +630,7 @@ const createMcpServer = (request: Request, dependencies: McpRouteDependencies, o
       appId: selected.app.appId,
       capabilityId: selected.operation.localId,
       input: args,
+      authority,
       dependencies,
     });
     const body = await parseResponse(response);
@@ -695,6 +702,7 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
   new Hono<AuthContext>()
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
+    .use("/mcp/v1", rejectReservedWorkloadCredential)
     .use("/mcp/v1", dependencies.limit ?? rateLimit())
     .all("/mcp/v1", async (c) => {
       if (c.req.method !== "POST") {
@@ -724,7 +732,12 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
         signal: request.signal,
       });
       const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null);
+      const server = createMcpServer(
+        request,
+        dependencies,
+        c.get("oauthScopes") ?? null,
+        invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
+      );
       await server.connect(transport);
       try {
         return await transport.handleRequest(request);

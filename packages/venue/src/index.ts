@@ -1,6 +1,6 @@
 import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
-import apiRoutes from "./api";
+import apiRoutes, { venueTodayWidgetHandler } from "./api";
 import { venueCapabilities } from "./capabilities";
 import { app } from "./config";
 import pageRoutes from "./frontend";
@@ -18,6 +18,7 @@ export default await app.start({
   fetch: router.fetch,
   help: venueHelp,
   openapi: apiRoutes,
+  widgets: { today: venueTodayWidgetHandler },
   lifecycle: {
     setup: async () => {
       await migrate();

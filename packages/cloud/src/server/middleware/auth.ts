@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { MessageResponse, Role, RoleOrSpecial, User, UserProfile, UserProvider } from "../../contracts/shared";
 import { isAccountExpired } from "../../services/account-model";
+import { isReservedWorkloadApiCredential } from "../../services/identity/workload-auth";
 import { oauthTokens } from "../../services/oauth-tokens";
 import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import type { ServiceAccount } from "../../services/service-accounts";
@@ -13,9 +14,22 @@ import type { AccessSubject } from "../services/access";
 // Types
 // ==========================
 
+export type InvocationProvenance = {
+  kind: "invocation";
+  callingAppId: string;
+  credentialKind: "session" | "oauth" | "api_key" | "mandate";
+  invocationId: string;
+  requestId?: string | null;
+  mandateId?: string;
+  mandateRevision?: number;
+  workloadType?: string;
+  workloadId?: string;
+};
+
 export type UserRequestActor = {
   kind: "user";
   user: User;
+  delegation?: InvocationProvenance;
 };
 
 export type ServiceAccountRequestActor =
@@ -26,6 +40,7 @@ export type ServiceAccountRequestActor =
       scopes: string[];
       credentialId?: string | null;
       credentialExpiresAt?: string | null;
+      delegation?: InvocationProvenance;
     }
   | {
       kind: "service_account";
@@ -34,9 +49,19 @@ export type ServiceAccountRequestActor =
       scopes: string[];
       credentialId?: string | null;
       credentialExpiresAt?: string | null;
+      delegation?: InvocationProvenance;
     };
 
 export type RequestActor = UserRequestActor | ServiceAccountRequestActor;
+
+export type RequestCredentialKind = "session" | "oauth" | "api_key" | "invocation";
+
+export type RequestAuthority = {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  credentialKind: RequestCredentialKind;
+  scopes: string[];
+};
 
 /** Hono context with authenticated user variables. */
 export type AuthContext = {
@@ -45,6 +70,10 @@ export type AuthContext = {
     accessSubject: AccessSubject;
     user: User;
     sessionToken?: string;
+    /** Credential class resolved once for downstream delegation. */
+    credentialKind?: RequestCredentialKind;
+    /** Constraints carried by OAuth/API credentials; absent sessions are unrestricted by transport scope. */
+    credentialScopes?: string[];
     /** OAuth scopes for bearer-token requests. Absent for sessions and API credentials. */
     oauthScopes?: string[];
   };
@@ -102,6 +131,7 @@ const loadAuthenticatedActorUncached = async (
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("user", user);
     c.set("sessionToken", token);
+    c.set("credentialKind", "session");
   }
 
   if (user) return { token, user, actor: { kind: "user", user } };
@@ -110,6 +140,9 @@ const loadAuthenticatedActorUncached = async (
   if (bearer && serviceAccountCredentials.isApiToken(bearer)) {
     const authResult = await serviceAccountCredentials.authenticateApiToken(bearer);
     if (!authResult) return { token: null, user: null, actor: null };
+    // App workload keys enter only through Core's dedicated broker/authority
+    // handlers, which authenticate their exact app binding directly.
+    if (isReservedWorkloadApiCredential(authResult)) return { token: null, user: null, actor: null };
     if (authResult.delegatedUser && isAccountExpired(authResult.delegatedUser.accountExpires)) {
       return { token: null, user: null, actor: null };
     }
@@ -123,6 +156,8 @@ const loadAuthenticatedActorUncached = async (
       credentialExpiresAt: authResult.credential.expiresAt,
     };
     c.set("actor", actor);
+    c.set("credentialKind", "api_key");
+    c.set("credentialScopes", authResult.credential.scopes);
     if (authResult.delegatedUser) {
       c.set("accessSubject", { type: "user", userId: authResult.delegatedUser.id });
       c.set("user", authResult.delegatedUser);
@@ -144,6 +179,8 @@ const loadAuthenticatedActorUncached = async (
       c.set("accessSubject", { type: "user", userId: authResult.user.id });
       c.set("user", authResult.user);
       c.set("oauthScopes", authResult.scopes);
+      c.set("credentialKind", "oauth");
+      c.set("credentialScopes", authResult.scopes);
       return { token: null, user: authResult.user, actor };
     }
 
@@ -160,6 +197,8 @@ const loadAuthenticatedActorUncached = async (
     };
     c.set("actor", actor);
     c.set("oauthScopes", authResult.scopes);
+    c.set("credentialKind", "oauth");
+    c.set("credentialScopes", authResult.scopes);
     if (authResult.delegatedUser) {
       c.set("accessSubject", { type: "user", userId: authResult.delegatedUser.id });
       c.set("user", authResult.delegatedUser);
@@ -289,6 +328,19 @@ const requireOAuthScope = (...requiredScopes: string[]) =>
     return c.json({ code: "FORBIDDEN", message: `OAuth scope ${requiredScopes.join(" or ")} is required` }, 403);
   });
 
+const getAuthority = (c: Context<AuthContext>): RequestAuthority => {
+  const actor = c.get("actor");
+  const accessSubject = c.get("accessSubject");
+  const credentialKind = c.get("credentialKind");
+  if (!actor || !accessSubject || !credentialKind) throw new Error("Request authority has not been resolved");
+  return {
+    actor,
+    accessSubject,
+    credentialKind,
+    scopes: [...(c.get("credentialScopes") ?? [])],
+  };
+};
+
 /** Preset: Redirect to a fixed URL on rejection */
 const redirect = (url: string): RoleOptions => ({
   onReject: () => url,
@@ -327,6 +379,7 @@ export const auth = {
   requireRole,
   requireUser,
   requireOAuthScope,
+  getAuthority,
   requireAccount,
   redirect,
   redirectToLogin,
