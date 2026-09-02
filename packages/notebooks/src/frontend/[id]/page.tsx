@@ -1,7 +1,7 @@
 import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { getLocale } from "@valentinkolb/cloud/server";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
@@ -13,6 +13,8 @@ import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.isl
 import VersionHistory from "./_components/versions/VersionHistory.island";
 import { loadNotebookPageData } from "./page-data";
 import { notebooksPageMessages } from "../messages";
+import BookSurface from "./_components/book/BookSurface";
+import PresentationModeLinks from "./_components/book/PresentationModeLinks.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = notebooksPageMessages.resolve([getLocale(c)]);
@@ -32,19 +34,35 @@ export default ssr<AuthContext>(async (c) => {
     return () => (
       <Layout c={c} title={t.accessDenied}>
         <div class="max-w-md mx-auto mt-16">
-          <Placeholder
-            surface="paper"
-            state="error"
-            icon="ti ti-lock"
-            title={t.accessDenied}
-            description={t.accessDeniedDescription}
-          />
+          <Placeholder surface="paper" state="error" icon="ti ti-lock" title={t.accessDenied} description={t.accessDeniedDescription} />
         </div>
       </Layout>
     );
   }
 
   if (data.kind === "redirect") return c.redirect(data.href);
+
+  if (data.isBookMode) {
+    c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
+    const bookTree = (nodes: typeof data.tree): import("./_components/book/BookNavigator.island").BookTreeNode[] =>
+      nodes.map((node) => ({ id: node.id, title: node.title, children: bookTree(node.children) }));
+    return () => (
+      <MinimalLayout c={c} preferences={false}>
+        <BookSurface
+          notebookId={data.notebook.id}
+          notebookName={data.notebook.name}
+          selectedNoteId={data.selectedNote?.id ?? null}
+          tree={bookTree(data.tree)}
+          tags={data.ctx.tags}
+          html={data.bookHtml}
+          noteTitle={data.selectedNote?.title ?? null}
+          currentHref={data.currentHref}
+          canWrite={data.canWrite}
+          locked={!!data.selectedNote?.lockedAt}
+        />
+      </MinimalLayout>
+    );
+  }
 
   const {
     user,
@@ -121,47 +139,46 @@ export default ssr<AuthContext>(async (c) => {
             ) : isGraphMode && graph ? (
               <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
             ) : selectedNote ? (
-              <NoteEditor
-                noteId={selectedNote.id}
-                noteTitle={selectedNote.title}
-                notebookId={notebook.id}
-                scriptsEnabled={canRunScripts}
-                noteCreatedAt={selectedNote.createdAt}
-                noteUpdatedAt={selectedNote.updatedAt}
-                noteLockedAt={selectedNote.lockedAt}
-                noteParentId={selectedNote.parentId}
-                notebookName={notebook.name}
-                appUrl={appUrl}
-                workspaceCursor={ctx.workspaceCursor}
-                userId={user.id}
-                displayName={user.displayName}
-                initialSnapshot={selectedNote.yjsSnapshot}
-                initialContent={selectedNote.contentMd}
-                initialPanelOpen={detailPanelOpen}
-                initialRichMode={ctx.settings.richMode}
-                readOnly={readonlyMode}
-                initialHref={currentHref}
-                initialDetail={{
-                  noteId: selectedNote.id,
-                  noteTitle: selectedNote.title,
-                  contentMd: selectedNote.contentMd,
-                  createdAt: selectedNote.createdAt,
-                  updatedAt: selectedNote.updatedAt,
-                  lockedAt: selectedNote.lockedAt,
-                  isLocked: !!selectedNote.lockedAt,
-                  tocItems,
-                  taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
-                  attachments: panelAttachments,
-                  backlinks,
-                  namedBlocks,
-                }}
-              />
+              <div class="flex flex-1 min-w-0 min-h-0 flex-col">
+                {canWrite && <PresentationModeLinks href={currentHref} mode={data.presentationMode} locked={!!selectedNote.lockedAt} />}
+                <NoteEditor
+                  noteId={selectedNote.id}
+                  noteTitle={selectedNote.title}
+                  notebookId={notebook.id}
+                  scriptsEnabled={canRunScripts}
+                  noteCreatedAt={selectedNote.createdAt}
+                  noteUpdatedAt={selectedNote.updatedAt}
+                  noteLockedAt={selectedNote.lockedAt}
+                  noteParentId={selectedNote.parentId}
+                  notebookName={notebook.name}
+                  appUrl={appUrl}
+                  workspaceCursor={ctx.workspaceCursor}
+                  userId={user.id}
+                  displayName={user.displayName}
+                  initialSnapshot={selectedNote.yjsSnapshot}
+                  initialContent={selectedNote.contentMd}
+                  initialPanelOpen={detailPanelOpen}
+                  initialRichMode={ctx.settings.richMode}
+                  readOnly={readonlyMode}
+                  initialHref={currentHref}
+                  initialDetail={{
+                    noteId: selectedNote.id,
+                    noteTitle: selectedNote.title,
+                    contentMd: selectedNote.contentMd,
+                    createdAt: selectedNote.createdAt,
+                    updatedAt: selectedNote.updatedAt,
+                    lockedAt: selectedNote.lockedAt,
+                    isLocked: !!selectedNote.lockedAt,
+                    tocItems,
+                    taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
+                    attachments: panelAttachments,
+                    backlinks,
+                    namedBlocks,
+                  }}
+                />
+              </div>
             ) : (
-              <Placeholder
-                class="flex-1"
-                icon="ti ti-file-text"
-                description={tree.length === 0 ? t.noNotes : t.selectNote}
-              />
+              <Placeholder class="flex-1" icon="ti ti-file-text" description={tree.length === 0 ? t.noNotes : t.selectNote} />
             )}
           </AppWorkspace.Main>
 

@@ -1,13 +1,15 @@
 import { hasRole } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import type { Context } from "hono";
 import { toPublicNoteComment, toPublicNotebook } from "@/api/public-resources";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { parseNavigatorQuery } from "@/lib/navigator-url";
 import { notebooksService } from "@/service";
+import { resolvePresentationMode, type PresentationMode } from "@/lib/presentation-mode";
+import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
-import { buildNoteUrl, buildVersionsUrl } from "../params";
+import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
 import { parseDetailPanelOpen, parseSettings } from "./_components/settings/NotebookSettingsStore";
 import type { NotebookContext } from "./_components/sidebar/types";
@@ -37,8 +39,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const isAdmin = permission === "admin";
   const canWrite = permission === "write" || isAdmin;
   const mode = c.req.query("mode");
-  const isVersionsMode = mode === "versions";
-  const isGraphMode = mode === "graph";
+  const isVersionsMode = canWrite && mode === "versions";
+  const isGraphMode = canWrite && mode === "graph";
   // Capture before the snapshot. Events published while the snapshot loads may
   // replay redundantly, but an event can never be skipped between SSR and the
   // browser subscription.
@@ -70,16 +72,27 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     canWrite,
     userId: user.id,
     bypassAccess: hasRole(user, "admin"),
+    permission,
+    requestedMode: mode,
+    defaultPresentationMode: notebook.defaultPresentationMode,
+    locale: getLocale(c),
   });
 
   if (!noteParam && selected.note && !isGraphMode) {
     return {
       kind: "redirect" as const,
-      href: isVersionsMode ? buildVersionsUrl(notebook.shortId, selected.note.id) : buildNoteUrl(notebook.shortId, selected.note.id),
+      href: `${buildNoteUrl(notebook.shortId, selected.note.id)}${new URL(c.req.url).search}`,
     };
   }
 
-  const readonlyMode = selected.routeState?.readonlyMode ?? (!canWrite || !!selected.note?.lockedAt);
+  const presentationMode = resolvePresentationMode({
+    permission,
+    requestedMode: mode,
+    defaultPresentationMode: notebook.defaultPresentationMode,
+    locked: !!selected.note?.lockedAt,
+  });
+  const isBookMode = presentationMode === "book" && !isVersionsMode && !isGraphMode;
+  const readonlyMode = presentationMode !== "write";
   const graph = isGraphMode ? await notebooksService.notebook.graph({ notebookId }) : null;
   const versionHistory =
     isVersionsMode && selected.note && selected.internalNoteId
@@ -93,9 +106,10 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const publicVersionHistory = versionHistory
     ? { ...versionHistory, versions: versionHistory.versions.map((version) => ({ ...version, noteId: selected.note!.id })) }
     : null;
-  const selectedCommentNote = selected.note && !isVersionsMode && !isGraphMode
-    ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
-    : null;
+  const selectedCommentNote =
+    selected.note && !isVersionsMode && !isGraphMode && !isBookMode
+      ? await notebooksService.note.getByShortId({ shortId: selected.note.id })
+      : null;
   const [attachmentCount, tags, favoriteRows, commentsPage] = await Promise.all([
     notebooksService.attachment.count({ notebookId }),
     notebooksService.tag.listForNotebook({ notebookId }),
@@ -151,13 +165,16 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     tocItems: selected.tocItems,
     namedBlocks: selected.namedBlocks,
     readonlyMode,
+    presentationMode,
+    isBookMode,
+    bookHtml: selected.bookHtml,
     graph,
     versionHistory: publicVersionHistory,
     ctx,
     appUrl,
     currentHref: `${requestUrl.pathname}${requestUrl.search}`,
     detailPanelOpen,
-    showDetailPanel: !!selected.note && !isVersionsMode && !isGraphMode,
+    showDetailPanel: !!selected.note && !isVersionsMode && !isGraphMode && !isBookMode,
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
     initialCommentsPage,
@@ -192,21 +209,61 @@ async function loadSelectedNote(params: {
   canWrite: boolean;
   userId: string;
   bypassAccess: boolean;
+  permission: string;
+  requestedMode: string | undefined;
+  defaultPresentationMode: PresentationMode;
+  locale: string;
 }): Promise<{
   internalNoteId: string | null;
   note: SelectedNote | null;
   routeState: SelectedNoteRouteState | null;
   tocItems: ReturnType<typeof extractTocFromMarkdown>;
   namedBlocks: ReturnType<typeof extractNamedBlockSummaries>;
+  bookHtml: string | null;
 }> {
   if (!params.selectedNoteId) {
-    return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [] };
+    return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
+  }
+
+  const presentationMode = resolvePresentationMode({
+    permission: params.permission,
+    requestedMode: params.requestedMode,
+    defaultPresentationMode: params.defaultPresentationMode,
+    locked: false,
+  });
+  if (presentationMode === "book" && !params.isVersionsMode && !(params.canWrite && params.requestedMode === "graph")) {
+    const book = await loadBookNote({
+      notebookId: params.notebookId,
+      notebookShortId: params.notebookShortId,
+      noteShortId: params.selectedNoteId,
+      userId: params.userId,
+      locale: params.locale,
+    });
+    if (!book) return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
+    return {
+      internalNoteId: book.note.id,
+      note: {
+        id: book.note.shortId,
+        title: book.note.title,
+        contentMd: null,
+        yjsSnapshot: null,
+        lockedAt: book.note.lockedAt,
+        parentId: null,
+        createdAt: book.note.createdAt,
+        updatedAt: book.note.updatedAt,
+        createdBy: book.note.createdBy,
+      },
+      routeState: null,
+      tocItems: [],
+      namedBlocks: [],
+      bookHtml: book.document.html,
+    };
   }
 
   if (params.isVersionsMode) {
     const noteMeta = await notebooksService.note.getByShortId({ shortId: params.selectedNoteId });
     if (noteMeta?.notebookId !== params.notebookId) {
-      return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [] };
+      return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
     }
     const note = {
       id: noteMeta.shortId,
@@ -227,6 +284,7 @@ async function loadSelectedNote(params: {
       routeState: null,
       tocItems: extractTocFromMarkdown(noteMeta.contentMd),
       namedBlocks: extractNamedBlockSummaries(noteMeta.contentMd),
+      bookHtml: null,
     };
   }
 
@@ -238,13 +296,14 @@ async function loadSelectedNote(params: {
     userId: params.userId,
     bypassAccess: params.bypassAccess,
   });
-  if (!routeState) return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [] };
+  if (!routeState) return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
   return {
     internalNoteId: null,
     note: routeState.note,
     routeState,
     tocItems: routeState.tocItems,
     namedBlocks: routeState.namedBlocks,
+    bookHtml: null,
   };
 }
 

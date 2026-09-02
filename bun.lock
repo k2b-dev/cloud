@@ -437,7 +437,9 @@
         "hono": "catalog:",
         "hono-openapi": "catalog:",
         "katex": "catalog:",
+        "marked": "17.0.6",
         "mermaid": "catalog:",
+        "sanitize-html": "catalog:",
         "solid-codemirror": "2.3.3",
         "solid-js": "catalog:",
         "y-codemirror.next": "0.3.5",
@@ -448,6 +450,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/d3-force": "3.0.10",
+        "@types/sanitize-html": "catalog:",
         "typescript": "catalog:",
       },
     },

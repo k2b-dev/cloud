@@ -6,6 +6,152 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The Book surface shares tokens with the workspace, not the editor's DOM. */
+.notebook-book-shell {
+  color: var(--color-zinc-950);
+  height: 100dvh;
+  display: flex;
+  background: var(--ui-surface);
+}
+.notebook-book-shell .k2b-app-workspace.notebook-book-workspace {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.dark .notebook-book-shell {
+  color: var(--color-zinc-100);
+}
+.notebook-book-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+}
+.notebook-presentation-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0.25rem 0.5rem;
+}
+.notebook-book-content {
+  width: 100%;
+  max-width: 80ch;
+  margin-inline: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+  padding-bottom: 6rem;
+  font-size: 1rem;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.notebook-book-content :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 650;
+  line-height: 1.25;
+  margin-block: 1.6em 0.6em;
+  scroll-margin-top: 1.5rem;
+}
+.notebook-book-content h1 {
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  letter-spacing: -0.025em;
+}
+.notebook-book-content h2 {
+  font-size: 1.6rem;
+}
+.notebook-book-content h3 {
+  font-size: 1.25rem;
+}
+.notebook-book-content :is(p, ul, ol, pre, blockquote, table, .md-table-wrap, .md-data-block, .notebook-book-query, .notebook-book-toc) {
+  margin-block: 1rem;
+}
+.notebook-book-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.notebook-book-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.notebook-book-content li > :is(ul, ol) {
+  margin-block: 0.25rem;
+}
+.notebook-book-content a {
+  color: var(--color-blue-600);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.dark .notebook-book-content a {
+  color: var(--color-blue-400);
+}
+.notebook-book-content a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.notebook-book-content pre {
+  overflow: auto;
+  padding: 1rem;
+  background: var(--ui-surface-subtle);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  font-size: 0.85em;
+}
+.notebook-book-content :not(pre) > code {
+  background: var(--ui-surface-subtle);
+  padding: 0.1em 0.3em;
+  border-radius: 0.2em;
+  font-size: 0.9em;
+}
+.notebook-book-content blockquote {
+  color: var(--color-zinc-600);
+  padding-left: 1rem;
+  border-left: 3px solid var(--ui-border);
+}
+.notebook-book-content :is(img, svg) {
+  max-width: 100%;
+  height: auto;
+}
+.notebook-book-content :is(.md-table-wrap, .notebook-book-query) {
+  overflow-x: auto;
+}
+.notebook-book-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.notebook-book-content :is(th, td) {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--ui-border);
+  text-align: left;
+}
+.notebook-book-content th {
+  font-weight: 600;
+}
+.notebook-book-tag {
+  display: inline-block;
+  font-size: 0.9em;
+}
+.notebook-book-empty {
+  color: var(--color-zinc-600);
+}
+.dark .notebook-book-content blockquote,
+.dark .notebook-book-empty {
+  color: var(--color-zinc-400);
+}
+.notebook-book-diagnostic {
+  border-left: 3px solid var(--ui-border);
+  padding: 0.75rem 1rem;
+}
+.notebook-book-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.notebook-book-content > :first-child {
+  margin-block-start: 0;
+}
+
 .notebook-detail-panel-header {
   view-transition-name: notebook-detail-panel;
 }

@@ -3,17 +3,17 @@ title: Notebooks
 navTitle: Notebooks
 section: Work
 order: 120
-description: Collaborative Markdown notebooks with discussions, structured blocks, links, files, and small tools.
+description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-08-30
+updated: 2026-09-03
 ---
 
 # Notebooks
 
-Notebooks keeps prose, lightweight structured data, and small interactive tools
-in one shared workspace. Notes use Markdown, synchronize in realtime, and can
-link to other notes, tags, and uploaded files. Page discussions keep questions,
-feedback, and decisions beside the note without mixing them into its body.
+Notebooks brings company handbooks, wikis, and working notes into one
+permission-scoped workspace. Notes use Markdown and can link to other notes,
+tags, and uploaded files. Editors work together in real time; readers see a
+dedicated Book view.
 
 The Notebooks start page keeps accessible notebooks at the top, shows recently
 edited notes across those notebooks, and provides one permission-aware activity
@@ -28,9 +28,11 @@ not replace the note list.
   lightweight task lists.
 - Organize notes in a tree and connect related knowledge with note links and
   tags.
+- Publish an internal handbook in Book view, with page navigation and tag
+  filters but no editing controls or detail panel.
 - Discuss a page in a durable Markdown thread. New comments appear live for
-  other readers, and authors can correct or remove their own comment for ten
-  minutes.
+  other users viewing its detail panel, and comment authors can correct or
+  remove their own comment for ten minutes.
 - Keep small tables, lists, todos, data blocks, and sections beside the prose
   that explains them.
 - Attach images and files to the notebook and reference them from notes.
@@ -45,6 +47,28 @@ not replace the note list.
 
 Use a separate notebook when content needs its own access rules, settings, or
 export boundary.
+
+## Choose a reading or writing view
+
+Users with read permission always use **Book**. It shows the note as a web page
+with navigation and tag filters, without an editor, detail panel, or discussion
+panel. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered
+on the server with the page. Script blocks remain visible as code and do not
+execute in Book.
+
+Mermaid diagrams enhance their server-rendered source in the browser. Without
+JavaScript, or if a diagram cannot render, its source stays readable. On mobile,
+expand the compact navigation to browse pages and tags.
+
+Editors and notebook admins can switch between **Write**, **Read-only**, and
+**Book**. Write edits the note; Read-only keeps the familiar workspace and
+detail panel without allowing changes to the note body. Use either workspace
+view to read or contribute to page discussions.
+
+Notebook admins choose **Default view** under **Settings → Notebook → View &
+behavior**. The initial default for editors and admins is Write. An explicit
+view in the page URL overrides this default; read permission still forces
+Book. Locked notes open in Read-only instead of Write.
 
 ## Understand the Notebooks model
 
@@ -68,10 +92,11 @@ collaborative edits by actor, note, and hour. Saved versions remain separate
 recovery snapshots and can reference every user or service account whose edits
 contributed since the preceding saved version.
 
-Comments follow the parent notebook's permissions. Readers can see existing
-discussion; users with write access can add comments, including on a locked
-note. Locking freezes the note body, not its discussion. Comment authors may
-edit or delete their own comment for ten minutes after posting.
+Comments follow the parent notebook's permissions, but Book does not display
+the discussion panel. Users with write access can add comments in the detail
+panel, including on a locked note. Locking freezes the note body, not its
+discussion. Comment authors may edit or delete their own comment for ten
+minutes after posting.
 
 ## How Notebooks fits Cloud
 
