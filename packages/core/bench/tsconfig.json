@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["./*.ts", "../../../scripts/bench-identity.ts", "../../cloud/src/types/**/*.d.ts"]
+}

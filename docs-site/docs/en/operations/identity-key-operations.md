@@ -158,3 +158,7 @@ the failed-signing audit guarantee assumes the database can commit it.
 
 Do not rotate `APP_SECRET` as a substitute. It encrypts settings and
 credentials and is deliberately not a signing-key or KEK fallback.
+
+Maintainers can measure this guard and the complete search authentication path
+with the [identity performance check](/en/docs/contributing/identity-performance).
+Its p95 gate includes the shared transaction, not just local JWT cryptography.
