@@ -1,5 +1,9 @@
 import { sql } from "bun";
-import type { AiToolApprovalPolicy } from "./types";
+import type { AiToolApprovalPolicy, AiTurnRunConfig } from "./types";
+
+/** Background authority never inherits a user's interactive Always Allow preference. */
+export const aiTurnAllowsRememberedApprovals = (config: AiTurnRunConfig | null | undefined): boolean =>
+  config == null || config.kind === "compact" || config.mandate === undefined;
 
 export type AiToolApprovalContext = {
   actorUserId: string;

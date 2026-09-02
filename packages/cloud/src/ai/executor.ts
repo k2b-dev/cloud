@@ -7,7 +7,13 @@ import type { AccessSubject, RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import { normalizeLocale } from "../shared/locale";
-import { type AiToolApprovalContext, aiToolAllowsAlways, aiToolApprovalScope, hasRememberedAiToolApproval } from "./approvals";
+import {
+  type AiToolApprovalContext,
+  aiToolAllowsAlways,
+  aiToolApprovalScope,
+  aiTurnAllowsRememberedApprovals,
+  hasRememberedAiToolApproval,
+} from "./approvals";
 import { createAiToolResolver } from "./capabilities";
 import { executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { createCloudCompactFn } from "./compaction";
@@ -334,7 +340,7 @@ const approvalReviewForCallId = (
  * to (attempt, turn) so re-claimed attempts never collide, and (b) maintains
  * tool blocks keyed by callId, enriched with Cloud status/approval metadata.
  */
-const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
+const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowRememberedApprovals = true) => {
   const toolBlocks = new Map<string, Extract<AiTurnBlock, { kind: "tool" }>>();
   for (const block of seedBlocks) {
     if (block.kind === "tool") toolBlocks.set(block.callId, block);
@@ -376,6 +382,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
     const existing = toolBlocks.get(callId);
     const rawName = patch.name ?? existing?.name ?? "tool";
     const name = canonicalNames.get(rawName) ?? rawName;
+    const approval = patch.clearApproval ? undefined : "approval" in patch ? patch.approval : existing?.approval;
     const block: Extract<AiTurnBlock, { kind: "tool" }> = {
       id: toolBlockId(displayCallId),
       kind: "tool",
@@ -385,7 +392,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
       status: patch.status ?? existing?.status ?? "running",
       result: "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
-      approval: patch.clearApproval ? undefined : "approval" in patch ? patch.approval : existing?.approval,
+      approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false } : approval,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
       presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
     };
@@ -544,6 +551,7 @@ export class AiTurnExecutor {
       startSeq: claim.liveSeq,
       leaseOwner: this.config.leaseOwner,
       seedBlocks: claim.liveBlocks ?? [],
+      allowRememberedApprovals: aiTurnAllowsRememberedApprovals(claim.runConfig),
     });
     const runConfig = claim.runConfig;
     if (!runConfig) {
@@ -1005,6 +1013,7 @@ export class AiTurnExecutor {
       abortController,
       prepared,
       approvalContext: material.toolApprovalContext,
+      allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
       rememberableCapabilityApprovals,
       capabilityActionReviews,
       appliedSteers,
@@ -1043,6 +1052,7 @@ export class AiTurnExecutor {
     abortController: AbortController;
     prepared: PreparedAiTools;
     approvalContext?: AiToolApprovalContext;
+    allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
     appliedSteers: AiTurnSteer[];
@@ -1056,6 +1066,7 @@ export class AiTurnExecutor {
       abortController,
       prepared,
       approvalContext,
+      allowRememberedApprovals,
       rememberableCapabilityApprovals,
       capabilityActionReviews,
       appliedSteers,
@@ -1075,6 +1086,7 @@ export class AiTurnExecutor {
             turnId,
             prepared,
             approvalContext,
+            allowRememberedApprovals,
             rememberableCapabilityApprovals,
             capabilityActionReviews,
           });
@@ -1158,6 +1170,7 @@ export class AiTurnExecutor {
     turnId: string;
     prepared: PreparedAiTools;
     approvalContext?: AiToolApprovalContext;
+    allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
     capabilityActionReviews: ReadonlyMap<string, CapabilityActionReview>;
   }): Promise<boolean> {
@@ -1169,6 +1182,7 @@ export class AiTurnExecutor {
       turnId,
       prepared,
       approvalContext,
+      allowRememberedApprovals,
       rememberableCapabilityApprovals,
       capabilityActionReviews,
     } = input;
@@ -1181,7 +1195,7 @@ export class AiTurnExecutor {
         ? rememberableCapabilityApprovals.get(customApprovalParentCallId(event.callId) ?? event.callId)
         : undefined;
     const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
-    const allowAlways = capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy);
+    const allowAlways = allowRememberedApprovals && (capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy));
 
     // Display-only client_view tools (e.g. cards) never need user input — resolve
     // inline and keep streaming instead of taking a full suspend/continuation trip.
@@ -1396,6 +1410,7 @@ class StreamPipeline {
   private readonly attempt: number;
   private readonly leaseOwner: string;
   private readonly mapper: ReturnType<typeof createEventMapper>;
+  private readonly allowRememberedApprovals: boolean;
   private lastSnapshotAt = 0;
   private snapshotDirty = false;
   private chain: Promise<void> = Promise.resolve();
@@ -1407,6 +1422,7 @@ class StreamPipeline {
     startSeq: number;
     leaseOwner: string;
     seedBlocks: AiTurnBlock[];
+    allowRememberedApprovals: boolean;
   }) {
     this.conversationId = input.conversationId;
     this.turnId = input.turnId;
@@ -1414,7 +1430,8 @@ class StreamPipeline {
     this.leaseOwner = input.leaseOwner;
     this.seq = input.startSeq;
     this.blocks = [];
-    this.mapper = createEventMapper(input.attempt, input.seedBlocks);
+    this.allowRememberedApprovals = input.allowRememberedApprovals;
+    this.mapper = createEventMapper(input.attempt, input.seedBlocks, input.allowRememberedApprovals);
   }
 
   private ordered(run: () => Promise<void>): Promise<void> {
@@ -1432,7 +1449,11 @@ class StreamPipeline {
   }
 
   seedBaseline(blocks: AiTurnBlock[]): void {
-    this.blocks = blocks;
+    this.blocks = this.allowRememberedApprovals
+      ? blocks
+      : blocks.map((block) =>
+          block.kind === "tool" && block.approval ? { ...block, approval: { ...block.approval, allowAlways: false } } : block,
+        );
   }
 
   setFrontendModes(modes: Map<string, AiFrontendToolMode>): void {
@@ -1560,6 +1581,7 @@ class StreamPipeline {
 }
 
 export const __aiExecutorTest = {
+  StreamPipeline,
   applyToolRoundPolicy,
   createEventMapper,
   rebuildAttemptBaseline,

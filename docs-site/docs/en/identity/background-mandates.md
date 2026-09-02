@@ -72,9 +72,14 @@ then confirms it with the owning app's workload credential. A pending mandate
 cannot issue invocations. Revoke it when persistence fails; Core also revokes
 unconfirmed mandates after the bounded confirmation window.
 
-Only active or paused mandates reserve an owning workload coordinate. Revoked
-metadata remains visible, but a failed remote registration can safely retry the
-same owner, workload type, and workload ID with a new mandate.
+Only confirmed active or paused mandates reserve an owning workload coordinate.
+Pending registrations cannot block a legitimate workload. Confirmation returns
+HTTP 409 if another confirmed mandate already owns the coordinate. Revoked
+metadata remains visible, and a failed registration can retry with a new mandate.
+
+Each creator may have at most 100 live pending mandates during the 15-minute
+confirmation window. Paused pending mandates count too; expired ones do not.
+At HTTP 409, confirm or revoke outstanding registrations before creating more.
 
 Use `POST /api/me/mandates` from the signed-in browser session for that remote
 sequence. Core always derives the user subject from that session; the request
@@ -83,6 +88,8 @@ expiry. Persist the returned ID and revision first, then call
 `POST /api/_internal/identity/v1/mandates/<mandateId>/confirm` with the same
 revision and the app workload credential. Ordinary `mandates.create(...)`
 remains the atomic same-transaction path and is confirmed immediately.
+Before confirming, the owning app must verify that the persisted workload
+belongs to the mandate's subject; knowing a workload ID is not proof of ownership.
 
 Policy values are:
 
@@ -107,6 +114,11 @@ Action invocation as approved only after that request resolved positively.
 Pausing or completing the task pauses its mandate, resuming the task resumes
 it, and deleting the task revokes it.
 
+Background turns never inherit a conversation's interactive **Always Allow**
+preferences. They require approval for the current Action and do not offer
+**Always Allow**. Intentionally unattended automation should instead use an
+explicit, narrowly scoped `preapproved` mandate where the application supports it.
+
 Installations upgrading existing scheduled chat tasks add mandates lazily in
 bounded reconciliation batches. Each task is locked while Core creates or
 recovers the unique mandate, and the task cannot be scheduled or delivered
@@ -114,10 +126,16 @@ until that link exists. Concurrent workers therefore converge on one mandate;
 they never fall back to the sponsor's browser session.
 
 Recovery accepts only a confirmed mandate with the same user, Core owner,
-workload identity, and exact scheduled-task policy. An unconfirmed, differently
-scoped, or unexpectedly paused mandate leaves the task unbound and moves it to
+workload identity, and exact scheduled-task policy. Unrelated pending mandates
+are ignored. An incompatible confirmed mandate moves the task to
 `needs_attention`; system reconciliation never resumes authority in the
-sponsor's name.
+sponsor's name. Scheduling and delivery recheck the mandate's current state,
+revision, expiry, and sponsor. Paused authority stops new turns; revoked,
+expired, or invalid authority requires attention. Editing a prompt does not
+silently resume a separately paused mandate.
+
+Terminal occurrence bookkeeping does not require live authority. Recovery
+handles each occurrence independently so one broken task cannot block others.
 
 Migration authority is a separate system-only service contract, not a caller
 supplied administrator flag. It is restricted to the exact built-in workload
@@ -134,6 +152,9 @@ Provision a resource-bound service-account credential for the owning
 application with binding `{ appId, resourceType: "cloud.app", resourceId:
 appId }` and the `identity:invoke` scope. Store it as
 `CLOUD_APP_CREDENTIAL` in that application only.
+Also set `CLOUD_CORE_INTERNAL_ORIGIN` to Core's private service origin. Workload
+broker routes are not reachable through the public gateway, and the helper
+does not fall back to the public origin for mandate calls.
 
 An administrator creates it through Core's identity API:
 
@@ -223,7 +244,9 @@ automation credentials in bounded batches. Mail creates the replacement mandate,
 pauses it for a disabled automation, retires the previous credential, clears its
 encrypted token, and links the automation in one transaction.
 Failed rows retain their previous credential and remain visible in the fixed
-migration counters and logs until repaired.
+migration counters and logs until repaired. Mail durably claims unattempted or
+least-recently attempted rows first, with a 60-second retry cooldown. Failing
+rows and process restarts therefore do not starve later migration candidates.
 
 ## What still authorizes the effect
 

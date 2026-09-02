@@ -105,9 +105,9 @@ return c.json(body);
 
 The top-level response requires `title` and `blocks`. It also accepts `icon`,
 `href`, and `meta`. The complete serialized response is limited to 128 KiB.
-Cloud validates and reserializes it before the dashboard sees it; unknown
-fields, oversized strings or collections, malformed JSON, and non-finite
-numbers are rejected.
+Cloud validates and reserializes it before the dashboard sees it. Unknown
+fields are stripped for compatibility; oversized strings or collections,
+malformed JSON, and non-finite numbers are rejected.
 
 ## Choose a block
 
@@ -131,8 +131,9 @@ Each list item requires `label`. It can contain `icon`, `iconTone`, `sub`,
 Each pill requires `label` and `value`. It can contain `tone` and `href`.
 
 Every `href`, including links inside list items and pills, must be a safe
-root-relative Cloud path such as `/app/inventory/items/42`. Absolute URLs,
-protocol-relative URLs, backslashes, and control characters are rejected.
+relative reference or an absolute HTTP(S) URL. Active schemes such as
+`javascript:`, backslashes, and control characters are rejected. Protocol-relative
+HTTP(S) links are accepted too.
 
 `WidgetResponse` contains final display strings, never catalog keys. Numeric
 `stat.value` and `pill.value` fields are formatted automatically by `@k2b/ui`
@@ -167,10 +168,16 @@ Cloud lists a `403` widget as unavailable at the user's access level. It skips
 and rendered as a small error state.
 
 Keep widget queries bounded. Dashboard runs at most eight widget requests
-concurrently under one 500 ms page budget and preserves registry order. Core
+concurrently and preserves registry order. Each started widget receives a
+500 ms budget. The page deadline is `ceil(widgetCount / 8) * 500 ms`, so later
+waves are not starved by the first eight widgets. More widgets can therefore
+increase total page latency without increasing concurrency. Request cancellation
+stops queued widgets from starting. Core
 also applies a 500 ms deadline to the complete proxy operation, including
 registry lookup, invocation signing, provider fetch, and response validation;
-a slow or unavailable app must not block the others. Link to the application
+a slow or unavailable app must not block the others. Provider failures are
+logged with bounded failure reasons; timeout exceptions and HTTP 504 produce
+the timeout state rather than a generic error. Link to the application
 for detailed work instead of turning the widget into a full page.
 
 See [Request identity](/en/docs/identity/authentication) and

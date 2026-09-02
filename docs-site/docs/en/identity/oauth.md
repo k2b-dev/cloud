@@ -271,5 +271,20 @@ an already issued legacy token for the existing two-hour public-key grace. A
 `kid` present in Core's authority never falls back to a same-named legacy key
 when the Core key is revoked or expired.
 
+After a Core authority error during refresh, OAuth atomically checks the exact
+reservation nonce, status, and issuance marker. Only a reservation proven not
+to have issued tokens is released for a later client retry. If Core already
+claimed issuance, or the database cannot prove a safe release, the refresh
+family stays fail-closed. A temporary Core outage therefore does not by itself
+destroy a provably unused refresh grant.
+
+The audience migration installs its old-writer compatibility trigger and
+backfills snapshots in one transaction. Older OAuth replicas that omit the
+snapshot still capture the exact resource or current client audiences; newer
+writers supply it directly without that extra client lookup. Keep the trigger
+until every old writer is retired. Before enabling Core issuance, also replace
+every binary that predates the database issuance gate. See
+[Runtime configuration](/en/docs/operations/runtime-configuration).
+
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

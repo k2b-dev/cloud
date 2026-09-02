@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   DASHBOARD_WIDGET_CONCURRENCY,
+  DASHBOARD_WIDGET_DEADLINE_MS,
+  dashboardWidgetPageBudgetMs,
   dashboardWidgetProxyUrl,
   dashboardWidgetRequestHeaders,
+  isDashboardWidgetTimeout,
   mapDashboardWidgetsBounded,
 } from "./widget-request";
 
@@ -27,6 +30,16 @@ describe("dashboard widget request metadata", () => {
 });
 
 describe("dashboard widget fan-out", () => {
+  test("derives the total page budget from the worker wave count", () => {
+    expect([0, 1, 8, 9, 17].map(dashboardWidgetPageBudgetMs)).toEqual([0, 500, 500, 1_000, 1_500]);
+  });
+
+  test("recognizes native timeout and legacy abort errors", () => {
+    expect(isDashboardWidgetTimeout(new DOMException("expired", "TimeoutError"))).toBeTrue();
+    expect(isDashboardWidgetTimeout(new DOMException("aborted", "AbortError"))).toBeTrue();
+    expect(isDashboardWidgetTimeout(new Error("failed"))).toBeFalse();
+  });
+
   test("preserves registry order while bounding concurrency", async () => {
     const widgets = Array.from({ length: DASHBOARD_WIDGET_CONCURRENCY * 3 }, (_, index) => index);
     let active = 0;
@@ -44,21 +57,52 @@ describe("dashboard widget fan-out", () => {
     expect(results).toEqual(widgets.map((widget) => `widget-${widget}`));
   });
 
-  test("shares one deadline signal across queued workers", async () => {
-    const signal = AbortSignal.timeout(10);
+  test("gives queued widgets a new per-start deadline after earlier widgets expire", async () => {
+    const timeoutSignal = AbortSignal.timeout.bind(AbortSignal);
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => timeoutSignal(5));
     const seenSignals = new Set<AbortSignal>();
+    const page = new AbortController();
+    try {
+      const results = await mapDashboardWidgetsBounded(
+        Array.from({ length: DASHBOARD_WIDGET_CONCURRENCY + 2 }, (_, index) => index),
+        page.signal,
+        async (_widget, workerSignal) => {
+          seenSignals.add(workerSignal);
+          expect(workerSignal.aborted).toBeFalse();
+          await new Promise<void>((resolve) => workerSignal.addEventListener("abort", () => resolve(), { once: true }));
+          return isDashboardWidgetTimeout(workerSignal.reason);
+        },
+      );
+
+      expect(seenSignals.size).toBe(DASHBOARD_WIDGET_CONCURRENCY + 2);
+      expect(timeout).toHaveBeenCalledTimes(DASHBOARD_WIDGET_CONCURRENCY + 2);
+      expect(timeout).toHaveBeenCalledWith(DASHBOARD_WIDGET_DEADLINE_MS);
+      expect(results).toEqual(Array(DASHBOARD_WIDGET_CONCURRENCY + 2).fill(true));
+      expect(page.signal.aborted).toBeFalse();
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  test("does not start queued I/O after the page aborts", async () => {
+    const page = new AbortController();
+    const started: number[] = [];
     const results = await mapDashboardWidgetsBounded(
       Array.from({ length: DASHBOARD_WIDGET_CONCURRENCY + 2 }, (_, index) => index),
-      signal,
-      async (widget, workerSignal) => {
-        seenSignals.add(workerSignal);
-        if (widget < DASHBOARD_WIDGET_CONCURRENCY) await Bun.sleep(20);
-        return workerSignal.aborted;
+      page.signal,
+      async (widget) => {
+        started.push(widget);
+        if (widget === DASHBOARD_WIDGET_CONCURRENCY - 1) page.abort();
+        return widget;
       },
     );
-
-    expect(seenSignals).toEqual(new Set([signal]));
-    expect(results.slice(DASHBOARD_WIDGET_CONCURRENCY)).toEqual([true, true]);
+    expect(started).toEqual(Array.from({ length: DASHBOARD_WIDGET_CONCURRENCY }, (_, index) => index));
+    expect(results.slice(DASHBOARD_WIDGET_CONCURRENCY)).toEqual([undefined, undefined]);
+    let called = false;
+    await mapDashboardWidgetsBounded([1], page.signal, async () => {
+      called = true;
+    });
+    expect(called).toBeFalse();
   });
 
   test("rejects an invalid concurrency limit", async () => {

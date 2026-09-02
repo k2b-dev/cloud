@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
+import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 
 const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
+
+test("remembered approvals reject mandate-backed chats even when kind is omitted", () => {
+  const mandate = { id: crypto.randomUUID(), revision: 1 };
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run", mandate })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ kind: "chat", input: "Run", mandate })).toBe(false);
+  expect(aiTurnAllowsRememberedApprovals({ input: "Run" })).toBe(true);
+  expect(aiTurnAllowsRememberedApprovals({ kind: "compact" })).toBe(true);
+});
 
 describe("nessi block event mapping", () => {
   test("text blocks map to attempt+turn scoped ids across start, delta, end", () => {
@@ -162,6 +171,40 @@ describe("nessi block event mapping", () => {
       type: "block_set",
       block: { approval: { allowAlways: true } },
     });
+  });
+
+  test("background approval blocks never offer Always Allow for tools or capability scopes", () => {
+    const mapper = createEventMapper(
+      1,
+      [
+        {
+          id: toolBlockId("old-call"),
+          kind: "tool",
+          callId: "old-call",
+          name: "danger",
+          status: "awaiting_approval",
+          approval: { message: "Old request", allowAlways: true },
+        },
+      ],
+      false,
+    );
+    expect(
+      mapper.translate({ ...turn, type: "tool_execution_start", callId: "old-call", name: "danger", args: {} } as OutboundEvent)[0],
+    ).toMatchObject({ block: { approval: { allowAlways: false } } });
+    mapper.setApprovalPolicies(new Map([["danger", "always"]]));
+    mapper.setApprovalReviews(new Map([["call-10", { message: "Sure?", approvalScope: "resource:one" }]]));
+    for (const kind of ["approval", "custom_approval"] as const) {
+      const ops = mapper.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind,
+        callId: kind === "custom_approval" ? "call-10-approval-0" : "call-10",
+        name: "danger",
+        args: {},
+        message: "Sure?",
+      } as OutboundEvent);
+      expect(ops[0]).toMatchObject({ type: "block_set", block: { approval: { allowAlways: false } } });
+    }
   });
 
   test("reconnect rebuild replaces the parent call with its pending custom approval", () => {

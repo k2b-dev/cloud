@@ -8,6 +8,7 @@ import { widgetInvocationOperation } from "../services/identity/invocation-opera
 import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
 import { capabilityCredentialHeaders } from "./capabilities";
 
@@ -21,6 +22,16 @@ type WidgetRouteDependencies = {
 };
 
 export const WIDGET_PROXY_TIMEOUT_MS = 500;
+const log = logger("widgets");
+type WidgetRejectionReason =
+  | "upstream_timeout"
+  | "upstream_status"
+  | "too_large"
+  | "invalid_json"
+  | "invalid_schema"
+  | "deadline_exceeded"
+  | "request_cancelled"
+  | "operation_failed";
 
 const jsonError = (message: string, status: 502 | 504): Response =>
   Response.json({ message }, { status, headers: { "content-type": "application/json" } });
@@ -52,13 +63,25 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
     .get("/widgets/v1/:appId/:widgetId", async (c) => {
       const timeout = AbortSignal.timeout(dependencies.timeoutMs ?? WIDGET_PROXY_TIMEOUT_MS);
       const signal = AbortSignal.any([c.req.raw.signal, timeout]);
+      const appId = c.req.param("appId");
+      const widgetId = c.req.param("widgetId");
+      let phase: "registry" | "signing" | "provider" | "response" = "registry";
+      const reject = (reason: WidgetRejectionReason, message: string, status: 502 | 504, upstreamStatus?: number): Response => {
+        log.warn("Widget proxy rejected response", {
+          appId: appId.slice(0, 80),
+          widgetId: widgetId.slice(0, 100),
+          phase,
+          reason,
+          ...(upstreamStatus === undefined ? {} : { upstreamStatus }),
+        });
+        return jsonError(message, status);
+      };
       try {
-        const appId = c.req.param("appId");
-        const widgetId = c.req.param("widgetId");
         const widget = (await waitWithin(registry(), signal)).find((entry) => entry.appId === appId && entry.widgetId === widgetId);
         if (!widget) return c.json({ message: "Widget not found" }, 404);
 
         const useInvocation = invocationIssuanceMode() === "jwt";
+        phase = "signing";
         const headers = useInvocation
           ? await (async () => {
               const signed = await waitWithin(
@@ -93,6 +116,8 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         const targetUrl = useInvocation
           ? new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url)
           : new URL(widget.url);
+        phase = "provider";
+        signal.throwIfAborted();
         const response = await fetchWidget(targetUrl, { headers, signal });
         if (response.status === 204 || response.status === 403) {
           await response.body?.cancel();
@@ -100,15 +125,22 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         }
         if (!response.ok) {
           await response.body?.cancel();
-          return jsonError("Widget is unavailable", 502);
+          return response.status === 504
+            ? reject("upstream_timeout", "Widget deadline exceeded", 504, response.status)
+            : reject("upstream_status", "Widget is unavailable", 502, response.status);
         }
+        phase = "response";
         const body = await readBoundedJson(response, WIDGET_MAX_RESPONSE_BYTES);
-        if (!body.ok) return jsonError("Widget returned invalid or oversized JSON", 502);
+        signal.throwIfAborted();
+        if (!body.ok) return reject(body.reason, "Widget returned invalid or oversized JSON", 502);
         const parsed = WidgetResponseSchema.safeParse(body.data);
-        if (!parsed.success) return jsonError("Widget returned an invalid response", 502);
+        if (!parsed.success) return reject("invalid_schema", "Widget returned an invalid response", 502);
         return Response.json(parsed.data, { headers: { "content-type": "application/json" } });
-      } catch {
-        return jsonError(timeout.aborted ? "Widget deadline exceeded" : "Widget is unavailable", timeout.aborted ? 504 : 502);
+      } catch (error) {
+        const isTimeout = timeout.aborted || (error instanceof Error && error.name === "TimeoutError");
+        return isTimeout
+          ? reject("deadline_exceeded", "Widget deadline exceeded", 504)
+          : reject(signal.aborted ? "request_cancelled" : "operation_failed", "Widget is unavailable", 502);
       }
     });
 };

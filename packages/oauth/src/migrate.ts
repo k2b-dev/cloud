@@ -141,7 +141,7 @@ export const migrate = async (): Promise<void> => {
       user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
       redirect_uri TEXT NOT NULL,
       scopes TEXT[] NOT NULL DEFAULT ARRAY['openid', 'profile', 'email'],
-      audiences TEXT[] NOT NULL DEFAULT ARRAY['cloud'],
+      audiences TEXT[],
       resource TEXT,
       nonce TEXT,
       code_challenge TEXT,
@@ -162,23 +162,52 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE oauth.codes
     ADD COLUMN IF NOT EXISTS resource TEXT
   `.simple();
-  await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS audiences TEXT[]`.simple();
-  await sql`
-    UPDATE oauth.codes code
-    SET audiences = CASE
-      WHEN code.resource IS NOT NULL THEN ARRAY[code.resource]
-      ELSE ARRAY(
-        SELECT audience
-        FROM unnest(ARRAY['cloud', code.client_id]::text[] || client.audiences) WITH ORDINALITY AS value(audience, position)
-        GROUP BY audience
-        ORDER BY min(position)
-      )
-    END
-    FROM oauth.clients client
-    WHERE client.client_id = code.client_id AND code.audiences IS NULL
-  `.simple();
-  await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET DEFAULT ARRAY['cloud']::text[]`.simple();
-  await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET NOT NULL`.simple();
+  // One locked transition also supports old replicas that still omit audiences.
+  // Keep this insertion bridge until those writers have left the rolling upgrade.
+  await sql.begin(async (tx) => {
+    await tx`LOCK TABLE oauth.codes IN ACCESS EXCLUSIVE MODE`.simple();
+    await tx`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS audiences TEXT[]`.simple();
+    await tx`ALTER TABLE oauth.codes ALTER COLUMN audiences DROP DEFAULT`.simple();
+    await tx`
+      CREATE OR REPLACE FUNCTION oauth.fill_code_audiences() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.audiences IS NULL THEN
+          IF NEW.resource IS NOT NULL THEN
+            NEW.audiences := ARRAY[NEW.resource];
+          ELSE
+            SELECT ARRAY(
+              SELECT audience
+              FROM unnest(ARRAY['cloud', NEW.client_id]::text[] || client.audiences)
+                WITH ORDINALITY AS value(audience, position)
+              GROUP BY audience ORDER BY min(position)
+            ) INTO NEW.audiences
+            FROM oauth.clients client WHERE client.client_id = NEW.client_id;
+          END IF;
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql
+    `.simple();
+    await tx`CREATE OR REPLACE TRIGGER fill_code_audiences
+      BEFORE INSERT ON oauth.codes FOR EACH ROW EXECUTE FUNCTION oauth.fill_code_audiences()`.simple();
+    // ['cloud'] alone was the previous default, not a valid unbound grant snapshot.
+    await tx`
+      UPDATE oauth.codes code
+      SET audiences = CASE
+        WHEN code.resource IS NOT NULL THEN ARRAY[code.resource]
+        ELSE ARRAY(
+          SELECT audience
+          FROM unnest(ARRAY['cloud', code.client_id]::text[] || client.audiences) WITH ORDINALITY AS value(audience, position)
+          GROUP BY audience
+          ORDER BY min(position)
+        )
+      END
+      FROM oauth.clients client
+      WHERE client.client_id = code.client_id
+        AND (code.audiences IS NULL OR code.audiences = ARRAY['cloud']::text[])
+    `.simple();
+    await tx`ALTER TABLE oauth.codes ALTER COLUMN audiences SET NOT NULL`.simple();
+  });
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_nonce UUID`.simple();
   await sql`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS authority_issued_at TIMESTAMPTZ`.simple();
   await sql`

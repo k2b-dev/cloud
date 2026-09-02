@@ -597,12 +597,22 @@ export const migrate = async (): Promise<void> => {
     END
     $$
   `.simple();
+  // Old targeted ON CONFLICT writers must be retired before this cutover.
+  // See docs-site/docs/en/reference/deprecations-and-migrations.md.
+  await sql.begin(async (tx) => {
+    await tx`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_mandates_confirmed_owner_workload
+      ON auth.mandates(owner_app_id, workload_type, workload_id)
+      WHERE state IN ('active', 'paused') AND confirmed_at IS NOT NULL
+    `.simple();
+    await tx`DROP INDEX IF EXISTS auth.uq_mandates_live_owner_workload`.simple();
+    await tx`DROP INDEX IF EXISTS auth.uq_mandates_owner_workload`.simple();
+  });
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_mandates_live_owner_workload
-    ON auth.mandates(owner_app_id, workload_type, workload_id)
-    WHERE state IN ('active', 'paused')
+    CREATE INDEX IF NOT EXISTS idx_mandates_pending_creator
+    ON auth.mandates(created_by_user_id)
+    WHERE state IN ('active', 'paused') AND confirmed_at IS NULL
   `.simple();
-  await sql`DROP INDEX IF EXISTS auth.uq_mandates_owner_workload`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_mandates_subject_user
     ON auth.mandates(subject_user_id)

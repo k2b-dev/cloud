@@ -403,7 +403,7 @@ suite("incoming automations", () => {
     }
   });
 
-  test("keeps legacy authority active when an existing mandate does not match", async () => {
+  test("retains failed legacy authority without starving later rows and persists retry backoff", async () => {
     const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
     process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
     try {
@@ -434,9 +434,33 @@ suite("incoming automations", () => {
       });
       if (!conflicting.ok) throw new Error(conflicting.error.message);
 
+      const healthy = await createIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        input: {
+          name: "Later healthy legacy authority",
+          enabled: false,
+          scope: { mode: "all" },
+          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item03" }],
+        },
+      });
+      if (!healthy.ok) throw new Error(healthy.error.message);
+
       process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-      const migrated = await migrateLegacyIncomingAutomationAuthorities(100);
-      expect(migrated.failed).toBeGreaterThanOrEqual(1);
+      const migrated = await migrateLegacyIncomingAutomationAuthorities(1);
+      expect(migrated).toMatchObject({ failed: 1, migrated: 0, remaining: 2 });
+      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 0, migrated: 1, remaining: 1 });
+      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 0, migrated: 0, remaining: 1 });
+      const [attempt] = await sql<{ attempted: boolean }[]>`
+        SELECT authority_migration_attempted_at IS NOT NULL AS attempted
+        FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid
+      `;
+      expect(attempt?.attempted).toBe(true);
+      await sql`
+        UPDATE mail.incoming_automations SET authority_migration_attempted_at = now() - interval '2 minutes'
+        WHERE id = ${created.data.id}::uuid
+      `;
+      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 1, migrated: 0, remaining: 1 });
       const [after] = await sql<
         {
           mandate_id: string | null;
@@ -462,6 +486,16 @@ suite("incoming automations", () => {
         reason: "Integration test cleanup",
       });
       expect(revoked.ok).toBe(true);
+      expect(
+        (
+          await deleteIncomingAutomation({
+            context: ownerContext,
+            mailboxId,
+            automationId: healthy.data.id,
+            input: { expectedRevision: healthy.data.revision + 1 },
+          })
+        ).ok,
+      ).toBe(true);
       process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
       expect(
         (

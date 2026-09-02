@@ -12,7 +12,29 @@ describe("WidgetResponseSchema", () => {
     ).toBeTrue();
   });
 
-  for (const href of ["https://evil.example", "//evil.example", "/\\evil", "javascript:alert(1)"]) {
+  for (const href of [
+    "/app/weather",
+    "../weather",
+    "./weather",
+    "#forecast",
+    "?location=one",
+    "https://weather.example/forecast",
+    "http://weather.example/forecast",
+  ]) {
+    test(`preserves safe widget links: ${href}`, () => {
+      expect(WidgetResponseSchema.parse({ title: "Weather", href, blocks: [] }).href).toBe(href);
+    });
+  }
+
+  for (const href of [
+    "/\\evil",
+    "javascript:alert(1)",
+    "data:text/html,unsafe",
+    "vbscript:msgbox(1)",
+    "file:///tmp/file",
+    "/app/\nweather",
+    "/app/\u0085weather",
+  ]) {
     test(`rejects unsafe widget links: ${href}`, () => {
       expect(WidgetResponseSchema.safeParse({ title: "Unsafe", href, blocks: [] }).success).toBeFalse();
       expect(
@@ -21,8 +43,18 @@ describe("WidgetResponseSchema", () => {
     });
   }
 
-  test("rejects unknown fields and unbounded collections", () => {
-    expect(WidgetResponseSchema.safeParse({ title: "Extra", blocks: [], html: "<script>" }).success).toBeFalse();
+  test("strips extra fields at every widget object boundary", () => {
+    expect(
+      WidgetResponseSchema.parse({
+        title: "Extra",
+        html: "<script>",
+        blocks: [{ kind: "list", extra: "ignored", items: [{ label: "Item", extra: "ignored" }] }],
+      }),
+    ).toEqual({ title: "Extra", blocks: [{ kind: "list", items: [{ label: "Item" }] }] });
+  });
+
+  test("retains collection and string bounds", () => {
+    expect(WidgetResponseSchema.safeParse({ title: "x".repeat(501), blocks: [] }).success).toBeFalse();
     expect(
       WidgetResponseSchema.safeParse({
         title: "Many",

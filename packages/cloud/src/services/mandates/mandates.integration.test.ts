@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { parsePgJsonRecord, toPgTextArray } from "../postgres";
-import { mandates } from ".";
+import { MANDATE_MAX_PENDING_PER_USER, mandates } from ".";
 
 const canUseDatabase = async (): Promise<boolean> => {
   try {
@@ -595,6 +595,81 @@ suite("mandates", () => {
         })
       ).ok,
     ).toBe(true);
+  });
+
+  test("pending registrations cannot squat a confirmed workload and concurrent confirmation has one winner", async () => {
+    const input = {
+      authority: interactive(),
+      subject: { type: "user" as const, id: ownerUserId },
+      ownerAppId: "external",
+      workloadType: "remote.job",
+      workloadId: `squat-${suffix}`,
+      policy: exactPolicy(),
+    };
+    const pending = await mandates.createPending(input);
+    const legitimate = await mandates.create(input);
+    expect(pending.ok).toBe(true);
+    expect(legitimate.ok).toBe(true);
+    if (!pending.ok || !legitimate.ok) throw new Error("Mandate fixture creation failed");
+    createdMandateIds.push(pending.data.id, legitimate.data.id);
+    const conflict = await mandates.confirm({
+      mandateId: pending.data.id,
+      expectedRevision: 1,
+      authority: { kind: "workload", ownerAppId: "external" },
+    });
+    expect(conflict.ok ? null : conflict.error.code).toBe("CONFLICT");
+    expect((await mandates.get(pending.data.id))?.confirmedAt).toBeNull();
+
+    const candidates = await Promise.all([1, 2].map(() => mandates.createPending({ ...input, workloadId: `confirm-race-${suffix}` })));
+    const ids = candidates.map((candidate) => {
+      if (!candidate.ok) throw new Error("Pending fixture failed");
+      createdMandateIds.push(candidate.data.id);
+      return candidate.data.id;
+    });
+    const confirmed = await Promise.all(
+      ids.map((mandateId) => mandates.confirm({ mandateId, expectedRevision: 1, authority: { kind: "workload", ownerAppId: "external" } })),
+    );
+    expect(confirmed.filter((result) => result.ok)).toHaveLength(1);
+    expect(confirmed.filter((result) => !result.ok && result.error.code === "CONFLICT")).toHaveLength(1);
+  });
+
+  test("serializes the pending quota across concurrent creators and frees expired capacity", async () => {
+    // Keep the quota fixture independent from other tests' pending registrations.
+    const [creator] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name)
+      VALUES (${`pending-quota-${suffix}`}, 'local', 'user', 'Pending quota') RETURNING id
+    `;
+    if (!creator) throw new Error("Missing quota fixture user");
+    const input = {
+      authority: { kind: "interactive" as const, userId: creator.id },
+      subject: { type: "user" as const, id: creator.id },
+      ownerAppId: "external",
+      workloadType: "remote.job",
+      policy: exactPolicy(),
+    };
+    try {
+      const rows = await sql<{ id: string }[]>`
+        INSERT INTO auth.mandates (subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy, created_by_user_id, confirmed_at, confirmation_deadline)
+        SELECT 'user', ${creator.id}::uuid, 'external', 'remote.job', ${`quota-${suffix}-`} || slot::text,
+          ${exactPolicy()}::jsonb, ${creator.id}::uuid, NULL, now() + interval '15 minutes'
+        FROM generate_series(1, ${MANDATE_MAX_PENDING_PER_USER - 1}) slot
+        RETURNING id
+      `;
+      createdMandateIds.push(...rows.map((row) => row.id));
+      const attempts = await Promise.all(
+        [1, 2].map((slot) => mandates.createPending({ ...input, workloadId: `quota-race-${suffix}-${slot}` })),
+      );
+      for (const result of attempts) if (result.ok) createdMandateIds.push(result.data.id);
+      expect(attempts.filter((result) => result.ok)).toHaveLength(1);
+      expect(attempts.filter((result) => !result.ok && result.error.code === "CONFLICT")).toHaveLength(1);
+      await sql`UPDATE auth.mandates SET created_at = now() - interval '20 minutes', confirmation_deadline = now() - interval '1 minute' WHERE id = ${rows[0]!.id}::uuid`;
+      const next = await mandates.createPending({ ...input, workloadId: `quota-after-expiry-${suffix}` });
+      expect(next.ok).toBe(true);
+      if (next.ok) createdMandateIds.push(next.data.id);
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id = ${creator.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${creator.id}::uuid`;
+    }
   });
 
   test("lists bounded scopes and terminally reconciles stale unconfirmed mandates", async () => {

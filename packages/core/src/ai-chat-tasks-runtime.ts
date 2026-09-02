@@ -9,6 +9,14 @@ const APP_ID = "core";
 const RECOVERY_ID = "core:ai-chat-tasks:recover";
 const SCHEDULE_PREFIX = "task:";
 const log = logger("core:ai-chat-tasks");
+const recoveryStep = async <T>(step: string, run: () => Promise<T>): Promise<T | undefined> => {
+  try {
+    return await run();
+  } catch (error) {
+    log.warn("Scheduled chat task recovery step failed", { step, error: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
+};
 
 const taskMandate = (task: { mandateId: string | null; mandateRevision: number | null }): { id: string; revision: number } => {
   if (!task.mandateId || task.mandateRevision === null) throw new Error("Scheduled task mandate is unavailable");
@@ -119,35 +127,80 @@ const registerRecurringTask = async (task: Awaited<ReturnType<typeof aiChatTasks
   });
 };
 
+export const reconcileAiChatTaskSchedules = async (input: {
+  tasks: Awaited<ReturnType<typeof aiChatTasks.listActiveCron>>;
+  register: typeof registerRecurringTask;
+  list: () => Promise<Array<{ id: string }>>;
+  remove: (id: string) => Promise<unknown>;
+  removeObsolete: boolean;
+}): Promise<void> => {
+  const desired = new Set(input.tasks.map((task) => `${SCHEDULE_PREFIX}${task.id}`));
+  for (const task of input.tasks) await recoveryStep(`register:${task.id}`, () => input.register(task));
+  if (!input.removeObsolete) return;
+  const current = await recoveryStep("list-schedules", input.list);
+  for (const schedule of current ?? []) {
+    if (schedule.id.startsWith(SCHEDULE_PREFIX) && !desired.has(schedule.id)) {
+      await recoveryStep(`remove-schedule:${schedule.id}`, () => input.remove(schedule.id));
+    }
+  }
+};
+
 export const reconcileAiChatTasks = async (): Promise<void> => {
   const lock = await reconcileMutex.acquire(APP_ID, 60_000);
   if (!lock) return;
   try {
-    const mandatePreparation = await aiChatTasks.prepareLegacyMandates();
+    const mandatePreparation = await recoveryStep("prepare-mandates", () => aiChatTasks.prepareLegacyMandates());
     const tasks = await aiChatTasks.listActiveCron();
-    const desired = new Set(tasks.map((task) => `${SCHEDULE_PREFIX}${task.id}`));
-    for (const task of tasks) await registerRecurringTask(task);
-    if (!mandatePreparation.remaining) {
-      for (const current of await taskScheduler.list()) {
-        if (current.id.startsWith(SCHEDULE_PREFIX) && !desired.has(current.id)) await taskScheduler.delete({ id: current.id });
-      }
-    }
+    await reconcileAiChatTaskSchedules({
+      tasks,
+      register: registerRecurringTask,
+      list: () => taskScheduler.list(),
+      remove: (id) => taskScheduler.delete({ id }),
+      removeObsolete: mandatePreparation?.remaining === false,
+    });
   } finally {
     await reconcileMutex.release(lock).catch(() => undefined);
   }
 };
 
-const recover = async (): Promise<{ queued: number }> => {
-  await reconcileAiChatTasks();
-  for (const terminal of await aiChatTasks.listTerminalRunningTurns()) {
-    await aiChatTasks.finalizeTurn(terminal);
-  }
-  await aiChatTasks.materializeDueOnce();
-  const queued = await aiChatTasks.listQueuedOccurrences();
-  for (const { occurrence } of queued) await submitOccurrence(occurrence.id);
-  await deliverPendingAiMessages();
-  return { queued: queued.length };
+type RecoveryDependencies = {
+  reconcile: () => Promise<void>;
+  listTerminal: typeof aiChatTasks.listTerminalRunningTurns;
+  finalize: (terminal: Awaited<ReturnType<typeof aiChatTasks.listTerminalRunningTurns>>[number]) => Promise<unknown>;
+  materialize: () => Promise<unknown>;
+  listQueued: () => Promise<Array<{ occurrence: { id: string } }>>;
+  submit: (occurrenceId: string) => Promise<unknown>;
+  deliverMessages: () => Promise<unknown>;
 };
+export const recoverAiChatTasks = async (dependencies: RecoveryDependencies): Promise<{ queued: number }> => {
+  await recoveryStep("reconcile", dependencies.reconcile);
+  const terminal = await recoveryStep("list-terminal", dependencies.listTerminal);
+  for (const occurrence of terminal ?? []) {
+    await recoveryStep(`finalize:${occurrence.turnId}`, () => dependencies.finalize(occurrence));
+  }
+  await recoveryStep("materialize", dependencies.materialize);
+  const queued = await recoveryStep("list-queued", dependencies.listQueued);
+  let submitted = 0;
+  for (const { occurrence } of queued ?? []) {
+    const accepted = await recoveryStep(`submit:${occurrence.id}`, async () => {
+      await dependencies.submit(occurrence.id);
+      return true;
+    });
+    if (accepted) submitted += 1;
+  }
+  await recoveryStep("deliver-messages", dependencies.deliverMessages);
+  return { queued: submitted };
+};
+const recover = (): Promise<{ queued: number }> =>
+  recoverAiChatTasks({
+    reconcile: reconcileAiChatTasks,
+    listTerminal: () => aiChatTasks.listTerminalRunningTurns(),
+    finalize: (terminal) => aiChatTasks.finalizeTurn(terminal),
+    materialize: () => aiChatTasks.materializeDueOnce(),
+    listQueued: () => aiChatTasks.listQueuedOccurrences(),
+    submit: submitOccurrence,
+    deliverMessages: () => deliverPendingAiMessages(),
+  });
 
 export const aiChatTaskRuntime = {
   start: async (): Promise<void> => {

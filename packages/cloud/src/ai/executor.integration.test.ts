@@ -1,17 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { Message } from "@k2b/nessi";
+import type { InboundEvent, Message, OutboundEvent } from "@k2b/nessi";
 import { sql } from "bun";
 import type { User } from "../contracts";
-import { AiTurnExecutor } from "./executor";
+import { aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiWireEvent } from "./protocol";
 import { createAiProvider } from "./provider";
+import { listPendingAiTurnActions, submitAiTurnAction } from "./runtime";
 import { aiConversations } from "./store";
 import { aiStreamTopic } from "./stream";
-import type { AiModelProfile, AiTurnFinalizedEvent } from "./types";
+import type { PreparedAiTools } from "./tools";
+import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
 import type { validateAiTurnRequest } from "./validate";
 import { createCloudAiViewImageTool } from "./vision-tool";
 
@@ -251,6 +254,112 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  test("requires a fresh background approval without changing interactive remembered approvals", async () => {
+    const userId = await insertUser();
+    const approvalContext = { actorUserId: userId };
+    await rememberAiToolApproval(approvalContext, { toolName: "danger", approvalScope: "danger" });
+    try {
+      for (const mode of ["interactive", "background", "background-implicit-kind"] as const) {
+        const background = mode !== "interactive";
+        const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+        try {
+          const runConfig: AiChatTurnRunConfig = {
+            ...(mode === "background-implicit-kind" ? {} : { kind: "chat" }),
+            input: "Run the action",
+            ...(background ? { mandate: { id: crypto.randomUUID(), revision: 1 } } : {}),
+          };
+          const { turn } = await aiConversations.submitChatTurn({
+            conversationId: conversation.id,
+            modelProfileId: MODEL_ID,
+            runConfig,
+            userMessage: userMessage("Run the action"),
+          });
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner: "approval-test",
+            leaseMs: 30_000,
+            from: "queue",
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Expected claimed approval turn");
+          const allowRememberedApprovals = aiTurnAllowsRememberedApprovals(runConfig);
+          const pipeline = new __aiExecutorTest.StreamPipeline({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            attempt: claim.turn.attempt,
+            startSeq: claim.liveSeq,
+            leaseOwner: "approval-test",
+            seedBlocks: [],
+            allowRememberedApprovals,
+          });
+          const prepared: PreparedAiTools = {
+            tools: [],
+            canonicalNames: new Map(),
+            approvalPolicies: new Map([["danger", "always"]]),
+            frontendModes: new Map(),
+          };
+          pipeline.setApprovalPolicies(prepared.approvalPolicies);
+          const pushed: InboundEvent[] = [];
+          const event = {
+            type: "tool_action_request",
+            kind: "approval",
+            callId: "approval-1",
+            name: "danger",
+            args: {},
+            message: "Confirm action",
+            agentId: "cloud",
+            loopId: turn.id,
+            turnId: `${turn.id}:turn:0`,
+            turnIndex: 0,
+          } as Extract<OutboundEvent, { type: "tool_action_request" }>;
+          const suspended = await createExecutor("approval-test")["handleActionRequest"]({
+            event,
+            loop: { push: (value: InboundEvent) => pushed.push(value) } as never,
+            pipeline,
+            conversationId: conversation.id,
+            turnId: turn.id,
+            prepared,
+            approvalContext,
+            allowRememberedApprovals,
+            rememberableCapabilityApprovals: new Map(),
+            capabilityActionReviews: new Map(),
+          });
+          expect(suspended).toBe(background);
+          if (!background) {
+            expect(pushed).toEqual([{ type: "approval_response", callId: "approval-1", approved: true }]);
+            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+          } else {
+            expect(pushed).toHaveLength(0);
+            expect(pipeline.blocks).toMatchObject([{ kind: "tool", approval: { allowAlways: false } }]);
+            expect(
+              await aiConversations.getPendingTurnAction({ conversationId: conversation.id, turnId: turn.id, callId: "approval-1" }),
+            ).toMatchObject({ allowAlways: false });
+            // A pre-upgrade pending record cannot restore Always Allow through a forged response.
+            await sql`UPDATE ai.pending_actions SET allow_always = true WHERE turn_id = ${turn.id}::uuid`;
+            expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toMatchObject([
+              { allowAlways: false },
+            ]);
+            expect(
+              await submitAiTurnAction({
+                conversationId: conversation.id,
+                turnId: turn.id,
+                callId: "approval-1",
+                action: { type: "approval_response", approved: true, remember: "always" },
+                toolApprovalContext: approvalContext,
+              }),
+            ).toMatchObject({ ok: false, status: 400 });
+          }
+        } finally {
+          await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+        }
+      }
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("runs a chat turn end to end: claim, stream, persist, finish", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

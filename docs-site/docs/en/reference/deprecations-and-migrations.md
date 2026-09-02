@@ -5,10 +5,56 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 # Deprecations and migrations
+
+## Identity authority rollout prerequisites
+
+Deploy Core's purpose-specific session and invocation JWKS endpoints before
+their consumers. Every Core replica behind the configured JWKS origin must
+support them, including when Core is itself a consumer. Mixed old/new endpoint
+pools can fail on cold caches. Keep all issuance modes in `legacy` until the
+corresponding consumers are compatible. Upgrade every OAuth writer to the
+database-gate-aware version before enabling Core OAuth issuance. See the
+network, database, clock, and rollout requirements in
+[Runtime configuration](/en/docs/operations/runtime-configuration).
+
+The public gateway now rejects HTTP and WebSocket paths containing an
+`_internal` segment. Broker callers must use the private Core origin. This is
+an ingress boundary, not a substitute for workload authentication.
+
+## Confirmed-only mandate coordinates require a coordinated cutover
+
+The mandate uniqueness index now covers confirmed active or paused rows only.
+This prevents pending registrations from reserving another workload's identity.
+The previous targeted `ON CONFLICT` statement cannot run against that new
+index and fails with PostgreSQL `42P10`. This schema change is not compatible
+with old mandate-writing processes.
+
+Before starting a Core version that migrates this index:
+
+1. stop mandate-writing Core and application processes, including background
+   workers and separately deployed applications using the old Cloud package;
+2. update every writer to the version using `ON CONFLICT DO NOTHING`;
+3. start updated Core to migrate, then start the updated application writers;
+4. verify interactive creation, pending confirmation, and background delivery
+   before restoring workload creation traffic.
+
+Do not restart old mandate writers against the new schema. An operator needing
+a rolling upgrade must first deploy a compatibility release that changes only
+the insert conflict handling on every writer, then deploy the index migration.
+Keep the existing session and OAuth compatibility windows; this coordinated
+mandate cutover does not require discarding user credentials.
+
+## Widget response validation and budgets
+
+Widget responses remain extensible: unknown fields are stripped. Safe relative
+links and absolute HTTP(S) links remain accepted, while active schemes and
+oversized or malformed payloads are rejected. Dashboard runs eight requests at
+a time with 500 ms per started widget and a page budget derived from the number
+of waves. See [Dashboard widgets](/en/docs/platform/dashboard-widgets).
 
 ## Browser sessions move from Valkey to JWT families
 

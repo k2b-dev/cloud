@@ -20,11 +20,20 @@ const WidgetTextSchema = z.string().max(10_000);
 const WidgetLabelSchema = z.string().max(500);
 const WidgetIconSchema = z.string().max(120);
 const WidgetClassSchema = z.string().max(500);
+const isSafeWidgetHref = (value: string): boolean => {
+  if (/[\\\u0000-\u001f\u007f-\u009f]/u.test(value)) return false;
+  try {
+    const url = new URL(value, "https://cloud.invalid");
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+};
 const WidgetHrefSchema = z
   .string()
   .min(1)
   .max(2048)
-  .regex(/^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/, "Widget links must be root-relative same-origin Cloud paths");
+  .refine(isSafeWidgetHref, "Widget links must be relative paths or HTTP(S) URLs without control characters or backslashes");
 
 export const WidgetToneSchema = z.enum(["emerald", "amber", "red", "blue", "zinc"]);
 export type WidgetTone = z.infer<typeof WidgetToneSchema>;
@@ -47,7 +56,7 @@ export const WidgetAccentSchema = z
     icon: WidgetIconSchema,
     text: WidgetLabelSchema.optional(),
   })
-  .strict();
+  .strip();
 
 export type WidgetAccent = z.infer<typeof WidgetAccentSchema>;
 
@@ -61,7 +70,7 @@ export const WidgetStatBlockSchema = z
     accent: WidgetAccentSchema.optional(),
     grow: z.boolean().optional(),
   })
-  .strict();
+  .strip();
 export type WidgetStatBlock = z.infer<typeof WidgetStatBlockSchema>;
 
 export const WidgetListItemSchema = z
@@ -73,7 +82,7 @@ export const WidgetListItemSchema = z
     meta: WidgetLabelSchema.optional(),
     href: WidgetHrefSchema.optional(),
   })
-  .strict();
+  .strip();
 export type WidgetListItem = z.infer<typeof WidgetListItemSchema>;
 
 export const WidgetListBlockSchema = z
@@ -83,7 +92,7 @@ export const WidgetListBlockSchema = z
     emptyMessage: WidgetTextSchema.optional(),
     grow: z.boolean().optional(),
   })
-  .strict();
+  .strip();
 export type WidgetListBlock = z.infer<typeof WidgetListBlockSchema>;
 
 export const WidgetStatusBlockSchema = z
@@ -95,7 +104,7 @@ export const WidgetStatusBlockSchema = z
     icon: WidgetIconSchema.optional(),
     grow: z.boolean().optional(),
   })
-  .strict();
+  .strip();
 export type WidgetStatusBlock = z.infer<typeof WidgetStatusBlockSchema>;
 
 export const WidgetPillSchema = z
@@ -105,7 +114,7 @@ export const WidgetPillSchema = z
     tone: WidgetToneSchema.optional(),
     href: WidgetHrefSchema.optional(),
   })
-  .strict();
+  .strip();
 export type WidgetPill = z.infer<typeof WidgetPillSchema>;
 
 export const WidgetPillsBlockSchema = z
@@ -114,7 +123,7 @@ export const WidgetPillsBlockSchema = z
     pills: z.array(WidgetPillSchema).max(50),
     grow: z.boolean().optional(),
   })
-  .strict();
+  .strip();
 export type WidgetPillsBlock = z.infer<typeof WidgetPillsBlockSchema>;
 
 /**
@@ -128,7 +137,7 @@ export const WidgetPlaceholderBlockSchema = z
     description: WidgetTextSchema.optional(),
     icon: WidgetIconSchema.optional(),
   })
-  .strict();
+  .strip();
 export type WidgetPlaceholderBlock = z.infer<typeof WidgetPlaceholderBlockSchema>;
 
 /**
@@ -143,7 +152,7 @@ export const WidgetHeroBlockSchema = z
     icon: WidgetIconSchema.optional(),
     tone: WidgetToneSchema.optional(),
   })
-  .strict();
+  .strip();
 export type WidgetHeroBlock = z.infer<typeof WidgetHeroBlockSchema>;
 
 /** Discriminated union of every block type the dashboard can render. */
@@ -170,5 +179,5 @@ export const WidgetResponseSchema = z
     meta: WidgetLabelSchema.optional(),
     blocks: z.array(WidgetBlockSchema).max(24),
   })
-  .strict();
+  .strip();
 export type WidgetResponse = z.infer<typeof WidgetResponseSchema>;

@@ -156,7 +156,9 @@ publish. Add other Queries for app-specific list, filter, lookup, or exhaustive
 traversal semantics when they have a stable cross-client use.
 
 Cloud ranks results by app-provided priority and title after merging providers.
-One provider failure does not fail the complete search. Log provider failures
+One provider failure does not fail the complete search: successful providers
+still return partial results with HTTP 200. A shared registry or invocation
+signer failure returns HTTP 503, not a successful empty result. Log provider failures
 with [structured logging](/en/docs/platform/logging); the application's domain
 database remains the source of truth.
 

@@ -161,7 +161,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         400: jsonResponse(ErrorResponseSchema, "Invalid query"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "User-backed actor required"),
-        503: jsonResponse(ErrorResponseSchema, "Capability registry unavailable"),
+        503: jsonResponse(ErrorResponseSchema, "Capability registry or invocation authority unavailable"),
       },
     }),
     v("query", SearchQuerySchema),
@@ -231,31 +231,41 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
-      const signedInvocations =
-        useInvocation && invocationAuthority
-          ? await waitWithin(
-              (dependencies.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
-                Promise.all(
-                  startBounded(
-                    active,
-                    PROVIDER_CONCURRENCY,
-                    (provider) =>
-                      (dependencies.signInvocation ?? signInvocationToken)({
-                        targetAppId: provider.appId,
-                        callingAppId: "core",
-                        operation: searchInvocationOperation,
-                        schemaHash: provider.schemaHash,
-                        authority: invocationAuthority,
-                        requestId: c.req.header("x-request-id")?.slice(0, 200),
-                        signer,
-                      }),
-                    signingSignal,
-                  ),
+      let signedInvocations: PromiseSettledResult<Awaited<ReturnType<typeof signInvocationToken>>>[] | null = null;
+      try {
+        if (useInvocation && invocationAuthority && active.length > 0) {
+          signedInvocations = await waitWithin(
+            (dependencies.withActiveSigner ?? withActiveIdentitySigner)("invocation", (signer) =>
+              Promise.all(
+                startBounded(
+                  active,
+                  PROVIDER_CONCURRENCY,
+                  (provider) =>
+                    (dependencies.signInvocation ?? signInvocationToken)({
+                      targetAppId: provider.appId,
+                      callingAppId: "core",
+                      operation: searchInvocationOperation,
+                      schemaHash: provider.schemaHash,
+                      authority: invocationAuthority,
+                      requestId: c.req.header("x-request-id")?.slice(0, 200),
+                      signer,
+                    }),
+                  signingSignal,
                 ),
               ),
-              signingSignal,
-            ).catch((reason) => active.map((): PromiseRejectedResult => ({ status: "rejected", reason })))
-          : null;
+            ),
+            signingSignal,
+          );
+        }
+      } catch {
+        log.warn("Search invocation authority unavailable", {
+          reason: signingSignal.aborted ? "signing_deadline" : "signing_guard_failed",
+        });
+        return c.json(
+          { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Search invocation authority is currently unavailable" },
+          503,
+        );
+      }
       // One request-wide budget keeps latency flat as the number of apps grows.
       // Workers that have not started when the deadline expires fail fast on
       // the already-aborted signal instead of opening a fresh timeout window.

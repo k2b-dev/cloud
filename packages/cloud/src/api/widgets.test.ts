@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import type { DashboardWidget } from "../_internal/registry";
@@ -188,7 +188,7 @@ describe("Core widget proxy", () => {
 
   test("rejects unsafe links and oversized bodies instead of forwarding them", async () => {
     const providers = [
-      () => Response.json({ title: "Unsafe", href: "https://evil.example", blocks: [] }),
+      () => Response.json({ title: "Unsafe", href: "javascript:alert(1)", blocks: [] }),
       () => new Response(JSON.stringify({ title: "Huge", blocks: [], padding: "x".repeat(140 * 1024) })),
     ];
     for (const provider of providers) {
@@ -212,5 +212,60 @@ describe("Core widget proxy", () => {
       expect(response.status).toBe(504);
       expect(await response.json()).toEqual({ message: "Widget deadline exceeded" });
     });
+  });
+
+  test("preserves safe external links while stripping provider extension fields", async () => {
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [widget],
+      fetch: async () => Response.json({ title: "Weather", href: "https://weather.example/forecast", blocks: [], extension: "ignored" }),
+    });
+    const response = await routes.request("/widgets/v1/weather/current");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ title: "Weather", href: "https://weather.example/forecast", blocks: [] });
+  });
+
+  test("logs bounded rejection reasons without provider bodies or thrown error details", async () => {
+    const warnings: unknown[][] = [];
+    const warn = spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args);
+    });
+    try {
+      const routes = createWidgetRoutes({
+        authenticate,
+        listWidgets: async () => [widget],
+        fetch: async () => Response.json({ title: "Private provider payload", blocks: [{ kind: "unknown" }] }),
+      });
+      expect((await routes.request("/widgets/v1/weather/current")).status).toBe(502);
+      expect(warnings).toEqual([
+        [
+          "[widgets]",
+          "Widget proxy rejected response",
+          {
+            appId: "weather",
+            widgetId: "current",
+            phase: "response",
+            reason: "invalid_schema",
+          },
+        ],
+      ]);
+      expect(JSON.stringify(warnings)).not.toContain("Private provider payload");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("preserves timeout classification for provider TimeoutError and HTTP 504", async () => {
+    for (const fetch of [
+      async () => {
+        throw new DOMException("private timeout detail", "TimeoutError");
+      },
+      async () => new Response("private timeout detail", { status: 504 }),
+    ]) {
+      const routes = createWidgetRoutes({ authenticate, listWidgets: async () => [widget], fetch });
+      const response = await routes.request("/widgets/v1/weather/current");
+      expect(response.status).toBe(504);
+      expect(await response.json()).toEqual({ message: "Widget deadline exceeded" });
+    }
   });
 });

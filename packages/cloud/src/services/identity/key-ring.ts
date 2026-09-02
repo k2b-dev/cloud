@@ -369,7 +369,7 @@ export const revokeIdentitySigningKey = async (params: { kid: string; reason: st
   if (rows.length > 0) {
     const purpose = rows[0]!.purpose;
     log.warn("Cloud identity signing key revoked", { kid: params.kid, purpose, reason });
-    if (purpose === "session" || purpose === "invocation") await prepareIdentitySigner(purpose);
+    await prepareIdentitySigner(purpose);
   }
   return rows.length > 0;
 };

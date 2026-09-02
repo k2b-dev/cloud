@@ -20,6 +20,8 @@ export {
 export type MandateState = "active" | "paused" | "revoked";
 export type MandateSubject = { type: "user"; id: string } | { type: "service_account"; id: string };
 export const MANDATE_CONFIRMATION_TTL_MS = 15 * 60 * 1_000;
+/** One maximum-size provisioning page may await confirmation per creator. */
+export const MANDATE_MAX_PENDING_PER_USER = 100;
 
 export type Mandate = {
   id: string;
@@ -306,6 +308,11 @@ const changedRow = async (
   return fail(err.conflict("Mandate changed; read it and retry"));
 };
 
+const lockWorkload = async (ownerAppId: string, workloadType: string, workloadId: string, db: SQL): Promise<void> => {
+  const coordinate = JSON.stringify([ownerAppId, workloadType, workloadId]);
+  await db`SELECT pg_advisory_xact_lock(hashtextextended(${"mandate-workload:" + coordinate}, 0))`;
+};
+
 const createMandateInDb = async (
   input: {
     authority: MandateCreateAuthority;
@@ -336,6 +343,26 @@ const createMandateInDb = async (
   }
   if (!(await validSubject(input.subject, db))) return fail(err.forbidden("Mandate subject is not active"));
   const ownerConfirmation = input.confirmation === "owner";
+  if (ownerConfirmation) {
+    // Serialize quota decisions across Core replicas; expired registrations do
+    // not consume capacity while the bounded orphan reconciler catches up.
+    await db`SELECT pg_advisory_xact_lock(hashtextextended(${"mandate-pending:" + authorityUserId}, 0))`;
+    const [pending] = await db<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM (
+        SELECT 1 FROM auth.mandates
+        WHERE created_by_user_id = ${authorityUserId}::uuid
+          AND confirmed_at IS NULL AND state IN ('active', 'paused')
+          AND confirmation_deadline > now()
+          AND (expires_at IS NULL OR expires_at > now())
+        LIMIT ${MANDATE_MAX_PENDING_PER_USER}
+      ) pending
+    `;
+    if ((pending?.count ?? 0) >= MANDATE_MAX_PENDING_PER_USER) {
+      return fail(err.conflict("Pending mandate limit reached; confirm or revoke an existing registration"));
+    }
+  } else {
+    await lockWorkload(ownerAppId.data, workloadType.data, workloadId.data, db);
+  }
   const confirmationTtlSeconds = MANDATE_CONFIRMATION_TTL_MS / 1_000;
   const [row] = await db<MandateRow[]>`
     INSERT INTO auth.mandates (
@@ -352,7 +379,7 @@ const createMandateInDb = async (
       CASE WHEN ${ownerConfirmation} THEN now() + (${confirmationTtlSeconds} * interval '1 second') ELSE NULL END,
       ${input.authority.kind === "system" ? null : input.authority.userId}::uuid
     )
-    ON CONFLICT (owner_app_id, workload_type, workload_id) WHERE state IN ('active', 'paused') DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING *
   `;
   return row ? ok(mapMandate(row)) : fail(err.conflict("Mandate workload"));
@@ -437,12 +464,23 @@ const confirmMandateInDb = async (
   input: { mandateId: string; expectedRevision: number; authority: MandateWorkloadAuthority },
   db: SQL,
 ): Promise<Result<Mandate>> => {
-  const existing = await load(input.mandateId, db);
+  let existing = await load(input.mandateId, db);
   if (!existing) return fail(err.notFound("Mandate"));
   if (existing.ownerAppId !== input.authority.ownerAppId) return fail(err.forbidden("Cannot confirm this mandate"));
+  await lockWorkload(existing.ownerAppId, existing.workloadType, existing.workloadId, db);
+  existing = await load(input.mandateId, db);
+  if (!existing) return fail(err.notFound("Mandate"));
   if (existing.state === "revoked") return fail(err.conflict("Mandate is revoked"));
   if (existing.revision !== input.expectedRevision) return fail(err.conflict("Mandate revision changed"));
   if (existing.confirmedAt) return ok(existing);
+  const [claimed] = await db<{ id: string }[]>`
+    SELECT id FROM auth.mandates
+    WHERE owner_app_id = ${existing.ownerAppId}
+      AND workload_type = ${existing.workloadType} AND workload_id = ${existing.workloadId}
+      AND confirmed_at IS NOT NULL AND state IN ('active', 'paused')
+      AND id <> ${existing.id}::uuid
+  `;
+  if (claimed) return fail(err.conflict("Mandate workload already has confirmed authority"));
   const [row] = await db<MandateRow[]>`
     UPDATE auth.mandates
     SET confirmed_at = now(), confirmation_deadline = NULL, updated_at = now()

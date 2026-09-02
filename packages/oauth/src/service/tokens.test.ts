@@ -873,7 +873,7 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
-  test("refresh issuance reservations finalize once and fail closed on known or unknown failure", async () => {
+  test("refresh issuance reservations release unclaimed failures and fail closed after issuance", async () => {
     const userId = await insertUser();
     let clientId: string | null = null;
     const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
@@ -913,8 +913,7 @@ suite("OAuth resource access tokens", () => {
       const [knownFamily] = await sql<{ status: string; revoked_reason: string | null }[]>`
         SELECT status, revoked_reason FROM oauth.refresh_token_families WHERE id = ${knownFailure.familyId}::uuid
       `;
-      expect(knownFamily).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_failed" });
-      expect((await oauth.refreshTokens.rotate(knownFailure.refreshToken, created.data)).ok).toBe(false);
+      expect(knownFamily).toMatchObject({ status: "active", revoked_reason: null });
 
       const successful = await createGrant();
       process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
@@ -1663,7 +1662,7 @@ suite("OAuth resource access tokens", () => {
     expect(await invalidResource.json()).toMatchObject({ error: "invalid_target" });
   });
 
-  test("maps definite Core grant denial to invalid_grant while unknown refresh outcomes stay fail closed", async () => {
+  test("preserves public authority errors while releasing refresh attempts proven unclaimed", async () => {
     const userId = await insertUser();
     const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
     const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
@@ -1754,10 +1753,10 @@ suite("OAuth resource access tokens", () => {
       const unknownResponse = await refreshRequest(unknownRefresh.refreshToken);
       expect(unknownResponse.status).toBe(500);
       expect(await unknownResponse.json()).toMatchObject({ error: "server_error" });
-      const [revokedFamily] = await sql<{ status: string }[]>`
+      const [unclaimedFamily] = await sql<{ status: string }[]>`
         SELECT status FROM oauth.refresh_token_families WHERE id = ${unknownRefresh.familyId}::uuid
       `;
-      expect(revokedFamily?.status).toBe("revoked");
+      expect(unclaimedFamily?.status).toBe("active");
     } finally {
       globalThis.fetch = originalFetch;
       await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;

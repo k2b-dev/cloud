@@ -12,6 +12,24 @@ afterEach(() => {
 });
 
 describe("server capability client", () => {
+  test("does not send workload authority to a public-origin fallback", async () => {
+    delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    let fetched = false;
+    globalThis.fetch = Object.assign(
+      async () => {
+        fetched = true;
+        return Response.json({ data: {} });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const result = await invokeCapability(
+      { appId: "spaces", capabilityId: "space.read", kind: "query", input: {} },
+      { authorization: "Bearer cld_test", mandate: { id: crypto.randomUUID(), revision: 1, callingAppId: "mail" } },
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "APP_UNAVAILABLE", status: 503 } });
+    expect(fetched).toBe(false);
+  });
+
   test("sends the source credential and invocation metadata only to the configured Core origin", async () => {
     process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000/private/path";
     const forwarded: Request[] = [];

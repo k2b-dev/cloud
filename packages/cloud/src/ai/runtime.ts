@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-import { type AiToolApprovalContext, rememberAiToolApproval } from "./approvals";
+import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { startAiInvalidationRuntime, stopAiInvalidationRuntime } from "./live-outbox";
@@ -262,8 +262,12 @@ const actionMatchesResolvedEvent = (action: AiTurnActionInput, event: InboundEve
   return event.type === "tool_result" && isDeepStrictEqual(event.result, action.result);
 };
 
-export const listPendingAiTurnActions = (input: { conversationId: string; turnId: string }): Promise<AiPendingTurnAction[]> =>
-  aiConversations.listPendingTurnActions(input);
+export const listPendingAiTurnActions = async (input: { conversationId: string; turnId: string }): Promise<AiPendingTurnAction[]> => {
+  const [actions, config] = await Promise.all([aiConversations.listPendingTurnActions(input), aiConversations.getTurnRunConfig(input)]);
+  return aiTurnAllowsRememberedApprovals(config)
+    ? actions
+    : actions.map((action) => (action.type === "approval_request" ? { ...action, allowAlways: false } : action));
+};
 
 export const submitAiTurnAction = async (input: {
   conversationId: string;
@@ -289,7 +293,8 @@ export const submitAiTurnAction = async (input: {
   if (input.action.type === "approval_response") {
     if (pending.kind === "client_tool") return { ok: false, status: 400, message: "Frontend tool requests require a tool result." };
     if (input.action.remember === "always") {
-      if (!input.action.approved || !pending.allowAlways || !input.toolApprovalContext) {
+      const config = await aiConversations.getTurnRunConfig(input);
+      if (!input.action.approved || !pending.allowAlways || !input.toolApprovalContext || !aiTurnAllowsRememberedApprovals(config)) {
         return { ok: false, status: 400, message: "This approval cannot be remembered." };
       }
       await rememberAiToolApproval(input.toolApprovalContext, { toolName: pending.name, approvalScope: pending.approvalScope });

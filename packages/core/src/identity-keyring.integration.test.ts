@@ -58,7 +58,7 @@ suite("Core identity key ring", () => {
           index_state.indexrelid::oid::int AS oid,
           pg_get_indexdef(index_state.indexrelid) AS definition
         FROM pg_index AS index_state
-        WHERE index_state.indexrelid = 'auth.uq_mandates_live_owner_workload'::regclass
+        WHERE index_state.indexrelid = 'auth.uq_mandates_confirmed_owner_workload'::regclass
       `;
       return index;
     };
@@ -68,7 +68,7 @@ suite("Core identity key ring", () => {
     const after = await readIndex();
 
     expect(after).toEqual(before);
-    expect(after?.definition).toContain("WHERE (state = ANY (ARRAY['active'::text, 'paused'::text]))");
+    expect(after?.definition).toContain("confirmed_at IS NOT NULL");
   }, 30_000);
 
   test("invalidates a replica-stale signer and retries once with its replacement", async () => {
@@ -130,20 +130,20 @@ suite("Core identity key ring", () => {
     await callbackEntered;
 
     let revocationSettled = false;
-    const revocation = sql`
-      UPDATE auth.signing_keys
-      SET state = 'revoked', revoked_at = now(), revoke_reason = 'FOR SHARE integration test'
-      WHERE kid = ${active.kid}
-    `.then(() => {
+    const revocation = revokeIdentitySigningKey({ kid: active.kid, reason: "FOR SHARE integration test" }).then((revoked) => {
       revocationSettled = true;
+      return revoked;
     });
     await Bun.sleep(25);
     expect(revocationSettled).toBeFalse();
 
     release();
     expect(await issuance).toBe(active.kid);
-    await revocation;
+    expect(await revocation).toBeTrue();
     expect(revocationSettled).toBeTrue();
+    const replacements = (await getIdentitySigningKeyStatus()).filter((key) => key.purpose === "oauth" && key.state === "active");
+    expect(replacements).toHaveLength(1);
+    expect(replacements[0]!.kid).not.toBe(active.kid);
   });
 
   test("rotates concurrently, fails closed, revokes, cleans up, and rolling-rewraps", async () => {

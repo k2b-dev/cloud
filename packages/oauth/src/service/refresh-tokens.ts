@@ -293,19 +293,19 @@ export const rotate = async (
       authorityGrant: reserved.authorityGrant,
     });
   } catch (error) {
-    if (error instanceof SafeRefreshIssuanceRejectionError) {
-      const released = await sql<{ id: string }[]>`
-        UPDATE oauth.refresh_tokens
-        SET status = 'active', authority_nonce = NULL, authority_reserved_at = NULL,
-          authority_scopes = NULL, authority_audiences = NULL, authority_resource = NULL
-        WHERE id = ${reserved.tokenId}::uuid
-          AND status = 'issuing'
-          AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
-          AND authority_issued_at IS NULL
-        RETURNING id
-      `;
-      if (released.length === 1) throw error;
-    }
+    // The database, not the transport error, decides whether issuance happened.
+    // Clearing the nonce fences a late Core claim; a committed claim prevents release.
+    const released = await sql<{ id: string }[]>`
+      UPDATE oauth.refresh_tokens
+      SET status = 'active', authority_nonce = NULL, authority_reserved_at = NULL,
+        authority_scopes = NULL, authority_audiences = NULL, authority_resource = NULL
+      WHERE id = ${reserved.tokenId}::uuid
+        AND status = 'issuing'
+        AND authority_nonce = ${reserved.authorityGrant.nonce}::uuid
+        AND authority_issued_at IS NULL
+      RETURNING id
+    `;
+    if (released.length === 1) throw error;
     await revokeFamily(reserved.familyId, "authority_issuance_failed");
     throw error;
   }

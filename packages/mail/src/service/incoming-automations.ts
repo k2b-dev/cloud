@@ -435,13 +435,27 @@ const migrateLegacyAutomationAuthority = async (automationId: string): Promise<"
 export const migrateLegacyIncomingAutomationAuthorities = async (
   limit = AUTHORITY_MIGRATION_LIMIT,
 ): Promise<{ migrated: number; retired: number; failed: number; remaining: number }> => {
-  const boundedLimit = Math.max(1, Math.min(AUTHORITY_MIGRATION_LIMIT, Math.floor(limit)));
+  const boundedLimit = Number.isFinite(limit)
+    ? Math.max(1, Math.min(AUTHORITY_MIGRATION_LIMIT, Math.floor(limit)))
+    : AUTHORITY_MIGRATION_LIMIT;
+  // Commit the claim before migrating: failures and process restarts retain their
+  // place behind untouched rows, and abandoned claims become retryable next tick.
   const rows = await sql<{ id: string }[]>`
-    SELECT id
-    FROM mail.incoming_automations
-    WHERE integration_credential_id IS NOT NULL
-    ORDER BY created_at, id
-    LIMIT ${boundedLimit}
+    WITH candidates AS (
+      SELECT id
+      FROM mail.incoming_automations
+      WHERE integration_credential_id IS NOT NULL
+        AND (authority_migration_attempted_at IS NULL
+          OR authority_migration_attempted_at <= now() - (${AUTHORITY_MIGRATION_INTERVAL_MS} * interval '1 millisecond'))
+      ORDER BY authority_migration_attempted_at NULLS FIRST, created_at, id
+      LIMIT ${boundedLimit}
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE mail.incoming_automations automation
+    SET authority_migration_attempted_at = now()
+    FROM candidates
+    WHERE automation.id = candidates.id
+    RETURNING automation.id
   `;
   let migrated = 0;
   let retired = 0;

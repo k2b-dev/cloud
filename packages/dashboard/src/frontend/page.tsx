@@ -40,8 +40,10 @@ import DashboardControls, { DashboardEditButton } from "./EditDashboard.island";
 import { type DashboardMessages, dashboardMessages } from "./messages";
 import {
   DASHBOARD_WIDGET_DEADLINE_MS,
+  dashboardWidgetPageBudgetMs,
   dashboardWidgetProxyUrl,
   dashboardWidgetRequestHeaders,
+  isDashboardWidgetTimeout,
   mapDashboardWidgetsBounded,
 } from "./widget-request";
 
@@ -113,6 +115,7 @@ const fetchWidget = async (
   const startedAt = performance.now();
 
   try {
+    signal.throwIfAborted();
     const resp = await fetch(dashboardWidgetProxyUrl(coreOrigin, widget.appId, widget.widgetId), {
       headers: dashboardWidgetRequestHeaders(cookie, locale),
       signal,
@@ -132,7 +135,7 @@ const fetchWidget = async (
       return {
         source: widget,
         status: "error",
-        data: widgetErrorResponse(widget, t.widgetUnavailable, t.widgetEndpointError),
+        data: widgetErrorResponse(widget, t.widgetUnavailable, resp.status === 504 ? t.widgetTimeout : t.widgetEndpointError),
       };
     }
     const data = WidgetResponseSchema.safeParse(await resp.json());
@@ -140,7 +143,7 @@ const fetchWidget = async (
     return { source: widget, status: 200, data: data.data };
   } catch (err) {
     const durationMs = Math.round(performance.now() - startedAt);
-    const isTimeout = err instanceof Error && err.name === "AbortError";
+    const isTimeout = isDashboardWidgetTimeout(err);
     logSlowWidget(widget, durationMs, isTimeout ? "timeout" : "error");
     log.warn("Widget fetch threw", {
       appId: widget.appId,
@@ -302,8 +305,9 @@ export default ssr<AuthContext>(async (c) => {
       presentation: w.presentation,
     }));
 
-  // Keep both connection fan-out and total SSR latency bounded as app count grows.
-  const widgetDeadline = AbortSignal.timeout(DASHBOARD_WIDGET_DEADLINE_MS);
+  // Give each started widget its own budget; the page allows one budget per
+  // worker wave and still stops queued work when the browser request aborts.
+  const widgetDeadline = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(dashboardWidgetPageBudgetMs(widgetsToFetch.length))]);
   const results = await mapDashboardWidgetsBounded(widgetsToFetch, widgetDeadline, (widget, signal) =>
     fetchWidget(widget, cookie, locale, t, signal, coreOrigin),
   );

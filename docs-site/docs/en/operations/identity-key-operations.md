@@ -58,6 +58,11 @@ hairpin routing. The token issuer remains the public HTTPS Cloud origin; only
 the public-key transport uses the private address. A warm verifier can tolerate
 a brief Core outage.
 
+Private HTTP requires a trusted transport network; it is not secure merely
+because a JWKS contains public keys. Follow the network, Core-first rollout,
+and clock requirements in
+[Runtime configuration](/en/docs/operations/runtime-configuration).
+
 Invocation JWTs have a nominal 30-second lifetime and a dedicated two-second
 clock tolerance. A correctly issued token can therefore remain acceptable for
 at most 32 seconds after its `iat`; browser sessions retain their separate

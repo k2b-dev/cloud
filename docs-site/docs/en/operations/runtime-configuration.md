@@ -28,7 +28,7 @@ encrypted with `APP_SECRET`.
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's compatible JWKS; does not change the public issuer |
-| `CLOUD_CORE_INTERNAL_ORIGIN` | Optional private Core origin used by application server helpers; defaults to the public Cloud origin |
+| `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
 | `CLOUD_SESSION_ISSUANCE_MODE` | Core session issuance gate: `legacy` or `jwt`; defaults to `legacy` |
 | `CLOUD_INVOCATION_ISSUANCE_MODE` | Core internal-dispatch gate: `legacy` or `jwt`; defaults to `legacy` during rolling migration |
 | `CLOUD_OAUTH_ISSUANCE_MODE` | OAuth signing gate: `legacy` or `core`; defaults to `legacy` during rolling migration |
@@ -65,8 +65,21 @@ and compatible legacy OAuth keys during migration. Applications cache that
 public set locally for at most five minutes; the warm verification path uses no
 signing-key database query.
 
-Set `CLOUD_CORE_INTERNAL_ORIGIN` to the same private Core service origin when
-applications use server-side capability helpers. The helper sends the caller
+Private HTTP origins assume a network that prevents traffic interception and
+modification, such as a trusted single-host container bridge. Public keys are
+not secret, but substituted JWKS keys can defeat authentication. Expose only
+the gateway publicly. Across hosts or untrusted networks, use authenticated
+HTTPS or an equivalently protected transport for both JWKS and broker traffic.
+An internal DNS name alone does not provide that protection.
+
+Core and OAuth currently require the same PostgreSQL database for identity
+state and one-shot grant claims. Separate databases are not supported.
+
+Set `CLOUD_CORE_INTERNAL_ORIGIN` to the private Core service origin when
+applications use workload credentials or mandates. The gateway rejects paths
+containing an `_internal` segment for HTTP and WebSocket requests; background
+helpers fail closed when their private origin is missing. Interactive helpers
+can still use the public capability route. The helper sends the caller
 credential only to Core, where it is resolved once and exchanged for a
 target-bound invocation. The target application never receives the source
 cookie, OAuth token, or API key.
@@ -89,6 +102,14 @@ or cannot decrypt and validate the active private/public key pairs. Existing
 applications can continue verifying with public JWKS material and warm caches,
 but Core fails closed for new issuance.
 
+Deploy the purpose-specific session and invocation JWKS endpoints on Core
+before upgrading their consumers. Every replica behind the configured JWKS
+origin must serve both endpoints; a mixed pool with older Core replicas is not
+ready. Stage or drain old replicas before routing upgraded consumers, including
+Core itself, to that origin. Verify cold JWKS reads, not just warm-cache health.
+For rollback, restore compatible consumers before removing these endpoints.
+Current verifiers deliberately do not fall back to the combined identity JWKS.
+
 Keep `CLOUD_SESSION_ISSUANCE_MODE=legacy` while deploying the dual-read verifier
 to every application. Change only Core to `jwt` after the complete application
 fleet is compatible. This gate prevents a new Core instance from issuing a JWT
@@ -101,6 +122,9 @@ provider routes first, then change only Core to
 allows two additional seconds for clock skew. Keep the legacy mode only for the rolling
 upgrade; it is not a second long-term authorization model.
 
+Synchronize every host's clock, for example with NTP, and monitor drift well
+within the invocation verifier's two-second tolerance.
+
 For OAuth, deploy Core-key verification and the closed Core issuance endpoint
 before setting `CLOUD_OAUTH_ISSUANCE_MODE=core` on the OAuth app. OAuth first
 checks its app-bound workload credential and Core's active OAuth signer through
@@ -109,6 +133,11 @@ scrubs legacy private keys only after that check succeeds. Failure leaves the
 legacy state intact; after a successful cutover, updated replicas cannot resume
 legacy issuance from a local setting. Keep the legacy OAuth public keys
 available for their two-hour verification grace.
+Replace every old OAuth binary with a cutover-aware version before changing
+the mode: binaries predating the database issuance gate do not honor it.
+
+Before upgrading mandate writers, follow the coordinated schema cutover in
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
 For Mail incoming automations, deploy the mandate schema and Core broker first.
 Then provision Mail's `identity:invoke` app credential and set

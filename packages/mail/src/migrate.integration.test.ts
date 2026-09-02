@@ -8,6 +8,21 @@ const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
 
 suite("mail migrations", () => {
+  test("installs durable fair legacy-authority retry progress idempotently", async () => {
+    await migrate();
+    const [first] = await sql<{ oid: number }[]>`
+      SELECT 'mail.incoming_automations_legacy_authority_retry_idx'::regclass::oid::int AS oid
+    `;
+    await migrate();
+    const [shape] = await sql<{ oid: number; columns: number; applied: number }[]>`
+      SELECT 'mail.incoming_automations_legacy_authority_retry_idx'::regclass::oid::int AS oid,
+        (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'mail'
+          AND table_name = 'incoming_automations' AND column_name = 'authority_migration_attempted_at') AS columns,
+        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 123) AS applied
+    `;
+    expect(shape).toEqual({ oid: first!.oid, columns: 1, applied: 1 });
+  });
+
   test("installs versioned attachment extraction and source-aware search chunks", async () => {
     await migrate();
     await migrate();

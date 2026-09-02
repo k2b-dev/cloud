@@ -609,13 +609,13 @@ describe("global capability search", () => {
 
       try {
         const response = await routes.request("/search?q=needle");
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(503);
         expect(timeout).toHaveBeenCalledTimes(2);
         expect(timeout).toHaveBeenCalledWith(500);
         expect(timeout).toHaveBeenCalledWith(8_000);
         expect(signed).toBe(8);
         expect(fetched).toBe(0);
-        expect((await response.json()) as { count: number }).toMatchObject({ count: 0 });
+        expect(await response.json()).toMatchObject({ code: "APP_UNAVAILABLE" });
       } finally {
         timeout.mockRestore();
       }
@@ -647,14 +647,64 @@ describe("global capability search", () => {
 
       try {
         const response = await routes.request("/search?q=needle");
-        expect(response.status).toBe(200);
+        expect(response.status).toBe(503);
         expect(timeout).toHaveBeenCalledTimes(2);
         expect(signed).toBe(0);
         expect(fetched).toBe(0);
-        expect(await response.json()).toMatchObject({ count: 0 });
+        expect(await response.json()).toMatchObject({ code: "APP_UNAVAILABLE" });
       } finally {
         timeout.mockRestore();
       }
+    });
+  });
+
+  test("reports a global signing-guard failure as unavailable instead of an empty successful search", async () => {
+    await withInvocationMode("jwt", async () => {
+      let guardCalls = 0;
+      let fetched = false;
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [provider(1), provider(2)],
+        withActiveSigner: async () => {
+          guardCalls += 1;
+          throw new Error("private signing failure details");
+        },
+        fetch: async () => {
+          fetched = true;
+          return Response.json({ data: [] });
+        },
+      });
+      const response = await routes.request("/search?q=needle");
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ code: "APP_UNAVAILABLE", message: "Search invocation authority is currently unavailable" });
+      expect(guardCalls).toBe(1);
+      expect(fetched).toBeFalse();
+    });
+  });
+
+  test("retains partial results when one target-specific signing operation fails", async () => {
+    await withInvocationMode("jwt", async () => {
+      const fetched: string[] = [];
+      const routes = createSearchRoutes({
+        authenticate,
+        listCapabilities: async () => [provider(1), provider(2)],
+        withActiveSigner,
+        signInvocation: async (params) => {
+          if (params.targetAppId === "search-01") throw new Error("target signing failed");
+          return fakeInvocation(params);
+        },
+        fetch: async (url) => {
+          const appId = new URL(String(url)).hostname;
+          fetched.push(appId);
+          return Response.json({
+            data: [{ ref: { type: `${appId}.item`, id: "one" }, title: "Found", links: [{ rel: "open", href: `/app/${appId}` }] }],
+          });
+        },
+      });
+      const response = await routes.request("/search?q=needle");
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ count: 1, items: [{ appId: "search-02" }] });
+      expect(fetched).toEqual(["search-02"]);
     });
   });
 });

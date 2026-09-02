@@ -14,6 +14,7 @@
  * isn't lost during connection setup.
  */
 import type { ServerWebSocket } from "bun";
+import { isInternalPath } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
 const MAX_PENDING_FRAMES = 32;
@@ -92,6 +93,7 @@ export const tryUpgradeWebSocket = (
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
 ): Response | undefined => {
   const url = new URL(req.url);
+  if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
   const match = matchRoute(table, url.pathname);
   if (!match) {
     return new Response("WebSocket: no app registered for this path", { status: 502 });

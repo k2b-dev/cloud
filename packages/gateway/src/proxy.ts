@@ -1,5 +1,6 @@
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@valentinkolb/cloud/services";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
+import { isInternalPath } from "./request-boundary";
 import type { RouteTable } from "./trie";
 import { matchRoute } from "./trie";
 
@@ -97,6 +98,7 @@ export const proxyRequest = async (
   clientIp: string | null = null,
 ): Promise<Response> => {
   const url = new URL(req.url);
+  if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
   const start = performance.now();
   stats.totalRequests++;
 

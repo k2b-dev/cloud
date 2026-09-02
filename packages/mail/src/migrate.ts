@@ -3977,6 +3977,16 @@ const indexIncomingAutomationAuthorityMigration = async (db: SqlClient): Promise
   `;
 };
 
+const makeIncomingAutomationAuthorityMigrationFair = async (db: SqlClient): Promise<void> => {
+  await db`ALTER TABLE mail.incoming_automations ADD COLUMN authority_migration_attempted_at TIMESTAMPTZ`;
+  await db`
+    CREATE INDEX incoming_automations_legacy_authority_retry_idx
+    ON mail.incoming_automations (authority_migration_attempted_at NULLS FIRST, created_at, id)
+    WHERE integration_credential_id IS NOT NULL
+  `;
+  await db`DROP INDEX IF EXISTS mail.incoming_automations_legacy_authority_idx`;
+};
+
 const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   await db`
     CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(
@@ -4346,6 +4356,7 @@ const migrations: readonly MailMigration[] = [
   { version: 120, name: "incoming_automation_integration_credentials", run: addIncomingAutomationIntegrationCredentials },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
   { version: 122, name: "incoming_automation_authority_migration_index", run: indexIncomingAutomationAuthorityMigration },
+  { version: 123, name: "fair_incoming_automation_authority_migration", run: makeIncomingAutomationAuthorityMigrationFair },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

@@ -41,8 +41,9 @@ export type CapabilityCaller = {
   mandate?: { id: string; revision: number; callingAppId: string };
 };
 
-const coreOrigin = async (): Promise<string> => {
+const coreOrigin = async (internal = false): Promise<string> => {
   const configured = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();
+  if (internal && !configured) throw new Error("CLOUD_CORE_INTERNAL_ORIGIN is required for mandate-backed invocation");
   const origin = configured || publicCloudOrigin(await get<string>("app.url"));
   const url = new URL(origin);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("CLOUD_CORE_INTERNAL_ORIGIN must use http or https");
@@ -68,7 +69,7 @@ const callerRequest = async (
     headers.set("x-cloud-app-id", caller.mandate.callingAppId);
   }
   const signal = combineCapabilitySignals(caller.signal, invocationSignal);
-  return new Request(new URL(path, await coreOrigin()), { method: "POST", headers, signal });
+  return new Request(new URL(path, await coreOrigin(caller.mandate !== undefined)), { method: "POST", headers, signal });
 };
 
 const unavailable = (
