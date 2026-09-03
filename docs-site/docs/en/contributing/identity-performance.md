@@ -40,10 +40,17 @@ The output directory contains:
 - `environment.json`: image IDs, source revision, and topology;
 - `report.json`: raw samples, percentiles, query counts, stage timings, and the
   acceptance result. Incomplete runs are marked `completed: false` and cannot
-  establish acceptance.
+  establish acceptance. A failed Core HTTP request includes `failedRequest`
+  with the case, status, elapsed time, stage timings, I/O counts, and any
+  signer error class/code. Signer error messages and SQL contents are not recorded.
 
 Keep the artifacts from every measured run, including failures. Retain the
 working-tree diff alongside the source revision when testing uncommitted code.
+
+Container isolation does not reserve CPU time. Use a quiet host for acceptance;
+record other running workloads. Stopping a shared development stack requires
+maintainer approval and restoration of its previous running services afterward.
+Do not treat an HTTP error as a latency sample or retry it into a passing run.
 
 ## Understand the measurements
 

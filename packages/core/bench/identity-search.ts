@@ -156,6 +156,7 @@ const coreServer = Bun.serve({
 });
 
 const records: { passes: boolean }[] = [];
+let failedRequest: Record<string, unknown> | undefined;
 let completeReportWritten = false;
 let cacheWarmups = 0;
 let lastCacheWarmup = 0;
@@ -229,6 +230,7 @@ try {
       let peak = 0;
       let targetCalls = 0;
       let stages = { authentication: 0, guardedSigning: 0, signingBatch: 0 };
+      let signerFailure: { name: string; code?: string } | undefined;
       const authenticate = auth.requireRole("authenticated");
       activeTargets = new Map(
         entries.map((entry) => [
@@ -272,6 +274,14 @@ try {
               },
               options,
             );
+          } catch (error) {
+            // Keep error classification, not messages/SQL that could contain credentials.
+            const code = error instanceof Error && "code" in error ? error.code : undefined;
+            signerFailure = {
+              name: error instanceof Error ? error.name : "UnknownError",
+              ...(typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code) ? { code } : {}),
+            };
+            throw error;
           } finally {
             stages.guardedSigning = performance.now() - start;
           }
@@ -296,6 +306,7 @@ try {
         await warmCaches();
         process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
         stages = { authentication: 0, guardedSigning: 0, signingBatch: 0 };
+        signerFailure = undefined;
         counts = {};
         targetCalls = 0;
         peak = 0;
@@ -307,6 +318,19 @@ try {
         });
         const body = await response.json();
         const elapsed = performance.now() - start;
+        if (response.status !== 200) {
+          failedRequest = {
+            phase,
+            providers: providerCount,
+            mode,
+            measured,
+            status: response.status,
+            elapsedMs: elapsed,
+            stages,
+            counts,
+            signerFailure,
+          };
+        }
         assert.equal(response.status, 200);
         assert.equal(body.apps.length, providerCount);
         assert.equal(body.count, providerCount, "Every provider must produce a validated, merged result");
@@ -459,7 +483,11 @@ try {
   if (!completeReportWritten)
     await Bun.write(
       process.env.IDENTITY_BENCH_REPORT!,
-      JSON.stringify({ completed: false, passes: false, error: error instanceof Error ? error.message : String(error), records }, null, 2),
+      JSON.stringify(
+        { completed: false, passes: false, error: error instanceof Error ? error.message : String(error), failedRequest, records },
+        null,
+        2,
+      ),
     );
   throw error;
 } finally {
