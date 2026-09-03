@@ -43,6 +43,8 @@ The output directory contains:
   establish acceptance. A failed Core HTTP request includes `failedRequest`
   with the case, status, elapsed time, stage timings, I/O counts, and any
   signer error class/code. Signer error messages and SQL contents are not recorded.
+  The complete report also identifies Core/provider process IDs and records a
+  separate signing-guard failure/recovery probe.
 
 Keep the artifacts from every measured run, including failures. Retain the
 working-tree diff alongside the source revision when testing uncommitted code.
@@ -74,10 +76,17 @@ comparison, not a measurement of a historical release binary.
 
 Every provider must contribute one valid merged resource; an error or omitted
 provider cannot masquerade as a faster result. Provider concurrency remains
-bounded at eight. The benchmark uses fixed in-memory discovery and shared-process
-HTTP handlers, not separate deployed application processes. Real domain queries,
-gateway routing, production load, and cross-host network latency are outside its
-scope.
+bounded at eight. By default, Core and providers run in separate Bun processes
+(`IDENTITY_BENCH_TOPOLOGY=split`). All provider fixtures share one provider
+process and its SQL pool; this is not one deployed process per application.
+The provider process receives no identity-key encryption key. Both processes
+use the same PostgreSQL protocol meter and isolated Redis server.
+
+Discovery is fixed in memory. Real domain queries, gateway routing, production
+load, and cross-host network latency are outside this benchmark's scope.
+Provider configuration, telemetry snapshots, and cache warm-ups use loopback
+control requests outside the timed search. Every measured search still includes
+its complete authentication and provider work.
 
 This is explicitly a warm-cache check. It refreshes the real signer and runtime
 configuration caches outside timed requests every 30 seconds, before their
@@ -95,10 +104,12 @@ Use these modes to investigate a failure without changing production code:
 ```bash
 IDENTITY_BENCH_MODE=profile bun scripts/bench-identity.ts
 IDENTITY_BENCH_MODE=direct-postgres bun scripts/bench-identity.ts
+IDENTITY_BENCH_TOPOLOGY=shared bun scripts/bench-identity.ts
 ```
 
-`profile` writes a Bun CPU profile beside the report. Profiling itself affects
-timings. `direct-postgres` bypasses only the PostgreSQL protocol meter; it still
+`profile` writes a Bun CPU profile of the Core process beside the report; it
+does not profile a separate provider process. Profiling itself affects timings.
+`direct-postgres` bypasses only the PostgreSQL protocol meter; it still
 runs real authentication, key guards, signing, provider calls and Redis checks,
 but cannot assert PostgreSQL query counts. Compare it with a normal run on the
 same quiet host to assess the meter's contribution.
@@ -107,6 +118,18 @@ Both modes record `configuration.acceptanceEligible: false` and `passes: false`.
 A zero exit status means the diagnostic run completed its applicable correctness
 checks, not that performance was accepted. Normal measurement remains the default
 (`IDENTITY_BENCH_MODE=measure`). No mode changes the JWT algorithm or deadlines.
+
+`shared` runs the identical provider handlers in Core's process, reproducing
+the earlier topology. For a topology counterexperiment, fix the order before
+running, for example shared/split, split/shared, shared/split. Keep all six
+reports and compare each topology's three complete runs. Do not choose a
+topology or discard a run just because it produces a passing number.
+
+After the timed cases, the runner holds a conflicting lock on the active signing
+key. Search must return 503 without dispatching a provider. After releasing the
+lock and waiting for issuance to settle, another real JWT search must pass all
+normal result and I/O assertions. This probe is not a latency sample. It verifies
+fail-closed recovery, not the cause of an unrelated historical HTTP error.
 
 ## Apply the acceptance gate
 
@@ -121,6 +144,14 @@ outliers. A full normal measurement exits unsuccessfully when any case exceeds
 the bound or an I/O assertion fails. For acceptance, run three independent full runs on the
 same unchanged checkout and require all three to pass; never select only the
 best run. A failed run leaves the performance gate open.
+
+The bound concerns **additional latency compared with legacy**, not total search
+duration. A slow application alone does not explain a regression. A maintainer
+may approve a documented performance exception only when a controlled
+counterexperiment attributes the excess to something outside the JWT migration.
+Preserve the failed numerical result, the evidence, the approval, and a separate
+backlog item. An exception is not a benchmark pass and does not waive correctness,
+security, or the I/O requirements below. Uncertain attribution does not qualify.
 
 PostgreSQL protocol instrumentation checks every measured request. Redis client
 observers are independently checked against Redis server command counters;

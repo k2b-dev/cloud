@@ -134,6 +134,8 @@ try {
       `IDENTITY_BENCH_SAMPLES=${configuration.samples}`,
       "--env",
       `IDENTITY_BENCH_MODE=${configuration.mode}`,
+      "--env",
+      `IDENTITY_BENCH_TOPOLOGY=${configuration.topology}`,
       "--entrypoint",
       "bun",
       images.bun,

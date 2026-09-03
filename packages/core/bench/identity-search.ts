@@ -2,7 +2,6 @@ import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
-import type { AuthContext } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { benchmarkConfiguration } from "./configuration";
 import { compare, summary } from "./statistics";
@@ -94,7 +93,7 @@ const meteredUrl = new URL(source);
 meteredUrl.hostname = "127.0.0.1";
 meteredUrl.port = String(address.port);
 process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
-const { sql, redis, RedisClient } = await import("bun");
+const { sql, SQL, redis, RedisClient } = await import("bun");
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
   const raw = String(await telemetry.send("INFO", ["commandstats"]));
@@ -109,7 +108,7 @@ assert.equal(counts["pg.other"] ?? 0, metered ? 1 : 0, "The real default SQL han
 // Maintainer-only harness: exercise the actual internal router, not a new public API.
 const { createSearchRoutes } = await import("../../cloud/src/api/search");
 const { auth } = await import("@valentinkolb/cloud/server");
-const { requireInvocationOrLegacy } = await import("../../cloud/src/server/middleware/invocation");
+const { createProviderFixture, ProviderStats, providerResult } = await import("./provider-fixture");
 const identity = await import("@valentinkolb/cloud/services/identity");
 const { session } = await import("@valentinkolb/cloud/services/session");
 const { compileCapabilityManifest } = await import("@valentinkolb/cloud/capabilities/testing");
@@ -140,16 +139,21 @@ const jwks = Bun.serve({
   },
 });
 process.env.CLOUD_IDENTITY_JWKS_ORIGIN = jwks.url.origin;
-let activeTargets = new Map<string, Hono<AuthContext>>();
-const providerServer = Bun.serve({
-  hostname: "127.0.0.1",
-  port: 0,
-  fetch: (request) => {
-    const appId = new URL(request.url).pathname.split("/")[1]!;
-    const target = activeTargets.get(appId);
-    return target ? target.fetch(request) : new Response("Unknown benchmark provider", { status: 404 });
-  },
-});
+const localProvider = configuration.topology === "shared" ? createProviderFixture(false) : undefined;
+const providerServer = localProvider ? Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: localProvider.fetch }) : undefined;
+let providerOrigin = providerServer?.url.origin;
+let providerPid = process.pid;
+let providerChild: ReturnType<typeof Bun.spawn> | undefined;
+const providerControl = async (path: string, body?: unknown) => {
+  assert(providerOrigin);
+  const response = await fetch(new URL("/_bench/" + path, providerOrigin), {
+    method: path === "stats" ? "GET" : "POST",
+    ...(body === undefined ? {} : { body: JSON.stringify(body), headers: { "content-type": "application/json" } }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(response.status, 200, "Provider control failed");
+  return response.json();
+};
 let activeRoutes: ReturnType<typeof createSearchRoutes> | undefined;
 const coreServer = Bun.serve({
   hostname: "127.0.0.1",
@@ -159,6 +163,7 @@ const coreServer = Bun.serve({
 
 const records: { passes: boolean }[] = [];
 let failedRequest: Record<string, unknown> | undefined;
+let guardFailureProbe: Record<string, unknown> | undefined;
 let completeReportWritten = false;
 let cacheWarmups = 0;
 let lastCacheWarmup = 0;
@@ -170,13 +175,49 @@ const warmCaches = async () => {
   identity.invalidateIdentitySignerCache("invocation");
   await getIdentityRuntimeConfig();
   await identity.prepareIdentitySigner("invocation");
+  await providerControl("warm");
   lastCacheWarmup = performance.now();
   cacheWarmups += 1;
 };
-const providerResult = (appId: string) => ({
-  data: [{ ref: { type: `${appId}.item`, id: "fixture" }, title: appId, links: [{ rel: "open", href: `/app/${appId}/fixture` }] }],
-});
 try {
+  if (configuration.topology === "split") {
+    const ready = Promise.withResolvers<void>();
+    providerChild = Bun.spawn([process.execPath, "bench/provider-process.ts"], {
+      env: {
+        ...process.env,
+        APP_ID: "bench-provider",
+        CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "",
+        CLOUD_IDENTITY_PREVIOUS_KEY: "",
+        CLOUD_IDENTITY_NEXT_KEY: "",
+      },
+      stdout: "inherit",
+      stderr: "inherit",
+      ipc(message: unknown) {
+        if (
+          message &&
+          typeof message === "object" &&
+          "url" in message &&
+          typeof message.url === "string" &&
+          "pid" in message &&
+          typeof message.pid === "number"
+        ) {
+          const url = new URL(message.url);
+          assert.equal(url.hostname, "127.0.0.1");
+          assert.notEqual(message.pid, process.pid);
+          providerOrigin = url.origin;
+          providerPid = message.pid;
+          ready.resolve();
+        }
+      },
+    });
+    const startupTimeout = setTimeout(() => ready.reject(new Error("Provider process did not become ready")), 15_000);
+    void providerChild.exited.then((code) => ready.reject(new Error("Provider process exited: " + code)));
+    try {
+      await ready.promise;
+    } finally {
+      clearTimeout(startupTimeout);
+    }
+  }
   for (const name of ["auth", "audit", "settings", "logging"]) await (await import(`../src/migrate/core/${name}.ts`)).migrate();
   // These cache entries belong exclusively to the disposable Redis process.
   await redis.set("settings:app.url", JSON.stringify(issuer));
@@ -224,7 +265,7 @@ try {
           appName: appId,
           appIcon: "ti ti-box",
           appDescription: "Benchmark",
-          endpoint: `${providerServer.url.origin}/${appId}/api/_internal/capabilities/v1`,
+          endpoint: `${providerOrigin}/${appId}/api/_internal/capabilities/v1`,
           manifest: compileCapabilityManifest(appId, definitions),
         };
       });
@@ -233,44 +274,13 @@ try {
       let targetCalls = 0;
       let stages = { authentication: 0, guardedSigning: 0, signingBatch: 0, targetVerification: 0, targetActor: 0 };
       let signerFailure: { name: string; code?: string } | undefined;
+      let guardFinished = Promise.resolve();
       const authenticate = auth.requireRole("authenticated");
-      activeTargets = new Map(
-        entries.map((entry) => [
-          entry.appId,
-          new Hono<AuthContext>()
-            .use(
-              requireInvocationOrLegacy(
-                () => ({ targetAppId: entry.appId, operation: "search.query", schemaHash: entry.manifest.queries[0]!.schemaHash }),
-                auth.requireRole("authenticated"),
-                {
-                  verify: async (...args) => {
-                    const start = performance.now();
-                    try {
-                      return await identity.verifyInvocationToken(...args);
-                    } finally {
-                      stages.targetVerification += performance.now() - start;
-                    }
-                  },
-                  resolve: async (...args) => {
-                    const start = performance.now();
-                    try {
-                      return await identity.resolveInvocationAuthority(...args);
-                    } finally {
-                      stages.targetActor += performance.now() - start;
-                    }
-                  },
-                },
-              ),
-            )
-            .post("*", async (c) => {
-              assert.equal(c.get("user").id, user.id);
-              const body = UniversalSearchInputSchema.parse((await c.req.json()).input);
-              assert.equal(body.query, "needle");
-              await Bun.sleep(latencyMs);
-              return c.json(providerResult(entry.appId));
-            }),
-        ]),
-      );
+      await providerControl("configure", {
+        userId: user.id,
+        latencyMs,
+        targets: entries.map((entry) => ({ appId: entry.appId, schemaHash: entry.manifest.queries[0]!.schemaHash })),
+      });
       activeRoutes = createSearchRoutes({
         authenticate: async (c, next) => {
           const start = performance.now();
@@ -281,6 +291,8 @@ try {
         },
         withActiveSigner: async (purpose, callback, options) => {
           const start = performance.now();
+          const finished = Promise.withResolvers<void>();
+          guardFinished = finished.promise;
           try {
             return await identity.withActiveIdentitySigner(
               purpose,
@@ -304,6 +316,7 @@ try {
             throw error;
           } finally {
             stages.guardedSigning = performance.now() - start;
+            finished.resolve();
           }
         },
         listCapabilities: async () => entries,
@@ -327,6 +340,7 @@ try {
         process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
         stages = { authentication: 0, guardedSigning: 0, signingBatch: 0, targetVerification: 0, targetActor: 0 };
         signerFailure = undefined;
+        await providerControl("reset");
         counts = {};
         targetCalls = 0;
         peak = 0;
@@ -338,6 +352,10 @@ try {
         });
         const body = await response.json();
         const elapsed = performance.now() - start;
+        const providerStats = ProviderStats.parse(await providerControl("stats"));
+        stages.targetVerification = providerStats.targetVerification;
+        stages.targetActor = providerStats.targetActor;
+        for (const [key, value] of Object.entries(providerStats.redis)) counts[key] = (counts[key] ?? 0) + value;
         if (response.status !== 200) {
           failedRequest = {
             phase,
@@ -352,6 +370,7 @@ try {
           };
         }
         assert.equal(response.status, 200);
+        assert.equal(providerStats.requests, phase === "end-to-end" ? providerCount : 0);
         assert.equal(body.apps.length, providerCount);
         assert.equal(body.count, providerCount, "Every provider must produce a validated, merged result");
         assert.equal(new Set(body.items.map((item: { appId: string }) => item.appId)).size, providerCount);
@@ -444,6 +463,47 @@ try {
       await Bun.write(process.env.IDENTITY_BENCH_REPORT!, JSON.stringify({ completed: false, records }, null, 2));
       const { rawMs: _raw, ...display } = record;
       console.log(JSON.stringify(display));
+      if (phase === "end-to-end" && providerCount === 30) {
+        // Correctness probe, not a latency sample: a real conflicting key lock
+        // must fail closed at the unchanged signing deadline and then recover.
+        await warmCaches();
+        const signer = await identity.prepareIdentitySigner("invocation");
+        const locker = new SQL(source, { max: 1 });
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const held = locker.begin(async (db) => {
+          await db`SELECT kid FROM auth.signing_keys WHERE kid = ${signer.kid} FOR UPDATE`;
+          entered.resolve();
+          await release.promise;
+        });
+        void held.catch(entered.reject);
+        try {
+          await entered.promise;
+          process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
+          targetCalls = 0;
+          signerFailure = undefined;
+          const start = performance.now();
+          const response = await fetch(new URL("/search?q=needle", coreServer.url), {
+            headers: { cookie: `session_token=${credentials.jwt}` },
+            signal: AbortSignal.timeout(8_000),
+          });
+          await response.arrayBuffer();
+          guardFailureProbe = { status: response.status, elapsedMs: performance.now() - start, targetCalls, signerFailure };
+          assert.equal(response.status, 503);
+          assert.equal(targetCalls, 0, "A blocked signing key must never dispatch providers");
+        } finally {
+          release.resolve();
+          await held;
+          await locker.close();
+        }
+        // The HTTP deadline may win before SQL rollback completes.
+        await guardFinished;
+        guardFailureProbe.signerFailure = signerFailure;
+        // Includes the normal exact I/O and provider-completeness assertions.
+        await once("jwt", true);
+        guardFailureProbe.recovered = true;
+        console.log("Signing guard fault/recovery probe passed");
+      }
     }
   }
   const signer = await identity.prepareIdentitySigner("invocation");
@@ -486,6 +546,8 @@ try {
     passes: configuration.acceptanceEligible && records.every((record) => record.passes),
     configuration,
     postgresMetered: metered,
+    processes: { core: process.pid, provider: providerPid },
+    guardFailureProbe,
     measuredAt: new Date().toISOString(),
     bun: Bun.version,
     platform: process.platform,
@@ -501,7 +563,7 @@ try {
       "Refresh real config/signer caches every 30s outside timings; cache refresh and cold-start latency are not part of this warm-cache gate",
     pool: "Bun default SQL pool",
     baseline: "Current dual-read legacy session and credential-forwarding branch, same router/fixtures; not an archived binary",
-    transport: `Real loopback HTTP to Core and providers (shared process), real PostgreSQL ${metered ? "through protocol meter" : "direct (diagnostic only)"}, isolated Redis, warmed HTTP JWKS; dispatcher phase stubs provider work only; fixed in-memory discovery`,
+    transport: `Real loopback HTTP to Core and providers (${configuration.topology} processes), real PostgreSQL ${metered ? "through protocol meter" : "direct (diagnostic only)"}, isolated Redis, warmed HTTP JWKS; dispatcher phase stubs provider work only; fixed in-memory discovery`,
     acceptance: "Each phase/provider combination: JWT p95 - legacy p95 <= max(legacy p95 * 0.1, 10ms)",
     redisInstrumentation:
       "Client GET/send observers cross-checked against isolated Redis INFO commandstats outside every timed request; only telemetry INFO commands excluded",
@@ -529,7 +591,12 @@ try {
   getSpy.mockRestore();
   sendSpy.mockRestore();
   await coreServer.stop(true);
-  await providerServer.stop(true);
+  await providerServer?.stop(true);
+  localProvider?.dispose();
+  if (providerChild) {
+    providerChild.kill();
+    await providerChild.exited;
+  }
   await sql.close({ timeout: 5 });
   redis.close();
   telemetry.close();
