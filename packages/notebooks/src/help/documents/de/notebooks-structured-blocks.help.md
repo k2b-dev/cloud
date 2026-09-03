@@ -2,96 +2,113 @@
 id: notebooks-structured-blocks
 title: "Strukturierte Blöcke"
 icon: "ti ti-braces"
-description: "Tabellen, Listen, Aufgaben, Daten und Abschnitte mit @ref für Skripte lesbar machen."
+description: "Eigene Daten definieren und gefilterte Seitenlisten und Inhaltsverzeichnisse erstellen."
 order: 130
 ---
 
-Benannte Blöcke verbinden lesbare Notizen mit Daten, die Skripte lesen können. Setze einen stabilen `@ref` direkt über den Block, der Teil der öffentlichen Notizstruktur werden soll.
+Nutze benannte Daten für Fakten neben deinem Text, Abfragen für automatische Seitenlisten und Inhaltsverzeichnisse für Überschriften einer Seite. Ein vorgegebenes Metadatenschema ist nicht nötig.
 
-## Automatische Seitenlisten und Inhaltsverzeichnisse
+## Eigene Daten ergänzen {icon="braces"}
 
-Tippe im Editor `:::` und wähle **query** oder **toc**. Im Rich-Modus zeigt jeder Block eine serverseitig gerenderte Vorschau. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um seine Einstellungen zu ändern. Ungültige Einstellungen werden an ihrer Quellzeile markiert. Die Buchansicht zeigt dieselben Ergebnisse ohne Editor.
+Setze einen stabilen Namen direkt über einen Datenblock:
 
-Diese Abfrage listet Notizen mit dem Tag `handbook`, zuletzt geänderte zuerst:
+```text
+@profile
+:::data
+owner: Ada
+status: active
+reviewDays: 30
+approved: true
+teams:
+  - operations
+  - support
+:::
+```
+
+Damit entstehen Felder wie `profile.owner` und `profile.reviewDays`. Namen und Feldschlüssel unterscheiden Groß- und Kleinschreibung. Verwende für Abfragefelder einen Buchstaben, gefolgt von Buchstaben, Zahlen, Unterstrichen oder Bindestrichen, mit höchstens 64 Zeichen pro Teil.
+
+Werte sind Zeichenfolgen, Zahlen, Wahrheitswerte oder flache Listen dieser Werte. Setze zahlenähnlichen Text in Anführungszeichen: `"30"` ist nicht die Zahl `30`. Schreibe Listeneinträge auf eigene Zeilen mit zwei Leerzeichen vor `-`; Datenblöcke erlauben keine Inline-Arrays oder verschachtelten Objekte. Datumsangaben bleiben Text statt eines eigenen Datentyps. Ein Schlüssel ohne Wert und Listeneinträge ist eine leere Liste; `""` ist eine leere Zeichenfolge.
+
+Wiederhole weder Blocknamen noch Schlüssel innerhalb eines Blocks. Ungültige benannte Daten werden aus Abfragen ausgeschlossen und mit einer Diagnose gemeldet. Ein Block unterstützt höchstens 64 Felder, eine Liste 128 Einträge und eine Zeichenfolge 2.000 Zeichen.
+
+## Passende Seiten auflisten {icon="list-search"}
+
+Tippe im Editor `:::` und wähle **query**. Dieses Beispiel findet Handbuchseiten mit aktivem Status und einem Prüfintervall von höchstens 30 Tagen:
 
 ```text
 :::query
 source: notes
+scope: notebook
+match: all
 where:
   - field: $tags
     op: contains-all
     value: [handbook]
+  - field: profile.status
+    op: eq
+    value: active
+  - field: profile.reviewDays
+    op: lte
+    value: 30
 sort:
   field: $updated
   direction: desc
+columns:
+  - $title
+  - profile.owner
+  - profile.reviewDays
 limit: 25
 :::
 ```
 
-Abfragen bleiben im aktuellen Notizbuch. Mit `scope: children` oder `scope: descendants` beschränkst du die Liste auf Seiten unterhalb der aktuellen Notiz. Filter können auch eigene benannte Daten wie `profile.owner` verwenden; ein vorgegebenes Metadatenschema ist nicht nötig. Die Vorschau greift auf gespeicherte Notizdaten zu. Das Bearbeiten eines Abfrageentwurfs speichert ihn nicht und verändert keine Ergebnisse.
+Abfragen lesen ausschließlich gespeicherte Notizen aus dem aktuellen Notizbuch. Sie können keine anderen Notizbücher abrufen, Tabellenzeilen lesen, JavaScript ausführen, Datenbestände verknüpfen oder Änderungen schreiben.
 
-Ein leerer `:::toc`-Block, abgeschlossen mit `:::`, listet die Überschriften der Seite. Mit `min-depth` und `max-depth` zwischen 1 und 6 wählst du die Überschriftenebenen.
+| Einstellung | Bedeutung |
+| --- | --- |
+| `source` | Pflichtwert: `notes` |
+| `scope` | `notebook` (Standard), direkte `children` oder alle `descendants` dieser Notiz |
+| `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im gewählten Bereich. |
+| `sort` | `field`: `$title`, `$created` oder `$updated`; `direction`: `asc` oder `desc`. Standard: zuletzt geändert, absteigend. |
+| `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne diese Einstellung erscheint eine verlinkte Titelliste. |
+| `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt weitere Treffer an; grenze die Filter ein, um diese zu sehen. |
 
-Gespeicherte Änderungen aktualisieren Abfragevorschauen. Hat sich der gespeicherte Quelltext eines schreibgeschützten Editors geändert, lade die Seite neu, um den neuen Quelltext mit passender Vorschau zu sehen.
+Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seite unterstützt höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten.
 
-**@ref**
+## Filter wählen {icon="filter"}
 
-## Der Vertrag eines Blocks {icon="contract"}
+| Feld oder Wert | Operatoren |
+| --- | --- |
+| `$title` | `eq`, `ne`, `in`, `not-in`, `contains`, `starts-with` |
+| `$created`, `$updated` | `eq`, `ne`, `in`, `not-in`; vollständige Zeitstempel wie `2026-09-01T10:00:00Z` verwenden |
+| `$tags` | `contains` für einen Tag; `contains-any` oder `contains-all` für eine Liste; `exists` oder `missing` |
+| Benannte Einzelwerte | `eq`, `ne`, `in`, `not-in`, `exists`, `missing` |
+| Benannter Text | Zusätzlich `contains`, `starts-with` |
+| Benannte Zahlen | Zusätzlich `gt`, `gte`, `lt`, `lte` |
+| Benannte Listen | `contains-any`, `contains-all`, `exists`, `missing` |
 
-:::reference
-- **Stabile Namen:** Verwende kurze kleingeschriebene Namen wie @plants oder @tasks. Benenne sie mit Bedacht um, da Skripte diese Namen aufrufen.
-- **Ein Name, eine Bedeutung:** Verwende denselben Namen nicht für verschiedene Begriffe. Automatisierungen sollten nicht erraten müssen, welcher Block gemeint ist.
-- **Sichtbare Daten:** Halte Quelldaten in Markdown sichtbar, damit andere Personen das Skript verstehen können, ohne zuerst den Code zu lesen.
-- **Zugriff durch Skripte:** Skripte lesen Blöcke mit Hilfsfunktionen wie current.table("plants"), current.todo("tasks") und current.data("recipe").
-:::
+Lasse `value` bei `exists` und `missing` weg. Operatoren für Listenzugehörigkeit erwarten Listen; die anderen Operatoren einen Einzelwert. `in` prüft einen Einzelwert gegen eine Liste, während `contains-any` und `contains-all` Listeninhalte prüfen.
 
-**Strukturierte Daten**
+Gleichheit beachtet Typen und Groß- und Kleinschreibung. Die Textoperatoren `contains` und `starts-with` ignorieren Groß- und Kleinschreibung; Tags ignorieren außerdem ein optionales führendes `#`. `ne` und `not-in` finden keine fehlenden Felder: Verwende dafür bei Bedarf einen zusätzlichen `missing`-Filter mit `match: any`. Leere Listen existieren. Es gibt keine verschachtelten Filtergruppen, Ausdrücke, Datumsbereichsvergleiche oder Sortierung nach eigenen Feldern.
 
-## Tabellen {icon="table"}
+## Seiteninhalt verlinken {icon="list"}
 
-Tabellen eignen sich für kleine strukturierte Listen, etwa Pflanzen, Rezepte, Kontakte, Bücher, Aufgaben oder Ausgaben.
-
-**Benannte Tabelle mit Formeln**
-
-```text
-@plants
-| Plant | Bed | Status | Progress | Notes |
-|---|---|---|---|---|
-| Tomato Harzfeuer | Bed A | planted | =PROGRESS(2,4) | keep rain off leaves |
-| Bush bean | Bed B | next | =PROGRESS(0.25) | sow into warm soil |
-| Chives | Bed C | harvest | =PROGRESS(1) | leave some flowers |
-```
-
-**Weitere Blöcke**
-
-## Listen, Aufgaben, Daten und Abschnitte {icon="braces"}
-
-:::reference
-- **Tabelle:** Zeilen und Spalten. Skripte erhalten Spalten und Zeilenobjekte.
-- **Liste:** Aufzählungspunkte. Nützlich für kleine benannte Sammlungen.
-- **Aufgabenliste:** Aufgabeneinträge mit `done`-, `content`- und `line`-Metadaten.
-- **Datenblock:** YAML-ähnlicher Datenblock, der als Objekt geparst wird.
-- **Abschnitt:** Benannter Markdown-Abschnitt, den Skripte lesen oder ergänzen können.
-:::
-
-**Datenquellen für Skripte**
+Tippe `:::` und wähle **toc**:
 
 ```text
-@recipe
-:::data
-servings: 4
-time: 35 min
-tags:
-  - bavarian
-  - weeknight
+:::toc
+min-depth: 2
+max-depth: 3
 :::
-
-@shopping
-- flour
-- eggs
-- mountain cheese
-
-@tasks
-- [ ] Grate cheese
-- [x] Slice onions
 ```
+
+Der Block verlinkt Überschriften dieser Notiz, auch nach dem Block. Die Ebenen reichen von 1 bis 6; Standardwerte sind 1 und 6. Das ist ein Inhaltsverzeichnis der Seite, kein Notizbuchverzeichnis.
+
+## Vorschau und Aktualisierung {icon="refresh"}
+
+Der Rich-Modus zeigt serverseitig gerenderte Abfrage- und Inhaltsvorschauen. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um ihn zu bearbeiten. Ungültige Einstellungen werden an ihren Quellzeilen markiert. Eine Entwurfsvorschau speichert weder den Entwurf noch ändert sie passende Notizen.
+
+Die Buchansicht rendert dieselben Blöcke auf dem Server ohne Editor. Gespeicherte Änderungen aktualisieren Buchinhalte und Abfragevorschauen automatisch, wenn JavaScript verfügbar ist. Schreibgeschützt bleibt die gespeicherte Quelle bis zum Neuladen unverändert; lade nach deren Änderung neu. Ohne JavaScript zeigt die Buchansicht Ergebnisse und Links weiterhin beim Seitenaufruf.
+
+## Tabellen und Aufgaben lesbar halten {icon="table"}
+
+Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen innerhalb einer Tabelle; Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.

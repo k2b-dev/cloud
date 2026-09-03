@@ -40,7 +40,7 @@ import {
 import { apiClient } from "../../../api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
 import { isInsideFencedCode } from "./editor-scope";
-import { withIcon } from "./kit-autocomplete";
+import { withIcon } from "./completion-icon";
 
 /** Lightweight note projection — only what the popup needs. */
 type NoteRef = {
@@ -70,7 +70,7 @@ const noteCache = createNotebookFetchCache<CachedNotes>(
   async (notebookId) => {
     // Fetch pages up to FETCH_CAP. We use the same paginated
     // endpoint `nb.list()` uses so the autocomplete +
-    // scripts agree on what's in the notebook.
+    // other readers agree on what's in the notebook.
     const all: NoteRef[] = [];
     let truncated = false;
     try {

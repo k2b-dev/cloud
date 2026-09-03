@@ -1,155 +1,6 @@
 import { recipeNotesDe } from "./recipe.de";
 import type { NotebookTemplate } from "./types";
 
-const recipeDashboardScript = `// Kitchen dashboard
-// Compares every #recipe ingredient table with the pantry table.
-
-const normalize = (value) => String(value ?? "").trim().toLowerCase();
-const numberValue = (value) => Number(String(value ?? "0").replace(",", ".")) || 0;
-
-// ── Read source notes ───────────────────────────────────────────
-const recipeNotes = await nb.search("#recipe");
-const pantryNote = (await nb.search("#pantry"))[0];
-const pantryRows = pantryNote?.table("pantry")?.rows ?? [];
-const pantry = new Map(pantryRows.map((row) => [normalize(row.Item), numberValue(row.Amount)]));
-
-// ── Derive recipe readiness ─────────────────────────────────────
-const recipeRows = recipeNotes
-  .filter((note) => note.table("ingredients"))
-  .map((note) => {
-    const ingredients = note.table("ingredients")?.rows ?? [];
-    const meta = note.data("recipe")?.value ?? {};
-    const missing = ingredients.filter((row) => !pantry.has(normalize(row.Item)) || pantry.get(normalize(row.Item)) <= 0);
-    return {
-      Recipe: note,
-      Type: meta.type ?? "recipe",
-      Time: meta.time ?? "",
-      "Pantry match": "=PROGRESS(" + (ingredients.length - missing.length) + ", " + ingredients.length + ")",
-      Missing: missing.map((row) => row.Item).join(", "),
-      missingItems: missing.map((row) => row.Item),
-    };
-  })
-  .sort((a, b) => a.missingItems.length - b.missingItems.length);
-const pages = [pantryNote, ...recipeNotes].filter(Boolean).sort((a, b) => a.title.localeCompare(b.title));
-const shoppingItems = current.todo("shopping")?.items ?? [];
-const openShopping = shoppingItems.filter((item) => !item.done);
-
-const addShoppingItems = async (items) => {
-  await current.todo("shopping")?.add(...items);
-  ui.toast("Shopping items added", { variant: "success" });
-};
-
-const recipeTableRows = recipeRows.map((row) => ({
-  Recipe: row.Recipe,
-  Type: row.Type,
-  Time: row.Time,
-  "Pantry match": row["Pantry match"],
-  Missing: row.Missing,
-  Action: row.missingItems.length
-    ? ui.button("Shop", () => addShoppingItems(row.missingItems.map((item) => item + " for " + row.Recipe.title)), {
-        variant: "secondary",
-        icon: "ti ti-shopping-cart-plus",
-      })
-    : "",
-}));
-
-const shoppingRows = shoppingItems.map((item) => ({
-  Item: item.content,
-  Done: item.done ? "yes" : "open",
-  Action: item.done ? "" : ui.button("Done", async () => {
-    await current.replaceLine(item.line, "- [x] " + item.content);
-  }, { variant: "secondary", icon: "ti ti-check" }),
-}));
-
-// ── Render dashboard ────────────────────────────────────────────
-ui.render(
-  ui.heading("Kitchen dashboard", 2),
-  ui.row(
-    ui.metric("Recipes", recipeRows.length, { icon: "ti ti-chef-hat", tone: "success" }),
-    ui.metric("Pantry items", pantryRows.length, { icon: "ti ti-basket", tone: "info" }),
-    ui.metric("Shopping", openShopping.length, { icon: "ti ti-shopping-cart", tone: "warning" }),
-  ),
-  ui.table(recipeTableRows, { emptyText: "No recipe notes yet." }),
-  ui.chart("bar", {
-    data: recipeRows.map((row) => ({ label: row.Recipe.title, value: row.missingItems.length })),
-    title: "Missing pantry items",
-    showValues: true,
-    height: 180,
-  }),
-  ui.table(shoppingRows, { emptyText: "Shopping list is empty." }),
-  ui.heading("Kitchen pages", 3),
-  ui.noteList(pages, { emptyText: "No kitchen pages yet." }),
-  ui.button("Add best missing items", async () => {
-    const best = recipeRows.find((row) => row.missingItems.length > 0);
-    if (!best) {
-      ui.toast("All starter recipes match the pantry", { variant: "success" });
-      return;
-    }
-    await addShoppingItems(best.missingItems.map((item) => item + " for " + best.Recipe.title));
-  }, { icon: "ti ti-shopping-cart-plus" }),
-);`;
-
-const recipesIndexScript = `// Recipe index
-const recipeNotes = (await nb.search("#recipe"))
-  .filter((note) => note.table("ingredients"))
-  .sort((a, b) => a.title.localeCompare(b.title));
-
-ui.render(
-  ui.heading("Recipe index", 2),
-  ui.table(recipeNotes.map((note) => {
-    const meta = note.data("recipe")?.value ?? {};
-    return {
-      Recipe: note,
-      Type: meta.type ?? "recipe",
-      Time: meta.time ?? "",
-      Ingredients: note.table("ingredients")?.rows.length ?? 0,
-    };
-  }), { emptyText: "No recipe notes yet." }),
-);`;
-
-const recipeReadinessScript = `// Pantry match for this recipe.
-const normalize = (value) => String(value ?? "").trim().toLowerCase();
-const numberValue = (value) => Number(String(value ?? "0").replace(",", ".")) || 0;
-
-const pantryNote = (await nb.search("#pantry"))[0];
-const pantryRows = pantryNote?.table("pantry")?.rows ?? [];
-const pantry = new Map(pantryRows.map((row) => [normalize(row.Item), numberValue(row.Amount)]));
-
-const ingredients = current.table("ingredients")?.rows ?? [];
-const rows = ingredients.map((row) => {
-  const onHand = pantry.get(normalize(row.Item)) ?? 0;
-  const missing = onHand <= 0;
-  return {
-    Ingredient: row.Item,
-    Need: row.Amount + " " + row.Unit,
-    Pantry: missing ? "missing" : "yes",
-    Notes: row.Notes,
-    Action: missing ? ui.button("Add", async () => {
-      await current.todo("shopping")?.add(row.Item + " for " + current.title);
-      ui.toast("Added to shopping", { variant: "success" });
-    }, { variant: "secondary", icon: "ti ti-shopping-cart-plus" }) : "",
-  };
-});
-const missing = rows.filter((row) => row.Pantry !== "yes").map((row) => row.Ingredient);
-
-ui.render(
-  ui.heading("Pantry match", 3),
-  ui.table(rows),
-  ui.chart("donut", {
-    data: [
-      { label: "Have", value: rows.length - missing.length },
-      { label: "Missing", value: missing.length },
-    ],
-    showLabels: true,
-    height: 150,
-  }),
-  ui.button("Add missing here", async () => {
-    if (missing.length === 0) return;
-    await current.todo("shopping")?.add(...missing.map((item) => item + " for " + current.title));
-    ui.toast("Missing ingredients added", { variant: "success" });
-  }, { icon: "ti ti-shopping-cart-plus" }),
-);`;
-
 const recipeContent = (title: string, type: string, time: string, servings: number, rows: string, method: string) => `# ${title}
 
 #recipe #bavarian
@@ -162,9 +13,9 @@ time: ${time}
 source: Bavarian home kitchen
 :::
 
-\`\`\`script
-${recipeReadinessScript}
-\`\`\`
+:::toc
+min-depth: 2
+:::
 
 @ingredients
 | Item | Amount | Unit | Notes |
@@ -182,19 +33,18 @@ ${method}
 export const recipeCollectorTemplate: NotebookTemplate = {
   id: "recipe-collector",
   name: "Recipes & Pantry",
-  description: "Recipes, pantry matching, shopping todos, and starter ideas.",
+  description: "Recipes, pantry inventory, shopping todos, and starter ideas.",
   icon: "ti ti-tools-kitchen-2",
   notebookName: "Recipes & Pantry",
-  notebookDescription: "Recipe dashboard, pantry inventory, and recipe pages that calculate what ingredients you already have.",
+  notebookDescription: "An automatic recipe index, pantry inventory, and readable recipe pages.",
   translations: {
     de: {
       name: "Rezepte und Vorräte",
-      description: "Rezepte, Vorratsabgleich, Einkaufsliste und Anregungen für den Einstieg.",
+      description: "Rezepte, Vorratsbestand, Einkaufsliste und Anregungen für den Einstieg.",
       notebookName: "Rezepte und Vorräte",
-      notebookDescription: "Rezeptübersicht, Vorratsbestand und Rezeptseiten, die vorhandene Zutaten berücksichtigen.",
+      notebookDescription: "Automatisches Rezeptverzeichnis, Vorratsbestand und lesbare Rezeptseiten.",
     },
   },
-  scriptsEnabled: true,
   homepageNoteKey: "dashboard",
   notes: (ctx) =>
     ctx.locale?.toLowerCase().split("-")[0] === "de"
@@ -207,23 +57,37 @@ export const recipeCollectorTemplate: NotebookTemplate = {
 #kitchen
 
 :::success
-Start here. The dashboard compares recipe ingredient tables with your pantry and shows what you can cook soon.
+Start here. Browse recipes in the automatic index and compare their ingredients with your pantry before shopping.
 :::
 
 ## How to use this kitchen notebook
 
 1. Update ${c.link("pantry", "Pantry")} with what you have at home.
 2. Open a recipe and keep its \`@ingredients\` table simple and consistent.
-3. Use **Add best missing items** to create a small shopping list from the closest recipe.
-4. Add new recipe pages only when you want notes, steps, or pantry matching for that dish.
+3. Add missing ingredients to the shopping list below.
+4. Add new recipe pages only when you want notes or preparation steps for that dish.
 
 :::info
-Ingredient names are lookup keys. Use the same name in recipes and pantry, for example \`Mountain cheese\` in both places.
+Consistent ingredient names help you compare recipes and pantry. Use the same name in recipes and pantry, for example \`Mountain cheese\` in both places.
 :::
 
-\`\`\`script
-${recipeDashboardScript}
-\`\`\`
+:::query
+source: notes
+scope: notebook
+where:
+  - field: $tags
+    op: contains
+    value: recipe
+sort:
+  field: $title
+  direction: asc
+columns:
+  - $title
+  - recipe.type
+  - recipe.servings
+  - recipe.time
+limit: 25
+:::
 
 @shopping
 - [ ] Buy fresh Brezn for Obazda
@@ -254,7 +118,7 @@ ${recipeDashboardScript}
 | Bay leaves | 12 | leaves | 5 | broth and roasts |
 
 :::info
-The first column is the lookup key used by scripts. Exact names keep the app predictable.
+Update amounts after shopping and cooking. Compare this table with the recipe ingredients when planning a meal.
 :::
 `,
           },
@@ -264,15 +128,29 @@ The first column is the lookup key used by scripts. Exact names keep the app pre
 
 #recipes
 
-\`\`\`script
-${recipesIndexScript}
-\`\`\`
+:::query
+source: notes
+scope: notebook
+where:
+  - field: $tags
+    op: contains
+    value: recipe
+sort:
+  field: $title
+  direction: asc
+columns:
+  - $title
+  - recipe.type
+  - recipe.servings
+  - recipe.time
+limit: 25
+:::
 
 ## Recipe schema
 
 - \`@recipe\` data stores metadata.
-- \`@ingredients\` table drives pantry matching.
-- \`@shopping\` todo receives missing ingredients.
+- \`@ingredients\` table records ingredient quantities.
+- \`@shopping\` todo is your checklist for missing ingredients.
 `,
           },
           {

@@ -23,7 +23,6 @@ const CreatedNotebookSchema = z.object({
   description: z.string().nullable(),
   icon: z.string().nullable(),
   homepageNoteId: ResourceShortIdSchema.nullable(),
-  scriptsEnabled: z.boolean(),
   defaultPresentationMode: z.enum(PRESENTATION_MODES),
   defaultNoteTitleTemplate: z.string(),
   createdBy: z.uuid().nullable(),

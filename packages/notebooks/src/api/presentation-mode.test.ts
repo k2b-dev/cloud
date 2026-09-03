@@ -49,7 +49,6 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
     icon: null,
     homepageNoteId: null,
     homepageNoteShortId: null,
-    scriptsEnabled: false,
     defaultPresentationMode: "write",
     defaultNoteTitleTemplate: "Untitled",
     createdBy: user.id,
@@ -78,6 +77,12 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
   });
 
   describe("notebook presentation API", () => {
+    test("rejects the removed scripting setting without updating the notebook", async () => {
+      permission.mockResolvedValue("admin");
+      expect((await patch({ name: "Unchanged", scriptsEnabled: true })).status).toBe(400);
+      expect(update).not.toHaveBeenCalled();
+    });
+
     test("denies changing the default for notebook writers", async () => {
       expect((await patch({ defaultPresentationMode: "book" })).status).toBe(403);
       expect(update).not.toHaveBeenCalled();

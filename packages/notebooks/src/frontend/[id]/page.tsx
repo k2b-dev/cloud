@@ -73,7 +73,6 @@ export default ssr<AuthContext>(async (c) => {
     isVersionsMode,
     isGraphMode,
     canWrite,
-    canRunScripts,
     selectedNoteId,
     selectedNote,
     selectedRouteState,
@@ -147,11 +146,7 @@ export default ssr<AuthContext>(async (c) => {
                   noteId={selectedNote.id}
                   noteTitle={selectedNote.title}
                   notebookId={notebook.id}
-                  scriptsEnabled={canRunScripts}
-                  noteCreatedAt={selectedNote.createdAt}
-                  noteUpdatedAt={selectedNote.updatedAt}
                   noteLockedAt={selectedNote.lockedAt}
-                  noteParentId={selectedNote.parentId}
                   notebookName={notebook.name}
                   appUrl={appUrl}
                   workspaceCursor={ctx.workspaceCursor}

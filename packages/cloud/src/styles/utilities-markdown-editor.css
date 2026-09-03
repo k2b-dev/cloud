@@ -465,7 +465,6 @@
 }
 
 .md-code-block pre,
-.md-script-source,
 .md-mermaid-block,
 .md-katex-block {
   border: 1px solid rgb(228 228 231 / 0.72) !important;
@@ -481,7 +480,6 @@
 }
 
 .dark .md-code-block pre,
-.dark .md-script-source,
 .dark .md-mermaid-block,
 .dark .md-katex-block {
   border-color: rgb(63 63 70 / 0.72) !important;

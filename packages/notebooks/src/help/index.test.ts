@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { renderNotebookBook } from "../lib/book-renderer";
+import { extractNamedDataProperties } from "../lib/named-blocks";
+import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
 import { notebookHelp } from ".";
 
 const expectedIds = [
@@ -7,8 +10,6 @@ const expectedIds = [
   "notebooks-write-organize",
   "notebooks-structured-blocks",
   "notebooks-table-formulas",
-  "notebooks-scripts",
-  "notebooks-script-api",
   "notebooks-settings-access",
   "notebooks-troubleshooting",
 ];
@@ -63,29 +64,58 @@ describe("notebookHelp", () => {
     expect(html).toContain("<strong>Capture notes:</strong>");
   });
 
-  test("serves trusted-script guidance as inert documentation", () => {
-    const scripts = document("notebooks-scripts");
-    expect(scripts.markdown).toContain("Scripts are trusted JavaScript blocks for small notebook apps.");
-    expect(scripts.markdown).toContain("Script blocks run in the browser of users who open the note.");
-    expect(scripts.html).not.toContain("data-script-source");
-    expect(scripts.html).toContain('<span class="hl-keyword">const</span>');
+  test("documents data, query, toc and the current view contract without a scripting API", () => {
+    expect(notebookHelp.getMarkdown("notebooks-scripts")).toBeUndefined();
+    expect(notebookHelp.getMarkdown("notebooks-script-api")).toBeUndefined();
+    for (const locale of ["en", "de"]) {
+      const blocks = notebookHelp.getMarkdown("notebooks-structured-blocks", locale)!;
+      for (const syntax of [":::data", ":::query", ":::toc", "match: any", "contains-all", "profile.reviewDays"])
+        expect(blocks).toContain(syntax);
+      expect(blocks).not.toContain("current.");
+    }
+    expect(document("notebooks-settings-access").markdown).not.toContain("enable scripts");
+    expect(document("notebooks-troubleshooting").markdown).toContain("Executable scripting is no longer supported");
   });
 
-  test("renders API and formula references as scannable tables", () => {
-    const scriptHtml = document("notebooks-script-api").html;
-    const formulaHtml = document("notebooks-table-formulas").html;
+  test("renders formula references as scannable tables", () => {
+    const html = document("notebooks-table-formulas").html;
+    expect(html).toContain('<h3 id="progress-and-percentages">Progress and percentages</h3>');
+    expect(html).toContain('<div class="md-table-wrap">');
+    expect(html).toContain(">Result and notes</span>");
+    expect(html).toContain(">PROGRESS</code></span>");
+  });
 
-    expect(scriptHtml).toContain('<h3 id="current-metadata">Current metadata</h3>');
-    expect(scriptHtml).toContain('<div class="md-table-wrap">');
-    expect(scriptHtml).toContain(">What it does</span>");
-    expect(scriptHtml).toContain(">await current.setContent(markdown)</code>");
-    expect(scriptHtml).toContain(">string | null</code>");
-    expect(scriptHtml).toContain(">Lock timestamp, or null when the note is not locked.</span>");
-    expect(scriptHtml).not.toContain("<h5><code");
-
-    expect(formulaHtml).toContain('<h3 id="progress-and-percentages">Progress and percentages</h3>');
-    expect(formulaHtml).toContain('<div class="md-table-wrap">');
-    expect(formulaHtml).toContain(">Result and notes</span>");
-    expect(formulaHtml).toContain(">PROGRESS</code></span>");
+  test("structured examples follow the real data, query and renderer contracts", () => {
+    for (const locale of ["en", "de"]) {
+      const markdown = notebookHelp.getMarkdown("notebooks-structured-blocks", locale)!;
+      const examples = [...markdown.matchAll(/```text\n([\s\S]*?)```/g)].map((match) => match[1]!);
+      expect(examples).toHaveLength(3);
+      for (const source of examples) {
+        expect(extractNamedDataProperties(source).diagnostics).toEqual([]);
+        const queries = parseNotebookQueryBlocks(source);
+        expect(queries.diagnostics).toEqual([]);
+        expect(parseNotebookTocBlocks(source).diagnostics).toEqual([]);
+        const result = renderNotebookBook({
+          markdown: source,
+          notebookId: "ABC123",
+          locale,
+          queryResults: new Map(
+            queries.blocks.map((query) => [
+              query.line,
+              {
+                columns: query.columns,
+                items: [],
+                total: 0,
+                limit: query.limit,
+                truncated: false,
+                diagnostics: [],
+              },
+            ]),
+          ),
+        });
+        expect(result.html).not.toContain("<script");
+        expect(result.html.length).toBeGreaterThan(0);
+      }
+    }
   });
 });

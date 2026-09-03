@@ -24,7 +24,6 @@ const notebook: notebooks.Notebook = {
   icon: null,
   homepageNoteId: null,
   homepageNoteShortId: null,
-  scriptsEnabled: false,
   defaultPresentationMode: "write",
   defaultNoteTitleTemplate: "Untitled",
   createdBy: params.userId,

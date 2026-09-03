@@ -31,10 +31,6 @@ export type Notebook = {
   icon: string | null;
   homepageNoteId: string | null;
   homepageNoteShortId: string | null;
-  /** Per-notebook opt-in for the JS scripting feature. Default false.
-   *  Only notebook admins can flip this; the editor consults this flag
-   *  before evaluating any `\`\`\`script` blocks. */
-  scriptsEnabled: boolean;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
@@ -53,7 +49,6 @@ export type UpdateNotebook = {
   description?: string | null;
   icon?: string | null;
   homepageNoteId?: string | null;
-  scriptsEnabled?: boolean;
   defaultPresentationMode?: PresentationMode;
   defaultNoteTitleTemplate?: string;
 };
@@ -66,7 +61,6 @@ type DbNotebook = {
   icon: string | null;
   homepage_note_id: string | null;
   homepage_note_short_id: string | null;
-  scripts_enabled: boolean;
   default_presentation_mode: PresentationMode;
   default_note_title_template: string;
   created_by: string | null;
@@ -107,7 +101,6 @@ const mapToNotebook = (row: DbNotebook): Notebook => ({
   icon: row.icon,
   homepageNoteId: row.homepage_note_id,
   homepageNoteShortId: row.homepage_note_short_id,
-  scriptsEnabled: row.scripts_enabled,
   defaultPresentationMode: row.default_presentation_mode,
   defaultNoteTitleTemplate: row.default_note_title_template,
   createdBy: row.created_by,
@@ -216,7 +209,6 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             n.icon,
             n.homepage_note_id,
             h.short_id AS homepage_note_short_id,
-            n.scripts_enabled,
             n.default_presentation_mode,
             n.default_note_title_template,
             n.created_by,
@@ -249,7 +241,6 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             n.icon,
             n.homepage_note_id,
             h.short_id AS homepage_note_short_id,
-            n.scripts_enabled,
             n.default_presentation_mode,
             n.default_note_title_template,
             n.created_by,
@@ -328,7 +319,6 @@ export const listAdmin = async (params: {
       n.icon,
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
-      n.scripts_enabled,
       n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
@@ -342,7 +332,7 @@ export const listAdmin = async (params: {
       ${pattern}::text IS NULL
       OR LOWER(n.name) LIKE ${pattern}
     )
-    GROUP BY n.id, n.short_id, n.name, n.description, n.icon, n.homepage_note_id, h.short_id, n.scripts_enabled,
+    GROUP BY n.id, n.short_id, n.name, n.description, n.icon, n.homepage_note_id, h.short_id,
              n.default_presentation_mode, n.default_note_title_template, n.created_by, n.created_at, n.updated_at
     ORDER BY LOWER(n.name) ASC, n.created_at ASC
     LIMIT ${params.pagination.limit}
@@ -413,7 +403,6 @@ export const get = async (params: { id: string }): Promise<Notebook | null> => {
       n.icon,
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
-      n.scripts_enabled,
       n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
@@ -437,7 +426,6 @@ export const getByShortId = async (params: { shortId: string }): Promise<Noteboo
       n.icon,
       n.homepage_note_id,
       h.short_id AS homepage_note_short_id,
-      n.scripts_enabled,
       n.default_presentation_mode,
       n.default_note_title_template,
       n.created_by,
@@ -474,7 +462,6 @@ export const create = async (params: {
       icon,
       homepage_note_id,
       NULL::text AS homepage_note_short_id,
-      scripts_enabled,
       default_presentation_mode,
       default_note_title_template,
       created_by,
@@ -541,7 +528,6 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   const description = data.description === undefined ? existing.description : data.description;
   const icon = data.icon === undefined ? existing.icon : data.icon;
   const homepageNoteId = data.homepageNoteId === undefined ? existing.homepageNoteId : data.homepageNoteId;
-  const scriptsEnabled = data.scriptsEnabled ?? existing.scriptsEnabled;
   const defaultPresentationMode = data.defaultPresentationMode ?? existing.defaultPresentationMode;
   if (!isPresentationMode(defaultPresentationMode)) {
     return { ok: false, error: "Invalid default presentation mode", status: 400 };
@@ -580,7 +566,6 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
         description = ${description},
         icon = ${icon},
         homepage_note_id = ${homepageNoteId}::uuid,
-        scripts_enabled = ${scriptsEnabled},
         default_presentation_mode = ${defaultPresentationMode},
         default_note_title_template = ${defaultNoteTitleTemplate},
         updated_at = now()
@@ -593,7 +578,6 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
       icon,
       homepage_note_id,
       NULL::text AS homepage_note_short_id,
-      scripts_enabled,
       default_presentation_mode,
       default_note_title_template,
       created_by,

@@ -8,15 +8,13 @@
  * doesn't have to remember to close the fence themselves.
  *
  * Languages mirror exactly what `markdown.ts` registers as
- * `codeLanguages`, plus three notebooks-specific specials that get
+ * `codeLanguages`, plus two notebooks-specific specials that get
  * their own rendering pipelines:
  *
- *  - `script` — kit-driven JS, rendered as a live output widget
- *               (see `scripts.ts`)
  *  - `mermaid` — diagram, rendered via `mermaid.ts`
  *  - `math`   — block KaTeX, rendered via `katex.ts`
  *
- * Each suggestion ships an explicit Tabler `kitIcon` so the icon
+ * Each suggestion ships an explicit Tabler `completionIcon` so the icon
  * column reads at a glance (`ti-brand-javascript`, `ti-database` for
  * SQL, `ti-math-function` for math, etc.) instead of falling through
  * to the generic `class` icon for every language.
@@ -27,7 +25,7 @@
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
 import { isInsideFencedCodeBody } from "./editor-scope";
-import { withIcon } from "./kit-autocomplete";
+import { withIcon } from "./completion-icon";
 
 /**
  * Each fence-language entry. `name` is what we insert into the
@@ -52,12 +50,6 @@ const LANGUAGES: FenceLang[] = [
   // Notebooks-specific specials — surface FIRST in the list because
   // they're the most distinctive feature of the editor, not generic
   // syntax-highlighted code.
-  {
-    name: "script",
-    detail: "Live notebook script",
-    icon: "ti-bolt",
-    bodyPlaceholder: "ui.toast('Hello');",
-  },
   {
     name: "mermaid",
     detail: "Mermaid diagram",
@@ -107,23 +99,14 @@ const buildSnippet = (lang: FenceLang): string => {
  *  fresh snippet objects on every keystroke.
  *
  *  `boost`: numeric weight that CM adds to the option's relevance
- *  score. We pin the notebooks-specific specials (`script` first,
- *  then `mermaid` / `math`) with a strong positive boost so they
- *  ALWAYS sort above the generic languages, even when the typed
- *  prefix matches multiple options equally. Rationale: scripts are
- *  the defining feature of this editor — surfacing them as the
- *  first pick after typing ``` is the discoverability win the
- *  whole picker was built for. The standard languages sort below
- *  in their array order (CM falls back to source-order on equal
- *  scores).
+ *  score. Mermaid and math receive a boost above generic languages.
  *
- *  We post-augment each Completion with `kitIcon` because
+ *  We post-augment each Completion with `completionIcon` because
  *  `snippetCompletion`'s second-arg type is `Completion` (no
- *  `kitIcon` field on the official interface); the icon renderer
+ *  `completionIcon` field on the official interface); the icon renderer
  *  in `slash-commands/index.ts` reads the field via a structural
  *  cast. */
 const LANG_BOOSTS: Record<string, number> = {
-  script: 100,
   mermaid: 90,
   math: 80,
 };

@@ -5,10 +5,24 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-02
+updated: 2026-09-04
 ---
 
 # Deprecations and migrations
+
+## Notebook scripts are now inert Markdown
+
+Notebooks no longer executes fenced `script` blocks. Existing source remains
+in each note as visible code. Use `:::toc` for an in-note contents list and
+`:::query` with named `:::data` properties for notebook summaries. Update
+automation that sends `scriptsEnabled` or uses `--scripts-enabled`; the
+setting and script-specific APIs are removed.
+
+The shared `markdown.render()` and `markdown.renderSync()` helpers also render
+`script` fences as ordinary code blocks. They no longer emit executable source
+carriers or output containers. Application authors must remove any custom
+enhancer that depended on those carriers; Markdown rendering does not execute
+user code. Help examples remain inert.
 
 ## Identity authority rollout prerequisites
 

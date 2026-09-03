@@ -28,7 +28,6 @@ export type NotebookTemplate = {
   icon: string;
   notebookName: string | ((ctx: TemplateContext) => string);
   notebookDescription?: string | ((ctx: TemplateContext) => string);
-  scriptsEnabled?: boolean;
   homepageNoteKey?: string;
   notes: (ctx: TemplateContext) => TemplateNote[];
   translations?: Record<string, Partial<Pick<NotebookTemplate, "name" | "description" | "notebookName" | "notebookDescription">>>;
@@ -71,7 +70,6 @@ export const materializeTemplate = (template: NotebookTemplate, now = new Date()
     notebookName: resolveText(localized?.notebookName ?? template.notebookName, ctx) ?? localized?.name ?? template.name,
     notebookDescription:
       resolveText(localized?.notebookDescription ?? template.notebookDescription, ctx) ?? localized?.description ?? template.description,
-    scriptsEnabled: template.scriptsEnabled ?? false,
     homepageNoteKey: template.homepageNoteKey,
     notes,
   };

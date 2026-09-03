@@ -51,7 +51,6 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     icon: null,
     homepageNoteId: null,
     homepageNoteShortId: null,
-    scriptsEnabled: false,
     defaultPresentationMode: "write",
     defaultNoteTitleTemplate: "Untitled",
     createdBy: user.id,

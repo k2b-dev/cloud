@@ -8,6 +8,11 @@ import {
 } from "./named-blocks";
 
 describe("named blocks", () => {
+  test("legacy script fences have no executable named-block type", () => {
+    const blocks = extractNamedBlocks("@legacy\n```script\nkit.ui.text('hello');\n```\n");
+    expect(blocks.map(({ name, type }) => ({ name, type }))).toEqual([{ name: "legacy", type: "unknown" }]);
+  });
+
   test("detects named block types in the current note", () => {
     const blocks = extractNamedBlocks(`@ideas
 | Idea | Tags |

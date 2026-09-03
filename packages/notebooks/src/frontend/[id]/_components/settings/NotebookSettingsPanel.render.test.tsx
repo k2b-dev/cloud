@@ -4,7 +4,7 @@ import type { Notebook } from "../sidebar/types";
 import "../detail/ssr-test-plugin";
 
 const { NotebookSettingsBody } = await import("./NotebookSettingsPanel.tsx");
-const { DefaultPresentationSection } = await import("./FeaturesSection.tsx");
+const { DefaultPresentationSection, FeaturesSection } = await import("./FeaturesSection.tsx");
 
 const notebook: Notebook = {
   id: "notes1",
@@ -12,7 +12,6 @@ const notebook: Notebook = {
   description: "Shared research notes",
   icon: "ti ti-flask",
   homepageNoteId: null,
-  scriptsEnabled: false,
   defaultPresentationMode: "write",
   defaultNoteTitleTemplate: "{{ date }}",
   createdBy: "user-id",
@@ -33,6 +32,13 @@ const renderSettings = (isAdmin: boolean) =>
   ));
 
 describe("Notebook settings", () => {
+  test("view preferences no longer offer executable scripting", () => {
+    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
+    expect(html).toContain("Default view");
+    expect(html).toContain("Your view");
+    expect(html).not.toContain("Enable script blocks");
+    expect(html).not.toContain("Enable scripting");
+  });
   test("uses the shared selector and explains the reader-only Book restriction", () => {
     const html = renderToString(() => <DefaultPresentationSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
     expect(html).toContain('aria-label="Default view"');

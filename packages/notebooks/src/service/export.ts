@@ -61,7 +61,6 @@ const publicNotebook = (notebook: Notebook) => ({
   description: notebook.description,
   icon: notebook.icon,
   homepageNoteId: notebook.homepageNoteShortId,
-  scriptsEnabled: notebook.scriptsEnabled,
   defaultPresentationMode: notebook.defaultPresentationMode,
   defaultNoteTitleTemplate: notebook.defaultNoteTitleTemplate,
   createdBy: notebook.createdBy,

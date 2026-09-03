@@ -1,19 +1,5 @@
-/**
- * Browser-side tag extractor — shared between the CodeMirror tag-pill
- * widget, the script-kit (`kit.note.tags`, `kit.notes` post-filter),
- * and any future client extension that needs to know which `#tag`s a
- * markdown body references.
- *
- * Mirrors the canonical server-side tag semantics in `service/tags.ts`
- * (server-side index pipeline): anything the platform indexes server-
- * side as a tag should also be reported by these utilities, and vice
- * versa. Drift means client-rendered tag pills and server search results
- * disagree — exactly the bug codex flagged on commit 7ee5fdc (kit was
- * using its own narrower regex).
- *
- * Runs entirely on the client — no `bun:sql` or other server-only
- * dependencies. Safe to import from any frontend module.
- */
+/** Browser-side tag extraction shared by editor pills and notebook navigation.
+ * Matches the server tag-index semantics without server-only dependencies. */
 
 /**
  * Tag regex.

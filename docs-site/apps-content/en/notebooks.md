@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Notebooks
@@ -42,8 +42,8 @@ not replace the note list.
 - Download the current note as Markdown or as an A4 PDF using the Document,
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy.
-- Enable trusted scripts when a notebook needs summaries, dashboards, charts,
-  prompts, or buttons over its own data.
+- Add filtered page lists with `:::query` and page contents with `:::toc`, using
+  your own named data instead of a fixed metadata schema.
 
 Use a separate notebook when content needs its own access rules, settings, or
 export boundary.
@@ -53,8 +53,7 @@ export boundary.
 Users with read permission always use **Book**. It shows the note as a web page
 with navigation and tag filters, without an editor, detail panel, or discussion
 panel. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered
-on the server with the page. Script blocks remain visible as code and do not
-execute in Book.
+on the server with the page.
 
 Page links, tag filters, search, and pagination update the Book content without
 reloading the whole page when JavaScript is available. Browser Back and Forward
@@ -91,13 +90,12 @@ Book. Locked notes open in Read-only instead of Write.
 | Comment | Durable Markdown discussion attached to one note |
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
-| Named block and script | Structured Markdown data and optional code that operates inside the notebook boundary |
+| Named data and query | User-defined Markdown properties and filtered lists of notes in this notebook |
 | Activity | Durable, permission-aware semantic changes across a notebook or note |
 | Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
-Named blocks remain visible Markdown rather than a hidden database. Scripts can
-read and update the current notebook through the documented runtime APIs, but
-cannot use that API to reach another notebook.
+Named data remains visible Markdown rather than a hidden database. Queries read
+saved notes; they cannot write changes or access another notebook.
 
 Realtime typing does not create one history row per keystroke. Notebooks groups
 collaborative edits by actor, note, and hour. Saved versions remain separate
@@ -110,6 +108,85 @@ panel, including on a locked note. Locking freezes the note body, not its
 discussion. Comment authors may edit or delete their own comment for ten
 minutes after posting.
 
+## Build a handbook index
+
+Define your own fields beside the page text. A name directly above a data block
+makes its properties available to queries:
+
+```text
+@profile
+:::data
+owner: Ada
+status: active
+reviewDays: 30
+approved: true
+teams:
+  - operations
+  - support
+:::
+```
+
+Data values are strings, numbers, booleans, or flat lists. Use unique block
+names and keys; nested objects and inline arrays are not supported. Quote
+numeric-looking text when it must remain a string. Dates remain strings.
+Invalid or duplicate named data is excluded from queries and reported.
+
+A hub page can list the active handbook pages without maintaining links by hand:
+
+```text
+:::query
+source: notes
+scope: notebook
+match: all
+where:
+  - field: $tags
+    op: contains-all
+    value: [handbook]
+  - field: profile.status
+    op: eq
+    value: active
+sort:
+  field: $updated
+  direction: desc
+columns:
+  - $title
+  - profile.owner
+limit: 25
+:::
+```
+
+Queries support the current notebook, direct children, or all descendants of
+the current page. Combine filters with `match: all` or `match: any`. Use
+equality, membership, text matching, numeric comparisons, or existence checks
+on your data. Tags support `contains`, `contains-any`, and `contains-all`.
+Field names and equality are case-sensitive; text contains/prefix filters and
+tags ignore case. Negative comparisons do not match missing fields.
+
+Sort by `$title`, `$created`, or `$updated`, ascending or descending. The
+default is most recently updated first, up to 25 results; set `limit` from 1
+to 100. A notice identifies additional matches. Queries do not aggregate table
+rows, join datasets, evaluate expressions, or modify notes. Open **Help →
+Structured blocks** for the complete operator and limit reference.
+
+For the headings on one page, insert:
+
+```text
+:::toc
+min-depth: 2
+max-depth: 3
+:::
+```
+
+This includes matching headings before and after the block. Omit the depth
+settings to include levels 1–6. Book and rich editor previews use the same
+server-rendered results. Read-only keeps its saved note source until a reload;
+reload after the source changes to see the matching preview.
+
+Executable scripting is no longer supported. Existing script fences stay in
+the Markdown as readable code and do not run in any view. Replace page indexes
+with queries and heading lists with contents blocks. Script buttons, write
+actions, and hidden runtime state have no replacement.
+
 ## How Notebooks fits Cloud
 
 Notebooks owns notes, hierarchy, attachments, realtime document state, search,
@@ -120,7 +197,7 @@ application discovery, and the shared Help surface.
 ## Find detailed product help
 
 Open **Help** inside Notebooks for writing, organization, structured blocks,
-formulas, scripts, access, exports, and troubleshooting. Developers can read
+formulas, queries, access, exports, and troubleshooting. Developers can read
 [Resource authorization](/en/docs/identity/authorization),
 [Realtime UI](/en/docs/frontend/realtime-ui), and
 [Application settings](/en/docs/platform/settings) for the shared contracts

@@ -33,7 +33,7 @@
  */
 import { type Completion, type CompletionContext, type CompletionResult, snippetCompletion } from "@codemirror/autocomplete";
 import { cellTextBeforeCursor, isTableRow } from "./_lib/table-cell";
-import { withIcon } from "./kit-autocomplete";
+import { withIcon } from "./completion-icon";
 
 type Formula = {
   /** Function name as it appears in the formula source. */
@@ -143,7 +143,7 @@ const COMPLETIONS: Completion[] = FORMULAS.map((f) => {
  *      content matches the formula pattern.
  *
  * Without this two-stage filter the source was the dominant
- * per-keystroke cost outside script fences (it always called
+ * per-keystroke cost in ordinary text (it always called
  * `lineAt` + ran a regex over the full line, even when typing in
  * a plain paragraph far from any table).
  */

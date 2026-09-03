@@ -146,7 +146,7 @@ export const insertAtCursor = (view: EditorView, text: string): void => {
 export const insertCodeBlock = (
   view: EditorView,
   options?: {
-    /** Language tag appended to the opening fence (e.g. `script`,
+    /** Language tag appended to the opening fence (e.g. `javascript`,
      *  `python`, `mermaid`, `math`). Omit for an untagged fence. */
     language?: string;
     /** Pre-filled body content. If provided, the cursor lands at
@@ -198,8 +198,7 @@ export const insertCallout = (view: EditorView, type: string): void => {
 
 /**
  * Insert a referenceable data block. The `@ref` handle is selected
- * after insertion so users discover that scripts can read it via
- * `kit.data("ref")` while still being nudged to rename it.
+ * after insertion so the user can give it a descriptive name.
  */
 export const insertDataBlock = (view: EditorView): void => {
   const { from } = view.state.selection.main;

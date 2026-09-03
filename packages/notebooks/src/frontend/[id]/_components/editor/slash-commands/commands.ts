@@ -215,20 +215,10 @@ export const slashCommands: SlashCommand[] = [
     run: (view) => insertCodeBlock(view),
   },
   // Notebook-special fence shortcuts. Each inserts a fully-tagged
-  // block directly without going through the ``` language picker
-  // — power users typing `/script` skip an extra step. The mermaid
-  // and math variants include a starter template so the rendered
+  // block directly without going through the ``` language picker.
+  // Both variants include a starter template so the rendered
   // widget shows something useful immediately (an empty mermaid
   // block renders as a parse error chip).
-  {
-    name: "script",
-    label: "Script block",
-    icon: "ti-bolt",
-    section: "Insert",
-    description: "Live kit script (\\`\\`\\`script)",
-    aliases: ["kit"],
-    run: (view) => insertCodeBlock(view, { language: "script" }),
-  },
   {
     name: "mermaid",
     label: "Mermaid diagram",
@@ -323,7 +313,7 @@ export const slashCommands: SlashCommand[] = [
     label: "Data block",
     icon: "ti-database",
     section: "Insert",
-    description: '@ref + :::data block for kit.data("ref")',
+    description: "Referenceable structured data block",
     aliases: ["dataset", "properties", "kv", "attrs"],
     run: (view) => insertDataBlock(view),
   },

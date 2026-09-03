@@ -1,4 +1,4 @@
-export type NamedBlockType = "table" | "list" | "data" | "section" | "script" | "unknown";
+export type NamedBlockType = "table" | "list" | "data" | "section" | "unknown";
 
 export type NamedBlock = {
   name: string;
@@ -166,9 +166,6 @@ export const extractNamedBlocks = (md: string | null | undefined): NamedBlock[] 
     } else if (/^:::data\b/.test(startText)) {
       type = "data";
       endLine = fencedEndLine(lines, startLine, ":::");
-    } else if (/^```script\b/.test(startText)) {
-      type = "script";
-      endLine = fencedEndLine(lines, startLine, "```");
     } else if (HEADING_RE.test(lines[startLine]!.text)) {
       type = "section";
       endLine = sectionEndLine(lines, startLine);

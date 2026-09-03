@@ -12,7 +12,6 @@ const notebook: Notebook = {
   icon: "ti-book",
   homepageNoteId: null,
   homepageNoteShortId: null,
-  scriptsEnabled: false,
   defaultPresentationMode: "book",
   defaultNoteTitleTemplate: "New Document",
   createdBy: "22222222-2222-4222-8222-222222222222",
@@ -67,6 +66,13 @@ const attachment: AttachmentContent = {
 };
 
 describe("notebook export", () => {
+  test("preserves legacy script source without exporting an execution setting", () => {
+    const contentMd = "# Legacy\n\n```script\nkit.ui.text('hello');\n```\n";
+    const files = buildNotebookExportFiles({ notebook, notes: [{ ...notes[0]!, contentMd }], attachments: [] });
+    expect(files.some((file) => typeof file.content === "string" && file.content.includes(contentMd))).toBe(true);
+    expect(String(files.find((file) => file.path === "notebook.json")?.content)).not.toContain("scriptsEnabled");
+  });
+
   test("builds a readable portable file set", () => {
     const files = buildNotebookExportFiles({
       notebook,

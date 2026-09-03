@@ -56,22 +56,8 @@ type EditorInstanceProps = {
   noteId: string;
   noteTitle: string;
   notebookId: string;
-  /** Per-notebook opt-in flag for the JS scripting feature. When true,
-   *  fenced ` ```script ` blocks evaluate in the editor; when false,
-   *  they render as inert code-fences. Toggled in NotebookSettingsPanel. */
-  scriptsEnabled: boolean;
-  // ---- script-kit metadata snapshot (Phase 2 kit.note read-only fields)
-  // These mirror the SSR-rendered `selectedNote` / `notebook` shapes
-  // and feed `kit.note.*` getters for fields that don't live in the
-  // Y.Doc itself. The Y.Text content is the live source for body /
-  // tags / tasks; everything else (title, timestamps, lockedAt,
-  // parentId, notebookName) updates only on full page render.
-  noteCreatedAt: string;
-  noteUpdatedAt: string;
   noteLockedAt: string | null;
-  noteParentId: string | null;
   notebookName: string;
-  // ---- end script-kit metadata
   appUrl: string;
   workspaceCursor: string | null;
   onWorkspaceCursorChange?: (cursor: string) => void;
@@ -183,10 +169,7 @@ export default function NoteEditor(props: Props) {
         ...current(),
         noteId: note.id,
         noteTitle: note.title,
-        noteCreatedAt: note.createdAt,
-        noteUpdatedAt: note.updatedAt,
         noteLockedAt: note.lockedAt,
-        noteParentId: note.parentId,
         initialSnapshot: note.yjsSnapshot,
       },
       eventDetail: detail,
@@ -449,40 +432,6 @@ function EditorInstance(props: EditorInstanceProps) {
           editor.katexExtension(),
           editor.codeFontExtension(),
           editor.tagPillExtension(props.notebookId),
-          // Note: `kit.*` autocomplete is wired INSIDE the
-          // slashCommandsExtension's `override` array (both kit and
-          // slash sources share one `autocompletion()` config so
-          // they can coexist — override means CM only uses sources
-          // we explicitly list).
-          // Scripts: per-notebook opt-in (admin toggles in settings).
-          // When OFF the extension emits no widgets and the
-          // ```script fence renders as a plain code block. When ON
-          // each block gets a `.md-script-output` block widget below
-          // it, hosting kit UI (buttons, toasts, error blocks). The
-          // widget root sets `contenteditable=false` so CM6's
-          // MutationObserver skips the subtree — without that, the
-          // kit's runtime DOM mutations get misinterpreted as user
-          // edits and corrupt the script body / surrounding doc.
-          editor.scriptsExtension({
-            scriptsEnabled: () => props.scriptsEnabled,
-            readOnly: () => !!props.readOnly,
-            notebookId: props.notebookId,
-            noteSnapshot: () => ({
-              id: props.noteId,
-              title: deriveNoteTitle(ytext.toString()),
-              // Live content snapshot — kit's `note.content` getter
-              // re-reads ytext on every access, but the snapshot
-              // here covers any code path that bypasses the getter.
-              content: ytext.toString(),
-              notebookName: props.notebookName,
-              parentId: props.noteParentId,
-              createdAt: props.noteCreatedAt,
-              updatedAt: props.noteUpdatedAt,
-              lockedAt: props.noteLockedAt,
-            }),
-            ytext,
-            ydoc: doc,
-          }),
         ]
       : [],
   );

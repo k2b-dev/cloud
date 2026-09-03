@@ -2,7 +2,7 @@
 
 ## What Notebooks is
 
-Notebooks are collaborative workspaces for structured, real-time synchronized notes. Notes remain readable Markdown while links, tags, attachments, named blocks, formulas, and trusted scripts add navigation, structured data, and automation.
+Notebooks are collaborative workspaces for structured, real-time synchronized notes. Notes remain readable Markdown while links, tags, attachments, named data blocks, queries, and formulas add navigation and summaries.
 
 Use `cld notebooks` to discover knowledge, maintain notes safely, manage notebook access, and move portable data in or out of Cloud. Use the browser when a task depends on live collaborative editing or visual layout; use the CLI for deterministic reads, searches, edits, exports, and administration.
 
@@ -10,6 +10,7 @@ Use `cld notebooks` to discover knowledge, maintain notes safely, manage noteboo
 
 - [Core model](#core-model)
 - [Markdown knowledge conventions](#markdown-knowledge-conventions)
+- [Declarative summaries](#declarative-summaries)
 - [Agent workflow](#agent-workflow)
 - [Resolve notebooks and notes](#resolve-notebooks-and-notes)
 - [Search and discovery](#search-and-discovery)
@@ -25,24 +26,24 @@ Use `cld notebooks` to discover knowledge, maintain notes safely, manage noteboo
 
 - A **notebook** is the access and organization boundary. Its `id` is the immutable six-character id used by APIs, URLs, and automation.
 - A **note** has Markdown content, tags, an optional parent, timestamps, and an optional permanent lock. Its displayed title is a stored projection of the first H1 or, when no H1 exists, the first visible content line. Notes are addressed by a short id and can link to each other.
-- A **named block** is a stable region inside Markdown, such as a table, list, data object, section, or script. Block-aware edits avoid replacing unrelated note content.
+- A **named block** is a stable region inside Markdown, such as a table, list, data object, or section. Block-aware edits avoid replacing unrelated note content.
 - An **attachment** belongs to a notebook and can be referenced from notes with an `attach://<short-id>` link.
 - A **version** is a historical note snapshot. Restoration writes a version into an existing empty target note rather than overwriting arbitrary current content.
-- A **script block** is trusted JavaScript embedded in a note. It can read notebook data, update the current note in edit mode, render UI, and use the documented utility API.
+- A **query block** lists notes from the same notebook using filters, sorting, and selected fields. It reads data without executing code or changing notes.
 - A **table formula** is a cell beginning with `=` in a Markdown table. Formula names are case-insensitive and operate on row values or table columns.
 
 Notebooks can be collaborative. Read current state before changing it and use edit preconditions when another person or agent might update the same note.
 
 ## Markdown knowledge conventions
 
-Keep durable knowledge visible in Markdown. Scripts and formulas should summarize or update readable source data, not hold the only copy.
+Keep durable knowledge visible in Markdown. Queries and formulas summarize readable source data rather than holding the only copy.
 
 - Headings use normal Markdown (`#`, `##`, and deeper levels).
 - Tasks use `- [ ]` and `- [x]`.
 - A parsed tag is written as `#tag` in note content.
 - A note link is `[Label](note://shortId)`.
 - A file link is `[Label](attach://shortId)`; an image is `![Alt](attach://shortId)`.
-- A named block places `@name` on its own line directly above a table, list, data fence, heading section, or script fence.
+- A named block places `@name` on its own line directly above a table, list, data block, or heading section.
 
 ````markdown
 @owners
@@ -51,22 +52,71 @@ Keep durable knowledge visible in Markdown. Scripts and formulas should summariz
 | Ada | Maintainer |
 
 @status
-```data
-{"state":"ready","reviewed":true}
-```
+:::data
+state: ready
+reviewed: true
+:::
 
 @next-actions
 - [ ] Publish the release
 - [ ] Verify the deployment
 ````
 
-The editor can render callouts and other Markdown extensions, but CLI agents should preserve unfamiliar syntax rather than normalize it away. A script is a fenced `script` block and runs in the browser with the opening user's permissions:
+The editor can render callouts and other Markdown extensions, but CLI agents should preserve unfamiliar syntax rather than normalize it away. Legacy fenced `script` blocks remain visible code and never execute. Preserve their source unless the user asks to replace it; there is no script runtime, notebook-local script storage, or script setting.
+
+## Declarative summaries
+
+Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so normal CLI read/edit commands can manage it.
 
 ````markdown
-```script
-ui.metric("Open tasks", current.todo("next-actions")?.items.filter((item) => !item.done).length ?? 0).show();
-```
+:::toc
+min-depth: 2
+max-depth: 3
+:::
+
+:::query
+source: notes
+scope: notebook
+match: all
+where:
+  - field: $tags
+    op: contains
+    value: handbook
+  - field: status.reviewed
+    op: eq
+    value: true
+sort:
+  field: $updated
+  direction: desc
+columns:
+  - $title
+  - status.state
+limit: 25
+:::
 ````
+
+The example reads `state` and `reviewed` from each note's `@status` data block. You choose block and property names; there are no required wiki metadata fields. Property paths use `block.key`. Data values are strings, numbers, booleans, or flat lists of these values, not nested objects.
+
+Query rules:
+
+- `source` must be `notes`; results stay inside the current notebook and require read access.
+- `scope` is `notebook` (default), `children`, or `descendants`, relative to the note containing the query.
+- `match` is `all` (default) or `any`; nested filter groups are not supported.
+- `$title`, `$created`, `$updated`, `$tags`, and named `block.key` properties can be selected or filtered.
+- Sort by `$title`, `$created`, or `$updated`, with `asc` or `desc`. The default is `$updated` descending.
+- Omitting `columns` produces a list. Selected columns produce a table, with at most 16 columns.
+- `limit` is 1–100, default 25. A query accepts at most 32 filters and 100 values in a filter list. A note accepts at most 20 query blocks.
+
+Choose operators for the field's value type:
+
+| Field | Operators |
+| --- | --- |
+| `$title` | `eq`, `ne`, `in`, `not-in`, `contains`, `starts-with` |
+| `$created`, `$updated` | `eq`, `ne`, `in`, `not-in` with RFC 3339 timestamps |
+| `$tags` | `exists`, `missing`, `contains`, `contains-any`, `contains-all` |
+| `block.key` | `exists`, `missing`, typed `eq`/`ne`/`in`/`not-in`, string `contains`/`starts-with`, numeric `gt`/`gte`/`lt`/`lte`, list `contains-any`/`contains-all` |
+
+`exists` and `missing` take no `value`. Queries do not evaluate JavaScript, SQL, regular expressions, or formulas. Invalid blocks show diagnostics rather than partially applying a query. TOC depths range from 1 to 6, with `min-depth` no greater than `max-depth`.
 
 ## Agent workflow
 
@@ -259,7 +309,7 @@ cld notebooks block \
   --json
 ```
 
-Supported block classifications are `table`, `list`, `data`, `section`, `script`, and `unknown`. A name may occur more than once; select a duplicate with `--index`.
+Supported block classifications are `table`, `list`, `data`, `section`, and `unknown`. A name may occur more than once; select a duplicate with `--index`.
 
 A safe block update is:
 
@@ -367,12 +417,12 @@ All commands support the global Cloud CLI options, including `--json`, `--profil
 | `current` | `cld notebooks current` | Show the default notebook. |
 | `get` | `cld notebooks get --notebook <ref>` | Show one notebook. |
 | `create` | `cld notebooks create <name> [--description text] [--icon icon] [--use]` | Create a notebook. |
-| `update` | `cld notebooks update --notebook <ref> [settings]` | Change name, description, icon, homepage, or script setting. |
+| `update` | `cld notebooks update --notebook <ref> [settings]` | Change name, description, icon, homepage, or the default note title. |
 | `delete` | `cld notebooks delete --notebook <ref> --yes` | Delete the notebook and all content. |
 | `templates` | `cld notebooks templates` | List built-in notebook templates. |
 | `create-from-template` | `cld notebooks create-from-template <template-id> [--name name] [--use]` | Create a notebook from a built-in template. |
 
-`update` accepts `--name`, `--description`, `--clear-description`, `--icon`, `--clear-icon`, `--homepage <note-ref>`, `--clear-homepage`, `--scripts-enabled true|false`, and `--default-note-title-template <liquid>`.
+`update` accepts `--name`, `--description`, `--clear-description`, `--icon`, `--clear-icon`, `--homepage <note-ref>`, `--clear-homepage`, and `--default-note-title-template <liquid>`.
 
 ### Notes and navigation
 
@@ -544,8 +594,6 @@ Store the raw token immediately; later list calls return metadata, not that toke
 
 Load only the reference needed for the task:
 
-- [Notebook Script API](notebooks-scripts.md): read when creating or changing trusted script blocks, rendered notebook tools, notebook-local state, or script-driven note operations.
-- [Notebook script utilities](notebooks-script-utilities.md): read when a script needs text, date, fuzzy search, crypto, encoding, chart, QR, password, timing, file, image, or clipboard helpers.
 - [Table formulas](notebooks-formulas.md): read when creating or changing formulas inside Markdown tables.
 
-The three references are exhaustive for their runtime surfaces. Do not assume unlisted script globals, utility functions, or formula functions exist.
+The formula reference lists the supported functions. Do not assume unlisted formula functions exist.

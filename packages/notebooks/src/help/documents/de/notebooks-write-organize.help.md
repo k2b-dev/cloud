@@ -15,7 +15,7 @@ Schreibe Notizen als lesbares Markdown. Nutze anschließend Links, Tags, Anhäng
 Nutze **Kommentare** in den Notizdetails für Fragen, Feedback und Entscheidungen, die zur Seite gehören, aber nicht ihren Markdown-Inhalt verändern sollen.
 
 :::reference
-- **Lesen:** Wer das Notizbuch lesen darf, kann auch die Diskussionen seiner Seiten verfolgen.
+- **Ansichten:** Nutzer mit Schreib- oder Adminrechten können Diskussionen unter Bearbeiten oder Schreibgeschützt verfolgen. Buch hat keinen Detailbereich und keine Diskussionen.
 - **Hinzufügen:** Nutzer mit Schreibzugriff können Markdown-Kommentare verfassen. Neue Kommentare erscheinen live bei anderen Lesern.
 - **Korrigieren:** Eigene Kommentare können nach dem Veröffentlichen zehn Minuten lang bearbeitet oder gelöscht werden.
 - **Gesperrte Notizen:** Eine Sperre schützt den Inhalt der Notiz, nicht ihre Diskussion. Nutzer mit Schreibzugriff können weiterhin kommentieren.
@@ -30,7 +30,7 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 :::reference
 - **Überschriften:** Gliedere die Notiz mit #, ## und weiteren Überschriftenebenen. Die erste H1 oder andernfalls die erste sichtbare Zeile wird außerdem als Notiztitel in der Navigation und Suche verwendet.
 - **Listen und Aufgaben:** Verwende - für Listen und - [ ] oder - [x] für Aufgaben.
-- **Slash-Menü:** Verwende das Einfüge-Menü im Editor für häufige Blöcke wie Notizlinks, Dateien, Tabellen und Skripte.
+- **Slash-Menü:** Verwende das Einfüge-Menü im Editor für häufige Blöcke wie Notizlinks, Dateien und Tabellen. Tippe ::: für Daten, Abfragen, Inhaltsverzeichnisse und Hinweisblöcke.
 :::
 
 **Normale Notiz**

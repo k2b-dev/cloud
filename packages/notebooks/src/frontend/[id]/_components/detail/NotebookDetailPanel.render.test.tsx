@@ -129,7 +129,8 @@ describe("Notebook note detail panel", () => {
     expect(html).toContain('href="/app/notebooks/book01/notes/note01?mode=versions"');
     expect(html).toContain('href="/app/notebooks/book01?mode=graph&amp;note=note01"');
     expect(html).toContain('href="#overview"');
-    expect(html).toContain('aria-label="Copy script snippet for inventory"');
+    expect(html).not.toContain("Copy script snippet");
+    expect(html).toContain("inventory");
     expect(html).toContain("plan.pdf");
     expect(html).toContain('href="/app/notebooks/other1/notes/source"');
     expect(html).toContain('aria-label="Close note details"');

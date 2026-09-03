@@ -156,7 +156,6 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     tree,
     permission,
     canWrite,
-    canRunScripts: notebook.scriptsEnabled,
     isVersionsMode,
     isGraphMode,
     selectedNoteId,

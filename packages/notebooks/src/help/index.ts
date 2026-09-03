@@ -1,7 +1,5 @@
 import { defineHelp } from "@valentinkolb/cloud/server";
 import coreModelDe from "./documents/de/notebooks-core-model.help.md" with { type: "text" };
-import scriptApiDe from "./documents/de/notebooks-script-api.help.md" with { type: "text" };
-import scriptsDe from "./documents/de/notebooks-scripts.help.md" with { type: "text" };
 import settingsAccessDe from "./documents/de/notebooks-settings-access.help.md" with { type: "text" };
 import startDe from "./documents/de/notebooks-start.help.md" with { type: "text" };
 import structuredBlocksDe from "./documents/de/notebooks-structured-blocks.help.md" with { type: "text" };
@@ -9,8 +7,6 @@ import tableFormulasDe from "./documents/de/notebooks-table-formulas.help.md" wi
 import troubleshootingDe from "./documents/de/notebooks-troubleshooting.help.md" with { type: "text" };
 import writeOrganizeDe from "./documents/de/notebooks-write-organize.help.md" with { type: "text" };
 import coreModel from "./documents/en/notebooks-core-model.help.md" with { type: "text" };
-import scriptApi from "./documents/en/notebooks-script-api.help.md" with { type: "text" };
-import scripts from "./documents/en/notebooks-scripts.help.md" with { type: "text" };
 import settingsAccess from "./documents/en/notebooks-settings-access.help.md" with { type: "text" };
 import start from "./documents/en/notebooks-start.help.md" with { type: "text" };
 import structuredBlocks from "./documents/en/notebooks-structured-blocks.help.md" with { type: "text" };
@@ -22,7 +18,7 @@ import writeOrganize from "./documents/en/notebooks-write-organize.help.md" with
 export const notebookHelp = defineHelp({
   baseLocale: "en",
   documents: {
-    en: [start, coreModel, writeOrganize, structuredBlocks, tableFormulas, scripts, scriptApi, settingsAccess, troubleshooting],
-    de: [startDe, coreModelDe, writeOrganizeDe, structuredBlocksDe, tableFormulasDe, scriptsDe, scriptApiDe, settingsAccessDe, troubleshootingDe],
+    en: [start, coreModel, writeOrganize, structuredBlocks, tableFormulas, settingsAccess, troubleshooting],
+    de: [startDe, coreModelDe, writeOrganizeDe, structuredBlocksDe, tableFormulasDe, settingsAccessDe, troubleshootingDe],
   },
 });

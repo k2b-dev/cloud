@@ -10,8 +10,6 @@ export type Notebook = {
   description: string | null;
   icon: string | null;
   homepageNoteId: string | null;
-  /** Per-notebook opt-in for `\`\`\`script` block execution. */
-  scriptsEnabled: boolean;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;

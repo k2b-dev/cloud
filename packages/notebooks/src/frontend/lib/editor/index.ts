@@ -12,7 +12,6 @@ import { markdownExtension } from "./markdown";
 import { markupExtension } from "./markup";
 import { mermaidExtension } from "./mermaid";
 import { namedBlocksExtension } from "./named-blocks";
-import { scriptsExtension } from "./scripts";
 import { searchTheme } from "./search-theme";
 import { subSupExtension } from "./sub-sup";
 import { tablesExtension } from "./tables";
@@ -39,7 +38,6 @@ export {
   pointerSelectionMarkdownRefreshExtension,
   rawDarkInit,
   rawLightInit,
-  scriptsExtension,
   searchTheme,
   subSupExtension,
   tablesExtension,
@@ -62,7 +60,6 @@ export const editor = {
   markupExtension,
   mermaidExtension,
   namedBlocksExtension,
-  scriptsExtension,
   searchTheme,
   subSupExtension,
   tablesExtension,

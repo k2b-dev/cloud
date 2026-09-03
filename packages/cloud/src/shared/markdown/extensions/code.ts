@@ -55,26 +55,7 @@ const renderCode = (source: string, language?: string): string => {
   return highlighter ? highlighter(source) : escapeHtml(source);
 };
 
-/** Base64-encode a UTF-8 string for embedding in a `data-` attribute.
- *  Server-safe: works in Bun runtime. The matching client-side decoder
- *  uses `atob` + `decodeURIComponent` (see `frontend/lib/script/read-mode.ts`). */
-const encodeScriptSource = (source: string): string => {
-  // `Buffer` exists in Bun's server-side runtime. The fallback path
-  // (`unescape(encodeURIComponent(...))` + `btoa`) is for any
-  // browser/edge environment that imports this module without Buffer.
-  if (typeof Buffer !== "undefined") return Buffer.from(source, "utf8").toString("base64");
-  return btoa(unescape(encodeURIComponent(source)));
-};
-
-export type CodeExtensionOptions = {
-  /**
-   * Notebook read mode executes fenced `script` blocks. Documentation must
-   * never do that: examples in help are source code, not executable content.
-   */
-  executableScripts?: boolean;
-};
-
-export function codeExtension(options: CodeExtensionOptions = {}): MarkedExtension {
+export function codeExtension(): MarkedExtension {
   return {
     renderer: {
       code(token: Tokens.Code): string {
@@ -82,7 +63,6 @@ export function codeExtension(options: CodeExtensionOptions = {}): MarkedExtensi
         const langLower = lang?.toLowerCase();
         const renderedCode = renderCode(text, langLower);
         const isMermaid = langLower === "mermaid";
-        const isScript = langLower === "script";
 
         // Language class for syntax highlighting / mermaid detection
         const langClass = lang ? ` language-${escapeHtml(lang)}` : "";
@@ -97,30 +77,6 @@ export function codeExtension(options: CodeExtensionOptions = {}): MarkedExtensi
             `<i class="ti ti-loader-2 animate-spin"></i> Loading diagram...` +
             `</div>` +
             `</div>` +
-            `</div>`
-          );
-        }
-
-        // ```script blocks: emit a wrapper carrying the source as a
-        // base64 `data-` attribute + an empty output container. The
-        // client-side `enhanceReadModeScripts` (see frontend/lib/script
-        // /read-mode.ts) finds these wrappers, decodes the source, and
-        // either runs it (when notebook.scriptsEnabled is true) or
-        // shows the source as a regular code block (when false).
-        // Decision is made client-side because the markdown layer is
-        // notebook-agnostic — `scriptsEnabled` is a per-notebook flag.
-        // The fallback (source) stays in the DOM (just `display: none`
-        // when scripts are active) so view-source / accessibility
-        // tooling sees the original code. Skip the carrier when
-        // there's no source — empty fences shouldn't activate.
-        if (isScript && options.executableScripts !== false) {
-          const sourceB64 = encodeScriptSource(text);
-          return (
-            `<div class="md-script-block my-3" data-script-source="${sourceB64}">` +
-            `<pre class="md-script-source bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md p-4 overflow-x-auto">` +
-            `<code class="text-sm font-mono text-gray-800 dark:text-gray-200 whitespace-pre language-script">${renderedCode}</code>` +
-            `</pre>` +
-            `<div class="md-script-output"></div>` +
             `</div>`
           );
         }

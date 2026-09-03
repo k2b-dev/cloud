@@ -4,7 +4,7 @@
  * All sources that need to know "is the cursor inside a fenced code
  * block?" go through here. Without this helper, each source would
  * walk the syntax tree independently — multiplied across the 3-4
- * non-script sources that share this question, that's a lot of
+ * completion sources that share this question, that's a lot of
  * redundant work per keystroke.
  *
  * Cache strategy: keyed on the immutable `EditorState` object and

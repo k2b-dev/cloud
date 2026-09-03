@@ -2,7 +2,7 @@
 id: notebooks-start
 title: "Einstieg"
 icon: "ti ti-notebook"
-description: "Wofür Notizbücher gedacht sind und wie Notizen, Struktur und Skripte zusammenspielen."
+description: "Einen Markdown-Arbeitsbereich erstellen, Seiten verbinden und automatische Verzeichnisse ergänzen."
 order: 100
 ---
 
@@ -25,9 +25,9 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Inhalte bleiben zuers
 
 :::steps
 1. **Schreiben:** Beginne mit Überschriften, Absätzen, Aufgaben, Links und Anhängen.
-2. **Strukturieren:** Verwende `@ref`-Blöcke, wenn Formeln oder Skripte stabile Tabellen, Listen, Aufgaben oder Daten benötigen.
-3. **Automatisieren:** Verwende vertrauenswürdige Skriptblöcke für Dashboards, Diagramme und kleine Abläufe direkt in der Notiz.
-4. **Nachschlagen:** Die Seiten zu Formeln und zur Skript-API beschreiben den genauen Vertrag.
+2. **Strukturieren:** Ergänze benannte :::data-Blöcke für eigene Felder. Halte Tabellen und Aufgaben neben dem Text, der sie erklärt.
+3. **Seiten auflisten:** Nutze :::query für gefilterte Seitenlisten und :::toc für Überschriften der aktuellen Notiz.
+4. **Lesen:** Nutze die Buchansicht als reduziertes Handbuch. Leserechte öffnen immer Buch; mit Schreib- oder Adminrechten stehen auch Bearbeiten und Schreibgeschützt zur Verfügung.
 :::
 
 ## Häufige Wege {icon="route"}
@@ -37,5 +37,5 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Inhalte bleiben zuers
 - **Notiz herunterladen:** Lade den aktuellen Inhalt in den Notizdetails als Markdown oder PDF herunter. Die PDF-Datei wird im Arbeitsspeicher erzeugt und nicht gespeichert.
 - **Wissen verbinden:** Verknüpfe Notizen mit Notizlinks, Tags und Anhängen.
 - **Kleine Datenbestände pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für überschaubare Daten nahe am erklärenden Text.
-- **Kleine Werkzeuge bauen:** Skripte eignen sich für Zusammenfassungen, Diagramme, Eingaben und Aktionen auf Notizbuchdaten.
+- **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen, ohne Code auszuführen.
 :::

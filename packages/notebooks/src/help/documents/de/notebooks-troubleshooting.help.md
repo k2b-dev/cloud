@@ -2,28 +2,26 @@
 id: notebooks-troubleshooting
 title: "Fehlerbehebung"
 icon: "ti ti-lifebuoy"
-description: "Häufige Probleme mit Markdown, @ref, Formeln, Skripten, Anhängen und Suche beheben."
+description: "Probleme mit Abfragen, Daten, Formeln, Anhängen und Ansichten beheben."
 order: 180
 ---
 
-Die meisten Probleme betreffen Markdown-Syntax, stabile `@ref`-Namen, aktivierte Skripte oder die Berechtigungen des Notizbuchs.
+Prüfe den Markdown-Quelltext und deine Berechtigungen im Notizbuch, bevor du seine Struktur änderst.
 
 ## Häufige Symptome {icon="stethoscope"}
 
 :::reference
-- **Ein Skript findet eine Tabelle nicht:** Prüfe, ob direkt über der Tabelle ein stabiler `@name` steht und das Skript denselben Namen verwendet.
-- **Eine Formel zeigt einen Fehler:** Prüfe Funktionsname, Argumente, Spaltennamen und zyklische Verweise. Spaltennamen mit Leerzeichen benötigen Backticks.
-- **Ein Skript läuft nicht:** Prüfe, ob Skriptblöcke in den Einstellungen aktiviert sind und der Code in einem `script`-Codeblock steht.
-- **Die Suche findet eine Notiz nicht:** Tags werden aus `#tag` gelesen. Strukturierte Tag-Filter verlangen alle angegebenen Tags.
-- **Ein Anhang fehlt:** Prüfe, ob die Datei im Notizbuch vorhanden ist und der Verweis `attach://shortId` verwendet.
-- **Ein Skript schreibt an die falsche Stelle:** Schreibzugriffe über `current` ändern die Notiz mit dem Skript. `nb.update` verschiebt nur eine andere Notiz im aktuellen Notizbaum.
+- **Eine Abfrage zeigt einen Fehler:** Öffne ihren Quelltext und prüfe die markierte Zeile. Verwende source: notes, unterstützte Felder und Operatoren und schließe den Block mit :::.
+- **Benannte Daten fehlen in einer Abfrage:** Setze @name direkt über :::data. Verwende eindeutige Namen und Schlüssel, flache Werte und dieselbe Feldschreibweise in der Abfrage. Ungültige oder doppelt benannte Daten werden nicht indexiert.
+- **Eine Abfrage liefert keine Notizen:** Prüfe scope, Tags, Werttypen und match. Der Standard match: all verlangt jeden Filter. Abfragen lesen gespeicherte Notizen, nicht ungespeicherten Text in einem anderen Editor.
+- **Eine Formel zeigt einen Fehler:** Prüfe Funktionsnamen, Argumentanzahl, Spaltennamen und zirkuläre Bezüge. Spaltennamen mit Leerzeichen brauchen Backticks.
+- **Ein Anhang fehlt:** Prüfe, ob die Datei in diesem Notizbuch existiert und der Markdown-Link attach://shortId verwendet.
+- **Bearbeitung oder Kommentare fehlen:** Leserechte öffnen nur die Buchansicht. Nutzer mit Schreib- oder Adminrechten können für den Detailbereich zu Bearbeiten oder Schreibgeschützt wechseln. Gesperrte Notizen lassen sich nicht bearbeiten.
+- **Ein altes Skript läuft nicht mehr:** Ausführbare Skripte werden nicht mehr unterstützt. Vorhandene Skriptblöcke bleiben lesbarer Code; ersetze Seitenlisten durch :::query und Inhaltsverzeichnisse durch :::toc. Für Skriptbuttons und Schreibaktionen gibt es keinen Ersatz.
 :::
 
-## Schrittweise prüfen {icon="route"}
+## Aktualisierungen prüfen {icon="refresh"}
 
-:::steps
-1. **Markdown lesen:** Prüfe zuerst, ob die Rohfassung die erwarteten Daten enthält.
-2. **Benannte Blöcke prüfen:** Vergleiche die `@ref`-Namen und nutze zum Erkunden Pluralmethoden wie `current.tables()`.
-3. **Skript verkleinern:** Beginne mit `ui.text` oder `ui.table`, bevor du Aktionen, Eingaben, Diagramme oder Schreibzugriffe hinzufügst.
-4. **Änderungen nachvollziehbar halten:** Bevorzuge sichtbare Markdown-Änderungen und benannte Blöcke, wenn andere das Ergebnis verstehen müssen.
-:::
+Beim Bearbeiten wird der Notiztext mit anderen Bearbeitern synchronisiert. Gespeicherte Änderungen aktualisieren Abfragevorschauen und Buchinhalte. Die schreibgeschützte Ansicht empfängt keine gemeinsamen Textänderungen: Lade sie neu, wenn sich die gespeicherte Quelle geändert hat.
+
+Kann eine Buchseite nicht aktualisiert werden, bleibt der letzte lesbare Inhalt sichtbar und du kannst es erneut versuchen. Entfällt der Zugriff oder die Seite, zeigt Notebooks den alten Inhalt nicht weiter an und prüft die Seite erneut. Ohne JavaScript musst du für Änderungen neu laden.

@@ -18,13 +18,7 @@ import type { Extension } from "@codemirror/state";
 const codeLanguages = [
   LanguageDescription.of({
     name: "JavaScript",
-    // `script` is the notebooks-app scripting fence (`\`\`\`script` blocks
-    // in `lib/editor/scripts.ts`). It evaluates as JS, so it should
-    // also highlight as JS — without this alias the source renders
-    // as flat monochrome text in the editor. The block-widget runner
-    // is unaffected; this only drives the markdown lexer's syntax
-    // highlighting when the cursor is INSIDE a script fence.
-    alias: ["js", "jsx", "ts", "tsx", "typescript", "script"],
+    alias: ["js", "jsx", "ts", "tsx", "typescript"],
     load: async () => javascript({ jsx: true, typescript: true }),
   }),
   LanguageDescription.of({

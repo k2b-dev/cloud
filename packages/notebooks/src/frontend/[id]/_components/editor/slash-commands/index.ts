@@ -11,10 +11,7 @@ import { fuzzy } from "@k2b/stdlib";
 import { buildAttachmentCompletionSource } from "../../../../lib/editor/attachment-autocomplete";
 import { codeFenceCompletionSource } from "../../../../lib/editor/code-fence-snippets";
 import { infoBlockCompletionSource } from "../../../../lib/editor/info-block-snippets";
-import { jsCompletionSource } from "../../../../lib/editor/js-snippets";
-import { kitCompletionSource } from "../../../../lib/editor/kit-autocomplete";
 import { buildNoteLinkCompletionSource } from "../../../../lib/editor/note-link-autocomplete";
-import { scriptTypeCompletionSource } from "../../../../lib/editor/script-intelligence";
 import { tableColumnCompletionSource } from "../../../../lib/editor/table-columns";
 import { tableFormulaCompletionSource } from "../../../../lib/editor/table-formulas";
 import { buildTagCompletionSource } from "../../../../lib/editor/tag-autocomplete";
@@ -232,27 +229,8 @@ const buildSlashSource = (ctx: SlashCommandContext) => {
   };
 };
 
-/** Default icons per CM completion `type` for kit + JS entries that
- *  don't set an explicit `kitIcon`. Tabler icon names — every entry
- *  here has been verified against the bundled webfont; bad names
- *  silently render as empty space.
- *
- *  - `method` / `function` — `f(x)` glyph reads instantly as "this
- *    is a function" (better than parentheses, which look more like
- *    "expression grouping" than "callable")
- *  - `property` — single dot, data accessor
- *  - `namespace` — `ti-category` (interleaved squares) reads as
- *    "grouped entries" without the file-system connotation
- *    `ti-folder` carries; fits both top-level kit submodules and
- *    nested namespaces like `kit.crypto.common`
- *  - `class` — type / constructor (a built object)
- *  - `keyword` — curly braces denote a code block / scope, which
- *    is what most JS keywords introduce (`if {}`, `for {}`, `try {}`,
- *    `function {}`); keyword-as-syntax mapping
- *  - `constant` — pennant glyph reads as "fixed marker" / "literal
- *    value pinned here"
- *  - `variable` — mutable global (window / document) */
-const KIT_TYPE_ICONS: Record<string, string> = {
+/** Default Tabler icons for completion entries without an explicit icon. */
+const COMPLETION_TYPE_ICONS: Record<string, string> = {
   method: "ti-math-function",
   function: "ti-math-function",
   property: "ti-circle-dot",
@@ -263,18 +241,13 @@ const KIT_TYPE_ICONS: Record<string, string> = {
   variable: "ti-variable",
 };
 
-/** Resolve the Tabler icon class for a Completion. Order:
- *   1. Slash command's own icon (from the SlashCommand registry).
- *   2. Kit completion's `kitIcon` (set on top-level namespace entries).
- *   3. Fallback by Completion `type` for kit methods / properties /
- *      sub-namespaces and the JS-standard keyword / global lists.
- *   4. Slash-command default (`ti-command`). */
+/** Prefer the command icon, then an explicit icon, then the completion type. */
 const resolveIcon = (completion: Completion): string => {
   const slashCmd = (completion as SlashCompletion).slashCommand;
   if (slashCmd?.icon) return slashCmd.icon;
-  const kitIcon = (completion as Completion & { kitIcon?: string }).kitIcon;
-  if (kitIcon) return kitIcon;
-  if (completion.type && KIT_TYPE_ICONS[completion.type]) return KIT_TYPE_ICONS[completion.type]!;
+  const completionIcon = (completion as Completion & { completionIcon?: string }).completionIcon;
+  if (completionIcon) return completionIcon;
+  if (completion.type && COMPLETION_TYPE_ICONS[completion.type]) return COMPLETION_TYPE_ICONS[completion.type]!;
   return "ti-command";
 };
 
@@ -302,7 +275,7 @@ const descRenderer = {
     const detail = completion.detail;
     if (!detail) return document.createElement("span");
     const el = document.createElement("span");
-    el.className = "cm-kit-detail";
+    el.className = "cm-completion-detail";
     el.textContent = detail;
     return el;
   },
@@ -311,7 +284,7 @@ const descRenderer = {
 /**
  * Wrap a completion source so a sync throw is caught and turned into
  * a `null` result. Without this, ONE crashing source aborts CM's
- * entire autocomplete query — losing slash commands, kit, JS, and
+ * entire autocomplete query — losing slash commands and
  * everything else in the override list. The wrapper preserves async
  * sources transparently (Promise rejections are caught via
  * `.catch`).
@@ -357,9 +330,6 @@ export const slashCommandsExtension = (ctx: SlashCommandContext): Extension =>
     //   3. notice-card picker — only at line-start, `:::<…>` (markdown ctx)
     //   4. table formulas     — only in `|...|` rows, cell starts with `=`
     //   5. tag completion     — `#<word>` mid-text (notebook-wide tags, async)
-    //   6. TS intelligence    — only inside `script` fences, lazy TS LS
-    //   7. kit API            — only inside script fences, prefix `kit…`
-    //   8. JS standard        — only inside script fences, identifiers
     //
     // Each source self-scopes via a cheap matchBefore + optional
     // syntax-tree check, so the ones that don't apply return `null`
@@ -391,9 +361,6 @@ export const slashCommandsExtension = (ctx: SlashCommandContext): Extension =>
       safe("attachment", buildAttachmentCompletionSource(ctx.notebookId)),
       safe("note-link", buildNoteLinkCompletionSource(ctx.notebookId)),
       safe("tag", buildTagCompletionSource(ctx.notebookId)),
-      safe("script-types", scriptTypeCompletionSource),
-      safe("kit", kitCompletionSource),
-      safe("js", jsCompletionSource),
     ],
     activateOnTyping: true,
     selectOnOpen: true,

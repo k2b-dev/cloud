@@ -31,7 +31,6 @@ type Notebook = {
   description: string | null;
   icon: string | null;
   homepageNoteId: string | null;
-  scriptsEnabled: boolean;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
   createdBy: string | null;
@@ -518,7 +517,6 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     const description = stringFlag(ctx.flags, "description");
     const icon = stringFlag(ctx.flags, "icon");
     const homepageRef = stringFlag(ctx.flags, "homepage");
-    const scriptsEnabled = optionalBooleanFlag(ctx.flags, "scripts-enabled");
     const defaultNoteTitleTemplate = stringFlag(ctx.flags, "default-note-title-template");
     if (name !== undefined) body.name = name;
     if (description !== undefined || booleanFlag(ctx.flags, "clear-description")) body.description = description ?? null;
@@ -526,7 +524,6 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     if (homepageRef || booleanFlag(ctx.flags, "clear-homepage")) {
       body.homepageNoteId = homepageRef ? (await resolveNoteRef(ctx, api, notebook.id, homepageRef)).id : null;
     }
-    if (scriptsEnabled !== undefined) body.scriptsEnabled = scriptsEnabled;
     if (defaultNoteTitleTemplate !== undefined) body.defaultNoteTitleTemplate = defaultNoteTitleTemplate;
     if (Object.keys(body).length === 0) throw new Error("No notebook updates supplied.");
     const payload = await ctx.readJson<Notebook>(
@@ -1476,7 +1473,6 @@ export default defineCliCommands({
         clearIcon: flag.boolean({ name: "clear-icon", description: "Clear the icon" }),
         homepage: flag.string({ description: "Homepage note short id, exact title, or path" }),
         clearHomepage: flag.boolean({ name: "clear-homepage", description: "Clear the homepage note" }),
-        scriptsEnabled: flag.string({ name: "scripts-enabled", description: "Enable or disable scripts: true|false" }),
         defaultNoteTitleTemplate: flag.string({
           name: "default-note-title-template",
           description: "Liquid template used for the initial H1 of empty notes",

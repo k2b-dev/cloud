@@ -25,7 +25,6 @@ describe("notebooks public resource projection", () => {
       icon: null,
       homepageNoteId: "22222222-2222-4222-8222-222222222222",
       homepageNoteShortId: "def456",
-      scriptsEnabled: false,
       defaultPresentationMode: "book",
       defaultNoteTitleTemplate: "Untitled",
       createdBy: null,

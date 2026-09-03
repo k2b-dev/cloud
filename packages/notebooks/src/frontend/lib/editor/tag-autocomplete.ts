@@ -42,9 +42,9 @@ import {
 import { apiClient } from "@/api/client";
 import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
 import { isInsideFencedCode } from "./editor-scope";
-import { withIcon } from "./kit-autocomplete";
+import { withIcon } from "./completion-icon";
 
-/** Server response shape — matches `KitTagSummary` in `kit-types.ts`. */
+/** Notebook tag-search response shape. */
 type TagSummary = { tag: string; count: number };
 
 type CachedTags = { tags: TagSummary[] };

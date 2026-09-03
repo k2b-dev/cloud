@@ -98,24 +98,6 @@ type NoteActivityItem = {
   lastOccurredAt: string;
 };
 
-const namedBlockSnippet = (block: NamedBlockSummary): string => {
-  const name = JSON.stringify(block.name);
-  switch (block.type) {
-    case "table":
-      return `const rows = current.table(${name})?.rows ?? [];`;
-    case "list":
-      return `const items = current.list(${name})?.items ?? [];`;
-    case "data":
-      return `const data = current.data(${name})?.value ?? {};`;
-    case "section":
-      return `const markdown = current.section(${name})?.markdown ?? "";`;
-    case "script":
-      return `// @${block.name} marks a script block. Script blocks are not readable through current.* yet.`;
-    default:
-      return `// @${block.name} has no typed script helper yet.`;
-  }
-};
-
 /**
  * Right-side detail panel — outline + backlinks + (edit-mode) online users +
  * actions + note metadata. Single island keeps editor bridge state and panel
@@ -293,16 +275,6 @@ export default function NotebookDetailPanel(props: Props) {
 
   const scrollToNamedBlock = (block: NamedBlockSummary) => {
     window.dispatchEvent(new CustomEvent(NAMED_BLOCK_SCROLL_EVENT, { detail: block }));
-  };
-
-  const copyNamedBlockSnippet = async (event: MouseEvent, block: NamedBlockSummary) => {
-    event.stopPropagation();
-    try {
-      await clipboard.copy(namedBlockSnippet(block));
-      toast.success(t().referenceCopied, { title: t().copied, iconClass: "ti ti-clipboard-check" });
-    } catch {
-      toast.error(t().referenceCopyFailed);
-    }
   };
 
   onMount(() => {
@@ -500,16 +472,6 @@ export default function NotebookDetailPanel(props: Props) {
                             title={<code class="truncate">{block.name}</code>}
                             description={block.type}
                           />
-                          <Tooltip.Anchor content={t().copyScriptSnippet({ name: block.name })} class="shrink-0">
-                            <IconButton
-                              label={t().copyScriptSnippet({ name: block.name })}
-                              size="xs"
-                              class="shrink-0 text-dimmed opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
-                              onClick={(event) => void copyNamedBlockSnippet(event, block)}
-                            >
-                              <i class="ti ti-copy text-xs" aria-hidden="true" />
-                            </IconButton>
-                          </Tooltip.Anchor>
                         </li>
                       )}
                     </For>

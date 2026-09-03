@@ -11,7 +11,7 @@ const ResourceShortIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9]{6}$/)
   .describe("Stable 6-character resource ID.");
-const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "script", "unknown"]);
+const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "unknown"]);
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
 const resourceRef = <Type extends string>(type: Type) =>
   z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();

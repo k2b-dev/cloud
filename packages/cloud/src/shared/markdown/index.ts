@@ -38,7 +38,7 @@ const createMarked = (profile: MarkdownProfile = "content") => {
   marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank" }));
   marked.use(imagesExtension());
   marked.use(katexExtension());
-  marked.use(codeExtension({ executableScripts: profile === "content" }));
+  marked.use(codeExtension());
   // Inline-style decorators come last so they run after structural tokenizers.
   marked.use(markExtension());
   marked.use(subSupExtension());
@@ -92,7 +92,7 @@ const sanitizeRenderedHtml = (html: string): string =>
       a: ["href", "name", "rel", "target", "title"],
       annotation: ["encoding"],
       code: ["class"],
-      div: ["class", "data-block-name", "data-script-source", "style"],
+      div: ["class", "data-block-name", "style"],
       img: ["alt", "class", "height", "loading", "src", "title", "width", "style"],
       input: ["checked", "class", "disabled", "type"],
       math: ["xmlns"],
@@ -168,8 +168,8 @@ export function renderMarkdownSync(content: string): string {
 }
 
 /**
- * Render trusted documentation Markdown without enabling notebook runtime
- * features. In particular, `script` fences remain visible source examples.
+ * Render trusted documentation Markdown with guided sections and internal
+ * navigation. All fenced code remains visible source, as in ordinary Markdown.
  */
 export function renderHelpMarkdown(content: string): string {
   if (!content || typeof content !== "string") return "";

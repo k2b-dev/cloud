@@ -2,96 +2,113 @@
 id: notebooks-structured-blocks
 title: "Structured blocks"
 icon: "ti ti-braces"
-description: "Use @ref blocks to make tables, lists, todos, data, and sections script-readable."
+description: "Define your own data and build filtered page lists and tables of contents."
 order: 130
 ---
 
-Named blocks are the bridge from readable notes to script-readable data. Put a stable `@ref` directly above the block that should become part of the public note structure.
+Use named data for facts beside your prose, queries for automatic page lists, and a table of contents for headings on one page. No predefined metadata schema is required.
 
-## Automatic page lists and contents
+## Add your own data {icon="braces"}
 
-Type `:::` in the editor and choose **query** or **toc**. In rich mode, each block shows a server-rendered preview. Move the cursor into the block or choose **Show source** to change its settings. Invalid settings are marked at their source lines. Book renders the same results without an editor.
+Put a stable name directly above a data block:
 
-This query lists notes tagged `handbook`, newest changes first:
+```text
+@profile
+:::data
+owner: Ada
+status: active
+reviewDays: 30
+approved: true
+teams:
+  - operations
+  - support
+:::
+```
+
+This exposes fields such as `profile.owner` and `profile.reviewDays`. Names and field keys are case-sensitive. For query fields, use a letter followed by letters, numbers, underscores, or hyphens, up to 64 characters per part.
+
+Values are strings, numbers, booleans, or flat lists of those values. Quote numeric-looking strings: `"30"` is not the number `30`. Write list items on separate lines with two spaces before `-`; data blocks do not accept inline arrays or nested objects. Dates remain strings rather than a separate type. A key with no value or list items is an empty list; use `""` for an empty string.
+
+Do not repeat a block name or a key inside a block. Invalid named data is excluded from queries and reported as a diagnostic. A block supports at most 64 fields, a list 128 items, and a string 2,000 characters.
+
+## List matching pages {icon="list-search"}
+
+Type `:::` in the editor and choose **query**. This example finds handbook pages with active status and a review interval of at most 30 days:
 
 ```text
 :::query
 source: notes
+scope: notebook
+match: all
 where:
   - field: $tags
     op: contains-all
     value: [handbook]
+  - field: profile.status
+    op: eq
+    value: active
+  - field: profile.reviewDays
+    op: lte
+    value: 30
 sort:
   field: $updated
   direction: desc
+columns:
+  - $title
+  - profile.owner
+  - profile.reviewDays
 limit: 25
 :::
 ```
 
-Queries stay within the current notebook. Use `scope: children` or `scope: descendants` to restrict the list to pages below the current note. Filters can also address your own named data, such as `profile.owner`; no predefined metadata schema is required. Query previews use saved note data. Editing a query draft does not save it or modify its results.
+Queries read saved notes from the current notebook only. They cannot fetch other notebooks, read table rows, run JavaScript, join datasets, or write changes.
 
-An empty `:::toc` block followed by `:::` lists the page's headings. Set `min-depth` and `max-depth` between 1 and 6 to choose the heading levels.
+| Setting | Meaning |
+| --- | --- |
+| `source` | Required: `notes` |
+| `scope` | `notebook` (default), direct `children`, or all `descendants` of this note |
+| `match` | `all` (default) requires every filter; `any` requires at least one. No filters means all notes in scope. |
+| `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated descending. |
+| `columns` | Fields to display, one per indented list item. Omit for a linked title list. |
+| `limit` | 1–100 results, default 25. A notice indicates additional matches; narrow your filters to see them. |
 
-Saved changes refresh query previews. If a Read-only editor's saved source has changed, reload the page to show the new source and matching preview.
+Use at most 32 filters and 16 distinct columns per query. A page supports at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values.
 
-**@ref**
+## Choose filters {icon="filter"}
 
-## The block contract {icon="contract"}
+| Field or value | Operators |
+| --- | --- |
+| `$title` | `eq`, `ne`, `in`, `not-in`, `contains`, `starts-with` |
+| `$created`, `$updated` | `eq`, `ne`, `in`, `not-in`; use full timestamps such as `2026-09-01T10:00:00Z` |
+| `$tags` | `contains` for one tag; `contains-any` or `contains-all` for a list; `exists` or `missing` |
+| Named scalar data | `eq`, `ne`, `in`, `not-in`, `exists`, `missing` |
+| Named text | Also `contains`, `starts-with` |
+| Named numbers | Also `gt`, `gte`, `lt`, `lte` |
+| Named lists | `contains-any`, `contains-all`, `exists`, `missing` |
 
-:::reference
-- **Stable names:** Use short lowercase names such as @plants or @tasks. Rename carefully because scripts call those names.
-- **One name, one meaning:** Do not reuse the same name for different concepts. Automation should not have to guess which block to use.
-- **Visible data:** Keep source data visible in Markdown so another user can understand the script without reading code first.
-- **Script access:** Scripts read blocks with helpers such as current.table("plants"), current.todo("tasks"), and current.data("recipe").
-:::
+Omit `value` for `exists` and `missing`. Membership operators take lists; other operators take one value. `in` tests a scalar against a list, while `contains-any` and `contains-all` test list contents.
 
-**Structured data**
+Equality preserves types and text case. Text `contains` and `starts-with` ignore case; tags ignore case and an optional leading `#`. `ne` and `not-in` do not match missing fields: use a separate `missing` filter with `match: any` if needed. Empty lists exist. There are no nested filter groups, expressions, date-range comparisons, or custom-field sorting.
 
-## Tables {icon="table"}
+## Add page contents {icon="list"}
 
-Tables work well for small structured lists such as plants, recipes, contacts, books, tasks, or expenses.
-
-**Named table with formulas**
-
-```text
-@plants
-| Plant | Bed | Status | Progress | Notes |
-|---|---|---|---|---|
-| Tomato Harzfeuer | Bed A | planted | =PROGRESS(2,4) | keep rain off leaves |
-| Bush bean | Bed B | next | =PROGRESS(0.25) | sow into warm soil |
-| Chives | Bed C | harvest | =PROGRESS(1) | leave some flowers |
-```
-
-**Other blocks**
-
-## Lists, todos, data, and sections {icon="braces"}
-
-:::reference
-- **Table:** Rows and columns. Scripts receive columns and row objects.
-- **List:** Bullet items. Useful for small named collections.
-- **Todo:** Task items with done/content/line metadata.
-- **Data:** YAML-like data block parsed as an object.
-- **Section:** Named Markdown section that scripts can read or append to.
-:::
-
-**Data sources for scripts**
+Type `:::` and choose **toc**:
 
 ```text
-@recipe
-:::data
-servings: 4
-time: 35 min
-tags:
-  - bavarian
-  - weeknight
+:::toc
+min-depth: 2
+max-depth: 3
 :::
-
-@shopping
-- flour
-- eggs
-- mountain cheese
-
-@tasks
-- [ ] Grate cheese
-- [x] Slice onions
 ```
+
+The block links to headings in this note, including headings after the block. Depths range from 1 to 6; defaults are 1 and 6. This is a page contents list, not a notebook index.
+
+## Preview and refresh {icon="refresh"}
+
+Rich mode shows server-rendered query and contents previews. Move the cursor into a block or choose **Show source** to edit it. Invalid settings are marked at their source lines. A draft preview does not save the draft or modify matching notes.
+
+Book renders the same blocks on the server without an editor. Saved changes refresh Book and query previews automatically when JavaScript is available. Read-only keeps its saved source until you reload; reload after that source changes. Without JavaScript, Book still renders results and links on page load.
+
+## Keep tables and tasks readable {icon="table"}
+
+Ordinary tables, lists, checkboxes, and named sections remain Markdown. Use table formulas for calculations within a table; queries only index named `:::data` properties and the system fields above.

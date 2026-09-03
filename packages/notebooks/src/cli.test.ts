@@ -23,7 +23,6 @@ const notebookFixture = {
   description: null,
   icon: null,
   homepageNoteId: null,
-  scriptsEnabled: false,
   defaultPresentationMode: "write",
   defaultNoteTitleTemplate: "New Document",
   createdBy: null,

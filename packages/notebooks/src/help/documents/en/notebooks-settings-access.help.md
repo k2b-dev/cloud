@@ -2,7 +2,7 @@
 id: notebooks-settings-access
 title: "Settings & access"
 icon: "ti ti-settings"
-description: "Choose the default view and configure notebook details, permissions, exports, and scripts."
+description: "Choose the default view and configure notebook details, permissions, and exports."
 order: 170
 ---
 
@@ -29,15 +29,9 @@ Locked notes open in **Read-only** instead of **Write**. Locking does not remove
 
 :::reference
 - **Notebook — General:** Name, icon, description, default start page, and the Liquid template used to initialize the H1 of empty new notes. Review the footer, then save or discard your changes.
-- **Notebook — View & behavior:** Admins choose the shared default view and whether to enable scripts. Your sidebar layout is stored in this browser and applies immediately.
+- **Notebook — View & behavior:** Admins choose the shared default view. Your sidebar layout is stored in this browser and applies immediately.
 - **Sharing — Access:** Admin-only permission editor. Permission changes save immediately.
 - **Sharing — API keys:** Admin-only resource credentials for integrations. Changes save immediately, and new tokens are shown once.
 - **Data — Export & snapshots:** Admin-only portable ZIP exports, S3 snapshot configuration, manual uploads, and recent snapshot runs. Snapshot configuration uses the persistent save footer.
 - **Lifecycle — Danger zone:** Admin-only destructive actions such as deleting the notebook and its notes.
-:::
-
-## Script feature flag {icon="shield-lock"}
-
-:::warning Enable scripts only for trusted notebooks
-Scripts can run in the editor workspace and perform notebook actions with the viewer's permissions. Keep scripting disabled when editors or note content are not trusted. Book shows script source without executing it.
 :::

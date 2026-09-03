@@ -66,7 +66,6 @@ const NotebookSchema = z.object({
   description: z.string().nullable(),
   icon: z.string().nullable(),
   homepageNoteId: ResourceShortIdSchema.nullable(),
-  scriptsEnabled: z.boolean().describe("Per-notebook opt-in for `\`\`\`script` block execution"),
   defaultNoteTitleTemplate: z.string().describe("Liquid template used to initialize the H1 of new notes"),
   defaultPresentationMode: z.enum(PRESENTATION_MODES).describe("Default view for notebook editors and admins; readers always use Book"),
   createdBy: z.uuid().nullable(),
@@ -80,17 +79,16 @@ const CreateNotebookSchema = z.object({
   icon: z.string().max(50).optional(),
 });
 
-const UpdateNotebookSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).nullable().optional(),
-  icon: z.string().max(50).nullable().optional(),
-  homepageNoteId: ResourceShortIdSchema.nullable().optional().describe("Homepage note ID"),
-  // Toggling scripts_enabled is admin-only — see the PATCH handler
-  // for the role check. Schema-level it's just a boolean field.
-  scriptsEnabled: z.boolean().optional(),
-  defaultNoteTitleTemplate: z.string().min(1).max(2_000).optional(),
-  defaultPresentationMode: z.enum(PRESENTATION_MODES).optional(),
-});
+const UpdateNotebookSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    description: z.string().max(500).nullable().optional(),
+    icon: z.string().max(50).nullable().optional(),
+    homepageNoteId: ResourceShortIdSchema.nullable().optional().describe("Homepage note ID"),
+    defaultNoteTitleTemplate: z.string().min(1).max(2_000).optional(),
+    defaultPresentationMode: z.enum(PRESENTATION_MODES).optional(),
+  })
+  .strict();
 
 const NotebookApiKeySchema = ServiceAccountCredentialSchema.extend({
   permission: z.enum(["none", "read", "write", "admin"]),
@@ -176,7 +174,7 @@ const NoteSearchHitSchema = z.object({
   snippet: z.string().nullable().describe("Plain text excerpt with U+E000/U+E001 match markers"),
 });
 
-const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "script", "unknown"]);
+const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "unknown"]);
 
 const NoteEditBlockFields = {
   name: z.string().min(1),
@@ -424,7 +422,7 @@ const TaskProgressSchema = z.object({
 
 const NamedBlockSummarySchema = z.object({
   name: z.string(),
-  type: z.enum(["table", "list", "data", "section", "script", "unknown"]),
+  type: z.enum(["table", "list", "data", "section", "unknown"]),
   line: z.number().int(),
 });
 
@@ -1122,7 +1120,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const data = c.req.valid("json");
 
-      const requiredLevel = data.scriptsEnabled !== undefined || data.defaultPresentationMode !== undefined ? "admin" : "write";
+      const requiredLevel = data.defaultPresentationMode !== undefined ? "admin" : "write";
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, requiredLevel);
       if (error) return error;
 
@@ -2753,13 +2751,8 @@ const appWithAttachments = app
     },
   )
 
-  // Get metadata by short ID — sibling to the `/content` route, but
-  // returns the AttachmentSchema (filename, mimeType, sizeBytes,
-  // kind, createdAt) without the blob. Used by kit.attachments.get
-  // so scripts can resolve a single ID in O(1) instead of
-  // fetching the whole list and filtering client-side. MUST be
-  // registered after `/content` and `/usage` so those more
-  // specific paths match first (Hono is first-match wins).
+  // Single-attachment metadata also serves CLI inspect/download.
+  // Keep the specific `/content` and `/usage` routes ahead of this route.
   .get(
     "/:id/attachments/:attId",
     describeRoute({

@@ -36,7 +36,6 @@ const notebook = {
   icon: null,
   homepageNoteId: null,
   homepageNoteShortId: null,
-  scriptsEnabled: false,
   defaultPresentationMode: "write" as const,
   defaultNoteTitleTemplate: "Untitled",
   createdBy: user.id,

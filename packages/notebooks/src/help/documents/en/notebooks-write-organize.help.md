@@ -15,8 +15,8 @@ Write notes as readable Markdown, then use links, tags, attachments, and the sid
 Use **Comments** in the note details for questions, feedback, and decisions that belong beside the page but should not change its Markdown.
 
 :::reference
-- **Read:** Anyone who can read the notebook can follow its page discussions.
-- **Add:** Writers can post Markdown comments. New comments appear live for other readers.
+- **Views:** Writers and admins can follow discussions in Write or Read-only. Book has no detail panel or discussions.
+- **Add:** Writers can post Markdown comments. New comments appear live for other users viewing the detail panel.
 - **Correct:** You can edit or delete your own comment for ten minutes after posting.
 - **Locked notes:** A lock freezes the note body, not its discussion. Writers can still comment on a locked note.
 :::
@@ -30,7 +30,7 @@ Keep durable handbook content in the note itself. Use comments to discuss that c
 :::reference
 - **Headings:** Use #, ##, and deeper headings to create sections. The first H1, or otherwise the first visible line, is also the note title used by navigation and search.
 - **Lists and tasks:** Use - for lists and - [ ] or - [x] for tasks.
-- **Slash menu:** Use the editor insert menu for common blocks such as notes, files, tables, and scripts.
+- **Slash menu:** Use the editor insert menu for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
 :::
 
 **Normal note**

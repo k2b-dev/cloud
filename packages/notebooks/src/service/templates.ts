@@ -158,9 +158,7 @@ export const instantiate = async (
   );
 
   try {
-    let finalNotebook = materialized.scriptsEnabled
-      ? requireResult(await notebooks.update({ id: notebook.id, data: { scriptsEnabled: true } }))
-      : notebook;
+    let finalNotebook = notebook;
 
     const createdNotes = await createNotes(template, finalNotebook, actorId, now, locale);
     if (materialized.homepageNoteKey) {

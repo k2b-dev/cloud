@@ -40,12 +40,12 @@
  * excludes code-block context (Markdown tables aren't recognised
  * inside fenced blocks; lines that begin and end with `|` inside a
  * code fence are just literal pipe characters, and the user is
- * already getting kit/JS autocomplete there).
+ * not editing a table there).
  */
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import type { EditorState } from "@codemirror/state";
 import { cellTextBeforeCursor, isTableRow, TABLE_SEPARATOR_RE } from "./_lib/table-cell";
-import { withIcon } from "./kit-autocomplete";
+import { withIcon } from "./completion-icon";
 
 const isSeparatorRow = (lineText: string): boolean => TABLE_SEPARATOR_RE.test(lineText);
 
@@ -144,10 +144,10 @@ export const tableColumnCompletionSource = (context: CompletionContext): Complet
   const columns = extractHeaderColumns(context.state, line.number);
   if (columns.length === 0) return null;
 
-  // Build completions. `kitIcon` is set via structural cast (same
-  // pattern as the kit + js sources) so the option-list shows a
+  // Build completions. `completionIcon` is set via structural cast (same
+  // pattern as the other completion sources) so the option-list shows a
   // distinct glyph (`ti-columns-3`) for column entries — visually
-  // separates them from JS identifiers / kit methods.
+  // separates them from ordinary identifiers.
   //
   // The `apply` text is computed per-completion based on whether
   // the column name needs backtick-quoting AND whether the user

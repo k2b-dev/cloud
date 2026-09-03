@@ -43,7 +43,6 @@
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "d3-force": "3.0.0",
-    "dayjs": "catalog:",
     "diff": "8.0.4",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
