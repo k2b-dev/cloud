@@ -167,6 +167,12 @@ first deploy JWT verification everywhere, then set
 `CLOUD_SESSION_ISSUANCE_MODE=jwt` on Core so new logins receive JWT sessions.
 This avoids a forced login wave and keeps mixed-version deployments safe.
 
+Changing the issuance mode does not invalidate existing sessions. A coordinated
+upgrade may instead require everyone to sign in again, but must explicitly
+invalidate the old browser sessions and replace every old issuer and reader.
+Browser-session revocation is separate from OAuth access tokens, refresh grants,
+and API credentials; those must remain usable under their own lifecycle rules.
+
 Revoke-all remains durable when Valkey is unavailable. If its legacy generation
 cannot be read safely, Core permanently switches that user's legacy credentials
 to an epoch-bound recovery format. Once Valkey returns, new opaque logins and

@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-02
+updated: 2026-09-03
 ---
 
 # OAuth clients and flows
@@ -288,3 +288,8 @@ every binary that predates the database issuance gate. See
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).
+
+Repository maintainers can run the isolated
+[OAuth upgrade verification](/en/docs/contributing/oauth-upgrade-verification)
+to compare the pre-JWT and Core-issued public protocol without using live
+clients or changing the development stack.
