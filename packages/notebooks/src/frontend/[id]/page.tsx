@@ -3,6 +3,9 @@ import type { AuthContext } from "@valentinkolb/cloud/server";
 import { getLocale } from "@valentinkolb/cloud/server";
 import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import { notebooksPageMessages } from "../messages";
+import BookSurface from "./_components/book/BookSurface";
+import PresentationModeLinks from "./_components/book/PresentationModeLinks.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
@@ -12,9 +15,6 @@ import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
 import VersionHistory from "./_components/versions/VersionHistory.island";
 import { loadNotebookPageData } from "./page-data";
-import { notebooksPageMessages } from "../messages";
-import BookSurface from "./_components/book/BookSurface";
-import PresentationModeLinks from "./_components/book/PresentationModeLinks.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = notebooksPageMessages.resolve([getLocale(c)]);
@@ -59,6 +59,8 @@ export default ssr<AuthContext>(async (c) => {
           currentHref={data.currentHref}
           canWrite={data.canWrite}
           locked={!!data.selectedNote?.lockedAt}
+          appUrl={data.appUrl}
+          cursor={data.ctx.workspaceCursor}
         />
       </MinimalLayout>
     );

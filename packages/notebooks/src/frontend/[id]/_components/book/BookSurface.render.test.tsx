@@ -26,6 +26,8 @@ const render = (
           locked,
           html,
           noteTitle: "Welcome",
+          appUrl: "https://cloud.example.test",
+          cursor: null,
           tags: [{ tag: "handbook", count: 2 }],
           tree: [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
         });

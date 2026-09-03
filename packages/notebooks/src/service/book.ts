@@ -1,6 +1,7 @@
 import { renderNotebookBook } from "../lib/book-renderer";
-import { parseNotebookQueryBlocks } from "../lib/query-blocks";
-import { resolveNoteQuery, type NoteQueryResult } from "./note-query";
+import { bookRendererMessages } from "../lib/book-renderer-messages";
+import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
+import { type NoteQueryResult, resolveNoteQuery } from "./note-query";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 
@@ -15,7 +16,21 @@ export const loadBookNote = async (params: {
   if (!(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel: "read" }))) return null;
   const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });
   if (!note || note.notebookId !== params.notebookId) return null;
-  const markdown = note.contentMd ?? "";
+  const document = await renderBookDocument({ ...params, noteId: note.id, markdown: note.contentMd ?? "" });
+  // Do not return a collaboration snapshot or raw notebook data to the Book surface.
+  return { note, document };
+};
+
+const renderBookDocument = async (params: {
+  notebookId: string;
+  notebookShortId: string;
+  noteId: string;
+  userId: string;
+  locale: string;
+  markdown: string;
+  linkMode?: "write" | "readonly";
+}) => {
+  const { markdown } = params;
   const queries = parseNotebookQueryBlocks(markdown).blocks;
   const queryResults = new Map<number, NoteQueryResult>();
   // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
@@ -24,13 +39,55 @@ export const loadBookNote = async (params: {
       query.line,
       await resolveNoteQuery({
         notebookId: params.notebookId,
-        noteId: note.id,
+        noteId: params.noteId,
         userId: params.userId,
         query,
       }),
     );
   }
-  const document = await renderNotebookBook({ markdown, notebookId: params.notebookShortId, locale: params.locale, queryResults });
-  // Do not return a collaboration snapshot or raw notebook data to the Book surface.
-  return { note, document };
+  return renderNotebookBook({
+    markdown,
+    notebookId: params.notebookShortId,
+    locale: params.locale,
+    queryResults,
+    linkMode: params.linkMode,
+  });
+};
+
+/** Drafts are never persisted. Read-only callers can preview only the saved document. */
+export const loadBookBlockPreview = async (params: {
+  notebookId: string;
+  notebookShortId: string;
+  noteShortId: string;
+  userId: string;
+  locale: string;
+  markdown?: string;
+}) => {
+  const requiredLevel = params.markdown === undefined ? "read" : "write";
+  if (!(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel }))) {
+    return { kind: "denied" as const };
+  }
+  const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });
+  if (!note || note.notebookId !== params.notebookId) return { kind: "not_found" as const };
+  if (params.markdown !== undefined && note.lockedAt) return { kind: "denied" as const };
+  const markdown = (params.markdown ?? note.contentMd ?? "").replace(/\r\n?/g, "\n");
+  const document = await renderBookDocument({
+    ...params,
+    noteId: note.id,
+    markdown,
+    linkMode: params.markdown === undefined ? "readonly" : "write",
+  });
+  const t = bookRendererMessages.resolve([params.locale]).t;
+  const diagnostics = [...parseNotebookQueryBlocks(markdown).diagnostics, ...parseNotebookTocBlocks(markdown).diagnostics].map(
+    ({ line, code, path }) => ({ line, message: `${t.invalidBlock({ line })} ${path}: ${t[code]}` }),
+  );
+  return {
+    kind: "ok" as const,
+    preview: {
+      markdown,
+      blocks: document.blocks,
+      headings: document.headings.flatMap(({ id, line }) => (line === undefined ? [] : [{ id, line }])),
+      diagnostics,
+    },
+  };
 };

@@ -97,7 +97,8 @@ describe("Book tag page SSR", () => {
     expect(html).toContain("Onboarding");
     expect(html).toContain("Start here");
     expect(html).toContain("/app/notebooks/book01/notes/note01?mode=book");
-    expect(html).not.toMatch(/NotebookSidebar|WorkspaceEventBridge|NoteEditor|NotebookDetailPanel|yjsSnapshot/);
+    expect(html).not.toMatch(/NotebookSidebar|NoteEditor|NotebookDetailPanel|yjsSnapshot/);
+    expect(html).toContain("WorkspaceEventBridge");
     expect(calls.notes).toHaveBeenCalledWith({
       notebookId: notebook.id,
       tag: "team",
@@ -128,7 +129,8 @@ describe("Book tag page SSR", () => {
     const html = await render("mode=book");
     expect(html).toContain("notebook-book-shell");
     expect(html).toContain("/app/notebooks/book01/notes/note01?mode=book");
-    expect(html).not.toMatch(/NotebookSidebar|WorkspaceEventBridge/);
+    expect(html).not.toMatch(/NotebookSidebar|NoteEditor|NotebookDetailPanel/);
+    expect(html).toContain("WorkspaceEventBridge");
   });
 
   test("no-access requests do not read the tag index or notebook workspace", async () => {

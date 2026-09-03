@@ -56,6 +56,18 @@ panel. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered
 on the server with the page. Script blocks remain visible as code and do not
 execute in Book.
 
+Page links, tag filters, search, and pagination update the Book content without
+reloading the whole page when JavaScript is available. Browser Back and Forward
+preserve the reading route. Saved changes refresh the current page, navigation,
+and query results automatically. Without JavaScript, links and filters still
+work through regular page loads. Switching to Write or Read-only loads that
+workspace as a new page.
+
+In the editor, type `:::` to insert a query or table of contents. Rich mode shows
+a server-rendered preview; move the cursor into the block or choose **Show
+source** to edit it. Invalid settings are marked at their source lines. Previewing
+a draft does not save it or change the notes returned by the query.
+
 Mermaid diagrams enhance their server-rendered source in the browser. Without
 JavaScript, or if a diagram cannot render, its source stays readable. On mobile,
 expand the compact navigation to browse pages and tags.

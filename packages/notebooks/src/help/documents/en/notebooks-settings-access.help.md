@@ -13,6 +13,8 @@ If you are in **Book**, switch to **Write** or **Read-only** first. These views 
 
 Users with read permission always see **Book**: a reading view with page navigation and tag filters, without editing controls, the detail panel, or page discussions. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered on the server with the page. Mermaid diagrams render in the browser; their source stays readable without JavaScript or if rendering fails.
 
+In Book, page links, tag filters, search, and pagination update the content without a full reload. Back and Forward return to previous reading locations. Saved changes refresh the page and query results automatically. Without JavaScript, navigation still works through regular page loads.
+
 Editors and admins can switch between three views:
 
 - **Write:** Edit the note and use the detail panel.

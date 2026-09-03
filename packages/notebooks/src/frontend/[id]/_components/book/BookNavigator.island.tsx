@@ -1,7 +1,8 @@
 import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
-import { createSignal, For } from "solid-js";
+import { createSignal, For, onCleanup, onMount } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
+import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
 import { bookMessages } from "./messages";
 
 export type BookTreeNode = { id: string; title: string; children: BookTreeNode[] };
@@ -27,7 +28,17 @@ const expandedParents = (nodes: BookTreeNode[], selected: string | null): string
 export default function BookNavigator(props: BookNavigatorProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
+  const [state, setState] = createSignal(props);
   const [expanded, setExpanded] = createSignal<readonly string[]>(expandedParents(props.tree, props.selectedNoteId));
+  onMount(() => {
+    const update = (event: Event) => {
+      const next = (event as CustomEvent<BookMetadata>).detail;
+      setState({ ...props, ...next, activeTag: next.activeTag });
+      setExpanded((current) => [...new Set([...current, ...expandedParents(next.tree, next.selectedNoteId)])]);
+    };
+    window.addEventListener(BOOK_SNAPSHOT_EVENT, update);
+    onCleanup(() => window.removeEventListener(BOOK_SNAPSHOT_EVENT, update));
+  });
   const items = (nodes: BookTreeNode[]) =>
     nodes.map((node) => (
       <AppWorkspace.NavTree.Item
@@ -47,21 +58,21 @@ export default function BookNavigator(props: BookNavigatorProps) {
       <AppWorkspace.SidebarSection title={t().notes}>
         <AppWorkspace.NavTree
           ariaLabel={t().notes}
-          selectedId={props.selectedNoteId}
+          selectedId={state().selectedNoteId}
           expandedIds={expanded()}
           onExpandedIdsChange={setExpanded}
         >
-          {items(props.tree)}
+          {items(state().tree)}
         </AppWorkspace.NavTree>
-        {props.tree.length === 0 && <Placeholder description={t().empty} />}
+        {state().tree.length === 0 && <Placeholder description={t().empty} />}
       </AppWorkspace.SidebarSection>
-      {props.tags.length > 0 && (
+      {state().tags.length > 0 && (
         <AppWorkspace.SidebarSection title={t().tags}>
-          <For each={props.tags}>
+          <For each={state().tags}>
             {(item) => (
               <AppWorkspace.SidebarItem
                 href={withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book")}
-                active={props.activeTag === item.tag}
+                active={state().activeTag === item.tag}
                 icon="ti ti-hash"
                 meta={item.count}
               >
@@ -75,7 +86,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
   );
   return (
     <AppWorkspace.Sidebar resizable>
-      <AppWorkspace.SidebarMobileTrigger label={props.notebookName} />
+      <AppWorkspace.SidebarMobileTrigger label={state().notebookName} />
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileBody>{navigation()}</AppWorkspace.SidebarMobileBody>
       </AppWorkspace.SidebarMobile>

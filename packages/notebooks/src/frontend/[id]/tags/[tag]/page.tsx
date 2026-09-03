@@ -7,30 +7,32 @@
  * handler re-renders, no client-side filtering.
  */
 
-import { AppWorkspace, Button, Pagination, Placeholder, TextInput } from "@k2b/ui";
+import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../../config";
+import { resolvePresentationMode } from "../../../../lib/presentation-mode";
+import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
+import type { BookTreeNode } from "../../_components/book/BookNavigator.island";
+import BookSurface from "../../_components/book/BookSurface";
+import BookTagContent from "../../_components/book/BookTagContent";
 import { parseSettings } from "../../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
-import { projectNotebook, projectTree } from "../../page-data";
 import { notebookWorkspaceMessages } from "../../messages";
-import { resolvePresentationMode } from "../../../../lib/presentation-mode";
-import { withPresentationMode } from "../../../../lib/presentation-url";
-import BookNavigator, { type BookTreeNode } from "../../_components/book/BookNavigator.island";
-import { bookMessages } from "../../_components/book/messages";
+import { projectNotebook, projectTree } from "../../page-data";
 
 const PER_PAGE = 50;
 
 const parsePage = (raw: string | undefined): number => {
   const n = Number.parseInt(raw ?? "1", 10);
-  return Number.isFinite(n) && n > 0 ? n : 1;
+  return Number.isSafeInteger(n) && n > 0 && Number.isSafeInteger((n - 1) * PER_PAGE) ? n : 1;
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -133,53 +135,57 @@ export default ssr<AuthContext>(async (c) => {
     navigatorQuery: {},
   };
 
-  const Content = () => (
-    <AppWorkspace class="flex-1 min-h-0">
-      {isBookMode ? (
-        <BookNavigator
+  c.get("page").title = `#${tagParam} · ${notebook.name}`;
+  if (isBookMode) {
+    const html = renderToString(() => (
+      <BookTagContent
+        notebookId={notebook.shortId}
+        tag={tagParam}
+        search={search}
+        page={page}
+        items={paginatedResult.items}
+        total={paginatedResult.total}
+        totalNotesForTag={totalNotesForTag}
+        locale={locale}
+      />
+    ));
+    return () => (
+      <MinimalLayout c={c} preferences={false}>
+        <BookSurface
           notebookId={notebook.shortId}
           notebookName={notebook.name}
           selectedNoteId={null}
           tree={bookTree(publicTree)}
           tags={tags}
           activeTag={tagParam}
+          html={html}
+          noteTitle={`#${tagParam}`}
+          currentHref={c.req.path + new URL(c.req.url).search}
+          canWrite={permission === "write" || permission === "admin"}
+          locked={false}
+          appUrl={appUrl}
+          cursor={workspaceCursor}
         />
-      ) : (
-        <>
-          <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-          <NotebookSidebar ctx={ctx} />
-        </>
-      )}
+      </MinimalLayout>
+    );
+  }
+
+  const Content = () => (
+    <AppWorkspace class="flex-1 min-h-0">
+      <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
+      <NotebookSidebar ctx={ctx} />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
-          {isBookMode && <h1 class="text-xl font-semibold mb-4">#{tagParam}</h1>}
           {/* SearchBar (full width) + note counter on the right. The
                 tag itself already lives in the breadcrumb above. */}
           <div class="flex items-center gap-2">
             <div class="flex-1 min-w-0">
-              {isBookMode ? (
-                <form role="search" method="get" action={baseHref} class="flex gap-2">
-                  <input type="hidden" name="mode" value="book" />
-                  <TextInput
-                    name="search"
-                    type="search"
-                    value={search}
-                    icon="ti ti-search"
-                    placeholder={t.searchTaggedNotes({ tag: tagParam })}
-                    aria-label={t.searchTaggedNotesLabel({ tag: tagParam })}
-                  />
-                  <Button type="submit" variant="secondary">
-                    {bookMessages.resolve([locale]).t.search}
-                  </Button>
-                </form>
-              ) : (
-                <SearchBar
-                  value={search}
-                  action={withPresentationMode(baseHref, presentationMode)}
-                  placeholder={t.searchTaggedNotes({ tag: tagParam })}
-                  ariaLabel={t.searchTaggedNotesLabel({ tag: tagParam })}
-                />
-              )}
+              <SearchBar
+                value={search}
+                action={withPresentationMode(baseHref, presentationMode)}
+                placeholder={t.searchTaggedNotes({ tag: tagParam })}
+                ariaLabel={t.searchTaggedNotesLabel({ tag: tagParam })}
+              />
             </div>
             <span class="shrink-0 text-xs text-dimmed tabular-nums">
               {search
@@ -194,11 +200,7 @@ export default ssr<AuthContext>(async (c) => {
                 {paginatedResult.items.map((n) => (
                   <li>
                     <a
-                      href={
-                        isBookMode
-                          ? withPresentationMode(buildNoteUrl(notebook.shortId, n.shortId), "book")
-                          : buildNoteUrl(notebook.shortId, n.shortId)
-                      }
+                      href={withPresentationMode(buildNoteUrl(notebook.shortId, n.shortId), presentationMode)}
                       class="flex flex-col items-stretch gap-1 rounded-[var(--ui-radius-control)] px-3 py-2.5 no-underline transition-colors hover:bg-[var(--ui-hover)]"
                     >
                       <div class="flex items-center gap-2">
@@ -238,26 +240,18 @@ export default ssr<AuthContext>(async (c) => {
       </AppWorkspace.Content>
     </AppWorkspace>
   );
-  c.get("page").title = `#${tagParam} · ${notebook.name}`;
-  return () =>
-    isBookMode ? (
-      <MinimalLayout c={c} preferences={false}>
-        <div class="k2b-ui notebook-book-shell">
-          <Content />
-        </div>
-      </MinimalLayout>
-    ) : (
-      <Layout
-        c={c}
-        fullPage
-        title={[
-          { title: t.start, href: "/" },
-          { title: t.notebooks, href: "/app/notebooks" },
-          { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
-          { title: `#${tagParam}` },
-        ]}
-      >
-        <Content />
-      </Layout>
-    );
+  return () => (
+    <Layout
+      c={c}
+      fullPage
+      title={[
+        { title: t.start, href: "/" },
+        { title: t.notebooks, href: "/app/notebooks" },
+        { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
+        { title: `#${tagParam}` },
+      ]}
+    >
+      <Content />
+    </Layout>
+  );
 });

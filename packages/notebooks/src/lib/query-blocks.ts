@@ -74,6 +74,8 @@ type Directive = {
   body: string[];
   line: number;
   closed: boolean;
+  from: number;
+  to: number;
 };
 
 type ParsedValue = QueryScalar | QueryScalar[];
@@ -107,6 +109,12 @@ const diagnostic = (code: NotebookBlockDiagnosticCode, line: number, path: strin
 
 const directives = (md: string): Directive[] => {
   const lines = md.split("\n");
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const text of lines) {
+    offsets.push(offset);
+    offset += text.length + 1;
+  }
   const found: Directive[] = [];
   let codeFence: { marker: string; length: number } | null = null;
 
@@ -133,10 +141,21 @@ const directives = (md: string): Directive[] => {
       }
       body.push(lines[i]!);
     }
-    found.push({ type: opener[1] as Directive["type"], body, line, closed });
+    found.push({
+      type: opener[1] as Directive["type"],
+      body,
+      line,
+      closed,
+      from: offsets[line - 1]!,
+      to: closed ? offsets[i]! + lines[i]!.length : md.length,
+    });
   }
   return found;
 };
+
+/** Source geometry only; query validation and result rendering stay server-owned. */
+export const extractNotebookDirectiveRanges = (md: string): Array<Pick<Directive, "type" | "line" | "from" | "to" | "closed">> =>
+  directives(md).map(({ type, line, from, to, closed }) => ({ type, line, from, to, closed }));
 
 const parseScalar = (raw: string): QueryScalar | null => {
   const value = raw.trim();

@@ -18,15 +18,18 @@ import { deriveNoteTitle } from "../../../../lib/note-title";
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
+import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
+import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { notebookWorkspaceMessages } from "../../messages";
 import {
   ATTACHMENTS_UPDATE_EVENT,
   EDITOR_COPY_EVENT,
   EDITOR_DOWNLOAD_EVENT,
+  EDITOR_INSERT_ATTACHMENT_EVENT,
   EDITOR_PDF_EVENT,
   type EditorPdfEventDetail,
-  EDITOR_INSERT_ATTACHMENT_EVENT,
   NAMED_BLOCK_SCROLL_EVENT,
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
@@ -47,7 +50,6 @@ import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOv
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createNoteNavigationCoordinator } from "./note-navigation";
 import { slashCommandsExtension } from "./slash-commands";
-import { notebookWorkspaceMessages } from "../../messages";
 
 const TOC_DEBOUNCE_MS = 300;
 type EditorInstanceProps = {
@@ -338,6 +340,25 @@ function EditorInstance(props: EditorInstanceProps) {
     value: ytext.toString(),
   });
 
+  const blockPreviews = createQueryBlockPreviews({
+    notebookId: props.notebookId,
+    noteId: props.noteId,
+    readOnly: !!props.readOnly,
+    initialMarkdown: ytext.toString(),
+    view: editorView,
+    enabled: richMode,
+    locale,
+    load: async (markdown, abortSignal) => {
+      const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
+        { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
+      return response.json();
+    },
+  });
+  addExtension(blockPreviews.listener);
+
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
   if (!props.readOnly && undoManager) {
     addExtension(() => yCollab(ytext, awareness, { undoManager }));
@@ -416,6 +437,7 @@ function EditorInstance(props: EditorInstanceProps) {
           editor.listsExtension(),
           editor.infoBlocksExtension(),
           editor.dataBlocksExtension(),
+          blockPreviews.extension,
           editor.namedBlocksExtension(),
           editor.linksExtension(props.notebookId),
           editor.markupExtension(),

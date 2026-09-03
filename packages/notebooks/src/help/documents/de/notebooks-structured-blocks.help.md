@@ -8,6 +8,32 @@ order: 130
 
 Benannte Blöcke verbinden lesbare Notizen mit Daten, die Skripte lesen können. Setze einen stabilen `@ref` direkt über den Block, der Teil der öffentlichen Notizstruktur werden soll.
 
+## Automatische Seitenlisten und Inhaltsverzeichnisse
+
+Tippe im Editor `:::` und wähle **query** oder **toc**. Im Rich-Modus zeigt jeder Block eine serverseitig gerenderte Vorschau. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um seine Einstellungen zu ändern. Ungültige Einstellungen werden an ihrer Quellzeile markiert. Die Buchansicht zeigt dieselben Ergebnisse ohne Editor.
+
+Diese Abfrage listet Notizen mit dem Tag `handbook`, zuletzt geänderte zuerst:
+
+```text
+:::query
+source: notes
+where:
+  - field: $tags
+    op: contains-all
+    value: [handbook]
+sort:
+  field: $updated
+  direction: desc
+limit: 25
+:::
+```
+
+Abfragen bleiben im aktuellen Notizbuch. Mit `scope: children` oder `scope: descendants` beschränkst du die Liste auf Seiten unterhalb der aktuellen Notiz. Filter können auch eigene benannte Daten wie `profile.owner` verwenden; ein vorgegebenes Metadatenschema ist nicht nötig. Die Vorschau greift auf gespeicherte Notizdaten zu. Das Bearbeiten eines Abfrageentwurfs speichert ihn nicht und verändert keine Ergebnisse.
+
+Ein leerer `:::toc`-Block, abgeschlossen mit `:::`, listet die Überschriften der Seite. Mit `min-depth` und `max-depth` zwischen 1 und 6 wählst du die Überschriftenebenen.
+
+Gespeicherte Änderungen aktualisieren Abfragevorschauen. Hat sich der gespeicherte Quelltext eines schreibgeschützten Editors geändert, lade die Seite neu, um den neuen Quelltext mit passender Vorschau zu sehen.
+
 **@ref**
 
 ## Der Vertrag eines Blocks {icon="contract"}

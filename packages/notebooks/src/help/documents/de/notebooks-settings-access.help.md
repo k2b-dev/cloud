@@ -13,6 +13,8 @@ Wechsle aus der Ansicht **Buch** zuerst zu **Bearbeiten** oder **Schreibgeschüt
 
 Nutzer mit Leserechten sehen immer **Buch**: eine Leseansicht mit Seitennavigation und Tagfiltern, ohne Bearbeitungswerkzeuge, Detailbereich oder Seitendiskussion. Abfrageblöcke (`:::query`) und Inhaltsverzeichnisse (`:::toc`) werden zusammen mit der Seite auf dem Server gerendert. Mermaid-Diagramme entstehen im Browser; ohne JavaScript oder bei einem Darstellungsfehler bleibt ihr Quelltext lesbar.
 
+In der Buchansicht aktualisieren Seitenlinks, Tagfilter, Suche und Seitennavigation den Inhalt ohne vollständiges Neuladen. Zurück und Vorwärts führen zu vorherigen Lesestellen. Gespeicherte Änderungen aktualisieren die Seite und ihre Abfrageergebnisse automatisch. Ohne JavaScript funktionieren Links und Filter weiterhin über normale Seitenaufrufe.
+
 Nutzer mit Schreib- oder Adminrechten können zwischen drei Ansichten wechseln:
 
 - **Bearbeiten:** Die Notiz bearbeiten und den Detailbereich nutzen.

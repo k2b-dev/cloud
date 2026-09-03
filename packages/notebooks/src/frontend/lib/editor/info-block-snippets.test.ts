@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
+import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../../../lib/query-blocks";
 import { buildDataBlockTemplate } from "./data-block-template";
-import { infoBlockCompletionSource } from "./info-block-snippets";
+import { buildInfoBlockSnippet, infoBlockCompletionSource } from "./info-block-snippets";
 import { markdownExtension } from "./markdown";
 
 const stateFor = (doc: string) =>
@@ -35,9 +36,29 @@ key: value
       const doc = ":::";
       const result = infoBlockCompletionSource(new CompletionContext(stateFor(doc), doc.length, true));
       expect(result?.options.find((option) => option.label === "data")?.detail).toBe("Referenzierbarer Datenblock");
-      expect(result?.options.map((option) => option.label)).toEqual(["note", "info", "success", "warning", "danger", "data"]);
+      expect(result?.options.map((option) => option.label)).toEqual([
+        "note",
+        "info",
+        "success",
+        "warning",
+        "danger",
+        "data",
+        "query",
+        "toc",
+      ]);
+      expect(result?.options.find((option) => option.label === "query")?.detail).toBe("Gefilterte Notizliste oder Tabelle");
+      expect(result?.options.find((option) => option.label === "toc")?.detail).toBe("Inhaltsverzeichnis");
     } finally {
       Object.assign(globalThis, { document: previousDocument });
     }
+  });
+
+  test("query and TOC snippets conform to the shared parser", () => {
+    const query = `:::${buildInfoBlockSnippet("query").replace("${0}", "")}`;
+    const toc = `:::${buildInfoBlockSnippet("toc").replace("${0}", "")}`;
+    expect(parseNotebookQueryBlocks(query).blocks).toHaveLength(1);
+    expect(parseNotebookQueryBlocks(query).diagnostics).toEqual([]);
+    expect(parseNotebookTocBlocks(toc).blocks).toHaveLength(1);
+    expect(parseNotebookTocBlocks(toc).diagnostics).toEqual([]);
   });
 });

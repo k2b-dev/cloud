@@ -5,6 +5,7 @@ import { slashCommandMessages } from "./frontend/[id]/_components/editor/slash-c
 import { notebookSettingsMessages } from "./frontend/[id]/_components/settings/messages";
 import { notebookWorkspaceMessages } from "./frontend/[id]/messages";
 import { notebooksAdminMessages } from "./frontend/admin-messages";
+import { queryBlockMessages } from "./frontend/lib/editor/query-block-messages";
 import { notebooksPageMessages } from "./frontend/messages";
 import { materializeTemplate, templates } from "./templates";
 
@@ -17,6 +18,7 @@ describe("Notebooks internationalization", () => {
       notebookSettingsMessages,
       notebookCapabilityMessages,
       slashCommandMessages,
+      queryBlockMessages,
     ]) {
       expect(catalog.check()).toEqual([]);
     }

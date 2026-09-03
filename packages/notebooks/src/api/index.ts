@@ -37,10 +37,12 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { PRESENTATION_MODES } from "../lib/presentation-mode";
+import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
+import { loadBookBlockPreview } from "../service/book";
+import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
@@ -48,8 +50,8 @@ import {
   ResourceShortIdSchema,
   toPublicAttachment,
   toPublicNote,
-  toPublicNoteComment,
   toPublicNotebook,
+  toPublicNoteComment,
   toPublicSnapshotLog,
 } from "./public-resources";
 import { notebookV as v } from "./validator";
@@ -456,6 +458,33 @@ const EditableNoteRouteStateSchema = z.object({
 
 const RouteStateQuerySchema = z.object({
   href: z.string().min(1).max(500),
+});
+
+const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z.lazy(() =>
+  z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }),
+);
+const BookSnapshotSchema = z.object({
+  href: z.string(),
+  html: z.string().nullable(),
+  title: z.string().nullable(),
+  notebookName: z.string(),
+  selectedNoteId: ResourceShortIdSchema.nullable(),
+  tree: z.array(BookTreeSchema),
+  tags: z.array(TagSummarySchema),
+  activeTag: z.string().optional(),
+  canWrite: z.boolean(),
+  locked: z.boolean(),
+  cursor: z.string().nullable(),
+});
+// Same request envelope budget as a collaboration sync payload. Preview never
+// persists the draft; query block/row work is further bounded by its parser.
+const BLOCK_PREVIEW_MAX_REQUEST_BYTES = 8_000_000;
+const BlockPreviewInputSchema = z.object({ markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional() }).strict();
+const BlockPreviewSchema = z.object({
+  markdown: z.string(),
+  blocks: z.array(z.object({ line: z.number().int().positive(), html: z.string() })),
+  headings: z.array(z.object({ id: z.string(), line: z.number().int().positive() })),
+  diagnostics: z.array(z.object({ line: z.number().int().positive(), message: z.string() })),
 });
 
 const RouteStateResponseSchema = z.discriminatedUnion("kind", [
@@ -1210,6 +1239,79 @@ const app = new Hono<AuthContext>()
 
   // Server-computed route state for enhanced note navigation
   .get(
+    "/:id/book",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Load a Book page",
+      ...requiresAuth,
+      description:
+        "Returns server-rendered Book content and reading navigation for a note or tag in this notebook. Never includes collaboration state.",
+      responses: {
+        200: jsonResponse(BookSnapshotSchema, "Book page"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid Book target"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Page not found"),
+      },
+    }),
+    v("query", RouteStateQuerySchema),
+    async (c) => {
+      const actor = requireUserBackedActor(c);
+      if (!actor.ok) return respond(c, actor);
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const result = await loadBookRoute({
+        notebookId: notebook!.id,
+        notebookShortId: notebook!.shortId,
+        userId: actor.data.id,
+        locale: getLocale(c),
+        origin: new URL(c.req.url).origin,
+        href: c.req.valid("query").href,
+      });
+      c.header("Cache-Control", "private, no-store");
+      if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      if (result.kind === "not_found") return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
+      if (result.kind === "invalid") return respond(c, fail(err.badInput(messages(c).invalidBookTarget)));
+      return respond(c, ok(result.snapshot));
+    },
+  )
+  .post(
+    "/:id/notes/:noteId/block-preview",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Preview query and contents blocks",
+      ...requiresAuth,
+      description:
+        "Omit markdown to preview the saved note with read access. Supplying a draft requires write access and an unlocked note; nothing is saved.",
+      responses: {
+        200: jsonResponse(BlockPreviewSchema, "Rendered blocks and source diagnostics"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied or note locked"),
+        404: jsonResponse(ErrorResponseSchema, "Note not found"),
+        413: jsonResponse(ErrorResponseSchema, "Preview request too large"),
+      },
+    }),
+    bodyLimit({ maxSize: BLOCK_PREVIEW_MAX_REQUEST_BYTES }),
+    v("json", BlockPreviewInputSchema),
+    async (c) => {
+      const actor = requireUserBackedActor(c);
+      if (!actor.ok) return respond(c, actor);
+      const { markdown } = c.req.valid("json");
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, markdown === undefined ? "read" : "write");
+      if (error) return error;
+      const result = await loadBookBlockPreview({
+        notebookId: notebook!.id,
+        notebookShortId: notebook!.shortId,
+        noteShortId: c.req.param("noteId")!,
+        userId: actor.data.id,
+        locale: getLocale(c),
+        ...(markdown === undefined ? {} : { markdown }),
+      });
+      c.header("Cache-Control", "private, no-store");
+      if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
+      if (result.kind === "not_found") return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
+      return respond(c, ok(result.preview));
+    },
+  )
+  .get(
     "/:id/route-state",
     describeRoute({
       tags: ["Notebooks"],
@@ -1431,7 +1533,10 @@ const app = new Hono<AuthContext>()
         viewerUserId: user?.id ?? null,
         pagination: parsePagination(c.req.valid("query")),
       });
-      return respond(c, ok({ ...page, items: page.items.map((comment) => toPublicNoteComment(comment, notebook!.shortId, note.data.shortId)) }));
+      return respond(
+        c,
+        ok({ ...page, items: page.items.map((comment) => toPublicNoteComment(comment, notebook!.shortId, note.data.shortId)) }),
+      );
     },
   )
 

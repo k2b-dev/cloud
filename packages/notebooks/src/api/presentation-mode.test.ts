@@ -15,6 +15,7 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
     expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
   }, 30_000);
 } else {
+  await import("../frontend/[id]/_components/detail/ssr-test-plugin");
   const server = await import("@valentinkolb/cloud/server");
   const { oauthTokens } = await import("@valentinkolb/cloud/services");
   const rateLimit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());

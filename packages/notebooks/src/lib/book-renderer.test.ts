@@ -23,6 +23,45 @@ const result: NoteQueryResult = {
 };
 
 describe("Notebook Book HTML", () => {
+  test("block previews are exact sanitized excerpts of the same document", () => {
+    const document = render("# Guide\n\n:::toc\n:::\n\n:::query\nsource: notes\n:::", "de", new Map([[6, result]]));
+    expect(document.blocks.map(({ line }) => line)).toEqual([3, 6]);
+    for (const block of document.blocks) expect(document.html).toContain(block.html);
+    expect(document.blocks[0]!.html).toContain('href="#heading-guide"');
+    expect(document.headings[0]).toMatchObject({ id: "heading-guide", line: 1 });
+    expect(document.blocks[1]!.html).not.toContain("NOTEBOOKBOOKSLOT");
+  });
+
+  test("preview source positions never point to headings inside code or nested Markdown", () => {
+    const document = render("```md\n# Same\n```\n\n> # Same\n\n:::info\n# Same\n:::\n\n# Same\n\nTitle\n=====");
+    expect(document.headings.map(({ line }) => line)).toEqual([undefined, undefined, 11, 13]);
+  });
+
+  test("invalid directives retain visible preview diagnostics without executable HTML", () => {
+    const document = render(":::query\nsource: <img src=x onerror=alert(1)>\n:::\n\n:::toc\nmax-depth: 42", "de");
+    expect(document.blocks).toHaveLength(2);
+    for (const block of document.blocks) {
+      expect(block.html).toContain("Ungültiger Block");
+      expect(block.html).not.toContain("<img");
+      expect(document.html).toContain(block.html);
+    }
+  });
+
+  test("editor previews retain their presentation mode on query note and tag links", () => {
+    for (const linkMode of ["write", "readonly"] as const) {
+      const document = renderNotebookBook({
+        markdown: ":::query\nsource: notes\ncolumns:\n  - $title\n  - $tags\n:::",
+        notebookId: "ABC123",
+        locale: "en",
+        linkMode,
+        queryResults: new Map([[1, result]]),
+      });
+      expect(document.blocks[0]!.html).toContain(`notes/DEF456?mode=${linkMode}`);
+      expect(document.blocks[0]!.html).toContain(`tags/team%2Fnews?mode=${linkMode}`);
+      expect(document.blocks[0]!.html).not.toContain("mode=book");
+    }
+  });
+
   test("renders standard Markdown and stable collision-free heading anchors", () => {
     const md = "# Handbook\n\n## Hello\n\n**bold** *italic* ~~old~~ `code`\n\n## Hello\n\n## Hello 2\n\n> Quote\n\n- one\n- two\n\n---";
     const first = render(md);

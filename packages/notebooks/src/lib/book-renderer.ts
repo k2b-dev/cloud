@@ -9,12 +9,13 @@ import { bookRendererMessages } from "./book-renderer-messages";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
-export type BookHeading = { id: string; depth: number; text: string };
+export type BookHeading = { id: string; depth: number; text: string; line?: number };
 
 export type NotebookBookInput = {
   markdown: string;
   notebookId: string;
   locale: string;
+  linkMode?: "book" | "write" | "readonly";
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
 };
@@ -31,10 +32,10 @@ const safeUrl = (raw: string, image = false): string | null => {
   return url;
 };
 
-const bookHref = (href: string): string => {
+const bookHref = (href: string, mode: "book" | "write" | "readonly"): string => {
   if (!/^\/app\/notebooks\/[A-Za-z0-9]+(?:\/|\?|#|$)/.test(href)) return href;
   const url = new URL(href, "https://notebooks.invalid");
-  url.searchParams.set("mode", "book");
+  url.searchParams.set("mode", mode);
   return `${url.pathname}${url.search}${url.hash}`;
 };
 
@@ -43,11 +44,21 @@ const bookHref = (href: string): string => {
  * access or executable notebook scripts. Only authorized query snapshots enter
  * here; both SSR and future refresh endpoints can use this same function.
  */
-export const renderNotebookBook = (input: NotebookBookInput): { html: string; headings: BookHeading[] } => {
+export const renderNotebookBook = (
+  input: NotebookBookInput,
+): {
+  html: string;
+  headings: BookHeading[];
+  blocks: { line: number; html: string }[];
+} => {
   const markdown = input.markdown.replace(/\r\n?/g, "\n");
   const { locale, t } = bookRendererMessages.resolve([input.locale]);
   const notebookId = encodeURIComponent(input.notebookId);
   const headings: BookHeading[] = [];
+  const headingLines = new Map<string, number[]>();
+  const headingSource = new WeakMap<object, number>();
+  const blockHtml = new Map<number, string>();
+  const linkMode = input.linkMode ?? "book";
   const usedIds = new Set<string>();
   const queries = new Map(parseNotebookQueryBlocks(markdown).blocks.map((block) => [block.line, block]));
   const tocs = new Map(parseNotebookTocBlocks(markdown).blocks.map((block) => [block.line, block]));
@@ -88,12 +99,12 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
     const attachmentId = /^attach:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
     if (attachmentId) return `/api/notebooks/${notebookId}/attachments/${attachmentId}/content?v=1`;
     const noteId = /^note:\/\/([A-Za-z0-9]{6})$/.exec(raw)?.[1];
-    if (noteId && !image) return `/app/notebooks/${notebookId}/notes/${noteId}?mode=book`;
+    if (noteId && !image) return `/app/notebooks/${notebookId}/notes/${noteId}?mode=${linkMode}`;
     const url = safeUrl(raw, image);
-    return url && !image ? bookHref(url) : url;
+    return url && !image ? bookHref(url, linkMode) : url;
   };
   const tag = (value: string) =>
-    `<a class="notebook-book-tag" href="/app/notebooks/${notebookId}/tags/${encodeURIComponent(value.toLowerCase())}?mode=book">#${escape(value)}</a>`;
+    `<a class="notebook-book-tag" href="/app/notebooks/${notebookId}/tags/${encodeURIComponent(value.toLowerCase())}?mode=${linkMode}">#${escape(value)}</a>`;
   const valueHtml = (value: NamedDataValue | null | undefined): string => {
     if (value === null || value === undefined) return "—";
     if (Array.isArray(value)) return value.map((item) => `<span class="md-data-chip">${escape(String(item))}</span>`).join(" ");
@@ -147,7 +158,8 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
   let insideLink = false;
   const renderer = new Renderer();
   renderer.html = ({ text: html }) => escape(html);
-  renderer.heading = function ({ depth, tokens }) {
+  renderer.heading = function (token) {
+    const { depth, tokens } = token;
     const body = this.parser.parseInline(tokens);
     const title = sanitizeHtml(body, { allowedTags: [], allowedAttributes: {} })
       .replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathLabels[Number(index)] ?? "")
@@ -157,7 +169,8 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
       );
     const base = `heading-${text.slugify(title) || "section"}`;
     const id = anchorId(base);
-    headings.push({ id, depth, text: title });
+    const line = headingSource.get(token);
+    headings.push({ id, depth, text: title, ...(line === undefined ? {} : { line }) });
     return `<h${depth} id="${id}">${body}</h${depth}>\n`;
   };
   renderer.link = function ({ href, title, tokens }) {
@@ -296,6 +309,17 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
     }
     const opener = /^:::(query|toc|data|note|info|success|warning|danger)\s*$/.exec(line.trim());
     if (!opener) {
+      // Source positions are optional for nested Markdown, but never guessed.
+      // Canonical heading IDs still cover every heading in the rendered TOC.
+      const heading = /^ {0,3}#{1,6}\s+/.test(line)
+        ? line.trim()
+        : index > 0 && /^ {0,3}(?:=+|-+)\s*$/.test(line) && lines[index - 1]!.trim()
+          ? `${lines[index - 1]}\n${line}`.trim()
+          : null;
+      if (heading) {
+        const sourceLine = /^ {0,3}#{1,6}\s+/.test(line) ? index + 1 : index;
+        headingLines.set(heading, [...(headingLines.get(heading) ?? []), sourceLine]);
+      }
       prepared.push(line);
       continue;
     }
@@ -309,12 +333,17 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
     prepared.push(
       "",
       slot(() => {
-        if (!closed) return diagnostic(start + 1) + source(lines.slice(start, index).join("\n"));
+        const preview = (html: string) => {
+          if (kind === "query" || kind === "toc") blockHtml.set(start + 1, html);
+          return html;
+        };
+        if (!closed) return preview(diagnostic(start + 1) + source(lines.slice(start, index).join("\n")));
         if (kind === "query") {
           const query = queries.get(start + 1);
-          return query ? renderQuery(query) : diagnostic(start + 1) + source(body);
+          return preview(query ? renderQuery(query) : diagnostic(start + 1) + source(body));
         }
-        if (kind === "toc") return tocs.has(start + 1) ? `<div data-book-toc="${start + 1}"></div>` : diagnostic(start + 1) + source(body);
+        if (kind === "toc")
+          return preview(tocs.has(start + 1) ? `<div data-book-toc="${start + 1}"></div>` : diagnostic(start + 1) + source(body));
         if (kind === "data") {
           const data = parseNamedDataBlockResult(body);
           if (data.diagnostics.length) return diagnostic(start + 1) + source(body);
@@ -329,40 +358,50 @@ export const renderNotebookBook = (input: NotebookBookInput): { html: string; he
       "",
     );
   }
-  let html = marked.parse(prepared.join("\n"), { async: false });
+  const tokens = marked.lexer(prepared.join("\n"));
+  for (const token of tokens) {
+    if (token.type !== "heading") continue;
+    const line = headingLines.get(token.raw.trim())?.shift();
+    if (line !== undefined) headingSource.set(token, line);
+  }
+  let html = marked.parser(tokens);
   html = html.replace(/<div data-book-toc="(\d+)"><\/div>/g, (_raw, line: string) => {
     const toc = tocs.get(Number(line))!;
     const items = headings.filter((heading) => heading.depth >= toc.minDepth && heading.depth <= toc.maxDepth);
-    return `<nav class="notebook-book-toc" aria-label="${escape(t.toc)}">${items.length ? `<ol>${items.map((heading) => `<li data-depth="${heading.depth}"><a href="#${heading.id}">${escape(heading.text)}</a></li>`).join("")}</ol>` : `<p class="notebook-book-empty">${escape(t.emptyToc)}</p>`}</nav>`;
+    const rendered = `<nav class="notebook-book-toc" aria-label="${escape(t.toc)}">${items.length ? `<ol>${items.map((heading) => `<li data-depth="${heading.depth}"><a href="#${heading.id}">${escape(heading.text)}</a></li>`).join("")}</ol>` : `<p class="notebook-book-empty">${escape(t.emptyToc)}</p>`}</nav>`;
+    blockHtml.set(Number(line), rendered);
+    return rendered;
   });
-  html = sanitizeHtml(html, {
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],
-    allowedAttributes: {
-      "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
-      a: ["href", "rel"],
-      img: ["src", "alt", "loading", "width", "height"],
-      input: ["type", "disabled", "checked"],
-      span: ["style"],
-      th: ["scope"],
-      time: ["datetime"],
-      ol: ["start"],
-    },
-    allowedSchemes: ["http", "https", "mailto", "tel"],
-    allowedSchemesByTag: { img: ["http", "https"] },
-    allowProtocolRelative: false,
-    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
-    transformTags: {
-      a: (_tag, attrs) => {
-        const href = attrs.href ? resolveUrl(attrs.href) : null;
-        const { href: _href, ...other } = attrs;
-        return { tagName: "a", attribs: { ...other, ...(href ? { href } : {}) } };
+  const sanitize = (value: string) =>
+    sanitizeHtml(value, {
+      allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],
+      allowedAttributes: {
+        "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
+        a: ["href", "rel"],
+        img: ["src", "alt", "loading", "width", "height"],
+        input: ["type", "disabled", "checked"],
+        span: ["style"],
+        th: ["scope"],
+        time: ["datetime"],
+        ol: ["start"],
       },
-      input: (_tag, attrs) => ({
-        tagName: "input",
-        attribs: { type: "checkbox", disabled: "", ...(Object.hasOwn(attrs, "checked") ? { checked: "" } : {}) },
-      }),
-    },
-  });
+      allowedSchemes: ["http", "https", "mailto", "tel"],
+      allowedSchemesByTag: { img: ["http", "https"] },
+      allowProtocolRelative: false,
+      allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
+      transformTags: {
+        a: (_tag, attrs) => {
+          const href = attrs.href ? resolveUrl(attrs.href) : null;
+          const { href: _href, ...other } = attrs;
+          return { tagName: "a", attribs: { ...other, ...(href ? { href } : {}) } };
+        },
+        input: (_tag, attrs) => ({
+          tagName: "input",
+          attribs: { type: "checkbox", disabled: "", ...(Object.hasOwn(attrs, "checked") ? { checked: "" } : {}) },
+        }),
+      },
+    });
+  html = sanitize(html);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
-  return { html, headings };
+  return { html, headings, blocks: [...blockHtml].map(([line, html]) => ({ line, html: sanitize(html) })) };
 };

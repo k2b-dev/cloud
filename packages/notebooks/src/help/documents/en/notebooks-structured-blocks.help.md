@@ -8,6 +8,32 @@ order: 130
 
 Named blocks are the bridge from readable notes to script-readable data. Put a stable `@ref` directly above the block that should become part of the public note structure.
 
+## Automatic page lists and contents
+
+Type `:::` in the editor and choose **query** or **toc**. In rich mode, each block shows a server-rendered preview. Move the cursor into the block or choose **Show source** to change its settings. Invalid settings are marked at their source lines. Book renders the same results without an editor.
+
+This query lists notes tagged `handbook`, newest changes first:
+
+```text
+:::query
+source: notes
+where:
+  - field: $tags
+    op: contains-all
+    value: [handbook]
+sort:
+  field: $updated
+  direction: desc
+limit: 25
+:::
+```
+
+Queries stay within the current notebook. Use `scope: children` or `scope: descendants` to restrict the list to pages below the current note. Filters can also address your own named data, such as `profile.owner`; no predefined metadata schema is required. Query previews use saved note data. Editing a query draft does not save it or modify its results.
+
+An empty `:::toc` block followed by `:::` lists the page's headings. Set `min-depth` and `max-depth` between 1 and 6 to choose the heading levels.
+
+Saved changes refresh query previews. If a Read-only editor's saved source has changed, reload the page to show the new source and matching preview.
+
 **@ref**
 
 ## The block contract {icon="contract"}
