@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { benchmarkConfiguration } from "../packages/core/bench/configuration";
 
 // Disposable containers share an offline namespace. No development services,
 // published ports or persistent volumes are used or changed.
 const root = resolve(import.meta.dir, "..");
+const configuration = benchmarkConfiguration(process.env);
 const output = await mkdtemp(join(tmpdir(), "cloud-identity-perf-"));
 const prefix = `cloud-identity-bench-${crypto.randomUUID()}`;
 const database = `cloud_identity_bench_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -28,6 +30,7 @@ await Bun.write(
       images,
       imageIds,
       sourceRevision,
+      configuration,
       topology: "Offline Docker namespace; read-only working tree; PostgreSQL tmpfs; no shared dev services",
     },
     null,
@@ -128,10 +131,15 @@ try {
       "--env",
       "IDENTITY_BENCH_REPORT=/results/report.json",
       "--env",
-      `IDENTITY_BENCH_SAMPLES=${process.env.IDENTITY_BENCH_SAMPLES ?? "200"}`,
+      `IDENTITY_BENCH_SAMPLES=${configuration.samples}`,
+      "--env",
+      `IDENTITY_BENCH_MODE=${configuration.mode}`,
       "--entrypoint",
       "bun",
       images.bun,
+      ...(configuration.mode === "profile"
+        ? ["--cpu-prof", "--cpu-prof-md", "--cpu-prof-name=identity.cpuprofile", "--cpu-prof-dir=/results"]
+        : []),
       "bench/identity-search.ts",
     ],
     { stdout: "inherit", stderr: "inherit" },

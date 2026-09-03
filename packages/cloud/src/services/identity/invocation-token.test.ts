@@ -241,6 +241,26 @@ describe("Cloud invocation JWT", () => {
     ).toBeNull();
   });
 
+  test("accepts null schema bindings without weakening hash validation", async () => {
+    const claims = { ...baseClaims(), schema_hash: null };
+    const signed = await token(claims);
+    expect(await verify(signed, { schemaHash: null })).toEqual(claims);
+    expect(await verify(signed, { schemaHash })).toBeNull();
+    for (const invalid of ["", "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)]) {
+      for (const deferSchemaBinding of [false, true]) {
+        const options = { issuer, key: keySet, now, deferSchemaBinding };
+        expect(await verifyInvocationToken(signed, { targetAppId, operation, schemaHash: invalid }, options)).toBeNull();
+        expect(
+          await verifyInvocationToken(
+            await token({ ...baseClaims(), schema_hash: invalid }),
+            { targetAppId, operation, schemaHash },
+            options,
+          ),
+        ).toBeNull();
+      }
+    }
+  });
+
   test("rejects inconsistent actor and access-subject combinations", async () => {
     const inconsistent = [
       { ...baseClaims(), access_subject_id: serviceAccountId },

@@ -4,6 +4,7 @@ import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
+import { benchmarkConfiguration } from "./configuration";
 import { compare, summary } from "./statistics";
 
 // Run through scripts/bench-identity.ts. The default SQL handle connects to a
@@ -11,8 +12,9 @@ import { compare, summary } from "./statistics";
 const source = new URL(process.env.DATABASE_URL!);
 assert.match(source.pathname, /^\/cloud_identity_bench_[a-z0-9]+$/);
 assert(["localhost", "127.0.0.1"].includes(source.hostname));
-const samplesPerMode = Number(process.env.IDENTITY_BENCH_SAMPLES ?? 200);
-assert(Number.isSafeInteger(samplesPerMode) && samplesPerMode >= 20 && samplesPerMode <= 2_000);
+const configuration = benchmarkConfiguration(process.env);
+const samplesPerMode = configuration.samples;
+const metered = configuration.mode !== "direct-postgres";
 const warmup = 20;
 const latencyMs = 5;
 const startingLoad = loadavg();
@@ -91,7 +93,7 @@ assert(address && typeof address !== "string");
 const meteredUrl = new URL(source);
 meteredUrl.hostname = "127.0.0.1";
 meteredUrl.port = String(address.port);
-process.env.DATABASE_URL = meteredUrl.href;
+process.env.DATABASE_URL = metered ? meteredUrl.href : source.href;
 const { sql, redis, RedisClient } = await import("bun");
 const telemetry = new RedisClient(process.env.REDIS_URL!);
 const redisSnapshot = async (): Promise<Counts> => {
@@ -103,7 +105,7 @@ const redisSnapshot = async (): Promise<Counts> => {
   );
 };
 await sql`SELECT 1`;
-assert.equal(counts["pg.other"], 1, "The real default SQL handle must use the protocol meter");
+assert.equal(counts["pg.other"] ?? 0, metered ? 1 : 0, "The real default SQL handle must use the selected transport");
 // Maintainer-only harness: exercise the actual internal router, not a new public API.
 const { createSearchRoutes } = await import("../../cloud/src/api/search");
 const { auth } = await import("@valentinkolb/cloud/server");
@@ -229,7 +231,7 @@ try {
       let active = 0;
       let peak = 0;
       let targetCalls = 0;
-      let stages = { authentication: 0, guardedSigning: 0, signingBatch: 0 };
+      let stages = { authentication: 0, guardedSigning: 0, signingBatch: 0, targetVerification: 0, targetActor: 0 };
       let signerFailure: { name: string; code?: string } | undefined;
       const authenticate = auth.requireRole("authenticated");
       activeTargets = new Map(
@@ -240,6 +242,24 @@ try {
               requireInvocationOrLegacy(
                 () => ({ targetAppId: entry.appId, operation: "search.query", schemaHash: entry.manifest.queries[0]!.schemaHash }),
                 auth.requireRole("authenticated"),
+                {
+                  verify: async (...args) => {
+                    const start = performance.now();
+                    try {
+                      return await identity.verifyInvocationToken(...args);
+                    } finally {
+                      stages.targetVerification += performance.now() - start;
+                    }
+                  },
+                  resolve: async (...args) => {
+                    const start = performance.now();
+                    try {
+                      return await identity.resolveInvocationAuthority(...args);
+                    } finally {
+                      stages.targetActor += performance.now() - start;
+                    }
+                  },
+                },
               ),
             )
             .post("*", async (c) => {
@@ -305,7 +325,7 @@ try {
       const once = async (mode: "legacy" | "jwt", measured: boolean) => {
         await warmCaches();
         process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
-        stages = { authentication: 0, guardedSigning: 0, signingBatch: 0 };
+        stages = { authentication: 0, guardedSigning: 0, signingBatch: 0, targetVerification: 0, targetActor: 0 };
         signerFailure = undefined;
         counts = {};
         targetCalls = 0;
@@ -351,7 +371,8 @@ try {
                 }
               : { "pg.user_actor": 1 + targetCount, "redis.session_get": (1 + targetCount) * 2 };
           const { "pg.logging": _logging, ...identityIo } = counts;
-          assert.deepEqual(identityIo, expected, `Unexpected ${mode}/${phase}/${providerCount} hot-path I/O`);
+          const observed = metered ? expected : Object.fromEntries(Object.entries(expected).filter(([key]) => !key.startsWith("pg.")));
+          assert.deepEqual(identityIo, observed, `Unexpected ${mode}/${phase}/${providerCount} hot-path I/O`);
           assert.equal(jwksReads - oldJwks, 0, "Warm verification must not fetch JWKS");
           const newRedis = await redisSnapshot();
           const delta = Object.fromEntries(
@@ -374,8 +395,20 @@ try {
       }
       const values = { legacy: [] as number[], jwt: [] as number[] };
       const stageValues = {
-        legacy: { authentication: [] as number[], guardedSigning: [] as number[], signingBatch: [] as number[] },
-        jwt: { authentication: [] as number[], guardedSigning: [] as number[], signingBatch: [] as number[] },
+        legacy: {
+          authentication: [] as number[],
+          guardedSigning: [] as number[],
+          signingBatch: [] as number[],
+          targetVerification: [] as number[],
+          targetActor: [] as number[],
+        },
+        jwt: {
+          authentication: [] as number[],
+          guardedSigning: [] as number[],
+          signingBatch: [] as number[],
+          targetVerification: [] as number[],
+          targetActor: [] as number[],
+        },
       };
       let legacyIo: Counts = {};
       let jwtIo: Counts = {};
@@ -386,7 +419,8 @@ try {
           const result = await once(mode, true);
           values[mode].push(result.elapsed);
           loggingWrites[mode] += result.loggingWrites;
-          for (const key of ["authentication", "guardedSigning", "signingBatch"] as const) stageValues[mode][key].push(result.stages[key]);
+          for (const key of ["authentication", "guardedSigning", "signingBatch", "targetVerification", "targetActor"] as const)
+            stageValues[mode][key].push(result.stages[key]);
           if (mode === "jwt") jwtIo = result.io;
           else legacyIo = result.io;
         }
@@ -449,7 +483,9 @@ try {
   }
   const report = {
     completed: true,
-    passes: records.every((record) => record.passes),
+    passes: configuration.acceptanceEligible && records.every((record) => record.passes),
+    configuration,
+    postgresMetered: metered,
     measuredAt: new Date().toISOString(),
     bun: Bun.version,
     platform: process.platform,
@@ -465,8 +501,7 @@ try {
       "Refresh real config/signer caches every 30s outside timings; cache refresh and cold-start latency are not part of this warm-cache gate",
     pool: "Bun default SQL pool",
     baseline: "Current dual-read legacy session and credential-forwarding branch, same router/fixtures; not an archived binary",
-    transport:
-      "Real loopback HTTP to Core and providers (shared process), real PostgreSQL through protocol meter, isolated Redis, warmed HTTP JWKS; dispatcher phase stubs provider work only; fixed in-memory discovery",
+    transport: `Real loopback HTTP to Core and providers (shared process), real PostgreSQL ${metered ? "through protocol meter" : "direct (diagnostic only)"}, isolated Redis, warmed HTTP JWKS; dispatcher phase stubs provider work only; fixed in-memory discovery`,
     acceptance: "Each phase/provider combination: JWT p95 - legacy p95 <= max(legacy p95 * 0.1, 10ms)",
     redisInstrumentation:
       "Client GET/send observers cross-checked against isolated Redis INFO commandstats outside every timed request; only telemetry INFO commands excluded",
@@ -476,7 +511,7 @@ try {
   await Bun.write(process.env.IDENTITY_BENCH_REPORT!, JSON.stringify(report, null, 2));
   completeReportWritten = true;
   assert(
-    records.every((record) => record.passes),
+    !configuration.acceptanceEligible || records.every((record) => record.passes),
     "p95 acceptance failed; retain the report and investigate without loosening the gate",
   );
 } catch (error) {

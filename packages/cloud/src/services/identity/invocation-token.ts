@@ -23,7 +23,10 @@ const OperationSchema = z
   .min(1)
   .max(200)
   .regex(/^[a-z][a-z0-9:._-]*$/);
-const SchemaHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const SchemaHashSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/)
+  .nullable();
 const ScopeSchema = z
   .string()
   .min(1)
@@ -59,7 +62,7 @@ const InvocationPayloadSchema = z
       .max(100)
       .refine((scopes) => new Set(scopes).size === scopes.length, "Scopes must be unique"),
     op: OperationSchema,
-    schema_hash: SchemaHashSchema.nullable(),
+    schema_hash: SchemaHashSchema,
     ver: z.literal(CLOUD_INVOCATION_PROTOCOL_VERSION),
     request_id: BoundedIdentifierSchema.optional(),
     mandate_id: z.string().uuid().optional(),
@@ -224,7 +227,7 @@ export const verifyInvocationToken = async (
   try {
     const targetAppId = AppIdSchema.parse(expected.targetAppId);
     const operation = OperationSchema.parse(expected.operation);
-    const schemaHash = z.union([SchemaHashSchema, z.null()]).parse(expected.schemaHash);
+    const schemaHash = SchemaHashSchema.parse(expected.schemaHash);
     const runtime = options.issuer && (options.key || options.jwksUrl) ? null : await getIdentityRuntimeConfig();
     const issuer = options.issuer ?? runtime!.issuer;
     const jwksUrl = options.jwksUrl ?? runtime?.invocationJwksUrl;

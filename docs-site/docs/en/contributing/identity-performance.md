@@ -37,7 +37,7 @@ with that run's exact `cloud-identity-bench-<UUID>` prefix.
 
 The output directory contains:
 
-- `environment.json`: image IDs, source revision, and topology;
+- `environment.json`: image IDs, source revision, benchmark mode, sample count, and topology;
 - `report.json`: raw samples, percentiles, query counts, stage timings, and the
   acceptance result. Incomplete runs are marked `completed: false` and cannot
   establish acceptance. A failed Core HTTP request includes `failedRequest`
@@ -58,6 +58,7 @@ The default run takes 200 samples per mode for each of six cases: dispatcher
 and end-to-end search with 1, 8, and 30 providers. Each case has 20 warm-up pairs.
 Legacy and JWT run alternately, reversing their order on each pair. A shorter
 smoke test can use `IDENTITY_BENCH_SAMPLES=20`; do not use it for acceptance.
+The report marks runs with fewer than 200 samples per mode as ineligible.
 
 Both modes use the real search router and authentication implementation. Legacy
 uses the current compatibility branch with an opaque session and forwarded
@@ -84,6 +85,28 @@ configuration caches outside timed requests every 30 seconds, before their
 Cold starts, cache refresh costs, and rotation require separate operational
 observations. Stage timings are diagnostic: guarded signing includes the signing
 batch, so those durations must not be added together.
+`targetVerification` and `targetActor` are sums of elapsed time across providers,
+which can overlap. They locate work; they are not extra sequential search latency.
+
+## Diagnose overhead
+
+Use these modes to investigate a failure without changing production code:
+
+```bash
+IDENTITY_BENCH_MODE=profile bun scripts/bench-identity.ts
+IDENTITY_BENCH_MODE=direct-postgres bun scripts/bench-identity.ts
+```
+
+`profile` writes a Bun CPU profile beside the report. Profiling itself affects
+timings. `direct-postgres` bypasses only the PostgreSQL protocol meter; it still
+runs real authentication, key guards, signing, provider calls and Redis checks,
+but cannot assert PostgreSQL query counts. Compare it with a normal run on the
+same quiet host to assess the meter's contribution.
+
+Both modes record `configuration.acceptanceEligible: false` and `passes: false`.
+A zero exit status means the diagnostic run completed its applicable correctness
+checks, not that performance was accepted. Normal measurement remains the default
+(`IDENTITY_BENCH_MODE=measure`). No mode changes the JWT algorithm or deadlines.
 
 ## Apply the acceptance gate
 
@@ -94,8 +117,8 @@ JWT p95 - legacy p95 <= max(legacy p95 × 0.10, 10 ms)
 ```
 
 Percentiles use nearest rank without rounding before comparison or removing
-outliers. The runner exits unsuccessfully when any case exceeds the bound or an
-I/O assertion fails. For acceptance, run three independent full runs on the
+outliers. A full normal measurement exits unsuccessfully when any case exceeds
+the bound or an I/O assertion fails. For acceptance, run three independent full runs on the
 same unchanged checkout and require all three to pass; never select only the
 best run. A failed run leaves the performance gate open.
 
