@@ -1,7 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, prompts, SelectChip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
-import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
+import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -28,13 +28,6 @@ const findNoteByShortId = (nodes: NoteTreeNode[], shortId: string | null): NoteT
     if (child) return child;
   }
   return null;
-};
-
-const resolveSameNotebookNoteHref = (url: URL, notebookShortId: string): string | null => {
-  if (url.origin !== window.location.origin || url.hash || !hasOnlyNavigatorQuery(url.searchParams)) return null;
-  const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
-  if (!match || decodeURIComponent(match[1]!) !== notebookShortId) return null;
-  return `${url.pathname}${url.search}`;
 };
 
 export default function NotebookSidebar(props: Props) {
@@ -64,11 +57,11 @@ export default function NotebookSidebar(props: Props) {
     setTreeSort(value);
     writeSettings(notebook().id, { treeSort: value });
   };
-  const attachmentsHref = () => buildAttachmentsUrl(notebook().id);
+  const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
   const hasTags = () => tags().length > 0;
   const allNotebooksHref = "/app/notebooks";
   const homepageNote = createMemo(() => findNoteByShortId(noteTree(), notebook().homepageNoteId));
-  const homepageHref = () => (homepageNote() ? buildNoteUrl(notebook().id, homepageNote()!.id) : null);
+  const homepageHref = () => (homepageNote() ? buildNoteUrl(notebook().id, homepageNote()!.id, props.ctx.presentationMode) : null);
   const homepageIsActive = () => homepageNote()?.id === selectedNoteId();
   const vt = (key: string) => `notebook-sidebar-${notebook().id}-${key}`;
 
@@ -79,7 +72,7 @@ export default function NotebookSidebar(props: Props) {
     });
 
   const handleSameNotebookNoteNavigate = async (nav: LinkNavigateEvent) => {
-    const target = resolveSameNotebookNoteHref(nav.url, notebook().id);
+    const target = resolveSameNotebookNoteTarget(nav.url.href, window.location.href, notebook().id)?.canonicalHref;
     if (!target) {
       nav.fallback();
       return;
@@ -108,6 +101,7 @@ export default function NotebookSidebar(props: Props) {
       showSearch={false}
       showHeaderActions={false}
       favoriteNoteIds={[...favoriteNoteIds()]}
+      presentationMode={props.ctx.presentationMode}
     />
   );
 
@@ -170,7 +164,7 @@ export default function NotebookSidebar(props: Props) {
           </AppWorkspace.SidebarItem>
           {hasTags() && (
             <div style={`view-transition-name:${vt("tags-mobile")}`}>
-              <TagsButton notebookId={notebook().id} tags={tags()} variant="sidebar-mobile" />
+              <TagsButton notebookId={notebook().id} tags={tags()} variant="sidebar-mobile" presentationMode={props.ctx.presentationMode} />
             </div>
           )}
           <NotebookSettingsButton
@@ -233,7 +227,13 @@ export default function NotebookSidebar(props: Props) {
                     viewTransitionName={vt("attachments-desktop")}
                   />
                   {hasTags() && (
-                    <TagsButton notebookId={notebook().id} tags={tags()} variant="icon" viewTransitionName={vt("tags-desktop")} />
+                    <TagsButton
+                      notebookId={notebook().id}
+                      tags={tags()}
+                      variant="icon"
+                      viewTransitionName={vt("tags-desktop")}
+                      presentationMode={props.ctx.presentationMode}
+                    />
                   )}
                 </AppWorkspace.SidebarIconGrid>
               </div>
@@ -280,6 +280,7 @@ export default function NotebookSidebar(props: Props) {
             initialSortMode={props.ctx.settings.navigatorSort}
             dateConfig={props.ctx.dateConfig}
             initialQuery={props.ctx.navigatorQuery}
+            presentationMode={props.ctx.presentationMode}
           />
         </Show>
       </AppWorkspace.SidebarDesktop>

@@ -23,6 +23,35 @@ const result: NoteQueryResult = {
 };
 
 describe("Notebook Book HTML", () => {
+  test("fence-looking source cannot expose directives or generated markers", () => {
+    for (const marker of ["```", "~~~"]) {
+      const markdown = `${marker}md\n${marker}not-a-closing-fence\n:::query\nsource: notes\n:::\n${marker}`;
+      const document = render(markdown);
+      expect(document.blocks).toEqual([]);
+      expect(document.html).toContain(":::query\nsource: notes\n:::");
+      expect(document.html).not.toContain("NOTEBOOKBOOKSLOT");
+    }
+  });
+
+  test("indented code keeps directives literal", () => {
+    for (const indent of ["    ", "\t"]) {
+      const document = render(`${indent}:::query\n${indent}source: notes\n${indent}:::`);
+      expect(document.blocks).toEqual([]);
+      expect(document.html).toContain("<pre><code>");
+      expect(document.html).toContain(":::query\nsource: notes\n:::");
+      expect(document.html).not.toContain("diagnostic");
+    }
+  });
+
+  test("notice code examples cannot prematurely close the notice", () => {
+    const document = render(":::info\n```text\n:::\n```\nStill inside\n:::\n\nOutside");
+    expect(document.html).toContain('<pre><code class="language-text">:::</code></pre>');
+    expect(document.html).toContain("<p>Still inside</p>");
+    expect(document.html.indexOf("Still inside")).toBeLessThan(document.html.indexOf("</aside>"));
+    expect(document.html.indexOf("Outside")).toBeGreaterThan(document.html.indexOf("</aside>"));
+    expect(document.html).not.toContain("NOTEBOOKBOOKSLOT");
+  });
+
   test("block previews are exact sanitized excerpts of the same document", () => {
     const document = render("# Guide\n\n:::toc\n:::\n\n:::query\nsource: notes\n:::", "de", new Map([[6, result]]));
     expect(document.blocks.map(({ line }) => line)).toEqual([3, 6]);

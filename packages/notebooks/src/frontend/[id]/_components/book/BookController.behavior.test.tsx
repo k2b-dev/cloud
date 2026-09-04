@@ -42,6 +42,7 @@ describe("Book controller", () => {
       <a id="third" href="/app/notebooks/book01/notes/note03?mode=book">Third</a>
       <a id="toc" href="#heading">TOC</a>
       <a id="write" href="/app/notebooks/book01/notes/note01?mode=write">Write</a>
+      <a id="notebook-root" href="/app/notebooks/book01?mode=book">Notebook home</a>
       <article id="notebook-book-content" tabindex="-1"><h1 id="heading">First</h1></article><div id="controller"></div></div></div>`;
     const requests: Array<{ href: string; signal: AbortSignal | null | undefined; resolve: (value: Response) => void }> = [];
     const originalFetch = globalThis.fetch;
@@ -111,6 +112,7 @@ describe("Book controller", () => {
     try {
       expect(app.click("toc").defaultPrevented).toBe(false);
       expect(app.click("write").defaultPrevented).toBe(false);
+      expect(app.click("notebook-root").defaultPrevented).toBe(false);
       expect(app.click("second", { ctrlKey: true }).defaultPrevented).toBe(false);
       await flush();
       expect(app.requests).toHaveLength(0);

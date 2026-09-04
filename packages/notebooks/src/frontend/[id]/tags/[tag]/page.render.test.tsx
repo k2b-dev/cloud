@@ -71,11 +71,11 @@ function fixtures(permission: PermissionLevel = "read") {
   return { cursor, tree, tags, count, notes };
 }
 
-async function render(query = "mode=write", locale = "en") {
+async function render(query = "mode=write", locale = "en", status = 200, actorUser: User = user) {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
-    c.set("actor", { kind: "user", user });
-    c.set("user", user);
+    c.set("actor", { kind: "user", user: actorUser });
+    c.set("user", actorUser);
     c.set("runtime", { apps: [] });
     await next();
   });
@@ -84,11 +84,18 @@ async function render(query = "mode=write", locale = "en") {
     headers: { "Accept-Language": locale },
   });
   const html = await response.text();
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(status);
   return html;
 }
 
 describe("Book tag page SSR", () => {
+  test("global administrators can read tags without a separate notebook grant", async () => {
+    fixtures("none");
+    const html = await render("mode=book", "en", 200, { ...user, roles: ["admin"] });
+    expect(html).toContain("notebook-book-shell");
+    expect(html).toContain("Onboarding");
+  });
+
   test("read grants override Write and render Book navigation without editor islands", async () => {
     const calls = fixtures();
     const html = await render();
@@ -134,10 +141,10 @@ describe("Book tag page SSR", () => {
 
   test("no-access requests do not read the tag index or notebook workspace", async () => {
     const calls = fixtures("none");
-    const html = await render();
+    const html = await render("mode=book", "en", 403);
     expect(html).not.toContain("Onboarding");
     expect(html).not.toContain("notebook-book-shell");
-    expect(html).toContain("Access Denied");
+    expect(html).toMatch(/Access denied/i);
     for (const call of Object.values(calls)) expect(call).not.toHaveBeenCalled();
   });
 });

@@ -58,6 +58,25 @@ function fixture(allowed = true, currentNote: notes.NoteWithContent | null = not
 }
 
 describe("authorized Book documents and server block previews", () => {
+  test("trusted platform admins retain Book and preview access without a notebook ACL", async () => {
+    const calls = fixture(false, { ...note, contentMd: ":::query\nsource: notes\n:::" });
+    expect(await loadBookNote({ ...params, bypassAccess: true })).not.toBeNull();
+    expect((await loadBookBlockPreview({ ...params, bypassAccess: true, markdown: ":::query\nsource: notes\n:::" })).kind).toBe("ok");
+    expect(calls.access).not.toHaveBeenCalled();
+    expect(calls.queries.mock.calls.every(([args]) => args.bypassAccess === true)).toBe(true);
+  });
+
+  test("platform admins still cannot preview a draft of a locked note", async () => {
+    fixture(false, { ...note, lockedAt: note.updatedAt });
+    expect(await loadBookBlockPreview({ ...params, bypassAccess: true, markdown: "Draft" })).toEqual({ kind: "denied" });
+  });
+
+  test("platform admins still cannot address a note through another notebook", async () => {
+    fixture(false, { ...note, notebookId: "44444444-4444-4444-8444-444444444444" });
+    expect(await loadBookNote({ ...params, bypassAccess: true })).toBeNull();
+    expect(await loadBookBlockPreview({ ...params, bypassAccess: true, markdown: "Draft" })).toEqual({ kind: "not_found" });
+  });
+
   test("denied reads and drafts do not load content or resolve queries", async () => {
     const calls = fixture(false);
     expect(await loadBookNote(params)).toBeNull();

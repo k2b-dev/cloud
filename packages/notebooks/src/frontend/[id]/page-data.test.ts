@@ -97,11 +97,11 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   return { backlinks, comments, graph, versions };
 }
 
-async function load(mode?: string, path = "/app/notebooks/book01/notes/note01") {
+async function requestPageData(mode?: string, path = "/app/notebooks/book01/notes/note01", actorUser: User = user) {
   const app = new Hono<AuthContext & { Variables: { page: { title?: string } } }>();
   let result: Awaited<ReturnType<typeof loadNotebookPageData>> | undefined;
   app.get("/app/notebooks/:id/notes/:noteId", async (c) => {
-    c.set("actor", { kind: "user", user });
+    c.set("actor", { kind: "user", user: actorUser });
     result = await loadNotebookPageData(c);
     return c.body(null, 204);
   });
@@ -109,11 +109,46 @@ async function load(mode?: string, path = "/app/notebooks/book01/notes/note01") 
     headers: { "Accept-Language": "de" },
   });
   expect(response.status).toBe(204);
-  if (!result || result.kind !== "ok") throw new Error(`Expected page data, got ${result?.kind}`);
+  if (!result) throw new Error("Expected page data");
+  return result;
+}
+
+async function load(mode?: string, path?: string) {
+  const result = await requestPageData(mode, path);
+  if (result.kind !== "ok") throw new Error(`Expected page data, got ${result.kind}`);
   return result;
 }
 
 describe("notebook page presentation authorization", () => {
+  test("global administrators can render Book without a separate notebook grant", async () => {
+    fixtures("none");
+    const data = await requestPageData("book", undefined, { ...user, roles: ["admin"] });
+    expect(data.kind).toBe("ok");
+    if (data.kind !== "ok") throw new Error("Expected Book data");
+    expect(data.permission).toBe("admin");
+    expect(data.bookHtml).toContain("<strong>handbook</strong>");
+    expect(data.ctx.presentationMode).toBe("book");
+  });
+
+  test("an explicit missing or cross-notebook link never falls back to another note", async () => {
+    fixtures("read");
+    track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(async ({ shortId }) =>
+      shortId === "note01" ? note : { ...note, shortId, notebookId: "44444444-4444-4444-8444-444444444444" },
+    );
+    expect(await requestPageData("book", "/app/notebooks/book01/notes/other1")).toEqual({ kind: "not_found" });
+    track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValue(null);
+    expect(await requestPageData("book", "/app/notebooks/book01/notes/gone01")).toEqual({ kind: "not_found" });
+  });
+
+  for (const mode of ["book", "write"]) {
+    test(`an explicit note removed after ID resolution returns not-found in ${mode}`, async () => {
+      fixtures("write");
+      track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(null);
+      track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(null);
+      expect(await requestPageData(mode)).toEqual({ kind: "not_found" });
+    });
+  }
+
   for (const mode of [undefined, "write", "readonly", "graph", "versions", "book"]) {
     test(`read grants always load Book instead of ${mode ?? "the Write default"}`, async () => {
       const calls = fixtures("read");

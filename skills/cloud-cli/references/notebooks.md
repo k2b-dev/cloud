@@ -68,6 +68,10 @@ The editor can render callouts and other Markdown extensions, but CLI agents sho
 
 Use `:::toc` for the current note's headings and `:::query` for lists or tables of notes. Both render in Book and in the editor preview. Their configuration remains Markdown, so normal CLI read/edit commands can manage it.
 
+Place data, query, and TOC directives at document level, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
+
+For notice blocks such as `:::info`, indent the closing `:::` no more than the opening line.
+
 ````markdown
 :::toc
 min-depth: 2

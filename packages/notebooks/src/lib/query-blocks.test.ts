@@ -2,6 +2,28 @@ import { describe, expect, test } from "bun:test";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, QUERY_MAX_COLUMNS, QUERY_MAX_FILTERS } from "./query-blocks";
 
 describe("notebook query blocks", () => {
+  test("code fences close only on a bare matching delimiter", () => {
+    for (const marker of ["```", "~~~"]) {
+      const markdown = `${marker}md\n${marker}not-a-closing-fence\n:::query\nsource: notes\n:::\n:::toc\n:::\n${marker}`;
+      expect(parseNotebookQueryBlocks(markdown)).toEqual({ blocks: [], diagnostics: [] });
+      expect(parseNotebookTocBlocks(markdown)).toEqual({ blocks: [], diagnostics: [] });
+    }
+  });
+
+  test("indented code examples do not become directives", () => {
+    for (const indent of ["    ", "\t"]) {
+      expect(parseNotebookQueryBlocks(`${indent}:::query\n${indent}source: notes\n${indent}:::`)).toEqual({ blocks: [], diagnostics: [] });
+      expect(parseNotebookTocBlocks(`${indent}:::toc\n${indent}:::`)).toEqual({ blocks: [], diagnostics: [] });
+    }
+  });
+
+  test("CRLF fences keep examples inert without hiding following directives", () => {
+    const markdown = ["```text", ":::query", "source: notes", ":::", "```", "", ":::query", "source: notes", ":::"].join("\r\n");
+    const result = parseNotebookQueryBlocks(markdown);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.blocks.map((block) => block.line)).toEqual([7]);
+  });
+
   test("parses the bounded query contract into a DOM-free AST", () => {
     const result = parseNotebookQueryBlocks(`:::query
 source: notes

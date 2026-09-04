@@ -13,8 +13,8 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
-import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
 import { deriveNoteTitle } from "../../../../lib/note-title";
+import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
@@ -48,7 +48,7 @@ import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
-import { createNoteNavigationCoordinator } from "./note-navigation";
+import { createNoteNavigationCoordinator, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { slashCommandsExtension } from "./slash-commands";
 
 const TOC_DEBOUNCE_MS = 300;
@@ -97,37 +97,6 @@ type LoadedNote = {
 type Props = EditorInstanceProps & {
   initialHref: string;
   initialDetail: SoftNavigatedDetail;
-};
-
-type SameNotebookNoteHref = {
-  noteShortId: string;
-  canonicalHref: string;
-};
-
-const parseSameNotebookEditNoteUrl = (href: string, notebookId: string): SameNotebookNoteHref | null => {
-  const noteSchemeMatch = href.match(/^note:\/\/([0-9a-zA-Z]{6})$/);
-  if (noteSchemeMatch?.[1]) {
-    const noteShortId = noteSchemeMatch[1];
-    return {
-      noteShortId,
-      canonicalHref: `/app/notebooks/${encodeURIComponent(notebookId)}/notes/${encodeURIComponent(noteShortId)}`,
-    };
-  }
-
-  try {
-    const url = new URL(href, window.location.href);
-    if (url.origin !== window.location.origin || url.hash || !hasOnlyNavigatorQuery(url.searchParams)) return null;
-    const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
-    if (!match || match[1] !== notebookId) return null;
-    const noteShortId = decodeURIComponent(match[2]!);
-    if (!/^[0-9A-Za-z]{6}$/.test(noteShortId)) return null;
-    return {
-      noteShortId,
-      canonicalHref: `${url.pathname}${url.search}`,
-    };
-  } catch {
-    return null;
-  }
 };
 
 export default function NoteEditor(props: Props) {
@@ -240,8 +209,10 @@ export default function NoteEditor(props: Props) {
 
   const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
     if (props.readOnly) return { kind: "fallback" };
-    const target = parseSameNotebookEditNoteUrl(href, props.notebookId);
+    const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
     if (!target) return { kind: "fallback" };
+    const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
+    if (mode && mode !== "write") return { kind: "fallback" };
     return await navigation.navigate(target, push);
   };
 
@@ -251,8 +222,17 @@ export default function NoteEditor(props: Props) {
       const anchor = (event.target as Element | null)?.closest("a[href]");
       if (!(anchor instanceof HTMLAnchorElement) || anchor.target || anchor.hasAttribute("download")) return;
       const href = anchor.getAttribute("href") ?? anchor.href;
-      const target = parseSameNotebookEditNoteUrl(href, props.notebookId);
-      if (!target) return;
+      const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
+      if (!target) {
+        // Anchors and non-editor routes still use document navigation, but
+        // must not discard an explicitly selected presentation mode.
+        const inherited = inheritPresentationMode(href, window.location.href);
+        if (inherited !== href) {
+          event.preventDefault();
+          window.location.assign(inherited);
+        }
+        return;
+      }
       event.preventDefault();
       void navigateSoft(href, true).then((result) => {
         if (result.kind === "fallback") window.location.assign(target.canonicalHref);

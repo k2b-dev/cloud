@@ -71,6 +71,17 @@ function fixture() {
 }
 
 describe("authorized Book refresh routes", () => {
+  test("trusted platform admins load Book pages without a direct notebook grant", async () => {
+    const calls = fixture();
+    calls.permission.mockResolvedValue("none");
+    const result = await loadBookRoute({ ...params, bypassAccess: true });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.snapshot.canWrite).toBe(true);
+    expect(result.snapshot.html).toContain("handbook");
+    expect(calls.permission).not.toHaveBeenCalled();
+  });
+
   test("denied requests read no notebook, note, tags, or cursor", async () => {
     const { permission, ...reads } = fixture();
     permission.mockResolvedValue("none");

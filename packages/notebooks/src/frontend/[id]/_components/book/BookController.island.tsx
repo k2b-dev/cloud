@@ -148,6 +148,8 @@ export default function BookController(props: Props) {
       }
       const url = bookNavigationTarget(anchor.href, window.location.href, props.notebookId);
       if (!url) return;
+      // Notebook entry applies homepage/last-note redirects on the server.
+      if (url.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return;
       const current = new URL(window.location.href);
       if (url.pathname === current.pathname && url.search === current.search && url.hash) return;
       event.preventDefault();

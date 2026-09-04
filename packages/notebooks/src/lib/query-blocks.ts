@@ -1,3 +1,5 @@
+import { literalMarkdownLines } from "./markdown-context";
+
 export const QUERY_MAX_FILTERS = 32;
 export const QUERY_MAX_COLUMNS = 16;
 export const QUERY_MAX_LIMIT = 100;
@@ -108,7 +110,9 @@ const diagnostic = (code: NotebookBlockDiagnosticCode, line: number, path: strin
 });
 
 const directives = (md: string): Directive[] => {
+  if (!/:::(?:query|toc)\b/.test(md)) return [];
   const lines = md.split("\n");
+  const literalLines = literalMarkdownLines(md);
   const offsets: number[] = [];
   let offset = 0;
   for (const text of lines) {
@@ -116,18 +120,10 @@ const directives = (md: string): Directive[] => {
     offset += text.length + 1;
   }
   const found: Directive[] = [];
-  let codeFence: { marker: string; length: number } | null = null;
-
   for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i]!.trim();
-    const fence = trimmed.match(/^(`{3,}|~{3,})/);
-    if (fence?.[1]) {
-      const marker = fence[1][0]!;
-      if (!codeFence) codeFence = { marker, length: fence[1].length };
-      else if (marker === codeFence.marker && fence[1].length >= codeFence.length) codeFence = null;
-      continue;
-    }
-    if (codeFence) continue;
+    if (literalLines.has(i)) continue;
+    const text = lines[i]!;
+    const trimmed = text.trim();
 
     const opener = trimmed.match(/^:::(query|toc)\s*$/);
     if (!opener?.[1]) continue;
@@ -139,7 +135,8 @@ const directives = (md: string): Directive[] => {
         closed = true;
         break;
       }
-      body.push(lines[i]!);
+      // Keep raw offsets above; normalize only the body consumed by the DSL.
+      body.push(lines[i]!.replace(/\r$/, ""));
     }
     found.push({
       type: opener[1] as Directive["type"],
@@ -226,8 +223,27 @@ const isQueryScalar = (value: unknown): value is QueryScalar =>
   (typeof value === "number" && Number.isFinite(value)) ||
   (typeof value === "string" && value.length <= QUERY_MAX_STRING_LENGTH);
 
-const isIsoInstant = (value: unknown): value is string =>
-  typeof value === "string" && RFC3339_RE.test(value) && Number.isFinite(Date.parse(value));
+const isIsoInstant = (value: unknown): value is string => {
+  if (typeof value !== "string" || !RFC3339_RE.test(value) || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  const day = Number(value.slice(8, 10));
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  // Date.parse normalizes e.g. February 30 and 24:00 instead of rejecting
+  // them. Reject these before a query can reach PostgreSQL's stricter cast.
+  const offset = value.match(/[+-](\d{2}):\d{2}$/);
+  // PostgreSQL has no year zero and accepts offsets only below 16 hours.
+  return (
+    year > 0 &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1]! &&
+    Number(value.slice(11, 13)) < 24 &&
+    (!offset || Number(offset[1]) < 16)
+  );
+};
 
 export const isQueryFilter = (value: unknown): value is QueryFilter => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;

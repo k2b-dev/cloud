@@ -41,6 +41,7 @@ export default function NotebookNavigatorPane(props: Props) {
         initialSortMode={props.ctx.settings.navigatorSort}
         dateConfig={props.ctx.dateConfig}
         initialQuery={props.ctx.navigatorQuery}
+        presentationMode={props.ctx.presentationMode}
       />
     </div>
   );

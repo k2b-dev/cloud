@@ -94,6 +94,22 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   });
 
   describe("Book HTTP boundary", () => {
+    test("a request body cannot grant the trusted admin override", async () => {
+      permission.mockResolvedValue("none");
+      const response = await preview({ markdown: "# Private", bypassAccess: true });
+      expect([400, 403]).toContain(response.status);
+      expect(loadPreview).not.toHaveBeenCalled();
+    });
+
+    test("derives the platform-admin override from the authenticated actor", async () => {
+      token.mockResolvedValue({ kind: "user", payload: {}, user: { ...user, roles: ["admin"] }, scopes: [] });
+      permission.mockResolvedValue("none");
+      expect((await refresh()).status).toBe(200);
+      expect(loadRoute.mock.calls[0]?.[0].bypassAccess).toBe(true);
+      expect((await preview({ markdown: "# Draft" })).status).toBe(200);
+      expect(loadPreview.mock.calls[0]?.[0].bypassAccess).toBe(true);
+    });
+
     test("serves read snapshots privately with request locale and public notebook resolution", async () => {
       const response = await refresh();
       expect(response.status).toBe(200);
@@ -123,6 +139,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       expect(saved.status).toBe(200);
       expect(saved.headers.get("Cache-Control")).toBe("private, no-store");
       expect(loadPreview).toHaveBeenCalledWith({
+        bypassAccess: false,
         notebookId: notebook.id,
         notebookShortId: "book01",
         noteShortId: "note01",

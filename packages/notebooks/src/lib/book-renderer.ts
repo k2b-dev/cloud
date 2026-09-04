@@ -6,6 +6,7 @@ import sanitizeHtml from "sanitize-html";
 import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages } from "./book-renderer-messages";
+import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
@@ -282,18 +283,17 @@ export const renderNotebookBook = (
   });
 
   const lines = markdown.split("\n");
+  let offset = 0;
+  const lineOffsets = lines.map((line) => {
+    const start = offset;
+    offset += line.length + 1;
+    return start;
+  });
+  const literalLines = literalMarkdownLines(markdown);
   const prepared: string[] = [];
-  let fence: { marker: string; length: number } | undefined;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!;
-    const marker = line.trim().match(/^(`{3,}|~{3,})/)?.[1];
-    if (marker) {
-      if (!fence) fence = { marker: marker[0]!, length: marker.length };
-      else if (marker[0] === fence.marker && marker.length >= fence.length) fence = undefined;
-      prepared.push(line);
-      continue;
-    }
-    if (fence) {
+    if (literalLines.has(index)) {
       prepared.push(line);
       continue;
     }
@@ -325,11 +325,12 @@ export const renderNotebookBook = (
     }
     const kind = opener[1]!;
     const start = index;
-    while (++index < lines.length && lines[index]!.trim() !== ":::") {
-      /* bounded by the document */
-    }
-    const closed = index < lines.length;
-    const body = lines.slice(start + 1, index).join("\n");
+    const remaining = markdown.slice(lineOffsets[start]);
+    const extent = notebookDirectiveLength(remaining) ?? remaining.length;
+    const blockLines = remaining.slice(0, extent).replace(/\n$/, "").split("\n");
+    const closed = blockLines.length > 1 && blockLines.at(-1)!.trim() === ":::";
+    index = closed ? start + blockLines.length - 1 : lines.length;
+    const body = blockLines.slice(1, closed ? -1 : undefined).join("\n");
     prepared.push(
       "",
       slot(() => {

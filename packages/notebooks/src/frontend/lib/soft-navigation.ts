@@ -1,4 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { inheritPresentationMode } from "../../lib/presentation-url";
 
 export const SOFT_NOTE_NAVIGATION_REQUEST_EVENT = "notebooks.note.softNavigationRequest";
 const SELECT_INITIAL_TITLE_KEY = "notebooks.selectInitialTitle";
@@ -18,6 +19,7 @@ export const requestSoftNoteNavigation = async (href: string, options: { push?: 
 };
 
 export const navigateToNotebookNote = async (href: string, options: { selectInitialTitle?: string } = {}): Promise<void> => {
+  href = inheritPresentationMode(href, window.location.href);
   if (options.selectInitialTitle) sessionStorage.setItem(SELECT_INITIAL_TITLE_KEY, options.selectInitialTitle);
   if ((await requestSoftNoteNavigation(href)).kind !== "fallback") return;
   navigateTo(href);

@@ -8,6 +8,10 @@ order: 130
 
 Use named data for facts beside your prose, queries for automatic page lists, and a table of contents for headings on one page. No predefined metadata schema is required.
 
+Place `:::data`, `:::query`, and `:::toc` directly in the document, outside lists, quotes, code examples, and other blocks. Nested examples are not evaluated.
+
+For notice blocks such as `:::info`, indent the closing `:::` no more than the opening line.
+
 ## Add your own data {icon="braces"}
 
 Put a stable name directly above a data block:

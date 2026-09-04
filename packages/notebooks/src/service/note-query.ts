@@ -351,7 +351,9 @@ const selectedValue = (row: DbQueryNote, field: QueryField): NamedDataValue | nu
       return row.tags;
     default: {
       const [block, key] = field.split(".") as [string, string];
-      return row.data_properties[block]?.[key] ?? null;
+      if (!Object.hasOwn(row.data_properties, block)) return null;
+      const properties = row.data_properties[block]!;
+      return Object.hasOwn(properties, key) ? properties[key]! : null;
     }
   }
 };
@@ -368,18 +370,22 @@ export const resolveNoteQuery = async (params: {
   userId: string | null;
   serviceAccountId?: string | null;
   boundNotebookId?: string | null;
+  /** Only trusted server callers may supply the platform-admin override. */
+  bypassAccess?: boolean;
 }): Promise<NoteQueryResult> => {
   const validation = validateNoteQuery(params.query);
   if (!validation.query) return invalidResult(validation.diagnostics);
   const query = validation.query;
   if (params.serviceAccountId && !params.boundNotebookId) return emptyResult(query, { code: "unavailable" });
   if (params.boundNotebookId && params.boundNotebookId !== params.notebookId) return emptyResult(query, { code: "unavailable" });
-  const canRead = await notebooks.canAccess({
-    notebookId: params.notebookId,
-    userId: params.userId,
-    serviceAccountId: params.serviceAccountId,
-    requiredLevel: "read",
-  });
+  const canRead =
+    params.bypassAccess ||
+    (await notebooks.canAccess({
+      notebookId: params.notebookId,
+      userId: params.userId,
+      serviceAccountId: params.serviceAccountId,
+      requiredLevel: "read",
+    }));
   if (!canRead) return emptyResult(query, { code: "unavailable" });
 
   const [context] = await sql<{ exists: boolean }[]>`
@@ -403,13 +409,13 @@ export const resolveNoteQuery = async (params: {
     JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
     WHERE n.notebook_id = ${params.notebookId}::uuid
       AND (${boundNotebookId}::uuid IS NULL OR n.notebook_id = ${boundNotebookId}::uuid)
-      AND EXISTS (
+      AND (${params.bypassAccess === true} OR EXISTS (
         SELECT 1
         FROM notebooks.notebook_access na
         JOIN auth.access a ON a.id = na.access_id
         WHERE na.notebook_id = n.notebook_id
           AND ${principalMatch}
-      )
+      ))
       AND ${scope}
       AND (${predicates})
   `;

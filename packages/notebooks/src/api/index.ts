@@ -1261,6 +1261,7 @@ const app = new Hono<AuthContext>()
         notebookId: notebook!.id,
         notebookShortId: notebook!.shortId,
         userId: actor.data.id,
+        bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         origin: new URL(c.req.url).origin,
         href: c.req.valid("query").href,
@@ -1300,6 +1301,7 @@ const app = new Hono<AuthContext>()
         notebookShortId: notebook!.shortId,
         noteShortId: c.req.param("noteId")!,
         userId: actor.data.id,
+        bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
       });

@@ -5,6 +5,7 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import SearchButton from "../search/SearchButton";
 import { listAccessibleNotebooks } from "./notebooks";
@@ -26,6 +27,7 @@ type Props = {
   showSearch?: boolean;
   showHeaderActions?: boolean;
   favoriteNoteIds?: string[];
+  presentationMode?: PresentationMode;
 };
 
 // =============================================================================
@@ -319,6 +321,7 @@ export const noteActionItems = (
 function NoteTreeItems(props: {
   nodes: NoteTreeNode[];
   notebookId: string;
+  presentationMode?: PresentationMode;
   canWrite: boolean;
   actions: ReturnType<typeof useNoteActions>;
   favoriteNoteIds?: () => Set<string>;
@@ -343,7 +346,7 @@ function NoteTreeItems(props: {
               </span>
             }
             icon="ti ti-file-text"
-            href={buildNoteUrl(props.notebookId, node.id)}
+            href={buildNoteUrl(props.notebookId, node.id, props.presentationMode)}
             navigation="document"
             actions={
               props.onToggleFavorite || props.canWrite ? (
@@ -379,6 +382,7 @@ function NoteTreeItems(props: {
             <NoteTreeItems
               nodes={node.children}
               notebookId={props.notebookId}
+              presentationMode={props.presentationMode}
               canWrite={props.canWrite}
               actions={props.actions}
               favoriteNoteIds={props.favoriteNoteIds}
@@ -454,6 +458,7 @@ export default function NoteTree(props: Props) {
           <NoteTreeItems
             nodes={props.tree}
             notebookId={props.notebookId}
+            presentationMode={props.presentationMode}
             canWrite={props.canWrite ?? false}
             actions={actions}
             favoriteNoteIds={favoriteNoteIds}

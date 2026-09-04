@@ -2,11 +2,12 @@ import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import type { Context } from "hono";
-import { toPublicNoteComment, toPublicNotebook } from "@/api/public-resources";
+import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { parseNavigatorQuery } from "@/lib/navigator-url";
+import { type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
+import { requestedPresentationMode } from "@/lib/presentation-url";
 import { notebooksService } from "@/service";
-import { resolvePresentationMode, type PresentationMode } from "@/lib/presentation-mode";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { buildNoteUrl } from "../params";
@@ -30,10 +31,12 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   if (!notebook) return { kind: "not_found" as const };
 
   const notebookId = notebook.id;
-  const permission = await notebooksService.notebook.permission.get({
-    notebookId,
-    userId: user.id,
-  });
+  const permission = hasRole(user, "admin")
+    ? "admin"
+    : await notebooksService.notebook.permission.get({
+        notebookId,
+        userId: user.id,
+      });
   if (permission === "none") return { kind: "access_denied" as const };
 
   const isAdmin = permission === "admin";
@@ -63,6 +66,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     homepageNoteId: notebook.homepageNoteShortId,
     firstNoteId: tree[0]?.id ?? null,
   });
+  if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
 
   const selected = await loadSelectedNote({
     notebookId,
@@ -77,6 +81,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     defaultPresentationMode: notebook.defaultPresentationMode,
     locale: getLocale(c),
   });
+  if (noteParam && !selected.note) return { kind: "not_found" as const };
 
   if (!noteParam && selected.note && !isGraphMode) {
     return {
@@ -144,6 +149,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     workspaceCursor,
     dateConfig: getDateConfig(c),
     navigatorQuery: parseNavigatorQuery(new URL(c.req.url).searchParams),
+    presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
   const appUrl = await get<string>("app.url");
@@ -195,6 +201,8 @@ async function resolveSelectedNoteId(params: {
   };
 
   const resolvedFromPath = await resolveNoteInNotebook(params.noteParam);
+  // An explicit link must never display another note under the requested URL.
+  if (params.noteParam) return resolvedFromPath;
   const resolvedFromCookie = await resolveNoteInNotebook(params.lastNoteId);
   const resolvedHomepage = await resolveNoteInNotebook(params.homepageNoteId);
   return resolvedFromPath ?? resolvedFromCookie ?? resolvedHomepage ?? params.firstNoteId;
@@ -237,6 +245,7 @@ async function loadSelectedNote(params: {
       noteShortId: params.selectedNoteId,
       userId: params.userId,
       locale: params.locale,
+      bypassAccess: params.bypassAccess,
     });
     if (!book) return { internalNoteId: null, note: null, routeState: null, tocItems: [], namedBlocks: [], bookHtml: null };
     return {

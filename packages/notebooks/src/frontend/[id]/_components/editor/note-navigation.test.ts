@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { createNoteNavigationCoordinator, type NoteNavigationTarget } from "./note-navigation";
+import { createNoteNavigationCoordinator, type NoteNavigationTarget, resolveSameNotebookNoteTarget } from "./note-navigation";
+
+test.each(["write", "readonly"])("note navigation targets retain %s on ordinary and note-scheme links", (mode) => {
+  const current = `https://cloud.example/app/notebooks/book01/notes/note01?mode=${mode}`;
+  for (const href of ["note://note02", "/app/notebooks/book01/notes/note02"]) {
+    expect(resolveSameNotebookNoteTarget(href, current, "book01")).toEqual({
+      noteShortId: "note02",
+      canonicalHref: `/app/notebooks/book01/notes/note02?mode=${mode}`,
+    });
+  }
+  expect(resolveSameNotebookNoteTarget("/app/notebooks/book01/notes/note02?mode=versions", current, "book01")).toBeNull();
+  expect(resolveSameNotebookNoteTarget("/app/notebooks/book01/notes/note02?mode=book", current, "book01")?.canonicalHref).toEndWith(
+    "?mode=book",
+  );
+  expect(resolveSameNotebookNoteTarget("https://other.example/app/notebooks/book01/notes/note02", current, "book01")).toBeNull();
+});
 
 const target = (noteShortId: string): NoteNavigationTarget => ({
   noteShortId,

@@ -9,6 +9,8 @@
 
 import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { hasRole } from "@valentinkolb/cloud/contracts";
+import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -50,7 +52,7 @@ export default ssr<AuthContext>(async (c) => {
   }
   const notebookId = notebook.id;
 
-  const permission = await notebooksService.notebook.permission.get({
+  const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
     notebookId,
     userId: user.id,
   });
@@ -69,6 +71,8 @@ export default ssr<AuthContext>(async (c) => {
       </Layout>
     );
   }
+  // Readers only use Book; inline attachment links remain available there.
+  if (permission === "read") return c.redirect(`/app/notebooks/${notebook.shortId}?mode=book`);
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -105,7 +109,13 @@ export default ssr<AuthContext>(async (c) => {
   const publicTree = projectTree(tree, notebook.shortId);
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / paginatedResult.perPage));
   const baseHref = buildAttachmentsUrl(notebook.shortId);
-  const paginationBaseUrl = search ? `${baseHref}?search=${encodeURIComponent(search)}&page=` : `${baseHref}?page=`;
+  const presentationMode = requestedPresentationMode(new URL(c.req.url).searchParams);
+  const searchHref = presentationMode ? withPresentationMode(baseHref, presentationMode) : baseHref;
+  const paginationQuery = new URLSearchParams();
+  if (presentationMode) paginationQuery.set("mode", presentationMode);
+  if (search) paginationQuery.set("search", search);
+  paginationQuery.set("page", "");
+  const paginationBaseUrl = `${baseHref}?${paginationQuery}`;
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -120,6 +130,7 @@ export default ssr<AuthContext>(async (c) => {
     workspaceCursor,
     dateConfig: getDateConfig(c),
     navigatorQuery: {},
+    presentationMode,
   };
 
   return () => (
@@ -140,7 +151,7 @@ export default ssr<AuthContext>(async (c) => {
           <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* Search bar across the full content width. The breadcrumb already
                 labels the page — no additional title above. */}
-            <SearchBar value={search} action={baseHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
+            <SearchBar value={search} action={searchHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
 
             <div class="mt-2 flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
               <AttachmentsOverview

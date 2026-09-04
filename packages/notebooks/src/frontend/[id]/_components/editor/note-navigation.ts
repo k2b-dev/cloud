@@ -1,8 +1,29 @@
 import type { SoftNavigationResult } from "../../../lib/soft-navigation";
+import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
+import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 
 export type NoteNavigationTarget = {
   noteShortId: string;
   canonicalHref: string;
+};
+
+export const resolveSameNotebookNoteTarget = (href: string, currentHref: string, notebookId: string): NoteNavigationTarget | null => {
+  try {
+    const noteId = href.match(/^note:\/\/([0-9a-zA-Z]{6})$/)?.[1];
+    const raw = noteId ? `/app/notebooks/${encodeURIComponent(notebookId)}/notes/${noteId}` : href;
+    const current = new URL(currentHref);
+    const url = new URL(inheritPresentationMode(raw, currentHref), current);
+    const params = new URLSearchParams(url.searchParams);
+    if (requestedPresentationMode(params)) params.delete("mode");
+    if (url.origin !== current.origin || url.hash || !hasOnlyNavigatorQuery(params)) return null;
+    const match = url.pathname.match(/^\/app\/notebooks\/([^/]+)\/notes\/([^/]+)$/);
+    if (!match || decodeURIComponent(match[1]!) !== notebookId) return null;
+    const noteShortId = decodeURIComponent(match[2]!);
+    if (!/^[0-9A-Za-z]{6}$/.test(noteShortId)) return null;
+    return { noteShortId, canonicalHref: `${url.pathname}${url.search}` };
+  } catch {
+    return null;
+  }
 };
 
 type PendingNavigation = {

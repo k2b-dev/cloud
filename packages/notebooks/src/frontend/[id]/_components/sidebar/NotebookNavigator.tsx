@@ -2,6 +2,7 @@ import { type DateContext, dates, searchParams } from "@k2b/stdlib";
 import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
@@ -30,6 +31,7 @@ type Props = {
   dateConfig: DateContext;
   initialQuery: NavigatorQuery;
   mode?: "roots" | "list";
+  presentationMode?: PresentationMode;
 };
 
 type Selection =
@@ -123,18 +125,18 @@ const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: stri
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
-  <For each={props.nodes}>
-    {(note) => (
-      <AppWorkspace.NavTree.Item
-        id={noteTreeId(note.id)}
-        label={note.title || t().untitled}
-        icon="ti ti-folder"
-        onSelect={() => props.onSelect(note.id)}
-      >
-        <NoteNavigationItems nodes={note.children} onSelect={props.onSelect} />
-      </AppWorkspace.NavTree.Item>
-    )}
-  </For>
+    <For each={props.nodes}>
+      {(note) => (
+        <AppWorkspace.NavTree.Item
+          id={noteTreeId(note.id)}
+          label={note.title || t().untitled}
+          icon="ti ti-folder"
+          onSelect={() => props.onSelect(note.id)}
+        >
+          <NoteNavigationItems nodes={note.children} onSelect={props.onSelect} />
+        </AppWorkspace.NavTree.Item>
+      )}
+    </For>
   );
 };
 
@@ -180,9 +182,9 @@ export default function NotebookNavigator(props: Props) {
     if (current.root === "tags" && current.tag) return tagTreeId(current.tag);
     return null;
   };
-  const attachmentsHref = () => buildAttachmentsUrl(props.notebook.id);
+  const attachmentsHref = () => buildAttachmentsUrl(props.notebook.id, props.presentationMode);
   const noteHref = (note: NoteTreeNode) =>
-    withNavigatorQuery(buildNoteUrl(props.notebook.id, note.id), queryFromSelection(selection(), props.tree));
+    withNavigatorQuery(buildNoteUrl(props.notebook.id, note.id, props.presentationMode), queryFromSelection(selection(), props.tree));
 
   const noteTags = (note: NoteTreeNode) => tagsFromMarkdown(note.contentMd);
 
@@ -258,10 +260,7 @@ export default function NotebookNavigator(props: Props) {
   const openHomepage = () => {
     const home = homepageNote();
     if (!home) {
-      void prompts.alert(
-        t().noHomepageDescription,
-        { title: t().noHomepage, icon: "ti ti-home" },
-      );
+      void prompts.alert(t().noHomepageDescription, { title: t().noHomepage, icon: "ti ti-home" });
       return;
     }
     setActiveNoteId(home.id);
@@ -452,7 +451,9 @@ export default function NotebookNavigator(props: Props) {
                             </span>
                           )}
                         </For>
-                        <span class="ml-auto shrink-0 text-[10px] text-dimmed">{dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}</span>
+                        <span class="ml-auto shrink-0 text-[10px] text-dimmed">
+                          {dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}
+                        </span>
                       </div>
                     </a>
                     <div class="absolute right-2 top-2 flex items-center gap-0.5">

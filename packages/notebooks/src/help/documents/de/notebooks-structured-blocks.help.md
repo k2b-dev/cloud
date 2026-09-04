@@ -8,6 +8,10 @@ order: 130
 
 Nutze benannte Daten für Fakten neben deinem Text, Abfragen für automatische Seitenlisten und Inhaltsverzeichnisse für Überschriften einer Seite. Ein vorgegebenes Metadatenschema ist nicht nötig.
 
+Setze `:::data`, `:::query` und `:::toc` direkt ins Dokument, außerhalb von Listen, Zitaten, Codebeispielen und anderen Blöcken. Verschachtelte Beispiele werden nicht ausgewertet.
+
+Bei Hinweisblöcken wie `:::info` darf das abschließende `:::` nicht weiter eingerückt sein als die öffnende Zeile.
+
 ## Eigene Daten ergänzen {icon="braces"}
 
 Setze einen stabilen Namen direkt über einen Datenblock:

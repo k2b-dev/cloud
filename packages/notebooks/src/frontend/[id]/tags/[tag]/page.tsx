@@ -9,6 +9,7 @@
 
 import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { hasRole } from "@valentinkolb/cloud/contracts";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -16,7 +17,7 @@ import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../../config";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
-import { withPresentationMode } from "../../../../lib/presentation-url";
+import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import type { BookTreeNode } from "../../_components/book/BookNavigator.island";
 import BookSurface from "../../_components/book/BookSurface";
@@ -57,7 +58,7 @@ export default ssr<AuthContext>(async (c) => {
     );
   }
 
-  const permission = await notebooksService.notebook.permission.get({
+  const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
     notebookId,
     userId: user.id,
   });
@@ -133,6 +134,7 @@ export default ssr<AuthContext>(async (c) => {
     workspaceCursor,
     dateConfig: getDateConfig(c),
     navigatorQuery: {},
+    presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
   c.get("page").title = `#${tagParam} · ${notebook.name}`;

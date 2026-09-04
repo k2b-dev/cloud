@@ -12,8 +12,10 @@ export const loadBookNote = async (params: {
   noteShortId: string;
   userId: string;
   locale: string;
+  bypassAccess?: boolean;
 }) => {
-  if (!(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel: "read" }))) return null;
+  if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel: "read" })))
+    return null;
   const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });
   if (!note || note.notebookId !== params.notebookId) return null;
   const document = await renderBookDocument({ ...params, noteId: note.id, markdown: note.contentMd ?? "" });
@@ -29,6 +31,7 @@ const renderBookDocument = async (params: {
   locale: string;
   markdown: string;
   linkMode?: "write" | "readonly";
+  bypassAccess?: boolean;
 }) => {
   const { markdown } = params;
   const queries = parseNotebookQueryBlocks(markdown).blocks;
@@ -41,6 +44,7 @@ const renderBookDocument = async (params: {
         notebookId: params.notebookId,
         noteId: params.noteId,
         userId: params.userId,
+        bypassAccess: params.bypassAccess,
         query,
       }),
     );
@@ -62,9 +66,10 @@ export const loadBookBlockPreview = async (params: {
   userId: string;
   locale: string;
   markdown?: string;
+  bypassAccess?: boolean;
 }) => {
   const requiredLevel = params.markdown === undefined ? "read" : "write";
-  if (!(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel }))) {
+  if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel }))) {
     return { kind: "denied" as const };
   }
   const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });

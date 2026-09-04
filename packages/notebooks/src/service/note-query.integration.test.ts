@@ -110,6 +110,25 @@ afterAll(async () => {
 }, 30_000);
 
 describe("bounded note query resolver", () => {
+  postgresTest("missing properties cannot resolve inherited JavaScript members", async () => {
+    const result = await resolve(baseQuery({ columns: ["constructor.name", "meta.constructor", "meta.toString"] }));
+    for (const item of result.items) {
+      expect(item.values).toEqual({ "constructor.name": null, "meta.constructor": null, "meta.toString": null });
+    }
+  });
+
+  postgresTest("trusted platform admin queries bypass only ACL, never notebook scope", async () => {
+    const input = { notebookId: otherNotebookId, noteId: foreignId, query: baseQuery(), userId: id() };
+    expect((await resolveNoteQuery(input)).diagnostics).toEqual([{ code: "unavailable" }]);
+    const result = await resolveNoteQuery({ ...input, bypassAccess: true });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.items.map((item) => item.title)).toEqual(["Foreign"]);
+    expect((await resolveNoteQuery({ ...input, bypassAccess: true, noteId: rootId })).diagnostics).toEqual([{ code: "unavailable" }]);
+    expect((await resolveNoteQuery({ ...input, bypassAccess: true, boundNotebookId: notebookId })).diagnostics).toEqual([
+      { code: "unavailable" },
+    ]);
+  });
+
   postgresTest("enforces notebook access and validates the context note for every scope", async () => {
     await sql`
       DELETE FROM notebooks.notebook_access

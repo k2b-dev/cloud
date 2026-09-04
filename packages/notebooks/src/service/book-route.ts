@@ -17,8 +17,11 @@ export const loadBookRoute = async (params: {
   locale: string;
   origin: string;
   href: string;
+  bypassAccess?: boolean;
 }) => {
-  const permission = await notebooks.getPermission({ notebookId: params.notebookId, userId: params.userId });
+  const permission = params.bypassAccess
+    ? "admin"
+    : await notebooks.getPermission({ notebookId: params.notebookId, userId: params.userId });
   if (permission === "none") return { kind: "denied" as const };
   const target = bookNavigationTarget(params.href, params.origin, params.notebookShortId);
   if (!target) return { kind: "invalid" as const };

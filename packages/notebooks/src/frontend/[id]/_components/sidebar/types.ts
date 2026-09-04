@@ -57,4 +57,6 @@ export type NotebookContext = {
   workspaceCursor: string | null;
   dateConfig: DateContext;
   navigatorQuery: NavigatorQuery;
+  /** Explicit URL choice, preserved across workspace note navigation. */
+  presentationMode?: PresentationMode;
 };

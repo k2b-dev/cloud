@@ -1,3 +1,6 @@
+import { literalMarkdownLines } from "./markdown-context";
+import { isIndentedCodeLine } from "./markdown-fences";
+
 export type NamedBlockType = "table" | "list" | "data" | "section" | "unknown";
 
 export type NamedBlock = {
@@ -103,11 +106,12 @@ const fencedEndLine = (lines: Line[], start: number, marker: string): number => 
   return start;
 };
 
-const sectionEndLine = (lines: Line[], start: number): number => {
+const sectionEndLine = (lines: Line[], start: number, literal: ReadonlySet<number>): number => {
   const match = lines[start]!.text.match(HEADING_RE);
   const level = match?.[1]?.length ?? 6;
   let end = lines.length - 1;
   for (let i = start + 1; i < lines.length; i++) {
+    if (literal.has(i)) continue;
     const next = lines[i]!.text.match(HEADING_RE);
     if (next && next[1]!.length <= level) {
       end = Math.max(start, i - 1);
@@ -118,22 +122,14 @@ const sectionEndLine = (lines: Line[], start: number): number => {
 };
 
 export const extractNamedBlocks = (md: string | null | undefined): NamedBlock[] => {
-  if (!md) return [];
+  if (!md || !md.includes("@")) return [];
   const lines = linesWithOffsets(md);
   const blocks: NamedBlock[] = [];
-  let fence: { marker: string; length: number } | null = null;
+  const literal = literalMarkdownLines(md);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    const trimmed = line.text.trim();
-    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
-    if (fenceMatch?.[1]) {
-      const marker = fenceMatch[1][0]!;
-      if (!fence) fence = { marker, length: fenceMatch[1].length };
-      else if (marker === fence.marker && fenceMatch[1].length >= fence.length) fence = null;
-      continue;
-    }
-    if (fence) continue;
+    if (literal.has(i) || isIndentedCodeLine(line.text)) continue;
 
     const name = isNamedBlockHandle(line.text);
     if (!name) continue;
@@ -157,18 +153,18 @@ export const extractNamedBlocks = (md: string | null | undefined): NamedBlock[] 
     let type: NamedBlockType = "unknown";
     let endLine = startLine;
     const startText = lines[startLine]!.text.trim();
-    if (isTableStart(lines, startLine)) {
+    if (!isIndentedCodeLine(lines[startLine]!.text) && isTableStart(lines, startLine)) {
       type = "table";
       endLine = tableEndLine(lines, startLine);
-    } else if (LIST_RE.test(lines[startLine]!.text)) {
+    } else if (!isIndentedCodeLine(lines[startLine]!.text) && LIST_RE.test(lines[startLine]!.text)) {
       type = "list";
       endLine = listEndLine(lines, startLine);
-    } else if (/^:::data\b/.test(startText)) {
+    } else if (!literal.has(startLine) && !isIndentedCodeLine(lines[startLine]!.text) && /^:::data\b/.test(startText)) {
       type = "data";
       endLine = fencedEndLine(lines, startLine, ":::");
     } else if (HEADING_RE.test(lines[startLine]!.text)) {
       type = "section";
-      endLine = sectionEndLine(lines, startLine);
+      endLine = sectionEndLine(lines, startLine, literal);
     }
 
     blocks.push({
@@ -182,9 +178,9 @@ export const extractNamedBlocks = (md: string | null | undefined): NamedBlock[] 
       startLine,
       endLine,
     });
-    // Sections may contain additional named blocks. Keep scanning their
-    // body so a dashboard section can expose smaller referenceable parts.
-    if (type !== "section") i = endLine;
+    // Sections may contain additional named blocks. Unknown handles must not
+    // skip a following independent handle; literal source is masked above.
+    if (type !== "section" && type !== "unknown") i = endLine;
   }
 
   return blocks;
@@ -194,24 +190,17 @@ export const extractNamedBlockSummaries = (md: string | null | undefined): Named
   extractNamedBlocks(md).map(({ name, type, line }) => ({ name, type, line }));
 
 export const extractDataBlocks = (md: string | null | undefined): DataBlock[] => {
-  if (!md) return [];
+  if (!md || !md.includes(":::data")) return [];
   const lines = linesWithOffsets(md);
   const namedDataBlocks = extractNamedBlocks(md).filter((block) => block.type === "data");
   const namedDataStarts = new Set(namedDataBlocks.map((block) => block.blockStart));
   const blocks: DataBlock[] = namedDataBlocks.map((block) => ({ ...block }));
-  let fence: { marker: string; length: number } | null = null;
+  const literal = literalMarkdownLines(md);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const trimmed = line.text.trim();
-    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
-    if (fenceMatch?.[1]) {
-      const marker = fenceMatch[1][0]!;
-      if (!fence) fence = { marker, length: fenceMatch[1].length };
-      else if (marker === fence.marker && fenceMatch[1].length >= fence.length) fence = null;
-      continue;
-    }
-    if (fence || !/^:::data\b/.test(trimmed) || namedDataStarts.has(line.from)) continue;
+    if (literal.has(i) || isIndentedCodeLine(line.text) || !/^:::data\b/.test(trimmed) || namedDataStarts.has(line.from)) continue;
 
     const endLine = fencedEndLine(lines, i, ":::");
     blocks.push({
@@ -273,7 +262,8 @@ export const parseNamedDataBlockResult = (src: string): { entries: NamedDataEntr
   const diagnostics: NamedDataDiagnostic[] = [];
   const keys = new Set<string>();
   let activeArray: NamedDataEntry | null = null;
-  for (const [index, line] of src.split("\n").entries()) {
+  for (const [index, sourceLine] of src.split("\n").entries()) {
+    const line = sourceLine.replace(/\r$/, "");
     const lineNumber = index + 1;
     if (!line.trim()) continue;
     const item = line.match(/^\s{2}-\s+(.+)$/);
@@ -365,7 +355,7 @@ export const renderDataBlockHtml = (name: string | null, src: string): string =>
   const entries = parseNamedDataBlock(src);
   const handle = name
     ? `<div class="md-block-handle" data-block-name="${escapeHtml(name)}">@${escapeHtml(name)}</div>`
-    : `<div class="md-data-handle-row"><div class="md-block-handle">data</div><span class="md-data-reference-hint">add @ref to use in scripts</span></div>`;
+    : `<div class="md-data-handle-row"><div class="md-block-handle">data</div></div>`;
   const rows =
     entries.length > 0
       ? entries

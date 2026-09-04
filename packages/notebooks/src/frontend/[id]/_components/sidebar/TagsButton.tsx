@@ -13,6 +13,7 @@ import { timed } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { buildTagPageUrl } from "../../../params";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { TagSummary } from "./types";
 import { notebookWorkspaceMessages } from "../../messages";
 
@@ -23,9 +24,10 @@ type Props = {
   tags: TagSummary[];
   variant: Variant;
   viewTransitionName?: string;
+  presentationMode?: PresentationMode;
 };
 
-const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
+const TagsModal = (props: { notebookId: string; tags: TagSummary[]; presentationMode?: PresentationMode }) => {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   // Two signals: `query` is the live input (immediate UI feedback),
@@ -77,7 +79,7 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
             {(t) => (
               <li>
                 <a
-                  href={buildTagPageUrl(props.notebookId, t.tag)}
+                  href={buildTagPageUrl(props.notebookId, t.tag, props.presentationMode)}
                   class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline transition-colors"
                 >
                   <i class="ti ti-hash text-sm" />
@@ -93,9 +95,9 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
   );
 };
 
-const openTagsModal = (notebookId: string, tags: TagSummary[], locale: string) => {
+const openTagsModal = (notebookId: string, tags: TagSummary[], locale: string, presentationMode?: PresentationMode) => {
   const { t } = notebookWorkspaceMessages.resolve([locale]);
-  return prompts.dialog<void>(() => <TagsModal notebookId={notebookId} tags={tags} />, {
+  return prompts.dialog<void>(() => <TagsModal notebookId={notebookId} tags={tags} presentationMode={presentationMode} />, {
     title: t.tags,
     icon: "ti ti-hash",
   });
@@ -110,7 +112,7 @@ export default function TagsButton(props: Props) {
       <AppWorkspace.SidebarIconAction
         label={t().tagCount({ count: tagCount() })}
         icon="ti ti-hash"
-        onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}
+        onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
         viewTransitionName={props.viewTransitionName}
       />
     );
@@ -118,7 +120,12 @@ export default function TagsButton(props: Props) {
 
   if (props.variant === "sidebar-mobile") {
     return (
-      <Button variant="ghost" size="sm" class="w-full justify-start" onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}>
+      <Button
+        variant="ghost"
+        size="sm"
+        class="w-full justify-start"
+        onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
+      >
         <i class="ti ti-hash" />
         {t().tags} ({tagCount()})
       </Button>
@@ -128,7 +135,7 @@ export default function TagsButton(props: Props) {
     <AppWorkspace.SidebarItem
       icon="ti ti-hash"
       meta={tagCount()}
-      onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}
+      onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
       title={t().tagCount({ count: tagCount() })}
     >
       {t().tags}

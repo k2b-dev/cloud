@@ -128,7 +128,7 @@ water: 20
     expect(blocks[0]?.name).toBeNull();
     expect(rendered).toContain('class="md-data-block"');
     expect(rendered).toContain('class="md-data-handle-row"');
-    expect(rendered).toContain("add @ref to use in scripts");
+    expect(rendered).not.toContain("scripts");
     expect(rendered).toContain("Flour");
     expect(rendered).toContain("Water");
     expect(rendered).not.toContain(":::data");
