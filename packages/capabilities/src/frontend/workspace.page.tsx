@@ -217,22 +217,26 @@ function CapabilityTable(props: {
 export default ssr<AuthContext>(async (c) => {
   const { t } = capabilityUiMessages.resolve([getLocale(c)]);
   const appId = c.req.param("appId");
-  if (!appId) return c.notFound();
+  if (!appId) return ssr.error(c, 404);
 
   const workspace = await loadCapabilityWorkspace(appId, {}, getLocale(c));
   const loaded = workspace.selected;
-  if (loaded.kind === "not-found") return c.notFound();
+  if (loaded.kind === "not-found") return ssr.error(c, 404);
 
   const kind = c.req.param("kind") as CapabilityKind | undefined;
   const capabilityId = c.req.param("capabilityId");
-  if ((kind && !capabilityId) || (!kind && capabilityId)) return c.notFound();
-  if (kind && kind !== "query" && kind !== "action") return c.notFound();
+  if ((kind && !capabilityId) || (!kind && capabilityId)) return ssr.error(c, 404);
+  if (kind && kind !== "query" && kind !== "action") return ssr.error(c, 404);
 
   const tableState = parseCapabilityTableState(new URL(c.req.url));
   const operations =
     loaded.kind === "ready" ? capabilityOperationRows(loaded.app.id, loaded.manifest.queries, loaded.manifest.actions) : [];
   const selection = loaded.kind === "ready" && kind && capabilityId ? selectCapability(loaded, kind, capabilityId) : undefined;
-  if (kind && capabilityId && !selection) return c.notFound();
+  if (loaded.kind === "ready" && kind && capabilityId && !selection) return ssr.error(c, 404);
+  if (loaded.kind === "unavailable") {
+    c.status(503);
+    c.header("Cache-Control", "private, no-store");
+  }
 
   const searchEntries = capabilitySearchEntries(workspace.apps, loaded.app.id, operations);
   const pageTitle = selection?.operation.title ?? loaded.app.name;

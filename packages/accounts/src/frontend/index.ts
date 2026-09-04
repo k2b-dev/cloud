@@ -1,3 +1,4 @@
+import { ssr } from "../config";
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import auditPage from "./audit/page";
@@ -15,16 +16,16 @@ import usersNewPage from "./users/new/page";
 import usersPage from "./users/page";
 
 export default new Hono<AuthContext>()
-  .get("/", auth.requireRole("user", auth.redirectToLogin), ...landingPage)
-  .get("/users", auth.requireRole("admin", auth.redirectToLogin), ...usersPage)
-  .get("/users/new", auth.requireRole("admin", auth.redirectToLogin), ...usersNewPage)
-  .get("/users/:id", auth.requireRole("admin", auth.redirectToLogin), ...userDetailPage)
-  .get("/requests", auth.requireRole("admin", auth.redirectToLogin), ...requestsPage)
-  .get("/audit", auth.requireRole("admin", auth.redirectToLogin), ...auditPage)
-  .get("/service-accounts", auth.requireRole("admin", auth.redirectToLogin), ...serviceAccountsPage)
-  .get("/notifications", auth.requireRole("admin", auth.redirectToLogin), ...notificationsPage)
-  .get("/notifications/:id", auth.requireRole("admin", auth.redirectToLogin), ...notificationDetailPage)
-  .get("/deleted-accounts", auth.requireRole("admin", auth.redirectToLogin), ...deletedAccountsPage)
-  .get("/reminders", auth.requireRole("admin", auth.redirectToLogin), ...remindersPage)
-  .get("/groups", auth.requireRole("user", auth.redirectToLogin), ...groupsPage)
-  .get("/groups/:id", auth.requireRole("user", auth.redirectToLogin), ...groupDetailPage);
+  .get("/", auth.requireRole("user", ssr.access), ...landingPage)
+  .get("/users", auth.requireRole("admin", ssr.access), ...usersPage)
+  .get("/users/new", auth.requireRole("admin", ssr.access), ...usersNewPage)
+  .get("/users/:id", auth.requireRole("admin", ssr.access), ...userDetailPage)
+  .get("/requests", auth.requireRole("admin", ssr.access), ...requestsPage)
+  .get("/audit", auth.requireRole("admin", ssr.access), ...auditPage)
+  .get("/service-accounts", auth.requireRole("admin", ssr.access), ...serviceAccountsPage)
+  .get("/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
+  .get("/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationDetailPage)
+  .get("/deleted-accounts", auth.requireRole("admin", ssr.access), ...deletedAccountsPage)
+  .get("/reminders", auth.requireRole("admin", ssr.access), ...remindersPage)
+  .get("/groups", auth.requireRole("user", ssr.access), ...groupsPage)
+  .get("/groups/:id", auth.requireRole("user", ssr.access), ...groupDetailPage);

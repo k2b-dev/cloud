@@ -31,6 +31,8 @@ export default ssr<AuthContext>(async (c) => {
 
   const form = await gridsService.form.getByPublicToken(token);
   if (!form || !form.isActive) {
+    c.status(404);
+    c.header("Cache-Control", "private, no-store");
     c.get("page").title = t.formNotFound;
     return () => (
       <MinimalLayout c={c}>

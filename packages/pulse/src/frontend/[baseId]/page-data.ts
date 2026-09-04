@@ -1,4 +1,5 @@
 import type { ResourceApiKey } from "@valentinkolb/cloud/access/ui";
+import type { ServiceError } from "@k2b/stdlib";
 import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
 import { get as getSetting } from "@valentinkolb/cloud/services";
 import type { Context } from "hono";
@@ -59,8 +60,8 @@ type PulseWorkspacePageContext<T extends AuthContext = AuthContext> = Context<T>
 
 type PulseWorkspacePageData =
   | {
-      kind: "not_found";
-      errorMessage: string;
+      kind: "error";
+      status: ServiceError["status"];
     }
   | {
       kind: "ok";
@@ -409,19 +410,19 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Pulse
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const publicBaseId = c.req.param("baseId") ?? "";
-  if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "not_found", errorMessage: "Pulse base not found" };
+  if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error", status: 404 };
   const baseId = await resolvePublicId("bases", publicBaseId);
-  if (!baseId) return { kind: "not_found", errorMessage: "Pulse base not found" };
+  if (!baseId) return { kind: "error", status: 404 };
   const publicRouteState = readWorkspacePathState(url.pathname, publicBaseId);
   const routeState: WorkspaceRouteState = { ...publicRouteState };
   if (routeState.sourceId) {
     const sourceId = await resolveBasePublicId("sources", baseId, routeState.sourceId);
-    if (!sourceId) return { kind: "not_found", errorMessage: "Pulse source not found" };
+    if (!sourceId) return { kind: "error", status: 404 };
     routeState.sourceId = sourceId;
   }
   if (routeState.dashboardId) {
     const dashboardId = await resolveBasePublicId("dashboards", baseId, routeState.dashboardId);
-    if (!dashboardId) return { kind: "not_found", errorMessage: "Pulse dashboard not found" };
+    if (!dashboardId) return { kind: "error", status: 404 };
     routeState.dashboardId = dashboardId;
   }
   const publicResourceQuery = readResourceQueryState(url.search);
@@ -442,7 +443,7 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Pulse
   ]);
 
   if (!baseResult.ok) {
-    return { kind: "not_found", errorMessage: baseResult.error.message };
+    return { kind: "error", status: baseResult.error.status };
   }
 
   const base = baseResult.data;

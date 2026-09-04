@@ -1,11 +1,13 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/app/capabilities", pageRoutes);
+
+router.get("/app/capabilities/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({ fetch: router.fetch });

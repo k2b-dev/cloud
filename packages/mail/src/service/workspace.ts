@@ -1,4 +1,5 @@
 import { logger } from "@valentinkolb/cloud/services";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   type ConversationDraftSummary,
@@ -476,9 +477,10 @@ export const loadMailboxPageData = async (params: {
   mailboxId: string;
   requestUrl: URL;
   listMode?: MailListMode;
-}): Promise<MailboxPageData | null> => {
+}): Promise<Result<MailboxPageData>> => {
   const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
-  if (!permission.ok || permission.data === "none") return null;
+  if (!permission.ok) return fail(permission.error);
+  if (permission.data === "none") return fail(err.forbidden());
   const scheduledMode = params.requestUrl.searchParams.get("scheduled") === "1";
 
   let initialLiveCursor: string | null = null;
@@ -510,7 +512,7 @@ export const loadMailboxPageData = async (params: {
         mailboxId: params.mailboxId,
       }),
     ]);
-  if (!mailboxResult.ok) return null;
+  if (!mailboxResult.ok) return fail(mailboxResult.error);
 
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
   const activeView = parsedView.success ? parsedView.data : null;
@@ -575,7 +577,7 @@ export const loadMailboxPageData = async (params: {
   const activeFolder = folders.find((folder) => folder.id === folderId);
   const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "Message";
 
-  return {
+  return ok({
     mailbox: mailboxResult.data,
     permission: permission.data,
     initialLiveCursor,
@@ -612,5 +614,5 @@ export const loadMailboxPageData = async (params: {
             : (activeSavedView?.name ?? activeFolder?.name ?? "All mail"),
     ...selection,
     selectedSubject,
-  };
+  });
 };

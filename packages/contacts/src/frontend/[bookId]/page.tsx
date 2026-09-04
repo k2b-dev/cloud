@@ -14,7 +14,6 @@ import {
   resolveBookPublicIds,
   resolvePublicId,
 } from "../../service/public-resources";
-import ContactBookUnavailable from "../_components/ContactBookUnavailable";
 import ContactDetailPanel from "../_components/ContactDetailPanel.island";
 import ContactsLiveEvents from "../_components/ContactsLiveEvents.island";
 import ContactsSidebar from "../_components/ContactsSidebar";
@@ -44,46 +43,20 @@ export default ssr<AuthContext>(async (c) => {
   // The cursor must precede the snapshot reads or an event can fall between them.
   const initialLiveCursor = await captureContactEventCursor();
   const bookId = await resolvePublicId("books", publicBookId);
-  if (!bookId) {
-    return () => (
-      <Layout c={c} title={t.notFoundTitle}>
-        <ContactBookUnavailable title={t.bookNotFoundTitle} description={t.linkInvalidDescription} icon="ti ti-address-book-off" />
-      </Layout>
-    );
-  }
+  if (!bookId) return ssr.error(c, 404);
   const [book, booksResult] = await Promise.all([
     contactsService.book.get({ id: bookId }),
     contactsService.book.list({
       subject: { type: "user", userId: user.id },
     }),
   ]);
-  if (!book) {
-    return () => (
-      <Layout c={c} title={t.notFoundTitle}>
-        <ContactBookUnavailable
-          title={t.bookNotFoundTitle}
-          description={t.bookDeletedDescription}
-          icon="ti ti-address-book-off"
-        />
-      </Layout>
-    );
-  }
+  if (!book) return ssr.error(c, 404);
   const hasReadAccess = await contactsService.book.permission.canAccess({
     bookId,
     subject: { type: "user", userId: user.id },
     requiredLevel: "read",
   });
-  if (!hasReadAccess) {
-    return () => (
-      <Layout c={c} title={t.accessDeniedTitle}>
-        <ContactBookUnavailable
-          title={t.bookUnavailableTitle}
-          description={t.askAdminDescription}
-          icon="ti ti-lock"
-        />
-      </Layout>
-    );
-  }
+  if (!hasReadAccess) return ssr.error(c, 403, { description: t.askAdminDescription });
   const internalBooks = booksResult.items;
   const {
     entries: permissionEntries,

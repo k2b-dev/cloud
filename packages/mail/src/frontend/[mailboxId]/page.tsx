@@ -15,10 +15,10 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
-  if (!mailboxId) return c.redirect("/app/mail");
+  if (!mailboxId) return ssr.error(c, 404);
   const actor = c.get("actor");
   const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-  if (!user) return c.redirect("/app/mail");
+  if (!user) return ssr.error(c, 403);
   const requestUrl = new URL(c.req.raw.url);
   const internalRequestUrl = await resolveSsrWorkspaceUrl(requestUrl, mailboxId);
   if (!internalRequestUrl) return c.redirect(`/app/mail/${mailboxShortId}`);
@@ -35,8 +35,8 @@ export default ssr<AuthContext>(async (c) => {
     loadMailboxPageData({ context, mailboxId, requestUrl: internalRequestUrl, listMode: workspacePreferences.listMode }),
     getSpacesMailIntegrationAvailability(),
   ]);
-  if (!internalData) return c.redirect("/app/mail");
-  const data = await projectMailboxPageData(internalData);
+  if (!internalData.ok) return ssr.error(c, internalData.error.status);
+  const data = await projectMailboxPageData(internalData.data);
   const dateConfig = getDateConfig(c);
 
   return () => (

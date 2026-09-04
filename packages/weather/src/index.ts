@@ -1,9 +1,9 @@
-import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AppContext, type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { currentWeatherWidgetHandler } from "./api/widgets";
 import { weatherCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { weatherHelp } from "./help";
 
@@ -20,6 +20,9 @@ const router = new Hono<AuthContext>()
   .route("/api/weather", apiRoutes)
   .route("/app/weather", pageRoutes)
   .route("/admin/weather", adminPageRoutes);
+
+router.get("/app/weather/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/weather/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   capabilities: weatherCapabilities,

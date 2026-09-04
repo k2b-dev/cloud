@@ -1,3 +1,4 @@
+import { ssr } from "../config";
 import { type AuthContext, auth, rateLimit, v } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import oauthRoutes from "../oauth";
@@ -17,13 +18,13 @@ export default new Hono<AuthContext>()
       c.header("Referrer-Policy", "no-referrer");
       await next();
     },
-    auth.requireRole("authenticated", auth.redirectToLogin),
-    auth.requireUser(auth.redirectToLogin),
+    auth.requireRole("authenticated", ssr.access),
+    auth.requireUser(ssr.access),
     ...consentPage,
   )
   .post("/oauth/consent", rateLimit(), auth.requireRole("authenticated"), auth.requireUser(), v("form", ConsentDecisionSchema), (c) =>
     completeConsent(c, c.req.valid("form")),
   )
   .route("/", oauthRoutes)
-  .get("/admin/oauth", auth.requireRole("admin", auth.redirectToLogin), ...oauthPage)
+  .get("/admin/oauth", auth.requireRole("admin", ssr.access), ...oauthPage)
   .get("/oauth/error", auth.requireRole("*"), ...oauthErrorPage);

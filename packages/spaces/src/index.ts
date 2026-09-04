@@ -1,10 +1,10 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { spacesTodayWidgetHandler } from "./api/widgets";
 import { spacesCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { spacesHelp } from "./help";
 import { migrate } from "./migrate";
@@ -16,6 +16,9 @@ const router = new Hono<AuthContext>()
   .route("/api/spaces", apiRoutes)
   .route("/app/spaces", pageRoutes)
   .route("/admin/spaces", adminPageRoutes);
+
+router.get("/app/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
   capabilities: spacesCapabilities,

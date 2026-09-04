@@ -9,15 +9,6 @@ import QueryReferenceWindow, { normalizeQueryReferenceTab } from "../../_compone
 import { serializeWorkspaceState } from "../../_components/workspace/workspace-state-serialization";
 import { resolveGridsMessages } from "../../messages";
 
-const messagePage =
-  (message: string, icon = "ti-alert-circle") =>
-  () => (
-    <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-      <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">
-        <i class={`ti ${icon} text-sm`} /> {message}
-      </div>
-    </main>
-  );
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = resolveGridsMessages(getLocale(c));
@@ -32,13 +23,13 @@ export default ssr<AuthContext>(async (c) => {
         normalizeQueryReferenceTab(routeTabParam) ?? normalizeQueryReferenceTab(defaultTabParam) ?? (sourceId ? "tables" : "basics");
       c.get("page").title = defaultTab === "workflows" ? t.workflowReference : defaultTab === "gql" ? t.gqlReference : t.gridsReference;
       const base = await gridsService.base.getByShortId(baseSlug);
-      if (!base) return messagePage(t.baseNotFound);
+      if (!base) return ssr.error(c, 404, { layout: "minimal" });
 
       const user = currentActorUser(c);
-      if (!user) return messagePage(t.signInToOpenReference, "ti-lock");
+      if (!user) return ssr.error(c, 403, { layout: "minimal" });
 
       const gate = await gateBaseAtAccess(gridsAccessContext(c), base.id, "read");
-      if (!gate.ok) return messagePage(t.noBaseAccess, "ti-lock");
+      if (!gate.ok) return ssr.error(c, gate.error.status, { layout: "minimal" });
 
       const catalog = await gridsService.base.catalog({
         baseId: base.id,

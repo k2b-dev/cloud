@@ -1,7 +1,7 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { migrate } from "./migrate";
 import { oauthService } from "./service";
@@ -25,6 +25,10 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/api/oauth/admin/clients", apiRoutes)
   .route("/", pageRoutes);
+
+router.get("/admin/oauth/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/oauth/consent/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/oauth/error/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 export default await app.start({
   fetch: router.fetch,

@@ -1,3 +1,4 @@
+import { ssr } from "../config";
 import { join } from "node:path";
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { authFlows, coreSettings } from "@valentinkolb/cloud/services";
@@ -41,7 +42,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       c.header("Expires", "0");
     })
     // Root remains Core-owned while the configured app controls the landing page.
-    .get("/", auth.requireRole("authenticated", auth.redirectToLogin), async (c) => {
+    .get("/", auth.requireRole("authenticated", ssr.access), async (c) => {
       const configured = await coreSettings.get<string>("app.home_path");
       return c.redirect(resolveHomePath(configured), 302);
     })
@@ -58,23 +59,23 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       }),
     )
     // Profile
-    .get("/me", auth.requireRole("authenticated", auth.redirectToLogin), ...profilePage)
-    .get("/me/profile", auth.requireRole("authenticated", auth.redirectToLogin), ...personalProfilePage)
-    .get("/me/security", auth.requireRole("authenticated", auth.redirectToLogin), ...securityPage)
-    .get("/me/access", auth.requireRole("authenticated", auth.redirectToLogin), ...accessPage)
-    .get("/me/notifications", auth.requireRole("authenticated", auth.redirectToLogin), ...notificationsPage)
-    .get("/me/notifications/history", auth.requireRole("authenticated", auth.redirectToLogin), ...notificationHistoryPage)
-    .get("/me/developer", auth.requireRole("authenticated", auth.redirectToLogin), ...developerPage)
+    .get("/me", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...profilePage)
+    .get("/me/profile", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...personalProfilePage)
+    .get("/me/security", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...securityPage)
+    .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)
+    .get("/me/notifications", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationsPage)
+    .get("/me/notifications/history", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationHistoryPage)
+    .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
     // Admin pages (admin only)
-    .get("/admin", auth.requireRole("admin", auth.redirectToLogin), ...adminPage)
-    .get("/admin/announcements", auth.requireRole("admin", auth.redirectToLogin), ...announcementsAdminPage)
-    .get("/admin/settings", auth.requireRole("admin", auth.redirectToLogin), ...settingsPage)
+    .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
+    .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
+    .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.
-    .get("/admin/apps", auth.requireRole("admin", auth.redirectToLogin), (c) => {
+    .get("/admin/apps", auth.requireRole("admin", ssr.access), (c) => {
       const apps = getRuntimeContext(c).apps;
       return c.redirect(hasDedicatedRuntimeRoute(apps, "/admin/gateway", "core") ? "/admin/gateway" : "/admin", 302);
     })
-    .get("/admin/sync", auth.requireRole("admin", auth.redirectToLogin), (c) => {
+    .get("/admin/sync", auth.requireRole("admin", ssr.access), (c) => {
       const apps = getRuntimeContext(c).apps;
       return c.redirect(
         hasDedicatedRuntimeRoute(apps, "/app/accounts", "core") ? "/app/accounts#sync-activity" : "/admin/settings?tab=freeipa",
@@ -85,12 +86,12 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/auth/login", auth.requireRole("anonymous", { onReject: (c) => resolveAuthenticatedLoginRedirect(c.req.url) }), ...loginPage)
     .get("/auth/new-password", ...newPasswordPage)
     .get("/auth/password-reset", auth.requireRole("anonymous", auth.redirect("/")), ...passwordResetPage)
-    .get("/auth/proxy-return", auth.requireRole("authenticated", auth.redirectToLogin), async (c) => {
+    .get("/auth/proxy-return", auth.requireRole("authenticated", ssr.access), async (c) => {
       const token = c.req.query("token");
       const target = token ? await authFlows.proxyReturn.consume({ token }) : null;
       return c.redirect(target?.url ?? "/", 302);
     })
-    .get("/auth/extend", auth.requireRole("authenticated", auth.redirectToLogin), async (c) => {
+    .get("/auth/extend", auth.requireRole("authenticated", ssr.access), async (c) => {
       return c.redirect("/me?action=extend", 302);
     })
     // Legal pages are driven by the `legal.*` settings group.

@@ -3,7 +3,7 @@ import { type AuthContext, auth, getLocale, middleware } from "@valentinkolb/clo
 import { type Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { apiRoutes } from "./api";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import gatewayPage from "./frontend/page";
 import { gatewayOpsHelp } from "./help";
 import { gatewayOpsLifecycle } from "./lifecycle";
@@ -49,6 +49,7 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/admin/gateway/_ssr", routes(app.config))
+  .all("/admin/gateway/_ssr/*", (c) => c.notFound())
   .use(
     "/public/*",
     serveStatic({
@@ -59,20 +60,20 @@ const router = new Hono<AuthContext>()
     }),
   )
   .get("/admin/gateway", (c) => c.redirect("/admin/gateway/apps"))
-  .get("/admin/gateway/apps", auth.requireRole("admin", auth.redirectToLogin), ...gatewayPage)
-  .get("/admin/gateway/routes", auth.requireRole("admin", auth.redirectToLogin), ...gatewayPage)
-  .get("/admin/observability", auth.requireRole("admin", auth.redirectToLogin), ...observabilityOverviewPage)
-  .get("/admin/observability/logs", auth.requireRole("admin", auth.redirectToLogin), ...logsPage)
-  .get("/admin/observability/jobs", auth.requireRole("admin", auth.redirectToLogin), ...jobsPage)
-  .post("/admin/observability/jobs/run-now", auth.requireRole("admin", auth.redirectToLogin), runScheduleNowAction)
-  .get("/admin/observability/telemetry", auth.requireRole("admin", auth.redirectToLogin), ...telemetryPage)
-  .get("/admin/observability/workflows", auth.requireRole("admin", auth.redirectToLogin), ...workflowsPage)
-  .get("/admin/observability/metrics", auth.requireRole("admin", auth.redirectToLogin), ...metricsPage)
-  .get("/admin/observability/data", auth.requireRole("admin", auth.redirectToLogin), (c) => c.redirect("/admin/observability/postgres"))
-  .get("/admin/observability/postgres", auth.requireRole("admin", auth.redirectToLogin), ...postgresPage)
-  .get("/admin/observability/redis", auth.requireRole("admin", auth.redirectToLogin), ...redisPage)
-  .get("/admin/observability/alerts", auth.requireRole("admin", auth.redirectToLogin), ...alertsPage)
-  .get("/admin/observability/notifications", auth.requireRole("admin", auth.redirectToLogin), ...notificationsPage)
+  .get("/admin/gateway/apps", auth.requireRole("admin", ssr.access), ...gatewayPage)
+  .get("/admin/gateway/routes", auth.requireRole("admin", ssr.access), ...gatewayPage)
+  .get("/admin/observability", auth.requireRole("admin", ssr.access), ...observabilityOverviewPage)
+  .get("/admin/observability/logs", auth.requireRole("admin", ssr.access), ...logsPage)
+  .get("/admin/observability/jobs", auth.requireRole("admin", ssr.access), ...jobsPage)
+  .post("/admin/observability/jobs/run-now", auth.requireRole("admin", ssr.access), runScheduleNowAction)
+  .get("/admin/observability/telemetry", auth.requireRole("admin", ssr.access), ...telemetryPage)
+  .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
+  .get("/admin/observability/metrics", auth.requireRole("admin", ssr.access), ...metricsPage)
+  .get("/admin/observability/data", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/observability/postgres"))
+  .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
+  .get("/admin/observability/redis", auth.requireRole("admin", ssr.access), ...redisPage)
+  .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
+  .get("/admin/observability/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
   .get("/metrics", auth.requireRole("*"), metricsEndpoint)
   .use("/api/*", localizeApiError)
   .route("/api/gateway/widget", widgetRoutes)
@@ -85,6 +86,9 @@ const router = new Hono<AuthContext>()
   .route("/api/gateway/jobs", jobsApiRoutes)
   .route("/api/gateway/workflows", workflowsApiRoutes)
   .route("/api/gateway", apiRoutes);
+
+router.get("/admin/gateway/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/observability/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

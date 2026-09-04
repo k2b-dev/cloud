@@ -12,43 +12,15 @@ export default ssr<AuthContext>(async (c) => {
   const tableSlug = c.req.param("tableId")!;
   const base = await gridsService.base.getByShortId(baseSlug);
 
-  if (!base) {
-    return () => (
-      <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">{t.baseNotFound}</div>
-      </main>
-    );
-  }
+  if (!base) return ssr.error(c, 404, { layout: "minimal" });
 
   const table = await gridsService.table.getByShortIdForBase(base.id, tableSlug);
-  if (!table) {
-    return () => (
-      <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">{t.tableNotFound}</div>
-      </main>
-    );
-  }
+  if (!table) return ssr.error(c, 404, { layout: "minimal" });
 
   const user = currentActorUser(c);
-  if (!user) {
-    return () => (
-      <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">
-          <i class="ti ti-lock text-sm" /> {t.signInToOpenFormulaReference}
-        </div>
-      </main>
-    );
-  }
+  if (!user) return ssr.error(c, 403, { layout: "minimal" });
 
-  if (!(await gateBaseAtAccess(gridsAccessContext(c), base.id, "read")).ok) {
-    return () => (
-      <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">
-          <i class="ti ti-lock text-sm" /> {t.noTableAccess}
-        </div>
-      </main>
-    );
-  }
+  if (!(await gateBaseAtAccess(gridsAccessContext(c), base.id, "read")).ok) return ssr.error(c, 403, { layout: "minimal" });
 
   const fields = await gridsService.field.listByTable(table.id);
   const currentFieldId = new URL(c.req.url).searchParams.get("field");

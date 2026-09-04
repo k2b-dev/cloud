@@ -54,6 +54,7 @@ export default ssr<AuthContext>(async (c) => {
     (error): error is NonNullable<typeof error> => error !== null,
   );
   const accessDenied = loadErrors.some((error) => error.code === "FORBIDDEN");
+  if (accessDenied) return ssr.error(c, 403);
   const loadErrorDescription = [...new Set(loadErrors.map((error) => localizeMailError(error, locale).message))].join(" ");
   const columns: DataTableColumn<PlatformMailboxOperationSummary>[] = [
     { id: "mailbox", header: t.adminMailboxes, value: (row) => row.mailboxName },
@@ -93,14 +94,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
         </div>
 
-        {accessDenied ? (
-          <Placeholder
-            state="error"
-            variant="panel"
-            title={t.adminUnavailable}
-            description={loadErrorDescription || t.cloudAdminRequired}
-          />
-        ) : (
+        {(
           <>
             <StatGrid columns={6}>
               <StatCell

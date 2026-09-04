@@ -1,7 +1,7 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import adminPageRoutes from "./frontend";
 import { proxyAuthHelp } from "./help";
 import { migrate } from "./migrate";
@@ -16,6 +16,8 @@ const router = new Hono<AuthContext>()
   .route("/api/proxy-auth", apiRoutes)
   .route("/admin/proxy-auth", adminPageRoutes)
   .route("/proxy-auth", verifyRoutes);
+
+router.get("/admin/proxy-auth/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

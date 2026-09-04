@@ -1,4 +1,5 @@
 import { dates } from "@k2b/stdlib";
+import { z } from "zod";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
@@ -42,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const id = c.req.param("id")!;
+  if (!z.uuid().safeParse(id).success) return ssr.error(c, 404);
   const recursive = c.req.query("recursive") === "true";
   const sessionUser = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
@@ -55,30 +57,7 @@ export default ssr<AuthContext>(async (c) => {
 
   const user = await accountsService.user.get({ id });
 
-  if (!user) {
-    return () => (
-      <Layout
-        c={c}
-        fullWidth
-        title={[
-          { title: t.start, href: "/" },
-          { title: t.accounts, href: "/app/accounts" },
-          { title: t.users, href: "/app/accounts/users" },
-          { title: t.notFound },
-        ]}
-      >
-        <div class="flex-1 flex items-center justify-center">
-          <div class="text-center text-dimmed flex flex-col items-center gap-2">
-            <i class="ti ti-user-off text-4xl" />
-            <p class="text-sm">{t.userNotFound}</p>
-            <a href={buildUsersUrl(listState)} class="text-xs hover:text-primary">
-              {t.backToUsers}
-            </a>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
+  if (!user) return ssr.error(c, 404, { action: { label: t.backToUsers, href: buildUsersUrl(listState) } });
 
   const isIpaUser = user.provider === "ipa";
   const isGuestProfile = user.profile === "guest";

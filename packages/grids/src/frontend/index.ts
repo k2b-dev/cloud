@@ -1,3 +1,4 @@
+import { ssr } from "../config";
 import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -19,7 +20,7 @@ import publicDocumentPage from "./public/documents/[token]/page";
 import publicFormPage from "./public/forms/[token]/page";
 
 /** Admin pages mounted at `/admin/grids` — platform-admin only. */
-export const adminRoutes = new Hono<AuthContext>().get("/", auth.requireRole("admin", auth.redirectToLogin), ...adminPage);
+export const adminRoutes = new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...adminPage);
 
 const auditRequestContext = (c: Context<AuthContext>) => ({
   ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("cf-connecting-ip") || null,
@@ -66,30 +67,30 @@ export const customAppRoutes = new Hono<AuthContext>()
  *   /:base                               → workspace shell/default redirect
  */
 export default new Hono<AuthContext>()
-  .get("/", auth.requireRole("user", auth.redirectToLogin), ...indexPage)
+  .get("/", auth.requireRole("user", ssr.access), ...indexPage)
   // Old edit URLs redirect to the canonical in-context edit mode.
-  .get("/:baseId/table/:tableId/view/:viewId/edit", auth.requireRole("user", auth.redirectToLogin), (c) =>
+  .get("/:baseId/table/:tableId/view/:viewId/edit", auth.requireRole("user", ssr.access), (c) =>
     c.redirect(`/app/grids/${c.req.param("baseId")}/table/${c.req.param("tableId")}/view/${c.req.param("viewId")}?edit=true`, 302),
   )
-  .get("/:baseId/table/:tableId/edit", auth.requireRole("user", auth.redirectToLogin), (c) =>
+  .get("/:baseId/table/:tableId/edit", auth.requireRole("user", ssr.access), (c) =>
     c.redirect(`/app/grids/${c.req.param("baseId")}/table/${c.req.param("tableId")}?edit=true`, 302),
   )
   // View paths.
-  .get("/:baseId/table/:tableId/view/:viewId/query", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage)
-  .get("/:baseId/table/:tableId/view/:viewId", auth.requireRole("user", auth.redirectToLogin), ...viewRecordsPage)
-  .get("/:baseId/table/:tableId/formula-reference", auth.requireRole("user", auth.redirectToLogin), ...formulaReferencePage)
+  .get("/:baseId/table/:tableId/view/:viewId/query", auth.requireRole("user", ssr.access), ...baseDetailPage)
+  .get("/:baseId/table/:tableId/view/:viewId", auth.requireRole("user", ssr.access), ...viewRecordsPage)
+  .get("/:baseId/table/:tableId/formula-reference", auth.requireRole("user", ssr.access), ...formulaReferencePage)
   // Table paths.
-  .get("/:baseId/table/:tableId/query", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage)
-  .get("/:baseId/table/:tableId", auth.requireRole("user", auth.redirectToLogin), ...tableRecordsPage)
+  .get("/:baseId/table/:tableId/query", auth.requireRole("user", ssr.access), ...baseDetailPage)
+  .get("/:baseId/table/:tableId", auth.requireRole("user", ssr.access), ...tableRecordsPage)
   // Document template paths.
-  .get("/:baseId/document/:documentTableId/:documentTemplateId", auth.requireRole("user", auth.redirectToLogin), ...documentTemplatePage)
-  .get("/:baseId/documents", auth.requireRole("user", auth.redirectToLogin), ...documentsPage)
-  .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
-  .get("/:baseId/reference/:tab", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
-  .get("/:baseId/reference", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
-  .get("/:baseId/query-reference", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
-  .get("/:baseId/query", auth.requireRole("user", auth.redirectToLogin), ...queryWorkspacePage)
-  .get("/:baseId/apps/:customAppId", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage)
-  .get("/:baseId/workflows/:workflowId", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage)
-  .get("/:baseId/workflows", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage)
-  .get("/:baseId", auth.requireRole("user", auth.redirectToLogin), ...baseDetailPage);
+  .get("/:baseId/document/:documentTableId/:documentTemplateId", auth.requireRole("user", ssr.access), ...documentTemplatePage)
+  .get("/:baseId/documents", auth.requireRole("user", ssr.access), ...documentsPage)
+  .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", ssr.access), ...queryReferencePage)
+  .get("/:baseId/reference/:tab", auth.requireRole("user", ssr.access), ...queryReferencePage)
+  .get("/:baseId/reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
+  .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
+  .get("/:baseId/query", auth.requireRole("user", ssr.access), ...queryWorkspacePage)
+  .get("/:baseId/apps/:customAppId", auth.requireRole("user", ssr.access), ...baseDetailPage)
+  .get("/:baseId/workflows/:workflowId", auth.requireRole("user", ssr.access), ...baseDetailPage)
+  .get("/:baseId/workflows", auth.requireRole("user", ssr.access), ...baseDetailPage)
+  .get("/:baseId", auth.requireRole("user", ssr.access), ...baseDetailPage);

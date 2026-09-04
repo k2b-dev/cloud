@@ -15,16 +15,17 @@ export default ssr<AuthContext>(async (c) => {
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const actor = c.get("actor");
   const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-  if (!mailboxShortId || !user) return c.redirect("/app/mail");
+  if (!user) return ssr.error(c, 403);
+  if (!mailboxShortId) return ssr.error(c, 404);
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
-  if (!mailboxId) return c.redirect("/app/mail");
+  if (!mailboxId) return ssr.error(c, 404);
   const context: MailRequestContext = {
     actor,
     accessSubject: c.get("accessSubject"),
     requestId: c.req.header("x-request-id") ?? null,
   };
   const result = await loadMailIncomingAutomationsWorkspace(context, mailboxId);
-  if (!result.ok) return c.redirect(`/app/mail/${mailboxShortId}/automations`);
+  if (!result.ok) return ssr.error(c, result.error.status);
   const data = await projectAutomationWorkspace(result.data);
   const requested = c.req.query("new") ?? "";
   const openPreset = presets.has(requested as IncomingAutomationPreset)

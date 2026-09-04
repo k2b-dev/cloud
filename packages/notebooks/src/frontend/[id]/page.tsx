@@ -20,25 +20,9 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = notebooksPageMessages.resolve([getLocale(c)]);
   const data = await loadNotebookPageData(c);
 
-  if (data.kind === "not_found") {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
-        </div>
-      </Layout>
-    );
-  }
+  if (data.kind === "not_found") return ssr.error(c, 404, { action: { label: t.notebooks, href: "/app/notebooks" } });
 
-  if (data.kind === "access_denied") {
-    return () => (
-      <Layout c={c} title={t.accessDenied}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-lock" title={t.accessDenied} description={t.accessDeniedDescription} />
-        </div>
-      </Layout>
-    );
-  }
+  if (data.kind === "access_denied") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: t.notebooks, href: "/app/notebooks" } });
 
   if (data.kind === "redirect") return c.redirect(data.href);
 

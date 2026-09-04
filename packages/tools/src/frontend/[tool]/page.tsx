@@ -44,14 +44,10 @@ const toolComponents: Record<
 
 export default ssr<AuthContext>(async (c) => {
   const toolId = c.req.param("toolId");
-  if (!toolId) {
-    return c.redirect("/tools", 302);
-  }
+  if (!toolId) return ssr.error(c, 404);
   const tool = resolveRegistry(getLocale(c)).toolById(toolId);
 
-  if (!tool) {
-    return c.redirect("/tools", 302);
-  }
+  if (!tool) return ssr.error(c, 404);
 
   const renderTool = toolComponents[tool.id];
   const speedtestBase = tool.id === "speedtest" ? resolveSpeedtestBase(c) : undefined;

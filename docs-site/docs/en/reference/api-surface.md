@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-08-30
+updated: 2026-09-04
 ---
 
 # API surface
@@ -45,6 +45,10 @@ Import `defineApp()` from the package root:
 ```ts
 import { defineApp } from "@valentinkolb/cloud";
 ```
+
+The returned application's `ssr` renders pages and exposes `ssr.access` for
+browser-route rejections and `ssr.error(c, status, options?)` for terminal HTML
+errors. See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 
 The root also exports the types bound to an application declaration. This
 includes typed settings and notification definitions. Registry, heartbeat, and

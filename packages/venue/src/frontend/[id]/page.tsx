@@ -43,21 +43,15 @@ const resolveView = (venueId: string, pathView: string | undefined, sectionId: s
 export default ssr<AuthContext>(async (c) => {
   const { t } = venueMessages.resolve([getLocale(c)]);
   const id = c.req.param("id");
-  if (!id) return c.redirect("/app/venue");
+  if (!id) return ssr.error(c, 404);
   const url = new URL(c.req.raw.url);
   const user = expectUserBackedActor(c);
   const venue = await venueService.venues.getByShortId(id, user);
 
-  if (!venue) {
-    return () => (
-      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/venue" }, { title: t.notFound }]} fullWidth>
-        <div class="paper m-4 p-6 text-sm text-dimmed">{t.venueNotFound}</div>
-      </Layout>
-    );
-  }
+  if (!venue) return ssr.error(c, 404);
 
   const access = await venueService.access.require(venue.id, user, "read");
-  if (!access.ok) return c.redirect("/app/venue");
+  if (!access.ok) return ssr.error(c, access.error.status);
 
   const pathView = c.req.param("view");
   const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search);

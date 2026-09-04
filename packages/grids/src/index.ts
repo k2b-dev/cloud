@@ -1,10 +1,10 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { createRuntimeLifecycle, stopRuntimeResources } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { gridsCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminRoutes, customAppRoutes, publicRoutes } from "./frontend";
 import { gridsHelp } from "./help";
 import { migrate } from "./migrate";
@@ -47,6 +47,11 @@ const gridsRuntimeLifecycle = createRuntimeLifecycle({
       stopEvidenceExportJobs,
     ]),
 });
+
+router.get("/app/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/share/grids/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
+router.get("/apps/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "minimal" }));
 
 const result = await app.start({
   capabilities: gridsCapabilities,

@@ -36,14 +36,19 @@ export default ssr<AuthContext>(async (c) => {
     loadAssistantSidebarSnapshot(user.id),
     coreSettings.get<string>("app.url"),
   ]);
-  const { conversations, projects } = sidebar;
-  const activeProject = requestedProjectId ? (projects.find((project) => project.shortId === requestedProjectId) ?? null) : null;
-  if (requestedProjectId && !activeProject) return c.redirect("/app/assistant", 302);
-  const activeProjectRecord = activeProject ? await aiProjects.getByShortId(activeProject.shortId, subject) : null;
-  const projectChats = activeProject
+  const { conversations } = sidebar;
+  const activeProjectRecord = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, subject) : null;
+  if (requestedProjectId && !activeProjectRecord) return ssr.error(c, 404);
+  const activeProject = activeProjectRecord ? { ...activeProjectRecord, id: activeProjectRecord.shortId } : null;
+  const projects = activeProject
+    ? sidebar.projects.some((project) => project.id === activeProject.id)
+      ? sidebar.projects.map((project) => (project.id === activeProject.id ? activeProject : project))
+      : [...sidebar.projects, activeProject]
+    : sidebar.projects;
+  const projectChats = activeProjectRecord
     ? await aiConversations.listConversationsPage({
         ownerUserId: user.id,
-        projectId: activeProjectRecord!.id,
+        projectId: activeProjectRecord.id,
         page: 1,
         perPage: 20,
       })
@@ -54,6 +59,7 @@ export default ssr<AuthContext>(async (c) => {
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
+  if (!activeProject && requestedConversationId && !resolvedActiveConversation) return ssr.error(c, 404);
   if (requestedConversationId && resolvedActiveConversation?.shortId !== requestedConversationId) {
     return c.redirect(
       resolvedActiveConversation

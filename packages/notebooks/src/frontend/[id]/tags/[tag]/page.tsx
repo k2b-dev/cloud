@@ -48,29 +48,13 @@ export default ssr<AuthContext>(async (c) => {
 
   let notebook = await notebooksService.notebook.getByShortId({ shortId: notebookShortId });
   const notebookId = notebook?.id;
-  if (!notebook || !notebookId) {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
-        </div>
-      </Layout>
-    );
-  }
+  if (!notebook || !notebookId) return ssr.error(c, 404, { action: { label: "Notebooks", href: "/app/notebooks" } });
 
   const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
     notebookId,
     userId: user.id,
   });
-  if (permission === "none") {
-    return () => (
-      <Layout c={c} title={t.accessDenied}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-lock" title={t.accessDenied} description={t.accessDeniedDescription} />
-        </div>
-      </Layout>
-    );
-  }
+  if (permission === "none") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -96,13 +80,7 @@ export default ssr<AuthContext>(async (c) => {
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
     get<string>("app.url"),
   ]);
-  if (!snapshotNotebook) {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
-      </Layout>
-    );
-  }
+  if (!snapshotNotebook) return ssr.error(c, 404);
   notebook = snapshotNotebook;
   const presentationMode = resolvePresentationMode({
     permission,

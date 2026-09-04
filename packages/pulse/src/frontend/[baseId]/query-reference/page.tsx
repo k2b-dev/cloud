@@ -18,13 +18,7 @@ export default ssr<AuthContext>(async (c) => {
   const initialTab = readReferenceTab(c.req.query("tab") ?? null, includeDashboardDsl);
   const baseResult = baseId ? await pulseService.base.get(baseId, user) : null;
 
-  if (!baseResult?.ok) {
-    return () => (
-      <main class="min-h-screen bg-zinc-50 p-6 dark:bg-zinc-950">
-        <div class="paper mx-auto mt-16 max-w-md p-8 text-center text-dimmed">{t.pulseBaseNotFound}</div>
-      </main>
-    );
-  }
+  if (!baseResult?.ok) return ssr.error(c, baseResult && !baseResult.ok ? baseResult.error.status : 404, { layout: "minimal" });
 
   const [metricsResult, eventsResult, statesResult, sourcesResult, fieldsResult] = await Promise.all([
     pulseService.query.metrics(baseResult.data.id, user, {}),

@@ -8,10 +8,10 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const publicBookId = c.req.param("bookId") ?? "";
   const bookId = await resolvePublicId("books", publicBookId);
-  if (!bookId) return c.redirect("/app/contacts", 302);
+  if (!bookId) return ssr.error(c, 404);
 
   const book = await contactsService.book.get({ id: bookId });
-  if (!book) return c.redirect("/app/contacts", 302);
+  if (!book) return ssr.error(c, 404);
 
   const hasReadAccess = await contactsService.book.permission.canAccess({
     bookId,
@@ -20,5 +20,6 @@ export default ssr<AuthContext>(async (c) => {
   });
 
   const publicBook = (await projectBooks([book]))[0]!;
-  return c.redirect(hasReadAccess ? `/app/contacts/${publicBook.id}` : "/app/contacts", 302);
+  if (!hasReadAccess) return ssr.error(c, 403);
+  return c.redirect(`/app/contacts/${publicBook.id}`, 302);
 });

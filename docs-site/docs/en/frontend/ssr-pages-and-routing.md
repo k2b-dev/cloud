@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-08-30
+updated: 2026-09-04
 ---
 
 # SSR pages and routing
@@ -77,16 +77,17 @@ import {
 import { Hono } from "hono";
 import detailPage from "./detail/page";
 import listPage from "./page";
+import { ssr } from "../config";
 
 export default new Hono<AuthContext>()
   .get(
     "/",
-    auth.requireRole("user", auth.redirectToLogin),
+    auth.requireRole("user", ssr.access),
     ...listPage,
   )
   .get(
     "/:id",
-    auth.requireRole("user", auth.redirectToLogin),
+    auth.requireRole("user", ssr.access),
     ...detailPage,
   );
 ```
@@ -95,6 +96,48 @@ The file tree does not create routes. Spread the middleware array returned by
 `ssr()`.
 
 Register fixed routes before dynamic or catch-all routes.
+
+## Render page errors
+
+Return `ssr.error(c, status)` when a whole page cannot be shown. It uses the
+application's SSR template and the shared error state, with the request locale,
+theme, a home link, and the actual HTTP status. It also sets
+`Cache-Control: private, no-store`.
+
+```tsx
+const detailPage = ssr<AuthContext>(async (c) => {
+  const result = await inventory.read({
+    id: c.req.param("id")!,
+    accessSubject: c.get("accessSubject"),
+  });
+  if (!result.ok) return ssr.error(c, result.error.status);
+  return () => <Layout c={c}><InventoryDetail item={result.data} /></Layout>;
+});
+```
+
+Use `403` for denied access and `404` for a missing resource. Preserve a
+service's intentional existence-hiding `404`; do not add a lookup to tell
+missing and inaccessible resources apart. Other HTTP error statuses are
+preserved and receive generic failure copy. This does not catch exceptions.
+
+The optional third argument accepts `title`, `description`,
+`action: { label, href, icon? }`, and `layout: "cloud" | "minimal"` (default
+`"cloud"`). Supply only safe, localized application copy, never internal error
+details. Use `"minimal"` for standalone pages without Cloud navigation. A
+custom public page can instead set `c.status(404)` and retain its own render
+function. Keep independent widget or panel failures inside their page.
+
+Add an explicit fallback after the known page routes, scoped to the page
+prefix:
+
+```ts
+router.get("/app/inventory/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+```
+
+Do not use an application-wide fallback for mixed page/API routers. Register
+API, asset, download, and protocol boundaries before page fallbacks and retain
+their own non-HTML not-found behavior. A page fallback does not replace route
+authorization on existing pages.
 
 ## Serve anonymous pages
 

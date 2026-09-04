@@ -1,8 +1,8 @@
-import { type AppContext, type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AppContext, type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { filesCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { filesHelp } from "./help";
 import { filesService } from "./service";
@@ -16,6 +16,9 @@ const router = new Hono<AuthContext>()
   .route("/api/files", apiRoutes)
   .route("/app/files", pageRoutes)
   .route("/admin/files", adminPageRoutes);
+
+router.get("/app/files/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/files/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   capabilities: filesCapabilities,

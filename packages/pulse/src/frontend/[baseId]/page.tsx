@@ -1,4 +1,3 @@
-import { ButtonLink } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
@@ -10,20 +9,8 @@ export default ssr<AuthContext>(async (c) => {
   const data = await loadPulseWorkspacePageData(c);
   const { t } = pulseMessages.resolve([getLocale(c)]);
 
-  if (data.kind === "not_found") {
-    return () => (
-      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/pulse" }, { title: t.notFound }]}>
-        <div class="mx-auto flex max-w-4xl flex-col items-center gap-4 py-12">
-          <p class="flex items-center gap-1.5 text-xs text-dimmed">
-            <i class="ti ti-alert-circle text-sm" />
-            {data.errorMessage}
-          </p>
-          <ButtonLink href="/app/pulse" size="sm">
-            {t.backToPulse}
-          </ButtonLink>
-        </div>
-      </Layout>
-    );
+  if (data.kind === "error") {
+    return ssr.error(c, data.status, { action: { label: t.backToPulse, href: "/app/pulse" } });
   }
 
   const workspaceProps = data.workspaceProps;

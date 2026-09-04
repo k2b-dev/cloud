@@ -1,9 +1,9 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { ipaSyncWidgetHandler } from "./api/widgets";
 import { ipaHosts } from "./backend";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import adminPageRoutes from "./frontend";
 import { ipaHostsHelp } from "./help";
 import { migrate } from "./migrate";
@@ -14,6 +14,8 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/api/ipa-hosts", apiRoutes)
   .route("/admin/ipa-hosts", adminPageRoutes);
+
+router.get("/admin/ipa-hosts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

@@ -1,7 +1,7 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import { adminRoutes, publicRoutes } from "./frontend";
 import { faqHelp } from "./help";
 import { migrate } from "./migrate";
@@ -13,6 +13,9 @@ const router = new Hono<AuthContext>()
   .route("/api/faq", apiRoutes)
   .route("/faq", publicRoutes)
   .route("/admin/faq", adminRoutes);
+
+router.get("/faq/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/faq/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

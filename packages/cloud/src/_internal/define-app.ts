@@ -45,6 +45,7 @@ import { registerSettings, toLegacySettingDefs } from "../services/settings/defa
 import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { themeBootstrapScript } from "../shared/theme";
+import { escapeHtml } from "../shared/markdown/shared";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -57,11 +58,12 @@ import { type CapabilityRegistryRecord, capabilityRegistry, helpRegistry } from 
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
+import { createPageResponses } from "./page-responses";
 
 /** Cache-busting version stamp — changes on every server start / rebuild. */
 const v = Date.now();
 
-type PageOptions = {
+export type PageOptions = {
   title?: string;
   description?: string;
   theme?: "light" | "dark";
@@ -232,7 +234,7 @@ export type StartResult = {
 export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationDefinitionMap = {}, AppId extends string = string> = {
   // Bind the generic explicitly — without it, ssr collapses to the constraint
   // `object` and apps lose the typed `c.get("page")` (title/description/theme).
-  ssr: ReturnType<typeof createStatusPreservingSsrHandler<PageOptions>>;
+  ssr: ReturnType<typeof createStatusPreservingSsrHandler<PageOptions>> & ReturnType<typeof createPageResponses>;
   plugin: () => import("bun").BunPlugin;
   config: SsrConfig;
   meta: AppMeta;
@@ -290,8 +292,8 @@ export const defineApp = <
 <html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
   <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="view-transition" content="same-origin">
-    <title>${title ?? "Cloud"}</title>
-    <meta name="description" content="${description ?? "Cloud workspace"}">
+    <title>${escapeHtml(title ?? "Cloud")}</title>
+    <meta name="description" content="${escapeHtml(description ?? "Cloud workspace")}">
     <meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="icon" href="${appFaviconHref(opts.id, v)}">
@@ -321,9 +323,12 @@ export const defineApp = <
   // unconditionally: `<html lang>`, the Layout LocaleProvider, and
   // `getDateConfig` share one canonical `getLocale(c)` that page handlers
   // cannot override.
-  const ssr = createStatusPreservingSsrHandler<PageOptions>(html, (c) => {
-    c.get("page").lang = getLocale(c);
-  });
+  const ssr = Object.assign(
+    createStatusPreservingSsrHandler<PageOptions>(html, (c) => {
+      c.get("page").lang = getLocale(c);
+    }),
+    createPageResponses(html),
+  );
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const baseMeta: AppMeta = {
@@ -513,6 +518,7 @@ export const defineApp = <
       .use("*", routeTemplate)
       .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
       .route(ssrMountPath, routes(config))
+      .all(`${ssrMountPath}/*`, (c) => c.notFound())
       .all("/public/*", servePublicAsset(isDevelopment));
 
     if (compiledHelp) {

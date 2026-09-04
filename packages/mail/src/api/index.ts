@@ -785,7 +785,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       requestUrl,
       listMode: query.listMode,
     });
-    return respondAggregate(c, data ? { ok: true, data } : fail(err.notFound("Mailbox")));
+    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
   })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",

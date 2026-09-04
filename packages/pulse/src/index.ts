@@ -1,8 +1,8 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { pulseCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { pulseHelp } from "./help";
 import { migrate } from "./migrate";
@@ -14,6 +14,8 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/api/pulse", apiRoutes)
   .route("/app/pulse", pageRoutes);
+
+router.get("/app/pulse/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

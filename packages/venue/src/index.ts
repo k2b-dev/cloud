@@ -1,8 +1,8 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes, { venueTodayWidgetHandler } from "./api";
 import { venueCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { venueHelp } from "./help";
 import { migrate } from "./migrate";
@@ -12,6 +12,8 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/api/venue", apiRoutes)
   .route("/app/venue", pageRoutes);
+
+router.get("/app/venue/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   capabilities: venueCapabilities,

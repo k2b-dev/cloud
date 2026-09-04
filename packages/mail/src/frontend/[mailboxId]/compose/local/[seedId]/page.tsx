@@ -13,7 +13,7 @@ export default ssr<AuthContext>(async (c) => {
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const seedId = c.req.param("seedId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
-  if (!mailboxId) return c.redirect("/app/mail");
+  if (!mailboxId) return ssr.error(c, 404);
   const context: MailRequestContext = {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
@@ -29,7 +29,8 @@ export default ssr<AuthContext>(async (c) => {
     senderIdentities.listSenderIdentities(context, mailboxId),
     calendarInvitations.composerIntegrationAvailable(),
   ]);
-  if (!mailbox.ok || (permission !== "write" && permission !== "admin")) return c.redirect(`/app/mail/${mailboxShortId}`);
+  if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
+  if (permission !== "write" && permission !== "admin") return ssr.error(c, 403);
   const publicData = await projectComposeData({ mailbox: mailbox.data, identities: identities.ok ? identities.data : [] });
   const returnHref = mailDraftReturnHref(c.req.query("return") ?? "", mailboxShortId);
   const popout = c.req.query("window") === "1";

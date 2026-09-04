@@ -1,5 +1,6 @@
+import { ssr } from "../config";
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import proxyAuthPage from "./page";
 
-export default new Hono<AuthContext>().get("/", auth.requireRole("admin", auth.redirectToLogin), ...proxyAuthPage);
+export default new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...proxyAuthPage);

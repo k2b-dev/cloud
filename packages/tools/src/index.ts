@@ -1,4 +1,4 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { createToolsApiRouter } from "./api";
 import documentMarkdownRoutes from "./api/document-markdown";
@@ -6,7 +6,7 @@ import markdownPdfRoutes from "./api/markdown-pdf";
 import speedtestRoutes from "./api/speedtest";
 import speedtestCliRoutes from "./api/speedtest-cli";
 import webhookRoutes from "./api/webhooks";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { toolsHelp } from "./help";
 import { migrate } from "./migrate";
@@ -30,7 +30,10 @@ const router = new Hono<AuthContext>()
   .route("/tools/api/documents", documentMarkdownRoutes)
   .route("/tools/api/markdown", markdownPdfRoutes)
   .route("/tools/api/webhooks", webhookRoutes)
+  .all("/tools/api/*", (c) => c.notFound())
   .route("/tools", pageRoutes);
+
+router.get("/tools/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 export default await app.start({
   fetch: router.fetch,

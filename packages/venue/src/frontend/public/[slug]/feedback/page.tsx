@@ -19,6 +19,8 @@ export default ssr(async (c) => {
   c.get("page").title = status ? t.pageTitleFeedback({ name: status.venue.name }) : t.feedbackUnavailable;
 
   if (!status || !status.venue.feedbackEnabled) {
+    if (!status) c.status(404);
+    c.header("Cache-Control", "private, no-store");
     return () => (
       <main class="flex min-h-screen items-center justify-center bg-zinc-100 p-4 text-zinc-950">
         <section class="w-full max-w-md text-center">

@@ -18,6 +18,7 @@ export default ssr(async (c) => {
   const id = c.req.param("id") ?? "";
   const internalStatus = id ? await venueService.publicStatus(id, new Date(), getLocale(c)) : null;
   const status = internalStatus ? await venueService.publicResources.projectPublicStatus(internalStatus) : null;
+  if (!status) c.status(404);
   c.get("page").title = status?.venue.name ?? t.venueFallbackTitle;
 
   const requestOrigin = new URL(c.req.raw.url).origin;

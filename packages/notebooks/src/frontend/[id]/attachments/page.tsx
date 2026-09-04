@@ -7,7 +7,7 @@
  * no client-side filter, results stay deterministic.
  */
 
-import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
+import { AppWorkspace, Pagination } from "@k2b/ui";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
@@ -41,36 +41,14 @@ export default ssr<AuthContext>(async (c) => {
   const page = parsePage(c.req.query("page"));
 
   let notebook = await notebooksService.notebook.getByShortId({ shortId: notebookShortId });
-  if (!notebook) {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
-        </div>
-      </Layout>
-    );
-  }
+  if (!notebook) return ssr.error(c, 404, { action: { label: "Notebooks", href: "/app/notebooks" } });
   const notebookId = notebook.id;
 
   const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
     notebookId,
     userId: user.id,
   });
-  if (permission === "none") {
-    return () => (
-      <Layout c={c} title={t.accessDenied}>
-        <div class="max-w-md mx-auto mt-16">
-          <Placeholder
-            surface="paper"
-            state="error"
-            icon="ti ti-lock"
-            title={t.accessDenied}
-            description={t.accessDeniedDescription}
-          />
-        </div>
-      </Layout>
-    );
-  }
+  if (permission === "none") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
   // Readers only use Book; inline attachment links remain available there.
   if (permission === "read") return c.redirect(`/app/notebooks/${notebook.shortId}?mode=book`);
 
@@ -97,13 +75,7 @@ export default ssr<AuthContext>(async (c) => {
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
     get<string>("app.url"),
   ]);
-  if (!snapshotNotebook) {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
-      </Layout>
-    );
-  }
+  if (!snapshotNotebook) return ssr.error(c, 404);
   notebook = snapshotNotebook;
   const publicNotebook = projectNotebook(notebook);
   const publicTree = projectTree(tree, notebook.shortId);

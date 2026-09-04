@@ -376,7 +376,7 @@ export default ssr<AuthContext>(async (c) => {
     dateConfig: getDateConfig(c),
     signal: c.req.raw.signal,
   });
-  if (!runtime) return c.notFound();
+  if (!runtime) return ssr.error(c, 404, { layout: "minimal" });
   const { app, definition, capabilities, base, page, pageParams, dateConfig, runtimeContext, authSubjectIds, viewer } = runtime;
   const availabilityCapability = (pageId: string, target: "page" | "block" | "action", blockId?: string, actionId?: string) =>
     capabilities.availability.find(
@@ -458,7 +458,7 @@ export default ssr<AuthContext>(async (c) => {
       recordAccess: ALL_RECORD_ACCESS,
       dateConfig,
     });
-    if (!record) return c.notFound();
+    if (!record) return ssr.error(c, 404, { layout: "minimal" });
     parameterRecords.set(parameterId, record);
   }
 
@@ -482,21 +482,21 @@ export default ssr<AuthContext>(async (c) => {
       capability.fieldIds.join("\0") !== expectedFieldIds.join("\0") ||
       capability.editableFieldIds.join("\0") !== expectedEditableFieldIds.join("\0")
     ) {
-      return c.notFound();
+      return ssr.error(c, 404, { layout: "minimal" });
     }
     const record = parameterRecords.get(page.record.id.path);
-    if (!record) return c.notFound();
+    if (!record) return ssr.error(c, 404, { layout: "minimal" });
     const allowed = new Set(capability.fieldIds);
     const fields = (await gridsService.field.listByTable(page.record.tableId)).filter((field) => allowed.has(field.id));
-    if (fields.length !== allowed.size) return c.notFound();
+    if (fields.length !== allowed.size) return ssr.error(c, 404, { layout: "minimal" });
     const table = await gridsService.table.get(page.record.tableId);
-    if (!table) return c.notFound();
+    if (!table) return ssr.error(c, 404, { layout: "minimal" });
     const relationTargetTableIds = [...new Set(capability.relationLabels.map((relation) => relation.targetTableId))];
     const relationTargetTables = await Promise.all(relationTargetTableIds.map((tableId) => gridsService.table.get(tableId)));
-    if (relationTargetTables.some((target) => !target || target.baseId !== app.baseId)) return c.notFound();
+    if (relationTargetTables.some((target) => !target || target.baseId !== app.baseId)) return ssr.error(c, 404, { layout: "minimal" });
     const targetFieldsByTableId = await gridsService.field.listByTables(relationTargetTableIds);
     const liveRelationLabels = customAppRecordRelationSnapshot(fields, targetFieldsByTableId);
-    if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels)) return c.notFound();
+    if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels)) return ssr.error(c, 404, { layout: "minimal" });
     const relationTableIds = [page.record.tableId, ...relationTargetTableIds];
     const relationViewer = {
       ...actorViewerFor(requestAccess),
@@ -525,7 +525,7 @@ export default ssr<AuthContext>(async (c) => {
     const fieldsById = new Map(fields.map((field) => [field.id, field]));
     for (const block of visibleHtmlBlocks) {
       const field = fieldsById.get(block.fieldId);
-      if (!field || field.type !== "html_template") return c.notFound();
+      if (!field || field.type !== "html_template") return ssr.error(c, 404, { layout: "minimal" });
       renderedHtml.set(block.id, { html: record.data[field.id], fieldName: field.name });
     }
     const visibleRecordBlocks = runtimePage.rows.flatMap((row) =>
@@ -581,7 +581,7 @@ export default ssr<AuthContext>(async (c) => {
       const capability = capabilities.documents.find(
         (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record!.tableId,
       );
-      if (!capability || capability.templateIds.join("\0") !== expectedTemplateIds.join("\0")) return c.notFound();
+      if (!capability || capability.templateIds.join("\0") !== expectedTemplateIds.join("\0")) return ssr.error(c, 404, { layout: "minimal" });
       for (const templateId of expectedTemplateIds) configuredTemplateIds.add(templateId);
     }
     const readableTemplateIds: string[] = [];
@@ -726,7 +726,7 @@ export default ssr<AuthContext>(async (c) => {
     const capability = capabilities.comments.find(
       (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record?.tableId,
     );
-    if (!capability || !page.record || !pageRecord) return c.notFound();
+    if (!capability || !page.record || !pageRecord) return ssr.error(c, 404, { layout: "minimal" });
     commentEndpoints.set(block.id, customAppCommentsUrl(app.shortId, page.id, block.id, pageParams));
   }
   const formBlocks = runtimePage.rows.flatMap((row) =>

@@ -3,14 +3,13 @@ import "./ssr-test-plugin";
 import { detailMessages } from "./detail-messages";
 import { resultsMessages } from "./results-messages";
 
-const { bookUnavailableMessages } = await import("./ContactBookUnavailable.tsx");
 const { liveEventsMessages } = await import("./ContactsLiveEvents.island.tsx");
 const { sidebarMessages } = await import("./ContactsSidebar.tsx");
 const { spotlightMessages } = await import("./ContactsSpotlightButton.island.tsx");
 
 describe("Contacts results i18n", () => {
   test("German is complete for every catalog", () => {
-    const catalogs = { resultsMessages, detailMessages, sidebarMessages, spotlightMessages, liveEventsMessages, bookUnavailableMessages };
+    const catalogs = { resultsMessages, detailMessages, sidebarMessages, spotlightMessages, liveEventsMessages };
     for (const [name, catalog] of Object.entries(catalogs)) {
       const report = catalog.check().find((entry) => entry.locale === "de");
       expect({ name, missing: report?.missing ?? [], extra: report?.extra ?? [] }).toEqual({ name, missing: [], extra: [] });

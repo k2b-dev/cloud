@@ -9,12 +9,12 @@ export default ssr<AuthContext>(async (c) => {
   const publicBookId = c.req.param("bookId") ?? "";
   const publicContactId = c.req.param("contactId") ?? "";
   const bookId = await resolvePublicId("books", publicBookId);
-  if (!bookId) return c.redirect("/app/contacts", 302);
+  if (!bookId) return ssr.error(c, 404);
   const [contactId] = (await resolveBookPublicIds("contacts", bookId, [publicContactId])) ?? [];
-  if (!contactId) return c.redirect(`/app/contacts/${publicBookId}`, 302);
+  if (!contactId) return ssr.error(c, 404);
 
   const book = await contactsService.book.get({ id: bookId });
-  if (!book) return c.redirect("/app/contacts", 302);
+  if (!book) return ssr.error(c, 404);
 
   const hasReadAccess = await contactsService.book.permission.canAccess({
     bookId,
@@ -22,7 +22,7 @@ export default ssr<AuthContext>(async (c) => {
     requiredLevel: "read",
   });
 
-  if (!hasReadAccess) return c.redirect("/app/contacts", 302);
+  if (!hasReadAccess) return ssr.error(c, 403);
   const hasWriteAccess = await contactsService.book.permission.canAccess({
     bookId,
     subject: { type: "user", userId: user.id },
@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!hasWriteAccess) return c.redirect(`/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`, 302);
 
   const contact = await contactsService.contact.get({ bookId, id: contactId });
-  if (!contact) return c.redirect(`/app/contacts/${publicBookId}`, 302);
+  if (!contact) return ssr.error(c, 404);
 
   const [projectedBook, projectedContact] = await Promise.all([projectBooks([book]), projectContacts([contact])]);
   return c.redirect(`/app/contacts/${projectedBook[0]!.id}?contact=${projectedContact[0]!.id}&contactBook=${projectedBook[0]!.id}`, 302);

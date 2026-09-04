@@ -1,4 +1,4 @@
-import { ButtonLink, Placeholder } from "@k2b/ui";
+
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
@@ -16,25 +16,7 @@ export default ssr<AuthContext>(async (c) => {
     ? await spacesPublicResources.resolvePublicId("spaces", spaceShortId)
     : null;
   const dateConfig = getDateConfig(c);
-  if (!spaceId) {
-    return () => (
-      <Layout c={c} title={t.notFound}>
-        <Placeholder
-          state="error"
-          variant="panel"
-          icon="ti ti-alert-circle"
-          title={t.notFound}
-          description={t.spaceNotFound}
-          class="mx-auto max-w-md"
-          action={
-            <ButtonLink href="/app/spaces" size="sm">
-              {t.allSpaces}
-            </ButtonLink>
-          }
-        />
-      </Layout>
-    );
-  }
+  if (!spaceId) return ssr.error(c, 404, { action: { label: t.allSpaces, href: "/app/spaces" } });
   const [state, mailIntegrationAvailable] = await Promise.all([
     loadSpacesWorkspaceState({
       user: expectUserBackedActor(c),
@@ -48,25 +30,7 @@ export default ssr<AuthContext>(async (c) => {
     isMailInvitationIntegrationAvailable(),
   ]);
 
-  if (state.kind !== "ok") {
-    return () => (
-      <Layout c={c} title={state.title}>
-        <Placeholder
-          state="error"
-          variant="panel"
-          icon={state.kind === "accessDenied" ? "ti ti-lock" : "ti ti-alert-circle"}
-          title={state.title}
-          description={state.message}
-          class="mx-auto max-w-md"
-          action={
-            <ButtonLink href="/app/spaces" size="sm">
-              {t.allSpaces}
-            </ButtonLink>
-          }
-        />
-      </Layout>
-    );
-  }
+  if (state.kind !== "ok") return ssr.error(c, state.kind === "accessDenied" ? 403 : 404, { description: state.message, action: { label: t.allSpaces, href: "/app/spaces" } });
 
   return () => (
     <Layout c={c} fullWidth title={state.title}>

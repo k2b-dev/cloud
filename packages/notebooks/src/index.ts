@@ -1,10 +1,10 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { recentNotesWidgetHandler } from "./api/widgets";
 import { notebooksCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { notebookHelp } from "./help";
 import { migrate } from "./migrate";
@@ -16,6 +16,9 @@ const router = new Hono<AuthContext>()
   .route("/api/notebooks", apiRoutes)
   .route("/app/notebooks", pageRoutes)
   .route("/admin/notebooks", adminPageRoutes);
+
+router.get("/app/notebooks/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/notebooks/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
   capabilities: notebooksCapabilities,

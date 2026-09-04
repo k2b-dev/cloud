@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { mailCapabilities } from "./capabilities";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import adminPage from "./frontend/admin";
 import adminSecurityPage from "./frontend/admin-security";
@@ -29,9 +29,12 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.settings())
   .route("/api/mail", apiRoutes)
   .route("/app/mail", pageRoutes)
-  .get("/admin/mail", auth.requireRole("admin", auth.redirectToLogin), ...adminPage)
-  .get("/admin/mail/security", auth.requireRole("admin", auth.redirectToLogin), ...adminSecurityPage)
+  .get("/admin/mail", auth.requireRole("admin", ssr.access), ...adminPage)
+  .get("/admin/mail/security", auth.requireRole("admin", ssr.access), ...adminSecurityPage)
   .route("/share/mail", publicAttachmentRoutes);
+
+router.get("/app/mail/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/mail/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
   capabilities: mailCapabilities,

@@ -208,6 +208,15 @@ export const publicIds = async (
   return new Map((await rowsByIds(db, table, ids)).map((row) => [row.id, row.short_id]));
 };
 
+/** Browser workspaces cannot open deleted mailboxes; lifecycle APIs use resolvePublicId. */
+export const resolveActiveMailboxId = async (shortId: string, db: SqlClient = sql): Promise<string | null> => {
+  if (!SHORT_ID_REGEX.test(shortId)) return null;
+  const [row] = await db<{ id: string }[]>`
+    SELECT id FROM mail.mailboxes WHERE short_id = ${shortId} AND deleted_at IS NULL
+  `;
+  return row?.id ?? null;
+};
+
 export const requirePublicId = (ids: Map<string, string>, id: string): string => {
   const shortId = ids.get(id);
   if (!shortId) throw new Error(`Missing public ID for Mail resource ${id}`);

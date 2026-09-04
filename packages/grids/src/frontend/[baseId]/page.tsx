@@ -69,23 +69,7 @@ export default ssr<AuthContext>(async (c) => {
     );
   }
 
-  if (loadedState.kind !== "ok") {
-    // A base you may not open is found, just not yours — so no "404" numeral
-    // there. Either way, offer the one place that always works.
-    const denied = loadedState.kind === "accessDenied";
-    if (!denied) c.status(404);
-    return () => (
-      <Layout c={c} title={loadedState.title}>
-        <NotFoundState
-          code={denied ? undefined : "404"}
-          icon={denied ? "ti ti-lock" : undefined}
-          title={loadedState.message}
-          description={denied ? t.askBaseAdminForAccess : t.baseUnavailable}
-          action={{ label: t.allBases, href: "/app/grids", icon: "ti ti-table" }}
-        />
-      </Layout>
-    );
-  }
+  if (loadedState.kind !== "ok") return ssr.error(c, loadedState.kind === "accessDenied" ? 403 : 404, { description: loadedState.kind === "accessDenied" ? t.askBaseAdminForAccess : t.baseUnavailable, action: { label: t.allBases, href: "/app/grids" } });
 
   const state = loaded.state;
   if (!state) throw new Error("Workspace state projection is missing");

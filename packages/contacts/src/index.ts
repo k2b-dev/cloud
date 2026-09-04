@@ -1,10 +1,10 @@
-import { type AuthContext, middleware } from "@valentinkolb/cloud/server";
+import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { contactsCapabilities } from "./capabilities";
 import { capabilityRetention } from "./capability-retention";
-import { app } from "./config";
+import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { contactsHelp } from "./help";
 import { migrate } from "./migrate";
@@ -16,6 +16,9 @@ const router = new Hono<AuthContext>()
   .route("/api/contacts", apiRoutes)
   .route("/app/contacts", pageRoutes)
   .route("/admin/contacts", adminPageRoutes);
+
+router.get("/app/contacts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
+router.get("/admin/contacts/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
 const result = await app.start({
   capabilities: contactsCapabilities,

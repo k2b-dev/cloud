@@ -115,10 +115,10 @@ export const projectMailConversationDetail = async (
 
 export const resolveSsrMailboxId = async (
   shortId: string,
-  resolve: typeof publicResources.resolvePublicId = publicResources.resolvePublicId,
+  resolve: typeof publicResources.resolveActiveMailboxId = publicResources.resolveActiveMailboxId,
 ): Promise<string | null> => {
   if (!ResourceShortIdSchema.safeParse(shortId).success) return null;
-  return resolve("mailboxes", shortId);
+  return resolve(shortId);
 };
 
 export const resolveSsrMailboxResourceId = async (

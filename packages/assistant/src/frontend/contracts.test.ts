@@ -10,7 +10,7 @@ describe("Assistant frontend contracts", () => {
     expect(client.match(/fetch\(/g)).toHaveLength(1);
     expect(client).toContain("/api/ai/tasks");
     expect(apiRoutes).toContain("auth.requireUser()");
-    expect(pageRoutes).toContain("auth.requireUser(auth.redirectToLogin)");
+    expect(pageRoutes).toContain("auth.requireUser(ssr.access)");
   });
 
   test("keeps one hydration boundary and viewport-safe dialogs", async () => {

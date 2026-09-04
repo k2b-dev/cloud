@@ -34,6 +34,13 @@ const loadIds = async (_table: string, values: Array<string | null | undefined>)
   new Map(values.flatMap((id) => (id && shorts.has(id) ? [[id, shorts.get(id)!] as const] : [])));
 
 describe("Mail SSR public boundary", () => {
+  test("preserves missing and active mailbox outcomes from the active resolver", async () => {
+    expect(await resolveSsrMailboxId("Box001", async () => null)).toBeNull();
+    expect(await resolveSsrMailboxId("Box001", async (shortId) => {
+      expect(shortId).toBe("Box001");
+      return ids.mailbox;
+    })).toBe(ids.mailbox);
+  });
   test("projects active and deleted overview mailbox IDs for browser links", async () => {
     const active = await projectSsrMailboxList([{ id: ids.mailbox, name: "Inbox" }], loadIds);
     const deleted = await projectSsrMailboxList([{ id: ids.mailbox, name: "Deleted" }], loadIds);

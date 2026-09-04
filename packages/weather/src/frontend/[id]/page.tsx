@@ -158,6 +158,8 @@ export default ssr<AuthContext>(async (c) => {
   // Find active location
   const activeLocation = locations.find((l) => l.id === id);
   if (!activeLocation) {
+    c.status(404);
+    c.header("Cache-Control", "private, no-store");
     return () => (
       <Layout
         c={c}

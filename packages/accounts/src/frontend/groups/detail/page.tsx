@@ -1,4 +1,5 @@
 import { ButtonLink } from "@k2b/ui";
+import { z } from "zod";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -48,30 +49,9 @@ export default ssr<AuthContext>(async (c) => {
     defaultScope,
   });
   const groupsBackLabel = listState.scope === "managed" ? t.managedGroups : listState.scope === "member" ? t.myGroups : t.allGroups;
-  const renderGroupNotFound = () => () => (
-    <Layout
-      c={c}
-      fullWidth
-      title={[
-        { title: t.start, href: "/" },
-        { title: t.accounts, href: "/app/accounts" },
-        { title: t.groups, href: "/app/accounts/groups" },
-        { title: t.notFound },
-      ]}
-    >
-      <div class="flex-1 flex items-center justify-center">
-        <div class="text-center text-dimmed flex flex-col items-center gap-2">
-          <i class="ti ti-alert-circle text-4xl" />
-          <p class="text-sm">{t.groupNotFound}</p>
-          <a href={groupsListHref} class="text-xs hover:text-primary">
-            {t.backToGroups}
-          </a>
-        </div>
-      </div>
-    </Layout>
-  );
+  const renderGroupNotFound = () => ssr.error(c, 404, { action: { label: t.backToGroups, href: groupsListHref } });
 
-  if (!groupId) {
+  if (!groupId || !z.uuid().safeParse(groupId).success) {
     return renderGroupNotFound();
   }
 

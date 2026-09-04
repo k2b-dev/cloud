@@ -5,7 +5,7 @@ section: Identity and access
 order: 318
 description: Choose who may enter an API or SSR route before the service checks its resource.
 tags: [identity, middleware, routes, policies]
-updated: 2026-07-27
+updated: 2026-09-04
 ---
 
 # Route policies
@@ -103,24 +103,44 @@ caller fails the policy.
 
 ## Protect SSR routes
 
-Redirect browser requests to login:
+Use the owning application's SSR rejection policy for browser pages:
 
 ```ts
+import { ssr } from "../config";
+
 const pages = new Hono<AuthContext>().get(
   "/:id",
-  auth.requireRole("authenticated", auth.redirectToLogin),
-  inventoryPage,
+  auth.requireRole("user", ssr.access),
+  ...inventoryPage,
 );
 ```
 
-`redirectToLogin` adds a safe local `redirectTo` value. The browser returns to
-the requested path after login.
+`ssr.access` redirects anonymous or expired sessions to login with a safe local
+`redirectTo`, including the query string. An authenticated caller who fails the
+policy receives a localized HTML `403`, not another login redirect. Both
+responses use `Cache-Control: private, no-store`.
+
+The router must already have the usual `middleware.runtime()` and
+`middleware.settings()` context. Use the same option for account policies:
+`auth.requireAccount({ provider: "ipa", profile: "user", ...ssr.access })`.
+For any user-backed actor, combine
+`auth.requireRole("authenticated", ssr.access)` with
+`auth.requireUser(ssr.access)`.
+
+Resource checks still belong to the service. Render their terminal page errors
+with [ssr.error()](/en/docs/frontend/ssr-pages-and-routing#render-page-errors).
+Do not use page responses on JSON APIs, downloads, or protocol endpoints.
 
 Redirect rejected callers to a fixed path when needed:
 
 ```ts
 auth.requireRole("admin", auth.redirect("/"));
 ```
+
+Explicit `auth.redirect()` and `auth.redirectToLogin` overrides redirect for
+both rejection reasons. A custom `onReject(c, reason)` may return a response,
+redirect path, or a promise of either. Prefer `ssr.access` for ordinary pages
+to avoid a forbidden-page/login loop.
 
 ## Match an account type
 

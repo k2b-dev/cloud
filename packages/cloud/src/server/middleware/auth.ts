@@ -86,7 +86,7 @@ export type AuthContext = {
 type RejectResult = string | Response | { message: string; status: number };
 
 type RoleOptions = {
-  onReject?: (c: Context, reason: "unauthenticated" | "forbidden") => RejectResult;
+  onReject?: (c: Context, reason: "unauthenticated" | "forbidden") => RejectResult | Promise<RejectResult>;
   /** Require any of these audiences for OAuth bearer tokens. Sessions and API keys are unaffected. */
   oauthAudience?: string | string[] | (() => string | string[] | Promise<string | string[]>);
 };
@@ -96,9 +96,9 @@ type AccountOptions = RoleOptions & {
   profile?: UserProfile;
 };
 
-const handleReject = (c: Context, options: RoleOptions, reason: "unauthenticated" | "forbidden"): Response | Promise<Response> => {
+const handleReject = async (c: Context, options: RoleOptions, reason: "unauthenticated" | "forbidden"): Promise<Response> => {
   if (options.onReject) {
-    const result = options.onReject(c, reason);
+    const result = await options.onReject(c, reason);
     if (typeof result === "string") return c.redirect(result);
     if (result instanceof Response) return result;
     return c.json({ message: result.message } as MessageResponse, result.status as 400 | 401 | 403 | 404 | 500);

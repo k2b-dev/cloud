@@ -11,7 +11,6 @@ import FileDetailLayoutSync from "../../_components/FileDetailLayoutSync.island"
 import FileDetailPanel from "../../_components/FileDetailPanel.island";
 import FileList from "../../_components/FileList.island";
 import FileSettings, { parseFileSettings } from "../../_components/FileSettings.island";
-import FilesUnavailable from "../../_components/FilesUnavailable";
 import FileToolbar from "../../_components/FileToolbar.island";
 import { filePageBaseUrl, filePageUrl } from "../../url";
 import { filesMessages } from "../../messages";
@@ -119,7 +118,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
 
   // Validate base type
   if (baseType !== "home" && baseType !== "group") {
-    return c.redirect("/app/files", 302);
+    return ssr.error(c, 404);
   }
 
   // Canonicalize old home route with uid segment to /app/files/home[/...]
@@ -129,26 +128,14 @@ export const renderFilesBasePage = async <E extends AuthContext>(
 
   // Parse base and check access
   const baseResult = await filesService.base.get({ baseType, baseId });
-  if (!baseResult.ok) {
-    return () => (
-      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files }, { title: t.notFound }]} fullWidth>
-        <FilesUnavailable title={t.storageNotFound} description={t.storageNotFoundDescription} icon="ti ti-folder-off" />
-      </Layout>
-    );
-  }
+  if (!baseResult.ok) return ssr.error(c, baseResult.status);
 
   const base = baseResult.data;
   const accessResult = await filesService.base.permission.canAccess({
     user,
     base,
   });
-  if (!accessResult.ok) {
-    return () => (
-      <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.files }, { title: t.accessDenied }]} fullWidth>
-        <FilesUnavailable title={t.storageUnavailable} description={t.storageUnavailableDescription} icon="ti ti-lock" />
-      </Layout>
-    );
-  }
+  if (!accessResult.ok) return ssr.error(c, accessResult.status);
 
   // Get all accessible bases for sidebar
   const allBases = await filesService.base.listResolved({ user });
@@ -166,6 +153,8 @@ export const renderFilesBasePage = async <E extends AuthContext>(
   });
 
   if (!infoResult.ok) {
+    c.status(infoResult.status);
+    c.header("Cache-Control", "private, no-store");
     return () => (
       <Layout c={c} title={buildBreadcrumbs(baseType, baseId, currentBaseInfo.name, path, t.start, t.files)} fullWidth>
         <AppWorkspace>

@@ -44,4 +44,6 @@ const inventoryPage = ssr<AuthContext>(async (c) => {
   );
 });
 
-export const inventoryPageRoutes = new Hono<AuthContext>().get("/", auth.requireRole("user", auth.redirectToLogin), ...inventoryPage);
+export const inventoryPageRoutes = new Hono<AuthContext>()
+  .get("/", auth.requireRole("user", ssr.access), ...inventoryPage)
+  .get("/*", auth.requireRole("*"), (c) => ssr.error(c, 404));

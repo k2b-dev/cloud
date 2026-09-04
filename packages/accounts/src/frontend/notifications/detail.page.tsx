@@ -1,4 +1,5 @@
 import { dates } from "@k2b/stdlib";
+import { z } from "zod";
 import { DataTable, type DataTableColumn, MarkdownView, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
@@ -99,7 +100,7 @@ export default ssr<AuthContext>(async (c) => {
   };
   const user = expectUserBackedActor(c);
   const batchId = c.req.param("id");
-  if (!batchId) return c.notFound();
+  if (!batchId || !z.uuid().safeParse(batchId).success) return ssr.error(c, 404);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const recipientStatus = validRecipientStatus(c.req.query("recipient_status"));
@@ -110,7 +111,7 @@ export default ssr<AuthContext>(async (c) => {
   ]);
 
   if (!batch) {
-    return c.notFound();
+    return ssr.error(c, 404);
   }
 
   const recipientsPage =
