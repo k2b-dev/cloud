@@ -3,11 +3,11 @@ import { AppWorkspace } from "@k2b/ui";
 import { Show } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton.island";
-import type { ViewType } from "../settings/SpaceSettingsStore";
 import CopyICalButton from "./CopyICalButton.island";
 import CreateItemButton from "./CreateItemButton.island";
 import SpaceSettingsButton from "./SpaceSettingsButton.island";
 import type { SpaceContext } from "./types";
+import ViewLinks from "./ViewLinks.island";
 
 type Props = {
   ctx: SpaceContext;
@@ -15,20 +15,8 @@ type Props = {
   dateConfig?: DateContext;
 };
 
-const buildViewHref = (ctx: SpaceContext, view: ViewType): string => {
-  const query = new URLSearchParams(ctx.query);
-  query.set("view", view);
-  return `/app/spaces/${ctx.space.id}?${query.toString()}`;
-};
-
 export default function SpaceSidebar(props: Props) {
   const t = useSpaceMessages();
-  const views: Array<{ id: ViewType; label: string; icon: string }> = [
-    { id: "list", label: t.overview, icon: "ti-home" },
-    { id: "table", label: t.table, icon: "ti-table" },
-    { id: "kanban", label: t.kanban, icon: "ti-layout-kanban" },
-    { id: "calendar", label: t.calendar, icon: "ti-calendar" },
-  ];
   const vt = (key: string) => `space-sidebar-${props.ctx.space.id}-${key}`;
 
   return (
@@ -66,20 +54,7 @@ export default function SpaceSidebar(props: Props) {
           >
             {t.allSpaces}
           </AppWorkspace.SidebarItem>
-          {views.map((view) => {
-            const href = buildViewHref(props.ctx, view.id);
-            return (
-              <AppWorkspace.SidebarItem
-                href={href}
-                navigation="document"
-                icon={view.icon}
-                active={props.ctx.currentView === view.id}
-                viewTransitionName={vt(`view-${view.id}-mobile`)}
-              >
-                {view.label}
-              </AppWorkspace.SidebarItem>
-            );
-          })}
+          <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="mobile" />
           <div style={`view-transition-name:${vt("copy-ical-mobile")}`}>
             <CopyICalButton icalToken={props.ctx.space.icalToken} variant="chip" />
           </div>
@@ -128,20 +103,7 @@ export default function SpaceSidebar(props: Props) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarSection sidebarMode="expanded">
-            {views.map((view) => {
-              const href = buildViewHref(props.ctx, view.id);
-              return (
-                <AppWorkspace.SidebarItem
-                  href={href}
-                  navigation="document"
-                  icon={view.icon}
-                  active={props.ctx.currentView === view.id}
-                  viewTransitionName={vt(`view-${view.id}-desktop`)}
-                >
-                  {view.label}
-                </AppWorkspace.SidebarItem>
-              );
-            })}
+            <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="desktop" />
           </AppWorkspace.SidebarSection>
         </div>
 
@@ -164,15 +126,7 @@ export default function SpaceSidebar(props: Props) {
             variant="icon"
           />
           <AppWorkspace.SidebarIconAction href="/app/spaces" navigation="document" icon="ti ti-layout-grid" label={t.allSpaces} />
-          {views.map((view) => (
-            <AppWorkspace.SidebarIconAction
-              href={buildViewHref(props.ctx, view.id)}
-              navigation="document"
-              icon={view.icon}
-              label={view.label}
-              active={props.ctx.currentView === view.id}
-            />
-          ))}
+          <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="collapsed" />
         </AppWorkspace.SidebarIconGrid>
 
         <div class="min-h-0 flex-1" />

@@ -21,11 +21,14 @@ type FilterBarProps = {
   columns: SpaceColumn[];
   tags: SpaceTag[];
   filter: FilterState;
+  resultFilter?: FilterState;
   total: number;
   baseUrl: string;
   hideGroupBy?: boolean;
   onFilterChange?: (patch: Partial<FilterState>) => void;
   onSearchChange?: (search: string) => void | Promise<void>;
+  searchBusy?: boolean;
+  searchReset?: number;
   onClearFilters?: () => void;
 };
 
@@ -167,16 +170,26 @@ export default function FilterBar(props: FilterBarProps) {
     },
   ];
 
-  const hasFilters = props.hideGroupBy
-    ? hasActiveFilters({
-        ...props.filter,
-        groupBy: defaultFilter.groupBy,
-      })
-    : hasActiveFilters(props.filter);
+  const hasFilters = () =>
+    props.hideGroupBy
+      ? hasActiveFilters({
+          ...props.filter,
+          groupBy: defaultFilter.groupBy,
+        })
+      : hasActiveFilters(props.filter);
+  const resultFilter = () => props.resultFilter ?? props.filter;
+  const hasResultFilters = () =>
+    hasActiveFilters(props.hideGroupBy ? { ...resultFilter(), groupBy: defaultFilter.groupBy } : resultFilter());
 
   return (
     <div class="flex flex-col gap-2" style="view-transition-name: filter-bar">
-      <SearchInput value={props.filter.search} baseUrl={buildFilterUrl(props.baseUrl, {}, props.filter)} onSearch={props.onSearchChange} />
+      <SearchInput
+        value={props.filter.search}
+        busy={props.searchBusy}
+        reset={props.searchReset}
+        baseUrl={buildFilterUrl(props.baseUrl, {}, props.filter)}
+        onSearch={props.onSearchChange}
+      />
 
       <div class="no-scrollbar flex items-center gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible">
         {/* Scope: item type + completion state + assignment */}
@@ -288,7 +301,7 @@ export default function FilterBar(props: FilterBarProps) {
         )}
 
         {/* Clear Filters */}
-        {hasFilters && (
+        {hasFilters() && (
           <ButtonLink
             href={buildFilterUrl(props.baseUrl, defaultFilter, defaultFilter)}
             onClick={clearFilters}
@@ -303,9 +316,9 @@ export default function FilterBar(props: FilterBarProps) {
         )}
 
         <span class="shrink-0 whitespace-nowrap text-xs text-dimmed">
-          {props.filter.search && `${t.resultsFor({ query: props.filter.search })} `}
+          {resultFilter().search && `${t.resultsFor({ query: resultFilter().search })} `}
           {props.total === 0 ? t.noItems : t.itemCount({ count: props.total })}
-          {hasFilters && !props.filter.search && ` (${t.filtered})`}
+          {hasResultFilters() && !resultFilter().search && ` (${t.filtered})`}
         </span>
       </div>
     </div>

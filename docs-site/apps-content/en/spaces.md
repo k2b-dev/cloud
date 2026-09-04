@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-08-30
+updated: 2026-09-05
 ---
 
 # Spaces
@@ -50,6 +50,12 @@ when the audience or lifecycle is different.
 
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
+
+In list and table views, search updates results without reloading the page or
+moving focus out of the search field. The URL follows the displayed results,
+so you can share or reload the filtered view. While a search loads, the previous
+results stay visible. If it fails, your search text remains available and you
+can retry.
 
 Task checklist entries are deliberately small: one completion state and one
 label, without separate assignees, dates, or detail pages. Checklist changes

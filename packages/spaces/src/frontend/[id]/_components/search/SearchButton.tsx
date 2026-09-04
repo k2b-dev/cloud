@@ -106,7 +106,9 @@ export default function SearchButton(props: Props) {
     });
 
     if (selected?.value) {
-      requestSpacesRouteNavigation(buildItemHref(props.spaceId, props.query, selected.value.id), { scroll: "preserve" });
+      const current = new URL(window.location.href);
+      const query = current.pathname === `/app/spaces/${props.spaceId}` ? current.search : props.query;
+      requestSpacesRouteNavigation(buildItemHref(props.spaceId, query, selected.value.id), { scroll: "preserve" });
     }
   };
 

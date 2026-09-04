@@ -1,6 +1,6 @@
 import { timed as timing } from "@k2b/stdlib/solid";
 import { TextInput } from "@k2b/ui";
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, on } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { buildSearchUrl } from "./types";
@@ -10,6 +10,8 @@ type SearchInputProps = {
   baseUrl?: string;
   onSearch?: (value: string) => void | Promise<void>;
   debounceMs?: number;
+  busy?: boolean;
+  reset?: number;
 };
 
 /**
@@ -35,6 +37,17 @@ export default function SearchInput(props: SearchInputProps) {
   createEffect(() => {
     if (!focused() && !debounce.isPending()) setValue(props.value);
   });
+  createEffect(
+    on(
+      () => props.reset,
+      () => {
+        debounce.cancel();
+        setPending(false);
+        setValue(props.value);
+      },
+      { defer: true },
+    ),
+  );
 
   const handleInput = (newValue: string) => {
     setValue(newValue);
@@ -52,7 +65,7 @@ export default function SearchInput(props: SearchInputProps) {
         onValueChange={handleInput}
         clearable
         onClear={() => handleInput("")}
-        suffix={pending() ? <i class="ti ti-loader-2 animate-spin text-zinc-400" /> : undefined}
+        suffix={pending() || props.busy ? <i class="ti ti-loader-2 animate-spin text-zinc-400" /> : undefined}
       />
     </div>
   );
