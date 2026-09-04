@@ -7,6 +7,7 @@ import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
 import { bookRendererMessages } from "./book-renderer-messages";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
+import { closesNotice } from "./markdown-fences";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
 
@@ -157,17 +158,19 @@ export const renderNotebookBook = (
   };
 
   let insideLink = false;
-  const renderer = new Renderer();
-  renderer.html = ({ text: html }) => escape(html);
-  renderer.heading = function (token) {
-    const { depth, tokens } = token;
-    const body = this.parser.parseInline(tokens);
-    const title = sanitizeHtml(body, { allowedTags: [], allowedAttributes: {} })
+  const plainText = (html: string) =>
+    sanitizeHtml(html.replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/g, "$1"), { allowedTags: [], allowedAttributes: {} })
       .replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathLabels[Number(index)] ?? "")
       .replace(
         /&(amp|lt|gt|quot|#39);/g,
         (entity) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" })[entity] ?? entity,
       );
+  const renderer = new Renderer();
+  renderer.html = ({ text: html }) => escape(html);
+  renderer.heading = function (token) {
+    const { depth, tokens } = token;
+    const body = this.parser.parseInline(tokens);
+    const title = plainText(body);
     const base = `heading-${text.slugify(title) || "section"}`;
     const id = anchorId(base);
     const line = headingSource.get(token);
@@ -179,11 +182,13 @@ export const renderNotebookBook = (
     insideLink = true;
     const body = this.parser.parseInline(tokens);
     insideLink = wasInsideLink;
+    if (wasInsideLink) return body;
     const url = resolveUrl(href);
     if (!url) return body;
     return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
   };
-  renderer.image = ({ href, title, text: alt }) => {
+  renderer.image = function ({ href, title, tokens }) {
+    const alt = plainText(this.parser.parseInline(tokens));
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`;
@@ -202,11 +207,15 @@ export const renderNotebookBook = (
           : escape(code);
     return `<pre><code${language ? ` class="language-${escape(language)}"` : ""}>${colored}</code></pre>`;
   };
-  renderer.table = ({ header, rows, align }) =>
-    renderPrettyTableHtml(
+  renderer.table = function ({ header, rows, align }) {
+    // Preserve Marked's document-level reference links and the Book inline
+    // extensions while the shared table renderer owns formula evaluation.
+    const cells = new Map([...header, ...rows.flat()].map((cell) => [cell.text, cell.tokens]));
+    return renderPrettyTableHtml(
       { headers: header.map((cell) => cell.text), rows: rows.map((row) => row.map((cell) => cell.text)), align },
-      { notebookId: input.notebookId, locale },
+      { notebookId: input.notebookId, locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
     );
+  };
   const marked = new Marked({ gfm: true, breaks: true, renderer });
   marked.use({
     extensions: [
@@ -251,14 +260,14 @@ export const renderNotebookBook = (
               type: "bookInline",
               raw: formatting[0],
               tag: formatting[1] ? "mark" : formatting[2] ? "sub" : "sup",
-              body: formatting[1] ?? formatting[2] ?? formatting[3],
+              tokens: this.lexer.inlineTokens(formatting[1] ?? formatting[2] ?? formatting[3]!),
             };
           const hash = /^(\s*)#([A-Za-z][\w-]*(?:\/[\w-]+)*)/.exec(src);
           return hash ? { type: "bookInline", raw: hash[0], hash: hash[2], prefix: hash[1] } : undefined;
         },
         renderer(token) {
           if (token.hash) return `${String(token.prefix)}${insideLink ? escape(`#${token.hash}`) : tag(String(token.hash))}`;
-          return `<${token.tag}>${escape(String(token.body))}</${token.tag}>`;
+          return `<${token.tag}>${this.parser.parseInline(token.tokens ?? [])}</${token.tag}>`;
         },
       },
       {
@@ -269,14 +278,22 @@ export const renderNotebookBook = (
         tokenizer(src) {
           const match = /^!\[([^\]\n]*)\]\(([^\s)]+)\s+=(\d+)?x(\d+)?\)/.exec(src);
           return match && (match[3] || match[4])
-            ? { type: "bookSizedImage", raw: match[0], alt: match[1], href: match[2], width: match[3], height: match[4] }
+            ? {
+                type: "bookSizedImage",
+                raw: match[0],
+                tokens: this.lexer.inlineTokens(match[1]!),
+                href: match[2],
+                width: match[3],
+                height: match[4],
+              }
             : undefined;
         },
         renderer(token) {
           const url = resolveUrl(String(token.href), true);
+          const alt = plainText(this.parser.parseInline(token.tokens ?? []));
           return url
-            ? `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(String(token.alt))}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`
-            : escape(String(token.alt));
+            ? `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`
+            : escape(alt);
         },
       },
     ],
@@ -307,7 +324,7 @@ export const renderNotebookBook = (
         );
       continue;
     }
-    const opener = /^:::(query|toc|data|note|info|success|warning|danger)\s*$/.exec(line.trim());
+    const opener = /^ {0,3}:::(query|toc|data|note|info|success|warning|danger)[ \t]*$/.exec(line);
     if (!opener) {
       // Source positions are optional for nested Markdown, but never guessed.
       // Canonical heading IDs still cover every heading in the rendered TOC.
@@ -328,7 +345,11 @@ export const renderNotebookBook = (
     const remaining = markdown.slice(lineOffsets[start]);
     const extent = notebookDirectiveLength(remaining) ?? remaining.length;
     const blockLines = remaining.slice(0, extent).replace(/\n$/, "").split("\n");
-    const closed = blockLines.length > 1 && blockLines.at(-1)!.trim() === ":::";
+    const closed =
+      blockLines.length > 1 &&
+      (kind === "query" || kind === "toc" || kind === "data"
+        ? /^ {0,3}:::[ \t]*$/.test(blockLines.at(-1)!)
+        : closesNotice(blockLines.at(-1)!, line));
     index = closed ? start + blockLines.length - 1 : lines.length;
     const body = blockLines.slice(1, closed ? -1 : undefined).join("\n");
     prepared.push(

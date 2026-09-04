@@ -67,16 +67,18 @@ limit: 25
 
 Abfragen lesen ausschließlich gespeicherte Notizen aus dem aktuellen Notizbuch. Sie können keine anderen Notizbücher abrufen, Tabellenzeilen lesen, JavaScript ausführen, Datenbestände verknüpfen oder Änderungen schreiben.
 
+Übernimm die Einrückung aus dem Beispiel: zwei Leerzeichen vor Filterlisteneinträgen, Spalten und Sortierfeldern; vier vor `op` und `value` eines Filters. Das Format ähnelt YAML, unterstützt aber nur die hier gezeigte Syntax. Kommentare, Anker und verschachtelte Filterobjekte sind nicht erlaubt. Lasse optionale Einstellungen für ihre Standardwerte ganz weg, statt ihre Werte leer zu lassen.
+
 | Einstellung | Bedeutung |
 | --- | --- |
 | `source` | Pflichtwert: `notes` |
-| `scope` | `notebook` (Standard), direkte `children` oder alle `descendants` dieser Notiz |
+| `scope` | `notebook` (Standard, einschließlich dieser Notiz), direkte `children` oder alle `descendants` dieser Notiz. Kinder und Nachkommen schließen diese Notiz aus. |
 | `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im gewählten Bereich. |
 | `sort` | `field`: `$title`, `$created` oder `$updated`; `direction`: `asc` oder `desc`. Standard: zuletzt geändert, absteigend. |
 | `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne diese Einstellung erscheint eine verlinkte Titelliste. |
 | `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt weitere Treffer an; grenze die Filter ein, um diese zu sehen. |
 
-Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seite unterstützt höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten.
+Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seite unterstützt höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten. Eine Filterzeichenfolge darf höchstens 2.000 Zeichen enthalten. Setze Listenwerte mit Kommas in Anführungszeichen, etwa `["Sales, Europe", Support]`.
 
 ## Filter wählen {icon="filter"}
 
@@ -92,7 +94,7 @@ Verwende höchstens 32 Filter und 16 verschiedene Spalten pro Abfrage. Eine Seit
 
 Lasse `value` bei `exists` und `missing` weg. Operatoren für Listenzugehörigkeit erwarten Listen; die anderen Operatoren einen Einzelwert. `in` prüft einen Einzelwert gegen eine Liste, während `contains-any` und `contains-all` Listeninhalte prüfen.
 
-Gleichheit beachtet Typen und Groß- und Kleinschreibung. Die Textoperatoren `contains` und `starts-with` ignorieren Groß- und Kleinschreibung; Tags ignorieren außerdem ein optionales führendes `#`. `ne` und `not-in` finden keine fehlenden Felder: Verwende dafür bei Bedarf einen zusätzlichen `missing`-Filter mit `match: any`. Leere Listen existieren. Es gibt keine verschachtelten Filtergruppen, Ausdrücke, Datumsbereichsvergleiche oder Sortierung nach eigenen Feldern.
+Gleichheit beachtet Typen und Groß- und Kleinschreibung. Die Textoperatoren `contains` und `starts-with` ignorieren Groß- und Kleinschreibung; Tags ignorieren außerdem ein optionales führendes `#`. `ne` und `not-in` finden keine fehlenden Felder: Verwende dafür bei Bedarf einen zusätzlichen `missing`-Filter mit `match: any`. Leere Eigenschaftslisten existieren; `$tags` existiert nur bei mindestens einem Tag. Es gibt keine verschachtelten Filtergruppen, Ausdrücke, Datumsbereichsvergleiche oder Sortierung nach eigenen Feldern.
 
 ## Seiteninhalt verlinken {icon="list"}
 
@@ -105,14 +107,18 @@ max-depth: 3
 :::
 ```
 
-Der Block verlinkt Überschriften dieser Notiz, auch nach dem Block. Die Ebenen reichen von 1 bis 6; Standardwerte sind 1 und 6. Das ist ein Inhaltsverzeichnis der Seite, kein Notizbuchverzeichnis.
+Der Block verlinkt Überschriften dieser Notiz, auch vor und nach dem Block. Die Ebenen reichen von 1 bis 6; Standardwerte sind 1 und 6. `min-depth` darf `max-depth` nicht überschreiten. Das ist ein Inhaltsverzeichnis der Seite, kein Notizbuchverzeichnis.
+
+Die Buchansicht verlinkt auch Überschriften innerhalb von Listen, Zitaten und Hinweisen. Die Editorvorschau kann nur zu Überschriften mit genauer Quellposition springen; bei anderen Überschriften zeigt sie einen Hinweis.
 
 ## Vorschau und Aktualisierung {icon="refresh"}
 
-Der Rich-Modus zeigt serverseitig gerenderte Abfrage- und Inhaltsvorschauen. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um ihn zu bearbeiten. Ungültige Einstellungen werden an ihren Quellzeilen markiert. Eine Entwurfsvorschau speichert weder den Entwurf noch ändert sie passende Notizen.
+Der Rich-Modus zeigt serverseitig gerenderte Abfrage- und Inhaltsvorschauen. Bewege den Cursor in den Block oder wähle **Quelltext anzeigen**, um ihn zu bearbeiten. Ungültige Einstellungen werden an ihren Quellzeilen markiert. Eine Entwurfsvorschau verwendet die Abfrageeinstellungen und Überschriften deines Entwurfs, liest für Abfragen aber weiterhin gespeicherte Daten – auch für die aktuelle Notiz. Sie speichert weder den Entwurf noch ändert sie passende Notizen.
 
 Die Buchansicht rendert dieselben Blöcke auf dem Server ohne Editor. Gespeicherte Änderungen aktualisieren Buchinhalte und Abfragevorschauen automatisch, wenn JavaScript verfügbar ist. Schreibgeschützt bleibt die gespeicherte Quelle bis zum Neuladen unverändert; lade nach deren Änderung neu. Ohne JavaScript zeigt die Buchansicht Ergebnisse und Links weiterhin beim Seitenaufruf.
 
 ## Tabellen und Aufgaben lesbar halten {icon="table"}
 
 Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen innerhalb einer Tabelle; Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.
+
+Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, einschließlich berechneter Spalten, Summen und Fortschrittsbalken. Formelfehler bleiben in der betroffenen Zelle sichtbar. Tabellenüberschriften und normale Zellen unterstützen außerdem Formatierungen, Links, Bilder und LaTeX; Formelergebnisse bleiben reine Werte.

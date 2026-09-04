@@ -30,6 +30,219 @@ const notebookFixture = {
   updatedAt: "2026-07-10T00:00:00.000Z",
 };
 
+const noteFixture = {
+  id: "note01",
+  notebookId: "wiki01",
+  parentId: null,
+  title: "Handbook",
+  position: 0,
+  hasChildren: false,
+  yjsSnapshotAt: null,
+  yjsSnapshot: null,
+  contentMd: "# Handbook\n\n:::toc\n:::\n",
+  createdBy: null,
+  createdAt: notebookFixture.createdAt,
+  updatedAt: notebookFixture.updatedAt,
+  lockedAt: null,
+};
+
+const editingServer = () => {
+  const writes: unknown[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method !== "GET") {
+        const body = await request.json();
+        writes.push(body);
+        return Response.json({ ...notebookFixture, ...body });
+      }
+      if (path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      return Response.json(noteFixture);
+    },
+  });
+  servers.push(server);
+  return { server: `http://127.0.0.1:${server.port}`, writes };
+};
+
+test("updates only valid default presentation modes", async () => {
+  const { server, writes } = editingServer();
+  for (const mode of ["book", "write", "readonly"]) {
+    const result = await runCli(server, ["notebooks", "update", "--notebook", "wiki01", "--default-presentation-mode", mode]);
+    expect(result.exitCode).toBe(0);
+  }
+  const invalid = await runCli(server, ["notebooks", "update", "--notebook", "wiki01", "--default-presentation-mode", "edit"]);
+  expect(invalid.exitCode).toBe(1);
+  expect(writes).toEqual([
+    { defaultPresentationMode: "book" },
+    { defaultPresentationMode: "write" },
+    { defaultPresentationMode: "readonly" },
+  ]);
+});
+
+test("rejects ambiguous edit operations before a write", async () => {
+  const { server, writes } = editingServer();
+  const result = await runCli(server, [
+    "notebooks",
+    "edit",
+    "--notebook",
+    "wiki01",
+    "--note",
+    "note01",
+    "--append",
+    "--set-content",
+    "--content",
+    ":::query\nsource: notes\n:::",
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("exactly one edit operation");
+  expect(writes).toEqual([]);
+});
+
+test("rejects malformed edit line selectors instead of truncating them", async () => {
+  const { server, writes } = editingServer();
+  for (const [flag, value] of [
+    ["--replace-lines", "1:2:3"],
+    ["--replace-lines", "1:2oops"],
+    ["--insert-before-line", "2.5"],
+  ]) {
+    const result = await runCli(server, [
+      "notebooks",
+      "edit",
+      "--notebook",
+      "wiki01",
+      "--note",
+      "note01",
+      flag!,
+      value!,
+      "--content",
+      ":::toc\n:::",
+    ]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid");
+  }
+  expect(writes).toEqual([]);
+});
+
+test("dry-run honors the same updatedAt precondition as saved edits", async () => {
+  const { server, writes } = editingServer();
+  const args = [
+    "--json",
+    "notebooks",
+    "edit",
+    "--notebook",
+    "wiki01",
+    "--note",
+    "note01",
+    "--append",
+    "--content",
+    ":::query\nsource: notes\n:::\n",
+    "--dry-run",
+    "--if-updated-at",
+  ];
+  const stale = await runCli(server, [...args, "2020-01-01T00:00:00.000Z"]);
+  expect(stale.exitCode).toBe(1);
+  expect(stale.stderr).toContain("updatedAt changed");
+  const current = await runCli(server, [...args, noteFixture.updatedAt]);
+  expect(current.exitCode).toBe(0);
+  expect(JSON.parse(current.stdout).content).toContain(":::toc\n:::");
+  expect(JSON.parse(current.stdout).content).toContain(":::query\nsource: notes");
+  expect(writes).toEqual([]);
+});
+
+test("preview uses saved content by default and preserves empty or populated drafts", async () => {
+  const bodies: unknown[] = [];
+  const preview = {
+    markdown: noteFixture.contentMd,
+    blocks: [{ line: 3, html: "<nav>Contents</nav>" }],
+    headings: [{ id: "heading-handbook", line: 1 }],
+    diagnostics: [],
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === "GET" && path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      if (request.method === "GET" && path === "/api/notebooks/wiki01/notes/note01") return Response.json(noteFixture);
+      if (request.method === "POST" && path === "/api/notebooks/wiki01/notes/note01/block-preview") {
+        bodies.push(await request.json());
+        return Response.json(preview);
+      }
+      throw new Error(`Unexpected request ${request.method} ${path}`);
+    },
+  });
+  servers.push(server);
+  for (const input of [[], ["--content", ""], ["--content", ":::query\nsource: notes\n:::\n"]]) {
+    const result = await runCli(`http://127.0.0.1:${server.port}`, [
+      "--json",
+      "notebooks",
+      "preview",
+      "--notebook",
+      "wiki01",
+      "--note",
+      "note01",
+      ...input,
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(preview);
+  }
+  expect(bodies).toEqual([{}, { markdown: "" }, { markdown: ":::query\nsource: notes\n:::\n" }]);
+});
+
+test("preview rejects competing draft sources before contacting the server", async () => {
+  const requests: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      requests.push(request.url);
+      return Response.json({});
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "notebooks",
+    "preview",
+    "--notebook",
+    "wiki01",
+    "--note",
+    "note01",
+    "--content",
+    ":::toc\n:::",
+    "--stdin",
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("only one of --content, --file, or --stdin");
+  expect(requests).toEqual([]);
+});
+
+test("preview retains machine-readable diagnostics while returning a failure exit code", async () => {
+  const preview = {
+    markdown: ":::query\nsource: invalid\n:::",
+    blocks: [],
+    headings: [],
+    diagnostics: [{ line: 1, message: "Invalid source" }],
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      if (request.method === "POST") return Response.json(preview);
+      return Response.json(new URL(request.url).pathname === "/api/notebooks/wiki01" ? notebookFixture : noteFixture);
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "notebooks",
+    "preview",
+    "--notebook",
+    "wiki01",
+    "--note",
+    "note01",
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(JSON.parse(result.stdout)).toEqual(preview);
+});
+
 test("global search forwards full-text and structured filters", async () => {
   const requestUrls: string[] = [];
   const server = Bun.serve({

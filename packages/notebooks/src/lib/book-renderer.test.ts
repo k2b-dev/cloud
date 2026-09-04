@@ -23,6 +23,35 @@ const result: NoteQueryResult = {
 };
 
 describe("Notebook Book HTML", () => {
+  test("highlight preserves nested formatting, links and math", () => {
+    const { html } = render("==**Important** [Guide](note://DEF456) $x$==");
+    expect(html).toContain("<mark><strong>Important</strong>");
+    expect(html).toContain('href="/app/notebooks/ABC123/notes/DEF456?mode=book"');
+    expect(html).toContain('class="katex"');
+    expect(html).not.toContain("NOTEBOOKBOOKSLOT");
+    const linked = render("[==#team==](https://example.test)").html;
+    expect(linked.match(/<a /g)).toHaveLength(1);
+    const nested = render("[==[Inner](note://DEF456)==](https://example.test)").html;
+    expect(nested.match(/<a /g)).toHaveLength(1);
+    expect(nested).toContain("<mark>Inner</mark>");
+  });
+
+  test("image alt text uses plain inline labels without double escaping or HTML slots", () => {
+    for (const dimensions of ["", " =120x80"]) {
+      const { html, headings } = render(`:::toc\n:::\n\n# ![**Logo** &amp; $x$](https://example.test/logo.png${dimensions})`);
+      expect(headings[0]?.text).toBe("Logo & x");
+      expect(html).toContain('alt="Logo &amp; x"');
+      expect(html).not.toContain("&amp;amp;");
+      expect(html).not.toContain("NOTEBOOKBOOKSLOT");
+      expect(html).not.toContain('class="katex"');
+    }
+  });
+
+  test("image headings use alt text for accessible TOC labels and anchors", () => {
+    const { html, headings } = render(":::toc\n:::\n\n# ![Logo & handbook](https://example.test/logo.png)");
+    expect(headings[0]).toMatchObject({ text: "Logo & handbook", id: "heading-logo-handbook" });
+    expect(html).toContain('href="#heading-logo-handbook">Logo &amp; handbook</a>');
+  });
   test("fence-looking source cannot expose directives or generated markers", () => {
     for (const marker of ["```", "~~~"]) {
       const markdown = `${marker}md\n${marker}not-a-closing-fence\n:::query\nsource: notes\n:::\n${marker}`;
@@ -274,6 +303,56 @@ describe("Notebook Book HTML", () => {
     expect(first.html).not.toContain("NOTEBOOKBOOKSLOT");
     expect(first.html).not.toContain("&amp;amp;");
     expect(render(md)).toEqual(first);
+  });
+
+  test("multiple TOCs target unique rendered headings across nested Markdown", () => {
+    const markdown = [
+      ":::toc",
+      ":::",
+      "",
+      "# Same",
+      "",
+      "> ## Same",
+      "",
+      ":::info",
+      "### Same",
+      ":::",
+      "",
+      "Same",
+      "----",
+      "",
+      ":::toc",
+      "min-depth: 2",
+      "max-depth: 3",
+      ":::",
+      "",
+      "```md",
+      "# Hidden",
+      "```",
+    ].join("\n");
+    const document = render(markdown);
+    expect(document.headings.map((heading) => heading.depth)).toEqual([1, 2, 3, 2]);
+    expect(new Set(document.headings.map((heading) => heading.id)).size).toBe(4);
+    const first = document.blocks[0]!.html;
+    const second = document.blocks[1]!.html;
+    for (const heading of document.headings) {
+      expect(document.html.split(`id="${heading.id}"`)).toHaveLength(2);
+      expect(first).toContain(`href="#${heading.id}"`);
+      if (heading.depth > 1) expect(second).toContain(`href="#${heading.id}"`);
+      else expect(second).not.toContain(`href="#${heading.id}"`);
+    }
+    expect(first).not.toContain("Hidden");
+    expect(render(markdown)).toEqual(document);
+  });
+
+  test("directive boundaries agree with the parser instead of trimming arbitrary whitespace", () => {
+    for (const kind of ["query", "toc", "data", "info"]) {
+      expect(render(`\u00a0:::${kind}\n:::`).html).not.toContain("notebook-book-diagnostic");
+      for (const indent of ["    ", "\t", "\u00a0"]) {
+        const document = render(`:::${kind}\n${kind === "query" ? "source: notes" : "text: value"}\n${indent}:::`);
+        expect(document.html).toContain("notebook-book-diagnostic");
+      }
+    }
   });
 
   test("math cannot opt into trusted HTML or URL commands", () => {

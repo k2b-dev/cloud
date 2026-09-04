@@ -55,11 +55,12 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { type EvalContext, evaluateFormula, isFormula } from "@valentinkolb/cloud/shared";
 import { clipboard } from "@k2b/stdlib/browser";
+import { type EvalContext, evaluateFormula, isFormula } from "@valentinkolb/cloud/shared";
 import { isNamedBlockHandle } from "../../../lib/named-blocks";
 import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
 import { refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { splitTableLineCells, tableCellText } from "./_lib/table-cell";
 
 type Align = "left" | "right" | "center" | null;
 
@@ -71,11 +72,7 @@ type TableData = {
 };
 
 const splitRow = (line: string): string[] => {
-  const trimmed = line.trim();
-  return trimmed
-    .split("|")
-    .map((cell) => cell.trim())
-    .filter((_, i, arr) => !((i === 0 && trimmed.startsWith("|")) || (i === arr.length - 1 && trimmed.endsWith("|"))));
+  return splitTableLineCells(line).map((cell) => tableCellText(cell.text));
 };
 
 const parseAlign = (separator: string): Align => {
@@ -198,28 +195,6 @@ class FormulaPreviewWidget extends WidgetType {
   }
 }
 
-/** Split a table source line into cell ranges (positions within the
- *  line). Tracks the offset of each cell's content so the live-preview
- *  decoration can be placed precisely just before the cell-closing
- *  `|` (or end of line for the last cell). */
-type CellRange = { fromInLine: number; toInLine: number; text: string };
-
-const splitTableLineCells = (lineText: string): CellRange[] => {
-  const ranges: CellRange[] = [];
-  let cellStart = lineText.startsWith("|") ? 1 : 0;
-  for (let i = cellStart; i < lineText.length; i++) {
-    if (lineText[i] === "|") {
-      ranges.push({ fromInLine: cellStart, toInLine: i, text: lineText.slice(cellStart, i) });
-      cellStart = i + 1;
-    }
-  }
-  // Trailing cell when the row doesn't end with `|`
-  if (cellStart < lineText.length) {
-    ranges.push({ fromInLine: cellStart, toInLine: lineText.length, text: lineText.slice(cellStart) });
-  }
-  return ranges;
-};
-
 /** Build inline live-preview decorations for one table when its
  *  source is visible. Walks each body line, parses cell positions,
  *  evaluates any `=...` cells, and inserts a `Decoration.widget` at
@@ -236,7 +211,7 @@ const buildLivePreviewDecorations = (state: EditorState, tableNode: { from: numb
     const cells = splitTableLineCells(line.text);
     cells.forEach((cell, colIdx) => {
       if (colIdx >= data.headers.length) return;
-      const trimmed = cell.text.trim();
+      const trimmed = tableCellText(cell.text);
       if (!isFormula(trimmed)) return;
       const ctx: EvalContext = {
         headers: data.headers,
@@ -246,7 +221,8 @@ const buildLivePreviewDecorations = (state: EditorState, tableNode: { from: numb
       };
       const result = evaluateFormula(trimmed, ctx);
       const locale = typeof document === "undefined" ? undefined : document.documentElement.lang;
-      const previewText = result.kind === "ok" ? formatFormulaValue(result.value, locale) : `⚠ ${formatFormulaError(result, locale).split("\n")[0]}`;
+      const previewText =
+        result.kind === "ok" ? formatFormulaValue(result.value, locale) : `⚠ ${formatFormulaError(result, locale).split("\n")[0]}`;
       decorations.push(
         Decoration.widget({
           widget: new FormulaPreviewWidget(previewText, result.kind === "error"),

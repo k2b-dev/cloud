@@ -58,8 +58,8 @@ export const validateNoteQuery = (value: unknown): { query?: QueryBlock; diagnos
     !isRecord(value) ||
     !hasOnlyKeys(value, ["source", "scope", "match", "where", "sort", "columns", "limit", "line"]) ||
     value.source !== "notes" ||
-    !["notebook", "children", "descendants"].includes(String(value.scope)) ||
-    !["all", "any"].includes(String(value.match)) ||
+    (value.scope !== "notebook" && value.scope !== "children" && value.scope !== "descendants") ||
+    (value.match !== "all" && value.match !== "any") ||
     !Array.isArray(value.where) ||
     value.where.length > QUERY_MAX_FILTERS ||
     !Array.isArray(value.columns) ||
@@ -71,8 +71,8 @@ export const validateNoteQuery = (value: unknown): { query?: QueryBlock; diagnos
     Number(value.line) < 1 ||
     !isRecord(value.sort) ||
     !hasOnlyKeys(value.sort, ["field", "direction"]) ||
-    !["$title", "$created", "$updated"].includes(String(value.sort.field)) ||
-    !["asc", "desc"].includes(String(value.sort.direction))
+    (value.sort.field !== "$title" && value.sort.field !== "$created" && value.sort.field !== "$updated") ||
+    (value.sort.direction !== "asc" && value.sort.direction !== "desc")
   ) {
     return { diagnostics: [invalid("query")] };
   }

@@ -141,9 +141,17 @@ export const formatFormulaError = (error: EvalError, locale?: string): string =>
   return error.suggestion ? `${message}\n→ ${t.suggestion({ value: error.suggestion })}` : message;
 };
 
-const renderBodyCell = (cell: string, alignCls: string, ctx: EvalContext, notebookId?: string, locale?: string): string => {
-  if (!isFormula(cell)) {
-    return `<td><span class="md-table-cell${alignCls}">${renderInlineMarkdown(cell, notebookId, locale)}</span></td>`;
+const renderBodyCell = (
+  cell: string,
+  alignCls: string,
+  ctx: EvalContext,
+  notebookId?: string,
+  locale?: string,
+  renderInline?: (raw: string) => string,
+): string => {
+  if (!isFormula(cell) || (renderInline && /^==[^=\n]+==$/.test(cell))) {
+    const content = renderInline ? (renderIsoDateTime(cell, locale) ?? renderInline(cell)) : renderInlineMarkdown(cell, notebookId, locale);
+    return `<td><span class="md-table-cell${alignCls}">${content}</span></td>`;
   }
   const result = evaluateFormula(cell, ctx);
   if (result.kind === "ok") {
@@ -155,14 +163,20 @@ const renderBodyCell = (cell: string, alignCls: string, ctx: EvalContext, notebo
   return `<td><span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(cell)}</span></td>`;
 };
 
-export const renderPrettyTableHtml = (data: PrettyTableData, options: { notebookId?: string; locale?: string } = {}): string => {
+export const renderPrettyTableHtml = (
+  data: PrettyTableData,
+  options: { notebookId?: string; locale?: string; renderInline?: (raw: string) => string } = {},
+): string => {
   const locale = options.locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
   const align = data.align ?? [];
   const caption = data.caption
     ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">@${escapeHtml(data.caption)}</div>`
     : "";
   const headerHtml = data.headers
-    .map((h, i) => `<th><span class="md-table-cell${alignClass(align[i] ?? null)}">${escapeHtml(h)}</span></th>`)
+    .map(
+      (h, i) =>
+        `<th scope="col"><span class="md-table-cell${alignClass(align[i] ?? null)}">${options.renderInline?.(h) ?? escapeHtml(h)}</span></th>`,
+    )
     .join("");
   const bodyHtml = data.rows
     .map((row, rowIdx) => {
@@ -172,7 +186,7 @@ export const renderPrettyTableHtml = (data: PrettyTableData, options: { notebook
           const cell = row[colIdx] ?? "";
           const alignCls = alignClass(align[colIdx] ?? null);
           const ctx: EvalContext = { headers: data.headers, rows: data.rows, currentRow: rowIdx, currentCol: colIdx };
-          return renderBodyCell(cell, alignCls, ctx, options.notebookId, locale);
+          return renderBodyCell(cell, alignCls, ctx, options.notebookId, locale, options.renderInline);
         })
         .join("");
       return totalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;

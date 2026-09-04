@@ -44,7 +44,7 @@
  */
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import type { EditorState } from "@codemirror/state";
-import { cellTextBeforeCursor, isTableRow, TABLE_SEPARATOR_RE } from "./_lib/table-cell";
+import { cellTextBeforeCursor, isTableRow, splitTableLineCells, TABLE_SEPARATOR_RE, tableCellText } from "./_lib/table-cell";
 import { withIcon } from "./completion-icon";
 
 const isSeparatorRow = (lineText: string): boolean => TABLE_SEPARATOR_RE.test(lineText);
@@ -75,10 +75,9 @@ const extractHeaderColumns = (state: EditorState, currentLineNumber: number): st
 /** Split a header row into cell labels. Strips the leading/trailing
  *  pipes and trims whitespace from each cell. */
 const splitHeaderCells = (lineText: string): string[] => {
-  return lineText
-    .split("|")
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0);
+  return splitTableLineCells(lineText)
+    .map((cell) => tableCellText(cell.text))
+    .filter(Boolean);
 };
 
 /** Match: cursor is positioned at the END of cell text that looks
@@ -118,7 +117,7 @@ const BARE_IDENT_RE = /^[a-zA-Z_]\w*$/;
  *  fail to parse as an identifier). */
 const buildColumnApply = (col: string, userTypedBacktick: boolean): string => {
   if (!userTypedBacktick && BARE_IDENT_RE.test(col)) return col;
-  const escaped = col.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
+  const escaped = col.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\|/g, "\\|");
   return userTypedBacktick ? `${escaped}\`` : `\`${escaped}\``;
 };
 

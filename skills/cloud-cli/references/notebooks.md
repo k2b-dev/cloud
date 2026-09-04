@@ -99,12 +99,16 @@ limit: 25
 :::
 ````
 
-The example reads `state` and `reviewed` from each note's `@status` data block. You choose block and property names; there are no required wiki metadata fields. Property paths use `block.key`. Data values are strings, numbers, booleans, or flat lists of these values, not nested objects.
+The example reads `state` and `reviewed` from each note's `@status` data block. You choose block and property names; there are no required wiki metadata fields. Property paths use `block.key`. Each part starts with an ASCII letter and contains at most 64 letters, digits, underscores, or hyphens. Names and keys are case-sensitive.
+
+Data values are strings, numbers, booleans, or flat lists of these values, not nested objects. Write data list items on separate lines with two spaces before `-`; inline arrays belong to query filters, not data blocks. Quote numeric-looking strings. Each data block allows 64 fields, each list 128 items, and each string 2,000 characters. Duplicate names or keys prevent the affected named data from being indexed.
+
+The configuration is a small YAML-like format, not general YAML. Follow the example's indentation: two spaces for list items and sort fields, four for filter continuations. Use unquoted setting names and field paths. Comments, anchors, nested objects, and arbitrary YAML syntax are not supported.
 
 Query rules:
 
 - `source` must be `notes`; results stay inside the current notebook and require read access.
-- `scope` is `notebook` (default), `children`, or `descendants`, relative to the note containing the query.
+- `scope` is `notebook` (default, including the current note), direct `children`, or all `descendants`, relative to the note containing the query. Children and descendants exclude the current note.
 - `match` is `all` (default) or `any`; nested filter groups are not supported.
 - `$title`, `$created`, `$updated`, `$tags`, and named `block.key` properties can be selected or filtered.
 - Sort by `$title`, `$created`, or `$updated`, with `asc` or `desc`. The default is `$updated` descending.
@@ -120,7 +124,22 @@ Choose operators for the field's value type:
 | `$tags` | `exists`, `missing`, `contains`, `contains-any`, `contains-all` |
 | `block.key` | `exists`, `missing`, typed `eq`/`ne`/`in`/`not-in`, string `contains`/`starts-with`, numeric `gt`/`gte`/`lt`/`lte`, list `contains-any`/`contains-all` |
 
-`exists` and `missing` take no `value`. Queries do not evaluate JavaScript, SQL, regular expressions, or formulas. Invalid blocks show diagnostics rather than partially applying a query. TOC depths range from 1 to 6, with `min-depth` no greater than `max-depth`.
+`exists` and `missing` take no `value`. Membership operators take a non-empty inline list, such as `[active, draft]`; other operators take one value. Equality preserves types and text case. Text `contains` and `starts-with` ignore case. Tags also ignore an optional `#` prefix. `ne` and `not-in` exclude missing fields; add a `missing` filter with `match: any` when those should match. Empty property lists exist; `$tags` exists only when the note has at least one tag. Without filters, every note in scope matches, including with `match: any`.
+
+Queries read saved notes; a draft preview changes the query being tested, not the indexed properties of its source note. A result limit does not paginate: narrow filters when results are truncated. Queries do not evaluate JavaScript, SQL, regular expressions, or formulas. Invalid blocks show diagnostics rather than partially applying a query.
+
+TOC depths range from 1 to 6, defaulting to 1 and 6, with `min-depth` no greater than `max-depth`. The contents list includes headings before and after the block and filters by heading depth; it does not list child notes.
+
+### Validate a saved page or draft
+
+```bash
+cld notebooks preview --notebook <ref> --note <ref> --json
+cld notebooks preview --notebook <ref> --note <ref> --file ./draft.md --json
+```
+
+Preview requires a user-backed sign-in credential; notebook resource-bound API keys are not supported. Omit the content source to preview the saved page with read access. Supply exactly one of `--content`, `--file`, or `--stdin` to preview a complete draft; this requires write access and an unlocked note. Draft preview never saves. It evaluates queries against saved note data and builds the contents list from the draft headings.
+
+The JSON result contains `markdown`, rendered `blocks` (`line`, `html`), `headings` (`id`, `line`), and `diagnostics` (`line`, `message`). Source lines are 1-based. `headings` includes only headings with an exact source position; it is not a complete inventory of nested headings. Diagnostics produce exit code 1 while retaining the JSON result; a clean preview returns 0. Check diagnostics before applying a draft with `edit` and an edit precondition.
 
 ## Agent workflow
 
@@ -321,15 +340,21 @@ A safe block update is:
 block_json="$(cld notebooks block --notebook "$NB" --note "$NOTE" status --type data --json)"
 block_hash="$(printf '%s' "$block_json" | jq -r '.block.hash')"
 
-printf '%s\n' '{"state":"ready","owner":"ops"}' | \
-  cld notebooks edit \
+cld notebooks edit \
     --notebook "$NB" \
     --note "$NOTE" \
     --replace-block status \
     --type data \
     --if-block-hash "$block_hash" \
-    --stdin
+    --stdin <<'MD'
+:::data
+state: ready
+owner: ops
+:::
+MD
 ```
+
+For data blocks, `block` returns the inner data text, but `--replace-block` replaces the whole block including the opening and closing delimiters. It preserves `@status` unless `--include-handle` is set. Include the `:::data` lines in the replacement; bare JSON would remove the data block.
 
 ## Attachments, versions, and exports
 
@@ -421,12 +446,12 @@ All commands support the global Cloud CLI options, including `--json`, `--profil
 | `current` | `cld notebooks current` | Show the default notebook. |
 | `get` | `cld notebooks get --notebook <ref>` | Show one notebook. |
 | `create` | `cld notebooks create <name> [--description text] [--icon icon] [--use]` | Create a notebook. |
-| `update` | `cld notebooks update --notebook <ref> [settings]` | Change name, description, icon, homepage, or the default note title. |
+| `update` | `cld notebooks update --notebook <ref> [settings]` | Change notebook details, homepage, default note title, or default view. |
 | `delete` | `cld notebooks delete --notebook <ref> --yes` | Delete the notebook and all content. |
 | `templates` | `cld notebooks templates` | List built-in notebook templates. |
 | `create-from-template` | `cld notebooks create-from-template <template-id> [--name name] [--use]` | Create a notebook from a built-in template. |
 
-`update` accepts `--name`, `--description`, `--clear-description`, `--icon`, `--clear-icon`, `--homepage <note-ref>`, `--clear-homepage`, and `--default-note-title-template <liquid>`.
+`update` accepts `--name`, `--description`, `--clear-description`, `--icon`, `--clear-icon`, `--homepage <note-ref>`, `--clear-homepage`, `--default-note-title-template <liquid>`, and `--default-presentation-mode book|write|readonly`. The default view applies to writers and admins; readers always open Book.
 
 ### Notes and navigation
 
@@ -434,7 +459,7 @@ All commands support the global Cloud CLI options, including `--json`, `--profil
 |---|---|---|
 | `tree` | `cld notebooks tree --notebook <ref>` | Show the note tree. |
 | `notes` | `cld notebooks notes --notebook <ref> [--q text] [--parent note]` | List notes, optionally under one parent. |
-| `search` | `cld notebooks search (--notebook <ref> | --all) [filters]` | Full-text and filtered note search. |
+| `search` | `cld notebooks search (--notebook <ref> \| --all) [filters]` | Full-text and filtered note search. |
 | `note` | `cld notebooks note --notebook <ref> --note <ref> [--content]` | Show note metadata. |
 | `content` | `cld notebooks content --notebook <ref> --note <ref>` | Print raw Markdown. |
 | `read` | `cld notebooks read --notebook <ref> --note <ref> [--number-lines] [--blocks]` | Read content and edit metadata. |
@@ -457,8 +482,18 @@ All commands support the global Cloud CLI options, including `--json`, `--profil
 |---|---|---|
 | `block` | `cld notebooks block --notebook <ref> --note <ref> <name> [--type type] [--index N]` | Read one named block and its hash. |
 | `edit` | `cld notebooks edit --notebook <ref> --note <ref> <one operation> <content source> [precondition] [--dry-run]` | Apply one safe Markdown edit. |
+| `preview` | `cld notebooks preview --notebook <ref> --note <ref> [content source]` | Validate query and TOC blocks in a saved page or unsaved draft. |
 
 Content sources are `--content`, `--file/-f`, or `--stdin`. See [Safe edit operations](#safe-edit-operations) for every edit operation and precondition.
+
+### Comments
+
+| Command | Canonical form | Purpose |
+|---|---|---|
+| `comments` | `cld notebooks comments --notebook <ref> --note <ref> [--page N] [--per-page N]` | List note comments. |
+| `add-comment` | `cld notebooks add-comment --notebook <ref> --note <ref> <content source>` | Add a Markdown comment. |
+| `update-comment` | `cld notebooks update-comment --notebook <ref> --note <ref> <comment-id> <content source>` | Edit your recent comment. |
+| `delete-comment` | `cld notebooks delete-comment --notebook <ref> --note <ref> <comment-id> --yes` | Delete your recent comment. |
 
 ### Versions, attachments, export, and credentials
 
@@ -475,7 +510,7 @@ Content sources are `--content`, `--file/-f`, or `--stdin`. See [Safe edit opera
 | `delete-attachment` | `cld notebooks delete-attachment --notebook <ref> <attachment> --yes` | Delete an attachment. |
 | `export` | `cld notebooks export --notebook <ref> --output-file <zip>` | Export a portable ZIP. |
 | `api-keys` | `cld notebooks api-keys --notebook <ref>` | List notebook API keys. |
-| `create-api-key` | `cld notebooks create-api-key --notebook <ref> <name> --permission read|write|admin [--expires-at ISO]` | Create a resource-bound key. |
+| `create-api-key` | `cld notebooks create-api-key --notebook <ref> <name> --permission read\|write\|admin [--expires-at ISO]` | Create a resource-bound key. |
 | `revoke-api-key` | `cld notebooks revoke-api-key --notebook <ref> <credential-id> --yes` | Revoke a key. |
 | `snapshot` | `cld notebooks snapshot --notebook <ref>` | Show redacted snapshot settings. |
 | `update-snapshot` | `cld notebooks update-snapshot --notebook <ref> [settings]` | Update S3 snapshot settings. |
@@ -487,10 +522,10 @@ Content sources are `--content`, `--file/-f`, or `--stdin`. See [Safe edit opera
 | Command | Canonical form | Purpose |
 |---|---|---|
 | `access list` | `cld notebooks access list [notebook] [--include-service-accounts]` | List grants. |
-| `access grant` | `cld notebooks access grant [notebook] <principal> --permission read|write|admin` | Create a grant. |
-| `access set` | `cld notebooks access set [notebook] (--access-id id|<principal>) --permission read|write|admin` | Reconcile a grant. |
-| `access revoke` | `cld notebooks access revoke [notebook] (--access-id id|<principal>) --yes` | Revoke a grant. |
-| `access search-principals` | `cld notebooks access search-principals <query> [--kind user|group] [--page N] [--per-page N]` | Find principal ids. |
+| `access grant` | `cld notebooks access grant [notebook] <principal> --permission read\|write\|admin` | Create a grant. |
+| `access set` | `cld notebooks access set [notebook] (--access-id id\|<principal>) --permission read\|write\|admin` | Reconcile a grant. |
+| `access revoke` | `cld notebooks access revoke [notebook] (--access-id id\|<principal>) --yes` | Revoke a grant. |
+| `access search-principals` | `cld notebooks access search-principals <query> [--kind user\|group] [--page N] [--per-page N]` | Find principal ids. |
 
 ## JSON contracts
 
@@ -575,7 +610,7 @@ Use `note.updatedAt` or `contentHash` as an edit precondition. Each block summar
     "startLine": 4,
     "endLine": 8,
     "hash": "block-hash",
-    "content": "{\"state\":\"ready\"}"
+    "content": "state: ready"
   }
 }
 ```

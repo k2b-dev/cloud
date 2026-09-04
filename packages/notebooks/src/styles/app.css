@@ -158,10 +158,16 @@
   border-collapse: collapse;
   font-size: 0.9em;
 }
+.notebook-book-content .md-table-cell:not(.md-formula-ok):not(.md-formula-error):not(.md-table-progress) {
+  display: block;
+}
 .notebook-book-content :is(th, td) {
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--ui-border);
   text-align: left;
+}
+.notebook-book-content :is(th, td):has(> .md-table-cell) {
+  padding: 0;
 }
 .notebook-book-content th {
   font-weight: 600;

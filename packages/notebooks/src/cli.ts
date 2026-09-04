@@ -23,7 +23,7 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "./lib/note-edit";
-import type { PresentationMode } from "./lib/presentation-mode";
+import { PRESENTATION_MODES, type PresentationMode } from "./lib/presentation-mode";
 
 type Notebook = {
   id: string;
@@ -271,7 +271,13 @@ const parseLineRange = (value: string): { startLine: number; endLine: number } =
   const [startRaw, endRaw] = value.split(":");
   const startLine = Number.parseInt(startRaw ?? "", 10);
   const endLine = Number.parseInt(endRaw ?? startRaw ?? "", 10);
-  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
+  if (
+    !/^\d+(?::\d+)?$/.test(value) ||
+    !Number.isSafeInteger(startLine) ||
+    !Number.isSafeInteger(endLine) ||
+    startLine < 1 ||
+    endLine < startLine
+  ) {
     throw new Error(`Invalid line range "${value}". Use 1-based "start:end".`);
   }
   return { startLine, endLine };
@@ -279,7 +285,8 @@ const parseLineRange = (value: string): { startLine: number; endLine: number } =
 
 const parseLineValue = (value: string, label: string): number => {
   const line = Number.parseInt(value, 10);
-  if (!Number.isInteger(line) || line < 1) throw new Error(`Invalid ${label} "${value}". Use a 1-based line number.`);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(line) || line < 1)
+    throw new Error(`Invalid ${label} "${value}". Use a 1-based line number.`);
   return line;
 };
 
@@ -403,6 +410,19 @@ const resolveNoteRef = async (ctx: CloudCliContext, api: CloudApiClient<ApiType>
 };
 
 const buildEditOperation = async (ctx: CloudCliContext): Promise<NoteEditOperation> => {
+  const operations = [
+    "replace-lines",
+    "delete-lines",
+    "insert-before-line",
+    "insert-after-line",
+    "replace-block",
+    "append-block",
+    "prepend-block",
+    "append",
+    "prepend",
+    "set-content",
+  ].filter((name) => stringFlag(ctx.flags, name) !== undefined || booleanFlag(ctx.flags, name));
+  if (operations.length > 1) throw new Error("Pass exactly one edit operation per invocation.");
   const blockType = stringFlag(ctx.flags, "type") as NamedBlockType | undefined;
   const index = numberFlag(ctx.flags, "index");
   const blockOptions = {
@@ -518,6 +538,7 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     const icon = stringFlag(ctx.flags, "icon");
     const homepageRef = stringFlag(ctx.flags, "homepage");
     const defaultNoteTitleTemplate = stringFlag(ctx.flags, "default-note-title-template");
+    const defaultPresentationMode = stringFlag(ctx.flags, "default-presentation-mode");
     if (name !== undefined) body.name = name;
     if (description !== undefined || booleanFlag(ctx.flags, "clear-description")) body.description = description ?? null;
     if (icon !== undefined || booleanFlag(ctx.flags, "clear-icon")) body.icon = icon ?? null;
@@ -525,6 +546,7 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
       body.homepageNoteId = homepageRef ? (await resolveNoteRef(ctx, api, notebook.id, homepageRef)).id : null;
     }
     if (defaultNoteTitleTemplate !== undefined) body.defaultNoteTitleTemplate = defaultNoteTitleTemplate;
+    if (defaultPresentationMode !== undefined) body.defaultPresentationMode = defaultPresentationMode;
     if (Object.keys(body).length === 0) throw new Error("No notebook updates supplied.");
     const payload = await ctx.readJson<Notebook>(
       await ctx.fetch(`/api/notebooks/${encodeURIComponent(notebook.id)}`, {
@@ -727,6 +749,29 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     return 0;
   }
 
+  if (command === "preview") {
+    const hasDraft = stringFlag(ctx.flags, "content", "file", "f") !== undefined || booleanFlag(ctx.flags, "stdin");
+    const markdown = hasDraft ? await readInputContent(ctx) : undefined;
+    const { notebookRef, noteRef } = await resolveNoteCommandArgs(ctx, args);
+    const notebook = await resolveNotebookRef(ctx, api, notebookRef);
+    const note = await resolveNoteRef(ctx, api, notebook.id, noteRef);
+    const response = await api[":id"].notes[":noteId"]["block-preview"].$post({
+      param: { id: notebook.id, noteId: note.id },
+      json: markdown === undefined ? {} : { markdown },
+    });
+    const payload = await ctx.readJson<{
+      markdown: string;
+      blocks: { line: number; html: string }[];
+      headings: { id: string; line: number }[];
+      diagnostics: { line: number; message: string }[];
+    }>(response);
+    if (!printStructured(ctx, payload)) {
+      ctx.print(`${payload.blocks.length} blocks, ${payload.headings.length} headings, ${payload.diagnostics.length} diagnostics.`);
+      for (const diagnostic of payload.diagnostics) ctx.print(`Line ${diagnostic.line}: ${diagnostic.message}`);
+    }
+    return payload.diagnostics.length > 0 ? 1 : 0;
+  }
+
   if (command === "edit") {
     const { notebookRef, noteRef } = await resolveNoteCommandArgs(ctx, args);
     const notebook = await resolveNotebookRef(ctx, api, notebookRef);
@@ -742,6 +787,9 @@ const runNotebooksCommand = async (ctx: CloudCliContext, command: string, args: 
     if (booleanFlag(ctx.flags, "dry-run")) {
       const response = await api[":id"].notes[":noteId"].content.$get({ param: { id: notebook.id, noteId: note.id } });
       const payload = await ctx.readJson<NoteWithContent>(response);
+      if (request.ifUpdatedAt !== undefined && request.ifUpdatedAt !== payload.updatedAt) {
+        throw new Error("Note updatedAt changed; read the note again before editing.");
+      }
       const edit = applyNoteEdits(payload.contentMd ?? "", request.operations, {
         ifContentHash: request.ifContentHash,
         ifBlockHash: request.ifBlockHash,
@@ -1477,6 +1525,10 @@ export default defineCliCommands({
           name: "default-note-title-template",
           description: "Liquid template used for the initial H1 of empty notes",
         }),
+        defaultPresentationMode: flag.enum(PRESENTATION_MODES, {
+          name: "default-presentation-mode",
+          description: "Default view for editors and admins; readers always use Book",
+        }),
       },
       run: ({ ctx, args }) => runNotebooksCommand(ctx, "update", args.args),
     }),
@@ -1558,6 +1610,18 @@ export default defineCliCommands({
         index: flag.int({ min: 0, description: "Select a duplicate block by 0-based index" }),
       },
       run: ({ ctx, args }) => runNotebooksCommand(ctx, "block", args.args),
+    }),
+    command("preview", {
+      summary: "Preview query and TOC blocks without saving; diagnostics return exit code 1",
+      args: noteArgs,
+      flags: {
+        ...notebookFlag,
+        ...noteFlag,
+        content: flag.string({ description: "Draft Markdown; requires write access and an unlocked note" }),
+        file: flag.string({ aliases: ["f"], description: "Read draft Markdown from file" }),
+        stdin: flag.boolean({ description: "Read draft Markdown from stdin; omit draft input to preview saved content" }),
+      },
+      run: ({ ctx, args }) => runNotebooksCommand(ctx, "preview", args.args),
     }),
     command("edit", {
       summary: "Edit note markdown content",

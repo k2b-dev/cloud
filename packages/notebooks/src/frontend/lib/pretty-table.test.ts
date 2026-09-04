@@ -2,6 +2,31 @@ import { describe, expect, test } from "bun:test";
 import { renderPrettyTableHtml } from "./pretty-table";
 
 describe("pretty table rendering", () => {
+  test("delegates only inline content while keeping raw formula context and results", () => {
+    const rendered: string[] = [];
+    const html = renderPrettyTableHtml(
+      {
+        headers: ["Total Cost", "Result"],
+        rows: [
+          ["2", '=CONCAT("**literal**", `Total Cost`)'],
+          ["2026-05-14T18:01:15.575Z", ""],
+        ],
+      },
+      {
+        locale: "en",
+        renderInline: (raw) => {
+          rendered.push(raw);
+          return `<em>${raw}</em>`;
+        },
+      },
+    );
+    expect(rendered).toEqual(["Total Cost", "Result", "2", ""]);
+    expect(html).toContain('<th scope="col"><span class="md-table-cell"><em>Total Cost</em>');
+    expect(html).toContain("</i>**literal**2</span>");
+    expect(html).toContain('<time datetime="2026-05-14T18:01:15.575Z"');
+    expect(html).not.toContain("md-formula-error");
+  });
+
   test("renders inline markdown formatting in body cells", () => {
     const html = renderPrettyTableHtml({
       headers: ["Item", "Meta"],

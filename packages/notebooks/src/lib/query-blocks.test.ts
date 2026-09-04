@@ -2,6 +2,54 @@ import { describe, expect, test } from "bun:test";
 import { parseNotebookQueryBlocks, parseNotebookTocBlocks, QUERY_MAX_COLUMNS, QUERY_MAX_FILTERS } from "./query-blocks";
 
 describe("notebook query blocks", () => {
+  const filterQuery = (value: string) =>
+    parseNotebookQueryBlocks(`:::query\nsource: notes\nwhere:\n  - field: $title\n    op: in\n    value: ${value}\n:::`);
+
+  test("inline lists preserve apostrophes, escaped backslashes, commas and doubled single quotes", () => {
+    for (const [source, expected] of [
+      [String.raw`["C:\\", "next"]`, ["C:\\", "next"]],
+      [`[O'Reilly, handbook]`, ["O'Reilly", "handbook"]],
+      [`['O''Reilly, Inc.', handbook]`, ["O'Reilly, Inc.", "handbook"]],
+      [String.raw`["a\"b,c", next]`, ['a"b,c', "next"]],
+    ] as const) {
+      const result = filterQuery(source);
+      expect(result.diagnostics).toEqual([]);
+      expect(result.blocks[0]?.where[0]?.value).toEqual([...expected]);
+    }
+  });
+
+  test("malformed quoted values cannot silently become plain strings", () => {
+    for (const value of [`"unterminated`, `'unterminated`, `'a'b'`, `["a" trailing, b]`, `['a' trailing, b]`]) {
+      const result = filterQuery(value);
+      expect(result.blocks).toEqual([]);
+      expect(result.diagnostics.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("trailing whitespace is harmless but explicitly empty enum options are invalid", () => {
+    const result = parseNotebookQueryBlocks(
+      ":::query\nsource: notes  \nscope: notebook \nmatch: all \nsort:\n  field: $title \n  direction: asc \n:::",
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.blocks[0]?.sort).toEqual({ field: "$title", direction: "asc" });
+    for (const option of ["scope:", "match:", "sort:\n  field:", "sort:\n  direction:"]) {
+      expect(parseNotebookQueryBlocks(`:::query\nsource: notes\n${option}\n:::`).blocks).toEqual([]);
+    }
+  });
+
+  test("NUL values produce a diagnostic before database execution", () => {
+    expect(filterQuery(String.raw`["unsafe\u0000value"]`).blocks).toEqual([]);
+  });
+
+  test("unpaired Unicode surrogates are rejected while valid pairs survive", () => {
+    for (const value of [String.raw`["\ud800"]`, String.raw`["\udc00"]`, String.raw`["\ud800x"]`]) {
+      expect(filterQuery(value).blocks).toEqual([]);
+    }
+    const result = filterQuery(String.raw`["\ud83d\ude00"]`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.blocks[0]?.where[0]?.value).toEqual(["😀"]);
+  });
+
   test("code fences close only on a bare matching delimiter", () => {
     for (const marker of ["```", "~~~"]) {
       const markdown = `${marker}md\n${marker}not-a-closing-fence\n:::query\nsource: notes\n:::\n:::toc\n:::\n${marker}`;
@@ -14,6 +62,22 @@ describe("notebook query blocks", () => {
     for (const indent of ["    ", "\t"]) {
       expect(parseNotebookQueryBlocks(`${indent}:::query\n${indent}source: notes\n${indent}:::`)).toEqual({ blocks: [], diagnostics: [] });
       expect(parseNotebookTocBlocks(`${indent}:::toc\n${indent}:::`)).toEqual({ blocks: [], diagnostics: [] });
+    }
+  });
+
+  test("directive delimiters use the renderer's space and tab rules", () => {
+    for (const type of ["query", "toc"] as const) {
+      const parse = type === "query" ? parseNotebookQueryBlocks : parseNotebookTocBlocks;
+      const body = type === "query" ? "source: notes\n" : "";
+      for (const prefix of ["\u00a0", "\t", "    "]) {
+        expect(parse(`${prefix}:::${type}\n${body}:::`).blocks).toEqual([]);
+        const invalidClose = parse(`:::${type}\n${body}${prefix}:::`);
+        expect(invalidClose.blocks).toEqual([]);
+        expect(invalidClose.diagnostics).toContainEqual(expect.objectContaining({ code: "unclosed-block" }));
+      }
+      for (const indent of ["", " ", "  ", "   "]) {
+        expect(parse(`${indent}:::${type}\t\n${body}${indent}:::\t`).blocks).toHaveLength(1);
+      }
     }
   });
 

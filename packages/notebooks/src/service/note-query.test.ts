@@ -54,6 +54,42 @@ describe("note query validation", () => {
     ).toBe("invalid-query");
   });
 
+  test("does not coerce forged enum values before SQL execution", async () => {
+    for (const input of [
+      { ...query(), scope: ["notebook"] },
+      { ...query(), match: ["all"] },
+      { ...query(), sort: { field: ["$title"], direction: "asc" } },
+      { ...query(), sort: { field: "$title", direction: ["asc"] } },
+    ]) {
+      const result = await resolveNoteQuery({
+        notebookId: "not-a-uuid",
+        noteId: "not-a-uuid",
+        query: input,
+        userId: null,
+      });
+      expect(result.diagnostics).toEqual([{ code: "invalid-query", path: "query" }]);
+    }
+  });
+
+  test("rejects text that exceeds the query budget or cannot be bound to PostgreSQL", async () => {
+    for (const [field, op] of [
+      ["$title", "eq"],
+      ["$tags", "contains"],
+      ["meta.owner", "contains"],
+      ["meta.owner", "starts-with"],
+    ] as const) {
+      for (const value of ["x".repeat(2_001), "before\0after", "\ud800", "\udc00"]) {
+        const result = await resolveNoteQuery({
+          notebookId: "not-a-uuid",
+          noteId: "not-a-uuid",
+          query: query({ where: [{ field, op, value }] }),
+          userId: null,
+        });
+        expect(result.diagnostics).toEqual([{ code: "invalid-query", path: "query.where.0" }]);
+      }
+    }
+  });
+
   test("returns invalid-query before touching persistence or access services", async () => {
     const result = await resolveNoteQuery({
       notebookId: "not-a-uuid",

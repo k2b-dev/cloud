@@ -67,16 +67,18 @@ limit: 25
 
 Queries read saved notes from the current notebook only. They cannot fetch other notebooks, read table rows, run JavaScript, join datasets, or write changes.
 
+Follow the indentation shown above: two spaces before filter list items, columns, and sort fields; four before a filter's `op` and `value`. This is a small YAML-like format, not general YAML. Comments, anchors, and nested filter objects are not supported. Omit optional settings to use their defaults; do not leave their values blank.
+
 | Setting | Meaning |
 | --- | --- |
 | `source` | Required: `notes` |
-| `scope` | `notebook` (default), direct `children`, or all `descendants` of this note |
+| `scope` | `notebook` (default, including this note), direct `children`, or all `descendants` of this note. Children and descendants exclude this note. |
 | `match` | `all` (default) requires every filter; `any` requires at least one. No filters means all notes in scope. |
 | `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated descending. |
 | `columns` | Fields to display, one per indented list item. Omit for a linked title list. |
 | `limit` | 1–100 results, default 25. A notice indicates additional matches; narrow your filters to see them. |
 
-Use at most 32 filters and 16 distinct columns per query. A page supports at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values.
+Use at most 32 filters and 16 distinct columns per query. A page supports at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string can contain at most 2,000 characters. Quote values containing commas inside lists, for example `["Sales, Europe", Support]`.
 
 ## Choose filters {icon="filter"}
 
@@ -92,7 +94,7 @@ Use at most 32 filters and 16 distinct columns per query. A page supports at mos
 
 Omit `value` for `exists` and `missing`. Membership operators take lists; other operators take one value. `in` tests a scalar against a list, while `contains-any` and `contains-all` test list contents.
 
-Equality preserves types and text case. Text `contains` and `starts-with` ignore case; tags ignore case and an optional leading `#`. `ne` and `not-in` do not match missing fields: use a separate `missing` filter with `match: any` if needed. Empty lists exist. There are no nested filter groups, expressions, date-range comparisons, or custom-field sorting.
+Equality preserves types and text case. Text `contains` and `starts-with` ignore case; tags ignore case and an optional leading `#`. `ne` and `not-in` do not match missing fields: use a separate `missing` filter with `match: any` if needed. Empty property lists exist; `$tags` exists only when a note has at least one tag. There are no nested filter groups, expressions, date-range comparisons, or custom-field sorting.
 
 ## Add page contents {icon="list"}
 
@@ -105,14 +107,18 @@ max-depth: 3
 :::
 ```
 
-The block links to headings in this note, including headings after the block. Depths range from 1 to 6; defaults are 1 and 6. This is a page contents list, not a notebook index.
+The block links to headings in this note, including headings before and after the block. Depths range from 1 to 6; defaults are 1 and 6. `min-depth` must not exceed `max-depth`. This is a page contents list, not a notebook index.
+
+Book also links to headings inside lists, quotes, and notices. The editor preview can only jump to headings with an exact source position; for other headings it shows a notice.
 
 ## Preview and refresh {icon="refresh"}
 
-Rich mode shows server-rendered query and contents previews. Move the cursor into a block or choose **Show source** to edit it. Invalid settings are marked at their source lines. A draft preview does not save the draft or modify matching notes.
+Rich mode shows server-rendered query and contents previews. Move the cursor into a block or choose **Show source** to edit it. Invalid settings are marked at their source lines. A draft preview uses your draft's query settings and headings, but queries still read saved data, including for the current note. It does not save the draft or modify matching notes.
 
 Book renders the same blocks on the server without an editor. Saved changes refresh Book and query previews automatically when JavaScript is available. Read-only keeps its saved source until you reload; reload after that source changes. Without JavaScript, Book still renders results and links on page load.
 
 ## Keep tables and tasks readable {icon="table"}
 
 Ordinary tables, lists, checkboxes, and named sections remain Markdown. Use table formulas for calculations within a table; queries only index named `:::data` properties and the system fields above.
+
+Book evaluates the same table formulas as the editor, including computed columns, totals, and progress bars. Formula errors stay visible in the affected cell. Table headers and ordinary cells also support inline formatting, links, images, and LaTeX; formula results remain plain values.

@@ -123,15 +123,13 @@ const directives = (md: string): Directive[] => {
   for (let i = 0; i < lines.length; i++) {
     if (literalLines.has(i)) continue;
     const text = lines[i]!;
-    const trimmed = text.trim();
-
-    const opener = trimmed.match(/^:::(query|toc)\s*$/);
+    const opener = text.match(/^ {0,3}:::(query|toc)[ \t]*\r?$/);
     if (!opener?.[1]) continue;
     const line = i + 1;
     const body: string[] = [];
     let closed = false;
     for (i = i + 1; i < lines.length; i++) {
-      if (lines[i]!.trim() === ":::") {
+      if (/^ {0,3}:::[ \t]*\r?$/.test(lines[i]!)) {
         closed = true;
         break;
       }
@@ -163,7 +161,7 @@ const parseScalar = (raw: string): QueryScalar | null => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
-  if (value.startsWith('"') && value.endsWith('"')) {
+  if (value.startsWith('"')) {
     try {
       const parsed: unknown = JSON.parse(value);
       return typeof parsed === "string" && parsed.length <= QUERY_MAX_STRING_LENGTH ? parsed : null;
@@ -171,7 +169,8 @@ const parseScalar = (raw: string): QueryScalar | null => {
       return null;
     }
   }
-  if (value.startsWith("'") && value.endsWith("'")) {
+  if (value.startsWith("'")) {
+    if (!/^'(?:[^']|'')*'$/.test(value)) return null;
     const parsed = value.slice(1, -1).replace(/''/g, "'");
     return parsed.length <= QUERY_MAX_STRING_LENGTH ? parsed : null;
   }
@@ -189,8 +188,13 @@ const splitInlineList = (raw: string): string[] | null => {
   let start = 0;
   for (let i = 0; i < inner.length; i++) {
     const char = inner[i]!;
-    if ((char === "'" || char === '"') && (i === 0 || inner[i - 1] !== "\\")) {
-      quote = quote === char ? null : (quote ?? char);
+    if (quote === '"' && char === "\\") {
+      i++;
+    } else if (quote && char === quote) {
+      if (quote === "'" && inner[i + 1] === "'") i++;
+      else quote = null;
+    } else if (!quote && (char === "'" || char === '"') && !inner.slice(start, i).trim()) {
+      quote = char;
     } else if (char === "," && !quote) {
       items.push(inner.slice(start, i));
       start = i + 1;
@@ -221,7 +225,7 @@ const parseField = (raw: string): QueryField | null => {
 const isQueryScalar = (value: unknown): value is QueryScalar =>
   typeof value === "boolean" ||
   (typeof value === "number" && Number.isFinite(value)) ||
-  (typeof value === "string" && value.length <= QUERY_MAX_STRING_LENGTH);
+  (typeof value === "string" && value.length <= QUERY_MAX_STRING_LENGTH && !value.includes("\u0000") && value.isWellFormed());
 
 const isIsoInstant = (value: unknown): value is string => {
   if (typeof value !== "string" || !RFC3339_RE.test(value) || !Number.isFinite(Date.parse(value))) return false;
@@ -258,6 +262,7 @@ export const isQueryFilter = (value: unknown): value is QueryFilter => {
   const property = !SYSTEM_FIELDS.has(field as QuerySystemField);
 
   if (op === "exists" || op === "missing") return !hasValue && (property || field === "$tags");
+  if (!hasValue || (!isQueryScalar(operand) && !list)) return false;
   if (field === "$tags") {
     if (op === "contains") return typeof operand === "string";
     return (op === "contains-any" || op === "contains-all") && list && operand.every((item) => typeof item === "string");
@@ -287,7 +292,7 @@ const addValue = (
   diagnostics: NotebookBlockDiagnostic[],
 ) => {
   if (target.has(key)) diagnostics.push(diagnostic("duplicate-key", line, `${path}.${key}`));
-  else target.set(key, { value, line });
+  else target.set(key, { value: value.trim(), line });
 };
 
 const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: NotebookBlockDiagnostic[] } => {
@@ -360,12 +365,12 @@ const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: No
   else if (source.value !== "notes") diagnostics.push(diagnostic("invalid-type", source.line, "query.source"));
 
   const scopeEntry = top.get("scope");
-  const scope = scopeEntry?.value || "notebook";
+  const scope = scopeEntry?.value ?? "notebook";
   if (!["notebook", "children", "descendants"].includes(scope)) {
     diagnostics.push(diagnostic("invalid-type", scopeEntry?.line ?? directive.line, "query.scope"));
   }
   const matchEntry = top.get("match");
-  const match = matchEntry?.value || "all";
+  const match = matchEntry?.value ?? "all";
   if (!["all", "any"].includes(match)) diagnostics.push(diagnostic("invalid-type", matchEntry?.line ?? directive.line, "query.match"));
 
   const parsedFilters: QueryFilter[] = [];
@@ -410,12 +415,12 @@ const parseQuery = (directive: Directive): { block?: QueryBlock; diagnostics: No
     if (!["field", "direction"].includes(key)) diagnostics.push(diagnostic("unknown-key", entry.line, `query.sort.${key}`));
   }
   const sortFieldEntry = sort.get("field");
-  const sortField = sortFieldEntry?.value || "$updated";
+  const sortField = sortFieldEntry?.value ?? "$updated";
   if (!SORT_FIELDS.has(sortField as Exclude<QuerySystemField, "$tags">)) {
     diagnostics.push(diagnostic("invalid-field", sortFieldEntry?.line ?? directive.line, "query.sort.field"));
   }
   const directionEntry = sort.get("direction");
-  const direction = directionEntry?.value || "desc";
+  const direction = directionEntry?.value ?? "desc";
   if (direction !== "asc" && direction !== "desc") {
     diagnostics.push(diagnostic("invalid-type", directionEntry?.line ?? directive.line, "query.sort.direction"));
   }
