@@ -18,6 +18,12 @@ describe("AiUsageAdminPanel", () => {
     const html = renderToString(() =>
       createComponent(AiUsageAdminPanel, {
         report: {
+          pagination: {
+            users: { page: 2, perPage: 100, total: 201 },
+            capabilities: { page: 3, perPage: 100, total: 301 },
+            backgroundTasks: { page: 1, perPage: 100, total: 102 },
+            feedback: { page: 1, perPage: 100, total: 120 },
+          },
           overview: {
             range: "30d",
             since: "2026-07-24T00:00:00.000Z",
@@ -62,6 +68,7 @@ describe("AiUsageAdminPanel", () => {
               failed: 1,
               tokens: 400,
               credits: 0.25,
+              creditsCoverage: 0.6,
               avgDurationMs: 900,
               lastError: "Invalid output",
               lastRunAt: "2026-08-23T10:00:00.000Z",
@@ -93,6 +100,17 @@ describe("AiUsageAdminPanel", () => {
     expect(html).toContain("Launched by applications");
     expect(html).toContain("Message ranking");
     expect(html).toContain("Wrong date");
+    expect(html).toContain("interactive chats");
+    expect(html).toContain("Runs with price");
+    expect(html).toContain("0.2500");
+    expect(html).toContain("60.0%");
+    expect(html).toContain("1 of 201 entries on this page");
+    expect(html).toContain("range=30d&amp;capabilitiesPage=3&amp;usersPage=3");
+    expect(html).toContain("range=30d&amp;usersPage=2&amp;capabilitiesPage=3&amp;backgroundTasksPage=2");
+    expect(html).toContain("range=30d&amp;usersPage=2&amp;capabilitiesPage=3&amp;feedbackPage=2");
+    expect(html).toContain("min-w-0 overflow-hidden");
+    expect(html).toContain('data-file="AiUsageCharts.island.tsx"');
+    expect(html.match(/data-interactive="true"/g)).toHaveLength(2);
   });
 
   test("renders German copy through the inherited request locale", () => {
@@ -102,6 +120,12 @@ describe("AiUsageAdminPanel", () => {
         get children() {
           return createComponent(AiUsageAdminPanel, {
             report: {
+              pagination: {
+                users: { page: 1, perPage: 100, total: 0 },
+                capabilities: { page: 1, perPage: 100, total: 0 },
+                backgroundTasks: { page: 1, perPage: 100, total: 0 },
+                feedback: { page: 1, perPage: 100, total: 0 },
+              },
               overview: {
                 range: "30d",
                 since: "2026-07-24T00:00:00.000Z",
@@ -118,7 +142,7 @@ describe("AiUsageAdminPanel", () => {
                 launchedChats: 0,
                 modelSwitches: 0,
               },
-              timeline: [],
+              timeline: [{ bucket: "2026-08-23T00:00:00.000Z", turns: 0, tokens: 0, failed: 0, credits: 0 }],
               models: [],
               users: [],
               capabilities: [],

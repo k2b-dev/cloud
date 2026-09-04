@@ -87,11 +87,33 @@ credit usage, pricing coverage, model use, generation speed, per-user usage,
 application capability calls and failures, mid-chat model switches,
 application-launched chats, message ratings, and background AI failures.
 
-The report queries durable AI facts for the selected range. It does not use
-rolling counters, materialized views, prompts, model output, or private message
-content. Background structured runs keep only task, application, model, usage,
-duration, repair, and bounded error metadata; workflow task records are merged
-when the owning application has installed them.
+The headline metrics and model/user breakdowns cover interactive chats.
+**Background AI** shows structured tasks, workflow inference attempts, and
+conversation compaction separately, including credits and pricing coverage.
+A missing price is shown as unavailable; a reported zero remains zero.
+Credits follow the configured model prices and are not a provider invoice.
+
+User, capability, background, and feedback tables show 100 rows per page with
+separate page navigation and total counts. The selected range and pages remain
+in the URL. Charts include inactive hours or days as zero values; their buckets
+use UTC boundaries, with date labels displayed in your locale.
+
+Retrying or editing a message preserves previously recorded chat token and
+credit usage. Workflow inference is counted once through structured accounting;
+workflow task status and retries remain available in the workflow views.
+Compaction appears as `chat-compaction` in **Background AI**.
+
+After upgrading, existing chat usage is recovered from messages still present.
+Usage from responses already removed by an earlier retry cannot be recovered.
+Compaction accounting starts with this update; older summaries, including copied
+summaries, cannot reliably identify their original inference. Conversation
+and user deletion still follow the existing data lifecycle. Historical reports
+are therefore an operational cost signal rather than an immutable billing ledger.
+
+The report uses durable AI facts and does not expose prompts or private message
+content. Background records contain task, application, model, usage, duration,
+repair information, and bounded error metadata. Feedback reasons and comments
+are visible to administrators.
 
 Monitor:
 

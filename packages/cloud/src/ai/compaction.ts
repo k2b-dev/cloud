@@ -1,6 +1,7 @@
 import type { CompactFn, Message, StoreEntry } from "@k2b/nessi";
 import { truncateMiddle } from "@k2b/nessi";
 import { aiConversations } from "./store";
+import { safelyRecordStructuredRun } from "./structured-runs";
 import { buildAiTaskPrompt } from "./task-prompt";
 
 /**
@@ -128,14 +129,32 @@ export const createCloudCompactFn = (input: {
     return (async () => {
       const source = truncateMiddle(sourceEntries.map(messageToCompactionText).join("\n\n"), COMPACTION_MAX_SOURCE_CHARS);
       const prompt = buildCompactionPrompt(input.additionalInstructions, source);
-      const result = await ctx.provider.complete({
-        systemPrompt: prompt.systemPrompt,
-        messages: [{ role: "user", content: [{ type: "text", text: prompt.userText }] }],
-        tools: [],
-        maxOutputTokens: input.maxOutputTokens,
-        signal: input.signal,
-        disableReasoning: true,
-      });
+      const startedAt = Date.now();
+      const accounting = {
+        task: "chat-compaction",
+        appId: "core",
+        modelProfileId: input.modelProfileId,
+        providerModel: ctx.provider.model,
+      };
+      const result = await ctx.provider
+        .complete({
+          systemPrompt: prompt.systemPrompt,
+          messages: [{ role: "user", content: [{ type: "text", text: prompt.userText }] }],
+          tools: [],
+          maxOutputTokens: input.maxOutputTokens,
+          signal: input.signal,
+          disableReasoning: true,
+        })
+        .catch(async (error: unknown) => {
+          await safelyRecordStructuredRun({
+            ...accounting,
+            status: "failed",
+            durationMs: Date.now() - startedAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        });
+      await safelyRecordStructuredRun({ ...accounting, status: "ok", durationMs: Date.now() - startedAt, usage: result.usage });
       const summaryText = textFromAssistant(result.message).trim();
       if (!summaryText) return;
 

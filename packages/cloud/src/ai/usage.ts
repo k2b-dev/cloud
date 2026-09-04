@@ -62,6 +62,7 @@ export type AiUsageBackgroundTask = {
   failed: number;
   tokens: number;
   credits: number | null;
+  creditsCoverage: number;
   avgDurationMs: number | null;
   lastError: string | null;
   lastRunAt: string;
@@ -78,7 +79,15 @@ export type AiUsageFeedback = {
   comment: string | null;
   updatedAt: string;
 };
+export type AiUsagePagination = { page: number; perPage: number; total: number };
+export type AiUsageReportOptions = {
+  usersPage?: number;
+  capabilitiesPage?: number;
+  backgroundTasksPage?: number;
+  feedbackPage?: number;
+};
 export type AiUsageReport = {
+  pagination: Record<"users" | "capabilities" | "backgroundTasks" | "feedback", AiUsagePagination>;
   overview: AiUsageOverview;
   timeline: AiUsagePoint[];
   models: AiUsageModel[];
@@ -122,64 +131,70 @@ type BackgroundRow = {
   failed: unknown;
   tokens: unknown;
   credits: unknown;
+  credits_covered: unknown;
   avg_duration_ms: unknown;
   last_error: string | null;
   last_run_at: Date | string;
 };
 
-const loadBackgroundRows = async (since: Date): Promise<BackgroundRow[]> => {
-  const [relation] = await sql<{ workflow_tasks: string | null }[]>`SELECT to_regclass('ai.workflow_task')::text AS workflow_tasks`;
-  if (!relation?.workflow_tasks) {
-    return sql<BackgroundRow[]>`
-      SELECT COALESCE(app_id, 'core') AS app_id, task, model_profile_id, count(*) AS runs,
-        count(*) FILTER (WHERE status = 'failed') AS failed, COALESCE(sum(total_tokens), 0) AS tokens,
-        sum(credits_used) AS credits, avg(duration_ms) AS avg_duration_ms,
-        (array_agg(error ORDER BY created_at DESC) FILTER (WHERE error IS NOT NULL))[1] AS last_error,
-        max(created_at) AS last_run_at
-      FROM ai.structured_runs WHERE created_at >= ${since}
-      GROUP BY app_id, task, model_profile_id ORDER BY runs DESC LIMIT 100
-    `;
+// Page size is the existing admin table budget; every row remains reachable.
+const PAGE_SIZE = 100;
+const pagination = (requested: number | undefined, total: unknown): AiUsagePagination => {
+  const count = number(total);
+  const page = Number.isSafeInteger(requested) && requested! > 0 ? requested! : 1;
+  return { page: Math.min(page, Math.max(1, Math.ceil(count / PAGE_SIZE))), perPage: PAGE_SIZE, total: count };
+};
+const offset = (page: AiUsagePagination) => (page.page - 1) * page.perPage;
+
+/** UTC buckets match the query and include inactive intervals at both range edges. */
+const fillTimeline = (points: AiUsagePoint[], since: Date, until: Date, range: AiUsageRange): AiUsagePoint[] => {
+  const step = range === "24h" ? 3_600_000 : 86_400_000;
+  const values = new Map(points.map((point) => [point.bucket, point]));
+  const result: AiUsagePoint[] = [];
+  for (let time = Math.floor(since.getTime() / step) * step; time <= until.getTime(); time += step) {
+    const bucket = new Date(time).toISOString();
+    result.push(values.get(bucket) ?? { bucket, turns: 0, tokens: 0, failed: 0, credits: 0 });
   }
-  return sql<BackgroundRow[]>`
-    WITH background AS (
-      SELECT COALESCE(app_id, 'core') AS app_id, task, model_profile_id, status,
-        COALESCE(total_tokens, 0)::double precision AS tokens, credits_used AS credits,
-        duration_ms::double precision AS duration_ms, error, created_at
-      FROM ai.structured_runs WHERE created_at >= ${since}
-      UNION ALL
-      SELECT app_id, 'workflow.' || kind, model_profile_id,
-        CASE WHEN status = 'succeeded' THEN 'ok' ELSE status END,
-        COALESCE(NULLIF(usage->>'total', '')::double precision, 0),
-        NULLIF(usage->>'creditsUsed', '')::double precision,
-        EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000,
-        error_message, created_at
-      FROM ai.workflow_task WHERE created_at >= ${since}
-    )
-    SELECT app_id, task, model_profile_id, count(*) AS runs,
-      count(*) FILTER (WHERE status = 'failed') AS failed, sum(tokens) AS tokens, sum(credits) AS credits,
-      avg(duration_ms) AS avg_duration_ms,
-      (array_agg(error ORDER BY created_at DESC) FILTER (WHERE error IS NOT NULL))[1] AS last_error,
-      max(created_at) AS last_run_at
-    FROM background GROUP BY app_id, task, model_profile_id ORDER BY runs DESC LIMIT 100
-  `;
+  return result;
 };
 
 export const aiUsage = {
-  report: async (range: AiUsageRange = "30d"): Promise<AiUsageReport> => {
-    const since = new Date(Date.now() - RANGE_MS[range]);
+  report: async (range: AiUsageRange = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {
+    const until = new Date();
+    const since = new Date(until.getTime() - RANGE_MS[range]);
     const bucket = range === "24h" ? "hour" : "day";
+    // One projection owns accounting for every chat breakdown. Message deletion cannot change usage.
+    const response = sql`
+      SELECT turn.id, turn.conversation_id, turn.model_profile_id, turn.status, turn.created_at,
+        turn.provider_model, turn.usage, turn.loop_aggregate,
+        COALESCE(feedback.positive, 0) AS positive_feedback, COALESCE(feedback.negative, 0) AS negative_feedback
+      FROM ai.turns turn LEFT JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE feedback_rating = 1) AS positive,
+          count(*) FILTER (WHERE feedback_rating = -1) AS negative
+        FROM ai.messages message WHERE message.conversation_id = turn.conversation_id
+          AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
+      ) feedback ON TRUE
+      WHERE turn.created_at >= ${since} AND turn.created_at <= ${until}
+        AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
+    `;
+    const [counts] = await sql<{ users: unknown; capabilities: unknown; background: unknown; feedback: unknown }[]>`
+      WITH response AS (${response})
+      SELECT
+        (SELECT count(DISTINCT c.created_by_user_id) FROM response r JOIN ai.conversations c ON c.id = r.conversation_id) AS users,
+        (SELECT count(DISTINCT tool_name) FROM ai.tool_calls WHERE created_at >= ${since} AND position('.' in tool_name) > 0) AS capabilities,
+        (SELECT count(*) FROM (SELECT 1 FROM ai.structured_runs WHERE created_at >= ${since}
+          GROUP BY app_id, task, model_profile_id) groups) AS background,
+        (SELECT count(*) FROM ai.messages WHERE feedback_updated_at >= ${since}) AS feedback
+    `;
+    const pages = {
+      users: pagination(options.usersPage, counts?.users),
+      capabilities: pagination(options.capabilitiesPage, counts?.capabilities),
+      backgroundTasks: pagination(options.backgroundTasksPage, counts?.background),
+      feedback: pagination(options.feedbackPage, counts?.feedback),
+    };
     const [overviewRows, timelineRows, modelRows, userRows, capabilityRows, backgroundRows, launchRows, feedbackRows] = await Promise.all([
       sql<OverviewRow[]>`
-        WITH response AS (
-          SELECT DISTINCT ON (turn.id)
-            turn.id, turn.conversation_id, turn.model_profile_id, turn.status, turn.created_at,
-            message.usage, message.loop_aggregate, message.feedback_rating
-          FROM ai.turns turn
-          LEFT JOIN ai.messages message ON message.conversation_id = turn.conversation_id
-            AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
-          WHERE turn.created_at >= ${since} AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
-          ORDER BY turn.id, (message.loop_aggregate IS NOT NULL) DESC, message.seq DESC
-        ), ordered AS (
+        WITH response AS (${response}), ordered AS (
           SELECT model_profile_id, lag(model_profile_id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS previous_model
           FROM response
         )
@@ -187,13 +202,13 @@ export const aiUsage = {
           count(*) AS turns,
           count(*) FILTER (WHERE usage IS NOT NULL OR loop_aggregate IS NOT NULL) AS responses,
           (SELECT count(DISTINCT created_by_user_id) FROM ai.conversations c JOIN response r ON r.conversation_id = c.id) AS active_users,
-          COALESCE(sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,input}', '')::double precision, NULLIF(usage->>'input', '')::double precision)), 0) AS input_tokens,
-          COALESCE(sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,output}', '')::double precision, NULLIF(usage->>'output', '')::double precision)), 0) AS output_tokens,
-          sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,creditsUsed}', '')::double precision, NULLIF(usage->>'creditsUsed', '')::double precision)) AS credits_used,
-          count(*) FILTER (WHERE COALESCE(loop_aggregate #>> '{usage,creditsUsed}', usage->>'creditsUsed') IS NOT NULL) AS credits_covered,
+          COALESCE(sum(NULLIF(usage->>'input', '')::double precision), 0) AS input_tokens,
+          COALESCE(sum(NULLIF(usage->>'output', '')::double precision), 0) AS output_tokens,
+          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits_used,
+          count(*) FILTER (WHERE usage->>'creditsUsed' IS NOT NULL) AS credits_covered,
           count(*) FILTER (WHERE status = 'failed') AS failed_turns,
-          count(*) FILTER (WHERE feedback_rating = 1) AS positive_feedback,
-          count(*) FILTER (WHERE feedback_rating = -1) AS negative_feedback,
+          COALESCE(sum(positive_feedback), 0) AS positive_feedback,
+          COALESCE(sum(negative_feedback), 0) AS negative_feedback,
           (SELECT count(*) FROM ai.conversations WHERE launched_by_app_id IS NOT NULL AND created_at >= ${since}) AS launched_chats,
           (SELECT count(*) FROM ordered WHERE previous_model IS NOT NULL AND model_profile_id IS DISTINCT FROM previous_model) AS model_switches
         FROM response
@@ -207,18 +222,11 @@ export const aiUsage = {
           credits: unknown;
         }[]
       >`
-        WITH response AS (
-          SELECT DISTINCT ON (turn.id) turn.id, turn.status, turn.created_at, message.usage, message.loop_aggregate
-          FROM ai.turns turn
-          LEFT JOIN ai.messages message ON message.conversation_id = turn.conversation_id
-            AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
-          WHERE turn.created_at >= ${since} AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
-          ORDER BY turn.id, (message.loop_aggregate IS NOT NULL) DESC, message.seq DESC
-        )
-        SELECT date_trunc(${bucket}, created_at) AS bucket, count(*) AS turns,
-          COALESCE(sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,total}', '')::double precision, NULLIF(usage->>'total', '')::double precision)), 0) AS tokens,
+        WITH response AS (${response})
+        SELECT date_trunc(${bucket}, created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket, count(*) AS turns,
+          COALESCE(sum(NULLIF(usage->>'total', '')::double precision), 0) AS tokens,
           count(*) FILTER (WHERE status = 'failed') AS failed,
-          sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,creditsUsed}', '')::double precision, NULLIF(usage->>'creditsUsed', '')::double precision)) AS credits
+          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits
         FROM response GROUP BY 1 ORDER BY 1
       `,
       sql<
@@ -237,15 +245,7 @@ export const aiUsage = {
           switches_away: unknown;
         }[]
       >`
-        WITH response AS (
-          SELECT DISTINCT ON (turn.id) turn.id, turn.conversation_id, turn.model_profile_id, turn.status, turn.created_at,
-            message.provider_model, message.usage, message.loop_aggregate, message.feedback_rating
-          FROM ai.turns turn
-          LEFT JOIN ai.messages message ON message.conversation_id = turn.conversation_id
-            AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
-          WHERE turn.created_at >= ${since} AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
-          ORDER BY turn.id, (message.loop_aggregate IS NOT NULL) DESC, message.seq DESC
-        ), switches AS (
+        WITH response AS (${response}), switches AS (
           SELECT model_profile_id, lead(model_profile_id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS next_model
           FROM response
         ), switch_counts AS (
@@ -254,13 +254,13 @@ export const aiUsage = {
         )
         SELECT COALESCE(response.model_profile_id, 'unknown') AS model_profile_id, max(provider_model) AS provider_model,
           count(*) AS turns, count(*) FILTER (WHERE status = 'failed') AS failed,
-          COALESCE(sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,total}', '')::double precision, NULLIF(usage->>'total', '')::double precision)), 0) AS tokens,
-          sum(COALESCE(NULLIF(loop_aggregate #>> '{usage,creditsUsed}', '')::double precision, NULLIF(usage->>'creditsUsed', '')::double precision)) AS credits,
+          COALESCE(sum(NULLIF(usage->>'total', '')::double precision), 0) AS tokens,
+          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits,
           avg(NULLIF(loop_aggregate #>> '{timing,generationMs}', '')::double precision) AS avg_generation_ms,
           percentile_cont(0.95) WITHIN GROUP (ORDER BY NULLIF(loop_aggregate #>> '{timing,generationMs}', '')::double precision) AS p95_generation_ms,
           avg(NULLIF(loop_aggregate #>> '{timing,outputTokensPerSecond}', '')::double precision) AS avg_output_tps,
-          count(*) FILTER (WHERE feedback_rating = 1) AS positive_feedback,
-          count(*) FILTER (WHERE feedback_rating = -1) AS negative_feedback,
+          COALESCE(sum(positive_feedback), 0) AS positive_feedback,
+          COALESCE(sum(negative_feedback), 0) AS negative_feedback,
           max(COALESCE(switch_counts.switches_away, 0)) AS switches_away
         FROM response LEFT JOIN switch_counts ON switch_counts.model_profile_id IS NOT DISTINCT FROM response.model_profile_id
         GROUP BY response.model_profile_id ORDER BY turns DESC
@@ -277,28 +277,23 @@ export const aiUsage = {
           feedback_given: unknown;
         }[]
       >`
-        WITH response AS (
-          SELECT DISTINCT ON (turn.id) turn.id, turn.conversation_id, turn.status, message.usage, message.loop_aggregate, message.feedback_rating
-          FROM ai.turns turn
-          LEFT JOIN ai.messages message ON message.conversation_id = turn.conversation_id
-            AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
-          WHERE turn.created_at >= ${since} AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
-          ORDER BY turn.id, (message.loop_aggregate IS NOT NULL) DESC, message.seq DESC
-        ), calls AS (
-          SELECT conversation_id, count(DISTINCT tool_name) FILTER (WHERE position('.' in tool_name) > 0) AS capabilities
-          FROM ai.tool_calls WHERE created_at >= ${since} GROUP BY conversation_id
+        WITH response AS (${response}), calls AS (
+          SELECT c.created_by_user_id, count(DISTINCT tool.tool_name) AS capabilities
+          FROM ai.tool_calls tool JOIN ai.conversations c ON c.id = tool.conversation_id
+          WHERE tool.created_at >= ${since} AND position('.' in tool.tool_name) > 0 GROUP BY c.created_by_user_id
         )
         SELECT c.created_by_user_id AS user_id, COALESCE(NULLIF(u.display_name, ''), NULLIF(u.uid, ''), c.created_by_user_id::text) AS label,
           count(*) AS turns,
-          COALESCE(sum(COALESCE(NULLIF(r.loop_aggregate #>> '{usage,total}', '')::double precision, NULLIF(r.usage->>'total', '')::double precision)), 0) AS tokens,
-          sum(COALESCE(NULLIF(r.loop_aggregate #>> '{usage,creditsUsed}', '')::double precision, NULLIF(r.usage->>'creditsUsed', '')::double precision)) AS credits,
+          COALESCE(sum(NULLIF(r.usage->>'total', '')::double precision), 0) AS tokens,
+          sum(NULLIF(r.usage->>'creditsUsed', '')::double precision) AS credits,
           count(*) FILTER (WHERE r.status = 'failed') AS failed,
           max(COALESCE(calls.capabilities, 0)) AS capabilities,
-          count(*) FILTER (WHERE r.feedback_rating IS NOT NULL) AS feedback_given
+          COALESCE(sum(r.positive_feedback + r.negative_feedback), 0) AS feedback_given
         FROM response r JOIN ai.conversations c ON c.id = r.conversation_id
-        LEFT JOIN auth.users u ON u.id = c.created_by_user_id LEFT JOIN calls ON calls.conversation_id = c.id
+        LEFT JOIN auth.users u ON u.id = c.created_by_user_id LEFT JOIN calls ON calls.created_by_user_id = c.created_by_user_id
         WHERE c.created_by_user_id IS NOT NULL
-        GROUP BY c.created_by_user_id, u.display_name, u.uid ORDER BY turns DESC LIMIT 100
+        GROUP BY c.created_by_user_id, u.display_name, u.uid ORDER BY turns DESC, c.created_by_user_id
+        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.users)}
       `,
       sql<
         {
@@ -317,9 +312,20 @@ export const aiUsage = {
           count(DISTINCT conversation.created_by_user_id) AS users
         FROM ai.tool_calls tool JOIN ai.conversations conversation ON conversation.id = tool.conversation_id
         WHERE tool.created_at >= ${since} AND position('.' in tool.tool_name) > 0
-        GROUP BY tool.tool_name ORDER BY calls DESC LIMIT 100
+        GROUP BY tool.tool_name ORDER BY calls DESC, tool.tool_name
+        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.capabilities)}
       `,
-      loadBackgroundRows(since),
+      // Workflow AI already calls runAiStructured: task-state records are not another inference.
+      sql<BackgroundRow[]>`
+        SELECT COALESCE(app_id, 'core') AS app_id, task, model_profile_id, count(*) AS runs,
+          count(*) FILTER (WHERE status = 'failed') AS failed, COALESCE(sum(total_tokens), 0) AS tokens,
+          sum(credits_used) AS credits, count(credits_used) AS credits_covered, avg(duration_ms) AS avg_duration_ms,
+          (array_agg(error ORDER BY created_at DESC) FILTER (WHERE error IS NOT NULL))[1] AS last_error,
+          max(created_at) AS last_run_at
+        FROM ai.structured_runs WHERE created_at >= ${since}
+        GROUP BY app_id, task, model_profile_id ORDER BY runs DESC, app_id, task, model_profile_id
+        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.backgroundTasks)}
+      `,
       sql<{ app_id: string; chats: unknown; users: unknown }[]>`
         SELECT launched_by_app_id AS app_id, count(*) AS chats, count(DISTINCT created_by_user_id) AS users
         FROM ai.conversations WHERE launched_by_app_id IS NOT NULL AND created_at >= ${since}
@@ -346,13 +352,15 @@ export const aiUsage = {
         FROM ai.messages message JOIN ai.conversations conversation ON conversation.id = message.conversation_id
         LEFT JOIN auth.users users ON users.id = conversation.created_by_user_id
         WHERE message.feedback_updated_at >= ${since}
-        ORDER BY message.feedback_rating ASC, message.feedback_updated_at DESC LIMIT 100
+        ORDER BY message.feedback_rating ASC, message.feedback_updated_at DESC, message.id
+        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.feedback)}
       `,
     ]);
 
     const overview = overviewRows[0] ?? ({} as OverviewRow);
     const turns = number(overview.turns);
     return {
+      pagination: pages,
       overview: {
         range,
         since: since.toISOString(),
@@ -369,13 +377,18 @@ export const aiUsage = {
         launchedChats: number(overview.launched_chats),
         modelSwitches: number(overview.model_switches),
       },
-      timeline: timelineRows.map((row) => ({
-        bucket: iso(row.bucket),
-        turns: number(row.turns),
-        tokens: number(row.tokens),
-        failed: number(row.failed),
-        credits: nullableNumber(row.credits),
-      })),
+      timeline: fillTimeline(
+        timelineRows.map((row) => ({
+          bucket: iso(row.bucket),
+          turns: number(row.turns),
+          tokens: number(row.tokens),
+          failed: number(row.failed),
+          credits: nullableNumber(row.credits),
+        })),
+        since,
+        until,
+        range,
+      ),
       models: modelRows.map((row) => ({
         modelProfileId: row.model_profile_id ?? "unknown",
         providerModel: row.provider_model,
@@ -417,6 +430,7 @@ export const aiUsage = {
         tokens: number(row.tokens),
         credits: nullableNumber(row.credits),
         avgDurationMs: nullableNumber(row.avg_duration_ms),
+        creditsCoverage: number(row.runs) > 0 ? number(row.credits_covered) / number(row.runs) : 0,
         lastError: row.last_error,
         lastRunAt: iso(row.last_run_at),
       })),

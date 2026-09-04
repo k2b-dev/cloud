@@ -9,6 +9,8 @@ export {
   type AiUsageOverview,
   type AiUsagePoint,
   type AiUsageRange,
+  type AiUsagePagination,
+  type AiUsageReportOptions,
   type AiUsageReport,
   type AiUsageUser,
   aiUsage,

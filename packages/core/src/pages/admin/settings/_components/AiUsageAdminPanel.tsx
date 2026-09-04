@@ -1,8 +1,8 @@
 import {
-  Chart,
   DataPanel,
   DataTable,
   type DataTableColumn,
+  Pagination,
   RangePicker,
   SettingsPage,
   StatCell,
@@ -20,6 +20,7 @@ import type {
   AiUsageUser,
 } from "@valentinkolb/cloud/ai/admin";
 import { formatDateTime, formatDurationMs, formatNumber, formatPercent } from "@valentinkolb/cloud/shared";
+import AiUsageCharts from "./AiUsageCharts.island";
 import { aiUsageMessages } from "./ai-usage-messages";
 
 const ranges: readonly { value: AiUsageRange; label: string; href: string }[] = [
@@ -78,6 +79,8 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
     { id: "model", header: t().model, value: (row) => row.modelProfileId },
     { id: "runs", header: t().runs, value: (row) => row.runs, align: "right" },
     { id: "tokens", header: t().tokens, value: (row) => row.tokens, align: "right" },
+    { id: "credits", header: t().credits, value: (row) => row.credits, align: "right" },
+    { id: "coverage", header: t().priceCoverage, value: (row) => row.creditsCoverage, align: "right" },
     { id: "duration", header: t().averageDuration, value: (row) => row.avgDurationMs, align: "right" },
     { id: "errors", header: t().errors, value: (row) => row.failed, align: "right" },
     { id: "last", header: t().lastRun, value: (row) => row.lastRunAt },
@@ -90,6 +93,28 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
     { id: "reason", header: t().reason, value: (row) => row.reasons.join(",") },
     { id: "when", header: t().received, value: (row) => row.updatedAt },
   ];
+  const pagination = (table: keyof AiUsageReport["pagination"]) => {
+    const entry = props.report.pagination[table];
+    const params = new URLSearchParams({ tab: "ai-usage", range: props.report.overview.range });
+    for (const key of ["users", "capabilities", "backgroundTasks", "feedback"] as const) {
+      if (key !== table && props.report.pagination[key].page > 1) params.set(`${key}Page`, String(props.report.pagination[key].page));
+    }
+    return (
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="text-xs text-dimmed">
+          {t().shownOfTotal({
+            shown: formatNumber(props.report[table].length, numberContext()),
+            total: formatNumber(entry.total, numberContext()),
+          })}
+        </span>
+        <Pagination
+          currentPage={entry.page}
+          totalPages={Math.ceil(entry.total / entry.perPage)}
+          baseUrl={`/admin/settings?${params}&${table}Page=`}
+        />
+      </div>
+    );
+  };
   const totalFeedback = props.report.overview.positiveFeedback + props.report.overview.negativeFeedback;
 
   return (
@@ -100,6 +125,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
       actions={<RangePicker label={null} ariaLabel={t().range} options={ranges} value={props.report.overview.range} />}
       scrollPreserveKey="admin-ai-usage"
     >
+      <p class="text-sm text-dimmed">{t().interactiveSummary}</p>
       <StatGrid columns={5}>
         <StatCell
           label={t().turns}
@@ -133,49 +159,12 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </StatGrid>
 
-      <DataPanel
-        title={t().usageOverTime}
-        subtitle={t().usageOverTimeDescription}
-        isEmpty={props.report.timeline.length === 0}
-        empty={t().noTurns}
-      >
-        <Chart
-          kind="line"
-          class="h-72 w-full text-dimmed"
-          series={[
-            { label: t().turns, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.turns })) },
-            { label: t().errors, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.failed })) },
-          ]}
-          xAxis={{ format: (value) => formatDateTime(new Date(value), dateContext()) }}
-          legend
-          area
-          interactive
-        />
-      </DataPanel>
-
-      <DataPanel
-        title={t().tokenVolume}
-        subtitle={t().tokenVolumeDescription}
-        isEmpty={props.report.timeline.length === 0}
-        empty={t().noTokens}
-      >
-        <Chart
-          kind="line"
-          class="h-56 w-full text-dimmed"
-          series={[
-            { label: t().tokens, data: props.report.timeline.map((point) => ({ x: new Date(point.bucket).getTime(), y: point.tokens })) },
-          ]}
-          xAxis={{ format: (value) => formatDateTime(new Date(value), dateContext()) }}
-          yAxis={{ format: (value) => formatNumber(value, { ...numberContext(), compact: true }) }}
-          area
-          interactive
-        />
-      </DataPanel>
+      <AiUsageCharts timeline={props.report.timeline} range={props.report.overview.range} />
 
       <DataPanel
         title={t().models}
         subtitle={t().modelSummary({ count: formatNumber(props.report.overview.modelSwitches, numberContext()) })}
-        class="overflow-hidden"
+        class="min-w-0 overflow-hidden"
       >
         <DataTable
           rows={props.report.models}
@@ -224,7 +213,7 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel title={t().usersTitle} subtitle={t().usersDescription} class="overflow-hidden">
+      <DataPanel footer={pagination("users")} title={t().usersTitle} subtitle={t().usersDescription} class="min-w-0 overflow-hidden">
         <DataTable
           rows={props.report.users}
           columns={userColumns}
@@ -243,7 +232,12 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel title={t().capabilitiesTitle} subtitle={t().capabilitiesDescription} class="overflow-hidden">
+      <DataPanel
+        footer={pagination("capabilities")}
+        title={t().capabilitiesTitle}
+        subtitle={t().capabilitiesDescription}
+        class="min-w-0 overflow-hidden"
+      >
         <DataTable
           rows={props.report.capabilities}
           columns={capabilityColumns}
@@ -262,7 +256,12 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <DataPanel title={t().backgroundAi} subtitle={t().backgroundDescription} class="overflow-hidden">
+      <DataPanel
+        footer={pagination("backgroundTasks")}
+        title={t().backgroundAi}
+        subtitle={t().backgroundDescription}
+        class="min-w-0 overflow-hidden"
+      >
         <DataTable
           rows={props.report.backgroundTasks}
           columns={backgroundColumns}
@@ -285,6 +284,8 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
                 </div>
               );
             if (col.id === "model") return <code class="text-[10px]">{row.modelProfileId ?? t().unresolved}</code>;
+            if (col.id === "credits") return <span class="tabular-nums">{credits(row.credits)}</span>;
+            if (col.id === "coverage") return <span class="tabular-nums">{formatPercent(row.creditsCoverage, numberContext())}</span>;
             if (col.id === "duration") return <span class="tabular-nums">{formatDurationMs(row.avgDurationMs, numberContext())}</span>;
             if (col.id === "errors")
               return (
@@ -301,11 +302,11 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
         />
       </DataPanel>
 
-      <div class="grid gap-2 xl:grid-cols-2">
+      <div class="grid min-w-0 gap-2 xl:grid-cols-2">
         <DataPanel
           title={t().launchedByApps}
           subtitle={t().launchedDescription({ count: formatNumber(props.report.overview.launchedChats, numberContext()) })}
-          class="overflow-hidden"
+          class="min-w-0 overflow-hidden"
         >
           <DataTable
             rows={props.report.launches}
@@ -319,7 +320,12 @@ export default function AiUsageAdminPanel(props: { report: AiUsageReport }) {
             empty={t().noLaunches}
           />
         </DataPanel>
-        <DataPanel title={t().messageRanking} subtitle={t().messageRankingDescription} class="overflow-hidden">
+        <DataPanel
+          footer={pagination("feedback")}
+          title={t().messageRanking}
+          subtitle={t().messageRankingDescription}
+          class="min-w-0 overflow-hidden"
+        >
           <DataTable
             rows={props.report.feedback}
             columns={feedbackColumns}

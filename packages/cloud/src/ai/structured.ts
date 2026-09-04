@@ -3,9 +3,9 @@ import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
-import { logger, trace } from "../services/logging";
+import { trace } from "../services/logging";
 import { resolveAiModel } from "./settings";
-import { recordAiStructuredRun } from "./structured-runs";
+import { safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
 
 export const AI_BACKGROUND_MODEL_SETTING_KEY = "ai.background_model_id";
@@ -166,17 +166,6 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
       onError: (error) => (error instanceof StructuredOutputError ? structuredFailureSummary(error) : undefined),
     },
   );
-};
-
-const safelyRecordStructuredRun = async (record: Parameters<typeof recordAiStructuredRun>[0]): Promise<void> => {
-  try {
-    await recordAiStructuredRun(record);
-  } catch (error) {
-    logger("ai.structured").error("Could not persist AI structured-run usage", {
-      task: record.task,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 };
 
 /** Metadata-only failure diagnostics: error code, attempts, and per-attempt stop reasons (catches max_tokens truncation). */

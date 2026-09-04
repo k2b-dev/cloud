@@ -227,7 +227,12 @@ export default ssr<AuthContext>(async (c) => {
     aiSkillPage = skills.page;
     aiSkillPerPage = skills.perPage;
   } else if (tab.id === "ai-usage") {
-    aiUsageReport = await aiUsage.report(aiUsageRange);
+    aiUsageReport = await aiUsage.report(aiUsageRange, {
+      usersPage: Number(c.req.query("usersPage") ?? 1),
+      capabilitiesPage: Number(c.req.query("capabilitiesPage") ?? 1),
+      backgroundTasksPage: Number(c.req.query("backgroundTasksPage") ?? 1),
+      feedbackPage: Number(c.req.query("feedbackPage") ?? 1),
+    });
   } else if (tab.id === "ai-projects") {
     const [projects, summary] = await Promise.all([
       aiProjects.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),

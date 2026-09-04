@@ -7,6 +7,7 @@ import {
   aiTurnInputToContent,
 } from "./http";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import type { AiMessageFeedback } from "./types";
 
 describe("AI HTTP input helpers", () => {
   test("keeps the message when content contains only file references", () => {
@@ -140,6 +141,30 @@ describe("AI HTTP input helpers", () => {
     expect(() => AiMessageFeedbackInputSchema.parse({ rating: "up", reasons: ["incorrect"] })).toThrow(
       "Positive feedback cannot include problem details",
     );
+  });
+
+  test("accepts the chat UI feedback payloads without a written comment", () => {
+    const positive = { rating: "up", reasons: [], comment: null } satisfies Omit<AiMessageFeedback, "updatedAt">;
+    const negative = { rating: "down", reasons: ["incorrect"], comment: null } satisfies Omit<AiMessageFeedback, "updatedAt">;
+    expect(AiMessageFeedbackInputSchema.parse(positive)).toEqual(positive);
+    expect(AiMessageFeedbackInputSchema.parse(negative)).toEqual(negative);
+  });
+
+  test("keeps feedback detail requirements when comments are nullable", () => {
+    for (const comment of [null, "", "   "]) {
+      expect(() => AiMessageFeedbackInputSchema.parse({ rating: "down", reasons: [], comment })).toThrow(
+        "Choose a reason or describe the problem",
+      );
+    }
+    expect(() => AiMessageFeedbackInputSchema.parse({ rating: "up", reasons: [], comment: "Wrong date" })).toThrow(
+      "Positive feedback cannot include problem details",
+    );
+    expect(AiMessageFeedbackInputSchema.parse({ rating: "down", reasons: [], comment: "  Wrong date  " })).toEqual({
+      rating: "down",
+      reasons: [],
+      comment: "Wrong date",
+    });
+    expect(() => AiMessageFeedbackInputSchema.parse({ rating: "down", comment: "x".repeat(1001) })).toThrow();
   });
 
   test("accepts only the predefined optional local client tool", () => {

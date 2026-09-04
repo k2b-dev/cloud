@@ -1,5 +1,6 @@
 import type { Usage } from "@k2b/nessi";
 import { sql } from "bun";
+import { logger } from "../services/logging";
 
 export type AiStructuredRunRecord = {
   task: string;
@@ -37,4 +38,16 @@ export const recordAiStructuredRun = async (record: AiStructuredRunRecord): Prom
       ${record.errorCode ?? null}, ${record.error?.slice(0, 2_000) ?? null}
     )
   `;
+};
+
+/** Accounting failure must not turn a completed inference into a retry. */
+export const safelyRecordStructuredRun = async (record: AiStructuredRunRecord): Promise<void> => {
+  try {
+    await recordAiStructuredRun(record);
+  } catch (error) {
+    logger("ai.structured").error("Could not persist AI structured-run usage", {
+      task: record.task,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 };

@@ -71,7 +71,7 @@ export const AiMessageFeedbackInputSchema = z
   .object({
     rating: z.enum(["up", "down"]),
     reasons: z.array(z.enum(AI_MESSAGE_FEEDBACK_REASONS)).max(AI_MESSAGE_FEEDBACK_REASONS.length).default([]),
-    comment: z.string().trim().max(1000).optional(),
+    comment: z.string().trim().max(1000).nullish(),
   })
   .strict()
   .superRefine((value, context) => {

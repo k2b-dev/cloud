@@ -217,7 +217,10 @@ record for **Admin > AI > AI Usage**. The record contains the task and optional
 application id, resolved model, duration, usage, structured-output mode and
 repair state, attempts, and a bounded error. It never stores the input, prompt,
 or output. Domain-owned run tables and traces remain the detailed operational
-source.
+source. Workflow inference uses this same accounting record, so task records
+do not add a second charge. Each retry that calls the model has its own record.
+See [Observability](/en/docs/operations/observability) for pricing coverage and
+historical accounting limits.
 
 Use [Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming) when
 the user needs an interactive, stored conversation.

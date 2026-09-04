@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { withAiShortId } from "./short-id";
+import { migrateAiTurnUsage } from "./usage-migrate";
 
 const backfillAiShortIds = async (
   constraint: string,
@@ -2063,6 +2064,8 @@ export const migrateCloudAi = async (): Promise<void> => {
       console.log(`  ✓ moved ${split.credentials.length} AI provider key(s) out of ai.model_profiles_json`);
     }
   }
+
+  await migrateAiTurnUsage();
 
   console.log("  ✓ ai conversation tables");
 };
