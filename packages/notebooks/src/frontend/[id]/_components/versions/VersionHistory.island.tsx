@@ -1,14 +1,24 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Avatar, Button, IconButtonLink, MarkdownView, openSpotlightSearch, Placeholder, prompts, SegmentedControl, useLocale } from "@k2b/ui";
+import {
+  Avatar,
+  Button,
+  IconButtonLink,
+  MarkdownView,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  SegmentedControl,
+  useLocale,
+} from "@k2b/ui";
 import { markdown } from "@valentinkolb/cloud/shared";
 import { diffLines } from "diff";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteUrl } from "../../../params";
-import { buildDiffRows, type DiffRow, orderComparison, summarizeDiff } from "./version-history";
 import { notebookWorkspaceMessages } from "../../messages";
+import { buildDiffRows, type DiffRow, orderComparison, summarizeDiff } from "./version-history";
 
 type NoteVersion = {
   id: string;
@@ -289,7 +299,7 @@ export default function VersionHistory(props: Props) {
       {/* Header */}
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 px-2 pt-2">
         <div class="flex items-center gap-2">
-          <IconButtonLink href={backUrl} size="sm" class="text-dimmed" label={t().backToEditor}>
+          <IconButtonLink href={backUrl} size="sm" class="text-dimmed" label={t().backToEditor} tooltip={t().backToEditor}>
             <i class="ti ti-arrow-left" />
           </IconButtonLink>
           <div>
@@ -349,9 +359,7 @@ export default function VersionHistory(props: Props) {
         <div class="flex-1 flex items-center justify-center">
           <Show
             when={!versionPages.error()}
-            fallback={
-              <Placeholder icon="ti ti-alert-circle" title={t().versionsCouldNotLoad} description={t().reloadPage} />
-            }
+            fallback={<Placeholder icon="ti ti-alert-circle" title={t().versionsCouldNotLoad} description={t().reloadPage} />}
           >
             <Placeholder icon="ti ti-history" description={t().noVersions} />
           </Show>
@@ -435,13 +443,7 @@ export default function VersionHistory(props: Props) {
                     <span class="flex min-w-0 items-center gap-1">
                       <span class="truncate font-medium text-primary">{comparisonLabel()!.from}</span>
                       <Show when={comparisonLabel()!.fromId === comparisonTarget().id}>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          class="shrink-0"
-                          onClick={openComparisonPicker}
-                          aria-label={t().changeComparison}
-                        >
+                        <Button variant="ghost" size="xs" class="shrink-0" onClick={openComparisonPicker} aria-label={t().changeComparison}>
                           {t().change}
                         </Button>
                       </Show>
@@ -450,13 +452,7 @@ export default function VersionHistory(props: Props) {
                     <span class="flex min-w-0 items-center gap-1">
                       <span class="truncate font-medium text-primary">{comparisonLabel()!.to}</span>
                       <Show when={comparisonLabel()!.toId === comparisonTarget().id}>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          class="shrink-0"
-                          onClick={openComparisonPicker}
-                          aria-label={t().changeComparison}
-                        >
+                        <Button variant="ghost" size="xs" class="shrink-0" onClick={openComparisonPicker} aria-label={t().changeComparison}>
                           {t().change}
                         </Button>
                       </Show>
@@ -475,11 +471,7 @@ export default function VersionHistory(props: Props) {
             <div class="flex-1 min-h-0 overflow-auto scrollbar">
               <Show when={!selectedVersionId()}>
                 <div class="flex h-full items-center justify-center">
-                  <Placeholder
-                    icon="ti ti-file-search"
-                    title={t().selectVersion}
-                    description={t().selectVersionDescription}
-                  />
+                  <Placeholder icon="ti ti-file-search" title={t().selectVersion} description={t().selectVersionDescription} />
                 </div>
               </Show>
 
@@ -510,11 +502,7 @@ export default function VersionHistory(props: Props) {
                     when={selectedVersionData()?.contentMd?.trim()}
                     fallback={
                       <div class="flex h-full items-center justify-center">
-                        <Placeholder
-                          icon="ti ti-file-off"
-                          title={t().emptyVersion}
-                          description={t().emptyVersionDescription}
-                        />
+                        <Placeholder icon="ti ti-file-off" title={t().emptyVersion} description={t().emptyVersionDescription} />
                       </div>
                     }
                   >

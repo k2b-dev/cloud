@@ -3,8 +3,8 @@ import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
 import BookController from "./BookController.island";
 import BookMermaid from "./BookMermaid.island";
 import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
+import FloatingEditButton from "./FloatingEditButton.island";
 import { bookMessages } from "./messages";
-import PresentationModeLinks from "./PresentationModeLinks.island";
 
 export type BookSurfaceProps = BookNavigatorProps & {
   html: string | null;
@@ -29,46 +29,52 @@ export default function BookSurface(props: BookSurfaceProps) {
           tree={props.tree}
           tags={props.tags}
           activeTag={props.activeTag}
+          canWrite={props.canWrite}
+          locked={props.locked}
         />
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="notebook-book-main">
+          <div class="flex flex-1 min-w-0 min-h-0 flex-col">
             <header class="notebook-book-header">
               <span id="notebook-book-name" class="text-sm text-dimmed truncate">
                 {props.notebookName}
               </span>
-              <PresentationModeLinks href={props.currentHref} mode="book" locked={props.locked} canWrite={props.canWrite} />
             </header>
-            <BookController
-              notebookId={props.notebookId}
-              initial={{
-                href: props.currentHref,
-                title: props.noteTitle,
-                notebookName: props.notebookName,
-                selectedNoteId: props.selectedNoteId,
-                tree: props.tree,
-                tags: props.tags,
-                activeTag: props.activeTag,
-                canWrite: props.canWrite,
-                locked: props.locked,
-                cursor: props.cursor,
-              }}
-            />
-            <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
-            {props.html !== null ? (
-              <article
-                id="notebook-book-content"
-                aria-label={props.noteTitle ?? undefined}
-                tabIndex={-1}
-                class="notebook-book-content"
-                innerHTML={props.html}
-              />
-            ) : (
-              <article id="notebook-book-content" class="notebook-book-content" tabIndex={-1}>
-                <Placeholder icon="ti ti-book" description={props.tree.length ? t().selectNote : t().empty} />
-              </article>
-            )}
-            <BookMermaid rootId="notebook-book-content" />
-          </AppWorkspace.Main>
+            <div class="notebook-document-surface notebook-book-document">
+              <AppWorkspace.Main class="notebook-book-main">
+                <BookController
+                  notebookId={props.notebookId}
+                  initial={{
+                    href: props.currentHref,
+                    title: props.noteTitle,
+                    notebookName: props.notebookName,
+                    selectedNoteId: props.selectedNoteId,
+                    tree: props.tree,
+                    tags: props.tags,
+                    activeTag: props.activeTag,
+                    canWrite: props.canWrite,
+                    locked: props.locked,
+                    cursor: props.cursor,
+                  }}
+                />
+                <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
+                {props.html !== null ? (
+                  <article
+                    id="notebook-book-content"
+                    aria-label={props.noteTitle ?? undefined}
+                    tabIndex={-1}
+                    class="notebook-book-content"
+                    innerHTML={props.html}
+                  />
+                ) : (
+                  <article id="notebook-book-content" class="notebook-book-content" tabIndex={-1}>
+                    <Placeholder icon="ti ti-book" description={props.tree.length ? t().selectNote : t().empty} />
+                  </article>
+                )}
+                <BookMermaid rootId="notebook-book-content" />
+              </AppWorkspace.Main>
+              <FloatingEditButton href={props.currentHref} mode="book" locked={props.locked} canWrite={props.canWrite} />
+            </div>
+          </div>
         </AppWorkspace.Content>
       </AppWorkspace>
     </div>

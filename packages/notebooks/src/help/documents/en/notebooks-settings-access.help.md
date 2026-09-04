@@ -7,7 +7,7 @@ order: 170
 ---
 
 Open **Settings** from the notebook sidebar. Settings stay in a modal, so your current note remains in place.
-If you are in **Book**, switch to **Write** or **Read-only** first. These views are available to notebook editors and admins.
+If you are in **Book**, use the pencil button to edit an unlocked note first. These controls are available to notebook editors and admins.
 
 ## Choose how the notebook opens {icon="book"}
 
@@ -20,6 +20,12 @@ Editors and admins can switch between three views:
 - **Write:** Edit the note and use the detail panel.
 - **Read-only:** Keep the editor workspace and detail panel without editing the note body.
 - **Book:** Read the notebook as a handbook, without the editor workspace.
+
+In Write, use the book icon in the bottom toolbar to open Book. The detail panel also offers Book and Read-only actions. In Read-only, use **Edit note** in the detail panel to return to Write.
+
+Book and Read-only show a round pencil button at the bottom right when you hover over the document. Keyboard focus also reveals it; on touch devices it stays visible. Locked notes do not show an edit action.
+
+If no note is selected or the note is locked, Book offers **Open workspace** in the sidebar for editors and admins. Use it to reach settings or create a note.
 
 To choose the default for editors and admins, open **Notebook — View & behavior** and change **Default view**. Only notebook admins can change it, and the change saves immediately. The initial default is **Write**. A view chosen explicitly in the page URL takes precedence over the notebook default.
 

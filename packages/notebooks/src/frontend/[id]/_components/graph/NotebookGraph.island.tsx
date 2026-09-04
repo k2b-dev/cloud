@@ -298,7 +298,7 @@ export default function NotebookGraph(props: Props) {
     <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
         <Tooltip.Anchor content={t().closeGraph}>
-          <IconButtonLink href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
+          <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
             <i class="ti ti-x" />
           </IconButtonLink>
         </Tooltip.Anchor>
@@ -373,17 +373,17 @@ export default function NotebookGraph(props: Props) {
 
         <div class="absolute bottom-2 right-2 z-10 flex flex-col gap-1 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-1 shadow-[var(--ui-shadow-float)]">
           <Tooltip.Anchor content={t().zoomIn}>
-            <IconButton label={t().zoomIn} size="sm" onClick={() => setClampedZoom(zoom() * ZOOM_STEP)}>
+            <IconButton tooltip={false} label={t().zoomIn} size="sm" onClick={() => setClampedZoom(zoom() * ZOOM_STEP)}>
               <i class="ti ti-plus" />
             </IconButton>
           </Tooltip.Anchor>
           <Tooltip.Anchor content={t().zoomOut}>
-            <IconButton label={t().zoomOut} size="sm" onClick={() => setClampedZoom(zoom() / ZOOM_STEP)}>
+            <IconButton tooltip={false} label={t().zoomOut} size="sm" onClick={() => setClampedZoom(zoom() / ZOOM_STEP)}>
               <i class="ti ti-minus" />
             </IconButton>
           </Tooltip.Anchor>
           <Tooltip.Anchor content={t().fitGraph}>
-            <IconButton label={t().fitGraph} size="sm" onClick={fitGraph}>
+            <IconButton tooltip={false} label={t().fitGraph} size="sm" onClick={fitGraph}>
               <i class="ti ti-focus-centered" />
             </IconButton>
           </Tooltip.Anchor>

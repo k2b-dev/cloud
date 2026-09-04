@@ -5,8 +5,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookWorkspaceMessages } from "../../messages";
-import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import { readErrorMessage } from "../settings/utils";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 
 type Props = {
   notebookId: string;
@@ -245,7 +245,13 @@ export default function NoteCommentsSection(props: Props) {
                       <>
                         <Show when={comment.canEdit}>
                           <Tooltip.Anchor content={t().editComment}>
-                            <IconButton variant="ghost" size="xs" onClick={() => setEditingId(comment.id)} label={t().editComment}>
+                            <IconButton
+                              tooltip={false}
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => setEditingId(comment.id)}
+                              label={t().editComment}
+                            >
                               <i class="ti ti-pencil" aria-hidden="true" />
                             </IconButton>
                           </Tooltip.Anchor>
@@ -258,6 +264,7 @@ export default function NoteCommentsSection(props: Props) {
                               onClick={() => void deleteComment(comment)}
                               disabled={deleteConfirming() || deleteMutation.loading()}
                               label={t().deleteComment}
+                              tooltip={false}
                             >
                               <i class="ti ti-trash" aria-hidden="true" />
                             </IconButton>

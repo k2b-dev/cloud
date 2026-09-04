@@ -7,15 +7,15 @@ import {
   Button,
   ButtonLink,
   DetailPanel,
-  dialogCore,
   Dropdown,
+  dialogCore,
   IconButton,
   LinkCard,
   openSpotlightSearch,
   PanelDialog,
-  panelDialogOptions,
   Paper,
   Placeholder,
+  panelDialogOptions,
   prompts,
   useLocale,
 } from "@k2b/ui";
@@ -439,6 +439,7 @@ export default function NotebooksOverview(props: Props) {
                       </ButtonLink>
                       <IconButton
                         label={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
+                        tooltip={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
                         size="xs"
                         variant="text"
                         class="notebooks-overview-notebook-pin"
@@ -482,13 +483,7 @@ export default function NotebooksOverview(props: Props) {
             <Show
               when={props.recentNotes.length > 0}
               fallback={
-                <Placeholder
-                  state="empty"
-                  title={t().noNotes}
-                  description={t().noNotesDescription}
-                  icon="ti ti-note"
-                  class="min-h-72"
-                />
+                <Placeholder state="empty" title={t().noNotes} description={t().noNotesDescription} icon="ti ti-note" class="min-h-72" />
               }
             >
               <div class="notebooks-overview-note-grid">

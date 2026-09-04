@@ -7,7 +7,7 @@ order: 170
 ---
 
 Öffne **Einstellungen** in der Seitenleiste. Das Dialogfenster lässt die aktuelle Notiz an ihrer Position.
-Wechsle aus der Ansicht **Buch** zuerst zu **Bearbeiten** oder **Schreibgeschützt**. Diese Ansichten sind für Nutzer mit Schreib- oder Adminrechten verfügbar.
+Nutze in der Ansicht **Buch** zuerst den Stift, um eine ungesperrte Notiz zu bearbeiten. Diese Aktionen sind für Nutzer mit Schreib- oder Adminrechten verfügbar.
 
 ## Standardansicht wählen {icon="book"}
 
@@ -20,6 +20,12 @@ Nutzer mit Schreib- oder Adminrechten können zwischen drei Ansichten wechseln:
 - **Bearbeiten:** Die Notiz bearbeiten und den Detailbereich nutzen.
 - **Schreibgeschützt:** Den Arbeitsbereich mit Detailbereich nutzen, ohne den Notiztext zu bearbeiten.
 - **Buch:** Das Notizbuch als Handbuch ohne Editor-Arbeitsbereich lesen.
+
+Beim Bearbeiten öffnet das Buchsymbol in der unteren Werkzeugleiste die Buchansicht. Der Detailbereich bietet zusätzlich Aktionen für Buch und Schreibgeschützt. In der schreibgeschützten Ansicht führt **Notiz bearbeiten** im Detailbereich zurück zum Bearbeiten.
+
+In Buch und Schreibgeschützt erscheint unten rechts ein runder Stift, sobald du den Mauszeiger über das Dokument bewegst. Er wird auch bei Tastaturfokus sichtbar und bleibt auf Touchgeräten eingeblendet. Gesperrte Notizen zeigen keine Bearbeitungsaktion.
+
+Ist keine Notiz ausgewählt oder die Notiz gesperrt, bietet Buch Nutzern mit Schreib- oder Adminrechten **Arbeitsbereich öffnen** in der Seitenleiste. Dort kannst du Einstellungen öffnen oder eine Notiz erstellen.
 
 Unter **Notizbuch – Ansicht und Verhalten** legen Admins die **Standardansicht** für Nutzer mit Schreib- oder Adminrechten fest. Die Änderung wird sofort gespeichert. Anfangs öffnen diese Nutzer das Notizbuch zum Bearbeiten. Eine ausdrücklich in der Seiten-URL gewählte Ansicht hat Vorrang vor der Standardansicht.
 

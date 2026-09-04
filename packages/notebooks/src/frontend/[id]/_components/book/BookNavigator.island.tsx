@@ -13,6 +13,8 @@ export type BookNavigatorProps = {
   tree: BookTreeNode[];
   tags: { tag: string; count: number }[];
   activeTag?: string;
+  canWrite?: boolean;
+  locked?: boolean;
 };
 
 const expandedParents = (nodes: BookTreeNode[], selected: string | null): string[] => {
@@ -55,6 +57,17 @@ export default function BookNavigator(props: BookNavigatorProps) {
       <AppWorkspace.SidebarItem href="/app/notebooks" icon="ti ti-library">
         {t().allNotebooks}
       </AppWorkspace.SidebarItem>
+      {state().canWrite && (!state().selectedNoteId || state().locked) && (
+        <AppWorkspace.SidebarItem
+          href={withPresentationMode(
+            state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
+            "readonly",
+          )}
+          icon="ti ti-layout-sidebar"
+        >
+          {t().openWorkspace}
+        </AppWorkspace.SidebarItem>
+      )}
       <AppWorkspace.SidebarSection title={t().notes}>
         <AppWorkspace.NavTree
           ariaLabel={t().notes}

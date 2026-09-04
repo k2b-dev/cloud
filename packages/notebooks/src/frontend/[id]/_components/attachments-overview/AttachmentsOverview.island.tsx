@@ -60,7 +60,9 @@ const AttachmentsOverview = (props: Props) => {
     const { count } = await usageRes.json();
 
     const message =
-      count > 0 ? t().deleteReferencedAttachmentConfirm({ filename: att.filename, count }) : t().deleteAttachmentConfirm({ filename: att.filename });
+      count > 0
+        ? t().deleteReferencedAttachmentConfirm({ filename: att.filename, count })
+        : t().deleteAttachmentConfirm({ filename: att.filename });
 
     const ok = await prompts.confirm(message, {
       title: t().deleteAttachment,
@@ -91,12 +93,7 @@ const AttachmentsOverview = (props: Props) => {
         props.searchQuery ? (
           <Placeholder surface="paper" icon="ti ti-paperclip" description={t().noMatchingAttachments({ query: props.searchQuery })} />
         ) : (
-          <Placeholder
-            surface="paper"
-            icon="ti ti-paperclip"
-            title={t().noAttachments}
-            description={t().noAttachmentsDescription}
-          />
+          <Placeholder surface="paper" icon="ti ti-paperclip" title={t().noAttachments} description={t().noAttachmentsDescription} />
         )
       }
     >
@@ -136,6 +133,7 @@ const AttachmentsOverview = (props: Props) => {
                   <Tooltip.Anchor content={t().downloadAttachment}>
                     <IconButton
                       label={t().downloadNamedAttachment({ filename: att.filename })}
+                      tooltip={false}
                       size="xs"
                       onClick={() => onDownload(att)}
                       class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
@@ -146,6 +144,7 @@ const AttachmentsOverview = (props: Props) => {
                   <Tooltip.Anchor content={t().copyAttachmentMarkdown}>
                     <IconButton
                       label={t().copyNamedAttachmentMarkdown({ filename: att.filename })}
+                      tooltip={false}
                       size="xs"
                       onClick={() => void onCopy(att)}
                       class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
@@ -156,6 +155,7 @@ const AttachmentsOverview = (props: Props) => {
                   <Tooltip.Anchor content={t().deleteAttachment}>
                     <IconButton
                       label={t().deleteNamedAttachment({ filename: att.filename })}
+                      tooltip={false}
                       size="xs"
                       variant="danger"
                       onClick={() => void onDelete(att)}

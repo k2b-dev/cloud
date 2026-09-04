@@ -10,12 +10,12 @@
  */
 
 import { timed } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Placeholder, prompts, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { buildTagPageUrl } from "../../../params";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
-import type { TagSummary } from "./types";
+import { buildTagPageUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import type { TagSummary } from "./types";
 
 type Variant = "sidebar" | "sidebar-mobile" | "icon";
 
@@ -109,12 +109,14 @@ export default function TagsButton(props: Props) {
   const tagCount = () => props.tags.length;
   if (props.variant === "icon") {
     return (
-      <AppWorkspace.SidebarIconAction
-        label={t().tagCount({ count: tagCount() })}
-        icon="ti ti-hash"
-        onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
-        viewTransitionName={props.viewTransitionName}
-      />
+      <Tooltip.Anchor content={t().tagCount({ count: tagCount() })} class="w-full">
+        <AppWorkspace.SidebarIconAction
+          label={t().tagCount({ count: tagCount() })}
+          icon="ti ti-hash"
+          onClick={() => void openTagsModal(props.notebookId, props.tags, locale(), props.presentationMode)}
+          viewTransitionName={props.viewTransitionName}
+        />
+      </Tooltip.Anchor>
     );
   }
 

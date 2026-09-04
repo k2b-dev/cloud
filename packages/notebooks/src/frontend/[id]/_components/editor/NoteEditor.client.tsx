@@ -793,6 +793,7 @@ function EditorInstance(props: EditorInstanceProps) {
           connected={connected()}
           editorView={editorView()}
           notebookId={props.notebookId}
+          noteId={props.noteId}
           initialPanelOpen={props.initialPanelOpen}
         />
       </Show>

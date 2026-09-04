@@ -1,8 +1,8 @@
-import { AppWorkspace, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
+import { AppWorkspace, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, Tooltip, useLocale } from "@k2b/ui";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
-import { openNoteSearchPrompt } from "./openNoteSearchPrompt";
 import { notebookWorkspaceMessages } from "../../messages";
+import { openNoteSearchPrompt } from "./openNoteSearchPrompt";
 
 type Props = {
   notebookId: string;
@@ -23,12 +23,14 @@ export default function SearchButton(props: Props) {
 
   if (props.variant === "workspace-icon") {
     return (
-      <AppWorkspace.SidebarIconAction
-        icon="ti ti-search"
-        label={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}
-        onClick={() => void handleSearch()}
-        viewTransitionName={props.viewTransitionName}
-      />
+      <Tooltip.Anchor content={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`} class="w-full">
+        <AppWorkspace.SidebarIconAction
+          icon="ti ti-search"
+          label={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}
+          onClick={() => void handleSearch()}
+          viewTransitionName={props.viewTransitionName}
+        />
+      </Tooltip.Anchor>
     );
   }
 
@@ -41,11 +43,8 @@ export default function SearchButton(props: Props) {
   }
 
   return (
-    <SpotlightButton
-      variant={props.variant}
-      onClick={handleSearch}
-      title={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      ariaLabel={t().searchNotes}
-    />
+    <Tooltip.Anchor content={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}>
+      <SpotlightButton variant={props.variant} onClick={handleSearch} title="" ariaLabel={t().searchNotes} />
+    </Tooltip.Anchor>
   );
 }

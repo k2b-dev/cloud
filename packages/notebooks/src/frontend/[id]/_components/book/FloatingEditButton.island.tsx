@@ -1,17 +1,18 @@
-import { ButtonLink, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
 import { bookMessages } from "./messages";
 
-export default function PresentationModeLinks(props: { href: string; mode: PresentationMode; locked: boolean; canWrite?: boolean }) {
+export default function FloatingEditButton(props: { href: string; mode: PresentationMode; locked: boolean; canWrite: boolean }) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
   const [href, setHref] = createSignal(props.href);
   const [locked, setLocked] = createSignal(props.locked);
-  const [canWrite, setCanWrite] = createSignal(props.canWrite ?? true);
+  const [canWrite, setCanWrite] = createSignal(props.canWrite);
+  const [hasNote, setHasNote] = createSignal(/\/notes\/[A-Za-z0-9]{6}(?:[?#]|$)/.test(props.href));
   onMount(() => {
     const onNote = (event: Event) => {
       const noteId = (event as CustomEvent<{ noteId?: string }>).detail?.noteId;
@@ -27,6 +28,7 @@ export default function PresentationModeLinks(props: { href: string; mode: Prese
       setHref(next.href);
       setLocked(next.locked);
       setCanWrite(next.canWrite);
+      setHasNote(!!next.selectedNoteId);
     };
     window.addEventListener(BOOK_SNAPSHOT_EVENT, onBook);
     onCleanup(() => {
@@ -35,19 +37,21 @@ export default function PresentationModeLinks(props: { href: string; mode: Prese
     });
   });
   return (
-    <nav aria-label={t().modes} class="notebook-presentation-modes" hidden={!canWrite()}>
-      {(["book", "write", "readonly"] as const)
-        .filter((mode) => canWrite() && (mode !== "write" || !locked()))
-        .map((mode) => (
-          <ButtonLink
-            href={withPresentationMode(href(), mode)}
-            variant={mode === props.mode ? "subtle" : "ghost"}
-            size="xs"
-            aria-current={mode === props.mode ? "page" : undefined}
+    <Show when={canWrite() && !locked() && hasNote()}>
+      <div class="notebook-floating-edit">
+        <Tooltip.Anchor content={t().editNote}>
+          <IconButtonLink
+            href={withPresentationMode(href(), "write")}
+            label={t().editNote}
+            tooltip={false}
+            variant="primary"
+            size="lg"
+            class="notebook-floating-edit-button"
           >
-            {t()[mode]}
-          </ButtonLink>
-        ))}
-    </nav>
+            <i class="ti ti-pencil" aria-hidden="true" />
+          </IconButtonLink>
+        </Tooltip.Anchor>
+      </div>
+    </Show>
   );
 }

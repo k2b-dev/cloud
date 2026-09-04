@@ -6,6 +6,7 @@ import {
   AppWorkspace,
   Avatar,
   Button,
+  ButtonLink,
   DescriptionList,
   DetailPanel,
   IconButton,
@@ -22,8 +23,9 @@ import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
-import { buildVersionsUrl } from "../../../params";
+import { buildNoteUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { bookMessages } from "../book/messages";
 import type { Attachment } from "../editor/attachments-client";
 import { buildAttachmentContentUrl, confirmAndDownload, formatBytes } from "../editor/attachments-client";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
@@ -379,33 +381,43 @@ export default function NotebookDetailPanel(props: Props) {
               </Show>
               <Show when={props.mode === "edit"}>
                 <Tooltip.Anchor content={isRich() ? t().showMarkdown : t().showRichText}>
-                  <IconButton label={isRich() ? t().showMarkdown : t().showRichText} size="sm" onClick={toggleRichMode}>
+                  <IconButton tooltip={false} label={isRich() ? t().showMarkdown : t().showRichText} size="sm" onClick={toggleRichMode}>
                     <i class={`ti ${isRich() ? "ti-markdown" : "ti-typography"}`} aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
               <Tooltip.Anchor content={t().copyContent}>
-                <IconButton label={t().copyNoteContent} size="sm" onClick={copyContent}>
+                <IconButton tooltip={false} label={t().copyNoteContent} size="sm" onClick={copyContent}>
                   <i class="ti ti-copy" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().downloadMarkdown}>
-                <IconButton label={t().downloadNoteMarkdown} size="sm" onClick={downloadContent}>
+                <IconButton tooltip={false} label={t().downloadNoteMarkdown} size="sm" onClick={downloadContent}>
                   <i class="ti ti-download" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().downloadPdf}>
-                <IconButton label={t().downloadNotePdf} size="sm" onClick={downloadPdf}>
+                <IconButton tooltip={false} label={t().downloadNotePdf} size="sm" onClick={downloadPdf}>
                   <i class="ti ti-file-type-pdf" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().versionHistory}>
-                <IconButtonLink href={buildVersionsUrl(props.notebookId, noteId())} size="sm" label={t().openVersionHistory}>
+                <IconButtonLink
+                  tooltip={false}
+                  href={buildVersionsUrl(props.notebookId, noteId())}
+                  size="sm"
+                  label={t().openVersionHistory}
+                >
                   <i class="ti ti-history" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>
               <Tooltip.Anchor content={t().graphView}>
-                <IconButtonLink href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`} size="sm" label={t().openGraphView}>
+                <IconButtonLink
+                  tooltip={false}
+                  href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`}
+                  size="sm"
+                  label={t().openGraphView}
+                >
                   <i class="ti ti-affiliate" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>
@@ -413,7 +425,7 @@ export default function NotebookDetailPanel(props: Props) {
           }
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
-              <IconButton label={t().closeNoteDetails} size="sm" onClick={closePanel}>
+              <IconButton tooltip={false} label={t().closeNoteDetails} size="sm" onClick={closePanel}>
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
@@ -421,6 +433,30 @@ export default function NotebookDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey="notebook-detail">
+          <Show when={props.canWrite}>
+            <nav aria-label={bookMessages.resolve([locale()]).t.modes} class="flex flex-wrap gap-2">
+              <ButtonLink href={buildNoteUrl(props.notebookId, noteId(), "book")} variant="subtle" size="sm">
+                <i class="ti ti-book" aria-hidden="true" />
+                {bookMessages.resolve([locale()]).t.openBook}
+              </ButtonLink>
+              <Show
+                when={props.mode === "edit"}
+                fallback={
+                  <Show when={!lockedAt()}>
+                    <ButtonLink href={buildNoteUrl(props.notebookId, noteId(), "write")} variant="subtle" size="sm">
+                      <i class="ti ti-pencil" aria-hidden="true" />
+                      {bookMessages.resolve([locale()]).t.editNote}
+                    </ButtonLink>
+                  </Show>
+                }
+              >
+                <ButtonLink href={buildNoteUrl(props.notebookId, noteId(), "readonly")} variant="subtle" size="sm">
+                  <i class="ti ti-eye" aria-hidden="true" />
+                  {bookMessages.resolve([locale()]).t.openReadonly}
+                </ButtonLink>
+              </Show>
+            </nav>
+          </Show>
           <Show when={tasks().total > 0}>
             <DetailPanel.Summary title={t().taskProgress}>
               <div class="flex items-center justify-between text-xs">

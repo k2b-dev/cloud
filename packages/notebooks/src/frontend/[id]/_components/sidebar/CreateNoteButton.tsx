@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, IconButton, prompts, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
@@ -37,7 +37,14 @@ const CreateNoteButton = (props: Props) => {
 
   if (props.variant === "compact") {
     return (
-      <IconButton label={t().newNote} size="xs" onClick={handleCreate} loading={mutation.loading()} loadingLabel={t().creatingNote}>
+      <IconButton
+        label={t().newNote}
+        tooltip={t().newNote}
+        size="xs"
+        onClick={handleCreate}
+        loading={mutation.loading()}
+        loadingLabel={t().creatingNote}
+      >
         <i class={`ti ${mutation.loading() ? "ti-loader-2 animate-spin" : "ti-file-plus"}`} />
       </IconButton>
     );
@@ -45,14 +52,16 @@ const CreateNoteButton = (props: Props) => {
 
   if (props.variant === "icon") {
     return (
-      <AppWorkspace.SidebarIconAction
-        label={t().newNote}
-        icon={mutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"}
-        tone="success"
-        onClick={handleCreate}
-        disabled={mutation.loading()}
-        viewTransitionName={props.viewTransitionName}
-      />
+      <Tooltip.Anchor content={t().newNote} class="w-full">
+        <AppWorkspace.SidebarIconAction
+          label={t().newNote}
+          icon={mutation.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"}
+          tone="success"
+          onClick={handleCreate}
+          disabled={mutation.loading()}
+          viewTransitionName={props.viewTransitionName}
+        />
+      </Tooltip.Anchor>
     );
   }
 

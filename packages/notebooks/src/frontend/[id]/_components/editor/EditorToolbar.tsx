@@ -1,18 +1,21 @@
 import { Prec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { keymap } from "@codemirror/view";
-import { Dropdown, IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { requestNotebookSearch } from "../../../lib/hotkeys";
+import { buildNoteUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
+import { bookMessages } from "../book/messages";
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import { cycleHeading, insertCallout, insertLinePrefix, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   connected: boolean;
   editorView: EditorView | undefined;
   notebookId: string;
+  noteId: string;
   /** Initial open state for the detail panel — kept in sync at runtime via
    *  `DETAIL_PANEL_STATE_EVENT`. Used to seed the toggle button's icon so SSR
    *  output matches the eventual hydrated state (no flicker). */
@@ -135,7 +138,7 @@ export default function EditorToolbar(props: Props) {
 
   const Btn = (p: { icon: string; title: string; onClick: () => void }) => (
     <Tooltip.Anchor content={p.title}>
-      <IconButton label={p.title} size="xs" onClick={p.onClick} class="text-dimmed">
+      <IconButton label={p.title} tooltip={false} size="xs" onClick={p.onClick} class="text-dimmed">
         <i class={`ti ${p.icon} text-sm`} />
       </IconButton>
     </Tooltip.Anchor>
@@ -197,6 +200,17 @@ export default function EditorToolbar(props: Props) {
       </Show>
 
       {/* Detail panel toggle */}
+      <Tooltip.Anchor content={bookMessages.resolve([locale()]).t.openBook}>
+        <IconButtonLink
+          href={buildNoteUrl(props.notebookId, props.noteId, "book")}
+          label={bookMessages.resolve([locale()]).t.openBook}
+          tooltip={false}
+          size="xs"
+          class="text-dimmed"
+        >
+          <i class="ti ti-book" aria-hidden="true" />
+        </IconButtonLink>
+      </Tooltip.Anchor>
       <Btn
         icon={panelOpen() ? "ti-layout-sidebar-right-collapse" : "ti-layout-sidebar-right-expand"}
         title={panelOpen() ? t().collapseDetails : t().expandDetails}

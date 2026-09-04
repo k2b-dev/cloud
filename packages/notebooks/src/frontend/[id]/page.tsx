@@ -5,7 +5,7 @@ import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { notebooksPageMessages } from "../messages";
 import BookSurface from "./_components/book/BookSurface";
-import PresentationModeLinks from "./_components/book/PresentationModeLinks.island";
+import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
@@ -22,7 +22,8 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.kind === "not_found") return ssr.error(c, 404, { action: { label: t.notebooks, href: "/app/notebooks" } });
 
-  if (data.kind === "access_denied") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: t.notebooks, href: "/app/notebooks" } });
+  if (data.kind === "access_denied")
+    return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: t.notebooks, href: "/app/notebooks" } });
 
   if (data.kind === "redirect") return c.redirect(data.href);
 
@@ -124,8 +125,10 @@ export default ssr<AuthContext>(async (c) => {
             ) : isGraphMode && graph ? (
               <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
             ) : selectedNote ? (
-              <div class="flex flex-1 min-w-0 min-h-0 flex-col">
-                {canWrite && <PresentationModeLinks href={currentHref} mode={data.presentationMode} locked={!!selectedNote.lockedAt} />}
+              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col">
+                {readonlyMode && (
+                  <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
+                )}
                 <NoteEditor
                   noteId={selectedNote.id}
                   noteTitle={selectedNote.title}

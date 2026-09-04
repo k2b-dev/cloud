@@ -1,10 +1,10 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, prompts, SelectChip, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
-import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import SearchButton from "../search/SearchButton";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { writeSettings } from "../settings/NotebookSettingsStore";
@@ -201,31 +201,37 @@ export default function NotebookSidebar(props: Props) {
                     variant="workspace-icon"
                     viewTransitionName={vt("search-desktop")}
                   />
-                  <AppWorkspace.SidebarIconAction
-                    href={homepageHref()}
-                    icon="ti ti-home"
-                    label={homepageHref() ? t().homepage : t().setHomepage}
-                    active={homepageIsActive()}
-                    navigation="enhanced"
-                    scroll="top"
-                    onNavigate={handleSameNotebookNoteNavigate}
-                    viewTransitionName={vt("homepage-desktop")}
-                    onClick={homepageHref() ? undefined : explainMissingHomepage}
-                  />
-                  <AppWorkspace.SidebarIconAction
-                    href={allNotebooksHref}
-                    icon="ti ti-library"
-                    label={t().allNotebooks}
-                    navigation="document"
-                    viewTransitionName={vt("all-notebooks-desktop")}
-                  />
-                  <AppWorkspace.SidebarIconAction
-                    href={attachmentsHref()}
-                    icon="ti ti-paperclip"
-                    label={t().attachmentCount({ count: attachmentCount() })}
-                    navigation="document"
-                    viewTransitionName={vt("attachments-desktop")}
-                  />
+                  <Tooltip.Anchor content={homepageHref() ? t().homepage : t().setHomepage} class="w-full">
+                    <AppWorkspace.SidebarIconAction
+                      href={homepageHref()}
+                      icon="ti ti-home"
+                      label={homepageHref() ? t().homepage : t().setHomepage}
+                      active={homepageIsActive()}
+                      navigation="enhanced"
+                      scroll="top"
+                      onNavigate={handleSameNotebookNoteNavigate}
+                      viewTransitionName={vt("homepage-desktop")}
+                      onClick={homepageHref() ? undefined : explainMissingHomepage}
+                    />
+                  </Tooltip.Anchor>
+                  <Tooltip.Anchor content={t().allNotebooks} class="w-full">
+                    <AppWorkspace.SidebarIconAction
+                      href={allNotebooksHref}
+                      icon="ti ti-library"
+                      label={t().allNotebooks}
+                      navigation="document"
+                      viewTransitionName={vt("all-notebooks-desktop")}
+                    />
+                  </Tooltip.Anchor>
+                  <Tooltip.Anchor content={t().attachmentCount({ count: attachmentCount() })} class="w-full">
+                    <AppWorkspace.SidebarIconAction
+                      href={attachmentsHref()}
+                      icon="ti ti-paperclip"
+                      label={t().attachmentCount({ count: attachmentCount() })}
+                      navigation="document"
+                      viewTransitionName={vt("attachments-desktop")}
+                    />
+                  </Tooltip.Anchor>
                   {hasTags() && (
                     <TagsButton
                       notebookId={notebook().id}
@@ -243,15 +249,17 @@ export default function NotebookSidebar(props: Props) {
                   title={t().notes}
                   class="min-h-0 flex-1"
                   actions={
-                    <SelectChip
-                      aria-label={t().sortNotes}
-                      value={treeSort()}
-                      onValueChange={changeTreeSort}
-                      icon="ti ti-arrows-sort"
-                      iconOnly
-                      size="xs"
-                      options={treeSortOptions()}
-                    />
+                    <Tooltip.Anchor content={t().sortNotes}>
+                      <SelectChip
+                        aria-label={t().sortNotes}
+                        value={treeSort()}
+                        onValueChange={changeTreeSort}
+                        icon="ti ti-arrows-sort"
+                        iconOnly
+                        size="xs"
+                        options={treeSortOptions()}
+                      />
+                    </Tooltip.Anchor>
                   }
                 >
                   {renderTreeView()}

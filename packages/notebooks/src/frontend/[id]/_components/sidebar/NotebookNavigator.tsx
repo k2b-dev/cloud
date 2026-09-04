@@ -1,10 +1,11 @@
 import { type DateContext, dates, searchParams } from "@k2b/stdlib";
-import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, useLocale } from "@k2b/ui";
+import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import SearchButton from "../search/SearchButton";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
@@ -13,7 +14,6 @@ import { noteActionItems, useNoteActions } from "./NoteTree";
 import { flattenTree } from "./tree-utils";
 import type { Notebook, NoteTreeNode, TagSummary } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type SortMode = NotebookSettings["navigatorSort"];
 type TreeMode = "deep" | "level";
@@ -274,20 +274,24 @@ export default function NotebookNavigator(props: Props) {
           <AppWorkspace.SidebarIconGrid columns={2}>
             <For each={roots()}>
               {(root) => (
-                <AppWorkspace.SidebarIconAction
-                  icon={root.icon}
-                  label={root.label}
-                  active={selectedRoot() === root.id}
-                  onClick={() => select({ root: root.id })}
-                />
+                <Tooltip.Anchor content={root.label} class="w-full">
+                  <AppWorkspace.SidebarIconAction
+                    icon={root.icon}
+                    label={root.label}
+                    active={selectedRoot() === root.id}
+                    onClick={() => select({ root: root.id })}
+                  />
+                </Tooltip.Anchor>
               )}
             </For>
-            <AppWorkspace.SidebarIconAction
-              icon="ti ti-home"
-              label={t().homepage}
-              active={homepageNote()?.id === activeNoteId()}
-              onClick={openHomepage}
-            />
+            <Tooltip.Anchor content={t().homepage} class="w-full">
+              <AppWorkspace.SidebarIconAction
+                icon="ti ti-home"
+                label={t().homepage}
+                active={homepageNote()?.id === activeNoteId()}
+                onClick={openHomepage}
+              />
+            </Tooltip.Anchor>
             <SearchButton notebookId={props.notebook.id} notebookName={props.notebook.name} variant="workspace-icon" />
           </AppWorkspace.SidebarIconGrid>
         </AppWorkspace.SidebarSection>
@@ -355,6 +359,7 @@ export default function NotebookNavigator(props: Props) {
           <IconButton
             class="ml-auto shrink-0 text-green-600 dark:text-green-400"
             label={t().newNote}
+            tooltip={t().newNote}
             onClick={() => actions.handleCreateNote()}
           >
             <i class="ti ti-plus" />
@@ -402,6 +407,7 @@ export default function NotebookNavigator(props: Props) {
                           <Dropdown.Trigger
                             iconOnly
                             label={t().noteActions({ title: note().title || t().untitled })}
+                            tooltip={t().noteActions({ title: note().title || t().untitled })}
                             size="xs"
                             class="opacity-70 group-hover:opacity-100"
                           >
@@ -462,7 +468,7 @@ export default function NotebookNavigator(props: Props) {
                         class={`opacity-70 group-hover:opacity-100 ${
                           favoriteIds().has(note.id) ? "!text-amber-500 hover:!text-amber-500" : ""
                         }`}
-                        title={favoriteIds().has(note.id) ? t().removeFavorite : t().addFavorite}
+                        tooltip={favoriteIds().has(note.id) ? t().removeFavorite : t().addFavorite}
                         label={favoriteIds().has(note.id) ? t().removeFavorite : t().addFavorite}
                         onClick={(event) => void toggleFavorite(note, event)}
                       >
@@ -473,6 +479,7 @@ export default function NotebookNavigator(props: Props) {
                           <Dropdown.Trigger
                             iconOnly
                             label={t().noteActions({ title: note.title || t().untitled })}
+                            tooltip={t().noteActions({ title: note.title || t().untitled })}
                             size="xs"
                             class="opacity-70 group-hover:opacity-100"
                           >

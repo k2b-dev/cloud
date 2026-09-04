@@ -3,16 +3,16 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
-import type { PresentationMode } from "../../../../lib/presentation-mode";
+import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import SearchButton from "../search/SearchButton";
 import { listAccessibleNotebooks } from "./notebooks";
 import { flattenTree, getNodeDepthLabel } from "./tree-utils";
 import type { Notebook, NoteTreeNode } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
-import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   tree: NoteTreeNode[];
@@ -125,9 +125,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
 
         return (
           <div class="flex flex-col gap-2">
-            <p class="text-sm text-secondary">
-              {t().moveTo({ title: node.title })}
-            </p>
+            <p class="text-sm text-secondary">{t().moveTo({ title: node.title })}</p>
 
             <div class="flex flex-col gap-1 max-h-64 overflow-y-auto">
               {/* Root level option */}
@@ -236,15 +234,12 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
   };
 
   const handleLock = async (node: NoteTreeNode) => {
-    const confirmed = await prompts.confirm(
-      t().lockConfirm({ title: node.title }),
-      {
-        title: t().lockNote,
-        icon: "ti ti-lock",
-        variant: "danger",
-        confirmText: t().lockPermanently,
-      },
-    );
+    const confirmed = await prompts.confirm(t().lockConfirm({ title: node.title }), {
+      title: t().lockNote,
+      icon: "ti ti-lock",
+      variant: "danger",
+      confirmText: t().lockPermanently,
+    });
     if (confirmed) {
       lockNoteMut.mutate(node.id);
     }
@@ -358,7 +353,7 @@ function NoteTreeItems(props: {
                           label={favorite() ? t().removeFavorite : t().addFavorite}
                           size="xs"
                           class={favorite() ? "!text-amber-500 hover:!text-amber-500" : undefined}
-                          title={favorite() ? t().removeFavorite : t().addFavorite}
+                          tooltip={favorite() ? t().removeFavorite : t().addFavorite}
                           onClick={(event) => toggleFavorite()(node, event)}
                         >
                           <i class="ti ti-star text-xs" />
@@ -369,7 +364,12 @@ function NoteTreeItems(props: {
                   <Show when={props.canWrite}>
                     <AppWorkspace.SidebarItemActions visibility="hover">
                       <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(node, props.actions, t())}>
-                        <Dropdown.Trigger iconOnly label={t().noteActions({ title: label() })} size="xs">
+                        <Dropdown.Trigger
+                          iconOnly
+                          label={t().noteActions({ title: label() })}
+                          tooltip={t().noteActions({ title: label() })}
+                          size="xs"
+                        >
                           <i class="ti ti-dots text-xs" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
@@ -438,7 +438,7 @@ export default function NoteTree(props: Props) {
                 disabled={actions.loading()}
                 loading={actions.loading()}
                 loadingLabel={t().creatingNote}
-                title={`${t().newNote} (Mod+Alt+N)`}
+                tooltip={`${t().newNote} (Mod+Alt+N)`}
               >
                 <i class="ti ti-plus text-xs" />
               </IconButton>

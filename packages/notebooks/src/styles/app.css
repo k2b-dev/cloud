@@ -30,13 +30,43 @@
   gap: 1rem;
   padding: 1rem clamp(1rem, 4vw, 3rem);
 }
-.notebook-presentation-modes {
+.notebook-document-surface {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+.notebook-book-document {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0.25rem 0.5rem;
+}
+.notebook-floating-edit {
+  position: absolute;
+  right: max(1.25rem, env(safe-area-inset-right));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 10;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.notebook-floating-edit .notebook-floating-edit-button {
+  border-radius: 50%;
+}
+.notebook-document-surface:hover .notebook-floating-edit,
+.notebook-floating-edit:hover,
+.notebook-floating-edit:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .notebook-floating-edit {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notebook-floating-edit {
+    transition: none;
+  }
 }
 .notebook-book-content {
   width: 100%;

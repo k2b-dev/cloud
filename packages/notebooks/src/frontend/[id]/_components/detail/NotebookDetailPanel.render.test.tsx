@@ -88,6 +88,17 @@ const legacyDetailClasses = [
 ];
 
 describe("Notebook note detail panel", () => {
+  test("offers presentation actions appropriate to mode, permission and lock", () => {
+    const edit = renderPanel();
+    expect(edit).toContain("/notes/note01?mode=book");
+    expect(edit).toContain("/notes/note01?mode=readonly");
+    const read = renderPanel({ mode: "read" });
+    expect(read).toContain("/notes/note01?mode=book");
+    expect(read).toContain("/notes/note01?mode=write");
+    expect(read).not.toContain("/notes/note01?mode=readonly");
+    expect(renderPanel({ mode: "read", lockedAt: now, isLocked: true })).not.toContain("/notes/note01?mode=write");
+    expect(renderPanel({ mode: "read", canWrite: false })).not.toContain("/notes/note01?mode=write");
+  });
   test("formats relative dates with the request locale", () => {
     const html = renderPanel({ dateConfig: { locale: "de-CH", timeZone: "UTC" } });
 

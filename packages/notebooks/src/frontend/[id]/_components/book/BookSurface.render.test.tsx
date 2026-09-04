@@ -20,8 +20,8 @@ const render = (
         return createComponent(BookSurface, {
           notebookId: "book01",
           notebookName: "Company handbook",
-          selectedNoteId: "note02",
-          currentHref: "/app/notebooks/book01/notes/note02",
+          selectedNoteId: html === null ? null : "note02",
+          currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
           canWrite,
           locked,
           html,
@@ -47,15 +47,24 @@ describe("Book surface", () => {
     expect(html).toContain("sidebar-mobile");
     expect(html).toContain("sidebar-desktop");
   });
-  test("authors can switch views, with Write omitted for locked notes", () => {
+  test("authors get a floating edit action only on unlocked notes", () => {
     expect(render(true)).toContain("mode=write");
-    expect(render(true)).toContain("mode=readonly");
+    expect(render(true)).toContain("notebook-floating-edit");
+    expect(render(true)).not.toContain("mode=readonly");
     expect(render(true, true)).not.toContain("mode=write");
-    expect(render(true, true)).toContain("mode=readonly");
+    expect(render(true, true)).not.toContain("notebook-floating-edit");
+    expect(render(true, true)).toContain("/notes/note02?mode=readonly");
+  });
+  test("authors can leave an empty Book without exposing an edit action to readers", () => {
+    const empty = render(true, false, "en", null);
+    expect(empty).toContain("/app/notebooks/book01?mode=readonly");
+    expect(empty).toContain("Open workspace");
+    expect(empty).not.toContain("mode=write");
+    expect(render(false, false, "en", null)).not.toContain("Open workspace");
   });
   test("localizes controls and empty states without leaking editor data", () => {
     expect(bookMessages.check()).toEqual([]);
-    expect(render(true, false, "de-CH")).toContain("Bearbeiten");
+    expect(render(true, false, "de-CH")).toContain("Notiz bearbeiten");
     expect(render(false, false, "de", null)).toContain("Wähle eine Seite");
     expect(render(false, false, "de")).not.toContain("yjsSnapshot");
   });

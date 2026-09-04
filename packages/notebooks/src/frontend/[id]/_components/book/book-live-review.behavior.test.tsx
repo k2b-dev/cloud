@@ -24,7 +24,7 @@ describe("independent Book live metadata regression", () => {
 
   test("mode actions follow current note, lock and permission without remounting", async () => {
     const dom = createDomTestHarness();
-    const { default: ModeLinks } = await import("./PresentationModeLinks.island");
+    const { default: ModeLinks } = await import("./FloatingEditButton.island");
     const dispose = render(
       () =>
         createComponent(ModeLinks, {
@@ -38,11 +38,12 @@ describe("independent Book live metadata regression", () => {
     try {
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, locked: true } }));
       expect(dom.root.querySelector('a[href*="mode=write"]')).toBeNull();
-      expect(dom.root.querySelector('a[href*="mode=readonly"]')?.getAttribute("href")).toBe(
-        "/app/notebooks/book01/notes/note02?mode=readonly",
-      );
+      expect(dom.root.querySelectorAll("a")).toHaveLength(0);
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: metadata }));
       expect(dom.root.querySelector('a[href*="mode=write"]')).not.toBeNull();
+      expect(dom.root.querySelector("a")?.getAttribute("href")).toBe("/app/notebooks/book01/notes/note02?mode=write");
+      window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, selectedNoteId: null } }));
+      expect(dom.root.querySelectorAll("a")).toHaveLength(0);
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, canWrite: false } }));
       expect(dom.root.querySelectorAll("a")).toHaveLength(0);
     } finally {
