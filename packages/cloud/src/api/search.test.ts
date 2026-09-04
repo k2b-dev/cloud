@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { sql } from "bun";
 import { ok } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
@@ -11,7 +11,7 @@ import type { AuthContext } from "../server";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
-import { createSearchRoutes } from "./search";
+import { createSearchRoutes as buildSearchRoutes } from "./search";
 
 const capabilities = defineCapabilities({
   protocolVersion: 1,
@@ -51,17 +51,6 @@ const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("credentialKind", "session");
   c.set("credentialScopes", []);
   await next();
-};
-
-const withInvocationMode = async <T>(mode: "legacy" | "jwt", run: () => Promise<T>): Promise<T> => {
-  const previous = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-  process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
-  try {
-    return await run();
-  } finally {
-    if (previous === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previous;
-  }
 };
 
 const provider = (index: number): CapabilityRegistryEntry => {
@@ -115,9 +104,12 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
   );
 };
 
+const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0] = {}) =>
+  buildSearchRoutes({ withActiveSigner, signInvocation: async (params) => fakeInvocation(params), ...dependencies });
+
 describe("global capability search", () => {
   test("drops invalid optional request ids without suppressing provider results", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {
         let called = false;
         const routes = createSearchRoutes({
@@ -138,7 +130,7 @@ describe("global capability search", () => {
         expect(response.status).toBe(200);
         expect(called).toBeTrue();
       }
-    });
+    }
   });
 
   test("returns a structured unavailable error when capability discovery fails", async () => {
@@ -431,7 +423,7 @@ describe("global capability search", () => {
   });
 
   test("issues one target, operation, and schema-bound JWT per started provider without forwarding the source credential", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const providers = [provider(1), provider(2), provider(3)];
       const signed: Parameters<typeof signInvocationToken>[0][] = [];
       const forwarded = new Map<string, Headers>();
@@ -483,11 +475,11 @@ describe("global capability search", () => {
         expect(headers?.get("x-cloud-invocation-operation")).toBe(searchInvocationOperation);
         expect(headers?.get("x-cloud-capability-schema-hash")).toBe(entry.manifest.queries[0]?.schemaHash);
       }
-    });
+    }
   });
 
   test("guards one prepared signer for a thirty-target JWT fan-out", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const providers = Array.from({ length: 30 }, (_, index) => provider(index));
       let guardCalls = 0;
       let preparedSigner: Parameters<typeof signInvocationToken>[0]["signer"];
@@ -514,11 +506,11 @@ describe("global capability search", () => {
 
       expect((await routes.request("/search?q=needle")).status).toBe(200);
       expect(guardCalls).toBe(1);
-    });
+    }
   });
 
   test("keeps JWT fan-out at eight concurrent providers and merges partial successes", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const providers = Array.from({ length: 17 }, (_, index) => provider(index));
       let active = 0;
       let maximumActive = 0;
@@ -562,11 +554,11 @@ describe("global capability search", () => {
       expect(signedBeforeProviderSettled).toBeGreaterThan(8);
       expect(body.count).toBe(16);
       expect(body.items.some((item) => item.appId === "search-09")).toBeFalse();
-    });
+    }
   });
 
   test("uses one common JWT fan-out deadline, including providers queued behind the first worker batch", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const deadline = new AbortController();
       const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
       const providers = Array.from({ length: 9 }, (_, index) => provider(index));
@@ -612,11 +604,11 @@ describe("global capability search", () => {
       } finally {
         timeout.mockRestore();
       }
-    });
+    }
   });
 
   test("bounds a stuck signer and does not start queued signing after the common deadline", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const deadline = new AbortController();
       const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
       const providers = Array.from({ length: 9 }, (_, index) => provider(index));
@@ -649,11 +641,11 @@ describe("global capability search", () => {
       } finally {
         timeout.mockRestore();
       }
-    });
+    }
   });
 
   test("bounds a stuck active-signer guard before signing or provider fetch", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const deadline = new AbortController();
       const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => deadline.signal);
       let signed = 0;
@@ -685,11 +677,11 @@ describe("global capability search", () => {
       } finally {
         timeout.mockRestore();
       }
-    });
+    }
   });
 
   test("reports a global signing-guard failure as unavailable instead of an empty successful search", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       let guardCalls = 0;
       let fetched = false;
       const routes = createSearchRoutes({
@@ -709,11 +701,11 @@ describe("global capability search", () => {
       expect(await response.json()).toEqual({ code: "APP_UNAVAILABLE", message: "Search invocation authority is currently unavailable" });
       expect(guardCalls).toBe(1);
       expect(fetched).toBeFalse();
-    });
+    }
   });
 
   test("retains partial results when one target-specific signing operation fails", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const fetched: string[] = [];
       const routes = createSearchRoutes({
         authenticate,
@@ -735,6 +727,6 @@ describe("global capability search", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ count: 1, items: [{ appId: "search-02" }] });
       expect(fetched).toEqual(["search-02"]);
-    });
+    }
   });
 });

@@ -93,10 +93,6 @@ const signInvocation: typeof signInvocationToken = async (params) => {
   };
 };
 
-const setMode = (mode: "legacy" | "jwt"): void => {
-  process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
-};
-
 const request = new Request("http://cloud.test/search?q=needle", { headers: { cookie: "session_token=benchmark" } });
 const p95 = (samples: number[]): number => [...samples].sort((left, right) => left - right)[Math.ceil(samples.length * 0.95) - 1] ?? 0;
 
@@ -165,27 +161,15 @@ for (const providerCount of [1, 8, 30]) {
       },
     });
 
-    for (const mode of ["legacy", "jwt"] as const) {
-      setMode(mode);
-      for (let index = 0; index < WARMUP_ITERATIONS; index += 1) await routes.request(request.clone());
-    }
-
-    const samples: Record<"legacy" | "jwt", number[]> = { legacy: [], jwt: [] };
+    for (let index = 0; index < WARMUP_ITERATIONS; index += 1) await routes.request(request.clone());
+    const samples: number[] = [];
     for (let index = 0; index < ITERATIONS; index += 1) {
-      // Alternate order to keep host-load drift from consistently favoring one mode.
-      const modes = index % 2 === 0 ? (["legacy", "jwt"] as const) : (["jwt", "legacy"] as const);
-      for (const mode of modes) {
-        setMode(mode);
-        const startedAt = performance.now();
-        const response = await routes.request(request.clone());
-        if (!response.ok) throw new Error(`Search benchmark failed with ${response.status}`);
-        samples[mode].push(performance.now() - startedAt);
-      }
+      const startedAt = performance.now();
+      const response = await routes.request(request.clone());
+      if (!response.ok) throw new Error(`Search benchmark failed with ${response.status}`);
+      samples.push(performance.now() - startedAt);
     }
-
-    const legacy = summary(samples.legacy);
-    const jwt = summary(samples.jwt);
-    const allowedRegressionMs = Math.max(legacy.p95Ms * 0.1, 10);
+    const jwt = summary(samples);
     console.log(
       JSON.stringify({
         benchmark: "search-fanout",
@@ -193,11 +177,8 @@ for (const providerCount of [1, 8, 30]) {
         providers: providerCount,
         iterations: ITERATIONS,
         controlledProviderLatencyMs: PROVIDER_LATENCY_MS,
-        legacy,
         jwt,
-        p95RegressionMs: Number((jwt.p95Ms - legacy.p95Ms).toFixed(4)),
-        allowedRegressionMs: Number(allowedRegressionMs.toFixed(4)),
-        passes: jwt.p95Ms - legacy.p95Ms <= allowedRegressionMs,
+        latencyGate: "descriptive JWT-only measurement; no legacy comparison",
       }),
     );
   }

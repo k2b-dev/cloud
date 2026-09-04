@@ -41,7 +41,6 @@ import {
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
-import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
@@ -732,12 +731,7 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
         signal: request.signal,
       });
       const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const server = createMcpServer(
-        request,
-        dependencies,
-        c.get("oauthScopes") ?? null,
-        invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
-      );
+      const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null, auth.getAuthority(c));
       await server.connect(transport);
       try {
         return await transport.handleRequest(request);

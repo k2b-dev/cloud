@@ -28,11 +28,10 @@ import type { Role } from "../contracts/shared";
 import type { HelpDefinition } from "../server/help";
 import { getLocale, resolveLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
-import { requireInvocationOrLegacy } from "../server/middleware/invocation";
+import { requireInvocation } from "../server/middleware/invocation";
 import { routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { settings as settingsMiddleware } from "../server/middleware/settings";
-import { legacyCredentialBoundary } from "../server/middleware/workload";
 import {
   capabilityInvocationOperation,
   searchInvocationOperation,
@@ -43,7 +42,6 @@ import { startNotificationDefinitionRegistration } from "../services/notificatio
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
-import { cloudMcpResourceUri } from "../shared/app-url";
 import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { themeBootstrapScript } from "../shared/theme";
@@ -586,13 +584,8 @@ export const defineApp = <
           headers: { "content-type": "application/json" },
         });
       };
-      const legacyCapabilityAuth = legacyCredentialBoundary(
-        auth.requireRole("authenticated", {
-          oauthAudience: async () => ["cloud", cloudMcpResourceUri(await get<string>("app.url"))],
-        }),
-      );
       const capabilityAuth = (kind: "queries" | "actions", review = false) =>
-        requireInvocationOrLegacy((c) => {
+        requireInvocation((c) => {
           const localId = c.req.param("capabilityId") ?? "";
           const operation = kind === "queries" ? compiledCapabilities.queries.get(localId) : compiledCapabilities.actions.get(localId);
           if (!operation) return null;
@@ -609,7 +602,7 @@ export const defineApp = <
             operation: invocationOperation,
             schemaHash: operation.manifest.schemaHash,
           };
-        }, legacyCapabilityAuth);
+        });
       const capabilityReadScope = auth.requireOAuthScope("read", "admin");
       const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
       server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
@@ -631,14 +624,13 @@ export const defineApp = <
       for (const widgetId of Object.keys(startOpts.widgets)) {
         if (!declaredWidgetIds.has(widgetId)) throw new Error(`Widget handler "${widgetId}" is not declared by app "${meta.id}"`);
       }
-      const legacyWidgetAuth = legacyCredentialBoundary(auth.requireRole("authenticated"));
       server.get(
         "/api/_internal/widgets/v1/:widgetId",
-        requireInvocationOrLegacy((c) => {
+        requireInvocation((c) => {
           const widgetId = c.req.param("widgetId") ?? "";
           if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
           return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
-        }, legacyWidgetAuth),
+        }),
         runtimeMiddleware(),
         settingsMiddleware(),
         async (c) => {

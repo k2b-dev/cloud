@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
@@ -81,15 +81,6 @@ const app = () => {
 };
 
 describe("AI capability authority", () => {
-  let previousIssuanceMode: string | undefined;
-  beforeEach(() => {
-    previousIssuanceMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "legacy";
-  });
-  afterEach(() => {
-    if (previousIssuanceMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousIssuanceMode;
-  });
   test("refreshes the conversation owner and rejects mismatched or non-user actors", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     const store = { getConversation: async () => conversation(current.id) };
@@ -138,10 +129,9 @@ describe("AI capability authority", () => {
           requestClientTool: async <T>() => undefined as T,
         },
         dependencies: {
-          createDelegation: async (userId) => `delegation:${userId}`,
-          revokeDelegation: async () => undefined,
-          dispatch: async ({ request }) => {
-            const actorId = request.headers.get("authorization")?.replace("Bearer delegation:", "");
+          dispatch: async ({ request, authority }) => {
+            expect(request.headers.has("authorization")).toBeFalse();
+            const actorId = authority?.accessSubject.type === "user" ? authority.accessSubject.userId : null;
             return Response.json({ data: { actorId, visible: actorId === first.id ? ["private-item"] : [] } });
           },
         },
@@ -151,7 +141,7 @@ describe("AI capability authority", () => {
     expect(await executeFor(second)).toEqual({ data: { actorId: second.id, visible: [] } });
   });
 
-  test("uses one short-lived delegation, stable call idempotency, and always revokes it", async () => {
+  test("passes authority without a reusable credential and preserves stable call idempotency", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     const entry = buildAiCapabilityCatalog([app()])[0]!;
     const seen: string[] = [];
@@ -168,13 +158,6 @@ describe("AI capability authority", () => {
         requestClientTool: async <T>() => undefined as T,
       },
       dependencies: {
-        createDelegation: async (userId) => {
-          seen.push(`create:${userId}`);
-          return "short-lived-token";
-        },
-        revokeDelegation: async (token) => {
-          seen.push(`revoke:${token}`);
-        },
         dispatch: async ({ request }) => {
           seen.push(request.headers.get("authorization") ?? "");
           seen.push(request.headers.get("idempotency-key") ?? "");
@@ -184,11 +167,10 @@ describe("AI capability authority", () => {
       },
     });
     expect(result).toEqual({ data: { id: "created" } });
-    expect(seen[0]).toBe(`create:${current.id}`);
-    expect(seen[1]).toBe("Bearer short-lived-token");
-    expect(seen[2]).toMatch(/^ai-[a-f0-9]{64}$/);
-    expect(seen[3]).toBe("de-CH");
-    expect(seen[4]).toBe("revoke:short-lived-token");
+    expect(seen).toHaveLength(3);
+    expect(seen[0]).toBe("");
+    expect(seen[1]).toMatch(/^ai-[a-f0-9]{64}$/);
+    expect(seen[2]).toBe("de-CH");
   });
 
   test("resolves an advertised review without forwarding an idempotency key", async () => {
@@ -206,8 +188,6 @@ describe("AI capability authority", () => {
         requestClientTool: async <T>() => undefined as T,
       },
       dependencies: {
-        createDelegation: async () => "short-lived-token",
-        revokeDelegation: async () => undefined,
         dispatch: async ({ request, review: requestedReview }) => {
           review = requestedReview === true;
           expect(request.headers.has("idempotency-key")).toBe(false);
@@ -225,10 +205,6 @@ describe("AI capability authority", () => {
     const mandate = { id: "33333333-3333-4333-8333-333333333333", revision: 4 };
     const seen: Array<{ review: boolean; actionApproval?: "approved" }> = [];
     const dependencies = {
-      createDelegation: async () => {
-        throw new Error("Scheduled tasks must not create interactive delegations");
-      },
-      revokeDelegation: async () => undefined,
       dispatch: async (input: Parameters<typeof dispatchCapability>[0]) => {
         seen.push({ review: input.review === true, actionApproval: input.mandate?.actionApproval });
         if (!input.review && input.mandate?.actionApproval !== "approved") {
@@ -252,12 +228,6 @@ describe("AI capability authority", () => {
       dependencies,
     };
 
-    const disabled = new AiCapabilityExecutionError("INVOCATION_JWT_DISABLED", 503, "Mandate invocations require JWT issuance");
-    await expect(reviewAiCapability(base)).rejects.toEqual(disabled);
-    await expect(executeAiCapability({ ...base, actionApproval: "approved" })).rejects.toEqual(disabled);
-    expect(seen).toEqual([]);
-
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
     await reviewAiCapability(base);
     await expect(executeAiCapability(base)).rejects.toEqual(
       new AiCapabilityExecutionError("MANDATE_FORBIDDEN", 403, "Action approval is required"),
@@ -271,9 +241,8 @@ describe("AI capability authority", () => {
     ]);
   });
 
-  test("preserves target authorization errors without leaking or retaining the delegation", async () => {
+  test("preserves target authorization errors", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
-    let revoked = false;
     await expect(
       executeAiCapability({
         conversationId: "conversation-1",
@@ -286,15 +255,10 @@ describe("AI capability authority", () => {
           requestClientTool: async <T>() => undefined as T,
         },
         dependencies: {
-          createDelegation: async () => "secret-delegation",
-          revokeDelegation: async () => {
-            revoked = true;
-          },
           dispatch: async () => Response.json({ code: "FORBIDDEN", message: "No access to this collection" }, { status: 403 }),
         },
       }),
     ).rejects.toEqual(new AiCapabilityExecutionError("FORBIDDEN", 403, "No access to this collection"));
-    expect(revoked).toBe(true);
   });
 
   test("keeps unavailable and invalid app failures distinguishable", async () => {
@@ -315,8 +279,6 @@ describe("AI capability authority", () => {
             requestClientTool: async <T>() => undefined as T,
           },
           dependencies: {
-            createDelegation: async () => "short-lived-token",
-            revokeDelegation: async () => undefined,
             dispatch: async () => Response.json({ code: failure.code, message: failure.message }, { status: failure.status }),
           },
         }),
@@ -338,8 +300,6 @@ describe("AI capability authority", () => {
           requestClientTool: async <T>() => undefined as T,
         },
         dependencies: {
-          createDelegation: async () => "short-lived-token",
-          revokeDelegation: async () => undefined,
           dispatch: async () =>
             Response.json(
               {

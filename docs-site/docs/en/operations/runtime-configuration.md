@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Runtime configuration
@@ -29,8 +29,6 @@ encrypted with `APP_SECRET`.
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's compatible JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
-| `CLOUD_SESSION_ISSUANCE_MODE` | Core session issuance gate: `legacy` or `jwt`; defaults to `legacy` |
-| `CLOUD_INVOCATION_ISSUANCE_MODE` | Core internal-dispatch gate: `legacy` or `jwt`; defaults to `legacy` during rolling migration |
 | `CLOUD_OAUTH_ISSUANCE_MODE` | OAuth signing gate: `legacy` or `core`; defaults to `legacy` during rolling migration |
 | `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential; only apps that call a Core identity broker receive one |
 | `CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE` | Mail incoming-automation migration gate: `legacy` or `mandate`; defaults to `legacy` |
@@ -110,21 +108,13 @@ Core itself, to that origin. Verify cold JWKS reads, not just warm-cache health.
 For rollback, restore compatible consumers before removing these endpoints.
 Current verifiers deliberately do not fall back to the combined identity JWKS.
 
-Keep `CLOUD_SESSION_ISSUANCE_MODE=legacy` while deploying the dual-read verifier
-to every application. Change only Core to `jwt` after the complete application
-fleet is compatible. This gate prevents a new Core instance from issuing a JWT
-to an older application instance during a rolling rollout.
-
-Use the same order for internal invocation credentials: deploy the dual-read
-provider routes first, then change only Core to
-`CLOUD_INVOCATION_ISSUANCE_MODE=jwt`. Core then signs a separate nominal
-30-second JWT for each target and exact operation; the invocation-only verifier
-allows two additional seconds for clock skew. Keep the legacy mode only for the rolling
-upgrade; it is not a second long-term authorization model.
-
-Scheduled chat-task occurrences remain queued while this invocation gate is
-`legacy`. Delivery resumes after it changes to `jwt`; Core does not substitute
-a user's session for background mandate authority.
+Browser sessions and internal invocations are JWT-only. Deploy Core and every
+application together after draining old replicas; see the
+[coordinated hard cut](/en/docs/reference/deprecations-and-migrations).
+Old browser sessions are invalidated once. No session or invocation mode
+switch remains. Core signs a nominal 30-second token for each target and exact
+operation; invocation verification allows two additional seconds for clock skew.
+Scheduled work uses mandates, never a stored browser session.
 
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.

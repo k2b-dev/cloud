@@ -58,7 +58,6 @@ export const migrate = async (): Promise<void> => {
     WHERE mail IS NOT NULL
   `.simple();
   await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS auth_epoch BIGINT NOT NULL DEFAULT 0`.simple();
-  await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS legacy_session_generation BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`
     DO $$
     BEGIN
@@ -74,21 +73,6 @@ export const migrate = async (): Promise<void> => {
     END $$;
   `.simple();
   await sql`ALTER TABLE auth.users VALIDATE CONSTRAINT users_auth_epoch_nonnegative_check`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'users_legacy_session_generation_nonnegative_check'
-          AND conrelid = 'auth.users'::regclass
-      ) THEN
-        ALTER TABLE auth.users
-          ADD CONSTRAINT users_legacy_session_generation_nonnegative_check
-          CHECK (legacy_session_generation >= 0) NOT VALID;
-      END IF;
-    END $$;
-  `.simple();
-  await sql`ALTER TABLE auth.users VALIDATE CONSTRAINT users_legacy_session_generation_nonnegative_check`.simple();
   console.log("  ✓ auth.users table");
 
   await sql`
@@ -182,6 +166,7 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_session_families_signing_kid_expiry
     ON auth.session_families(signing_kid, expires_at DESC)
   `.simple();
+  await migrateBrowserSessionCutover();
   console.log("  ✓ auth.session_families table");
 
   await sql`
@@ -1009,4 +994,24 @@ export const migrate = async (): Promise<void> => {
     END $$;
   `.simple();
   console.log("  ✓ auth upgrade-safe ALTERs applied");
+};
+
+export const migrateBrowserSessionCutover = async (): Promise<void> => {
+  // Consume the removed bridge column transactionally, once, across replicas.
+  // Revoke browser families only; user epochs govern other durable authority too.
+  await sql`
+    DO $$
+    BEGIN
+      LOCK TABLE auth.users IN ACCESS EXCLUSIVE MODE;
+      IF EXISTS (
+        SELECT 1 FROM pg_attribute WHERE attrelid = 'auth.users'::regclass
+          AND attname = 'legacy_session_generation' AND NOT attisdropped
+      ) THEN
+        UPDATE auth.session_families
+        SET revoked_at = now(), revocation_reason = 'jwt_only_cutover'
+        WHERE revoked_at IS NULL;
+        ALTER TABLE auth.users DROP COLUMN legacy_session_generation;
+      END IF;
+    END $$;
+  `.simple();
 };

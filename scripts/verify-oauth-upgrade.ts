@@ -160,7 +160,19 @@ try {
     "-c",
     "CREATE DATABASE cloud_oauth_verify_fresh",
   ]);
-  for (const scenario of ["upgrade", "fresh"]) {
+  await command([
+    "docker",
+    "exec",
+    pg,
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "cloud_oauth_verify_upgrade",
+    "-c",
+    "CREATE DATABASE cloud_oauth_verify_regressions",
+  ]);
+  for (const [index, scenario] of ["upgrade", "fresh", "regressions"].entries()) {
     const name = `${prefix}-${scenario}`;
     owned.push(name);
     const mounts = ["cloud", "core", "oauth"].flatMap((pkg) => [
@@ -192,7 +204,7 @@ try {
         "-e",
         `DATABASE_URL=postgres://postgres:verification-only@127.0.0.1:5432/cloud_oauth_verify_${scenario}?sslmode=disable`,
         "-e",
-        `REDIS_URL=redis://127.0.0.1:6379/${scenario === "upgrade" ? "0" : "1"}`,
+        `REDIS_URL=redis://127.0.0.1:6379/${index}`,
         "-e",
         "NODE_ENV=development",
         "-e",
@@ -208,7 +220,7 @@ try {
         "--entrypoint",
         "bun",
         images.bun,
-        "src/verification/upgrade.ts",
+        `src/verification/${scenario === "regressions" ? "regressions" : "upgrade"}.ts`,
       ],
       { stdout: "inherit", stderr: "inherit" },
     );

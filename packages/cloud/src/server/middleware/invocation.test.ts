@@ -4,7 +4,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey, Si
 import type { User } from "../../contracts/shared";
 import { type CloudInvocationClaims, verifyInvocationToken } from "../../services/identity/invocation-token";
 import type { AuthContext } from "./auth";
-import { requireInvocation, requireInvocationOrLegacy } from "./invocation";
+import { requireInvocation } from "./invocation";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -153,33 +153,24 @@ describe("invocation middleware", () => {
     expect(await response.json()).toEqual({ kind: "invocation", scopes: ["read"], userId: user.id });
   });
 
-  test("the rolling adapter never falls back to legacy auth for an invalid or mismatched invocation", async () => {
-    let legacyCalls = 0;
+  test("rejects invalid signatures and mismatched invocation schemas", async () => {
     const app = new Hono<AuthContext>()
       .use(
-        requireInvocationOrLegacy(
-          () => ({ ...expected(), schemaHash: "b".repeat(64) }),
-          async (_c, next) => {
-            legacyCalls += 1;
-            await next();
-          },
-          {
-            verify: realVerify,
-            resolve: async () => ({
-              actor: { kind: "user", user },
-              accessSubject: { type: "user", userId: user.id },
-              credentialKind: "invocation",
-              scopes: ["read"],
-            }),
-          },
-        ),
+        requireInvocation(() => ({ ...expected(), schemaHash: "b".repeat(64) }), {
+          verify: realVerify,
+          resolve: async () => ({
+            actor: { kind: "user", user },
+            accessSubject: { type: "user", userId: user.id },
+            credentialKind: "invocation",
+            scopes: ["read"],
+          }),
+        }),
       )
       .get("/", (c) => c.text("unexpected"));
     expect((await app.request("/", { headers: { authorization: `Bearer ${await signedToken(claims, wrongSigningKey)}` } })).status).toBe(
       401,
     );
     expect((await app.request("/", { headers: { authorization: `Bearer ${await signedToken(claims)}` } })).status).toBe(409);
-    expect(legacyCalls).toBe(0);
   });
 
   test("strict mode rejects non-invocation credentials before verification", async () => {
@@ -195,20 +186,15 @@ describe("invocation middleware", () => {
       )
       .get("/", (c) => c.text("ok"));
 
-    const response = await app.request("/", { headers: { authorization: "Bearer cld_source" } });
-    expect(response.status).toBe(401);
+    const credentials: HeadersInit[] = [
+      { authorization: "Bearer cld_source" },
+      { authorization: "Bearer user:opaque" },
+      { cookie: "session_token=user:opaque" },
+      {},
+    ];
+    for (const headers of credentials) {
+      expect((await app.request("/", { headers })).status).toBe(401);
+    }
     expect(verified).toBeFalse();
-  });
-
-  test("rolling compatibility delegates only non-invocation credentials to legacy auth", async () => {
-    let legacyCalls = 0;
-    const legacy = async (_c: Parameters<ReturnType<typeof requireInvocationOrLegacy>>[0], next: () => Promise<void>) => {
-      legacyCalls += 1;
-      await next();
-    };
-    const app = new Hono<AuthContext>().use(requireInvocationOrLegacy(expected, legacy)).get("/", (c) => c.text("ok"));
-
-    expect((await app.request("/", { headers: { authorization: "Bearer cld_source" } })).status).toBe(200);
-    expect(legacyCalls).toBe(1);
   });
 });

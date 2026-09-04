@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
-import { loadJwtSessionUser, loadLegacySessionUser } from "./user";
+import { loadJwtSessionUser } from "./user";
 
 const canUseDatabase = async (): Promise<boolean> => {
   try {
@@ -24,10 +24,10 @@ suite("session family actor resolution", () => {
     await sql`
       INSERT INTO auth.users (
         id, uid, provider, profile, given_name, sn, display_name, mail,
-        auth_epoch, legacy_session_generation
+        auth_epoch
       ) VALUES (
         ${userId}, ${`session-family-${userId}`}, 'local', 'user', 'Session', 'Family',
-        'Session Family', ${`session-family-${userId}@example.test`}, 2, 4
+        'Session Family', ${`session-family-${userId}@example.test`}, 2
       )
     `;
     await sql`
@@ -51,7 +51,7 @@ suite("session family actor resolution", () => {
     await sql`DELETE FROM auth.signing_keys WHERE kid = ${kid}`;
   });
 
-  test("enforces family, epoch, key revocation, and the durable legacy floor", async () => {
+  test("enforces family, epoch and signing-key revocation", async () => {
     const input = { userId, sid, authEpoch: 2, groupsAdmin: ["admins"] };
     expect((await loadJwtSessionUser(input))?.id).toBe(userId);
 
@@ -65,14 +65,5 @@ suite("session family actor resolution", () => {
 
     await sql`UPDATE auth.signing_keys SET state = 'revoked', revoked_at = now(), revoke_reason = 'test' WHERE kid = ${kid}`;
     expect(await loadJwtSessionUser(input)).toBeNull();
-
-    expect(await loadLegacySessionUser({ userId, sessionGeneration: 3, groupsAdmin: ["admins"] })).toBeNull();
-    expect((await loadLegacySessionUser({ userId, sessionGeneration: 4, groupsAdmin: ["admins"] }))?.id).toBe(userId);
-    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 2, groupsAdmin: [] })).toBeNull();
-    await sql`UPDATE auth.users SET legacy_session_generation = ${Number.MAX_SAFE_INTEGER} WHERE id = ${userId}`;
-    expect(await loadLegacySessionUser({ userId, sessionGeneration: 4, authEpoch: 2, groupsAdmin: [] })).toBeNull();
-    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, groupsAdmin: [] })).toBeNull();
-    expect(await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 1, groupsAdmin: [] })).toBeNull();
-    expect((await loadLegacySessionUser({ userId, sessionGeneration: -1, authEpoch: 2, groupsAdmin: [] }))?.id).toBe(userId);
   });
 });

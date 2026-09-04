@@ -5,7 +5,7 @@ import {
   CapabilityIdempotencyKeySchema,
   CapabilityLocalIdSchema,
 } from "@valentinkolb/cloud/contracts";
-import { type AuthenticatedWorkload, authenticateWorkloadCredential, invocationIssuanceMode } from "@valentinkolb/cloud/services/identity";
+import { type AuthenticatedWorkload, authenticateWorkloadCredential } from "@valentinkolb/cloud/services/identity";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 
@@ -50,7 +50,6 @@ type InvocationBrokerDependencies = {
     scope: "identity:invoke";
   }) => Promise<AuthenticatedWorkload | null>;
   dispatchDependencies?: CapabilityDispatchDependencies;
-  issuanceEnabled: () => boolean;
 };
 
 const bearerToken = (authorization: string | undefined): string | null => {
@@ -114,11 +113,6 @@ const dispatchRequest = (source: Request, input: InvocationRequest): Request => 
 export const createIdentityInvocationRoutes = (dependencies: Partial<InvocationBrokerDependencies> = {}): Hono => {
   const authenticateWorkload = dependencies.authenticateWorkload ?? authenticateWorkloadCredential;
   return new Hono().post("/invoke", async (c) => {
-    if (!(dependencies.issuanceEnabled ?? (() => invocationIssuanceMode() === "jwt"))()) {
-      return c.json({ code: "INVOCATION_JWT_DISABLED", message: "Background capability invocation is not enabled" }, 503, {
-        "Cache-Control": "no-store",
-      });
-    }
     const appId = CapabilityAppIdSchema.safeParse(c.req.header("X-Cloud-App-Id"));
     const token = bearerToken(c.req.header("Authorization"));
     if (!appId.success || !token) return errorResponse(c, 401, "UNAUTHORIZED");

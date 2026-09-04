@@ -33,7 +33,6 @@ import {
 import { logger } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -174,35 +173,6 @@ export const loadCapabilityCatalogPage = async (
     apps,
     page,
   };
-};
-
-export const capabilityCredentialHeaders = (request: Request): Headers => {
-  const headers = new Headers({
-    "content-type": "application/json",
-    accept: "application/json",
-  });
-  const authorization = request.headers.get("authorization");
-  const cookie = request.headers.get("cookie");
-  if (authorization && /^Bearer\s+\S+$/i.test(authorization)) {
-    headers.set("authorization", authorization);
-  } else if (cookie) {
-    const sessionCookie = cookie
-      .split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith("session_token="));
-    if (sessionCookie) headers.set("cookie", sessionCookie);
-  }
-  for (const name of ["x-request-id", "traceparent", "tracestate", "idempotency-key"] as const) {
-    const value = request.headers.get(name);
-    if (value) headers.set(name, value);
-  }
-  // Locale travels as invocation metadata next to auth and tracing. The
-  // caller's preference (explicit header, locale cookie, Accept-Language) is
-  // folded into one canonical header; without a preference the header stays
-  // absent and the provider falls back to the shared operator default.
-  const preferred = preferredLocale(request.headers);
-  if (preferred) headers.set(LOCALE_HEADER, preferred);
-  return headers;
 };
 
 const errorResponse = (code: string, message: string, status: number, details?: Record<string, unknown>) => ({
@@ -393,35 +363,33 @@ export const dispatchCapability = async (params: {
             authorization: `Bearer ${issued.data.token}`,
           });
         })()
-      : invocationIssuanceMode() === "jwt"
-        ? await (async () => {
-            if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
-            const authority = params.authority;
-            const signed = await waitWithin(
-              (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
-                "invocation",
-                (signer) =>
-                  (params.dependencies?.signInvocation ?? signInvocationToken)({
-                    targetAppId: params.appId,
-                    callingAppId: params.callingAppId ?? "core",
-                    operation: invocationOperation,
-                    schemaHash: operation.schemaHash,
-                    authority: invocationAuthorityFromRequest(authority),
-                    requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
-                    signer,
-                    issuer: signer.issuer,
-                  }),
-                { signal, timeoutMs },
-              ),
-              signal,
-            );
-            return new Headers({
-              "content-type": "application/json",
-              accept: "application/json",
-              authorization: `Bearer ${signed.token}`,
-            });
-          })()
-        : capabilityCredentialHeaders(params.request);
+      : await (async () => {
+          if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
+          const authority = params.authority;
+          const signed = await waitWithin(
+            (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
+              "invocation",
+              (signer) =>
+                (params.dependencies?.signInvocation ?? signInvocationToken)({
+                  targetAppId: params.appId,
+                  callingAppId: params.callingAppId ?? "core",
+                  operation: invocationOperation,
+                  schemaHash: operation.schemaHash,
+                  authority: invocationAuthorityFromRequest(authority),
+                  requestId: normalizeInvocationRequestId(params.request.headers.get("x-request-id")),
+                  signer,
+                  issuer: signer.issuer,
+                }),
+              { signal, timeoutMs },
+            ),
+            signal,
+          );
+          return new Headers({
+            "content-type": "application/json",
+            accept: "application/json",
+            authorization: `Bearer ${signed.token}`,
+          });
+        })();
   } catch (error) {
     if (error instanceof MandateDispatchError) {
       const denied = errorResponse(
@@ -629,7 +597,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,
-          authority: invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
+          authority: auth.getAuthority(c),
           locale,
           dependencies,
         });
@@ -679,7 +647,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
           appId: c.req.param("appId") ?? "",
           capabilityId: c.req.param("capabilityId") ?? "",
           input: request.data.input,
-          authority: invocationIssuanceMode() === "jwt" ? auth.getAuthority(c) : undefined,
+          authority: auth.getAuthority(c),
           locale,
           dependencies,
         });

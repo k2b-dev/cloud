@@ -14,11 +14,9 @@ import { type AuthContext, auth, expectUserBackedActor, jsonResponse, preferredL
 import { logger } from "../services";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
-import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
-import { capabilityCredentialHeaders } from "./capabilities";
 import { type SearchItem, SearchItemSchema, SearchQuerySchema, SearchResponseSchema } from "./search/schemas";
 
 const log = logger("search");
@@ -144,7 +142,7 @@ const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
 /**
  * Creates the global search route.
  * Discovers search providers from the capability registry and fetches results via HTTP,
- * forwarding the session cookie for authentication.
+ * authenticating each provider with an operation-bound invocation JWT.
  */
 export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) => {
   const registry = dependencies.listCapabilities ?? listCapabilities;
@@ -170,8 +168,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
 
       const query = c.req.valid("query");
       const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
-      const useInvocation = invocationIssuanceMode() === "jwt";
-      const invocationAuthority = useInvocation ? invocationAuthorityFromRequest(auth.getAuthority(c)) : null;
+      const invocationAuthority = invocationAuthorityFromRequest(auth.getAuthority(c));
       let entries: CapabilityRegistryEntry[];
       try {
         entries = await registry();
@@ -228,13 +225,13 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       // The same request-wide budget covers signing and provider I/O.
       const providerDeadline = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
       const fanoutSignal = AbortSignal.any([c.req.raw.signal, providerDeadline]);
-      const signingSignal = useInvocation ? AbortSignal.any([fanoutSignal, AbortSignal.timeout(SIGNING_TIMEOUT_MS)]) : fanoutSignal;
+      const signingSignal = AbortSignal.any([fanoutSignal, AbortSignal.timeout(SIGNING_TIMEOUT_MS)]);
       // Guard the whole issuance batch once, then reuse the prepared signer for
       // every target. This is one Postgres check per outer search request, not
       // one check per provider.
       let signedInvocations: PromiseSettledResult<Awaited<ReturnType<typeof signInvocationToken>>>[] | null = null;
       try {
-        if (useInvocation && invocationAuthority && active.length > 0) {
+        if (active.length > 0) {
           signedInvocations = await waitWithin(
             (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
@@ -280,19 +277,17 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
         // they understand.
         const scopedTags = query.tag.filter((t) => provider.tags.includes(t));
 
-        const headers = useInvocation
-          ? await (async () => {
-              const signed = await signedInvocations?.[index];
-              if (!signed || signed.status === "rejected") {
-                throw signed?.reason ?? new Error("Resolved request authority is required for search invocation issuance");
-              }
-              return new Headers({
-                "content-type": "application/json",
-                accept: "application/json",
-                authorization: `Bearer ${signed.value.token}`,
-              });
-            })()
-          : capabilityCredentialHeaders(c.req.raw);
+        const headers = await (async () => {
+          const signed = await signedInvocations?.[index];
+          if (!signed || signed.status === "rejected") {
+            throw signed?.reason ?? new Error("Resolved request authority is required for search invocation issuance");
+          }
+          return new Headers({
+            "content-type": "application/json",
+            accept: "application/json",
+            authorization: `Bearer ${signed.value.token}`,
+          });
+        })();
         if (requestId) headers.set("x-request-id", requestId);
         for (const name of ["traceparent", "tracestate"] as const) {
           const value = c.req.header(name);

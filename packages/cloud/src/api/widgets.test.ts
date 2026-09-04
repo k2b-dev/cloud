@@ -6,7 +6,7 @@ import type { DashboardWidget } from "../_internal/registry";
 import type { AuthContext } from "../server";
 import type { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
-import { createWidgetRoutes } from "./widgets";
+import { createWidgetRoutes as buildWidgetRoutes } from "./widgets";
 
 const user = { id: "11111111-1111-4111-8111-111111111111", roles: ["user"] } as AuthContext["Variables"]["user"];
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
@@ -62,20 +62,16 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
   );
 };
 
-const withInvocationMode = async (mode: "legacy" | "jwt", run: () => Promise<void>) => {
-  const previous = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-  process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
-  try {
-    await run();
-  } finally {
-    if (previous === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previous;
-  }
-};
+const createWidgetRoutes = (dependencies: Parameters<typeof buildWidgetRoutes>[0] = {}) =>
+  buildWidgetRoutes({
+    withActiveSigner,
+    signInvocation: async () => ({ token: "target-token" }) as Awaited<ReturnType<typeof signInvocationToken>>,
+    ...dependencies,
+  });
 
 describe("Core widget proxy", () => {
   test("drops invalid optional request ids before signing and forwarding", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {
         let called = false;
         const routes = createWidgetRoutes({
@@ -96,11 +92,11 @@ describe("Core widget proxy", () => {
         expect(response.status).toBe(200);
         expect(called).toBeTrue();
       }
-    });
+    }
   });
 
-  test("legacy mode preserves the public target during the rolling migration", async () => {
-    await withInvocationMode("legacy", async () => {
+  test("always uses the invocation-only target, even for a browser cookie", async () => {
+    {
       const captured: { target?: URL; headers?: Headers } = {};
       const routes = createWidgetRoutes({
         authenticate,
@@ -115,14 +111,14 @@ describe("Core widget proxy", () => {
       const response = await routes.request("/widgets/v1/weather/current", { headers: { cookie: "theme=dark; session_token=session" } });
       expect(response.status).toBe(204);
       expect(response.headers.get("content-type")).toBe("application/json");
-      expect(captured.target?.href).toBe("http://app-weather:3000/api/weather/widget/current");
-      expect(captured.headers?.get("cookie")).toBe("session_token=session");
-      expect(captured.headers?.get("authorization")).toBeNull();
-    });
+      expect(captured.target?.href).toBe("http://app-weather:3000/api/_internal/widgets/v1/current");
+      expect(captured.headers?.get("cookie")).toBeNull();
+      expect(captured.headers?.get("authorization")).toBe("Bearer target-token");
+    }
   });
 
   test("JWT mode issues an exact target token and never forwards the source credential", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       let signed: Parameters<typeof signInvocationToken>[0] | null = null;
       let receivedSigner = false;
       let guardCalls = 0;
@@ -171,7 +167,7 @@ describe("Core widget proxy", () => {
       expect(captured.headers?.get("cookie")).toBeNull();
       expect(captured.headers?.get("x-cloud-locale")).toBe("de-CH");
       expect(captured.headers?.get("x-cloud-invocation-operation")).toBe("widget.read:current");
-    });
+    }
   });
 
   test("does not proxy undeclared widget targets", async () => {
@@ -198,7 +194,7 @@ describe("Core widget proxy", () => {
   }
 
   test("validates and reserializes provider JSON without forwarding foreign response metadata", async () => {
-    await withInvocationMode("legacy", async () => {
+    {
       const routes = createWidgetRoutes({
         authenticate,
         listWidgets: async () => [widget],
@@ -212,7 +208,7 @@ describe("Core widget proxy", () => {
       expect(response.headers.get("content-type")).toStartWith("application/json");
       expect(response.headers.get("set-cookie")).toBeNull();
       expect(await response.json()).toEqual({ title: "Weather", href: "/app/weather", blocks: [] });
-    });
+    }
   });
 
   test("rejects unsafe links and oversized bodies instead of forwarding them", async () => {
@@ -229,7 +225,7 @@ describe("Core widget proxy", () => {
   });
 
   test("bounds registry and invocation signing inside the proxy deadline", async () => {
-    await withInvocationMode("jwt", async () => {
+    {
       const routes = createWidgetRoutes({
         authenticate,
         timeoutMs: 5,
@@ -240,7 +236,7 @@ describe("Core widget proxy", () => {
       const response = await routes.request("/widgets/v1/weather/current");
       expect(response.status).toBe(504);
       expect(await response.json()).toEqual({ message: "Widget deadline exceeded" });
-    });
+    }
   });
 
   test("preserves safe external links while stripping provider extension fields", async () => {

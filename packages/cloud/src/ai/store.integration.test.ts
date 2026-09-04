@@ -3,6 +3,7 @@ import type { LoopAggregate, Message } from "@k2b/nessi";
 import { sql } from "bun";
 import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
+import { createTestSession } from "../services/session/test-fixture";
 import {
   forgetAiToolApproval,
   hasRememberedAiToolApproval,
@@ -78,10 +79,10 @@ suite("AI conversation store integration", () => {
   test("creates and explicitly revokes a short-lived internal user delegation", async () => {
     const userId = await insertUser();
     try {
-      const token = await authSession.createDelegation(userId, 5);
-      expect(await authSession.getData(token)).toMatchObject({ userId });
+      const token = await createTestSession(userId);
+      expect(await authSession.authenticate(token)).toMatchObject({ data: { userId } });
       await authSession.revoke(token);
-      expect(await authSession.getData(token)).toBeNull();
+      expect(await authSession.authenticate(token)).toBeNull();
     } finally {
       await cleanupFixture({ userId, conversationIds: [] });
     }

@@ -5,7 +5,7 @@ section: Contributing
 order: 1320
 description: Check the public OAuth contract against the pre-JWT implementation with an isolated HTTP reference client.
 tags: [contributing, identity, oauth, testing, migration]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Verify OAuth upgrade compatibility
@@ -14,6 +14,11 @@ Run this check before removing OAuth migration compatibility. It exercises
 the public HTTP protocol against the actual pre-JWT implementation, upgrades
 the same database, and repeats the requests against Core-owned issuance.
 A second scenario starts with an empty database and current code.
+A third disposable database runs the complete OAuth token and AI store/task
+regression suites with real JWT session fixtures and a Core JWKS endpoint.
+Those tests load anydoc's native Linux binding from the existing Core image;
+the runner checks that its package version matches the checkout. No native
+dependency is downloaded during verification.
 
 ```bash
 bun scripts/verify-oauth-upgrade.ts
@@ -42,7 +47,7 @@ the public JWKS endpoint. No authentication or signing function is mocked.
 
 A successful run exits with status zero and prints the evidence directory.
 It contains `upgrade.json`, `fresh.json`, `environment.json`, `regressions.txt`,
-and `oauth.diff`. Existing contract, session-JWT, and Core-authority tests also
+`full-regressions.txt`, and `oauth.diff`. Existing contract, session-JWT, and Core-authority tests also
 run against the disposable database; skipped tests fail the check.
 The reports contain check results and synthetic contract data, not tokens,
 client secrets, or private keys. The environment report records the baseline,
@@ -78,10 +83,11 @@ between validation and signing; the public endpoint maps this to
 These are observable behaviors, even though the request/response schemas
 remain unchanged. Keep their focused failure and concurrency tests too.
 
-Changing `CLOUD_SESSION_ISSUANCE_MODE` to `jwt` alone does **not** invalidate
-existing browser sessions. This check explicitly revokes the fixture user's
-sessions to verify logout and re-login. It does not implement an automatic,
-installation-wide upgrade logout or remove the legacy session reader.
+The upgrade rejects old opaque browser sessions immediately and verifies JWT
+re-login. Isolated regression tests reconstruct the previous JWT release's
+migration marker and session families, verify the one-time invalidation under
+concurrent migration, and prove that another migration preserves new logins.
+OAuth access tokens, codes, and refresh grants remain usable after browser logout.
 
 Accepting a coordinated browser logout removes the need to wait for old browser
 sessions to expire. It does not permit dropping OAuth verification keys while

@@ -3,9 +3,10 @@ import { createMcpRoutes } from "@valentinkolb/cloud/api";
 import { type AuthContext, auth, v } from "@valentinkolb/cloud/server";
 import { oauthTokens, serviceAccounts } from "@valentinkolb/cloud/services";
 import { clearOAuthVerifierCachesForTest } from "@valentinkolb/cloud/services/oauth-tokens";
-import { redis, sql } from "bun";
+import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
+import { createTestSession } from "../../../cloud/src/services/session/test-fixture";
 import adminApiRoutes from "../api";
 import type { OAuthClient } from "../contracts";
 import { ConsentDecisionSchema, completeConsent } from "../frontend/consent-action";
@@ -67,11 +68,7 @@ const insertGroup = async (name: string) => {
 
 const adminActor = (id: string) => ({ id, uid: `oauth-admin-${id}`, provider: "local", roles: ["admin"] });
 
-const createSessionToken = async (userId: string): Promise<string> => {
-  const randomToken = crypto.randomUUID();
-  await redis.set(`session:${userId}:${randomToken}`, JSON.stringify({ userId, gen: 0 }), "EX", 60);
-  return `${userId}:${randomToken}`;
-};
+const createSessionToken = createTestSession;
 
 const waitForAdvisoryWaiter = async (key: number): Promise<void> => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -761,7 +758,7 @@ suite("OAuth resource access tokens", () => {
       });
       expect(consumed?.scopes).toEqual(["openid"]);
     } finally {
-      await redis.del(`session:${sessionToken}`);
+      await auth.session.revoke(sessionToken);
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -1159,7 +1156,7 @@ suite("OAuth resource access tokens", () => {
       expect(body.clients).toHaveLength(1);
       expect(body.pagination).toEqual({ page: 2, per_page: 2, total: 3, total_pages: 2, has_next: false });
     } finally {
-      await redis.del(`session:${sessionToken}`);
+      await auth.session.revoke(sessionToken);
       for (const client of clients) await sql`DELETE FROM oauth.clients WHERE id = ${client.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -1440,7 +1437,7 @@ suite("OAuth resource access tokens", () => {
       expect(refreshAfterRevocation.status).toBe(401);
       expect(await refreshAfterRevocation.json()).toMatchObject({ error: "invalid_client" });
     } finally {
-      await redis.del(`session:${sessionToken}`);
+      await auth.session.revoke(sessionToken);
       if (clientId) await sql`DELETE FROM oauth.clients WHERE client_id = ${clientId}`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -1903,7 +1900,7 @@ suite("OAuth resource access tokens", () => {
       await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userId}::uuid`;
       expect((await refresh()).status).toBe(200);
     } finally {
-      await redis.del(`session:${sessionToken}`);
+      await auth.session.revoke(sessionToken);
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -2193,7 +2190,7 @@ suite("OAuth resource access tokens", () => {
       expect(await oauthTokens.verifyAccessToken(refreshed.access_token, resource)).not.toBeNull();
       expect(await oauthTokens.verifyAccessToken(refreshed.access_token)).toBeNull();
     } finally {
-      await redis.del(`session:${sessionToken}`);
+      await auth.session.revoke(sessionToken);
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }

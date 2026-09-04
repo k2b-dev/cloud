@@ -1,4 +1,4 @@
-import { redis, sql } from "bun";
+import { sql } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { env } from "../../config/env";
@@ -12,99 +12,18 @@ import {
   signSessionToken,
   verifySessionToken,
 } from "../identity";
-import { identityMetrics } from "../identity/metrics";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
-import { logger } from "../logging";
 import * as settings from "../settings";
-import { LEGACY_EPOCH_SESSION_GENERATION, LEGACY_SESSION_EPOCH_FLOOR, loadJwtSessionUser, loadLegacySessionUser } from "./user";
+import { loadJwtSessionUser } from "./user";
 
 export type SessionData = {
   userId: string;
-  gen: number;
-  /** Present for JWT-aware consumers; optional to preserve the legacy dependency-injection contract. */
-  kind?: "jwt" | "legacy";
-  sid?: string | null;
-  authEpoch?: number | null;
-  expiresAt?: string | null;
+  sid: string;
+  authEpoch: number;
+  expiresAt: string;
 };
 
 export type AuthenticatedSession = { data: SessionData; user: User };
-
-/** gen=-1 requires authEpoch and the durable epoch-only bridge floor. */
-type LegacyStoredSession = { userId: string; gen: number; authEpoch?: number };
-type VerifiedCredential = { kind: "jwt"; claims: CloudSessionClaims } | { kind: "legacy"; data: LegacyStoredSession };
-
-const sessionKey = (userId: string, randomToken: string) => `session:${userId}:${randomToken}`;
-const genKey = (userId: string) => `session:gen:${userId}`;
-const log = logger("cloud:session");
-// Match the internal authority request budget; legacy Redis work must not hold a
-// user row / pool connection indefinitely while Redis is unavailable.
-const LEGACY_REDIS_BUDGET_MS = 5_000;
-let lastLegacyUseLogAt = 0;
-
-const boundedLegacyRedis = async <T>(pending: Promise<T>, deadline = Date.now() + LEGACY_REDIS_BUDGET_MS): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      pending,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error("Legacy session Redis operation timed out")), Math.max(0, deadline - Date.now()));
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-};
-
-const sessionIssuanceMode = (): "legacy" | "jwt" => {
-  const value = (process.env.CLOUD_SESSION_ISSUANCE_MODE ?? "legacy").trim().toLowerCase();
-  if (value !== "legacy" && value !== "jwt") throw new Error("CLOUD_SESSION_ISSUANCE_MODE must be legacy or jwt");
-  return value;
-};
-
-const readGen = async (userId: string): Promise<number> => {
-  const raw = await redis.get(genKey(userId));
-  if (!raw) return 0;
-  const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n < 0) throw new Error("Legacy Redis generation is invalid");
-  return n;
-};
-
-/** Monotonic only: a delayed command after timeout can never restore an older generation. */
-const synchronizeLegacyGeneration = async (userId: string, floor: number, deadline?: number): Promise<number> => {
-  const value = await boundedLegacyRedis(
-    redis.send("EVAL", [
-      `local raw = redis.call('GET', KEYS[1]) or '0'
-       local current = tonumber(raw)
-       local target = tonumber(ARGV[1])
-       if not current or current < 0 or current > tonumber(ARGV[2]) or current % 1 ~= 0 then
-         return redis.error_reply('Invalid legacy session generation')
-       end
-       if current < target then
-         redis.call('SET', KEYS[1], ARGV[1])
-         return ARGV[1]
-       end
-       return raw`,
-      "1",
-      genKey(userId),
-      String(floor),
-      String(LEGACY_SESSION_EPOCH_FLOOR),
-    ]),
-    deadline,
-  );
-  const generation = Number(value);
-  if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Legacy Redis generation is invalid");
-  return generation;
-};
-
-const parseToken = (token: string): { userId: string; randomToken: string } | null => {
-  const colonIndex = token.indexOf(":");
-  if (colonIndex === -1) return null;
-  const userId = token.slice(0, colonIndex);
-  const randomToken = token.slice(colonIndex + 1);
-  if (!userId || !randomToken) return null;
-  return { userId, randomToken };
-};
 
 const parseBearer = (header: string | undefined): string | null => {
   if (!header) return null;
@@ -114,71 +33,12 @@ const parseBearer = (header: string | undefined): string | null => {
 
 const isCloudApiToken = (token: string | null): boolean => Boolean(token?.startsWith("cld_"));
 
-const createLegacyToken = async (userId: string, ttlSeconds: number): Promise<string> => {
-  const randomToken = crypto.randomUUID();
-  await sql.begin(async (tx) => {
-    const [user] = await tx<Array<{ auth_epoch: string | number | bigint; legacy_session_generation: string | number | bigint }>>`
-      SELECT auth_epoch, legacy_session_generation FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
-    `;
-    if (!user) throw new Error("Cannot create a session for an unknown user");
-    const authEpoch = Number(user.auth_epoch);
-    if (!Number.isSafeInteger(authEpoch) || authEpoch < 0) throw new Error("User auth_epoch is invalid");
-    const floor = Number(user.legacy_session_generation);
-    const deadline = Date.now() + LEGACY_REDIS_BUDGET_MS;
-    let gen = LEGACY_EPOCH_SESSION_GENERATION;
-    if (floor < LEGACY_SESSION_EPOCH_FLOOR) {
-      gen = await synchronizeLegacyGeneration(userId, floor, deadline);
-      // Persist observed Redis high-water before releasing the same lock used by
-      // revoke-all. A revoke that read Redis before us cannot miss this issuance.
-      if (gen > floor) await tx`UPDATE auth.users SET legacy_session_generation = ${gen} WHERE id = ${userId}::uuid`;
-      if (gen >= LEGACY_SESSION_EPOCH_FLOOR) gen = LEGACY_EPOCH_SESSION_GENERATION;
-    }
-    const data: LegacyStoredSession = { userId, gen, authEpoch };
-    await boundedLegacyRedis(
-      redis.send("SET", [sessionKey(userId, randomToken), JSON.stringify(data), "EX", String(ttlSeconds)]),
-      deadline,
-    );
-  });
-  return `${userId}:${randomToken}`;
+const verifyCredential = async (token: string): Promise<CloudSessionClaims | null> => {
+  if (!isSessionJwtCandidate(token)) return null;
+  return verifySessionToken(token);
 };
 
-const readLegacyCredential = async (token: string): Promise<VerifiedCredential | null> => {
-  const parsed = parseToken(token);
-  if (!parsed) return null;
-  const raw = await redis.get(sessionKey(parsed.userId, parsed.randomToken));
-  if (!raw) return null;
-  let data: LegacyStoredSession;
-  try {
-    data = JSON.parse(raw) as LegacyStoredSession;
-  } catch {
-    return null;
-  }
-  if (data.userId !== parsed.userId || !Number.isSafeInteger(data.gen)) return null;
-  if (data.authEpoch !== undefined && (!Number.isSafeInteger(data.authEpoch) || data.authEpoch < 0)) return null;
-  if (data.gen === LEGACY_EPOCH_SESSION_GENERATION) {
-    if (data.authEpoch === undefined) return null;
-  } else {
-    if (data.gen < 0 || data.gen >= LEGACY_SESSION_EPOCH_FLOOR) return null;
-    const currentGen = await readGen(parsed.userId);
-    if (data.gen < currentGen) return null;
-  }
-  identityMetrics.increment("legacy_session_use");
-  if (Date.now() - lastLegacyUseLogAt >= 60_000) {
-    lastLegacyUseLogAt = Date.now();
-    log.info("Legacy session compatibility path used");
-  }
-  return { kind: "legacy", data };
-};
-
-const verifyCredential = async (token: string): Promise<VerifiedCredential | null> => {
-  if (isSessionJwtCandidate(token)) {
-    const claims = await verifySessionToken(token);
-    return claims ? { kind: "jwt", claims } : null;
-  }
-  return readLegacyCredential(token);
-};
-
-const verificationByRequest = new WeakMap<Context, Map<string, Promise<VerifiedCredential | null>>>();
+const verificationByRequest = new WeakMap<Context, Map<string, Promise<CloudSessionClaims | null>>>();
 const authenticationByRequest = new WeakMap<Context, Map<string, Promise<AuthenticatedSession | null>>>();
 
 const requestCached = <T>(
@@ -199,40 +59,15 @@ const requestCached = <T>(
   return pending;
 };
 
-const verifyForRequest = (c: Context, token: string): Promise<VerifiedCredential | null> =>
+const verifyForRequest = (c: Context, token: string): Promise<CloudSessionClaims | null> =>
   requestCached(verificationByRequest, c, token, () => verifyCredential(token));
 
-const authenticateVerified = async (credential: VerifiedCredential): Promise<AuthenticatedSession | null> => {
+const authenticateVerified = async (credential: CloudSessionClaims): Promise<AuthenticatedSession | null> => {
   const { groupsAdmin } = await getIdentityRuntimeConfig();
-  if (credential.kind === "jwt") {
-    const user = await loadJwtSessionUser({
-      userId: credential.claims.sub,
-      sid: credential.claims.sid,
-      authEpoch: credential.claims.auth_epoch,
-      groupsAdmin,
-    });
-    if (!user) return null;
-    if (isAccountExpired(user.accountExpires)) {
-      await session.revokeAllForUser(user.id);
-      return null;
-    }
-    return {
-      user,
-      data: {
-        userId: user.id,
-        gen: 0,
-        kind: "jwt",
-        sid: credential.claims.sid,
-        authEpoch: credential.claims.auth_epoch,
-        expiresAt: new Date(credential.claims.exp * 1_000).toISOString(),
-      },
-    };
-  }
-
-  const user = await loadLegacySessionUser({
-    userId: credential.data.userId,
-    sessionGeneration: credential.data.gen,
-    authEpoch: credential.data.authEpoch,
+  const user = await loadJwtSessionUser({
+    userId: credential.sub,
+    sid: credential.sid,
+    authEpoch: credential.auth_epoch,
     groupsAdmin,
   });
   if (!user) return null;
@@ -244,11 +79,9 @@ const authenticateVerified = async (credential: VerifiedCredential): Promise<Aut
     user,
     data: {
       userId: user.id,
-      gen: credential.data.gen,
-      kind: "legacy",
-      sid: null,
-      authEpoch: credential.data.authEpoch ?? null,
-      expiresAt: null,
+      sid: credential.sid,
+      authEpoch: credential.auth_epoch,
+      expiresAt: new Date(credential.exp * 1_000).toISOString(),
     },
   };
 };
@@ -271,8 +104,6 @@ const revokeToken = async (token: string, requestId?: string | null): Promise<vo
     `;
     return;
   }
-  const parsed = parseToken(token);
-  if (parsed) await redis.del(sessionKey(parsed.userId, parsed.randomToken));
 };
 
 const issueJwtSession = async (c: Context, userId: string, ttlSeconds: number, attempt = 0): Promise<string> => {
@@ -353,20 +184,12 @@ export const session = {
   },
 
   getBearerToken: (c: Context): string | null => parseBearer(c.req.header("Authorization")),
-  parseToken,
 
   create: async (c: Context, userId: string): Promise<string> => {
     const expiryHours = await settings.get<number>("user.session.expiry_hours");
     if (!Number.isFinite(expiryHours) || expiryHours < 1) throw new Error("user.session.expiry_hours must be a positive number");
     const ttlSeconds = Math.floor(expiryHours * 60 * 60);
-    const issuedAt = new Date();
-    let clientToken: string;
-    if (sessionIssuanceMode() === "legacy") {
-      clientToken = await createLegacyToken(userId, ttlSeconds);
-      await sql`UPDATE auth.users SET last_login_local = ${issuedAt} WHERE id = ${userId}::uuid`;
-    } else {
-      clientToken = await issueJwtSession(c, userId, ttlSeconds);
-    }
+    const clientToken = await issueJwtSession(c, userId, ttlSeconds);
 
     setCookie(c, "session_token", clientToken, {
       httpOnly: true,
@@ -378,12 +201,6 @@ export const session = {
     return clientToken;
   },
 
-  /** Compatibility-only delegation path. Invocation JWTs replace this in the next identity slice. */
-  createDelegation: (userId: string, ttlSeconds = 60): Promise<string> => {
-    const ttl = Number.isFinite(ttlSeconds) ? Math.max(5, Math.min(Math.floor(ttlSeconds), 120)) : 60;
-    return createLegacyToken(userId, ttl);
-  },
-
   revoke: revokeToken,
 
   delete: async (c: Context): Promise<void> => {
@@ -393,45 +210,11 @@ export const session = {
   },
 
   revokeAllForUser: async (userId: string): Promise<void> => {
-    let observedLegacyGeneration: number | null = null;
-    try {
-      observedLegacyGeneration = await boundedLegacyRedis(readGen(userId));
-    } catch (error) {
-      log.warn("Legacy session generation unavailable during durable revoke-all", {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    const requestedFloor =
-      observedLegacyGeneration === null ? LEGACY_SESSION_EPOCH_FLOOR : Math.min(LEGACY_SESSION_EPOCH_FLOOR, observedLegacyGeneration + 1);
-    const [updated] = await sql<Array<{ legacy_session_generation: string | number | bigint }>>`
-      UPDATE auth.users
-      SET auth_epoch = auth_epoch + 1,
-          legacy_session_generation = CASE
-            WHEN legacy_session_generation >= ${LEGACY_SESSION_EPOCH_FLOOR} THEN ${LEGACY_SESSION_EPOCH_FLOOR}
-            ELSE LEAST(${LEGACY_SESSION_EPOCH_FLOOR}, GREATEST(legacy_session_generation + 1, ${requestedFloor}))
-          END
-      WHERE id = ${userId}::uuid
-      RETURNING legacy_session_generation
+    const [updated] = await sql<Array<{ id: string }>>`
+      UPDATE auth.users SET auth_epoch = auth_epoch + 1
+      WHERE id = ${userId}::uuid RETURNING id
     `;
     if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
-
-    const durableFloor = Number(updated.legacy_session_generation);
-    if (!Number.isSafeInteger(durableFloor) || durableFloor < 0) {
-      throw new Error("Durable legacy session generation is invalid");
-    }
-    if (durableFloor === LEGACY_SESSION_EPOCH_FLOOR) return;
-
-    try {
-      await synchronizeLegacyGeneration(userId, durableFloor);
-    } catch (error) {
-      log.warn("Legacy Redis generation could not be synchronized after durable revoke-all", {
-        userId,
-        durableFloor,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   },
 
   authenticate: authenticateToken,
@@ -444,8 +227,6 @@ export const session = {
 
   getRequestSubject: async (c: Context, token: string): Promise<string | null> => {
     const credential = await verifyForRequest(c, token);
-    return credential?.kind === "jwt" ? credential.claims.sub : (credential?.data.userId ?? null);
+    return credential?.sub ?? null;
   },
-
-  getData: async (token: string): Promise<SessionData | null> => (await authenticateToken(token))?.data ?? null,
 };

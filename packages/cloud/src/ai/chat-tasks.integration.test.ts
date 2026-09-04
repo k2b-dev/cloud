@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { mandates } from "../services/mandates";
 import { toPgTextArray } from "../services/postgres";
@@ -21,17 +21,7 @@ const canUseAiDatabase = async (): Promise<boolean> => {
 const suite = (await canUseAiDatabase()) ? describe : describe.skip;
 
 suite("AI chat tasks", () => {
-  let previousIssuanceMode: string | undefined;
-  beforeEach(() => {
-    previousIssuanceMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
-  });
-  afterEach(() => {
-    if (previousIssuanceMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousIssuanceMode;
-  });
-
-  test("holds active once tasks and queued occurrences during legacy issuance and recovers after JWT is enabled", async () => {
+  test("backfills mandates and executes existing queued occurrences without an issuance switch", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
@@ -42,22 +32,19 @@ suite("AI chat tasks", () => {
       const task = (await aiChatTasks.create({
         userId: user!.id,
         chatId: conversation.shortId,
-        prompt: "Wait for JWT",
+        prompt: "Migrated task",
         schedule: { kind: "once", runAt: new Date(Date.now() + 60_000).toISOString() },
         timezone: "UTC",
       }))!;
       await sql`UPDATE ai.chat_tasks SET run_at = now() - interval '1 minute', mandate_id = NULL, mandate_revision = NULL WHERE id = ${task.id}::uuid`;
-      process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "legacy";
       await aiChatTasks.prepareLegacyMandates();
       const waiting = (await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))!;
       expect(waiting.state).toBe("active");
       const [occurrence] = await aiChatTasks.materializeDueOnce();
       expect(occurrence?.state).toBe("queued");
-      expect(await aiChatTasks.listQueuedOccurrences()).toEqual([]);
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toEqual(waiting);
       expect((await aiChatTasks.materializeDueOnce())[0]?.id).toBe(occurrence!.id);
-      expect(await aiChatTasks.getQueuedOccurrence(occurrence!.id)).toBeNull();
-      expect(await aiChatTasks.listQueuedOccurrences()).toEqual([]);
+      expect((await aiChatTasks.listQueuedOccurrences())[0]?.occurrence.id).toBe(occurrence!.id);
       const deliver = () =>
         aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence!.id,
@@ -66,7 +53,6 @@ suite("AI chat tasks", () => {
           userMessage: { role: "user", content: [{ type: "text", text: waiting.prompt }] },
           expectedRevision: waiting.revision,
         });
-      expect(await deliver()).toEqual({ delivered: false, reason: "held" });
       expect(await aiChatTasks.get({ userId: user!.id, taskId: task.shortId })).toEqual(waiting);
       expect((await aiChatTasks.listOccurrences({ userId: user!.id, taskId: task.shortId }))?.[0]?.state).toBe("queued");
       expect(
@@ -74,12 +60,10 @@ suite("AI chat tasks", () => {
           ?.count,
       ).toBe(0);
 
-      process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
       expect((await aiChatTasks.listQueuedOccurrences())[0]?.occurrence.id).toBe(occurrence!.id);
       expect((await aiChatTasks.getQueuedOccurrence(occurrence!.id))?.task.id).toBe(task.id);
       const delivered = await deliver();
-      if (!delivered.delivered) throw new Error("Expected held task to recover");
-      process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "legacy";
+      if (!delivered.delivered) throw new Error("Expected migrated task to execute");
       await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: "completed" });
       expect((await aiChatTasks.get({ userId: user!.id, taskId: task.shortId }))?.state).toBe("completed");
       const manualTask = (await aiChatTasks.create({

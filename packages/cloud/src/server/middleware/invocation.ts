@@ -53,16 +53,3 @@ export const requireInvocation = (
     installAuthority(c, claims, authority);
     return next();
   });
-
-/** Temporary rolling-upgrade adapter. Remove with the legacy credential-forwarding path. */
-export const requireInvocationOrLegacy = (
-  expected: (c: Context<AuthContext>) => InvocationExpectation | null,
-  legacy: MiddlewareHandler<AuthContext>,
-  dependencies: InvocationMiddlewareDependencies = {},
-): MiddlewareHandler<AuthContext> => {
-  const invocation = requireInvocation(expected, dependencies);
-  return createMiddleware<AuthContext>((c, next) => {
-    const token = bearerToken(c);
-    return token && isInvocationJwtCandidate(token) ? invocation(c, next) : legacy(c, next);
-  });
-};

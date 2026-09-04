@@ -22,15 +22,3 @@ const reservedWorkloadResponse = (c: Context<AuthContext>): Response =>
 export const rejectReservedWorkloadCredential: MiddlewareHandler<AuthContext> = createMiddleware<AuthContext>(async (c, next) =>
   isReservedWorkloadCredential(c) ? reservedWorkloadResponse(c) : await next(),
 );
-
-/** Apply ordinary authentication first, then keep reserved workload keys out of legacy target routes. */
-export const legacyCredentialBoundary = (authenticate: MiddlewareHandler<AuthContext>): MiddlewareHandler<AuthContext> =>
-  createMiddleware<AuthContext>((c, next) =>
-    authenticate(c, async () => {
-      if (isReservedWorkloadCredential(c)) {
-        c.res = reservedWorkloadResponse(c);
-        return;
-      }
-      await next();
-    }),
-  );

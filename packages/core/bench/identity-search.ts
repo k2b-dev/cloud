@@ -4,7 +4,7 @@ import { connect, createServer, type Socket } from "node:net";
 import { cpus, loadavg } from "node:os";
 import { Hono } from "hono";
 import { benchmarkConfiguration } from "./configuration";
-import { compare, summary } from "./statistics";
+import { summary } from "./statistics";
 
 // Run through scripts/bench-identity.ts. The default SQL handle connects to a
 // real, metered, disposable PostgreSQL database. Authentication is not mocked.
@@ -228,15 +228,14 @@ try {
   >`INSERT INTO auth.users (uid, provider, profile) VALUES ('benchmark-user', 'local', 'user') RETURNING id`;
   assert(user);
   const login = new Hono().get("/", async (c) => c.json({ token: await session.create(c, user.id) }));
-  const tokenFor = async (mode: "legacy" | "jwt") => {
-    process.env.CLOUD_SESSION_ISSUANCE_MODE = mode;
+  const tokenFor = async () => {
     const response = await login.request("http://bench.test/");
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(typeof data.token, "string");
     return String(data.token);
   };
-  const credentials = { legacy: await tokenFor("legacy"), jwt: await tokenFor("jwt") };
+  const credential = await tokenFor();
   await identity.prepareIdentitySigner("invocation");
   sessionKeys = await identity.listIdentityJwks("session");
   invocationKeys = await identity.listIdentityJwks("invocation");
@@ -335,9 +334,8 @@ try {
           }
         },
       });
-      const once = async (mode: "legacy" | "jwt", measured: boolean) => {
+      const once = async (measured: boolean) => {
         await warmCaches();
-        process.env.CLOUD_INVOCATION_ISSUANCE_MODE = mode;
         stages = { authentication: 0, guardedSigning: 0, signingBatch: 0, targetVerification: 0, targetActor: 0 };
         signerFailure = undefined;
         await providerControl("reset");
@@ -348,7 +346,7 @@ try {
         const oldRedis = measured ? await redisSnapshot() : {};
         const start = performance.now();
         const response = await fetch(new URL("/search?q=needle", coreServer.url), {
-          headers: { cookie: `session_token=${credentials[mode]}` },
+          headers: { cookie: `session_token=${credential}` },
         });
         const body = await response.json();
         const elapsed = performance.now() - start;
@@ -360,7 +358,7 @@ try {
           failedRequest = {
             phase,
             providers: providerCount,
-            mode,
+            mode: "jwt",
             measured,
             status: response.status,
             elapsedMs: elapsed,
@@ -378,20 +376,17 @@ try {
         assert(peak <= 8);
         if (measured) {
           const targetCount = phase === "end-to-end" ? providerCount : 0;
-          const expected =
-            mode === "jwt"
-              ? {
-                  "pg.session_actor": 1,
-                  "pg.begin": 1,
-                  "pg.timeout": 1,
-                  "pg.key": 1,
-                  "pg.commit": 1,
-                  ...(targetCount ? { "pg.user_actor": targetCount } : {}),
-                }
-              : { "pg.user_actor": 1 + targetCount, "redis.session_get": (1 + targetCount) * 2 };
+          const expected = {
+            "pg.session_actor": 1,
+            "pg.begin": 1,
+            "pg.timeout": 1,
+            "pg.key": 1,
+            "pg.commit": 1,
+            ...(targetCount ? { "pg.user_actor": targetCount } : {}),
+          };
           const { "pg.logging": _logging, ...identityIo } = counts;
           const observed = metered ? expected : Object.fromEntries(Object.entries(expected).filter(([key]) => !key.startsWith("pg.")));
-          assert.deepEqual(identityIo, observed, `Unexpected ${mode}/${phase}/${providerCount} hot-path I/O`);
+          assert.deepEqual(identityIo, observed, `Unexpected jwt/${phase}/${providerCount} hot-path I/O`);
           assert.equal(jwksReads - oldJwks, 0, "Warm verification must not fetch JWKS");
           const newRedis = await redisSnapshot();
           const delta = Object.fromEntries(
@@ -399,28 +394,16 @@ try {
               .map(([key, value]) => [key, value - (oldRedis[key] ?? 0)])
               .filter(([, value]) => value !== 0),
           );
-          assert.deepEqual(
-            delta,
-            mode === "jwt" ? {} : { get: (1 + targetCount) * 2 },
-            "Redis server command counters must agree, including commands not observed by client spies",
-          );
+          assert.deepEqual(delta, {}, "Redis server command counters must agree, including commands not observed by client spies");
         }
         const { "pg.logging": loggingWrites = 0, ...identityIo } = counts;
         return { elapsed, io: identityIo, stages, loggingWrites };
       };
       for (let i = 0; i < warmup; i += 1) {
-        await once("legacy", false);
-        await once("jwt", false);
+        await once(false);
       }
-      const values = { legacy: [] as number[], jwt: [] as number[] };
+      const values = { jwt: [] as number[] };
       const stageValues = {
-        legacy: {
-          authentication: [] as number[],
-          guardedSigning: [] as number[],
-          signingBatch: [] as number[],
-          targetVerification: [] as number[],
-          targetActor: [] as number[],
-        },
         jwt: {
           authentication: [] as number[],
           guardedSigning: [] as number[],
@@ -429,27 +412,23 @@ try {
           targetActor: [] as number[],
         },
       };
-      let legacyIo: Counts = {};
       let jwtIo: Counts = {};
-      const loggingWrites = { legacy: 0, jwt: 0 };
+      const loggingWrites = { jwt: 0 };
       for (let i = 0; i < samplesPerMode; i += 1) {
-        const order = i % 2 === 0 ? (["legacy", "jwt"] as const) : (["jwt", "legacy"] as const);
-        for (const mode of order) {
-          const result = await once(mode, true);
-          values[mode].push(result.elapsed);
-          loggingWrites[mode] += result.loggingWrites;
-          for (const key of ["authentication", "guardedSigning", "signingBatch", "targetVerification", "targetActor"] as const)
-            stageValues[mode][key].push(result.stages[key]);
-          if (mode === "jwt") jwtIo = result.io;
-          else legacyIo = result.io;
-        }
+        const result = await once(true);
+        values.jwt.push(result.elapsed);
+        loggingWrites.jwt += result.loggingWrites;
+        for (const key of ["authentication", "guardedSigning", "signingBatch", "targetVerification", "targetActor"] as const)
+          stageValues.jwt[key].push(result.stages[key]);
+        jwtIo = result.io;
       }
       const record = {
         phase,
         providers: providerCount,
         controlledProviderLatencyMs: phase === "dispatcher" ? 0 : latencyMs,
-        ...compare(values.legacy, values.jwt),
-        ioPerRequest: { legacy: legacyIo, jwt: jwtIo },
+        jwt: summary(values.jwt),
+        passes: true, // Every sample above passed the exact identity I/O assertions.
+        ioPerRequest: { jwt: jwtIo },
         asynchronousLogWritesDuringMeasurements: loggingWrites,
         rawMs: values,
         stages: Object.fromEntries(
@@ -479,12 +458,11 @@ try {
         void held.catch(entered.reject);
         try {
           await entered.promise;
-          process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
           targetCalls = 0;
           signerFailure = undefined;
           const start = performance.now();
           const response = await fetch(new URL("/search?q=needle", coreServer.url), {
-            headers: { cookie: `session_token=${credentials.jwt}` },
+            headers: { cookie: `session_token=${credential}` },
             signal: AbortSignal.timeout(8_000),
           });
           await response.arrayBuffer();
@@ -500,7 +478,7 @@ try {
         await guardFinished;
         guardFailureProbe.signerFailure = signerFailure;
         // Includes the normal exact I/O and provider-completeness assertions.
-        await once("jwt", true);
+        await once(true);
         guardFailureProbe.recovered = true;
         console.log("Signing guard fault/recovery probe passed");
       }
@@ -562,9 +540,11 @@ try {
     cachePolicy:
       "Refresh real config/signer caches every 30s outside timings; cache refresh and cold-start latency are not part of this warm-cache gate",
     pool: "Bun default SQL pool",
-    baseline: "Current dual-read legacy session and credential-forwarding branch, same router/fixtures; not an archived binary",
+    baseline: null,
+    latencyGate: "not evaluated: the legacy implementation was removed; historical comparison evidence remains at commit 1e6a71d29",
     transport: `Real loopback HTTP to Core and providers (${configuration.topology} processes), real PostgreSQL ${metered ? "through protocol meter" : "direct (diagnostic only)"}, isolated Redis, warmed HTTP JWKS; dispatcher phase stubs provider work only; fixed in-memory discovery`,
-    acceptance: "Each phase/provider combination: JWT p95 - legacy p95 <= max(legacy p95 * 0.1, 10ms)",
+    acceptance:
+      "Exact warm JWT identity I/O and bounded signer failure/recovery; latency is descriptive, not a new legacy-regression acceptance",
     redisInstrumentation:
       "Client GET/send observers cross-checked against isolated Redis INFO commandstats outside every timed request; only telemetry INFO commands excluded",
     micro: { signing: summary(micro.sign), verification: summary(micro.verify) },
@@ -574,7 +554,7 @@ try {
   completeReportWritten = true;
   assert(
     !configuration.acceptanceEligible || records.every((record) => record.passes),
-    "p95 acceptance failed; retain the report and investigate without loosening the gate",
+    "Identity I/O acceptance failed; retain the report and investigate",
   );
 } catch (error) {
   if (!completeReportWritten)

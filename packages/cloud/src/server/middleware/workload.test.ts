@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AuthContext } from "./auth";
-import { legacyCredentialBoundary } from "./workload";
+import { rejectReservedWorkloadCredential } from "./workload";
 
 const workloadAuthentication =
   (scope: "identity:invoke" | "identity:oauth-issue"): MiddlewareHandler<AuthContext> =>
@@ -32,14 +32,15 @@ const workloadAuthentication =
 
 describe("reserved workload credential boundary", () => {
   for (const scope of ["identity:invoke", "identity:oauth-issue"] as const) {
-    test(`rejects ${scope} at direct legacy capability and widget targets`, async () => {
+    test(`rejects ${scope} at Core public authority entry points`, async () => {
       let reached = 0;
       const reachedHandler = (c: Context<AuthContext>) => {
         reached += 1;
         return c.json({ ok: true });
       };
       const app = new Hono<AuthContext>()
-        .use(legacyCredentialBoundary(workloadAuthentication(scope)))
+        .use(workloadAuthentication(scope))
+        .use(rejectReservedWorkloadCredential)
         .post("/api/_internal/capabilities/v1/queries/get", reachedHandler)
         .post("/api/_internal/capabilities/v1/actions/update", reachedHandler)
         .get("/api/_internal/widgets/v1/current", reachedHandler);
@@ -63,7 +64,7 @@ describe("reserved workload credential boundary", () => {
         c.set("credentialScopes", ["read"]);
         await next();
       })
-      .use(legacyCredentialBoundary(async (_c, next) => next()))
+      .use(rejectReservedWorkloadCredential)
       .get("/", (c) => c.text("ok"));
     expect((await app.request("/")).status).toBe(200);
   });

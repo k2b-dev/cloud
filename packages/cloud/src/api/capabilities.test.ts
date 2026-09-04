@@ -10,11 +10,10 @@ import { auth, type RequestAuthority } from "../server";
 import type { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
+  createCapabilityRoutes as buildCapabilityRoutes,
   type CapabilityRouteDependencies,
-  capabilityCredentialHeaders,
-  createCapabilityRoutes,
-  dispatchCapability,
   loadCapabilityCatalogPage,
+  dispatchCapability as performDispatch,
 } from "./capabilities";
 
 const compiled = compileCapabilities(
@@ -71,7 +70,13 @@ const summary = (capability: CapabilityRegistryEntry): AppRegistryEntry => ({
   },
 });
 
-const authenticate = async (_c: unknown, next: () => Promise<void>) => next();
+const authenticate: NonNullable<CapabilityRouteDependencies["authenticate"]> = async (c, next) => {
+  c.set("actor", resourceAuthority.actor);
+  c.set("accessSubject", resourceAuthority.accessSubject);
+  c.set("credentialKind", resourceAuthority.credentialKind);
+  c.set("credentialScopes", resourceAuthority.scopes);
+  return next();
+};
 
 let signerKey: CryptoKey | undefined;
 const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callback) => {
@@ -112,6 +117,10 @@ const resourceAuthority: RequestAuthority = {
 };
 
 const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authenticate"]> = async (c, next) => {
+  c.set("actor", resourceAuthority.actor);
+  c.set("accessSubject", resourceAuthority.accessSubject);
+  c.set("credentialKind", resourceAuthority.credentialKind);
+  c.set("credentialScopes", resourceAuthority.scopes);
   const token = auth.session.getToken(c);
   if (token === "session-token") return next();
   if (token === "read-token") {
@@ -128,6 +137,11 @@ const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authentic
   }
   return c.json({ message: "Authentication required" }, 401);
 };
+
+const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) =>
+  buildCapabilityRoutes({ withActiveSigner, ...dependencies });
+const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
+  performDispatch({ authority: resourceAuthority, ...params, dependencies: { withActiveSigner, ...params.dependencies } });
 
 describe("capability API", () => {
   test("paginates the live catalog deterministically", async () => {
@@ -261,7 +275,8 @@ describe("capability API", () => {
       body: JSON.stringify({ input: { id: "one" } }),
     });
     expect(response.status).toBe(200);
-    expect(forwarded?.get("authorization")).toBe("Bearer secret");
+    expect(forwarded?.get("authorization")).toStartWith("Bearer ey");
+    expect(forwarded?.get("authorization")).not.toContain("secret");
     expect(forwarded?.get("cookie")).toBeNull();
     expect(forwarded?.get("x-cloud-actor")).toBeNull();
     expect(forwarded?.get("idempotency-key")).toBeNull();
@@ -272,12 +287,10 @@ describe("capability API", () => {
   });
 
   test("exchanges the source credential for one exact target invocation in jwt mode", async () => {
-    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
     let forwarded: Headers | undefined;
     let signed: Parameters<typeof signInvocationToken>[0] | null = null;
     let guardCalls = 0;
-    try {
+    {
       const response = await dispatchCapability({
         request: new Request("http://cloud.internal/api/capabilities/v1", {
           headers: {
@@ -338,17 +351,12 @@ describe("capability API", () => {
       expect(forwarded?.get("authorization")).toBe("Bearer target-invocation");
       expect(forwarded?.get("cookie")).toBeNull();
       expect(forwarded?.get("authorization")).not.toContain("cld_source-secret");
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
     }
   });
 
   test("bounds invocation signing inside the capability deadline", async () => {
-    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
     let fetched = false;
-    try {
+    {
       const response = await dispatchCapability({
         request: new Request("http://cloud.internal/api/capabilities/v1"),
         kind: "queries",
@@ -371,16 +379,11 @@ describe("capability API", () => {
       expect(response.status).toBe(504);
       expect(fetched).toBeFalse();
       expect(await response.json()).toMatchObject({ code: "DEADLINE_EXCEEDED", details: { retrySafe: true } });
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
     }
   });
 
   test("drops malformed optional request IDs before real invocation signing and forwarding", async () => {
-    const previousMode = process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-    process.env.CLOUD_INVOCATION_ISSUANCE_MODE = "jwt";
-    try {
+    {
       for (const requestId of ["contains spaces", "non-ascii-é", "x".repeat(201)]) {
         let forwarded: Headers | undefined;
         const response = await dispatchCapability({
@@ -403,9 +406,6 @@ describe("capability API", () => {
         expect(forwarded?.get("x-request-id")).toBeNull();
         expect(forwarded?.get("authorization")).toStartWith("Bearer ey");
       }
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_INVOCATION_ISSUANCE_MODE;
-      else process.env.CLOUD_INVOCATION_ISSUANCE_MODE = previousMode;
     }
   });
 
@@ -831,20 +831,4 @@ describe("capability API", () => {
 
 test("shared catalog loader rejects limits outside the public schema", async () => {
   await expect(loadCapabilityCatalogPage({ limit: 26 }, { listApps: async () => [] })).rejects.toThrow("between 1 and 25");
-});
-
-test("capabilityCredentialHeaders never forwards internal identity headers", () => {
-  const request = new Request("http://cloud.test", {
-    headers: {
-      authorization: "Basic ignored",
-      cookie: "other=private; session_token=session-value; analytics=private",
-      "x-cloud-actor": "forged",
-      "x-cloud-user": "forged",
-    },
-  });
-  const headers = capabilityCredentialHeaders(request);
-  expect(headers.get("authorization")).toBeNull();
-  expect(headers.get("cookie")).toBe("session_token=session-value");
-  expect(headers.get("x-cloud-actor")).toBeNull();
-  expect(headers.get("x-cloud-user")).toBeNull();
 });

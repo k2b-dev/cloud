@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import type { CapabilityRegistryEntry } from "@valentinkolb/cloud/contracts/registry";
 import type { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
-import { generateKeyPair } from "jose";
 import { sql } from "bun";
+import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { createIdentityInvocationRoutes } from "./identity-invocation";
 
@@ -89,7 +89,6 @@ describe("identity invocation broker", () => {
     const targetRequests: Request[] = [];
     let signed: Record<string, unknown> | null = null;
     const routes = createIdentityInvocationRoutes({
-      issuanceEnabled: () => true,
       authenticateWorkload,
       dispatchDependencies: {
         getCapability: async () => registryEntry,
@@ -159,7 +158,6 @@ describe("identity invocation broker", () => {
   test("rejects caller-supplied schema or authority fields", async () => {
     let dispatched = false;
     const routes = createIdentityInvocationRoutes({
-      issuanceEnabled: () => true,
       authenticateWorkload,
       dispatchDependencies: {
         getCapability: async () => {
@@ -183,7 +181,6 @@ describe("identity invocation broker", () => {
   test("rejects invalid credentials before dispatch", async () => {
     let dispatched = false;
     const routes = createIdentityInvocationRoutes({
-      issuanceEnabled: () => true,
       authenticateWorkload: async () => null,
       dispatchDependencies: {
         getCapability: async () => {
@@ -199,7 +196,6 @@ describe("identity invocation broker", () => {
 
   test("returns bounded mandate denial instead of a token", async () => {
     const routes = createIdentityInvocationRoutes({
-      issuanceEnabled: () => true,
       authenticateWorkload,
       dispatchDependencies: {
         getCapability: async () => registryEntry,
@@ -215,15 +211,8 @@ describe("identity invocation broker", () => {
     });
   });
 
-  test("stays closed until invocation issuance is enabled", async () => {
-    const routes = createIdentityInvocationRoutes({
-      issuanceEnabled: () => false,
-      authenticateWorkload: async () => {
-        throw new Error("disabled issuance must not authenticate workloads");
-      },
-    });
-    const response = await routes.request(request(invocation()));
-    expect(response.status).toBe(503);
-    expect(await response.json()).toMatchObject({ code: "INVOCATION_JWT_DISABLED" });
+  test("rejects an unauthenticated workload without an issuance switch", async () => {
+    const routes = createIdentityInvocationRoutes({ authenticateWorkload: async () => null });
+    expect((await routes.request(request(invocation()))).status).toBe(401);
   });
 });

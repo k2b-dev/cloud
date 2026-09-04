@@ -17,7 +17,7 @@ if (core) {
   }
   // Settings are seeded in the fixture's own Valkey, not overridden functions.
   for (const [key, value] of Object.entries({
-    "app.url": "http://127.0.0.1:4300",
+    "app.url": process.env.OAUTH_VERIFY_ISSUER ?? "http://127.0.0.1:4300",
     "freeipa.groups.admin": ["admins"],
     "user.session.expiry_hours": 24,
     "security.rate_limit_per_second": 1000,

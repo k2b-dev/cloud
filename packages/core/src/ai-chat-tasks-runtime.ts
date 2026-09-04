@@ -3,7 +3,6 @@ import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from 
 import { enqueueExistingAiTurn, validateAiTurnRequest } from "@valentinkolb/cloud/ai/runtime";
 import { accounts, coreSettings, logger } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
-import { invocationIssuanceMode } from "@valentinkolb/cloud/services/identity";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
 const APP_ID = "core";
@@ -28,82 +27,80 @@ const taskScheduler = scheduler({ id: "core-ai-chat-tasks" });
 const reconcileMutex = mutex({ id: "core:ai-chat-tasks:reconcile", defaultTtl: 60_000, retryCount: 0 });
 let started = false;
 
-const taskJob = job<
-  { occurrenceId: string },
-  { status: "gone" | "failed" | "not_found" | "busy" | "stale" | "delivered" | "held"; retry: boolean }
->({
-  id: "core-ai-chat-task-occurrence",
-  defaults: { leaseMs: 60_000, keyTtlMs: 24 * 60 * 60_000 },
-  process: async ({ ctx }) => {
-    if (invocationIssuanceMode() !== "jwt") return { status: "held" as const, retry: true };
-    const pending = await aiChatTasks.getQueuedOccurrence(ctx.input.occurrenceId);
-    if (!pending) return { status: "gone" as const, retry: false };
-    const { occurrence, task } = pending;
-    const [user, conversation] = await Promise.all([
-      accounts.users.get({ id: task.sponsorUserId }),
-      aiConversations.getConversation({ conversationId: task.conversationId, ownerUserId: task.sponsorUserId }),
-    ]);
-    if (!user || isAccountExpired(user.accountExpires) || !conversation) {
-      const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Task sponsor or chat is unavailable" });
-      return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
-    }
-    const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
-    if (conversation.projectId && !project) {
-      const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
-      return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
-    }
-    const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
-    const { resolved } = await validateAiTurnRequest({
-      input: text,
-      modelPolicy: personalAiModelPolicy,
-      requestedModelId: project?.defaultModelProfileId ?? undefined,
-    });
-    const delivered = await aiChatTasks.deliverOccurrence({
-      occurrenceId: occurrence.id,
-      modelProfileId: resolved.profile.id,
-      runConfig: {
-        kind: "chat",
+const taskJob = job<{ occurrenceId: string }, { status: "gone" | "failed" | "not_found" | "busy" | "stale" | "delivered"; retry: boolean }>(
+  {
+    id: "core-ai-chat-task-occurrence",
+    defaults: { leaseMs: 60_000, keyTtlMs: 24 * 60 * 60_000 },
+    process: async ({ ctx }) => {
+      const pending = await aiChatTasks.getQueuedOccurrence(ctx.input.occurrenceId);
+      if (!pending) return { status: "gone" as const, retry: false };
+      const { occurrence, task } = pending;
+      const [user, conversation] = await Promise.all([
+        accounts.users.get({ id: task.sponsorUserId }),
+        aiConversations.getConversation({ conversationId: task.conversationId, ownerUserId: task.sponsorUserId }),
+      ]);
+      if (!user || isAccountExpired(user.accountExpires) || !conversation) {
+        const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Task sponsor or chat is unavailable" });
+        return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
+      }
+      const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
+      if (conversation.projectId && !project) {
+        const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
+        return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
+      }
+      const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
+      const { resolved } = await validateAiTurnRequest({
         input: text,
-        chatId: conversation.shortId,
-        actor: { kind: "user", user },
         modelPolicy: personalAiModelPolicy,
         requestedModelId: project?.defaultModelProfileId ?? undefined,
-        project: project ?? undefined,
-        toolSource: { kind: "default", appTools: true },
-        toolApprovalContext: { actorUserId: user.id },
-        mandate: taskMandate(task),
-      },
-      userMessage: { role: "user", content: [{ type: "text", text }] },
-      expectedRevision: task.revision,
-    });
-    if (!delivered.delivered)
-      return {
-        status: delivered.reason,
-        retry: delivered.reason === "busy" || delivered.reason === "stale" || delivered.reason === "held",
-      };
-    await enqueueExistingAiTurn({ conversationId: delivered.conversationId, turnId: delivered.turnId });
-    return { status: "delivered" as const, retry: false };
+      });
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: resolved.profile.id,
+        runConfig: {
+          kind: "chat",
+          input: text,
+          chatId: conversation.shortId,
+          actor: { kind: "user", user },
+          modelPolicy: personalAiModelPolicy,
+          requestedModelId: project?.defaultModelProfileId ?? undefined,
+          project: project ?? undefined,
+          toolSource: { kind: "default", appTools: true },
+          toolApprovalContext: { actorUserId: user.id },
+          mandate: taskMandate(task),
+        },
+        userMessage: { role: "user", content: [{ type: "text", text }] },
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered)
+        return {
+          status: delivered.reason,
+          retry: delivered.reason === "busy" || delivered.reason === "stale",
+        };
+      await enqueueExistingAiTurn({ conversationId: delivered.conversationId, turnId: delivered.turnId });
+      return { status: "delivered" as const, retry: false };
+    },
+    after: async ({ ctx }) => {
+      // Keep an already submitted job retryable; completing it would retain its dedupe key while the occurrence is still queued.
+      if (ctx.data?.retry) {
+        ctx.reschedule({ delayMs: 60_000 });
+        return;
+      }
+      if (!ctx.error) return;
+      if (ctx.failureCount < 2) {
+        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
+        return;
+      }
+      const status = await aiChatTasks
+        .failOccurrence({
+          occurrenceId: ctx.input.occurrenceId,
+          error: ctx.error instanceof Error ? ctx.error.message : "Scheduled task delivery failed",
+        })
+        .catch(() => "gone" as const);
+      if (status === "stale") ctx.reschedule({ delayMs: 60_000 });
+    },
   },
-  after: async ({ ctx }) => {
-    // Keep an already submitted job retryable; completing it would retain its dedupe key while the occurrence is still queued.
-    if (invocationIssuanceMode() !== "jwt" || ctx.data?.retry) {
-      ctx.reschedule({ delayMs: 60_000 });
-      return;
-    }
-    if (!ctx.error) return;
-    if (ctx.failureCount < 2) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-      return;
-    }
-    const status = await aiChatTasks
-      .failOccurrence({
-        occurrenceId: ctx.input.occurrenceId,
-        error: ctx.error instanceof Error ? ctx.error.message : "Scheduled task delivery failed",
-      })
-      .catch(() => "gone" as const);
-    if (status === "stale") ctx.reschedule({ delayMs: 60_000 });
-  },
-});
+);
 
 const submitOccurrence = (occurrenceId: string): Promise<string> =>
   taskJob.submit({ key: `occurrence:${occurrenceId}`, input: { occurrenceId } });

@@ -24,7 +24,6 @@ const start = async (role: "core" | "oauth", version: "baseline" | "current", wo
       APP_ID: role,
       OAUTH_VERIFY_VERSION: version,
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: role === "core" && version === "current" ? "43".repeat(32) : "",
-      CLOUD_SESSION_ISSUANCE_MODE: version === "current" ? "jwt" : "legacy",
       CLOUD_OAUTH_ISSUANCE_MODE: version === "current" ? "core" : "legacy",
       CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
       CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
@@ -256,8 +255,8 @@ try {
     const [privateKeys] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM oauth.keys WHERE private_key <> ''`;
     assert.equal(privateKeys?.count, 0);
     check("old binary stopped; real schema upgrade; readiness-gated Core cutover; legacy private keys erased");
-    // Still usable before explicit revocation: changing issuance mode is not a hard cut.
-    await actor(oldToken);
+    // The hard cut rejects opaque browser sessions immediately, without Redis cleanup.
+    await actor(oldToken, 401);
     await core.revoke();
     await actor(oldToken, 401);
     await actor(login.token, 401);
@@ -299,9 +298,21 @@ try {
         "packages/oauth/src/contracts.test.ts",
         "packages/oauth/src/service/token-authority.test.ts",
         "packages/cloud/src/services/identity/session-token.test.ts",
+        "packages/cloud/src/services/session/session.integration.test.ts",
+        "packages/cloud/src/services/session/user.integration.test.ts",
         "packages/core/src/api/identity-oauth-issuance.test.ts",
       ],
-      { cwd: "/workspace", env: { ...process.env, APP_ID: "core" }, stdout: "pipe", stderr: "pipe" },
+      {
+        cwd: "/workspace",
+        env: {
+          ...process.env,
+          APP_ID: "core",
+          CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "43".repeat(32),
+          CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
     const [stdout, stderr, code] = await Promise.all([
       new Response(regression.stdout).text(),

@@ -11,20 +11,16 @@ import {
 } from "./live-routes";
 
 describe("AI live cursors", () => {
-  test("rejects deleted and expired users behind an otherwise valid session", async () => {
-    const session = async () => ({ userId: "user-1", gen: 1 });
-    expect(await resolveAiLiveSessionUser("token", { getSession: session, getUser: async () => null })).toBeNull();
-    const revoked: string[] = [];
-    expect(
-      await resolveAiLiveSessionUser("token", {
-        getSession: session,
-        getUser: async () => ({ id: "user-1", accountExpires: "2020-01-01T00:00:00.000Z" }) as never,
-        revokeAllForUser: async (userId) => {
-          revoked.push(userId);
-        },
-      }),
-    ).toBeNull();
-    expect(revoked).toEqual(["user-1"]);
+  test("uses the same live session authorization as HTTP and avoids work without a token", async () => {
+    let calls = 0;
+    const authenticate = async () => {
+      calls += 1;
+      return null;
+    };
+    expect(await resolveAiLiveSessionUser(null, authenticate)).toBeNull();
+    expect(calls).toBe(0);
+    expect(await resolveAiLiveSessionUser("revoked", authenticate)).toBeNull();
+    expect(calls).toBe(1);
   });
 
   test("uses the SSR cursor initially and the authoritative head for recovery", async () => {

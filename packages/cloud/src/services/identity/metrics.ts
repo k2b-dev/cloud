@@ -5,8 +5,7 @@ export type IdentityMetricName =
   | "verify_failure"
   | "unknown_kid_refresh"
   | "rotation_success"
-  | "rotation_failure"
-  | "legacy_session_use";
+  | "rotation_failure";
 
 const names: IdentityMetricName[] = [
   "sign_success",
@@ -16,7 +15,6 @@ const names: IdentityMetricName[] = [
   "unknown_kid_refresh",
   "rotation_success",
   "rotation_failure",
-  "legacy_session_use",
 ];
 
 const counters = new Map<IdentityMetricName, number>(names.map((name) => [name, 0]));

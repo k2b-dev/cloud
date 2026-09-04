@@ -6,8 +6,6 @@ import type { RequestActor } from "../server";
 import type { AccessSubject } from "../server/services/access";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
-import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
-import { session } from "../services/session";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { aiToolAudit } from "./tool-audit";
@@ -86,77 +84,61 @@ type AiCapabilityCall = {
   /** Set only by the capability tool after its explicit approval request resolved true. */
   actionApproval?: "approved";
   dependencies?: CapabilityDispatchDependencies & {
-    createDelegation?: (userId: string, ttlSeconds?: number) => Promise<string>;
-    revokeDelegation?: (token: string) => Promise<void>;
     dispatch?: typeof dispatchCapability;
   };
 };
 
 const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): Promise<unknown> => {
-  const issuanceMode = invocationIssuanceMode();
-  if (input.mandate && issuanceMode !== "jwt") {
-    throw new AiCapabilityExecutionError("INVOCATION_JWT_DISABLED", 503, "Mandate invocations require JWT issuance");
-  }
   if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.authority.actor.user.id) {
     throw new Error("Cloud capability authority is inconsistent.");
   }
-  const createDelegation = input.dependencies?.createDelegation ?? session.createDelegation;
-  const revokeDelegation = input.dependencies?.revokeDelegation ?? session.revoke;
   const dispatch = input.dependencies?.dispatch ?? dispatchCapability;
-  const useInvocation = issuanceMode === "jwt";
-  const token = useInvocation ? null : await createDelegation(input.authority.actor.user.id, 60);
-  try {
-    const headers = new Headers(token ? { authorization: `Bearer ${token}` } : undefined);
-    if (input.locale) headers.set(LOCALE_HEADER, input.locale);
-    const action = input.entry.kind === "action" ? (input.entry.operation as CapabilityActionManifest) : null;
-    if (!review && action?.idempotency === "required" && input.context.callId) {
-      const key = idempotencyKey(input.conversationId, input.context.callId);
-      if (input.turnId) {
-        await aiToolAudit.noteCapabilityDispatch({
-          conversationId: input.conversationId,
-          turnId: input.turnId,
-          callId: input.context.callId,
-          toolName: input.entry.name,
-          idempotencyKey: key,
-        });
-      }
-      headers.set("idempotency-key", key);
+  const headers = new Headers();
+  if (input.locale) headers.set(LOCALE_HEADER, input.locale);
+  const action = input.entry.kind === "action" ? (input.entry.operation as CapabilityActionManifest) : null;
+  if (!review && action?.idempotency === "required" && input.context.callId) {
+    const key = idempotencyKey(input.conversationId, input.context.callId);
+    if (input.turnId) {
+      await aiToolAudit.noteCapabilityDispatch({
+        conversationId: input.conversationId,
+        turnId: input.turnId,
+        callId: input.context.callId,
+        toolName: input.entry.name,
+        idempotencyKey: key,
+      });
     }
-    const request = new Request("http://cloud.internal/api/ai/capability", {
-      method: "POST",
-      headers,
-      signal: input.context.signal,
-    });
-    return await parseCapabilityResponse(
-      await dispatch({
-        request,
-        kind: input.entry.kind === "query" ? "queries" : "actions",
-        review,
-        appId: input.entry.appId,
-        capabilityId: input.entry.operation.localId,
-        input: input.args,
-        authority: useInvocation
-          ? {
-              actor: input.authority.actor,
-              accessSubject: input.authority.accessSubject,
-              credentialKind: "session",
-              scopes: [],
-            }
-          : undefined,
-        mandate: input.mandate
-          ? {
-              mandateId: input.mandate.id,
-              mandateRevision: input.mandate.revision,
-              ownerAppId: "core",
-              ...(!review && input.actionApproval ? { actionApproval: input.actionApproval } : {}),
-            }
-          : undefined,
-        dependencies: input.dependencies,
-      }),
-    );
-  } finally {
-    if (token) await revokeDelegation(token).catch(() => undefined);
+    headers.set("idempotency-key", key);
   }
+  const request = new Request("http://cloud.internal/api/ai/capability", {
+    method: "POST",
+    headers,
+    signal: input.context.signal,
+  });
+  return await parseCapabilityResponse(
+    await dispatch({
+      request,
+      kind: input.entry.kind === "query" ? "queries" : "actions",
+      review,
+      appId: input.entry.appId,
+      capabilityId: input.entry.operation.localId,
+      input: input.args,
+      authority: {
+        actor: input.authority.actor,
+        accessSubject: input.authority.accessSubject,
+        credentialKind: "session",
+        scopes: [],
+      },
+      mandate: input.mandate
+        ? {
+            mandateId: input.mandate.id,
+            mandateRevision: input.mandate.revision,
+            ownerAppId: "core",
+            ...(!review && input.actionApproval ? { actionApproval: input.actionApproval } : {}),
+          }
+        : undefined,
+      dependencies: input.dependencies,
+    }),
+  );
 };
 
 export const reviewAiCapability = async (input: AiCapabilityCall): Promise<CapabilityActionReview | null> => {

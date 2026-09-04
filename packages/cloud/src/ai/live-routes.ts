@@ -2,8 +2,6 @@ import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import { type AuthContext, auth, getLocale } from "../server";
-import { isAccountExpired } from "../services/account-model";
-import { accounts } from "../services/accounts";
 import { logger } from "../services/logging";
 import {
   AI_LIVE_WS_TYPE,
@@ -56,26 +54,11 @@ export type AiLiveRoutesConfig = {
 
 export const resolveAiLiveSessionUser = async (
   sessionToken: string | null,
-  dependencies: {
-    getSession?: typeof auth.session.getData;
-    getUser?: typeof accounts.users.get;
-    revokeAllForUser?: typeof auth.session.revokeAllForUser;
-  } = {},
+  authenticate: typeof auth.session.authenticate = auth.session.authenticate,
 ): Promise<LiveUser | null> => {
   if (!sessionToken) return null;
-  if (!dependencies.getSession && !dependencies.getUser && !dependencies.revokeAllForUser) {
-    const authenticated = await auth.session.authenticate(sessionToken);
-    return authenticated ? { id: authenticated.user.id } : null;
-  }
-  const session = await (dependencies.getSession ?? auth.session.getData)(sessionToken);
-  if (!session) return null;
-  const user = await (dependencies.getUser ?? accounts.users.get)({ id: session.userId });
-  if (!user) return null;
-  if (isAccountExpired(user.accountExpires)) {
-    await (dependencies.revokeAllForUser ?? auth.session.revokeAllForUser)(user.id);
-    return null;
-  }
-  return { id: user.id };
+  const authenticated = await authenticate(sessionToken);
+  return authenticated ? { id: authenticated.user.id } : null;
 };
 
 const isClosing = (ctx: WsContext): boolean => ctx.phase === "closing";

@@ -1,13 +1,13 @@
 import { spyOn } from "bun:test";
 import assert from "node:assert/strict";
 import { UniversalSearchInputSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@valentinkolb/cloud/server";
 import * as identity from "@valentinkolb/cloud/services/identity";
 import { getIdentityRuntimeConfig, invalidateIdentityRuntimeConfig } from "@valentinkolb/cloud/services/identity/runtime-config";
 import { redis } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
-import { requireInvocationOrLegacy } from "../../cloud/src/server/middleware/invocation";
+import { requireInvocation } from "../../cloud/src/server/middleware/invocation";
 
 const Configuration = z.object({
   userId: z.string().uuid(),
@@ -61,28 +61,24 @@ export const createProviderFixture = (observeRedis: boolean) => {
             appId,
             new Hono<AuthContext>()
               .use(
-                requireInvocationOrLegacy(
-                  () => ({ targetAppId: appId, operation: "search.query", schemaHash }),
-                  auth.requireRole("authenticated"),
-                  {
-                    verify: async (...args) => {
-                      const start = performance.now();
-                      try {
-                        return await identity.verifyInvocationToken(...args);
-                      } finally {
-                        stats.targetVerification += performance.now() - start;
-                      }
-                    },
-                    resolve: async (...args) => {
-                      const start = performance.now();
-                      try {
-                        return await identity.resolveInvocationAuthority(...args);
-                      } finally {
-                        stats.targetActor += performance.now() - start;
-                      }
-                    },
+                requireInvocation(() => ({ targetAppId: appId, operation: "search.query", schemaHash }), {
+                  verify: async (...args) => {
+                    const start = performance.now();
+                    try {
+                      return await identity.verifyInvocationToken(...args);
+                    } finally {
+                      stats.targetVerification += performance.now() - start;
+                    }
                   },
-                ),
+                  resolve: async (...args) => {
+                    const start = performance.now();
+                    try {
+                      return await identity.resolveInvocationAuthority(...args);
+                    } finally {
+                      stats.targetActor += performance.now() - start;
+                    }
+                  },
+                }),
               )
               .post("*", async (c) => {
                 assert.equal(c.get("user").id, config.userId);

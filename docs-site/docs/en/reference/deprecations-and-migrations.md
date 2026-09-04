@@ -59,8 +59,9 @@ Before starting a Core version that migrates this index:
 Do not restart old mandate writers against the new schema. An operator needing
 a rolling upgrade must first deploy a compatibility release that changes only
 the insert conflict handling on every writer, then deploy the index migration.
-Keep the existing session and OAuth compatibility windows; this coordinated
-mandate cutover does not require discarding user credentials.
+This mandate-index change does not itself revoke credentials. The JWT-only
+browser hard cut below has a separate coordinated rollout; OAuth retains its
+own verification grace.
 
 ## Widget response validation and budgets
 
@@ -70,25 +71,35 @@ oversized or malformed payloads are rejected. Dashboard runs eight requests at
 a time with 500 ms per started widget and a page budget derived from the number
 of waves. See [Dashboard widgets](/en/docs/platform/dashboard-widgets).
 
-## Browser sessions move from Valkey to JWT families
+## JWT-only sessions and internal invocations
 
-The release initially keeps `CLOUD_SESSION_ISSUANCE_MODE=legacy`. Deploy that
-dual-read release to every application first. Then change only Core to
-`CLOUD_SESSION_ISSUANCE_MODE=jwt`; new logins use signed
-`cloud-session+jwt` credentials backed by PostgreSQL session families.
-Existing opaque `userId:random` credentials remain readable from Valkey until
-their configured original expiry, so the rollout does not log users out.
+This is a coordinated hard cut, not a rolling compatibility release. All
+Cloud users must sign in again. Existing OAuth clients, refresh grants, API
+credentials, and background mandates retain their separate lifecycles.
 
-During this compatibility window, revoke-all updates both the PostgreSQL
-`auth_epoch` and the legacy Valkey generation. Individual logout revokes the
-JWT family or deletes the opaque session as appropriate. Operators should use
-the bounded `legacy_session_use` process metric and the durable sampled
-`Legacy session compatibility path used` log to establish a zero-use grace
-period before removing the legacy reader in a later release.
+1. Back up PostgreSQL and the Core identity-key encryption key. Drain old Core
+   and application replicas, including background workers, before migration.
+2. Deploy Core and every application with the JWT-only release. Keep the
+   Core-only key encryption key configured and both purpose-specific JWKS
+   endpoints reachable. There is no browser or invocation issuance-mode switch.
+3. Core's migration revokes existing JWT browser families once and removes the
+   legacy generation column. Opaque Valkey sessions are always rejected.
+   Repeated migrations preserve new logins and do not change user epochs.
+4. Verify a new login, logout, WebSocket reconnect, search, widgets, and an
+   existing OAuth client before restoring traffic and background work.
 
-Applications do not need to change cookie or Bearer handling. Code that parsed
-the old opaque value was never a supported contract and must switch to the
-request `actor` and `accessSubject`.
+Do not roll an old binary back onto the migrated schema. Recovery requires a
+coordinated compatible release or restoration of the backed-up database and
+keys. Do not flush shared Valkey: unused opaque session keys expire naturally;
+old generation keys are no longer read or written.
+
+Application code must use request `actor` and `accessSubject`, not parse or
+persist session tokens. `session.createDelegation`, `session.getData`,
+`session.parseToken`, and the legacy forwarding middleware are removed.
+Use `session.authenticate` for live session reauthorization and the public
+capability/mandate APIs for cross-application work. Internal capability and
+widget endpoints reject browser cookies, OAuth tokens, and API keys; Core
+issues target- and operation-bound invocation JWTs for them.
 
 ## Conversation files use one namespace
 

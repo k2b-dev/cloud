@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Background authority mandates
@@ -137,12 +137,8 @@ silently resume a separately paused mandate.
 Terminal occurrence bookkeeping does not require live authority. Recovery
 handles each occurrence independently so one broken task cannot block others.
 
-Scheduled turns also require `CLOUD_INVOCATION_ISSUANCE_MODE=jwt` on Core.
-While the gate is `legacy`, occurrences remain queued and delivery retries on
-the normal reconciliation cadence. No background turn starts and no user-session
-fallback is created. Existing terminal turns can still finish their bookkeeping.
-Direct mandate-backed AI execution returns `INVOCATION_JWT_DISABLED` until the
-gate opens.
+Scheduled turns use invocation JWTs unconditionally. Core never substitutes
+a user's browser session for background mandate authority.
 
 Migration authority is a separate system-only service contract, not a caller
 supplied administrator flag. It is restricted to the exact built-in workload

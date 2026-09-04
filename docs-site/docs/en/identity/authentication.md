@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Request identity
@@ -161,26 +161,16 @@ the user's authentication epoch therefore takes effect without waiting for the
 JWT to expire. Normal authenticated requests do not read a session or
 generation from Valkey.
 
-During the migration window, Cloud also accepts existing opaque
-`userId:random` sessions from Valkey until their original expiry. Operators
-first deploy JWT verification everywhere, then set
-`CLOUD_SESSION_ISSUANCE_MODE=jwt` on Core so new logins receive JWT sessions.
-This avoids a forced login wave and keeps mixed-version deployments safe.
+Cloud accepts only JWT browser sessions. Upgrading from the compatibility
+release invalidates existing browser sessions once; users must sign in again.
+A normal restart or repeated migration does not invalidate newly issued sessions.
+Revoke-all increments the user's PostgreSQL authentication epoch without
+accessing Valkey. Individual logout revokes only that session family.
 
-Changing the issuance mode does not invalidate existing sessions. A coordinated
-upgrade may instead require everyone to sign in again, but must explicitly
-invalidate the old browser sessions and replace every old issuer and reader.
-Browser-session revocation is separate from OAuth access tokens, refresh grants,
-and API credentials; those must remain usable under their own lifecycle rules.
-
-Revoke-all remains durable when Valkey is unavailable. If its legacy generation
-cannot be read safely, Core permanently switches that user's legacy credentials
-to an epoch-bound recovery format. Once Valkey returns, new opaque logins and
-legacy delegations work again without resetting the revocation floor or reviving
-old sessions. This recovery also handles an existing saturated generation floor.
-Replicas predating the recovery format reject those new opaque credentials;
-upgrade all readers before relying on this recovery during a rolling deployment.
-The normal JWT verification path and its single PostgreSQL query are unchanged.
+The browser hard cut does not revoke OAuth access tokens, refresh grants,
+API credentials, or background mandates. Deploy Core and every application
+together; mixed old and new session or invocation handlers are unsupported.
+See [the coordinated upgrade procedure](/en/docs/reference/deprecations-and-migrations).
 
 An application should not read the cookie value or use `sessionToken` as a
 domain identifier.

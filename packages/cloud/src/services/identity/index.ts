@@ -11,7 +11,6 @@ export {
 export { type ResolvedInvocationAuthority, resolveInvocationAuthority } from "./invocation-actor";
 export { invocationAuthorityFromRequest } from "./invocation-authority";
 export { capabilityInvocationOperation, searchInvocationOperation, widgetInvocationOperation } from "./invocation-operations";
-export { invocationIssuanceMode } from "./invocation-runtime";
 export {
   type CloudInvocationClaims,
   clearInvocationVerifierCachesForTest,

@@ -5,12 +5,10 @@ import { WIDGET_MAX_RESPONSE_BYTES, WidgetResponseSchema } from "../contracts/wi
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
-import { invocationIssuanceMode } from "../services/identity/invocation-runtime";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
-import { capabilityCredentialHeaders } from "./capabilities";
 
 type WidgetRouteDependencies = {
   listWidgets?: typeof listWidgets;
@@ -81,31 +79,28 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         const widget = (await waitWithin(registry(), signal)).find((entry) => entry.appId === appId && entry.widgetId === widgetId);
         if (!widget) return c.json({ message: "Widget not found" }, 404);
 
-        const useInvocation = invocationIssuanceMode() === "jwt";
         phase = "signing";
-        const headers = useInvocation
-          ? await (async () => {
-              const signed = await waitWithin(
-                (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
-                  "invocation",
-                  (signer) =>
-                    (dependencies.signInvocation ?? signInvocationToken)({
-                      targetAppId: widget.appId,
-                      callingAppId: "core",
-                      operation: widgetInvocationOperation(widget.widgetId),
-                      schemaHash: null,
-                      authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
-                      requestId,
-                      signer,
-                      issuer: signer.issuer,
-                    }),
-                  { signal, timeoutMs: dependencies.timeoutMs ?? WIDGET_PROXY_TIMEOUT_MS },
-                ),
-                signal,
-              );
-              return new Headers({ authorization: `Bearer ${signed.token}` });
-            })()
-          : capabilityCredentialHeaders(c.req.raw);
+        const headers = await (async () => {
+          const signed = await waitWithin(
+            (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
+              "invocation",
+              (signer) =>
+                (dependencies.signInvocation ?? signInvocationToken)({
+                  targetAppId: widget.appId,
+                  callingAppId: "core",
+                  operation: widgetInvocationOperation(widget.widgetId),
+                  schemaHash: null,
+                  authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+                  requestId,
+                  signer,
+                  issuer: signer.issuer,
+                }),
+              { signal, timeoutMs: dependencies.timeoutMs ?? WIDGET_PROXY_TIMEOUT_MS },
+            ),
+            signal,
+          );
+          return new Headers({ authorization: `Bearer ${signed.token}` });
+        })();
 
         if (requestId) headers.set("x-request-id", requestId);
         for (const name of ["traceparent", "tracestate"] as const) {
@@ -116,12 +111,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         if (locale) headers.set(LOCALE_HEADER, locale);
         headers.set("x-cloud-invocation-operation", widgetInvocationOperation(widget.widgetId));
 
-        // Legacy keeps the existing public target so Core/dashboard can roll
-        // out before every app has the framework-owned internal handler. JWT
-        // issuance switches only to the invocation-authenticated route.
-        const targetUrl = useInvocation
-          ? new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url)
-          : new URL(widget.url);
+        const targetUrl = new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url);
         phase = "provider";
         signal.throwIfAborted();
         const response = await fetchWidget(targetUrl, { headers, signal });

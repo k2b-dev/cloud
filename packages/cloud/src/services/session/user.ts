@@ -9,11 +9,6 @@ import { toPgTextArray } from "../postgres";
 
 type DbRow = Record<string, unknown>;
 
-/** At this durable floor only explicit epoch-bound legacy sessions are valid. */
-export const LEGACY_SESSION_EPOCH_FLOOR = Number.MAX_SAFE_INTEGER;
-/** Old readers reject this against every supported nonnegative generation. */
-export const LEGACY_EPOCH_SESSION_GENERATION = -1;
-
 const pgArrayLiteralToStrings = (value: string): string[] => {
   if (value === "{}") return [];
   if (!value.startsWith("{") || !value.endsWith("}")) return [];
@@ -129,42 +124,6 @@ export const loadJwtSessionUser = async (
       AND u.auth_epoch = ${params.authEpoch}
       AND sf.revoked_at IS NULL
       AND sf.expires_at > now()
-  `;
-  return rows[0] ? buildProjectedUser(rows[0]) : null;
-};
-
-export const loadLegacySessionUser = async (
-  params: {
-    userId: string;
-    sessionGeneration: number;
-    authEpoch?: number;
-    groupsAdmin: string[];
-  },
-  query: typeof sql = sql,
-): Promise<User | null> => {
-  const epoch = params.authEpoch ?? null;
-  if (epoch !== null && (!Number.isSafeInteger(epoch) || epoch < 0)) return null;
-  const epochOnly = params.sessionGeneration === LEGACY_EPOCH_SESSION_GENERATION;
-  if (
-    (epochOnly && epoch === null) ||
-    (!epochOnly &&
-      (!Number.isSafeInteger(params.sessionGeneration) ||
-        params.sessionGeneration < 0 ||
-        params.sessionGeneration >= LEGACY_SESSION_EPOCH_FLOOR))
-  )
-    return null;
-  const rows = await query<DbRow[]>`
-    SELECT ${userProjectionSql(params.groupsAdmin)}
-    FROM auth.users u
-    ${userIpaDataJoin}
-    WHERE u.id = ${params.userId}::uuid
-      AND (${epoch}::bigint IS NULL OR u.auth_epoch = ${epoch}::bigint)
-      AND (
-        (u.legacy_session_generation < ${LEGACY_SESSION_EPOCH_FLOOR}
-          AND u.legacy_session_generation <= ${params.sessionGeneration})
-        OR (u.legacy_session_generation >= ${LEGACY_SESSION_EPOCH_FLOOR}
-          AND ${epochOnly} AND ${epoch}::bigint IS NOT NULL)
-      )
   `;
   return rows[0] ? buildProjectedUser(rows[0]) : null;
 };

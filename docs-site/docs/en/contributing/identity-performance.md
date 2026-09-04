@@ -3,15 +3,15 @@ title: Verify identity performance
 navTitle: Identity performance
 section: Contributing
 order: 1310
-description: Compare legacy and JWT search latency with real authentication and database access.
+description: Measure JWT search latency and verify identity I/O with real authentication.
 tags: [identity, jwt, performance, testing]
-updated: 2026-09-03
+updated: 2026-09-04
 ---
 
 # Verify identity performance
 
 Use the repository benchmark to check whether JWT authentication and delegated
-search stay within the agreed latency budget. A passing crypto microbenchmark
+search meet their identity I/O budgets and record latency. A passing crypto microbenchmark
 alone does not establish this: the active-key transaction and current-user
 queries must also run.
 
@@ -56,17 +56,16 @@ Do not treat an HTTP error as a latency sample or retry it into a passing run.
 
 ## Understand the measurements
 
-The default run takes 200 samples per mode for each of six cases: dispatcher
-and end-to-end search with 1, 8, and 30 providers. Each case has 20 warm-up pairs.
-Legacy and JWT run alternately, reversing their order on each pair. A shorter
-smoke test can use `IDENTITY_BENCH_SAMPLES=20`; do not use it for acceptance.
-The report marks runs with fewer than 200 samples per mode as ineligible.
+The default run takes 200 JWT samples for each of six cases: dispatcher and
+end-to-end search with 1, 8, and 30 providers, after 20 warm-ups per case.
+A shorter smoke test can use `IDENTITY_BENCH_SAMPLES=20`; it is marked
+ineligible for full I/O acceptance.
 
-Both modes use the real search router and authentication implementation. Legacy
-uses the current compatibility branch with an opaque session and forwarded
-credential. JWT uses a real session family, current-actor query, guarded signing
-transaction, and target-bound invocation tokens. This is a same-checkout
-comparison, not a measurement of a historical release binary.
+The hard cut removed the legacy production branch. This runner now measures
+only the real JWT router, session family, current-actor query, guarded signing,
+and target-bound invocation tokens. Its `passes` field covers identity I/O,
+not a new legacy-versus-JWT latency comparison. `latencyGate` states that the
+latency gate is not evaluated.
 
 | Case | Included work |
 | --- | --- |
@@ -131,19 +130,20 @@ lock and waiting for issuance to settle, another real JWT search must pass all
 normal result and I/O assertions. This probe is not a latency sample. It verifies
 fail-closed recovery, not the cause of an unrelated historical HTTP error.
 
-## Apply the acceptance gate
+## Preserve the historical latency gate
 
-For **every** provider count and both search cases:
+The migration comparison at commit `1e6a71d29` used this bound for every
+provider count and both search cases:
 
 ```text
 JWT p95 - legacy p95 <= max(legacy p95 × 0.10, 10 ms)
 ```
 
-Percentiles use nearest rank without rounding before comparison or removing
-outliers. A full normal measurement exits unsuccessfully when any case exceeds
-the bound or an I/O assertion fails. For acceptance, run three independent full runs on the
-same unchanged checkout and require all three to pass; never select only the
-best run. A failed run leaves the performance gate open.
+Historical comparison runs used nearest-rank percentiles without removing
+outliers and required three complete passing runs. Retain those reports,
+including failures. Reproduce that comparison on the archived revision;
+do not label two JWT runs as a legacy comparison or treat a current JWT-only
+run as fresh evidence for this latency gate.
 
 The bound concerns **additional latency compared with legacy**, not total search
 duration. A slow application alone does not explain a regression. A maintainer
@@ -156,8 +156,8 @@ security, or the I/O requirements below. Uncertain attribution does not qualify.
 PostgreSQL protocol instrumentation checks every measured request. Redis client
 observers are independently checked against Redis server command counters;
 telemetry reads happen outside the timed interval.
-Asynchronous writes to `logging.entries`, such as the periodic legacy-use
-notice, are counted separately from request identity queries. Logging remains
+Asynchronous writes to `logging.entries` are counted separately from request
+identity queries. Logging remains
 enabled and its timing effects are not removed from the samples.
 
 | JWT work | Required measured count |
@@ -172,6 +172,5 @@ The signing guard is constant per search, not zero-cost: its four database
 commands are included in the gate. If a run fails, inspect the raw samples,
 authentication/signing stages, and host load before changing the implementation.
 Do not weaken revocation, remove the database timeout, or relax the threshold to
-obtain a pass. A local pass is not a production latency guarantee or permission
-to remove compatibility paths. Deployment verification still follows
+obtain a pass. A local I/O pass is not a production latency guarantee. Deployment verification still follows
 [Identity key operations](/en/docs/operations/identity-key-operations).

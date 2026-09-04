@@ -10,7 +10,7 @@ export {
   type ServiceAccountRequestActor,
   type UserRequestActor,
 } from "./auth";
-export { type InvocationExpectation, requireInvocation, requireInvocationOrLegacy } from "./invocation";
+export { type InvocationExpectation, requireInvocation } from "./invocation";
 export { middleware } from "./middleware";
 export {
   imageResponse,
@@ -25,4 +25,4 @@ export {
 export { type RateLimitConfig, type RateLimitRouteOverride, rateLimit } from "./rate-limit";
 export { requestLogger } from "./request-logger";
 export { type ValidatorError, type ValidatorErrorResolver, v, validator } from "./validator";
-export { isReservedWorkloadCredential, legacyCredentialBoundary, rejectReservedWorkloadCredential } from "./workload";
+export { isReservedWorkloadCredential, rejectReservedWorkloadCredential } from "./workload";
