@@ -133,8 +133,8 @@ export const verifySessionToken = async (
       remote.state.lastForcedRefreshAt = now;
       identityMetrics.increment("unknown_kid_refresh");
       key = createRemoteSet(remote.url);
-      remote.state.key = key;
       verified = await verify(key);
+      remote.state.key = key;
     }
     const parsed = SessionPayloadSchema.safeParse(verified.payload);
     if (!parsed.success || parsed.data.exp <= parsed.data.iat) throw new Error("Cloud session JWT claims are invalid");

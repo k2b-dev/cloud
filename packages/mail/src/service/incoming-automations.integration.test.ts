@@ -414,6 +414,92 @@ suite("incoming automations", () => {
     }
   });
 
+  test("never migrates revoked, expired, disabled, or unavailable legacy authority", async () => {
+    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+    if (ownerContext.actor.kind !== "user") throw new Error("Expected a user test actor");
+    const userId = ownerContext.actor.user.id;
+    try {
+      for (const condition of ["revoked", "expired", "disabled", "sponsor"] as const) {
+        process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
+        const created = await createIncomingAutomation({
+          context: ownerContext,
+          mailboxId,
+          input: {
+            name: `Inactive legacy authority ${condition}`,
+            enabled: false,
+            scope: { mode: "all" },
+            steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+          },
+        });
+        if (!created.ok) throw new Error(created.error.message);
+        const [before] = await sql<
+          { integration_credential_id: string; service_account_id: string; encrypted_integration_token: string }[]
+        >`
+          SELECT automation.integration_credential_id, credential.service_account_id, automation.encrypted_integration_token
+          FROM mail.incoming_automations automation
+          JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
+          WHERE automation.id = ${created.data.id}::uuid
+        `;
+        if (!before) throw new Error("Expected legacy authority");
+        try {
+          if (condition === "revoked") {
+            await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now()
+              WHERE id = ${before.integration_credential_id}::uuid`;
+          } else if (condition === "expired") {
+            await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 minute'
+              WHERE id = ${before.integration_credential_id}::uuid`;
+          } else if (condition === "disabled") {
+            await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${before.service_account_id}::uuid`;
+          } else {
+            await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${userId}::uuid`;
+          }
+          process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
+          const migrated = await migrateLegacyIncomingAutomationAuthorities(100);
+          expect(migrated.failed).toBeGreaterThanOrEqual(1);
+          const [after] = await sql<
+            {
+              mandate_id: string | null;
+              integration_credential_id: string;
+              encrypted_integration_token: string;
+              attempted: boolean;
+              mandate_count: number;
+            }[]
+          >`
+            SELECT mandate_id, integration_credential_id, encrypted_integration_token,
+              authority_migration_attempted_at IS NOT NULL AS attempted,
+              (SELECT count(*)::int FROM auth.mandates WHERE owner_app_id = 'mail'
+                AND workload_type = 'incoming.automation' AND workload_id = ${created.data.id}) AS mandate_count
+            FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid
+          `;
+          expect(after).toEqual({
+            mandate_id: null,
+            integration_credential_id: before.integration_credential_id,
+            encrypted_integration_token: before.encrypted_integration_token,
+            attempted: true,
+            mandate_count: 0,
+          });
+        } finally {
+          await sql`UPDATE auth.service_accounts SET status = 'active' WHERE id = ${before.service_account_id}::uuid`;
+          await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userId}::uuid`;
+          const deleted = await deleteIncomingAutomation({
+            context: ownerContext,
+            mailboxId,
+            automationId: created.data.id,
+            input: { expectedRevision: created.data.revision },
+          });
+          if (!deleted.ok) throw new Error(deleted.error.message);
+          // Deleted automations retain legacy metadata until the retirement pass.
+          await sql`UPDATE mail.incoming_automations SET authority_migration_attempted_at = NULL
+            WHERE id = ${created.data.id}::uuid`;
+          await migrateLegacyIncomingAutomationAuthorities(100);
+        }
+      }
+    } finally {
+      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
+      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
+    }
+  });
+
   test("retains failed legacy authority without starving later rows and persists retry backoff", async () => {
     const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
     process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";

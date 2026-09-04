@@ -200,7 +200,10 @@ const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRo
     nowMs < date(beforeActive.created_at).getTime() + IDENTITY_ROTATION_AGE_MS;
   if (activeIsFresh && (!beforePending || date(beforePending.activate_at).getTime() > nowMs)) return beforeActive;
 
-  const generated = !beforeActive || (!beforePending && !activeIsFresh) ? await generateEncryptedKey(keys) : null;
+  const generated =
+    !beforeActive || date(beforeActive.sign_until).getTime() <= nowMs || (!beforePending && !activeIsFresh)
+      ? await generateEncryptedKey(keys)
+      : null;
   const active = await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`cloud:identity-keyring:${purpose}`}, 0))`;
     const rows = await tx<SigningKeyRow[]>`
@@ -212,8 +215,17 @@ const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRo
       FOR UPDATE
     `;
     let current = rows.find((row) => row.state === "active");
-    const pending = rows.find((row) => row.state === "pending");
+    let pending = rows.find((row) => row.state === "pending");
     const now = new Date();
+
+    // Long downtime can outlive both signing deadlines. Preserve their public
+    // verification windows, but never promote or return an expired signer.
+    for (const row of [current, pending]) {
+      if (!row || date(row.sign_until).getTime() > now.getTime()) continue;
+      await tx`UPDATE auth.signing_keys SET state = 'retired', retired_at = ${now} WHERE id = ${row.id}`;
+      if (row === current) current = undefined;
+      if (row === pending) pending = undefined;
+    }
 
     if (pending && date(pending.activate_at).getTime() <= now.getTime()) {
       if (current) {
@@ -244,8 +256,8 @@ const maintainPurpose = async (purpose: SigningKeyPurpose): Promise<SigningKeyRo
     }
 
     if (!current) {
-      if (!generated) throw new Error(`No ${purpose} signing key candidate is available`);
-      await insertKey(tx as typeof sql, purpose, generated, "active", now);
+      const candidate = generated ?? (await generateEncryptedKey(keys));
+      await insertKey(tx as typeof sql, purpose, candidate, "active", now);
       const [created] = await tx<SigningKeyRow[]>`
         SELECT id, purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
           created_at, activate_at, activated_at, sign_until, retired_at, verify_until, revoked_at

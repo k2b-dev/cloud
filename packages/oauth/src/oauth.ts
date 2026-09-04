@@ -637,8 +637,10 @@ const app = new Hono<AuthContext>()
 
       const issuer = await getIssuer();
       try {
+        const allowedAudiences = new Set(["cloud", result.client.clientId, ...result.client.audiences]);
         if (
           result.scopes.some((scope) => !result.client.scopes.includes(scope)) ||
+          (result.client.registrationKind !== "dynamic" && result.audiences.some((audience) => !allowedAudiences.has(audience))) ||
           !oauth.clients.validateResource(result.client, result.resource ?? undefined, issuer)
         ) {
           return tokenError(c, "invalid_grant", "Authorization code grant is no longer allowed");
@@ -657,7 +659,7 @@ const app = new Hono<AuthContext>()
           client: result.client,
           issuer,
           scopes: result.scopes,
-          audiences: result.resource ? [result.resource] : undefined,
+          audiences: result.audiences,
           resource: result.resource,
           authorityGrant: result.authorityGrant,
           issueRefreshToken: true,

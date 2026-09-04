@@ -194,6 +194,16 @@ export const rotate = async (
   if (!parsed) return { ok: false, error: "invalid_grant" };
 
   const reserved = await sql.begin(async (tx) => {
+    // Match finalization's family -> token order. A replay must not hold the
+    // token while waiting for a finalizer that already owns the family lock.
+    const [family] = await tx<{ id: string }[]>`
+      SELECT f.id
+      FROM oauth.refresh_token_families f
+      JOIN oauth.refresh_tokens rt ON rt.family_id = f.id
+      WHERE rt.token_prefix = ${parsed.tokenPrefix}
+      FOR UPDATE OF f
+    `;
+    if (!family) return { ok: false as const, error: "invalid_grant" as const };
     const [row] = await tx<DbRefreshTokenGrant[]>`
       SELECT
         rt.id,
@@ -215,7 +225,7 @@ export const rotate = async (
       FROM oauth.refresh_tokens rt
       JOIN oauth.refresh_token_families f ON f.id = rt.family_id
       WHERE rt.token_prefix = ${parsed.tokenPrefix}
-      FOR UPDATE OF rt, f
+      FOR UPDATE OF rt
     `;
     if (!row) return { ok: false as const, error: "invalid_grant" as const };
 

@@ -158,6 +158,29 @@ suite("OAuth external review regressions", () => {
     expect((await refreshTokens.rotate(token.refreshToken, client)).ok).toBe(false);
   }, 30_000);
 
+  test("refresh reservation waits for the family without locking its token", async () => {
+    const { userId, client } = await fixture();
+    const token = await refreshTokens.create({
+      userId,
+      client,
+      scopes: ["openid", "offline_access"],
+      audiences: ["cloud", client.clientId],
+    });
+    let rotation: ReturnType<typeof refreshTokens.rotate> | undefined;
+    await sql.begin(async (db) => {
+      await db`SELECT id FROM oauth.refresh_token_families WHERE id = ${token.familyId}::uuid FOR UPDATE`;
+      const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      rotation = refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
+        await sql`UPDATE oauth.refresh_tokens SET authority_issued_at = now() WHERE id = ${authorityGrant.tokenId}::uuid`;
+        return "core";
+      });
+      await waitForBlockedBy(backend!.pid);
+      // A token-first reservation deadlocks against this finalizer lock order.
+      await db`SELECT id FROM oauth.refresh_tokens WHERE family_id = ${token.familyId}::uuid FOR UPDATE NOWAIT`;
+    });
+    expect((await rotation)?.ok).toBe(true);
+  }, 30_000);
+
   test("audience upgrade rolls back atomically and supports old writers after retry", async () => {
     const { userId, client } = await fixture();
     await sql`DROP TRIGGER fill_code_audiences ON oauth.codes`.simple();

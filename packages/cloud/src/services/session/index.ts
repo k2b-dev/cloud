@@ -12,6 +12,7 @@ import {
   signSessionToken,
   verifySessionToken,
 } from "../identity";
+import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
 import * as settings from "../settings";
 import { loadJwtSessionUser } from "./user";
@@ -124,9 +125,12 @@ const issueJwtSession = async (c: Context, userId: string, ttlSeconds: number, a
       const epoch = Number(user.auth_epoch);
       if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error("User auth_epoch is invalid");
       const [activeKey] = await tx<Array<{ kid: string }>>`
-        SELECT kid FROM auth.signing_keys
-        WHERE kid = ${signer.kid} AND purpose = 'session' AND state = 'active'
-        FOR SHARE
+        UPDATE auth.signing_keys
+        SET verify_until = GREATEST(verify_until, ${new Date(
+          expiresAt.getTime() + IDENTITY_CLOCK_TOLERANCE_SECONDS * 1_000 + IDENTITY_ROLLOUT_MARGIN_MS,
+        )})
+        WHERE kid = ${signer.kid} AND purpose = 'session' AND state = 'active' AND sign_until > now()
+        RETURNING kid
       `;
       if (!activeKey) throw new Error("Prepared Cloud session signer is no longer active");
       await tx`

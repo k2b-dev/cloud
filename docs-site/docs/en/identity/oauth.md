@@ -91,6 +91,10 @@ refresh. Cloud also rechecks the account, client scopes and audiences, profile
 or explicit client access, and client existence before issuing a replacement.
 If any check fails, the grant cannot mint another access token.
 
+Authorization codes capture their granted audiences when created. Both the
+initial access token and its refresh family keep that snapshot; adding a client
+audience later does not widen an existing grant.
+
 The OpenID Connect UserInfo endpoint accepts only user access tokens that
 contain `openid`, were issued for the requesting client, and still refer to an
 active account and registered client. ID tokens and resource-only access tokens

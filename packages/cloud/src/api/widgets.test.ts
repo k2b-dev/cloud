@@ -70,6 +70,40 @@ const createWidgetRoutes = (dependencies: Parameters<typeof buildWidgetRoutes>[0
   });
 
 describe("Core widget proxy", () => {
+  test("requires an OAuth read scope before registry lookup or invocation issuance", async () => {
+    for (const scopes of [[], ["openid", "profile"], ["write"], ["read"], ["admin"]]) {
+      let registryCalls = 0;
+      let signingCalls = 0;
+      let providerCalls = 0;
+      const routes = createWidgetRoutes({
+        authenticate: async (c, next) => {
+          c.set("actor", { kind: "user", user });
+          c.set("accessSubject", { type: "user", userId: user.id });
+          c.set("credentialKind", "oauth");
+          c.set("credentialScopes", scopes);
+          c.set("oauthScopes", scopes);
+          await next();
+        },
+        listWidgets: async () => {
+          registryCalls += 1;
+          return [widget];
+        },
+        signInvocation: async () => {
+          signingCalls += 1;
+          return { token: "target-token" } as Awaited<ReturnType<typeof signInvocationToken>>;
+        },
+        fetch: async () => {
+          providerCalls += 1;
+          return Response.json({ title: "Weather", blocks: [] });
+        },
+      });
+      const allowed = scopes.includes("read") || scopes.includes("admin");
+      const response = await routes.request("/widgets/v1/weather/current");
+      expect(response.status).toBe(allowed ? 200 : 403);
+      expect([registryCalls, signingCalls, providerCalls]).toEqual(allowed ? [1, 1, 1] : [0, 0, 0]);
+    }
+  });
+
   test("drops invalid optional request ids before signing and forwarding", async () => {
     {
       for (const requestId of ["two words", "ümlaut", "x".repeat(201)]) {

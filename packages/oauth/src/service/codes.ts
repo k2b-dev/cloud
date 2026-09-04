@@ -84,6 +84,7 @@ export const consume = async (params: {
   userId: string;
   client: OAuthClient;
   scopes: OAuthScope[];
+  audiences: string[];
   resource: string | null;
   nonce: string | null;
   authorityGrant: { kind: "authorization_code"; code: string; nonce: string };
@@ -145,6 +146,7 @@ export const consume = async (params: {
     userId: row.user_id,
     client,
     scopes: row.scopes as OAuthScope[],
+    audiences: row.audiences,
     resource: row.resource,
     nonce: row.nonce,
     authorityGrant: { kind: "authorization_code", code, nonce: authorityNonce },

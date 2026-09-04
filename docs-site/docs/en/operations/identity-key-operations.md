@@ -37,6 +37,19 @@ issued token plus clock and rollout margin has expired. Rotation is protected
 by a purpose-scoped PostgreSQL transaction lock, so multiple Core instances
 converge on one active and at most one pending key.
 
+Session issuance extends its signing key's verification deadline in the same
+transaction that creates the session family. Long configured sessions therefore
+remain verifiable even if Core stops before the next maintenance pass.
+
+If downtime outlasts the active and pending signing deadlines, Core retires
+those signers and creates an immediately active replacement during startup.
+It preserves their existing public verification windows. Like initial startup
+and emergency replacement, this recovery cannot provide the normal ten-minute
+prepublication period; verifiers use their bounded unknown-key refresh to load
+the replacement. A verifier in its refresh cooldown can briefly reject new
+tokens, but startup does not require another restart or a maintenance timer to
+recover.
+
 Each purpose-specific JWKS response has its own ETag and a five-minute public
 cache bound. Unknown
 `kid` values trigger the verifier's JWKS refresh behavior. New issuance fails

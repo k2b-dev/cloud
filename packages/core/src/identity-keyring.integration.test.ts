@@ -239,4 +239,33 @@ suite("Core identity key ring", () => {
     await runIdentityKeyMaintenance();
     expect((await getIdentitySigningKeyStatus()).some((key) => key.kid === invocation!.kid)).toBe(false);
   }, 30_000);
+
+  test("recovers immediately after active and pending signing deadlines expire", async () => {
+    clearIdentityKeyCachesForTest();
+    await initializeIdentityAuthority();
+    await sql`
+      UPDATE auth.signing_keys SET created_at = now() - INTERVAL '31 days'
+      WHERE purpose = 'session' AND state = 'active'
+    `;
+    await runIdentityKeyMaintenance();
+    const expired = await sql<Array<{ kid: string }>>`
+      UPDATE auth.signing_keys
+      SET activate_at = now() - INTERVAL '32 days',
+          sign_until = now() - INTERVAL '1 second'
+      WHERE purpose = 'session' AND state IN ('active', 'pending')
+      RETURNING kid
+    `;
+    expect(expired).toHaveLength(2);
+    clearIdentityKeyCachesForTest();
+    await initializeIdentityAuthority();
+    const signer = await prepareIdentitySigner("session");
+    expect(expired.some((key) => key.kid === signer.kid)).toBeFalse();
+    expect(signer.signUntil.getTime()).toBeGreaterThan(Date.now());
+    const status = await getIdentitySigningKeyStatus();
+    for (const key of expired) {
+      expect(status.find((entry) => entry.kid === key.kid)?.state).toBe("retired");
+      expect((await listIdentityJwks("session")).keys.some((entry) => entry.kid === key.kid)).toBeTrue();
+    }
+    expect(status.filter((key) => key.purpose === "session" && key.state === "active")).toHaveLength(1);
+  }, 30_000);
 });

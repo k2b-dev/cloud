@@ -309,20 +309,23 @@ type LegacyAutomationAuthorityRow = {
   steps: MailAutomationStep[] | string;
   integration_credential_id: string;
   delegated_user_id: string | null;
+  authority_active: boolean;
 };
 
 const migrateLegacyAutomationAuthority = async (automationId: string): Promise<"migrated" | "retired" | "gone"> =>
   sql.begin(async (tx) => {
     const [row] = await tx<LegacyAutomationAuthorityRow[]>`
       SELECT automation.id, automation.enabled, automation.deleted_at, automation.steps,
-        automation.integration_credential_id, account.delegated_user_id
+        automation.integration_credential_id, account.delegated_user_id,
+        (credential.status = 'active' AND (credential.expires_at IS NULL OR credential.expires_at > now())
+          AND account.status = 'active' AND account.kind = 'user_delegated') AS authority_active
       FROM mail.incoming_automations automation
       JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
       JOIN auth.service_accounts account ON account.id = credential.service_account_id
       WHERE automation.id = ${automationId}::uuid
         AND automation.integration_credential_id IS NOT NULL
       LIMIT 1
-      FOR UPDATE OF automation, credential
+      FOR UPDATE OF automation, credential, account
     `;
     if (!row) return "gone" as const;
 
@@ -330,7 +333,16 @@ const migrateLegacyAutomationAuthority = async (automationId: string): Promise<"
     const policy = incomingAutomationMandatePolicy(steps);
     let mandateId: string | null = null;
     if (!row.deleted_at && policy) {
+      if (!row.authority_active)
+        throw new Error("Legacy automation authority is revoked, expired, or disabled; reauthorization is required");
       if (!row.delegated_user_id) throw new Error("Legacy automation credential has no delegated user");
+      const [sponsor] = await tx<{ id: string }[]>`
+        SELECT id FROM auth.users
+        WHERE id = ${row.delegated_user_id}::uuid
+          AND (account_expires IS NULL OR account_expires > now())
+        FOR SHARE
+      `;
+      if (!sponsor) throw new Error("Legacy automation sponsor is unavailable; reauthorization is required");
       const created = await mandates.create(
         {
           authority: {

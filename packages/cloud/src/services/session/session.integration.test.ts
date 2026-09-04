@@ -1,6 +1,8 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
 import { migrateBrowserSessionCutover } from "../../../../core/src/migrate/core/auth";
+import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
+import * as settings from "../settings";
 import { session } from "./index";
 import { createTestSession } from "./test-fixture";
 
@@ -15,6 +17,29 @@ const fixture = async () => {
 };
 
 suite("JWT-only browser sessions", () => {
+  test("retains signing keys atomically for concurrent long sessions without maintenance", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    const originalExpiry = await settings.get<number>("user.session.expiry_hours");
+    try {
+      await settings.set("user.session.expiry_hours", 90 * 24);
+      await Promise.all([first.create(), second.create()]);
+      const rows = await sql<Array<{ retained: boolean }>>`
+        SELECT sk.verify_until >= sf.expires_at
+          + (${IDENTITY_CLOCK_TOLERANCE_SECONDS}::int * INTERVAL '1 second')
+          + (${IDENTITY_ROLLOUT_MARGIN_MS}::int * INTERVAL '1 millisecond') AS retained
+        FROM auth.session_families sf JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid
+        WHERE sf.user_id IN (${first.userId}::uuid, ${second.userId}::uuid)
+      `;
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.retained)).toBeTrue();
+    } finally {
+      await settings.set("user.session.expiry_hours", originalExpiry);
+      await first.cleanup();
+      await second.cleanup();
+    }
+  });
+
   test("rejects opaque sessions without accessing their existing Redis records", async () => {
     const f = await fixture();
     const token = `${f.userId}:${crypto.randomUUID()}`;

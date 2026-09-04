@@ -255,8 +255,8 @@ export const verifyInvocationToken = async (
       remote.state.lastForcedRefreshAt = now;
       identityMetrics.increment("unknown_kid_refresh");
       key = createRemoteSet(remote.url);
-      remote.state.key = key;
       verified = await verify(key);
+      remote.state.key = key;
     }
     const parsed = InvocationPayloadSchema.safeParse(verified.payload);
     if (!parsed.success || parsed.data.op !== operation || (!options.deferSchemaBinding && parsed.data.schema_hash !== schemaHash)) {

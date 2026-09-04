@@ -58,6 +58,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
   return new Hono<AuthContext>()
     .use(dependencies.authenticate ?? auth.requireRole("authenticated"))
     .use(rejectReservedWorkloadCredential)
+    .use(auth.requireOAuthScope("read", "admin"))
     .get("/widgets/v1/:appId/:widgetId", async (c) => {
       const timeout = AbortSignal.timeout(dependencies.timeoutMs ?? WIDGET_PROXY_TIMEOUT_MS);
       const signal = AbortSignal.any([c.req.raw.signal, timeout]);

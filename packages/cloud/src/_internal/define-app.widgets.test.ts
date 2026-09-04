@@ -63,6 +63,8 @@ const invocationCandidate = `${Buffer.from(
 ).toString("base64url")}.e30.signature`;
 
 test("internal invocation widgets receive runtime, settings, actor and locale like the public handler", async () => {
+  let activeClaims = claims;
+  let handlerCalls = 0;
   const originalSecret = Object.getOwnPropertyDescriptor(env, "APP_SECRET")!;
   Object.defineProperty(env, "APP_SECRET", { value: "widget-context-test-only", configurable: true });
   const signals = ["SIGTERM", "SIGINT"] as const;
@@ -76,14 +78,14 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     spyOn(settingsSnapshot, "loadSnapshot").mockResolvedValue({ app: { locale: "en" } }),
     spyOn(invocationToken, "verifyInvocationToken").mockImplementation(async (_token, expected) => {
       expect(expected).toEqual({ targetAppId: "widget-context", operation: "widget.read:context", schemaHash: null });
-      return claims;
+      return activeClaims;
     }),
-    spyOn(invocationActor, "resolveInvocationAuthority").mockResolvedValue({
+    spyOn(invocationActor, "resolveInvocationAuthority").mockImplementation(async () => ({
       actor: { kind: "user", user },
       accessSubject: { type: "user", userId: user.id },
       credentialKind: "invocation",
-      scopes: [],
-    }),
+      scopes: activeClaims.scopes,
+    })),
     spyOn(auth, "requireRole").mockReturnValue(async (c, next) => {
       c.set("actor", { kind: "user", user });
       c.set("user", user);
@@ -94,14 +96,16 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     }),
   ];
   try {
-    const handler: Handler<AuthContext> = (c) =>
-      c.json({
+    const handler: Handler<AuthContext> = (c) => {
+      handlerCalls += 1;
+      return c.json({
         runtimeApps: getRuntimeContext(c).apps,
         settings: Reflect.get(c.var, "settings"),
         actorKind: c.get("actor").kind,
         userId: c.get("user").id,
         locale: getLocale(c),
       });
+    };
     const publicRoutes = new Hono<AuthContext>()
       .use(auth.requireRole("authenticated"), runtime(), settings())
       .get("/api/widget-context/widget", handler);
@@ -123,6 +127,14 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     const body = await internal.json();
     expect(body).toEqual(await direct.json());
     expect(body).toEqual({ runtimeApps: [], settings: { app: { locale: "en" } }, actorKind: "user", userId: user.id, locale: "de-CH" });
+    for (const scopes of [[], ["openid", "profile"], ["write"], ["read"], ["admin"]]) {
+      activeClaims = { ...claims, credential_kind: "oauth", scopes };
+      const previousCalls = handlerCalls;
+      const response = await server.fetch(new Request("http://widget-context/api/_internal/widgets/v1/context", { headers }));
+      const allowed = scopes.includes("read") || scopes.includes("admin");
+      expect(response.status).toBe(allowed ? 200 : 403);
+      expect(handlerCalls - previousCalls).toBe(allowed ? 1 : 0);
+    }
   } finally {
     for (const spy of spies) spy.mockRestore();
     Object.defineProperty(env, "APP_SECRET", originalSecret);

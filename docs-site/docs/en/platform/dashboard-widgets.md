@@ -157,6 +157,10 @@ Cloud authenticates the invocation, but it does not authorize application
 data. The handler must use the normal request identity and resource permission
 checks.
 
+OAuth callers need `read` or `admin` at both the Core widget proxy and the
+internal widget route. Session and API-key requests keep their existing access
+rules; OAuth scopes never replace the handler's resource permission checks.
+
 Framework-owned internal widget routes provide the same request runtime,
 settings, actor, access subject, and resolved locale as public application
 routes. Handlers can use the normal runtime context; they do not need a separate

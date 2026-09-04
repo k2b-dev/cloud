@@ -21,6 +21,82 @@ const canUseAiDatabase = async (): Promise<boolean> => {
 const suite = (await canUseAiDatabase()) ? describe : describe.skip;
 
 suite("AI chat tasks", () => {
+  test("uses current mandate revisions for explicit lifecycle changes without restoring changed authority", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`ai-lifecycle-${suffix}`}, 'local', 'user', 'Lifecycle', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id
+    `;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "Current lifecycle authority" });
+    try {
+      const task = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Lifecycle",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      const paused = await mandates.pause({
+        mandateId: task.mandateId!,
+        expectedRevision: task.mandateRevision!,
+        authority: { kind: "workload", ownerAppId: "core" },
+      });
+      expect(paused.ok).toBe(true);
+      // Explicit resume must work before scheduler reconciliation sees the independent pause.
+      const resumed = await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" });
+      expect(resumed?.state).toBe("active");
+      expect(resumed?.mandateRevision).toBe(task.mandateRevision! + 2);
+      const narrowed = await mandates.updatePolicy({
+        mandateId: task.mandateId!,
+        expectedRevision: resumed!.mandateRevision!,
+        authority: { kind: "workload", ownerAppId: "core" },
+        policy: { version: 1, apps: ["mail"], operations: ["capability.query:mail.read"], actions: "deny" },
+      });
+      expect(narrowed.ok).toBe(true);
+      await expect(aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "active" })).rejects.toThrow(
+        "Scheduled task mandate cannot be resumed",
+      );
+      expect((await aiChatTasks.setState({ userId: user!.id, taskId: task.shortId, state: "paused" }))?.state).toBe("paused");
+      const current = (await mandates.get(task.mandateId!))!;
+      const changed = await mandates.updatePolicy({
+        mandateId: current.id,
+        expectedRevision: current.revision,
+        authority: { kind: "workload", ownerAppId: "core" },
+        policy: { version: 1, apps: [], operations: [], actions: "deny" },
+      });
+      expect(changed.ok).toBe(true);
+      // Deletion must revoke the current binding even while the paused task retains an older revision.
+      expect(await aiChatTasks.delete({ userId: user!.id, taskId: task.shortId })).toBe(true);
+      expect((await mandates.get(current.id))?.state).toBe("revoked");
+
+      const revokedTask = (await aiChatTasks.create({
+        userId: user!.id,
+        chatId: conversation.shortId,
+        prompt: "Revoked",
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      }))!;
+      expect(
+        (
+          await mandates.revoke({
+            mandateId: revokedTask.mandateId!,
+            expectedRevision: revokedTask.mandateRevision!,
+            authority: { kind: "interactive", userId: user!.id },
+            reason: "Owner revoked authority",
+          })
+        ).ok,
+      ).toBe(true);
+      await expect(aiChatTasks.setState({ userId: user!.id, taskId: revokedTask.shortId, state: "active" })).rejects.toThrow(
+        "Mandate is revoked",
+      );
+      expect(await aiChatTasks.delete({ userId: user!.id, taskId: revokedTask.shortId })).toBe(true);
+      expect((await mandates.get(revokedTask.mandateId!))?.state).toBe("revoked");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
   test("backfills mandates and executes existing queued occurrences without an issuance switch", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`

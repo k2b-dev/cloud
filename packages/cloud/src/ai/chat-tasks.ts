@@ -622,7 +622,17 @@ export const aiChatTasks = {
         (current.state === "paused" && input.state === "active") ||
         (current.state === "needs_attention" && current.schedule_kind === "cron" && input.state === "active");
       if (!allowed) return null;
-      const revision = await mandateRevision(requireTaskMandate(current), input.state, input.userId, tx);
+      const mandate = await loadTaskMandate(current, tx);
+      if (!mandate || !taskMandateMatches(current, mandate)) {
+        throw new AiChatTaskAuthorityError("Scheduled task mandate is unavailable");
+      }
+      if (input.state === "active") {
+        const policy = taskMandatePolicy(mandate);
+        if (!mandate.confirmed_at || !mandate.unexpired || !policy || !isChatTaskMandatePolicy(policy)) {
+          throw new AiChatTaskAuthorityError("Scheduled task mandate cannot be resumed");
+        }
+      }
+      const revision = await mandateRevision({ mandate_id: mandate.id, mandate_revision: mandate.revision }, input.state, input.userId, tx);
       const updated = await tx<TaskRow[]>`
         UPDATE ai.chat_tasks task
         SET state = ${input.state}, mandate_revision = ${revision},
@@ -647,11 +657,14 @@ export const aiChatTasks = {
       let current = rows[0];
       if (!current) return false;
       current = await ensureTaskMandate(current, tx);
-      const mandate = requireTaskMandate(current);
+      const mandate = await loadTaskMandate(current, tx);
+      if (!mandate || !taskMandateMatches(current, mandate)) {
+        throw new AiChatTaskAuthorityError("Scheduled task mandate is unavailable");
+      }
       const revoked = await revokeMandate(
         {
-          mandateId: mandate.mandate_id,
-          expectedRevision: Number(mandate.mandate_revision),
+          mandateId: mandate.id,
+          expectedRevision: Number(mandate.revision),
           authority: mandateAuthority(input.userId),
           reason: "Scheduled chat task deleted",
         },

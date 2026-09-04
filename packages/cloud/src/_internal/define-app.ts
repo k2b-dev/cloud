@@ -637,6 +637,7 @@ export const defineApp = <
           if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
           return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
         }),
+        auth.requireOAuthScope("read", "admin"),
         runtimeMiddleware(),
         settingsMiddleware(),
         async (c) => {

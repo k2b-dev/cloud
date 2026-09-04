@@ -134,6 +134,11 @@ revision, expiry, and sponsor. Paused authority stops new turns; revoked,
 expired, or invalid authority requires attention. Editing a prompt does not
 silently resume a separately paused mandate.
 
+Explicit task pause, resume, and deletion reload the mandate under a lock, so
+an independent mandate change does not leave the task stuck on an old revision.
+Resuming still requires confirmed, unexpired authority with the scheduled-task
+policy. A changed policy is never reset, and revoked authority is never restored.
+
 Terminal occurrence bookkeeping does not require live authority. Recovery
 handles each occurrence independently so one broken task cannot block others.
 
@@ -260,6 +265,11 @@ Failed rows retain their previous credential and remain visible in the fixed
 migration counters and logs until repaired. Mail durably claims unattempted or
 least-recently attempted rows first, with a 60-second retry cooldown. Failing
 rows and process restarts therefore do not starve later migration candidates.
+Migration checks and locks the existing credential, delegated service account,
+and current sponsor before creating authority. A revoked or expired credential,
+disabled service account, or unavailable sponsor remains a failed migration;
+upgrading never restores that authority. Reauthorize the automation explicitly
+before retrying.
 
 Mail mailbox administrators may pause or delete another user's automation,
 remove all Spaces actions, or make cosmetic changes. Pause and revocation use

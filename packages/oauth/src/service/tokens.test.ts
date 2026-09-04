@@ -708,6 +708,79 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
+  test("authorization-code audience snapshots also bound the refresh family", async () => {
+    const userId = await insertUser();
+    let clientId: string | null = null;
+    try {
+      const created = await oauth.clients.create({
+        actor: adminActor(userId),
+        data: {
+          name: `Audience snapshot client ${crypto.randomUUID()}`,
+          redirectUris: ["https://client.example.test/callback"],
+          scopes: ["openid", "offline_access"],
+          audiences: ["cloud"],
+          allowedProfiles: ["user"],
+          accessMode: "profiles",
+          allowedUserIds: [],
+          allowedGroupIds: [],
+          isPublic: false,
+        },
+      });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      clientId = created.data.id;
+      const code = await oauth.codes.create({
+        clientId: created.data.clientId,
+        userId,
+        redirectUri: "https://client.example.test/callback",
+        scopes: ["openid", "offline_access"],
+      });
+      await oauth.clients.update({
+        id: clientId,
+        actor: adminActor(userId),
+        data: { audiences: ["cloud", "https://new.example.test/api"] },
+      });
+      const exchange = (body: Record<string, string>) =>
+        oauthRoutes.request("/oauth/token", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: created.data.clientId,
+            client_secret: created.data.clientSecret!,
+            ...body,
+          }),
+        });
+      const response = await exchange({ grant_type: "authorization_code", code, redirect_uri: "https://client.example.test/callback" });
+      expect(response.status).toBe(200);
+      const issued = (await response.json()) as { access_token: string; refresh_token: string };
+      const expected = ["cloud", created.data.clientId];
+      expect(jose.decodeJwt(issued.access_token).aud).toEqual(expected);
+      const [family] = await sql<{ audiences: string[] }[]>`
+        SELECT audiences FROM oauth.refresh_token_families WHERE client_id = ${created.data.clientId}
+      `;
+      expect(family?.audiences).toEqual(expected);
+      const refreshed = await exchange({ grant_type: "refresh_token", refresh_token: issued.refresh_token });
+      expect(refreshed.status).toBe(200);
+      expect(jose.decodeJwt(((await refreshed.json()) as { access_token: string }).access_token).aud).toEqual(expected);
+      const widerCode = await oauth.codes.create({
+        clientId: created.data.clientId,
+        userId,
+        redirectUri: "https://client.example.test/callback",
+        scopes: ["openid", "offline_access"],
+      });
+      await oauth.clients.update({ id: clientId, actor: adminActor(userId), data: { audiences: ["cloud"] } });
+      const rejected = await exchange({
+        grant_type: "authorization_code",
+        code: widerCode,
+        redirect_uri: "https://client.example.test/callback",
+      });
+      expect(await rejected.json()).toMatchObject({ error: "invalid_grant" });
+    } finally {
+      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("authorization requests without scope use conservative default scopes", async () => {
     const userId = await insertUser();
     const sessionToken = await createSessionToken(userId);

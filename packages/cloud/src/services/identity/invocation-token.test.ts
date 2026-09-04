@@ -8,6 +8,7 @@ import {
 } from "./constants";
 import {
   type CloudInvocationClaims,
+  clearInvocationVerifierCachesForTest,
   isInvocationJwtCandidate,
   normalizeInvocationRequestId,
   signInvocationToken,
@@ -87,6 +88,40 @@ const verify = (value: string, expected: { targetAppId?: string; operation?: str
   );
 
 describe("Cloud invocation JWT", () => {
+  test("keeps warm keys when an unknown kid refresh fails during a JWKS outage", async () => {
+    const pair = await generateKeyPair(CLOUD_IDENTITY_ALGORITHM, { extractable: true });
+    const publicKey = { ...(await exportJWK(pair.publicKey)), alg: CLOUD_IDENTITY_ALGORITHM, kid, use: "sig" };
+    let unavailable = false;
+    let fetches = 0;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        fetches += 1;
+        return unavailable ? new Response(null, { status: 503 }) : Response.json({ keys: [publicKey] });
+      },
+    });
+    const sign = (signingKid: string) =>
+      new SignJWT(baseClaims())
+        .setProtectedHeader({ alg: CLOUD_IDENTITY_ALGORITHM, typ: CLOUD_INVOCATION_TOKEN_TYPE, kid: signingKid })
+        .sign(pair.privateKey);
+    try {
+      const options = { issuer, jwksUrl: new URL(`http://127.0.0.1:${server.port}/jwks`), now };
+      const expected = { targetAppId, operation, schemaHash };
+      const known = await sign(kid);
+      expect(await verifyInvocationToken(known, expected, options)).not.toBeNull();
+      unavailable = true;
+      expect(await verifyInvocationToken(await sign(crypto.randomUUID()), expected, options)).toBeNull();
+      expect(fetches).toBe(2);
+      expect(await verifyInvocationToken(known, expected, options)).not.toBeNull();
+      expect(await verifyInvocationToken(await sign(crypto.randomUUID()), expected, options)).toBeNull();
+      expect(fetches).toBe(2);
+    } finally {
+      server.stop(true);
+      clearInvocationVerifierCachesForTest();
+    }
+  });
+
   test("uses the guarded issuer without another runtime configuration read", async () => {
     const config = spyOn(runtimeConfig, "getIdentityRuntimeConfig").mockRejectedValue(new Error("unexpected settings read"));
     try {
