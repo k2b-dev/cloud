@@ -654,9 +654,18 @@ export default function ItemDetailPanel(props: Props) {
           subtitle={isEvent() ? t.event : t.task}
           meta={
             <>
-              <span class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4 text-[var(--k2b-success-text)]">
-                <span class="h-1 w-1 rounded-full bg-[var(--k2b-success-500)]" aria-hidden="true" />
-                {isCompleted() ? t.completed : t.active}
+              <span
+                class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4"
+                style={{
+                  color: isCompleted()
+                    ? "var(--k2b-success-text)"
+                    : completionBlocked()
+                      ? "var(--k2b-warning-text)"
+                      : "var(--k2b-text-muted)",
+                }}
+              >
+                <i class={`ti ${isCompleted() ? "ti-check" : completionBlocked() ? "ti-lock" : "ti-circle"}`} aria-hidden="true" />
+                {isCompleted() ? t.completed : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.active}
               </span>
               <Show when={!props.canWrite}>
                 <span class="inline-flex items-center gap-1 text-dimmed">
@@ -706,21 +715,23 @@ export default function ItemDetailPanel(props: Props) {
                     onClick={() => completeMutation.mutate(!isCompleted())}
                     disabled={isLoading() || completionBlocked()}
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
-                    variant={isCompleted() || completionBlocked() ? "secondary" : "success"}
+                    variant="secondary"
                     size="sm"
-                    class={
-                      isCompleted()
-                        ? "text-emerald-700 dark:text-emerald-300"
-                        : completionBlocked()
-                          ? "!border-transparent !bg-[var(--k2b-warning-500)] !text-white disabled:!opacity-60"
-                          : undefined
+                    style={
+                      completionBlocked()
+                        ? { color: "var(--k2b-warning-text)", background: "var(--k2b-warning-surface)" }
+                        : undefined
                     }
                   >
                     <Show when={isCompleted() || completeMutation.loading()}>
                       <i class={`ti ${completeMutation.loading() ? "ti-loader-2 animate-spin" : "ti-check"}`} aria-hidden="true" />
                     </Show>
                     <Show when={!isCompleted() && !completeMutation.loading()}>
-                      <i class={`ti ${completionBlocked() ? "ti-lock" : "ti-circle-check"}`} aria-hidden="true" />
+                      <i
+                        class={`ti ${completionBlocked() ? "ti-lock" : "ti-circle-check"}`}
+                        style={{ color: completionBlocked() ? "inherit" : "var(--k2b-success-text)" }}
+                        aria-hidden="true"
+                      />
                     </Show>
                     {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
                   </Button>
