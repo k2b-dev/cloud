@@ -506,11 +506,9 @@ const app = new Hono<AuthContext>()
           return tokenError(c, "unauthorized_client", "Client credentials require a confidential client", 401);
         }
 
-        const issuer = await getIssuer();
         try {
           const token = await oauth.tokens.createClientCredentialsToken({
             client,
-            issuer,
             scope: body.scope,
             resource: body.resource,
           });
@@ -573,15 +571,12 @@ const app = new Hono<AuthContext>()
               issued.value = await oauth.tokens.createTokens({
                 userId: grant.userId,
                 client,
-                issuer,
                 scopes: grant.scopes,
                 audiences: grant.resource ? grant.audiences : Array.from(new Set(["cloud", client.clientId, ...grant.audiences])),
                 resource: grant.resource,
                 authorityGrant: grant.authorityGrant,
               });
-              return issued.value.authorityMode;
             } catch (error) {
-              if (error instanceof oauth.tokens.InactiveOAuthUserError) throw new oauth.refreshTokens.SafeRefreshIssuanceRejectionError();
               if (error instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
                 throw new oauth.refreshTokens.SafeRefreshIssuanceRejectionError();
               }
@@ -589,11 +584,7 @@ const app = new Hono<AuthContext>()
             }
           });
         } catch (err) {
-          if (
-            err instanceof InvalidRefreshGrantError ||
-            err instanceof oauth.refreshTokens.SafeRefreshIssuanceRejectionError ||
-            err instanceof oauth.tokens.InactiveOAuthUserError
-          ) {
+          if (err instanceof InvalidRefreshGrantError || err instanceof oauth.refreshTokens.SafeRefreshIssuanceRejectionError) {
             return tokenError(c, "invalid_grant", "Refresh token grant is no longer allowed");
           }
           log.error("Failed to generate refreshed access token", {
@@ -657,13 +648,11 @@ const app = new Hono<AuthContext>()
         const tokens = await oauth.tokens.createTokens({
           userId: result.userId,
           client: result.client,
-          issuer,
           scopes: result.scopes,
           audiences: result.audiences,
           resource: result.resource,
           authorityGrant: result.authorityGrant,
           issueRefreshToken: true,
-          nonce: result.nonce,
         });
 
         return c.json({
@@ -675,9 +664,6 @@ const app = new Hono<AuthContext>()
           ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken } : {}),
         });
       } catch (err) {
-        if (err instanceof oauth.tokens.InactiveOAuthUserError) {
-          return tokenError(c, "access_denied", "User account is missing or expired", 403);
-        }
         if (err instanceof oauth.tokens.OAuthAuthorityGrantRejectedError) {
           return tokenError(c, "invalid_grant", "Authorization code grant is no longer allowed");
         }

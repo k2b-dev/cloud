@@ -229,9 +229,8 @@ Applications do not import `oauthTokens` or verify JWTs. Apply
 `auth.requireRole("authenticated")`, then read `actor` and `accessSubject` from
 the request context.
 
-Access tokens expire after one hour. A signing key rotates on its next use
-after 30 days; JWKS publishes the retired public key for a two-hour grace period so
-tokens issued before a rotation remain verifiable. Revoking a refresh grant or
+Access tokens expire after one hour. Core owns signing-key rotation and publishes
+public keys for their verification lifetime. Revoking a refresh grant or
 signing out an OAuth client prevents future refreshes but does not revoke an
 already issued access token. That token can remain valid until its one-hour
 expiry. Current-client validation and domain authorization still apply on each
@@ -252,17 +251,12 @@ Create that credential once through
 one-time returned token in the OAuth app's `CLOUD_APP_CREDENTIAL`; do not give
 it to Core, another app, or a browser.
 
-During a rolling migration, `CLOUD_OAUTH_ISSUANCE_MODE=legacy` keeps signing
-with the existing `oauth.keys` key while all verifiers gain dual-read support.
-After the Core authority and OAuth workload credential are deployed, set the
-mode to `core`. During OAuth setup, the application first calls Core's closed
-readiness endpoint with its workload credential. Core confirms that the exact
-workload binding and an active OAuth signer are available. Only then does OAuth
-atomically record the one-way cutover in PostgreSQL and erase legacy private
-key material. A failed readiness check leaves both the database mode and the
-legacy key unchanged. Once cut over, the shared database state prevents another
-updated OAuth replica from resuming legacy issuance even if its local setting
-still says `legacy`.
+Core is the only issuer. OAuth setup checks its app-bound workload credential
+and Core's OAuth signer through the closed readiness endpoint. A failed check
+prevents startup; failed issuance never falls back to a local signer. No
+issuance-mode setting remains. Before upgrading, stop all old OAuth replicas:
+the migration removes `oauth.keys`, `oauth.issuance_state`, and the old
+authorization-code audience trigger. Client and grant data remain in place.
 
 Existing client IDs, secrets, routes, claims, issuer, audiences, one-hour
 access-token lifetime, authorization codes, and refresh families remain
@@ -270,10 +264,11 @@ unchanged. Authorization-code, refresh, and client-credentials exchanges use
 one-shot internal grant reservations; arbitrary claims or client assertions do
 not cross the authority boundary. A definitive Core grant rejection remains a
 public `invalid_grant` response. An unknown transport or server outcome remains
-`server_error` and is not retried automatically. Verifiers continue accepting
-an already issued legacy token for the existing two-hour public-key grace. A
-`kid` present in Core's authority never falls back to a same-named legacy key
-when the Core key is revoked or expired.
+`server_error` and is not retried automatically. Only Core's OAuth-purpose
+public keys are published. The upgraded Cloud rejects JWTs signed by the old
+OAuth signer. Existing refresh grants can obtain new tokens; clients without
+a usable refresh grant need a new authorization. External clients may retain
+old public keys in their own caches until a refresh or token expiry.
 
 After a Core authority error during refresh, OAuth atomically checks the exact
 reservation nonce, status, and issuance marker. Only a reservation proven not
@@ -282,12 +277,9 @@ claimed issuance, or the database cannot prove a safe release, the refresh
 family stays fail-closed. A temporary Core outage therefore does not by itself
 destroy a provably unused refresh grant.
 
-The audience migration installs its old-writer compatibility trigger and
-backfills snapshots in one transaction. Older OAuth replicas that omit the
-snapshot still capture the exact resource or current client audiences; newer
-writers supply it directly without that extra client lookup. Keep the trigger
-until every old writer is retired. Before enabling Core issuance, also replace
-every binary that predates the database issuance gate. See
+The audience migration retains and backfills existing code snapshots in one
+locked transaction. All current writers supply the snapshot directly; old
+writers are unsupported after the coordinated hard cut. See
 [Runtime configuration](/en/docs/operations/runtime-configuration).
 
 Continue with [Request identity](/en/docs/identity/authentication) and

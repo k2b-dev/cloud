@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { dirname } from "node:path";
 import { sql } from "bun";
+import { z } from "zod";
 
 assert.equal(new URL(process.env.DATABASE_URL!).pathname, "/cloud_oauth_verify_regressions");
 assert.equal(new URL(process.env.DATABASE_URL!).hostname, "127.0.0.1");
@@ -19,6 +20,8 @@ const env = {
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: "43".repeat(32),
   CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
   CLOUD_OAUTH_JWKS_ORIGIN: "http://127.0.0.1:4302",
+  CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
+  CLOUD_APP_CREDENTIAL: "",
   // Host installs may contain macOS-only native packages. Resolve the matching
   // optional native dependency from the existing Linux image, without downloads.
   NAPI_RS_NATIVE_LIBRARY_PATH: Bun.resolveSync(`@firecrawl/anydoc-linux-${process.arch}-gnu`, nativePackage),
@@ -30,9 +33,6 @@ const start = async (role: "core" | "oauth") => {
     env: {
       ...env,
       APP_ID: role,
-      // Exercise the retained OAuth migration/grace implementation too.
-      OAUTH_VERIFY_VERSION: role === "core" ? "current" : "baseline",
-      CLOUD_OAUTH_ISSUANCE_MODE: "legacy",
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: role === "core" ? env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY : "",
     },
     stdout: "inherit",
@@ -52,6 +52,20 @@ const start = async (role: "core" | "oauth") => {
 };
 try {
   await start("core");
+  const login = await fetch("http://127.0.0.1:4301/api/auth/admin-login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: process.env.ADMIN_LOGIN_TOKEN }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+  const workload = await fetch("http://127.0.0.1:4301/api/admin/identity/workloads/oauth/credentials", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ name: "OAuth regression authority", scopes: ["identity:oauth-issue"] }),
+  });
+  assert.equal(workload.status, 201);
+  env.CLOUD_APP_CREDENTIAL = z.object({ token: z.string() }).parse(await workload.json()).token;
   await start("oauth");
   const tests = Bun.spawn(
     [

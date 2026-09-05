@@ -5,7 +5,6 @@ export type OAuthUserGrantReference =
   | { kind: "refresh_token"; tokenId: string; nonce: string };
 
 export type OAuthClientCredentialsGrantReference = { kind: "client_credentials"; grantId: string; nonce: string };
-export type OAuthIssuanceMode = "legacy" | "core";
 
 export type UserAccessTokenRequest = {
   kind: "user_access";
@@ -38,12 +37,6 @@ export class OAuthAuthorityGrantRejectedError extends Error {
     super("Core rejected the current OAuth grant authority");
   }
 }
-
-export const oauthIssuanceMode = (): OAuthIssuanceMode => {
-  const value = process.env.CLOUD_OAUTH_ISSUANCE_MODE?.trim() || "legacy";
-  if (value !== "legacy" && value !== "core") throw new Error("CLOUD_OAUTH_ISSUANCE_MODE must be legacy or core");
-  return value;
-};
 
 const coreOrigin = (): string => {
   const value = process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim();

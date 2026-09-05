@@ -65,12 +65,10 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     await scheduledMailRuntime.start();
     await imapPushRuntime.start();
     incomingAutomations.startIncomingAutomationBackfillRuntime();
-    incomingAutomations.startIncomingAutomationAuthorityMigrationRuntime();
   },
   stop: () =>
     stopRuntimeResources([
       incomingAutomations.stopIncomingAutomationBackfillRuntime,
-      incomingAutomations.stopIncomingAutomationAuthorityMigrationRuntime,
       () => imapPushRuntime.stop(),
       () => scheduledMailRuntime.stop(),
       () => attachmentExtractionRuntime.stop(),

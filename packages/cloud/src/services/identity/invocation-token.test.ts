@@ -152,7 +152,6 @@ describe("Cloud invocation JWT", () => {
   test("normalizes optional request metadata before signing, but verifies signed claims strictly", async () => {
     const config = spyOn(runtimeConfig, "getIdentityRuntimeConfig").mockResolvedValue({
       issuer,
-      jwksUrl: new URL(issuer),
       sessionJwksUrl: new URL(issuer),
       invocationJwksUrl: new URL(issuer),
       oauthJwksUrl: new URL(issuer),

@@ -119,17 +119,15 @@ preferences. They require approval for the current Action and do not offer
 **Always Allow**. Intentionally unattended automation should instead use an
 explicit, narrowly scoped `preapproved` mandate where the application supports it.
 
-Installations upgrading existing scheduled chat tasks add mandates lazily in
-bounded reconciliation batches. Each task is locked while Core creates or
-recovers the unique mandate, and the task cannot be scheduled or delivered
-until that link exists. Concurrent workers therefore converge on one mandate;
-they never fall back to the sponsor's browser session.
+New scheduled tasks create their mandate in the same transaction. Old tasks
+without a mandate are not automatically upgraded or authorized: admission
+stops and marks them `needs_attention`. Their owners must delete and recreate
+them. Prompt updates or resuming a task never regenerate missing authority.
+Existing tasks with valid mandates continue normally.
 
-Recovery accepts only a confirmed mandate with the same user, Core owner,
-workload identity, and exact scheduled-task policy. Unrelated pending mandates
-are ignored. An incompatible confirmed mandate moves the task to
-`needs_attention`; system reconciliation never resumes authority in the
-sponsor's name. Scheduling and delivery recheck the mandate's current state,
+Admission requires a confirmed mandate with the same user, Core owner,
+workload identity, and exact scheduled-task policy. An incompatible mandate
+moves the task to `needs_attention`. Scheduling and delivery recheck its state,
 revision, expiry, and sponsor. Paused authority stops new turns; revoked,
 expired, or invalid authority requires attention. Editing a prompt does not
 silently resume a separately paused mandate.
@@ -144,11 +142,6 @@ handles each occurrence independently so one broken task cannot block others.
 
 Scheduled turns use invocation JWTs unconditionally. Core never substitutes
 a user's browser session for background mandate authority.
-
-Migration authority is a separate system-only service contract, not a caller
-supplied administrator flag. It is restricted to the exact built-in workload
-family and stored sponsor. Migration audit events have no interactive actor and
-record bounded sponsor and migration provenance instead.
 
 Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
@@ -256,20 +249,12 @@ revision, and outcome, but never a JWT, app credential, policy body, or
 capability payload.
 
 A signing failure is recorded as a failed issuance before an internal error is
-returned, and no target request is sent. When Mail runs with
-`CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE=mandate`, it migrates legacy incoming
-automation credentials in bounded batches. Mail creates the replacement mandate,
-pauses it for a disabled automation, retires the previous credential, clears its
-encrypted token, and links the automation in one transaction.
-Failed rows retain their previous credential and remain visible in the fixed
-migration counters and logs until repaired. Mail durably claims unattempted or
-least-recently attempted rows first, with a 60-second retry cooldown. Failing
-rows and process restarts therefore do not starve later migration candidates.
-Migration checks and locks the existing credential, delegated service account,
-and current sponsor before creating authority. A revoked or expired credential,
-disabled service account, or unavailable sponsor remains a failed migration;
-upgrading never restores that authority. Reauthorize the automation explicitly
-before retrying.
+returned, and no target request is sent.
+
+Mail creates and links its mandate in the same transaction as the incoming
+automation, pausing the mandate when the automation starts disabled. Mail never
+creates or stores a user API token for these actions. Missing or revoked mandate
+authority fails closed; there is no credential fallback or background conversion.
 
 Mail mailbox administrators may pause or delete another user's automation,
 remove all Spaces actions, or make cosmetic changes. Pause and revocation use
@@ -280,10 +265,9 @@ explicit reauthorization. Equal application/operation lists alone do not prove
 that a changed definition preserves the same authority. Cosmetic changes do not
 reactivate separately paused or revoked mandates.
 
-Mail's credential migration is one-way. Setting its authority mode back to
-`legacy` neither recreates erased credentials nor makes migrated automations
-fall back to them. Keep the mandate-capable Mail version and Core broker available
-for migrated rows; changing the flag alone is not a data rollback.
+Mail is unreleased alpha and does not support migration of its former stored
+automation credentials. Use a fresh Mail schema for that alpha transition;
+no startup path deletes or converts existing test data automatically.
 
 ## What still authorizes the effect
 

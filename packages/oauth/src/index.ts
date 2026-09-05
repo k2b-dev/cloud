@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { app, ssr } from "./config";
@@ -6,6 +6,7 @@ import pageRoutes from "./frontend";
 import { migrate } from "./migrate";
 import { oauthService } from "./service";
 import { oauth } from "./service/oauth";
+import { probeOAuthTokenAuthority } from "./service/token-authority";
 
 const OAUTH_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 let cleanupTimer: ReturnType<typeof setInterval> | undefined;
@@ -15,7 +16,6 @@ const cleanupOAuthStorage = async (): Promise<void> => {
     oauth.codes.cleanup(),
     oauth.refreshTokens.cleanup(),
     oauth.clients.cleanupUnusedDynamic(),
-    oauth.tokens.cleanupSigningKeys(),
     oauth.tokens.cleanupAuthorityGrants(),
   ]);
 };
@@ -35,8 +35,8 @@ export default await app.start({
   openapi: apiRoutes,
   lifecycle: {
     setup: async () => {
+      await probeOAuthTokenAuthority();
       await migrate();
-      await oauth.tokens.ensureConfiguredIssuanceMode();
     },
     start: async (ctx) => {
       await cleanupOAuthStorage().catch((error) => {

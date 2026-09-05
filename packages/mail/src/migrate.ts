@@ -3945,46 +3945,11 @@ const addConversationSummaries = async (db: SqlClient): Promise<void> => {
   `;
 };
 
-const addIncomingAutomationIntegrationCredentials = async (db: SqlClient): Promise<void> => {
-  await db`
-    ALTER TABLE mail.incoming_automations
-    ADD COLUMN integration_credential_id UUID,
-    ADD COLUMN encrypted_integration_token TEXT
-  `;
-  await db`
-    ALTER TABLE mail.incoming_automations
-    ADD CONSTRAINT incoming_automations_integration_credential_shape CHECK (
-      (integration_credential_id IS NULL) = (encrypted_integration_token IS NULL)
-    )
-  `;
-};
-
 const addIncomingAutomationMandates = async (db: SqlClient): Promise<void> => {
   await db`
     ALTER TABLE mail.incoming_automations
-    ADD COLUMN mandate_id UUID REFERENCES auth.mandates(id) ON DELETE SET NULL,
-    ADD CONSTRAINT incoming_automations_authority_shape CHECK (
-      mandate_id IS NULL OR (integration_credential_id IS NULL AND encrypted_integration_token IS NULL)
-    )
+    ADD COLUMN mandate_id UUID REFERENCES auth.mandates(id) ON DELETE SET NULL
   `;
-};
-
-const indexIncomingAutomationAuthorityMigration = async (db: SqlClient): Promise<void> => {
-  await db`
-    CREATE INDEX IF NOT EXISTS incoming_automations_legacy_authority_idx
-    ON mail.incoming_automations (created_at, id)
-    WHERE integration_credential_id IS NOT NULL
-  `;
-};
-
-const makeIncomingAutomationAuthorityMigrationFair = async (db: SqlClient): Promise<void> => {
-  await db`ALTER TABLE mail.incoming_automations ADD COLUMN authority_migration_attempted_at TIMESTAMPTZ`;
-  await db`
-    CREATE INDEX incoming_automations_legacy_authority_retry_idx
-    ON mail.incoming_automations (authority_migration_attempted_at NULLS FIRST, created_at, id)
-    WHERE integration_credential_id IS NOT NULL
-  `;
-  await db`DROP INDEX IF EXISTS mail.incoming_automations_legacy_authority_idx`;
 };
 
 const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
@@ -4353,10 +4318,7 @@ const migrations: readonly MailMigration[] = [
   { version: 117, name: "public_short_ids", run: finalizePublicShortIds },
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
-  { version: 120, name: "incoming_automation_integration_credentials", run: addIncomingAutomationIntegrationCredentials },
   { version: 121, name: "incoming_automation_mandates", run: addIncomingAutomationMandates },
-  { version: 122, name: "incoming_automation_authority_migration_index", run: indexIncomingAutomationAuthorityMigration },
-  { version: 123, name: "fair_incoming_automation_authority_migration", run: makeIncomingAutomationAuthorityMigrationFair },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

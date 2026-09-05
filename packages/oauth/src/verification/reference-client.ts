@@ -21,6 +21,7 @@ export const issuer = "http://127.0.0.1:4300";
 export const callback = "http://127.0.0.1:4399/callback";
 export const resource = `${issuer}/api/reference`;
 const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`), { cooldownDuration: 0 });
+export const reloadJwks = () => jwks.reload();
 export const request = (path: string, init?: RequestInit) =>
   fetch(new URL(path, issuer), {
     ...init,

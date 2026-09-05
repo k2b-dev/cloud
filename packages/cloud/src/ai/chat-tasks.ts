@@ -106,11 +106,6 @@ const CHAT_TASK_MANDATE_POLICY = {
   actions: "require_approval",
 } as const satisfies MandatePolicyV1;
 const mandateAuthority = (userId: string) => ({ kind: "interactive" as const, userId });
-const mandateMigrationAuthority = (sponsorUserId: string) => ({
-  kind: "system" as const,
-  migration: "ai.chat-task" as const,
-  sponsorUserId,
-});
 const mandateWorkloadAuthority = { kind: "workload" as const, ownerAppId: "core" };
 const mandateError = (operation: string, result: { ok: false; error: { message: string } }): Error =>
   new AiChatTaskAuthorityError(`Could not ${operation} scheduled task mandate: ${result.error.message}`);
@@ -137,65 +132,10 @@ const mandateRevision = async (
 const requireTaskMandate = (
   task: Pick<TaskRow, "mandate_id" | "mandate_revision">,
 ): { mandate_id: string; mandate_revision: number | bigint } => {
-  if (!task.mandate_id || task.mandate_revision === null) throw new Error("Scheduled task mandate is unavailable");
+  if (!task.mandate_id || task.mandate_revision === null)
+    throw new AiChatTaskAuthorityError("Scheduled task mandate is unavailable; recreate the task");
   return { mandate_id: task.mandate_id, mandate_revision: task.mandate_revision };
 };
-const ensureTaskMandate = async (task: TaskRow, db: SQL): Promise<TaskRow> => {
-  if (task.mandate_id && task.mandate_revision !== null) return task;
-  if (task.mandate_id || task.mandate_revision !== null) throw new AiChatTaskAuthorityError("Scheduled task mandate state is inconsistent");
-
-  const created = await createMandate(
-    {
-      authority: mandateMigrationAuthority(task.sponsor_user_id),
-      subject: { type: "user", id: task.sponsor_user_id },
-      ownerAppId: "core",
-      workloadType: "ai.chat-task",
-      workloadId: task.id,
-      policy: CHAT_TASK_MANDATE_POLICY,
-    },
-    { db },
-  );
-  let mandate: Pick<Mandate, "id" | "revision" | "state">;
-  if (created.ok) {
-    mandate = created.data;
-  } else {
-    const [candidate] = await db<{ id: string }[]>`
-      SELECT id FROM auth.mandates
-      WHERE owner_app_id = 'core' AND workload_type = 'ai.chat-task' AND workload_id = ${task.id}
-        AND state IN ('active', 'paused') AND confirmed_at IS NOT NULL
-      LIMIT 1
-      FOR UPDATE
-    `;
-    const existing = candidate ? await loadTaskMandate({ ...task, mandate_id: candidate.id }, db) : null;
-    const policy = existing ? taskMandatePolicy(existing) : null;
-    if (
-      !existing ||
-      !taskMandateMatches(task, existing) ||
-      !existing.confirmed_at ||
-      !existing.unexpired ||
-      !policy ||
-      !isChatTaskMandatePolicy(policy)
-    ) {
-      throw mandateError("recover", created);
-    }
-    mandate = { id: existing.id, revision: Number(existing.revision), state: existing.state };
-  }
-
-  let revision = mandate.revision;
-  if (task.state === "active" && mandate.state === "paused") {
-    throw new AiChatTaskAuthorityError("Could not recover scheduled task mandate: active legacy task has a paused mandate");
-  } else if (task.state !== "active" && mandate.state === "active") {
-    const paused = await pauseMandate({ mandateId: mandate.id, expectedRevision: revision, authority: mandateWorkloadAuthority }, { db });
-    if (!paused.ok) throw mandateError("pause", paused);
-    revision = paused.data.revision;
-  }
-  await db`
-    UPDATE ai.chat_tasks SET mandate_id = ${mandate.id}::uuid, mandate_revision = ${revision}
-    WHERE id = ${task.id}::uuid AND mandate_id IS NULL AND mandate_revision IS NULL
-  `;
-  return { ...task, mandate_id: mandate.id, mandate_revision: revision };
-};
-
 type TaskMandateRow = {
   id: string;
   revision: number | bigint;
@@ -252,13 +192,7 @@ const stopTaskAdmission = async (
 /** The caller holds the task lock; mandate and sponsor locks remain held until turn admission commits. */
 const prepareTaskForExecution = async (input: TaskRow, db: SQL): Promise<TaskRow | null> => {
   if (input.state !== "active") return null;
-  let task: TaskRow;
-  try {
-    task = await ensureTaskMandate(input, db);
-  } catch (error) {
-    if (!(error instanceof AiChatTaskAuthorityError)) throw error;
-    return stopTaskAdmission(input, "needs_attention", error.message, db);
-  }
+  const task = input;
   const mandate = await loadTaskMandate(task, db);
   const policy = mandate ? taskMandatePolicy(mandate) : null;
   const [sponsor] = await db<{ id: string }[]>`
@@ -374,34 +308,6 @@ const loadTurnTask = async (turnId: string, db: SQL): Promise<TaskRow | null> =>
 };
 
 export const aiChatTasks = {
-  prepareLegacyMandates: async (limit = 100): Promise<{ prepared: number; remaining: boolean }> => {
-    const boundedLimit = Math.min(Math.max(limit, 1), 500);
-    const rows = await sql<{ id: string }[]>`
-      SELECT id FROM ai.chat_tasks
-      WHERE state = 'active' AND mandate_id IS NULL AND mandate_revision IS NULL
-      ORDER BY created_at, id
-      LIMIT ${boundedLimit}
-    `;
-    let prepared = 0;
-    for (const row of rows) {
-      try {
-        if (await prepareTaskById(row.id)) prepared += 1;
-      } catch (error) {
-        log.warn("Scheduled task mandate recovery failed", {
-          taskId: row.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    const [remaining] = await sql<{ present: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1 FROM ai.chat_tasks
-        WHERE state = 'active' AND mandate_id IS NULL AND mandate_revision IS NULL
-      ) AS present
-    `;
-    return { prepared, remaining: remaining?.present === true };
-  },
-
   list: async (input: {
     userId: string;
     chatId?: string;
@@ -550,13 +456,12 @@ export const aiChatTasks = {
       `;
       let current = rows[0];
       if (!current) return null;
+      requireTaskMandate(current);
       const wasActive = current.state === "active";
       const authorityStopped = wasActive && !(await prepareTaskForExecution(current, tx));
       if (authorityStopped) {
         [current] = await tx<TaskRow[]>`${taskSelect} WHERE task.id = ${current.id}::uuid`;
         if (!current) return null;
-      } else {
-        current = await ensureTaskMandate(current, tx);
       }
       const nextTimezone = input.timezone ?? current.timezone;
       const scheduleChanged = input.schedule
@@ -615,7 +520,7 @@ export const aiChatTasks = {
       `;
       let current = rows[0];
       if (!current) return null;
-      current = await ensureTaskMandate(current, tx);
+      requireTaskMandate(current);
       const allowed =
         current.state === input.state ||
         (current.state === "active" && input.state === "paused") ||
@@ -656,7 +561,11 @@ export const aiChatTasks = {
       `;
       let current = rows[0];
       if (!current) return false;
-      current = await ensureTaskMandate(current, tx);
+      if (!current.mandate_id && current.mandate_revision === null) {
+        await tx`DELETE FROM ai.chat_tasks WHERE id = ${current.id}::uuid`;
+        return true;
+      }
+      requireTaskMandate(current);
       const mandate = await loadTaskMandate(current, tx);
       if (!mandate || !taskMandateMatches(current, mandate)) {
         throw new AiChatTaskAuthorityError("Scheduled task mandate is unavailable");
@@ -692,7 +601,6 @@ export const aiChatTasks = {
     const rows = await sql<TaskRow[]>`
       ${taskSelect}
       WHERE task.state = 'active' AND task.schedule_kind = 'cron'
-        AND task.mandate_id IS NOT NULL AND task.mandate_revision IS NOT NULL
     `;
     const tasks: AiChatTask[] = [];
     for (const row of rows) {
@@ -773,11 +681,6 @@ export const aiChatTasks = {
   },
 
   listQueuedOccurrences: async (limit = 100): Promise<Array<{ occurrence: AiChatTaskOccurrence; task: AiChatTask }>> => {
-    try {
-      await aiChatTasks.prepareLegacyMandates(limit);
-    } catch (error) {
-      log.warn("Scheduled task legacy preparation failed", { error: error instanceof Error ? error.message : String(error) });
-    }
     const rows = await sql<(OccurrenceRow & TaskRow)[]>`
       SELECT occurrence.id, occurrence.short_id, occurrence.task_id, occurrence.scheduled_for, occurrence.trigger,
         occurrence.state, occurrence.turn_id, occurrence.error, occurrence.created_at, occurrence.started_at, occurrence.completed_at,

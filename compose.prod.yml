@@ -102,7 +102,6 @@ services:
     environment:
       <<: *shared-env
       CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
-      CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE: ${CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE:-legacy}
 
   app-notebooks:
     <<: *app-defaults
@@ -114,7 +113,6 @@ services:
     environment:
       <<: *shared-env
       CLOUD_APP_CREDENTIAL: ${CLOUD_OAUTH_APP_CREDENTIAL:-}
-      CLOUD_OAUTH_ISSUANCE_MODE: ${CLOUD_OAUTH_ISSUANCE_MODE:-legacy}
 
   app-proxy-auth:
     <<: *app-defaults

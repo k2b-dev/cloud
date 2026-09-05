@@ -12,7 +12,6 @@ import {
   deleteIncomingAutomation,
   listIncomingAutomationActivityMetadata,
   listIncomingAutomations,
-  migrateLegacyIncomingAutomationAuthorities,
   setIncomingAutomationEnabled,
   startIncomingAutomationBackfill,
   updateIncomingAutomation,
@@ -293,369 +292,50 @@ suite("incoming automations", () => {
     });
   });
 
-  test("encrypts and revokes delegated Spaces authorization with the managed definition", async () => {
+  test("creates a disabled automation with a paused bounded mandate and no user token", async () => {
+    const credentialCount = async () => {
+      const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.service_account_credentials`;
+      return row!.count;
+    };
+    const beforeCredentials = await credentialCount();
     const created = await createIncomingAutomation({
       context: ownerContext,
       mailboxId,
       input: {
-        name: "Link project item",
+        name: "Mandated Spaces effects",
         enabled: false,
         scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+        steps: [
+          { id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" },
+          {
+            id: crypto.randomUUID(),
+            kind: "create_space_event",
+            spaceId: "Space1",
+            columnId: "Column",
+            event: {
+              kind: "custom",
+              title: "Planning",
+              startsAt: "2026-09-03T10:00:00Z",
+              endsAt: "2026-09-03T11:00:00Z",
+              allDay: false,
+            },
+          },
+        ],
       },
     });
-    expect(created.ok).toBe(true);
-    if (!created.ok) return;
+    if (!created.ok) throw new Error(created.error.message);
 
     const [stored] = await sql<
-      { integration_credential_id: string | null; encrypted_integration_token: string | null; status: string | null }[]
+      {
+        mandate_id: string | null;
+        state: string | null;
+        owner_app_id: string | null;
+        workload_id: string | null;
+        subject_user_id: string | null;
+        policy: unknown;
+      }[]
     >`
-      SELECT automation.integration_credential_id, automation.encrypted_integration_token, credential.status
-      FROM mail.incoming_automations automation
-      LEFT JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
-      WHERE automation.id = ${created.data.id}::uuid
-    `;
-    expect(stored?.integration_credential_id).not.toBeNull();
-    expect(stored?.encrypted_integration_token).not.toContain("cld_");
-    expect(stored?.status).toBe("active");
-
-    const updated = await updateIncomingAutomation({
-      context: ownerContext,
-      mailboxId,
-      automationId: created.data.id,
-      input: {
-        expectedRevision: created.data.revision,
-        name: created.data.name,
-        enabled: false,
-        scope: { mode: "all" },
-        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
-      },
-    });
-    expect(updated.ok).toBe(true);
-    const [after] = await sql<
-      { integration_credential_id: string | null; encrypted_integration_token: string | null; status: string | null }[]
-    >`
-      SELECT automation.integration_credential_id, automation.encrypted_integration_token, credential.status
-      FROM mail.incoming_automations automation
-      LEFT JOIN auth.service_account_credentials credential ON credential.id = ${stored?.integration_credential_id ?? null}::uuid
-      WHERE automation.id = ${created.data.id}::uuid
-    `;
-    expect(after).toMatchObject({ integration_credential_id: null, encrypted_integration_token: null, status: "revoked" });
-    if (updated.ok) {
-      await deleteIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        automationId: updated.data.id,
-        input: { expectedRevision: updated.data.revision },
-      });
-    }
-  });
-
-  test("atomically migrates a bounded legacy credential to a paused mandate", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
-    try {
-      const created = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Legacy authority migration",
-          enabled: false,
-          scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
-        },
-      });
-      if (!created.ok) throw new Error(created.error.message);
-      const [before] = await sql<{ integration_credential_id: string; mandate_id: string | null }[]>`
-        SELECT integration_credential_id, mandate_id
-        FROM mail.incoming_automations
-        WHERE id = ${created.data.id}::uuid
-      `;
-      expect(before?.integration_credential_id).toBeDefined();
-      expect(before?.mandate_id).toBeNull();
-
-      process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-      const migrated = await migrateLegacyIncomingAutomationAuthorities(100);
-      expect(migrated.migrated).toBeGreaterThanOrEqual(1);
-      const [after] = await sql<
-        {
-          mandate_id: string;
-          integration_credential_id: string | null;
-          encrypted_integration_token: string | null;
-          mandate_state: string;
-          credential_state: string;
-        }[]
-      >`
-        SELECT automation.mandate_id, automation.integration_credential_id, automation.encrypted_integration_token,
-          mandate.state AS mandate_state, credential.status AS credential_state
-        FROM mail.incoming_automations automation
-        JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
-        JOIN auth.service_account_credentials credential ON credential.id = ${before!.integration_credential_id}::uuid
-        WHERE automation.id = ${created.data.id}::uuid
-      `;
-      expect(after).toMatchObject({
-        integration_credential_id: null,
-        encrypted_integration_token: null,
-        mandate_state: "paused",
-        credential_state: "revoked",
-      });
-      expect((await migrateLegacyIncomingAutomationAuthorities(100)).migrated).toBe(0);
-
-      const deleted = await deleteIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        automationId: created.data.id,
-        input: { expectedRevision: created.data.revision + 1 },
-      });
-      expect(deleted.ok).toBe(true);
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
-  });
-
-  test("never migrates revoked, expired, disabled, or unavailable legacy authority", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    if (ownerContext.actor.kind !== "user") throw new Error("Expected a user test actor");
-    const userId = ownerContext.actor.user.id;
-    try {
-      for (const condition of ["revoked", "expired", "disabled", "sponsor"] as const) {
-        process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
-        const created = await createIncomingAutomation({
-          context: ownerContext,
-          mailboxId,
-          input: {
-            name: `Inactive legacy authority ${condition}`,
-            enabled: false,
-            scope: { mode: "all" },
-            steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
-          },
-        });
-        if (!created.ok) throw new Error(created.error.message);
-        const [before] = await sql<
-          { integration_credential_id: string; service_account_id: string; encrypted_integration_token: string }[]
-        >`
-          SELECT automation.integration_credential_id, credential.service_account_id, automation.encrypted_integration_token
-          FROM mail.incoming_automations automation
-          JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
-          WHERE automation.id = ${created.data.id}::uuid
-        `;
-        if (!before) throw new Error("Expected legacy authority");
-        try {
-          if (condition === "revoked") {
-            await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now()
-              WHERE id = ${before.integration_credential_id}::uuid`;
-          } else if (condition === "expired") {
-            await sql`UPDATE auth.service_account_credentials SET expires_at = now() - interval '1 minute'
-              WHERE id = ${before.integration_credential_id}::uuid`;
-          } else if (condition === "disabled") {
-            await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${before.service_account_id}::uuid`;
-          } else {
-            await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${userId}::uuid`;
-          }
-          process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-          const migrated = await migrateLegacyIncomingAutomationAuthorities(100);
-          expect(migrated.failed).toBeGreaterThanOrEqual(1);
-          const [after] = await sql<
-            {
-              mandate_id: string | null;
-              integration_credential_id: string;
-              encrypted_integration_token: string;
-              attempted: boolean;
-              mandate_count: number;
-            }[]
-          >`
-            SELECT mandate_id, integration_credential_id, encrypted_integration_token,
-              authority_migration_attempted_at IS NOT NULL AS attempted,
-              (SELECT count(*)::int FROM auth.mandates WHERE owner_app_id = 'mail'
-                AND workload_type = 'incoming.automation' AND workload_id = ${created.data.id}) AS mandate_count
-            FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid
-          `;
-          expect(after).toEqual({
-            mandate_id: null,
-            integration_credential_id: before.integration_credential_id,
-            encrypted_integration_token: before.encrypted_integration_token,
-            attempted: true,
-            mandate_count: 0,
-          });
-        } finally {
-          await sql`UPDATE auth.service_accounts SET status = 'active' WHERE id = ${before.service_account_id}::uuid`;
-          await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userId}::uuid`;
-          const deleted = await deleteIncomingAutomation({
-            context: ownerContext,
-            mailboxId,
-            automationId: created.data.id,
-            input: { expectedRevision: created.data.revision },
-          });
-          if (!deleted.ok) throw new Error(deleted.error.message);
-          // Deleted automations retain legacy metadata until the retirement pass.
-          await sql`UPDATE mail.incoming_automations SET authority_migration_attempted_at = NULL
-            WHERE id = ${created.data.id}::uuid`;
-          await migrateLegacyIncomingAutomationAuthorities(100);
-        }
-      }
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
-  });
-
-  test("retains failed legacy authority without starving later rows and persists retry backoff", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
-    try {
-      const created = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Legacy authority mismatch",
-          enabled: true,
-          scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item02" }],
-        },
-      });
-      if (!created.ok) throw new Error(created.error.message);
-      if (ownerContext.actor.kind !== "user") throw new Error("Expected a user test actor");
-      const conflicting = await mandates.create({
-        authority: { kind: "interactive", userId: ownerContext.actor.user.id },
-        subject: { type: "user", id: ownerContext.actor.user.id },
-        ownerAppId: "mail",
-        workloadType: "incoming.automation",
-        workloadId: created.data.id,
-        policy: {
-          version: 1,
-          apps: ["spaces"],
-          operations: ["capability.query:space.read"],
-          actions: "deny",
-        },
-      });
-      if (!conflicting.ok) throw new Error(conflicting.error.message);
-
-      const healthy = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Later healthy legacy authority",
-          enabled: false,
-          scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item03" }],
-        },
-      });
-      if (!healthy.ok) throw new Error(healthy.error.message);
-
-      process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-      const migrated = await migrateLegacyIncomingAutomationAuthorities(1);
-      expect(migrated).toMatchObject({ failed: 1, migrated: 0, remaining: 2 });
-      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 0, migrated: 1, remaining: 1 });
-      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 0, migrated: 0, remaining: 1 });
-      const [attempt] = await sql<{ attempted: boolean }[]>`
-        SELECT authority_migration_attempted_at IS NOT NULL AS attempted
-        FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid
-      `;
-      expect(attempt?.attempted).toBe(true);
-      await sql`
-        UPDATE mail.incoming_automations SET authority_migration_attempted_at = now() - interval '2 minutes'
-        WHERE id = ${created.data.id}::uuid
-      `;
-      expect(await migrateLegacyIncomingAutomationAuthorities(1)).toMatchObject({ failed: 1, migrated: 0, remaining: 1 });
-      const [after] = await sql<
-        {
-          mandate_id: string | null;
-          integration_credential_id: string | null;
-          encrypted_integration_token: string | null;
-          status: string;
-        }[]
-      >`
-        SELECT automation.mandate_id, automation.integration_credential_id, automation.encrypted_integration_token, credential.status
-        FROM mail.incoming_automations automation
-        JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
-        WHERE automation.id = ${created.data.id}::uuid
-      `;
-      expect(after?.mandate_id).toBeNull();
-      expect(after?.integration_credential_id).not.toBeNull();
-      expect(after?.encrypted_integration_token).not.toBeNull();
-      expect(after?.status).toBe("active");
-
-      const revoked = await mandates.revoke({
-        mandateId: conflicting.data.id,
-        expectedRevision: conflicting.data.revision,
-        authority: { kind: "interactive", userId: ownerContext.actor.user.id },
-        reason: "Integration test cleanup",
-      });
-      expect(revoked.ok).toBe(true);
-      expect(
-        (
-          await deleteIncomingAutomation({
-            context: ownerContext,
-            mailboxId,
-            automationId: healthy.data.id,
-            input: { expectedRevision: healthy.data.revision + 1 },
-          })
-        ).ok,
-      ).toBe(true);
-      process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "legacy";
-      expect(
-        (
-          await deleteIncomingAutomation({
-            context: ownerContext,
-            mailboxId,
-            automationId: created.data.id,
-            input: { expectedRevision: created.data.revision },
-          })
-        ).ok,
-      ).toBe(true);
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
-  });
-
-  test("creates a disabled automation with a paused bounded mandate and no user token", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-    try {
-      const created = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Mandated Spaces effects",
-          enabled: false,
-          scope: { mode: "all" },
-          steps: [
-            { id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" },
-            {
-              id: crypto.randomUUID(),
-              kind: "create_space_event",
-              spaceId: "Space1",
-              columnId: "Column",
-              event: {
-                kind: "custom",
-                title: "Planning",
-                startsAt: "2026-09-03T10:00:00Z",
-                endsAt: "2026-09-03T11:00:00Z",
-                allDay: false,
-              },
-            },
-          ],
-        },
-      });
-      if (!created.ok) throw new Error(created.error.message);
-
-      const [stored] = await sql<
-        {
-          mandate_id: string | null;
-          integration_credential_id: string | null;
-          encrypted_integration_token: string | null;
-          state: string | null;
-          owner_app_id: string | null;
-          workload_id: string | null;
-          subject_user_id: string | null;
-          policy: unknown;
-        }[]
-      >`
         SELECT automation.mandate_id,
-               automation.integration_credential_id,
-               automation.encrypted_integration_token,
                mandate.state,
                mandate.owner_app_id,
                mandate.workload_id,
@@ -665,316 +345,279 @@ suite("incoming automations", () => {
         LEFT JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
         WHERE automation.id = ${created.data.id}::uuid
       `;
-      expect(stored).toMatchObject({
-        integration_credential_id: null,
-        encrypted_integration_token: null,
-        state: "paused",
-        owner_app_id: "mail",
-        workload_id: created.data.id,
-        subject_user_id: ownerContext.actor.kind === "user" ? ownerContext.actor.user.id : null,
-        policy: {
-          version: 1,
-          apps: ["spaces"],
-          operations: ["capability.action.run:event.create-once", "capability.action.run:item.reference.add"],
-          actions: "preapproved",
-        },
-      });
-      expect(stored?.mandate_id).not.toBeNull();
+    expect(stored).toMatchObject({
+      state: "paused",
+      owner_app_id: "mail",
+      workload_id: created.data.id,
+      subject_user_id: ownerContext.actor.kind === "user" ? ownerContext.actor.user.id : null,
+      policy: {
+        version: 1,
+        apps: ["spaces"],
+        operations: ["capability.action.run:event.create-once", "capability.action.run:item.reference.add"],
+        actions: "preapproved",
+      },
+    });
+    expect(stored?.mandate_id).not.toBeNull();
+    expect(await credentialCount()).toBe(beforeCredentials);
 
-      const deleted = await deleteIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        automationId: created.data.id,
-        input: { expectedRevision: created.data.revision },
-      });
-      expect(deleted.ok).toBe(true);
-      const [revoked] = await sql<{ state: string; revoke_reason: string | null }[]>`
+    const deleted = await deleteIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: created.data.revision },
+    });
+    expect(deleted.ok).toBe(true);
+    const [revoked] = await sql<{ state: string; revoke_reason: string | null }[]>`
         SELECT state, revoke_reason
         FROM auth.mandates
         WHERE id = ${stored?.mandate_id ?? null}::uuid
       `;
-      expect(revoked).toEqual({ state: "revoked", revoke_reason: "Incoming automation deleted" });
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
+    expect(revoked).toEqual({ state: "revoked", revoke_reason: "Incoming automation deleted" });
   });
 
   test("lets a shared mailbox admin stop but not repurpose or resume another user's mandate", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-    try {
-      const created = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Shared mailbox authority",
-          enabled: true,
-          scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
-        },
-      });
-      if (!created.ok) throw new Error(created.error.message);
-      let current = created.data;
-      const [binding] = await sql<
-        { mandate_id: string }[]
-      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${current.id}::uuid`;
-      const originalMandate = await mandates.get(binding!.mandate_id);
-      if (!originalMandate) throw new Error("Expected mandate");
-      const update = (context: MailRequestContext, patch: Partial<Parameters<typeof updateIncomingAutomation>[0]["input"]>) =>
-        updateIncomingAutomation({
-          context,
-          mailboxId,
-          automationId: current.id,
-          input: {
-            expectedRevision: current.revision,
-            name: current.name,
-            enabled: current.enabled,
-            scope: current.scope,
-            steps: current.steps,
-            ...patch,
-          },
-        });
-
-      const renamed = await update(sharedAdminContext, { name: "Renamed by shared admin" });
-      if (!renamed.ok) throw new Error(renamed.error.message);
-      current = renamed.data;
-      expect(current.workflowVersionId).toBe(created.data.workflowVersionId);
-      expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
-      const unchanged = await update(sharedAdminContext, {});
-      expect(unchanged.ok && unchanged.data.revision).toBe(current.revision);
-
-      const targetChange = await update(sharedAdminContext, {
-        steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
-      });
-      expect(targetChange.ok ? null : targetChange.error.code).toBe("FORBIDDEN");
-      expect(targetChange.ok ? null : targetChange.error.message).toContain("reauthorization");
-      const scopeChange = await update(sharedAdminContext, {
-        scope: {
-          mode: "matching",
-          conditions: {
-            mode: "all",
-            items: [{ field: "sender_address", operator: "is", value: "only@example.test" }],
-          },
-        },
-      });
-      expect(scopeChange.ok ? null : scopeChange.error.code).toBe("FORBIDDEN");
-      expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
-
-      const paused = await setIncomingAutomationEnabled({
-        context: sharedAdminContext,
-        mailboxId,
-        automationId: current.id,
-        input: { expectedRevision: current.revision, enabled: false },
-      });
-      if (!paused.ok) throw new Error(paused.error.message);
-      current = paused.data;
-      expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
-      const pausedNoop = await setIncomingAutomationEnabled({
-        context: sharedAdminContext,
-        mailboxId,
-        automationId: current.id,
-        input: { expectedRevision: current.revision, enabled: false },
-      });
-      expect(pausedNoop.ok && pausedNoop.data.revision).toBe(current.revision);
-      const pausedRename = await update(sharedAdminContext, { name: "Still paused" });
-      if (!pausedRename.ok) throw new Error(pausedRename.error.message);
-      current = pausedRename.data;
-      const resume = await setIncomingAutomationEnabled({
-        context: sharedAdminContext,
-        mailboxId,
-        automationId: current.id,
-        input: { expectedRevision: current.revision, enabled: true },
-      });
-      expect(resume.ok ? null : resume.error.code).toBe("FORBIDDEN");
-      const updateResume = await update(sharedAdminContext, { enabled: true });
-      expect(updateResume.ok ? null : updateResume.error.code).toBe("FORBIDDEN");
-      expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
-
-      const ownerUpdate = await update(ownerContext, {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Shared mailbox authority",
         enabled: true,
-        steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
-      });
-      if (!ownerUpdate.ok) throw new Error(ownerUpdate.error.message);
-      current = ownerUpdate.data;
-      expect((await mandates.get(originalMandate.id))?.state).toBe("active");
-      expect((await mandates.get(originalMandate.id))?.subject).toEqual(originalMandate.subject);
-      const deleted = await deleteIncomingAutomation({
-        context: sharedAdminContext,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    let current = created.data;
+    const [binding] = await sql<{ mandate_id: string }[]>`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${current.id}::uuid`;
+    const originalMandate = await mandates.get(binding!.mandate_id);
+    if (!originalMandate) throw new Error("Expected mandate");
+    const update = (context: MailRequestContext, patch: Partial<Parameters<typeof updateIncomingAutomation>[0]["input"]>) =>
+      updateIncomingAutomation({
+        context,
         mailboxId,
         automationId: current.id,
-        input: { expectedRevision: current.revision },
+        input: {
+          expectedRevision: current.revision,
+          name: current.name,
+          enabled: current.enabled,
+          scope: current.scope,
+          steps: current.steps,
+          ...patch,
+        },
       });
-      expect(deleted.ok).toBe(true);
-      expect((await mandates.get(originalMandate.id))?.state).toBe("revoked");
-      const lifecycleAudit = await sql<{ action: string; actor_user_id: string | null; metadata: unknown }[]>`
+
+    const renamed = await update(sharedAdminContext, { name: "Renamed by shared admin" });
+    if (!renamed.ok) throw new Error(renamed.error.message);
+    current = renamed.data;
+    expect(current.workflowVersionId).toBe(created.data.workflowVersionId);
+    expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
+    const unchanged = await update(sharedAdminContext, {});
+    expect(unchanged.ok && unchanged.data.revision).toBe(current.revision);
+
+    const targetChange = await update(sharedAdminContext, {
+      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+    });
+    expect(targetChange.ok ? null : targetChange.error.code).toBe("FORBIDDEN");
+    expect(targetChange.ok ? null : targetChange.error.message).toContain("reauthorization");
+    const scopeChange = await update(sharedAdminContext, {
+      scope: {
+        mode: "matching",
+        conditions: {
+          mode: "all",
+          items: [{ field: "sender_address", operator: "is", value: "only@example.test" }],
+        },
+      },
+    });
+    expect(scopeChange.ok ? null : scopeChange.error.code).toBe("FORBIDDEN");
+    expect((await mandates.get(originalMandate.id))?.revision).toBe(originalMandate.revision);
+
+    const paused = await setIncomingAutomationEnabled({
+      context: sharedAdminContext,
+      mailboxId,
+      automationId: current.id,
+      input: { expectedRevision: current.revision, enabled: false },
+    });
+    if (!paused.ok) throw new Error(paused.error.message);
+    current = paused.data;
+    expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
+    const pausedNoop = await setIncomingAutomationEnabled({
+      context: sharedAdminContext,
+      mailboxId,
+      automationId: current.id,
+      input: { expectedRevision: current.revision, enabled: false },
+    });
+    expect(pausedNoop.ok && pausedNoop.data.revision).toBe(current.revision);
+    const pausedRename = await update(sharedAdminContext, { name: "Still paused" });
+    if (!pausedRename.ok) throw new Error(pausedRename.error.message);
+    current = pausedRename.data;
+    const resume = await setIncomingAutomationEnabled({
+      context: sharedAdminContext,
+      mailboxId,
+      automationId: current.id,
+      input: { expectedRevision: current.revision, enabled: true },
+    });
+    expect(resume.ok ? null : resume.error.code).toBe("FORBIDDEN");
+    const updateResume = await update(sharedAdminContext, { enabled: true });
+    expect(updateResume.ok ? null : updateResume.error.code).toBe("FORBIDDEN");
+    expect((await mandates.get(originalMandate.id))?.state).toBe("paused");
+
+    const ownerUpdate = await update(ownerContext, {
+      enabled: true,
+      steps: [{ id: current.steps[0]!.id, kind: "link_space_item", itemId: "Item02" }],
+    });
+    if (!ownerUpdate.ok) throw new Error(ownerUpdate.error.message);
+    current = ownerUpdate.data;
+    expect((await mandates.get(originalMandate.id))?.state).toBe("active");
+    expect((await mandates.get(originalMandate.id))?.subject).toEqual(originalMandate.subject);
+    const deleted = await deleteIncomingAutomation({
+      context: sharedAdminContext,
+      mailboxId,
+      automationId: current.id,
+      input: { expectedRevision: current.revision },
+    });
+    expect(deleted.ok).toBe(true);
+    expect((await mandates.get(originalMandate.id))?.state).toBe("revoked");
+    const lifecycleAudit = await sql<{ action: string; actor_user_id: string | null; metadata: unknown }[]>`
         SELECT action, actor_user_id, metadata FROM audit.events
         WHERE target_type = 'mandate' AND target_id = ${originalMandate.id} AND action IN ('mandate.pause', 'mandate.revoke')
         ORDER BY id
       `;
-      expect(
-        lifecycleAudit.map((event) => ({
-          action: event.action,
-          actor_user_id: event.actor_user_id,
-          owner_app_id: parsePgJsonRecord(event.metadata)?.ownerAppId,
-        })),
-      ).toEqual([
-        { action: "mandate.pause", actor_user_id: null, owner_app_id: "mail" },
-        { action: "mandate.revoke", actor_user_id: null, owner_app_id: "mail" },
-      ]);
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
+    expect(
+      lifecycleAudit.map((event) => ({
+        action: event.action,
+        actor_user_id: event.actor_user_id,
+        owner_app_id: parsePgJsonRecord(event.metadata)?.ownerAppId,
+      })),
+    ).toEqual([
+      { action: "mandate.pause", actor_user_id: null, owner_app_id: "mail" },
+      { action: "mandate.revoke", actor_user_id: null, owner_app_id: "mail" },
+    ]);
   });
 
   test("lets a shared mailbox admin remove all Spaces effects and disable revoked authority", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-    try {
-      for (const externallyRevoked of [false, true]) {
-        const created = await createIncomingAutomation({
-          context: ownerContext,
-          mailboxId,
-          input: {
-            name: `Remove shared Spaces ${externallyRevoked}`,
-            enabled: true,
-            scope: { mode: "all" },
-            steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
-          },
-        });
-        if (!created.ok) throw new Error(created.error.message);
-        const [binding] = await sql<
-          { mandate_id: string }[]
-        >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
-        const mandate = await mandates.get(binding!.mandate_id);
-        if (!mandate) throw new Error("Expected mandate");
-        if (externallyRevoked) {
-          const revoked = await mandates.revoke({
-            mandateId: mandate.id,
-            expectedRevision: mandate.revision,
-            authority: { kind: "workload", ownerAppId: "mail" },
-            reason: "External revocation test",
-          });
-          if (!revoked.ok) throw new Error(revoked.error.message);
-        }
-        const updated = await updateIncomingAutomation({
-          context: sharedAdminContext,
-          mailboxId,
-          automationId: created.data.id,
-          input: {
-            expectedRevision: created.data.revision,
-            name: created.data.name,
-            enabled: false,
-            scope: created.data.scope,
-            steps: externallyRevoked
-              ? created.data.steps
-              : [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
-          },
-        });
-        expect(updated.ok).toBe(true);
-        expect((await mandates.get(mandate.id))?.state).toBe("revoked");
-        const [after] = await sql<
-          { mandate_id: string | null }[]
-        >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
-        expect(after?.mandate_id).toBe(externallyRevoked ? mandate.id : null);
-        if (updated.ok)
-          expect(
-            (
-              await deleteIncomingAutomation({
-                context: sharedAdminContext,
-                mailboxId,
-                automationId: created.data.id,
-                input: { expectedRevision: updated.data.revision },
-              })
-            ).ok,
-          ).toBe(true);
-      }
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
-  });
-
-  test("pauses the mandate when an enabled automation is disabled", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-    try {
+    for (const externallyRevoked of [false, true]) {
       const created = await createIncomingAutomation({
         context: ownerContext,
         mailboxId,
         input: {
-          name: "Disable mandated automation",
+          name: `Remove shared Spaces ${externallyRevoked}`,
           enabled: true,
           scope: { mode: "all" },
           steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
         },
       });
       if (!created.ok) throw new Error(created.error.message);
-      const disabled = await setIncomingAutomationEnabled({
-        context: ownerContext,
+      const [binding] = await sql<
+        { mandate_id: string }[]
+      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+      const mandate = await mandates.get(binding!.mandate_id);
+      if (!mandate) throw new Error("Expected mandate");
+      if (externallyRevoked) {
+        const revoked = await mandates.revoke({
+          mandateId: mandate.id,
+          expectedRevision: mandate.revision,
+          authority: { kind: "workload", ownerAppId: "mail" },
+          reason: "External revocation test",
+        });
+        if (!revoked.ok) throw new Error(revoked.error.message);
+      }
+      const updated = await updateIncomingAutomation({
+        context: sharedAdminContext,
         mailboxId,
         automationId: created.data.id,
-        input: { expectedRevision: created.data.revision, enabled: false },
+        input: {
+          expectedRevision: created.data.revision,
+          name: created.data.name,
+          enabled: false,
+          scope: created.data.scope,
+          steps: externallyRevoked ? created.data.steps : [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+        },
       });
-      if (!disabled.ok) throw new Error(disabled.error.message);
-      const [mandate] = await sql<{ id: string; state: string }[]>`
-        SELECT mandate.id, mandate.state
-        FROM mail.incoming_automations automation
-        JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
-        WHERE automation.id = ${created.data.id}::uuid
-      `;
-      expect(mandate?.state).toBe("paused");
-      await deleteIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        automationId: created.data.id,
-        input: { expectedRevision: disabled.data.revision },
-      });
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
+      expect(updated.ok).toBe(true);
+      expect((await mandates.get(mandate.id))?.state).toBe("revoked");
+      const [after] = await sql<
+        { mandate_id: string | null }[]
+      >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+      expect(after?.mandate_id).toBe(externallyRevoked ? mandate.id : null);
+      if (updated.ok)
+        expect(
+          (
+            await deleteIncomingAutomation({
+              context: sharedAdminContext,
+              mailboxId,
+              automationId: created.data.id,
+              input: { expectedRevision: updated.data.revision },
+            })
+          ).ok,
+        ).toBe(true);
     }
   });
 
-  test("resumes a paused mandate when the automation is enabled interactively", async () => {
-    const previousMode = process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-    process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = "mandate";
-    try {
-      const created = await createIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        input: {
-          name: "Resume mandated automation",
-          enabled: false,
-          scope: { mode: "all" },
-          steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
-        },
-      });
-      if (!created.ok) throw new Error(created.error.message);
-      const enabled = await setIncomingAutomationEnabled({
-        context: ownerContext,
-        mailboxId,
-        automationId: created.data.id,
-        input: { expectedRevision: created.data.revision, enabled: true },
-      });
-      if (!enabled.ok) throw new Error(enabled.error.message);
-      const [mandate] = await sql<{ id: string; state: string }[]>`
+  test("pauses the mandate when an enabled automation is disabled", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Disable mandated automation",
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const disabled = await setIncomingAutomationEnabled({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: created.data.revision, enabled: false },
+    });
+    if (!disabled.ok) throw new Error(disabled.error.message);
+    const [mandate] = await sql<{ id: string; state: string }[]>`
         SELECT mandate.id, mandate.state
         FROM mail.incoming_automations automation
         JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
         WHERE automation.id = ${created.data.id}::uuid
       `;
-      expect(mandate?.state).toBe("active");
-      await deleteIncomingAutomation({
-        context: ownerContext,
-        mailboxId,
-        automationId: created.data.id,
-        input: { expectedRevision: enabled.data.revision },
-      });
-    } finally {
-      if (previousMode === undefined) delete process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE;
-      else process.env.CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE = previousMode;
-    }
+    expect(mandate?.state).toBe("paused");
+    await deleteIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: disabled.data.revision },
+    });
+  });
+
+  test("resumes a paused mandate when the automation is enabled interactively", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Resume mandated automation",
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const enabled = await setIncomingAutomationEnabled({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: created.data.revision, enabled: true },
+    });
+    if (!enabled.ok) throw new Error(enabled.error.message);
+    const [mandate] = await sql<{ id: string; state: string }[]>`
+        SELECT mandate.id, mandate.state
+        FROM mail.incoming_automations automation
+        JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
+        WHERE automation.id = ${created.data.id}::uuid
+      `;
+    expect(mandate?.state).toBe("active");
+    await deleteIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: enabled.data.revision },
+    });
   });
 });

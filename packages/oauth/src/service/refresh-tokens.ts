@@ -1,7 +1,6 @@
 import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
-import type { OAuthIssuanceMode } from "./token-authority";
 
 type RefreshTokenStatus = "active" | "issuing" | "rotated" | "revoked" | "reused";
 type RefreshTokenFamilyStatus = "active" | "revoked";
@@ -188,7 +187,7 @@ export const rotate = async (
     audiences: string[];
     resource: string | null;
     authorityGrant: { kind: "refresh_token"; tokenId: string; nonce: string };
-  }) => Promise<OAuthIssuanceMode>,
+  }) => Promise<void>,
 ): Promise<RefreshTokenRotationResult> => {
   const parsed = parseRefreshToken(refreshToken);
   if (!parsed) return { ok: false, error: "invalid_grant" };

@@ -24,7 +24,6 @@ const start = async (role: "core" | "oauth", version: "baseline" | "current", wo
       APP_ID: role,
       OAUTH_VERIFY_VERSION: version,
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: role === "core" && version === "current" ? "43".repeat(32) : "",
-      CLOUD_OAUTH_ISSUANCE_MODE: version === "current" ? "core" : "legacy",
       CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
       CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
       CLOUD_OAUTH_JWKS_ORIGIN: client.issuer,
@@ -250,11 +249,11 @@ try {
     login = await client.login();
     oauth = await start("oauth", "current", await workloadCredential(login.cookie));
     assert.equal(decodeProtectedHeader(login.token).typ, "cloud-session+jwt");
-    const [state] = await sql<{ mode: string }[]>`SELECT mode FROM oauth.issuance_state WHERE singleton = true`;
-    assert.equal(state?.mode, "core");
-    const [privateKeys] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM oauth.keys WHERE private_key <> ''`;
-    assert.equal(privateKeys?.count, 0);
-    check("old binary stopped; real schema upgrade; readiness-gated Core cutover; legacy private keys erased");
+    const [removed] = await sql<{ keys: string | null; state: string | null }[]>`
+      SELECT to_regclass('oauth.keys')::text AS keys, to_regclass('oauth.issuance_state')::text AS state
+    `;
+    assert.deepEqual(removed, { keys: null, state: null });
+    check("old replicas stopped; real schema upgrade; Core-only readiness; obsolete signing tables removed");
     // The hard cut rejects opaque browser sessions immediately, without Redis cleanup.
     await actor(oldToken, 401);
     await core.revoke();
@@ -273,15 +272,19 @@ try {
     login = await client.login();
     assert.equal(decodeJwt(login.token).token_use, "session");
     await actor(login.token);
-    await client.verify(previous.access_token, "cloud");
-    await client.userinfo(previous.access_token);
-    await actor(previous.access_token);
+    // External clients may still have a warm pre-upgrade JWKS cache.
+    await client.reloadJwks();
+    await assert.rejects(client.verify(previous.access_token, "cloud"));
+    assert(previous.id_token);
+    await assert.rejects(client.verify(previous.id_token, clients.confidential.clientId));
+    assert.equal((await client.request("/oauth/userinfo", { headers: { authorization: `Bearer ${previous.access_token}` } })).status, 401);
+    await actor(previous.access_token, 401);
     const upgradedRefresh = await client.tokens(await client.refresh(clients.confidential, previous.refresh_token));
     assert(decodeProtectedHeader(upgradedRefresh.access_token).kid !== legacyKid);
     await client.verify(upgradedRefresh.access_token, "cloud");
     await client.verify((await client.tokens(await client.exchange(clients.public, pendingCode))).access_token, "cloud");
     await client.verify((await client.tokens(await client.exchange(clients.public, pendingResourceCode))).access_token, client.resource);
-    check("browser revocation + JWT re-login preserve old OAuth access tokens, refresh families, codes and resource bindings");
+    check("old browser and OAuth JWTs rejected; existing clients, refresh families, codes and resource bindings survive");
     assert.deepEqual(await exercise(clients, login.cookie, login.userId), before, "Public contract differs across upgrade");
     check("pre/post discovery, token response fields, stable JWT claims, UserInfo, actors and errors match exactly");
     const jwksResponse = await client.request("/.well-known/jwks.json");

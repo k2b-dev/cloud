@@ -1,14 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { MailAutomationStep } from "../contracts";
-import { incomingAutomationAuthorityMode, incomingAutomationMandatePolicy } from "./incoming-automation-authority";
+import { incomingAutomationMandatePolicy } from "./incoming-automation-authority";
 
 describe("incoming automation authority", () => {
-  test("keeps legacy issuance as the explicit rollout default", () => {
-    expect(incomingAutomationAuthorityMode(undefined)).toBe("legacy");
-    expect(incomingAutomationAuthorityMode("mandate")).toBe("mandate");
-    expect(() => incomingAutomationAuthorityMode("mixed")).toThrow("CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE must be legacy or mandate");
-  });
-
   test("creates a minimal deterministic policy for nested Spaces effects", () => {
     const steps: MailAutomationStep[] = [
       {

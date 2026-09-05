@@ -1,12 +1,11 @@
 import { publicCloudOrigin } from "../../shared/app-url";
 import { get as getSetting } from "../settings";
-import { CLOUD_IDENTITY_JWKS_PATH, CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH } from "./constants";
+import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH } from "./constants";
 
 const RUNTIME_CONFIG_TTL_MS = 60_000;
 
 export type IdentityRuntimeConfig = {
   issuer: string;
-  jwksUrl: URL;
   sessionJwksUrl: URL;
   invocationJwksUrl: URL;
   oauthJwksUrl: URL;
@@ -27,16 +26,6 @@ const normalizeGroups = (value: unknown): string[] => {
     ),
   ];
   return groups.length > 0 ? groups : ["admins"];
-};
-
-export const resolveIdentityJwksUrl = (issuer: string, transportOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN?.trim()): URL => {
-  if (!transportOrigin) return new URL(CLOUD_IDENTITY_JWKS_PATH, issuer);
-
-  const url = new URL(CLOUD_IDENTITY_JWKS_PATH, transportOrigin);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("CLOUD_IDENTITY_JWKS_ORIGIN must use http or https");
-  }
-  return url;
 };
 
 const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN?.trim()): URL => {
@@ -72,7 +61,6 @@ const load = async (): Promise<IdentityRuntimeConfig> => {
   }
   return {
     issuer,
-    jwksUrl: resolveIdentityJwksUrl(issuer),
     sessionJwksUrl: resolveSessionJwksUrl(issuer),
     invocationJwksUrl: resolveInvocationJwksUrl(issuer),
     oauthJwksUrl: resolveOAuthJwksUrl(issuer),

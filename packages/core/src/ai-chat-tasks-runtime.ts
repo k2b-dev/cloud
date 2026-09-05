@@ -154,14 +154,13 @@ export const reconcileAiChatTasks = async (): Promise<void> => {
   const lock = await reconcileMutex.acquire(APP_ID, 60_000);
   if (!lock) return;
   try {
-    const mandatePreparation = await recoveryStep("prepare-mandates", () => aiChatTasks.prepareLegacyMandates());
     const tasks = await aiChatTasks.listActiveCron();
     await reconcileAiChatTaskSchedules({
       tasks,
       register: registerRecurringTask,
       list: () => taskScheduler.list(),
       remove: (id) => taskScheduler.delete({ id }),
-      removeObsolete: mandatePreparation?.remaining === false,
+      removeObsolete: true,
     });
   } finally {
     await reconcileMutex.release(lock).catch(() => undefined);

@@ -1,13 +1,14 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { clearIdentityKeyCachesForTest, prepareIdentitySigner, revokeIdentitySigningKey } from "@valentinkolb/cloud/services/identity";
 import { sql } from "bun";
-import { generateKeyPair } from "jose";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { createIdentityOAuthIssuanceRoutes } from "../../core/src/api/identity-oauth-issuance";
 import { migrate as migrateAuth } from "../../core/src/migrate/core/auth";
 import { migrate } from "./migrate";
 import * as clients from "./service/clients";
 import * as refreshTokens from "./service/refresh-tokens";
 import type { OAuthUserGrantReference } from "./service/token-authority";
+import * as tokens from "./service/tokens";
 
 // This suite intentionally exercises schema upgrades and must use a disposable DB.
 const suite = process.env.CLOUD_OAUTH_REVIEW_INTEGRATION === "1" ? describe : describe.skip;
@@ -104,7 +105,6 @@ suite("OAuth external review regressions", () => {
       expect(authorityGrant.nonce).not.toBe(references[0]!.nonce);
       expect((await issue(routes, references[0]!)).status).toBe(403);
       expect((await issue(routes, authorityGrant)).status).toBe(200);
-      return "core";
     });
     expect(result.ok).toBe(true);
   }, 30_000);
@@ -172,7 +172,6 @@ suite("OAuth external review regressions", () => {
       const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
       rotation = refreshTokens.rotate(token.refreshToken, client, undefined, undefined, async ({ authorityGrant }) => {
         await sql`UPDATE oauth.refresh_tokens SET authority_issued_at = now() WHERE id = ${authorityGrant.tokenId}::uuid`;
-        return "core";
       });
       await waitForBlockedBy(backend!.pid);
       // A token-first reservation deadlocks against this finalizer lock order.
@@ -181,9 +180,8 @@ suite("OAuth external review regressions", () => {
     expect((await rotation)?.ok).toBe(true);
   }, 30_000);
 
-  test("audience upgrade rolls back atomically and supports old writers after retry", async () => {
+  test("audience upgrade rolls back atomically, preserves grants and rejects old writers", async () => {
     const { userId, client } = await fixture();
-    await sql`DROP TRIGGER fill_code_audiences ON oauth.codes`.simple();
     await sql`ALTER TABLE oauth.codes DROP COLUMN audiences`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
       VALUES ('before-upgrade', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
@@ -204,14 +202,15 @@ suite("OAuth external review regressions", () => {
     }
     await migrate();
     // Also repair grants written with the previous migration's incorrect default.
-    await sql`DROP TRIGGER fill_code_audiences ON oauth.codes`.simple();
     await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET DEFAULT ARRAY['cloud']::text[]`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
       VALUES ('previous-default', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     await migrate();
-    await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource) VALUES
-      ('old-resource-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail'),
-      ('old-unbound-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', NULL)`;
+    const oldWriter = async () => {
+      await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
+        VALUES ('old-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+    };
+    await expect(oldWriter()).rejects.toThrow();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, audiences)
       VALUES ('new-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
     await migrate();
@@ -219,11 +218,47 @@ suite("OAuth external review regressions", () => {
     expect(rows).toEqual([
       { code: "before-upgrade", audiences: ["mail"] },
       { code: "new-writer", audiences: ["cloud", client.clientId] },
-      { code: "old-resource-writer", audiences: ["mail"] },
-      { code: "old-unbound-writer", audiences: ["cloud", client.clientId, "mail"] },
       { code: "previous-default", audiences: ["mail"] },
     ]);
   }, 60_000);
+
+  test("unknown OAuth keys cannot poison a warm local verifier during a storage outage", async () => {
+    const originalOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
+    const kid = crypto.randomUUID();
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    const publicKey = await exportJWK(pair.publicKey);
+    let renamed = false;
+    try {
+      delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
+      tokens.clearOAuthVerifierCacheForTest();
+      await sql`INSERT INTO auth.signing_keys (
+        purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
+        created_at, activate_at, activated_at, sign_until, retired_at, verify_until
+      ) VALUES ('oauth', 'retired', ${kid}, 'RS256', ${JSON.stringify(publicKey)}::jsonb, 'unused', 'test',
+        now() - interval '2 hours', now() - interval '2 hours', now() - interval '2 hours',
+        now() - interval '1 hour', now() - interval '30 minutes', now() + interval '1 hour')`;
+      const sign = (keyId: string) =>
+        new SignJWT({ token_use: "access" })
+          .setProtectedHeader({ alg: "RS256", kid: keyId })
+          .setIssuer("https://cloud.test")
+          .setIssuedAt()
+          .setExpirationTime("1h")
+          .sign(pair.privateKey);
+      const valid = await sign(kid);
+      expect(await tokens.verifyAccessToken({ token: valid, issuer: "https://cloud.test" })).not.toBeNull();
+      // The suite is opt-in and asserts its disposable database before running.
+      await sql`ALTER TABLE auth.signing_keys RENAME TO signing_keys_cache_outage`.simple();
+      renamed = true;
+      expect(await tokens.verifyAccessToken({ token: await sign(crypto.randomUUID()), issuer: "https://cloud.test" })).toBeNull();
+      expect(await tokens.verifyAccessToken({ token: valid, issuer: "https://cloud.test" })).not.toBeNull();
+    } finally {
+      if (renamed) await sql`ALTER TABLE auth.signing_keys_cache_outage RENAME TO signing_keys`.simple();
+      await sql`DELETE FROM auth.signing_keys WHERE kid = ${kid}`;
+      tokens.clearOAuthVerifierCacheForTest();
+      if (originalOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
+      else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalOrigin;
+    }
+  });
 
   test("emergency OAuth revoke eagerly prepares a usable replacement", async () => {
     const originalApp = process.env.APP_ID;

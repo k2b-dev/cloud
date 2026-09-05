@@ -162,35 +162,13 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE oauth.codes
     ADD COLUMN IF NOT EXISTS resource TEXT
   `.simple();
-  // One locked transition also supports old replicas that still omit audiences.
-  // Keep this insertion bridge until those writers have left the rolling upgrade.
+  // Retain existing code snapshots; all writers now supply audiences explicitly.
   await sql.begin(async (tx) => {
     await tx`LOCK TABLE oauth.codes IN ACCESS EXCLUSIVE MODE`.simple();
     await tx`ALTER TABLE oauth.codes ADD COLUMN IF NOT EXISTS audiences TEXT[]`.simple();
     await tx`ALTER TABLE oauth.codes ALTER COLUMN audiences DROP DEFAULT`.simple();
-    await tx`
-      CREATE OR REPLACE FUNCTION oauth.fill_code_audiences() RETURNS trigger AS $$
-      BEGIN
-        IF NEW.audiences IS NULL THEN
-          IF NEW.resource IS NOT NULL THEN
-            NEW.audiences := ARRAY[NEW.resource];
-          ELSE
-            SELECT ARRAY(
-              SELECT audience
-              FROM unnest(ARRAY['cloud', NEW.client_id]::text[] || client.audiences)
-                WITH ORDINALITY AS value(audience, position)
-              GROUP BY audience ORDER BY min(position)
-            ) INTO NEW.audiences
-            FROM oauth.clients client WHERE client.client_id = NEW.client_id;
-          END IF;
-        END IF;
-        RETURN NEW;
-      END;
-      $$ LANGUAGE plpgsql
-    `.simple();
-    await tx`CREATE OR REPLACE TRIGGER fill_code_audiences
-      BEFORE INSERT ON oauth.codes FOR EACH ROW EXECUTE FUNCTION oauth.fill_code_audiences()`.simple();
-    // ['cloud'] alone was the previous default, not a valid unbound grant snapshot.
+    await tx`DROP TRIGGER IF EXISTS fill_code_audiences ON oauth.codes`.simple();
+    await tx`DROP FUNCTION IF EXISTS oauth.fill_code_audiences()`.simple();
     await tx`
       UPDATE oauth.codes code
       SET audiences = CASE
@@ -415,47 +393,9 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ oauth first-party CLI client");
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS oauth.keys (
-      id TEXT PRIMARY KEY DEFAULT 'current',
-      private_key TEXT NOT NULL,
-      public_key TEXT NOT NULL,
-      kid TEXT NOT NULL DEFAULT gen_random_uuid()::text,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      retired_at TIMESTAMPTZ
-    )
-  `.simple();
-  await sql`ALTER TABLE oauth.keys ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`.simple();
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS oauth_keys_kid_key ON oauth.keys(kid)`.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS oauth_keys_one_active_key
-    ON oauth.keys ((retired_at IS NULL))
-    WHERE retired_at IS NULL
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS oauth_keys_retired_at
-    ON oauth.keys(retired_at)
-    WHERE retired_at IS NOT NULL
-  `.simple();
-  await sql`UPDATE oauth.keys SET private_key = '' WHERE retired_at IS NOT NULL AND private_key <> ''`.simple();
-  await sql`
-    COMMENT ON TABLE oauth.keys IS
-      'Legacy OAuth signing keys retained only for rolling issuance and token verification grace; Core owns new OAuth keys'
-  `.simple();
-  console.log("  ✓ oauth.keys legacy verification table");
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS oauth.issuance_state (
-      singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
-      mode TEXT NOT NULL DEFAULT 'legacy' CHECK (mode IN ('legacy', 'core')),
-      cutover_at TIMESTAMPTZ,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-  await sql`
-    INSERT INTO oauth.issuance_state (singleton, mode)
-    VALUES (true, 'legacy')
-    ON CONFLICT (singleton) DO NOTHING
-  `.simple();
-  console.log("  ✓ oauth issuance state");
+  // Coordinated hard cut: old replicas must be stopped before this migration.
+  // Client registrations, authorization codes and refresh grants are retained.
+  await sql`DROP TABLE IF EXISTS oauth.keys`.simple();
+  await sql`DROP TABLE IF EXISTS oauth.issuance_state`.simple();
+  console.log("  ✓ OAuth signing authority belongs exclusively to Core");
 };

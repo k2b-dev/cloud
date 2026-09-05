@@ -8,19 +8,17 @@ const enabled = process.env.MAIL_INTEGRATION_TESTS === "1";
 const suite = enabled ? describe : describe.skip;
 
 suite("mail migrations", () => {
-  test("installs durable fair legacy-authority retry progress idempotently", async () => {
+  test("installs mandate-only automation authority idempotently", async () => {
     await migrate();
-    const [first] = await sql<{ oid: number }[]>`
-      SELECT 'mail.incoming_automations_legacy_authority_retry_idx'::regclass::oid::int AS oid
-    `;
     await migrate();
-    const [shape] = await sql<{ oid: number; columns: number; applied: number }[]>`
-      SELECT 'mail.incoming_automations_legacy_authority_retry_idx'::regclass::oid::int AS oid,
+    const [shape] = await sql<{ columns: number; applied: number }[]>`
+      SELECT
         (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'mail'
-          AND table_name = 'incoming_automations' AND column_name = 'authority_migration_attempted_at') AS columns,
-        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 123) AS applied
+          AND table_name = 'incoming_automations'
+          AND column_name IN ('integration_credential_id', 'encrypted_integration_token', 'authority_migration_attempted_at')) AS columns,
+        (SELECT count(*)::int FROM mail.schema_migrations WHERE version = 121) AS applied
     `;
-    expect(shape).toEqual({ oid: first!.oid, columns: 1, applied: 1 });
+    expect(shape).toEqual({ columns: 0, applied: 1 });
   });
 
   test("installs versioned attachment extraction and source-aware search chunks", async () => {
@@ -305,8 +303,8 @@ suite("mail migrations", () => {
       text_sources_applied_count: 1,
       summaries_applied_count: 1,
       live_invalidation_applied_count: 1,
-      integration_credentials_applied_count: 1,
-      integration_credential_columns_present: true,
+      integration_credentials_applied_count: 0,
+      integration_credential_columns_present: false,
       mandates_applied_count: 1,
       mandate_column_present: true,
       summary_columns_present: true,

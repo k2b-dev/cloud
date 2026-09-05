@@ -29,9 +29,7 @@ encrypted with `APP_SECRET`.
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
 | `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's compatible JWKS; does not change the public issuer |
 | `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
-| `CLOUD_OAUTH_ISSUANCE_MODE` | OAuth signing gate: `legacy` or `core`; defaults to `legacy` during rolling migration |
 | `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential; only apps that call a Core identity broker receive one |
-| `CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE` | Mail incoming-automation migration gate: `legacy` or `mandate`; defaults to `legacy` |
 | `PORT` | Service port; defaults to `3000` |
 | `NODE_ENV` | Enables production or development behavior |
 | `ADMIN_LOGIN_TOKEN` | Local emergency administrator login |
@@ -106,7 +104,7 @@ origin must serve both endpoints; a mixed pool with older Core replicas is not
 ready. Stage or drain old replicas before routing upgraded consumers, including
 Core itself, to that origin. Verify cold JWKS reads, not just warm-cache health.
 For rollback, restore compatible consumers before removing these endpoints.
-Current verifiers deliberately do not fall back to the combined identity JWKS.
+The combined identity JWKS endpoint has been removed; no fallback remains.
 
 Browser sessions and internal invocations are JWT-only. Deploy Core and every
 application together after draining old replicas; see the
@@ -119,33 +117,26 @@ Scheduled work uses mandates, never a stored browser session.
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.
 
-For OAuth, deploy Core-key verification and the closed Core issuance endpoint
-before setting `CLOUD_OAUTH_ISSUANCE_MODE=core` on the OAuth app. OAuth first
-checks its app-bound workload credential and Core's active OAuth signer through
-the closed readiness endpoint. It changes the database-authoritative mode and
-scrubs legacy private keys only after that check succeeds. Failure leaves the
-legacy state intact; after a successful cutover, updated replicas cannot resume
-legacy issuance from a local setting. Keep the legacy OAuth public keys
-available for their two-hour verification grace.
-Replace every old OAuth binary with a cutover-aware version before changing
-the mode: binaries predating the database issuance gate do not honor it.
+OAuth always uses Core issuance. Start Core and provision OAuth's app-bound
+`identity:oauth-issue` credential before starting OAuth. OAuth checks the
+credential and Core signer at startup and fails closed if either is unavailable.
+That readiness check runs before OAuth's migrations. In the local Docker stack,
+put the provisioned OAuth credential in `CLOUD_OAUTH_APP_CREDENTIAL`; Compose
+passes it only to the OAuth container as `CLOUD_APP_CREDENTIAL`.
+There is no mode switch or local signing fallback. Drain all old OAuth replicas
+before migration: it drops their signing keys and issuance-state table. Client
+IDs, secrets and refresh grants are retained. Old OAuth JWTs are rejected by
+the upgraded Cloud; external verifiers may still hold cached old public keys.
 
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-For Mail incoming automations, deploy the mandate schema and Core broker first.
-Then provision Mail's `identity:invoke` app credential and set
-`CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE=mandate`. Existing automation rows with
-an encrypted legacy integration credential keep their previous behavior until
-Mail migrates them in bounded batches; newly created or interactively updated
-Spaces automations use a mandate immediately. Each batch atomically links the
-mandate and retires the previous credential. Check that the remaining count is
-zero and keep a verification window before removing the legacy read path.
-
-Enable invocation JWT issuance before enabling Mail's mandate mode. Successful
-Mail migration removes the old encrypted credential; switching the Mail flag
-back to `legacy` does not restore it. Keep compatible Mail and Core versions
-available for already-migrated automations.
+Mail incoming automations use mandates exclusively. Provision Mail's
+`identity:invoke` app credential and keep Core's broker available. There is no
+legacy-token mode or authority backfill. Mail is unreleased alpha: this schema
+targets fresh installations, not conversion of old automation credentials.
+Existing alpha test installations must be recreated separately if needed;
+starting Mail does not reset their data.
 
 Do not enable `ADMIN_LOGIN_TOKEN` in production.
 

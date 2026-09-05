@@ -211,7 +211,6 @@ services:
       <<: *env
       APP_ID: mail
       CLOUD_APP_CREDENTIAL: ${CLOUD_MAIL_APP_CREDENTIAL:-}
-      CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE: ${CLOUD_MAIL_AUTOMATION_AUTHORITY_MODE:-legacy}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
@@ -227,7 +226,6 @@ services:
       <<: *env
       APP_ID: oauth
       CLOUD_APP_CREDENTIAL: ${CLOUD_OAUTH_APP_CREDENTIAL:-}
-      CLOUD_OAUTH_ISSUANCE_MODE: ${CLOUD_OAUTH_ISSUANCE_MODE:-legacy}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

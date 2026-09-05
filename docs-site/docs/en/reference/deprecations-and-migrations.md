@@ -10,6 +10,17 @@ updated: 2026-09-04
 
 # Deprecations and migrations
 
+## Mail automation authority is mandate-only
+
+Mail incoming automations no longer create, store or forward user API tokens.
+Spaces actions require a mandate and Mail's app-bound `identity:invoke`
+credential. The authority-mode flag and credential backfill have been removed.
+
+Mail is unreleased alpha, so this change does not convert old automation data.
+Use a fresh Mail schema when replacing an older alpha installation. Existing
+test data and previously issued credentials are not deleted automatically;
+resetting them is a separate operator action, not an application startup step.
+
 ## Notebook scripts are now inert Markdown
 
 Notebooks no longer executes fenced `script` blocks. Existing source remains
@@ -29,9 +40,8 @@ user code. Help examples remain inert.
 Deploy Core's purpose-specific session and invocation JWKS endpoints before
 their consumers. Every Core replica behind the configured JWKS origin must
 support them, including when Core is itself a consumer. Mixed old/new endpoint
-pools can fail on cold caches. Keep all issuance modes in `legacy` until the
-corresponding consumers are compatible. Upgrade every OAuth writer to the
-database-gate-aware version before enabling Core OAuth issuance. See the
+pools can fail on cold caches. Drain every old replica before the coordinated
+hard cut; no issuance-mode or old-writer fallback remains. See the
 network, database, clock, and rollout requirements in
 [Runtime configuration](/en/docs/operations/runtime-configuration).
 
@@ -60,8 +70,7 @@ Do not restart old mandate writers against the new schema. An operator needing
 a rolling upgrade must first deploy a compatibility release that changes only
 the insert conflict handling on every writer, then deploy the index migration.
 This mandate-index change does not itself revoke credentials. The JWT-only
-browser hard cut below has a separate coordinated rollout; OAuth retains its
-own verification grace.
+browser and OAuth hard cut below must be coordinated with it.
 
 ## Widget response validation and budgets
 
@@ -100,6 +109,34 @@ Use `session.authenticate` for live session reauthorization and the public
 capability/mandate APIs for cross-application work. Internal capability and
 widget endpoints reject browser cookies, OAuth tokens, and API keys; Core
 issues target- and operation-bound invocation JWTs for them.
+
+### OAuth signing hard cut
+
+Include every OAuth replica in the maintenance window. Start updated Core,
+provision OAuth's `identity:oauth-issue` workload credential, then start updated
+OAuth. Its migration drops only the obsolete `oauth.keys` and
+`oauth.issuance_state` tables and the old code-audience compatibility trigger.
+Client registrations, client secrets, authorization codes and refresh families
+are retained. Existing code snapshots are backfilled where needed.
+
+Old OAuth access and ID tokens are no longer supported by the updated Cloud.
+Clients with a valid refresh grant can obtain Core-issued tokens; others need
+another authorization. No supported OAuth grant type, PKCE, dynamic
+registration, consent or resource-binding feature is removed. Clients using
+discovery do not need a new client ID or secret. A client that manually pins
+signing keys must load Core's keys from the unchanged public JWKS URL. An
+external client's cached old keys are not remotely erased by this update.
+
+The combined `/.well-known/cloud-identity-jwks.json` endpoint is removed.
+Current applications use the separate session and invocation JWKS endpoints.
+Do not restart old binaries against this schema. Restoring removed signing
+material requires the pre-upgrade database backup; there is no signing-mode
+rollback switch.
+
+Scheduled AI/chat tasks without a stored mandate no longer acquire one during
+background execution. Admission marks them `needs_attention`; the owner must
+delete and recreate them. Existing mandated tasks are unaffected. This removes
+the system-migration authority path, including the obsolete Mail variant.
 
 ## Conversation files use one namespace
 

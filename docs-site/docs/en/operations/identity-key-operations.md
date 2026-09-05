@@ -14,9 +14,8 @@ Core is the only private-key authority for platform session, invocation, and
 OAuth tokens. It stores RSA private JWKs encrypted in PostgreSQL with a Core-only
 key-encryption key (KEK). Applications verify sessions only from
 `/.well-known/cloud-session-jwks.json` and invocations only from
-`/.well-known/cloud-invocation-jwks.json`. The former combined
-`/.well-known/cloud-identity-jwks.json` remains available during rolling
-upgrades, but current verifiers never use it. The OAuth purpose is
+`/.well-known/cloud-invocation-jwks.json`. The former combined identity JWKS
+endpoint is removed. The OAuth purpose is
 published through the existing, compatible `/.well-known/jwks.json` endpoint;
 the validators and key purposes remain mutually exclusive.
 

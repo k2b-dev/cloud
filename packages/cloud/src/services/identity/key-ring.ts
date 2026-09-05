@@ -366,26 +366,17 @@ export const initializeIdentityAuthority = async (): Promise<void> => {
   if (keys.previous) await rewrapIdentitySigningKeys();
 };
 
-export const listIdentityJwks = async (purpose?: "session" | "invocation"): Promise<{ keys: JWK[]; etag: string }> => {
-  const rows = purpose
-    ? await sql<Array<{ public_jwk: JWK | string }>>`
+export const listIdentityJwks = async (purpose: "session" | "invocation"): Promise<{ keys: JWK[]; etag: string }> => {
+  const rows = await sql<Array<{ public_jwk: JWK | string }>>`
         SELECT public_jwk
         FROM auth.signing_keys
         WHERE purpose = ${purpose}
           AND state IN ('pending', 'active', 'retired')
           AND verify_until > now()
         ORDER BY created_at
-      `
-    : await sql<Array<{ public_jwk: JWK | string }>>`
-        SELECT public_jwk
-        FROM auth.signing_keys
-        WHERE purpose IN ('session', 'invocation')
-          AND state IN ('pending', 'active', 'retired')
-          AND verify_until > now()
-        ORDER BY purpose, created_at
       `;
   const keys = rows.map((row) => publicJwk(row.public_jwk));
-  return { keys, etag: `"${(await crypto.common.hash(JSON.stringify({ purpose: purpose ?? "combined", keys }))).slice(0, 32)}"` };
+  return { keys, etag: `"${(await crypto.common.hash(JSON.stringify({ purpose, keys }))).slice(0, 32)}"` };
 };
 
 export const revokeIdentitySigningKey = async (params: { kid: string; reason: string }): Promise<boolean> => {

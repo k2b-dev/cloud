@@ -1,4 +1,3 @@
-export const CLOUD_IDENTITY_JWKS_PATH = "/.well-known/cloud-identity-jwks.json";
 export const CLOUD_SESSION_JWKS_PATH = "/.well-known/cloud-session-jwks.json";
 export const CLOUD_INVOCATION_JWKS_PATH = "/.well-known/cloud-invocation-jwks.json";
 export const CLOUD_OAUTH_JWKS_PATH = "/.well-known/jwks.json";

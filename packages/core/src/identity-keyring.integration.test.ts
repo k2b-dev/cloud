@@ -176,7 +176,6 @@ suite("Core identity key ring", () => {
     status = await getIdentitySigningKeyStatus();
     expect(status.filter((key) => key.purpose === "invocation" && key.state === "active")).toHaveLength(1);
     expect(status.find((key) => key.kid === invocation!.kid)?.state).toBe("retired");
-    expect((await listIdentityJwks()).keys.some((key) => key.kid === invocation!.kid)).toBe(true);
     expect((await listIdentityJwks("invocation")).keys.some((key) => key.kid === invocation!.kid)).toBe(true);
     expect((await listIdentityJwks("session")).keys.some((key) => key.kid === invocation!.kid)).toBe(false);
 
@@ -226,7 +225,7 @@ suite("Core identity key ring", () => {
 
     const activeAfterRewrap = (await getIdentitySigningKeyStatus()).find((key) => key.purpose === "invocation" && key.state === "active")!;
     expect(await revokeIdentitySigningKey({ kid: activeAfterRewrap.kid, reason: "integration test" })).toBe(true);
-    expect((await listIdentityJwks()).keys.some((key) => key.kid === activeAfterRewrap.kid)).toBe(false);
+    expect((await listIdentityJwks("invocation")).keys.some((key) => key.kid === activeAfterRewrap.kid)).toBe(false);
     expect((await getIdentitySigningKeyStatus()).filter((key) => key.purpose === "invocation" && key.state === "active")).toHaveLength(1);
 
     await sql`

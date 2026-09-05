@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createMcpRoutes } from "@valentinkolb/cloud/api";
 import { type AuthContext, auth, v } from "@valentinkolb/cloud/server";
 import { oauthTokens, serviceAccounts } from "@valentinkolb/cloud/services";
-import { clearOAuthVerifierCachesForTest } from "@valentinkolb/cloud/services/oauth-tokens";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
@@ -70,18 +69,25 @@ const adminActor = (id: string) => ({ id, uid: `oauth-admin-${id}`, provider: "l
 
 const createSessionToken = createTestSession;
 
-const waitForAdvisoryWaiter = async (key: number): Promise<void> => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const [row] = await sql<{ waiting: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1 FROM pg_locks
-        WHERE locktype = 'advisory' AND granted = false AND objid = ${key}::oid
-      ) AS waiting
-    `;
-    if (row?.waiting) return;
-    await Bun.sleep(10);
-  }
-  throw new Error("Timed out waiting for the deterministic OAuth issuance interleaving");
+// Exercise real code consumption and Core issuance, never a test-only signing bypass.
+const createGrantedTokens = async (params: Omit<Parameters<typeof oauth.tokens.createTokens>[0], "authorityGrant">) => {
+  const redirectUri = params.client.redirectUris[0]!;
+  const code = await oauth.codes.create({
+    clientId: params.client.clientId,
+    userId: params.userId,
+    redirectUri,
+    scopes: params.scopes ?? params.client.scopes,
+    resource: params.resource ?? undefined,
+  });
+  const consumed = await oauth.codes.consume({
+    code,
+    clientId: params.client.clientId,
+    client: params.client,
+    redirectUri,
+    resource: params.resource ?? undefined,
+  });
+  if (!consumed) throw new Error("Test authorization code was rejected");
+  return oauth.tokens.createTokens({ ...params, audiences: consumed.audiences, authorityGrant: consumed.authorityGrant });
 };
 
 const requestClientCredentialsToken = async (params: { clientId: string; clientSecret: string; scope?: string; resource?: string }) => {
@@ -144,10 +150,9 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const tokens = await oauth.tokens.createTokens({
+      const tokens = await createGrantedTokens({
         userId,
         client: created.data,
-        issuer: "http://localhost:3000",
       });
 
       const verified =
@@ -175,361 +180,6 @@ suite("OAuth resource access tokens", () => {
     }
   });
 
-  test("rotates signing keys while old one-hour JWTs remain verifiable during grace", async () => {
-    const userId = await insertUser();
-    let clientId: string | null = null;
-
-    try {
-      const created = await oauth.clients.create({
-        actor: adminActor(userId),
-        data: {
-          name: `Rotation client ${crypto.randomUUID()}`,
-          redirectUris: ["https://client.example.test/callback"],
-          scopes: ["openid", "read"],
-          audiences: ["cloud"],
-          allowedProfiles: ["user"],
-          accessMode: "profiles",
-          allowedUserIds: [],
-          allowedGroupIds: [],
-          isPublic: false,
-        },
-      });
-      expect(created.ok).toBe(true);
-      if (!created.ok) return;
-      clientId = created.data.id;
-
-      const first = await oauth.tokens.createTokens({ userId, client: created.data, issuer: "http://localhost:3000" });
-      const firstKid = jose.decodeProtectedHeader(first.accessToken).kid!;
-      await sql`UPDATE oauth.keys SET created_at = now() - INTERVAL '31 days' WHERE kid = ${firstKid}`;
-
-      const second = await oauth.tokens.createTokens({ userId, client: created.data, issuer: "http://localhost:3000" });
-      const secondKid = jose.decodeProtectedHeader(second.accessToken).kid!;
-      expect(secondKid).not.toBe(firstKid);
-      expect(jose.decodeJwt(second.accessToken).sub).toBe(userId);
-      const [retired] = await sql<{ private_key: string }[]>`SELECT private_key FROM oauth.keys WHERE kid = ${firstKid}`;
-      expect(retired?.private_key).toBe("");
-
-      expect(await oauth.tokens.verifyAccessToken({ token: first.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
-      expect(await oauth.tokens.verifyAccessToken({ token: second.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
-      const jwks = await oauth.tokens.getJwks();
-      expect(jwks.keys.map((key) => key.kid)).toEqual(expect.arrayContaining([firstKid, secondKid]));
-
-      await sql`UPDATE oauth.keys SET retired_at = now() - INTERVAL '3 hours' WHERE kid = ${firstKid}`;
-      expect(await oauth.tokens.cleanupSigningKeys()).toBeGreaterThanOrEqual(1);
-      oauth.tokens.clearOAuthVerifierCacheForTest();
-      expect(await oauth.tokens.verifyAccessToken({ token: first.accessToken, issuer: "http://localhost:3000" })).toBeNull();
-      expect(await oauth.tokens.verifyAccessToken({ token: second.accessToken, issuer: "http://localhost:3000" })).not.toBeNull();
-    } finally {
-      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
-  test("cuts every replica over only after Core readiness and the database issuance lock", async () => {
-    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-    let releaseLock = () => {};
-    let lockHolder: Promise<unknown> = Promise.resolve();
-    try {
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      clearOAuthVerifierCachesForTest();
-      oauth.tokens.clearOAuthVerifierCacheForTest();
-      const legacyKey = await oauth.tokens.getOrCreateKeyPair();
-
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
-      await expect(
-        oauth.tokens.ensureConfiguredIssuanceMode({
-          probe: async () => {
-            throw new Error("Core OAuth signer unavailable");
-          },
-        }),
-      ).rejects.toThrow("Core OAuth signer unavailable");
-      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
-
-      let lockReady!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        lockReady = resolve;
-      });
-      const release = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      lockHolder = sql.begin(async (tx) => {
-        await tx`SELECT mode FROM oauth.issuance_state WHERE singleton = true FOR SHARE`;
-        lockReady();
-        await release;
-      });
-      await ready;
-
-      let probes = 0;
-      const cutover = oauth.tokens.ensureConfiguredIssuanceMode({
-        probe: async () => {
-          probes += 1;
-        },
-      });
-      await Bun.sleep(50);
-      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
-      releaseLock();
-      await lockHolder;
-      lockHolder = Promise.resolve();
-      await expect(cutover).resolves.toBe("core");
-      expect(probes).toBe(1);
-      const [retired] = await sql<{ private_key: string; retired_at: Date | null }[]>`
-        SELECT private_key, retired_at FROM oauth.keys WHERE kid = ${legacyKey.kid}
-      `;
-      expect(retired?.private_key).toBe("");
-      expect(retired?.retired_at).toBeInstanceOf(Date);
-      await expect(oauth.tokens.getOrCreateKeyPair()).rejects.toThrow("disabled by the database cutover");
-    } finally {
-      releaseLock();
-      await lockHolder.catch(() => undefined);
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      clearOAuthVerifierCachesForTest();
-      oauth.tokens.clearOAuthVerifierCacheForTest();
-      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
-    }
-  });
-
-  test("lets an in-flight legacy authorization code finish before the global cutover", async () => {
-    const userId = await insertUser();
-    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-    const lockKey = 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
-    const suffix = crypto.randomUUID().replaceAll("-", "");
-    const functionName = `test_code_cutover_${suffix}`;
-    const triggerName = `test_code_cutover_trigger_${suffix}`;
-    let releaseLock = () => {};
-    let lockHolder: Promise<unknown> = Promise.resolve();
-    let clientId: string | null = null;
-    try {
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      const created = await oauth.clients.create({
-        actor: adminActor(userId),
-        data: {
-          name: `Code cutover ${crypto.randomUUID()}`,
-          redirectUris: ["https://client.example.test/callback"],
-          scopes: ["openid"],
-          audiences: ["cloud"],
-          allowedProfiles: ["user"],
-          accessMode: "profiles",
-          allowedUserIds: [],
-          allowedGroupIds: [],
-          isPublic: false,
-        },
-      });
-      expect(created.ok).toBe(true);
-      if (!created.ok) return;
-      clientId = created.data.id;
-      const code = await oauth.codes.create({
-        clientId: created.data.clientId,
-        userId,
-        redirectUri: "https://client.example.test/callback",
-        scopes: ["openid"],
-      });
-      const consumed = await oauth.codes.consume({
-        code,
-        clientId: created.data.clientId,
-        client: created.data,
-        redirectUri: "https://client.example.test/callback",
-      });
-      expect(consumed).not.toBeNull();
-      if (!consumed) return;
-
-      await sql.unsafe(`
-        CREATE FUNCTION oauth.${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${lockKey});
-          RETURN NEW;
-        END $$
-      `);
-      await sql.unsafe(`
-        CREATE TRIGGER ${triggerName}
-        BEFORE UPDATE OF authority_issued_at ON oauth.codes
-        FOR EACH ROW WHEN (NEW.code = '${code}')
-        EXECUTE FUNCTION oauth.${functionName}()
-      `);
-      let lockReady!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        lockReady = resolve;
-      });
-      const release = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      lockHolder = sql.begin(async (tx) => {
-        await tx`SELECT pg_advisory_xact_lock(${lockKey})`;
-        lockReady();
-        await release;
-      });
-      await ready;
-
-      const issuance = oauth.tokens.createTokens({
-        userId,
-        client: created.data,
-        issuer: "http://localhost:3000",
-        scopes: consumed.scopes,
-        authorityGrant: consumed.authorityGrant,
-      });
-      await waitForAdvisoryWaiter(lockKey);
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
-      const cutover = oauth.tokens.ensureConfiguredIssuanceMode({ probe: async () => {} });
-      await Bun.sleep(50);
-      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("legacy");
-      releaseLock();
-      await lockHolder;
-      lockHolder = Promise.resolve();
-      const [issued] = await Promise.all([issuance, cutover]);
-      expect(issued.authorityMode).toBe("legacy");
-      expect(jose.decodeProtectedHeader(issued.accessToken).alg).toBe("RS256");
-      expect(await oauth.tokens.getOAuthIssuanceMode()).toBe("core");
-      const [grant] = await sql<{ authority_issued_at: Date | null }[]>`
-        SELECT authority_issued_at FROM oauth.codes WHERE code = ${code}
-      `;
-      expect(grant?.authority_issued_at).toBeInstanceOf(Date);
-    } finally {
-      releaseLock();
-      await lockHolder.catch(() => undefined);
-      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON oauth.codes`).catch(() => undefined);
-      await sql.unsafe(`DROP FUNCTION IF EXISTS oauth.${functionName}()`).catch(() => undefined);
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      clearOAuthVerifierCachesForTest();
-      oauth.tokens.clearOAuthVerifierCacheForTest();
-      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
-      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
-  test("routes a client-credentials grant to Core when cutover wins before signing", async () => {
-    const userId = await insertUser();
-    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-    const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
-    const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
-    const originalFetch = globalThis.fetch;
-    const lockKey = 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
-    const suffix = crypto.randomUUID().replaceAll("-", "");
-    const functionName = `test_service_cutover_${suffix}`;
-    const triggerName = `test_service_cutover_trigger_${suffix}`;
-    let releaseLock = () => {};
-    let lockHolder: Promise<unknown> = Promise.resolve();
-    let clientId: string | null = null;
-    let serviceAccountId: string | null = null;
-    try {
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
-      process.env.CLOUD_APP_CREDENTIAL = "test-workload";
-      process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      const serviceAccount = await serviceAccounts.createResourceBound({
-        name: `Cutover service ${crypto.randomUUID()}`,
-        appId: "oauth-test",
-        resourceType: "fixture",
-        resourceId: crypto.randomUUID(),
-        createdBy: userId,
-      });
-      expect(serviceAccount.ok).toBe(true);
-      if (!serviceAccount.ok) return;
-      serviceAccountId = serviceAccount.data.id;
-      const created = await oauth.clients.create({
-        actor: adminActor(userId),
-        data: {
-          name: `Service cutover ${crypto.randomUUID()}`,
-          redirectUris: [],
-          scopes: ["read"],
-          audiences: ["cloud"],
-          serviceAccountId,
-          allowedProfiles: ["user"],
-          accessMode: "profiles",
-          allowedUserIds: [],
-          allowedGroupIds: [],
-          isPublic: false,
-        },
-      });
-      expect(created.ok).toBe(true);
-      if (!created.ok) return;
-      clientId = created.data.id;
-
-      await sql.unsafe(`
-        CREATE FUNCTION oauth.${functionName}() RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${lockKey});
-          RETURN NEW;
-        END $$
-      `);
-      await sql.unsafe(`
-        CREATE TRIGGER ${triggerName}
-        BEFORE INSERT ON oauth.client_credentials_authority_grants
-        FOR EACH ROW WHEN (NEW.client_id = '${created.data.clientId}')
-        EXECUTE FUNCTION oauth.${functionName}()
-      `);
-      let lockReady!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        lockReady = resolve;
-      });
-      const release = new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      lockHolder = sql.begin(async (tx) => {
-        await tx`SELECT pg_advisory_xact_lock(${lockKey})`;
-        lockReady();
-        await release;
-      });
-      await ready;
-
-      let coreGrantId: string | null = null;
-      globalThis.fetch = Object.assign(
-        async (input: RequestInfo | URL, init?: RequestInit) => {
-          const request = new Request(input, init);
-          const body = (await request.json()) as {
-            tokens: Array<{ kind: string; grant: { grantId: string; nonce: string } }>;
-          };
-          coreGrantId = body.tokens[0]!.grant.grantId;
-          await sql`
-            UPDATE oauth.client_credentials_authority_grants
-            SET consumed_at = now()
-            WHERE id = ${coreGrantId}::uuid AND nonce = ${body.tokens[0]!.grant.nonce}::uuid AND consumed_at IS NULL
-          `;
-          return Response.json({ tokens: ["core.jwt"] });
-        },
-        { preconnect: originalFetch.preconnect },
-      );
-      const issuance = oauth.tokens.createClientCredentialsToken({
-        client: created.data,
-        issuer: "http://localhost:3000",
-      });
-      await waitForAdvisoryWaiter(lockKey);
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
-      await expect(oauth.tokens.ensureConfiguredIssuanceMode({ probe: async () => {} })).resolves.toBe("core");
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "legacy";
-      releaseLock();
-      await lockHolder;
-      lockHolder = Promise.resolve();
-      const issued = await issuance;
-      expect(issued.accessToken).toBe("core.jwt");
-      expect(coreGrantId).not.toBeNull();
-      const [grant] = await sql<{ consumed_at: Date | null }[]>`
-        SELECT consumed_at FROM oauth.client_credentials_authority_grants WHERE id = ${coreGrantId}::uuid
-      `;
-      expect(grant?.consumed_at).toBeInstanceOf(Date);
-      await expect(oauth.tokens.getOrCreateKeyPair()).rejects.toThrow("disabled by the database cutover");
-    } finally {
-      releaseLock();
-      await lockHolder.catch(() => undefined);
-      globalThis.fetch = originalFetch;
-      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON oauth.client_credentials_authority_grants`).catch(() => undefined);
-      await sql.unsafe(`DROP FUNCTION IF EXISTS oauth.${functionName}()`).catch(() => undefined);
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
-      if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
-      else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
-      if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
-      else process.env.CLOUD_CORE_INTERNAL_ORIGIN = originalCoreOrigin;
-      if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
-      if (serviceAccountId) await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-    }
-  });
-
   test("publishes and verifies Core authority keys while revoked kids fail closed", async () => {
     const issuer = "http://localhost:3000";
     const kid = crypto.randomUUID();
@@ -538,10 +188,6 @@ suite("OAuth resource access tokens", () => {
     const publicJwk = { ...(await jose.exportJWK(publicKey)), alg: "RS256", kid, use: "sig" };
 
     try {
-      await sql`
-        INSERT INTO oauth.keys (id, private_key, public_key, kid, retired_at)
-        VALUES (${crypto.randomUUID()}, ${await jose.exportPKCS8(privateKey)}, ${await jose.exportSPKI(publicKey)}, ${kid}, now())
-      `;
       await sql`
         INSERT INTO auth.signing_keys (
           purpose, state, kid, alg, public_jwk, encrypted_private_jwk, encryption_key_id,
@@ -580,7 +226,6 @@ suite("OAuth resource access tokens", () => {
       expect((await oauth.tokens.getJwks()).keys.map((key) => key.kid)).not.toContain(kid);
     } finally {
       await sql`DELETE FROM auth.signing_keys WHERE kid = ${kid}`;
-      await sql`DELETE FROM oauth.keys WHERE kid = ${kid}`;
     }
   });
 
@@ -946,7 +591,6 @@ suite("OAuth resource access tokens", () => {
   test("refresh issuance reservations release unclaimed failures and fail closed after issuance", async () => {
     const userId = await insertUser();
     let clientId: string | null = null;
-    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
     try {
       const created = await oauth.clients.create({
         actor: adminActor(userId),
@@ -986,13 +630,11 @@ suite("OAuth resource access tokens", () => {
       expect(knownFamily).toMatchObject({ status: "active", revoked_reason: null });
 
       const successful = await createGrant();
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
       const rotated = await oauth.refreshTokens.rotate(successful.refreshToken, created.data, undefined, undefined, async (grant) => {
         await sql`
           UPDATE oauth.refresh_tokens SET authority_issued_at = now()
           WHERE id = ${grant.authorityGrant.tokenId}::uuid AND authority_nonce = ${grant.authorityGrant.nonce}::uuid
         `;
-        return "core";
       });
       expect(rotated.ok).toBe(true);
       if (rotated.ok) expect(rotated.refreshToken).not.toBe(successful.refreshToken);
@@ -1003,7 +645,6 @@ suite("OAuth resource access tokens", () => {
           UPDATE oauth.refresh_tokens SET authority_issued_at = now()
           WHERE id = ${grant.authorityGrant.tokenId}::uuid AND authority_nonce = ${grant.authorityGrant.nonce}::uuid
         `;
-        return "core";
       });
       expect(firstRotation.ok).toBe(true);
       if (!firstRotation.ok) return;
@@ -1018,7 +659,6 @@ suite("OAuth resource access tokens", () => {
       const inFlight = oauth.refreshTokens.rotate(firstRotation.refreshToken, created.data, undefined, undefined, async () => {
         entered();
         await callbackRelease;
-        return "legacy";
       });
       await callbackEntered;
       expect(await oauth.refreshTokens.rotate(replayRace.refreshToken, created.data)).toMatchObject({
@@ -1065,8 +705,6 @@ suite("OAuth resource access tokens", () => {
       `;
       expect(strandedFamily).toMatchObject({ status: "revoked", revoked_reason: "authority_issuance_stranded" });
     } finally {
-      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -1734,7 +1372,6 @@ suite("OAuth resource access tokens", () => {
 
   test("preserves public authority errors while releasing refresh attempts proven unclaimed", async () => {
     const userId = await insertUser();
-    const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
     const originalCredential = process.env.CLOUD_APP_CREDENTIAL;
     const originalCoreOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
     const originalFetch = globalThis.fetch;
@@ -1757,10 +1394,8 @@ suite("OAuth resource access tokens", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) return;
       clientId = created.data.id;
-      process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
       process.env.CLOUD_APP_CREDENTIAL = "test-workload";
       process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://core.internal:3000";
-      await sql`UPDATE oauth.issuance_state SET mode = 'core', cutover_at = now(), updated_at = now() WHERE singleton = true`;
       globalThis.fetch = Object.assign(async () => new Response(null, { status: 403 }), { preconnect: originalFetch.preconnect });
 
       const code = await oauth.codes.create({
@@ -1829,9 +1464,6 @@ suite("OAuth resource access tokens", () => {
       expect(unclaimedFamily?.status).toBe("active");
     } finally {
       globalThis.fetch = originalFetch;
-      await sql`UPDATE oauth.issuance_state SET mode = 'legacy', cutover_at = NULL, updated_at = now() WHERE singleton = true`;
-      if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-      else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
       if (originalCredential === undefined) delete process.env.CLOUD_APP_CREDENTIAL;
       else process.env.CLOUD_APP_CREDENTIAL = originalCredential;
       if (originalCoreOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
@@ -1852,7 +1484,7 @@ suite("OAuth resource access tokens", () => {
           name: `UserInfo client ${crypto.randomUUID()}`,
           redirectUris: ["https://client.example.test/callback"],
           scopes: ["openid", "email", "read"],
-          audiences: ["cloud"],
+          audiences: ["cloud", "http://localhost:3000/api/mcp/v1"],
           allowedProfiles: ["user"],
           accessMode: "profiles",
           allowedUserIds: [],
@@ -1864,10 +1496,9 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const tokens = await oauth.tokens.createTokens({
+      const tokens = await createGrantedTokens({
         userId,
         client: created.data,
-        issuer: "http://localhost:3000",
         scopes: ["openid", "email"],
       });
       const userInfo = (token: string) => oauthRoutes.request("/oauth/userinfo", { headers: { authorization: `Bearer ${token}` } });
@@ -1878,18 +1509,16 @@ suite("OAuth resource access tokens", () => {
       expect(await valid.json()).toMatchObject({ id: userId });
       expect((await userInfo(tokens.idToken!)).status).toBe(401);
 
-      const noOpenId = await oauth.tokens.createTokens({
+      const noOpenId = await createGrantedTokens({
         userId,
         client: created.data,
-        issuer: "http://localhost:3000",
         scopes: ["read"],
       });
       expect((await userInfo(noOpenId.accessToken)).status).toBe(403);
 
-      const resourceBound = await oauth.tokens.createTokens({
+      const resourceBound = await createGrantedTokens({
         userId,
         client: created.data,
-        issuer: "http://localhost:3000",
         scopes: ["openid"],
         audiences: ["http://localhost:3000/api/mcp/v1"],
         resource: "http://localhost:3000/api/mcp/v1",
@@ -1933,10 +1562,9 @@ suite("OAuth resource access tokens", () => {
       if (!created.ok) return;
       clientId = created.data.id;
 
-      const issued = await oauth.tokens.createTokens({
+      const issued = await createGrantedTokens({
         userId,
         client: created.data,
-        issuer: "http://localhost:3000",
         scopes: ["openid", "offline_access", "read"],
         issueRefreshToken: true,
       });

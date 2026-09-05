@@ -1,18 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   issueOAuthTokenBatch,
   OAuthAuthorityGrantRejectedError,
   type OAuthTokenRequest,
-  oauthIssuanceMode,
   probeOAuthTokenAuthority,
 } from "./token-authority";
-
-const originalMode = process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-
-afterEach(() => {
-  if (originalMode === undefined) delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-  else process.env.CLOUD_OAUTH_ISSUANCE_MODE = originalMode;
-});
 
 const request: OAuthTokenRequest = {
   kind: "user_access",
@@ -21,15 +13,6 @@ const request: OAuthTokenRequest = {
 };
 
 describe("OAuth Core token authority client", () => {
-  test("keeps legacy issuance as the rolling-upgrade default and rejects invalid modes", () => {
-    delete process.env.CLOUD_OAUTH_ISSUANCE_MODE;
-    expect(oauthIssuanceMode()).toBe("legacy");
-    process.env.CLOUD_OAUTH_ISSUANCE_MODE = "core";
-    expect(oauthIssuanceMode()).toBe("core");
-    process.env.CLOUD_OAUTH_ISSUANCE_MODE = "both";
-    expect(oauthIssuanceMode).toThrow("must be legacy or core");
-  });
-
   test("sends one closed batch with workload authentication", async () => {
     const seen: Request[] = [];
     const tokens = await issueOAuthTokenBatch([request], {

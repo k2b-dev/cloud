@@ -10,7 +10,7 @@ updated: 2026-09-04
 
 # Verify OAuth upgrade compatibility
 
-Run this check before removing OAuth migration compatibility. It exercises
+Run this check to verify the coordinated OAuth hard cut. It exercises
 the public HTTP protocol against the actual pre-JWT implementation, upgrades
 the same database, and repeats the requests against Core-owned issuance.
 A second scenario starts with an empty database and current code.
@@ -65,8 +65,8 @@ evidence with the exact source changes used for the run.
 | Refresh | Rotation, scope reduction, replay rejection, family revocation, and exact resource binding work through HTTP. |
 | Machine clients | Client credentials retain resource-service-account identity; invalid secrets, scopes, and resources are rejected. |
 | Dynamic clients | Registration, explicit consent, PKCE, and resource-bound refresh work. A resource token cannot authenticate as a general Cloud session. |
-| Upgrade | Existing client IDs/secrets, unconsumed codes, refresh families, and unexpired legacy access tokens remain usable after migration. |
-| Authority cutover | Core readiness precedes the durable issuance cutover; legacy private signing material is erased. |
+| Upgrade | Existing client IDs/secrets, unconsumed codes and refresh families remain usable. Old OAuth JWTs are rejected by Cloud and by the reference client after its JWKS refresh. |
+| Authority cutover | Core is the sole issuer; OAuth startup checks readiness and the migration removes obsolete signing tables. |
 | Browser logout | Explicit session revocation rejects old opaque and current JWT sessions; a new login returns a usable JWT cookie without revoking OAuth grants. |
 
 For the pre/post comparison, timestamps and fresh token identifiers are not
@@ -89,10 +89,11 @@ migration marker and session families, verify the one-time invalidation under
 concurrent migration, and prove that another migration preserves new logins.
 OAuth access tokens, codes, and refresh grants remain usable after browser logout.
 
-Accepting a coordinated browser logout removes the need to wait for old browser
-sessions to expire. It does not permit dropping OAuth verification keys while
-access tokens remain valid, discarding refresh grants, or skipping background
-credential migrations. See [Request identity](/en/docs/identity/authentication)
+The coordinated hard cut intentionally invalidates old browser sessions and
+old OAuth JWTs. Refresh grants and client registrations are not discarded.
+External clients can retain old public keys in their own warm caches; the
+reference client explicitly reloads JWKS to verify the new publication set.
+See [Request identity](/en/docs/identity/authentication)
 and [OAuth clients and flows](/en/docs/identity/oauth).
 
 ## What remains a deployment check

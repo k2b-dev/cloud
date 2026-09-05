@@ -46,13 +46,8 @@ export type Mandate = {
 
 export type MandateInteractiveAuthority = { kind: "interactive"; userId: string };
 export type MandateAdminAuthority = { kind: "admin"; userId: string };
-export type MandateSystemAuthority = {
-  kind: "system";
-  migration: "ai.chat-task" | "mail.incoming-automation";
-  sponsorUserId: string;
-};
 export type MandateWorkloadAuthority = { kind: "workload"; ownerAppId: string };
-export type MandateCreateAuthority = MandateInteractiveAuthority | MandateAdminAuthority | MandateSystemAuthority;
+export type MandateCreateAuthority = MandateInteractiveAuthority | MandateAdminAuthority;
 export type MandateMutationAuthority = MandateInteractiveAuthority | MandateAdminAuthority | MandateWorkloadAuthority;
 
 export type MandateMetricName =
@@ -214,17 +209,6 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
 const canActForSubject = (authority: MandateInteractiveAuthority | MandateAdminAuthority, subject: MandateSubject): boolean =>
   authority.kind === "admin" || (subject.type === "user" && subject.id === authority.userId);
 
-const canCreateForSubject = (
-  authority: MandateCreateAuthority,
-  workload: { subject: MandateSubject; ownerAppId: string; workloadType: string },
-): boolean => {
-  if (authority.kind !== "system") return canActForSubject(authority, workload.subject);
-  if (workload.subject.type !== "user" || workload.subject.id !== authority.sponsorUserId) return false;
-  return authority.migration === "ai.chat-task"
-    ? workload.ownerAppId === "core" && workload.workloadType === "ai.chat-task"
-    : workload.ownerAppId === "mail" && workload.workloadType === "incoming.automation";
-};
-
 const parsePolicyForWorkload = (
   policy: unknown,
   workload: { subject: MandateSubject; ownerAppId: string; workloadType: string },
@@ -260,14 +244,10 @@ const mutationAuditMetadata = (authority: MandateMutationAuthority, metadata: Re
 });
 
 const createAuditActor = (authority: MandateCreateAuthority): { userId: string } | null =>
-  authority.kind !== "system" && UUID.safeParse(authority.userId).success ? { userId: authority.userId } : null;
+  UUID.safeParse(authority.userId).success ? { userId: authority.userId } : null;
 
 const createAuditMetadata = (authority: MandateCreateAuthority): Record<string, unknown> =>
-  authority.kind === "system"
-    ? { provenance: "system-migration", migration: authority.migration, sponsorUserId: authority.sponsorUserId }
-    : authority.kind === "admin"
-      ? { adminAction: true }
-      : {};
+  authority.kind === "admin" ? { adminAction: true } : {};
 
 const auditedMutation = <T>(
   options: { db?: SQL },
@@ -330,7 +310,7 @@ const createMandateInDb = async (
   },
   db: SQL,
 ): Promise<Result<Mandate>> => {
-  const authorityUserId = input.authority.kind === "system" ? input.authority.sponsorUserId : input.authority.userId;
+  const authorityUserId = input.authority.userId;
   if (!UUID.safeParse(authorityUserId).success || !UUID.safeParse(input.subject.id).success) {
     return fail(err.badInput("Invalid mandate subject"));
   }
@@ -338,7 +318,7 @@ const createMandateInDb = async (
   const workloadType = WorkloadTypeSchema.safeParse(input.workloadType);
   const workloadId = WorkloadIdSchema.safeParse(input.workloadId);
   if (!ownerAppId.success || !workloadType.success || !workloadId.success) return fail(err.badInput("Invalid mandate workload"));
-  if (!canCreateForSubject(input.authority, input)) return fail(err.forbidden("Cannot create a mandate for this subject"));
+  if (!canActForSubject(input.authority, input.subject)) return fail(err.forbidden("Cannot create a mandate for this subject"));
   const policy = parsePolicyForWorkload(input.policy, input);
   if (!policy.ok) return policy;
   const expiresAt = input.expiresAt == null ? null : new Date(input.expiresAt);
@@ -381,7 +361,7 @@ const createMandateInDb = async (
       ${expiresAt},
       CASE WHEN ${ownerConfirmation} THEN NULL ELSE now() END,
       CASE WHEN ${ownerConfirmation} THEN now() + (${confirmationTtlSeconds} * interval '1 second') ELSE NULL END,
-      ${input.authority.kind === "system" ? null : input.authority.userId}::uuid
+      ${input.authority.userId}::uuid
     )
     ON CONFLICT DO NOTHING
     RETURNING *

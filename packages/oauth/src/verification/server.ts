@@ -59,15 +59,15 @@ if (core) {
   }
 } else {
   assert(!process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY, "OAuth must not receive Core's KEK");
+  if (current) {
+    const { probeOAuthTokenAuthority } = await import("../service/token-authority");
+    await probeOAuthTokenAuthority();
+  }
   const { migrate } = await import("../migrate");
   await migrate();
   const { default: oauthRoutes } = await import("../oauth");
   const { default: adminRoutes } = await import("../api");
   const { ConsentDecisionSchema, completeConsent } = await import("../frontend/consent-action");
-  if (current) {
-    const tokens = await import("../service/tokens");
-    await tokens.ensureConfiguredIssuanceMode();
-  }
   router.route("/", oauthRoutes);
   router.route("/api/oauth/admin/clients", adminRoutes);
   router.post("/oauth/consent", rateLimit(), auth.requireRole("authenticated"), auth.requireUser(), v("form", ConsentDecisionSchema), (c) =>

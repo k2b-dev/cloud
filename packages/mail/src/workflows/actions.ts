@@ -1,4 +1,4 @@
-import { decryptSecret, notifications } from "@valentinkolb/cloud/services";
+import { notifications } from "@valentinkolb/cloud/services";
 import type {
   ErasedWorkflowAction,
   WorkflowActionContext,
@@ -248,12 +248,9 @@ const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: st
   throw new Error(`${key} must resolve to an object`);
 };
 const workflowIntegrationRequest = async (ctx: WorkflowActionContext) => {
-  const [row] = await sql<
-    { mandate_id: string | null; mandate_revision: string | number | null; encrypted_integration_token: string | null }[]
-  >`
+  const [row] = await sql<{ mandate_id: string | null; mandate_revision: string | number | null }[]>`
     SELECT automation.mandate_id,
-           mandate.revision AS mandate_revision,
-           automation.encrypted_integration_token
+           mandate.revision AS mandate_revision
     FROM workflows.run run
     JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
     LEFT JOIN auth.mandates mandate ON mandate.id = automation.mandate_id
@@ -266,11 +263,7 @@ const workflowIntegrationRequest = async (ctx: WorkflowActionContext) => {
       requestId: ctx.runId,
     };
   }
-  if (!row?.encrypted_integration_token) {
-    throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
-  }
-  const token = await decryptSecret<string>(row.encrypted_integration_token);
-  return { authorization: `Bearer ${token}`, requestId: ctx.runId };
+  throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
 };
 const appActionResult = (result: Awaited<ReturnType<typeof createSpaceEventOnce>>): ActionResult =>
   result.ok
