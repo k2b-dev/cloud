@@ -6,7 +6,6 @@ import {
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
-  syncOps,
   trace,
 } from "@valentinkolb/cloud/services";
 import {
@@ -19,8 +18,6 @@ import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contr
 import { sha256Text } from "./canonical";
 import { createBlobReadable, getStoredBlob } from "./message-blobs";
 import { splitSearchText } from "./search-chunks";
-
-const unregisterSyncOps: Array<() => void> = [];
 
 export { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 
@@ -450,7 +447,6 @@ const extractionJob = lazySync((sync) =>
 );
 let extractionJobWorker: Worker | undefined;
 const startExtractionJob = async (): Promise<void> => {
-  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:extract-attachment", kind: "job", store: extractionJob().deadLetters }));
   extractionJobWorker = await extractionJob().process({}, async (ctx) => {
     const spanKey = trace.syncSpanKey("job", "mail:extract-attachment", ctx.jobId);
     await trace.start({
@@ -461,7 +457,7 @@ const startExtractionJob = async (): Promise<void> => {
       spanKey,
       attributes: { "cloud.mail.extractor_version": MAIL_ATTACHMENT_EXTRACTOR_VERSION },
     });
-    const result = await extractionTasks.run(() => extractMailAttachmentBlob(ctx.input.blobId, ctx.signal));
+    const result = await extractMailAttachmentBlob(ctx.input.blobId, ctx.signal);
     if (result) await trace.end({ spanKey, summary: result });
   });
 };
@@ -554,7 +550,7 @@ const extractionRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     extractionTasks.open();
     await startExtractionJob();
-    unregisterSyncOps.push(syncOps.registerScheduler({ name: "mail:attachment-extraction", scheduler: extractionScheduler() }));
+
     await extractionScheduler().create({
       id: "mail:attachment-extraction:recover",
       cron: "*/5 * * * *",
@@ -579,9 +575,7 @@ const extractionRuntimeLifecycle = createRuntimeLifecycle({
           extractionTasks,
           [extractionJobWorker].filter((worker): worker is Worker => worker !== undefined),
         ),
-    ]).finally(() => {
-      for (const unregister of unregisterSyncOps.splice(0)) unregister();
-    });
+    ]);
   },
 });
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { type LogEntry, logger, get as settingsGet, settingsService, syncOps } from "@valentinkolb/cloud/services";
+import { type LogEntry, logger, get as settingsGet, settingsService } from "@valentinkolb/cloud/services";
 import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
 import { decryptValue, encryptValue } from "@valentinkolb/cloud/services/settings/crypto";
 import { sql } from "bun";
@@ -621,8 +621,6 @@ let jobWorker: Worker | undefined;
 let scheduleWorker: Worker | undefined;
 
 const startWorkers = async (): Promise<void> => {
-  syncOps.registerDeadLetters({ name: "notebooks:snapshot:s3", kind: "job", store: snapshotJob().deadLetters });
-  syncOps.registerScheduler({ name: "notebooks:snapshot:s3", scheduler: snapshotScheduler() });
   jobWorker ??= await snapshotJob().process({}, async (ctx) => {
     ctx.signal.throwIfAborted();
     await runScheduledSnapshots(async () => {

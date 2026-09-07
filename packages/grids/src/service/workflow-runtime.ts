@@ -1,4 +1,3 @@
-import { syncOps } from "@valentinkolb/cloud/services";
 /**
  * What Grids still owns now that the kernel owns runs.
  *
@@ -79,7 +78,6 @@ const workflowScheduler = lazySync((sync) =>
   sync.scheduler({ id: "grids:workflows", delivery: { maxAttempts: 4, backoffMs: [5_000, 20_000, 60_000] } }),
 );
 let scheduleWorker: Worker | undefined;
-let unregisterScheduler: (() => void) | undefined;
 const RECONCILE_INTERVAL_MS = 60_000;
 /** Short, because a button press waits for it. Dispatch is cheap when there is nothing to do. */
 const WORKER_INTERVAL_MS = 1_000;
@@ -659,7 +657,6 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
       timezone: "UTC",
       process: cleanupExpiredEvidenceExports,
     });
-    unregisterScheduler ??= syncOps.registerScheduler({ name: "grids:workflows", scheduler: workflowScheduler() });
     scheduleWorker = await workflowScheduler().process();
     startRuntimeEventReader(eventCursor);
     workerTimer = setInterval(() => {
@@ -694,8 +691,6 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
       async () => {
         await scheduleWorker?.drain({ timeoutMs: 30_000 });
         scheduleWorker = undefined;
-        unregisterScheduler?.();
-        unregisterScheduler = undefined;
       },
     ]);
     draining = false;

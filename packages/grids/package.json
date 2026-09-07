@@ -44,6 +44,7 @@
     "zxing-wasm": "3.1.2"
   },
   "devDependencies": {
+    "@nats-io/jetstream": "catalog:",
     "@types/bun": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:",

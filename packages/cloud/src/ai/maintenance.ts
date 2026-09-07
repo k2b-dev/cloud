@@ -2,7 +2,7 @@ import type { Worker } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
 import { coreSettings } from "../services";
 import { logger, trace } from "../services/logging";
-import { syncOps } from "../services/sync-ops";
+
 import { enrichDirtyAiConversations } from "./enrich";
 import { learnAiMemoriesFromPrivateChats } from "./memory-learning";
 
@@ -30,7 +30,7 @@ const enrichJob = lazySync((sync) => {
     owner: "cloud",
     delivery: { ackWaitMs: 900_000, maxAttempts: 3, backoffMs: [2_000, 4_000] },
   });
-  syncOps.registerDeadLetters({ name: "ai:chat:enrich", kind: "job", store: handle.deadLetters });
+
   return handle;
 });
 const reindexJob = lazySync((sync) => {
@@ -39,7 +39,7 @@ const reindexJob = lazySync((sync) => {
     owner: "cloud",
     delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2_000] },
   });
-  syncOps.registerDeadLetters({ name: "ai:chat:reindex", kind: "job", store: handle.deadLetters });
+
   return handle;
 });
 const memoryLearningJob = lazySync((sync) => {
@@ -48,7 +48,7 @@ const memoryLearningJob = lazySync((sync) => {
     owner: "cloud",
     delivery: { ackWaitMs: 900_000, maxAttempts: 3, backoffMs: [2_000, 4_000] },
   });
-  syncOps.registerDeadLetters({ name: "ai:memory:learn", kind: "job", store: handle.deadLetters });
+
   return handle;
 });
 const workers: Worker[] = [];
@@ -115,7 +115,7 @@ const startWorkers = async (): Promise<void> => {
 
 const aiScheduler = lazySync((sync) => {
   const handle = sync.scheduler({ id: "ai-maintenance", owner: "cloud", delivery: { maxAttempts: 1 } });
-  syncOps.registerScheduler({ name: "ai-maintenance", scheduler: handle });
+
   return handle;
 });
 

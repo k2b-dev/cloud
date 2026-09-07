@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { ScheduleContext, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { syncOps, toPgTextArray } from "@valentinkolb/cloud/services";
+import { toPgTextArray } from "@valentinkolb/cloud/services";
 import { type SQL, type SQLQuery, sql } from "bun";
 import {
   EVIDENCE_EXPORT_SECTIONS,
@@ -1089,9 +1089,7 @@ const exportJob = lazySync((sync) =>
   }),
 );
 let exportWorker: Worker | undefined;
-let unregisterDeadLetters: (() => void) | undefined;
 export const startEvidenceExportJobs = async (): Promise<void> => {
-  unregisterDeadLetters ??= syncOps.registerDeadLetters({ name: "grids:evidence-export", kind: "job", store: exportJob().deadLetters });
   exportWorker ??= await exportJob().process(
     {
       onError: async ({ context, error }) => {
@@ -1231,8 +1229,6 @@ export const download = async (
 export const stopEvidenceExportJobs = async (): Promise<void> => {
   await exportWorker?.drain({ timeoutMs: JOB_LEASE_MS });
   exportWorker = undefined;
-  unregisterDeadLetters?.();
-  unregisterDeadLetters = undefined;
 };
 
 export const evidenceExportLimits = {

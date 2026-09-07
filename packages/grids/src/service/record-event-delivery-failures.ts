@@ -1,22 +1,6 @@
 import { sql } from "bun";
 
-export const RECORD_EVENT_MAX_INVALID_ATTEMPTS = 5;
-
 export type RecordEventDeliveryFailure = {
-  attempts: number;
-  dead: boolean;
-};
-
-export type RecordEventDeliveryFailureInput = {
-  baseId: string;
-  consumerGroup: string;
-  eventId: string;
-  payload: string | null;
-  error: string;
-  maxAttempts: number;
-};
-
-export type DeadRecordEventDeliveryFailure = {
   id: string;
   baseId: string;
   consumerGroup: string;
@@ -24,65 +8,13 @@ export type DeadRecordEventDeliveryFailure = {
   payload: string | null;
   error: string;
   attempts: number;
-  deadAt: string;
+  status: "retrying" | "dead";
+  deadAt: string | null;
 };
 
-export const recordRecordEventDeliveryFailure = async (input: RecordEventDeliveryFailureInput): Promise<RecordEventDeliveryFailure> => {
-  const maxAttempts = Math.max(1, input.maxAttempts);
-  const [row] = await sql<Array<{ attempts: number | string; status: "retrying" | "dead" }>>`
-    INSERT INTO grids.record_event_delivery_failures (
-      base_id,
-      consumer_group,
-      event_id,
-      payload,
-      error,
-      status,
-      dead_at
-    ) VALUES (
-      ${input.baseId}::uuid,
-      ${input.consumerGroup},
-      ${input.eventId},
-      ${input.payload},
-      ${input.error},
-      ${maxAttempts === 1 ? "dead" : "retrying"},
-      ${maxAttempts === 1 ? sql`now()` : null}
-    )
-    ON CONFLICT (base_id, consumer_group, event_id) DO UPDATE SET
-      payload = CASE
-        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.payload
-        ELSE EXCLUDED.payload
-      END,
-      error = CASE
-        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.error
-        ELSE EXCLUDED.error
-      END,
-      attempts = CASE
-        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.attempts
-        ELSE grids.record_event_delivery_failures.attempts + 1
-      END,
-      status = CASE
-        WHEN grids.record_event_delivery_failures.status = 'dead'
-          OR grids.record_event_delivery_failures.attempts + 1 >= ${maxAttempts} THEN 'dead'
-        ELSE 'retrying'
-      END,
-      last_seen_at = now(),
-      dead_at = CASE
-        WHEN grids.record_event_delivery_failures.status = 'dead'
-          OR grids.record_event_delivery_failures.attempts + 1 >= ${maxAttempts}
-          THEN COALESCE(grids.record_event_delivery_failures.dead_at, now())
-        ELSE NULL
-      END
-    RETURNING attempts, status
-  `;
-  if (!row) throw new Error("Record event delivery failure was not persisted");
-  return { attempts: Number(row.attempts), dead: row.status === "dead" };
-};
-
-export const recordInvalidRecordEventDelivery = (
-  input: Omit<RecordEventDeliveryFailureInput, "maxAttempts">,
-): Promise<RecordEventDeliveryFailure> => recordRecordEventDeliveryFailure({ ...input, maxAttempts: RECORD_EVENT_MAX_INVALID_ATTEMPTS });
-
-export const listDeadRecordEventDeliveryFailures = async (baseId: string, limit = 100): Promise<DeadRecordEventDeliveryFailure[]> => {
+// Historical workflow failures remain available for inspection and replay.
+// New workflow deliveries use the Sync DLQ; PostgreSQL still owns outbox failures.
+export const listRecordEventDeliveryFailures = async (baseId: string, limit = 100): Promise<RecordEventDeliveryFailure[]> => {
   const rows = await sql<
     Array<{
       id: string;
@@ -92,13 +24,14 @@ export const listDeadRecordEventDeliveryFailures = async (baseId: string, limit 
       payload: string | null;
       error: string;
       attempts: number | string;
-      dead_at: Date;
+      status: "retrying" | "dead";
+      dead_at: Date | null;
     }>
   >`
-    SELECT id::text, base_id::text, consumer_group, event_id, payload, error, attempts, dead_at
+    SELECT id::text, base_id::text, consumer_group, event_id, payload, error, attempts, status, dead_at
     FROM grids.record_event_delivery_failures
-    WHERE base_id = ${baseId}::uuid AND status = 'dead'
-    ORDER BY dead_at DESC, id DESC
+    WHERE base_id = ${baseId}::uuid
+    ORDER BY last_seen_at DESC, id DESC
     LIMIT ${Math.max(1, Math.min(limit, 500))}
   `;
   return rows.map((row) => ({
@@ -109,11 +42,12 @@ export const listDeadRecordEventDeliveryFailures = async (baseId: string, limit 
     payload: row.payload,
     error: row.error,
     attempts: Number(row.attempts),
-    deadAt: row.dead_at.toISOString(),
+    status: row.status,
+    deadAt: row.dead_at?.toISOString() ?? null,
   }));
 };
 
-export const getDeadRecordEventDeliveryFailure = async (baseId: string, id: string): Promise<DeadRecordEventDeliveryFailure | null> => {
+export const getRecordEventDeliveryFailure = async (baseId: string, id: string): Promise<RecordEventDeliveryFailure | null> => {
   const [row] = await sql<
     Array<{
       id: string;
@@ -123,12 +57,13 @@ export const getDeadRecordEventDeliveryFailure = async (baseId: string, id: stri
       payload: string | null;
       error: string;
       attempts: number | string;
-      dead_at: Date;
+      status: "retrying" | "dead";
+      dead_at: Date | null;
     }>
   >`
-    SELECT id::text, base_id::text, consumer_group, event_id, payload, error, attempts, dead_at
+    SELECT id::text, base_id::text, consumer_group, event_id, payload, error, attempts, status, dead_at
     FROM grids.record_event_delivery_failures
-    WHERE base_id = ${baseId}::uuid AND id = ${id}::uuid AND status = 'dead'
+    WHERE base_id = ${baseId}::uuid AND id = ${id}::uuid
   `;
   return row
     ? {
@@ -139,7 +74,8 @@ export const getDeadRecordEventDeliveryFailure = async (baseId: string, id: stri
         payload: row.payload,
         error: row.error,
         attempts: Number(row.attempts),
-        deadAt: row.dead_at.toISOString(),
+        status: row.status,
+        deadAt: row.dead_at?.toISOString() ?? null,
       }
     : null;
 };

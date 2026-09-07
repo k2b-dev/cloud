@@ -137,6 +137,28 @@ describe("Core Sync operations broker", () => {
     expect(forwarded).toBeTrue();
   });
 
+  test("binds dead-letter invocations to their queue or job kind", async () => {
+    const operations: string[] = [];
+    const forwarded: string[] = [];
+    const routes = mount({
+      signInvocation: async (params) => {
+        operations.push(params.operation);
+        return signInvocationToken(params);
+      },
+      fetch: async (input) => {
+        forwarded.push(String(input));
+        return Response.json({ deleted: true });
+      },
+    });
+    for (const kind of ["queue", "job"]) {
+      const path = `/dead-letters/${kind}/same/message`;
+      expect((await routes.request(`/api/admin/sync/mail${path}`, { method: "DELETE" })).status).toBe(200);
+      expect(operations.at(-1)).toBe(syncInvocationOperation("DELETE", path));
+      expect(forwarded.at(-1)).toBe(`http://app-mail:3000/_internal/sync${path}`);
+    }
+    expect(operations[0]).not.toBe(operations[1]);
+  });
+
   test("rejects routes outside the operations allowlist before registry lookup", async () => {
     let lookups = 0;
     const routes = mount({
@@ -149,6 +171,9 @@ describe("Core Sync operations broker", () => {
       ["/resources", "POST"],
       ["/secrets", "GET"],
       ["/dead-letters/a/b", "PATCH"],
+      ["/dead-letters/mail/requeue", "POST"],
+      ["/dead-letters/mail/message", "DELETE"],
+      ["/dead-letters/topic/mail/requeue", "POST"],
     ]) {
       expect((await routes.request(`/api/admin/sync/mail${path}`, { method })).status).toBe(404);
     }
@@ -163,7 +188,7 @@ describe("Core Sync operations broker", () => {
         return signInvocationToken(params);
       },
     });
-    const response = await routes.request("/api/admin/sync/mail/dead-letters/mail/requeue", {
+    const response = await routes.request("/api/admin/sync/mail/dead-letters/queue/mail/requeue", {
       method: "POST",
       body: JSON.stringify({ messageId: "x".repeat(16_384) }),
     });

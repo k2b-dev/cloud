@@ -122,6 +122,42 @@ For an intentional large reconciliation:
 
 Do not raise only one limit: the other continues to protect the directory.
 
+## Backfill account expiry dates
+
+Use **Run FreeIPA backfill** in Accounts to fill missing or premature expiry
+dates. Each accepted run fixes its target to the configured IPA account
+lifetime, with a minimum of seven days, at 23:59:59 UTC. Retries keep that
+target even if the settings or current date change. A later expiry read from
+FreeIPA is preserved and mirrored to Cloud.
+
+The backfill uses a Sync pump with a finite PostgreSQL scan. Accounts created
+after the run's cutoff belong to a later run. The pump saves progress after
+each account job is durably accepted. Pump completion means all candidate
+jobs were submitted; directory changes may still be running.
+
+The account worker processes one account at a time and rechecks its current
+identity. A deleted account, changed provider, or changed username is skipped.
+A directory write that succeeded before a local failure is verified again
+before retrying, and PostgreSQL updates commit together.
+
+Inspect `auth:ipa:backfill` logs and the pump run in observability for failures.
+After two failed attempts, the affected account job enters the
+`auth:ipa:backfill:account` dead-letter store. Later accounts continue. Resolve
+the provider error and retry that dead letter to retain the original target.
+Disabling FreeIPA during a run fails unfinished account jobs rather than
+marking them complete. PostgreSQL continues to own account identity and the
+local expiry mirror; the pump stores the run target, cursor, and acceptance
+checkpoints.
+
+For the upgrade from the former backfill job, quiesce old submitters and
+workers before switching versions. The old `auth:ipa:backfill` job's work
+stream must contain zero messages, its consumer must have zero pending
+acknowledgments, and its dead-letter stream must be empty. Resolve any
+accepted work through the old runtime before the cutover. The new pump does
+not consume or delete old job state. Old jobs carried no saved target date,
+so a partially completed old attempt cannot be converted without recomputing
+that date.
+
 ## Failure and recovery behavior
 
 The scheduled sync has at-least-once delivery. Cloud holds a distributed
@@ -140,7 +176,7 @@ a direct pump. Consider a staged pump only after measurements show sustained
 lease or transaction pressure and only with a persisted complete snapshot,
 stable item keys, idempotent apply, and atomic finalization.
 
-The current decision is to defer pump migration. Re-evaluate it when the
+The primary snapshot sync remains outside a pump. Reevaluate it when the
 seven-day p95 transaction duration reaches 60 seconds or the p95 complete sync
 duration reaches 90 seconds (75 percent of the 120-second lease). A staged
 snapshot design would use a persisted run id plus entity/external id as the

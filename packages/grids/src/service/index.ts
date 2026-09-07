@@ -2,10 +2,10 @@ import * as access from "./access";
 import * as audit from "./audit";
 import * as baseCatalog from "./base-catalog";
 import * as bases from "./bases";
-import * as documentIssuance from "./document-issuance";
 import * as combinedAudit from "./combined-audit";
 import * as controlledDestruction from "./controlled-destruction";
 import * as customApps from "./custom-apps";
+import * as documentIssuance from "./document-issuance";
 import * as documents from "./documents";
 import * as durableHistory from "./durable-history";
 import * as emailTemplates from "./email-templates";
@@ -32,7 +32,7 @@ import {
 import * as preservationHolds from "./preservation-holds";
 import * as recordChangeFeed from "./record-change-feed";
 import * as recordComments from "./record-comments";
-import { listDeadRecordEventDeliveryFailures } from "./record-event-delivery-failures";
+import { listRecordEventDeliveryFailures } from "./record-event-delivery-failures";
 import * as recordExternalIdentity from "./record-external-identity";
 import * as recordFinalization from "./record-finalization";
 import * as recordHistory from "./record-history";
@@ -367,8 +367,8 @@ export const gridsService = {
       start: startWorkflowRuntime,
       stop: stopWorkflowRuntime,
       reconcile: reconcileWorkflowRuntime,
-      listDeadRecordEvents: listDeadRecordEventDeliveryFailures,
-      replayDeadRecordEvent: replayWorkflowRecordEventDeliveryFailure,
+      listRecordEventFailures: listRecordEventDeliveryFailures,
+      replayRecordEventFailure: replayWorkflowRecordEventDeliveryFailure,
     },
   },
   template: {

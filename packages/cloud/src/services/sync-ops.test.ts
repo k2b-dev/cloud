@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { type DeadLetter, type DeadLetterStore, NotFoundError, type ScheduleInfo, type Sync } from "@k2b/sync";
+import { type DeadLetter, type DeadLetterStore, NotFoundError, type ScheduleInfo, type Sync, type SyncControl } from "@k2b/sync";
 import { Hono } from "hono";
 import type { AuthContext } from "../server/middleware/auth";
-import { createSyncOpsRegistry, createSyncOpsRoutes, type SyncOpsRoutesDependencies } from "./sync-ops";
+import { createSyncOpsRoutes, type SyncOpsRoutesDependencies } from "./sync-ops";
 
 const ADMIN_ID = "11111111-1111-4111-8111-111111111111";
 const admin = { id: ADMIN_ID, uid: "admin", provider: "local", roles: ["admin"] } as AuthContext["Variables"]["user"];
@@ -56,8 +56,9 @@ const scheduleInfo = (id: string): ScheduleInfo => ({
   meta: { source: "test" },
 });
 
-const fakeSync = () =>
+const fakeSync = (controls: SyncControl[]) =>
   ({
+    controls: () => controls,
     health: () => ({
       state: "ready",
       connection: "connected",
@@ -73,10 +74,9 @@ const fakeSync = () =>
   }) as unknown as Sync;
 
 const harness = () => {
-  const registry = createSyncOpsRegistry();
+  const controls: SyncControl[] = [];
   const audits: AuditCall[] = [];
-  const routes = createSyncOpsRoutes(fakeSync, {
-    registry,
+  const routes = createSyncOpsRoutes(() => fakeSync(controls), {
     audit: {
       recordResultAfterSideEffect: async (params) => {
         audits.push(params as AuditCall);
@@ -95,7 +95,7 @@ const harness = () => {
     const response = await app.request(path, init);
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   };
-  return { registry, audits, json };
+  return { controls, audits, json };
 };
 
 describe("sync ops routes", () => {
@@ -107,12 +107,12 @@ describe("sync ops routes", () => {
     expect(body.resources).toEqual([expect.objectContaining({ kind: "queue", id: "mail", detail: { deadLetters: 2 } })]);
   });
 
-  test("lists every registered store with a bounded page and truncation flag", async () => {
-    const { registry, json } = harness();
+  test("lists every declared store with a bounded page and truncation flag", async () => {
+    const { controls, json } = harness();
     const mail = fakeStore([deadLetter("a"), deadLetter("b"), deadLetter("c")]);
     const jobs = fakeStore([]);
-    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store, description: "Mail deliveries" });
-    registry.registerDeadLetters({ name: "reindex", kind: "job", store: jobs.store });
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: mail.store });
+    controls.push({ namespace: "test", owner: "test", id: "reindex", kind: "job", deadLetters: jobs.store });
 
     const { status, body } = await json("/dead-letters?limit=2");
     expect(status).toBe(200);
@@ -120,7 +120,7 @@ describe("sync ops routes", () => {
       {
         name: "mail",
         kind: "queue",
-        description: "Mail deliveries",
+        description: null,
         truncated: true,
         entries: [
           {
@@ -141,19 +141,25 @@ describe("sync ops routes", () => {
   });
 
   test("bounds the payload preview", async () => {
-    const { registry, json } = harness();
-    registry.registerDeadLetters({ name: "big", kind: "queue", store: fakeStore([deadLetter("x", "y".repeat(5_000))]).store });
+    const { controls, json } = harness();
+    controls.push({
+      namespace: "test",
+      owner: "test",
+      id: "big",
+      kind: "queue",
+      deadLetters: fakeStore([deadLetter("x", "y".repeat(5_000))]).store,
+    });
     const { body } = await json("/dead-letters");
     const stores = body.stores as Array<{ entries: Array<{ dataPreview: string }> }>;
     expect(stores[0]?.entries[0]?.dataPreview.length).toBeLessThanOrEqual(1_025);
   });
 
   test("requeues with a generated idempotency key and audits the actor", async () => {
-    const { registry, audits, json } = harness();
+    const { controls, audits, json } = harness();
     const mail = fakeStore([deadLetter("a")]);
-    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store });
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: mail.store });
 
-    const { status, body } = await json("/dead-letters/mail/requeue", {
+    const { status, body } = await json("/dead-letters/queue/mail/requeue", {
       method: "POST",
       headers: { "content-type": "application/json", "x-request-id": "req-1" },
       body: JSON.stringify({ messageId: "a" }),
@@ -174,25 +180,25 @@ describe("sync ops routes", () => {
   });
 
   test("maps missing stores and entries to 404 and still audits failed mutations", async () => {
-    const { registry, audits, json } = harness();
-    registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store });
+    const { controls, audits, json } = harness();
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: fakeStore([]).store });
 
     expect(
       (
-        await json("/dead-letters/nope/requeue", {
+        await json("/dead-letters/queue/nope/requeue", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: '{"messageId":"a"}',
         })
       ).status,
     ).toBe(404);
-    const missing = await json("/dead-letters/mail/requeue", {
+    const missing = await json("/dead-letters/queue/mail/requeue", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messageId: "ghost" }),
     });
     expect(missing.status).toBe(404);
-    expect((await json("/dead-letters/mail/ghost", { method: "DELETE" })).status).toBe(404);
+    expect((await json("/dead-letters/queue/mail/ghost", { method: "DELETE" })).status).toBe(404);
     expect(audits.map((entry) => [entry.action, entry.result.ok])).toEqual([
       ["sync.dead_letter.requeue", false],
       ["sync.dead_letter.delete", false],
@@ -200,11 +206,11 @@ describe("sync ops routes", () => {
   });
 
   test("deletes a dead letter and audits it", async () => {
-    const { registry, audits, json } = harness();
+    const { controls, audits, json } = harness();
     const mail = fakeStore([deadLetter("a")]);
-    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store });
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: mail.store });
 
-    const { status, body } = await json("/dead-letters/mail/a", { method: "DELETE" });
+    const { status, body } = await json("/dead-letters/queue/mail/a", { method: "DELETE" });
     expect(status).toBe(200);
     expect(body).toEqual({ deleted: true });
     expect(mail.items).toEqual([]);
@@ -212,17 +218,23 @@ describe("sync ops routes", () => {
   });
 
   test("lists schedules tagged with their scheduler id", async () => {
-    const { registry, json } = harness();
-    registry.registerScheduler({
-      name: "mail",
+    const { controls, json } = harness();
+    controls.push({
+      namespace: "test",
+      owner: "test",
+      kind: "scheduler",
+      id: "mail",
       scheduler: {
         list: async () => [scheduleInfo("mail:sync-due")],
         runNow: async () => ({ runId: "r" }),
         awaitRun: async () => ({ completed: true }),
       },
     });
-    registry.registerScheduler({
-      name: "core",
+    controls.push({
+      namespace: "test",
+      owner: "test",
+      kind: "scheduler",
+      id: "core",
       scheduler: {
         list: async () => [scheduleInfo("core:cleanup")],
         runNow: async () => ({ runId: "r" }),
@@ -255,11 +267,14 @@ describe("sync ops routes", () => {
   });
 
   test("runs a schedule now with a generated request id, then awaits the run", async () => {
-    const { registry, audits, json } = harness();
+    const { controls, audits, json } = harness();
     const runNowCalls: Array<{ id: string; requestId: string }> = [];
     const awaitCalls: Array<{ id: string; runId: string; timeoutMs?: number }> = [];
-    registry.registerScheduler({
-      name: "mail",
+    controls.push({
+      namespace: "test",
+      owner: "test",
+      kind: "scheduler",
+      id: "mail",
       scheduler: {
         list: async () => [],
         runNow: async (input) => {
@@ -310,11 +325,29 @@ describe("sync ops routes", () => {
     expect(awaitCalls).toEqual([{ id: "mail:sync-due", runId: "run-1", timeoutMs: 100 }]);
   });
 
-  test("rejects duplicate registrations and supports unregistering", () => {
-    const registry = createSyncOpsRegistry();
-    const unregister = registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store });
-    expect(() => registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store })).toThrow(/already registered/);
-    unregister();
-    expect(registry.deadLetterStores()).toEqual([]);
+  test("distinguishes queue and job controls with the same id for list and mutations", async () => {
+    const { controls, audits, json } = harness();
+    const queue = fakeStore([deadLetter("shared")]);
+    const job = fakeStore([deadLetter("shared")]);
+    controls.push(
+      { namespace: "test", owner: "test", id: "same", kind: "queue", deadLetters: queue.store },
+      { namespace: "test", owner: "test", id: "same", kind: "job", deadLetters: job.store },
+    );
+    const listed = await json("/dead-letters");
+    expect(listed.body.stores).toEqual([
+      expect.objectContaining({ name: "same", kind: "queue" }),
+      expect.objectContaining({ name: "same", kind: "job" }),
+    ]);
+    const requeued = await json("/dead-letters/job/same/requeue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId: "shared" }),
+    });
+    expect(requeued.status).toBe(200);
+    expect(job.calls).toEqual([{ op: "requeue", messageId: "shared", idempotencyKey: String(requeued.body.idempotencyKey) }]);
+    expect(queue.calls).toEqual([]);
+    expect((await json("/dead-letters/queue/same/shared", { method: "DELETE" })).status).toBe(200);
+    expect(queue.calls).toEqual([{ op: "delete", messageId: "shared" }]);
+    expect(audits.map((entry) => entry.metadata?.kind)).toEqual(["job", "queue"]);
   });
 });

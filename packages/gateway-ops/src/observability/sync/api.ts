@@ -11,7 +11,11 @@ import { z } from "zod";
 import { syncOpsService } from "./runtime";
 import { syncOpsCredentials } from "./service";
 
-const DeadLetterParamSchema = z.object({ app: z.string().min(1).max(200), store: z.string().min(1).max(96) });
+const DeadLetterParamSchema = z.object({
+  kind: z.enum(["queue", "job"]),
+  app: z.string().min(1).max(200),
+  store: z.string().min(1).max(96),
+});
 const DeadLetterEntryParamSchema = DeadLetterParamSchema.extend({ messageId: z.string().min(1).max(256) });
 const RequeueBodySchema = z.object({ messageId: z.string().min(1).max(256) });
 const ScheduleParamSchema = z.object({
@@ -30,15 +34,15 @@ const syncApiRoutes = new Hono<AuthContext>()
   /** Dead letters, resources, and schedules of every reachable app. */
   .get("/", async (c) => respond(c, ok(await syncOpsService.overview(syncOpsCredentials(c.req.raw)))))
 
-  .post("/dead-letters/:app/:store/requeue", v("param", DeadLetterParamSchema), v("json", RequeueBodySchema), async (c) => {
-    const { app, store } = c.req.valid("param");
+  .post("/dead-letters/:app/:kind/:store/requeue", v("param", DeadLetterParamSchema), v("json", RequeueBodySchema), async (c) => {
+    const { app, kind, store } = c.req.valid("param");
     const { messageId } = c.req.valid("json");
-    return respond(c, syncOpsService.requeueDeadLetter({ appId: app, store, messageId }, syncOpsCredentials(c.req.raw)));
+    return respond(c, syncOpsService.requeueDeadLetter({ appId: app, kind, store, messageId }, syncOpsCredentials(c.req.raw)));
   })
 
-  .delete("/dead-letters/:app/:store/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {
-    const { app, store, messageId } = c.req.valid("param");
-    return respond(c, syncOpsService.deleteDeadLetter({ appId: app, store, messageId }, syncOpsCredentials(c.req.raw)));
+  .delete("/dead-letters/:app/:kind/:store/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {
+    const { app, kind, store, messageId } = c.req.valid("param");
+    return respond(c, syncOpsService.deleteDeadLetter({ appId: app, kind, store, messageId }, syncOpsCredentials(c.req.raw)));
   })
 
   .post("/schedules/:app/:scheduler/:id/run-now", v("param", ScheduleParamSchema), v("json", RunNowBodySchema), async (c) => {

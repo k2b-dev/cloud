@@ -1,6 +1,4 @@
-import type { Worker } from "@k2b/sync";
-import { lazySync } from "@valentinkolb/cloud";
-import { logger, syncOps, trace } from "@valentinkolb/cloud/services";
+import { logger, stopRuntimeJobs, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEventWithFederatedTargets } from "./record-events";
@@ -12,7 +10,6 @@ const RECONCILE_CLAIM_MS = 30_000;
 const MAX_DELIVERY_ATTEMPTS = 20;
 const DELIVERED_RETENTION_DAYS = 30;
 const DEAD_RETENTION_DAYS = 90;
-const SHUTDOWN_DRAIN_MS = 30_000;
 
 type OutboxRow = {
   id: string;
@@ -196,63 +193,6 @@ const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsR
   return current?.status === "dead" ? "dead" : "already-delivered";
 };
 
-let activeDeliveries = 0;
-
-const deliveryJob = lazySync((sync) =>
-  sync.job<{ outboxId: string }>({
-    id: "grids:record-event-outbox",
-    delivery: { ackWaitMs: 30_000, maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
-  }),
-);
-let deliveryWorker: Worker | undefined;
-let unregisterDeadLetters: (() => void) | undefined;
-const startDeliveryWorker = async (): Promise<void> => {
-  unregisterDeadLetters ??= syncOps.registerDeadLetters({
-    name: "grids:record-event-outbox",
-    kind: "job",
-    store: deliveryJob().deadLetters,
-  });
-  deliveryWorker ??= await deliveryJob().process({}, async (ctx) => {
-    activeDeliveries += 1;
-    try {
-      await trace.withSpan(
-        {
-          spanKey: trace.syncSpanKey("job", "grids:record-event-outbox", ctx.jobId),
-          name: "Grid record event outbox",
-          source: "grids:record-event-outbox",
-          appId: "grids",
-          category: "job",
-          attributes: { "cloud.grids.record_event_outbox_id": ctx.input.outboxId },
-        },
-        async () => ({ outboxId: ctx.input.outboxId, status: await dispatchRecordEventOutbox(ctx.input.outboxId) }),
-        { summarize: (result) => result },
-      );
-    } finally {
-      activeDeliveries -= 1;
-      if (runtimeStarted) {
-        void runReconcile().catch((error) => {
-          log.warn("Record event outbox follow-up reconcile failed", {
-            outboxId: ctx.input.outboxId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
-    }
-  });
-};
-
-const submitRecordEventOutbox = async (outboxId: string): Promise<void> => {
-  if (!runtimeStarted) return;
-  try {
-    await deliveryJob().submit({ coalesce: true, key: outboxId, input: { outboxId } });
-  } catch (error) {
-    log.warn("Record event outbox submit failed; reconciler will retry", {
-      outboxId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-};
-
 let runtimeStarted = false;
 
 export const notifyRecordEventOutbox = (outboxId: string): void => {
@@ -351,11 +291,44 @@ export const reapTerminalRecordEventOutbox = async (
   return rows.length;
 };
 
+/** PostgreSQL is the sole retry authority until both publications are confirmed. */
+export const dispatchRecordEventOutboxBatch = async (
+  signal: AbortSignal,
+  publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEventWithFederatedTargets,
+): Promise<number> => {
+  let dispatched = 0;
+  // Keep the previous worker's one local in-flight publication. Claim immediately
+  // before dispatch, rather than leasing a backlog that may expire while queued.
+  while (!signal.aborted && dispatched < RECONCILE_BATCH_SIZE) {
+    const [id] = await claimRecordEventOutboxBatch(1);
+    if (!id || signal.aborted) break;
+    try {
+      await trace.withSpan(
+        {
+          spanKey: `grids:record-event-outbox:${id}`,
+          name: "Grid record event outbox",
+          source: "grids:record-event-outbox",
+          appId: "grids",
+          category: "job",
+          attributes: { "cloud.grids.record_event_outbox_id": id },
+        },
+        async () => ({ outboxId: id, status: await dispatchRecordEventOutbox(id, publish) }),
+        { summarize: (result) => result },
+      );
+    } catch (error) {
+      log.warn("Record event publication failed; PostgreSQL retains the retry", {
+        outboxId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    dispatched += 1;
+  }
+  return dispatched;
+};
+
 const reconcileRecordEventOutbox = async (): Promise<number> => {
   await reapTerminalRecordEventOutbox();
-  const ids = await claimRecordEventOutboxBatch();
-  await Promise.all(ids.map(submitRecordEventOutbox));
-  return ids.length;
+  return dispatchRecordEventOutboxBatch(dispatchController.signal);
 };
 
 export const recordEventOutboxStats = async (): Promise<{
@@ -382,32 +355,10 @@ export const recordEventOutboxStats = async (): Promise<{
   };
 };
 
+let dispatchController = new AbortController();
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let activeReconcile: Promise<number> | null = null;
 let reconcileRequested = false;
-
-type DrainState = { activeDeliveries: number; activeReconciles: number };
-
-const currentDrainState = (): DrainState => ({
-  activeDeliveries,
-  activeReconciles: activeReconcile ? 1 : 0,
-});
-
-export const waitForRecordEventOutboxDrain = async (
-  readState: () => DrainState = currentDrainState,
-  timeoutMs = SHUTDOWN_DRAIN_MS,
-): Promise<{ drained: boolean; state: DrainState }> => {
-  const deadline = performance.now() + Math.max(timeoutMs, 0);
-  while (true) {
-    const state = readState();
-    if (state.activeDeliveries === 0 && state.activeReconciles === 0) {
-      return { drained: true, state };
-    }
-    const remainingMs = deadline - performance.now();
-    if (remainingMs <= 0) return { drained: false, state };
-    await new Promise((resolve) => setTimeout(resolve, Math.min(25, remainingMs)));
-  }
-};
 
 const runReconcile = (): Promise<number> => {
   if (activeReconcile) {
@@ -419,7 +370,7 @@ const runReconcile = (): Promise<number> => {
     do {
       reconcileRequested = false;
       claimed = await reconcileRecordEventOutbox();
-    } while (reconcileRequested && runtimeStarted);
+    } while ((reconcileRequested || claimed === RECONCILE_BATCH_SIZE) && runtimeStarted);
     return claimed;
   })().finally(() => {
     activeReconcile = null;
@@ -436,9 +387,12 @@ const runReconcile = (): Promise<number> => {
 };
 
 export const startRecordEventOutbox = async (): Promise<void> => {
+  if (runtimeStarted) return;
+  dispatchController = new AbortController();
   runtimeStarted = true;
-  await startDeliveryWorker();
-  await reconcileRecordEventOutbox();
+  void runReconcile().catch((error) => {
+    log.warn("Initial record event outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
+  });
   if (!reconcileTimer) {
     reconcileTimer = setInterval(() => {
       void runReconcile().catch((error) => {
@@ -449,17 +403,21 @@ export const startRecordEventOutbox = async (): Promise<void> => {
 };
 
 export const stopRecordEventOutbox = async (): Promise<void> => {
-  runtimeStarted = false;
-  if (reconcileTimer) clearInterval(reconcileTimer);
-  reconcileTimer = null;
-  const deadline = performance.now() + SHUTDOWN_DRAIN_MS;
-  const producerDrain = await waitForRecordEventOutboxDrain(() => ({ ...currentDrainState(), activeDeliveries: 0 }), SHUTDOWN_DRAIN_MS);
-  await deliveryWorker?.drain({ timeoutMs: SHUTDOWN_DRAIN_MS });
-  deliveryWorker = undefined;
-  unregisterDeadLetters?.();
-  unregisterDeadLetters = undefined;
-  const drain = await waitForRecordEventOutboxDrain(currentDrainState, Math.max(0, deadline - performance.now()));
-  if (!producerDrain.drained || !drain.drained) {
-    log.warn("Record event outbox did not drain before shutdown", currentDrainState());
-  }
+  // The shared 30-second deadline reports unfinished publication as a shutdown
+  // failure; it cannot cancel that I/O. Unconfirmed rows remain recoverable in
+  // PostgreSQL, and abort prevents this dispatcher from claiming another row.
+  await stopRuntimeJobs(
+    {
+      close: () => {
+        runtimeStarted = false;
+        if (reconcileTimer) clearInterval(reconcileTimer);
+        reconcileTimer = null;
+        dispatchController.abort();
+      },
+      drain: async () => {
+        await Promise.allSettled([activeReconcile, ...activeDispatches.values()]);
+      },
+    },
+    [],
+  );
 };

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { logger, syncOps } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
 import type { SqlClient } from "./audit";
@@ -20,7 +20,6 @@ const externalRecordOperationScheduler = lazySync((sync) =>
   sync.scheduler({ id: "grids:external-record-operation-retention", delivery: { maxAttempts: 4, backoffMs: [5_000, 20_000, 60_000] } }),
 );
 let retentionWorker: Worker | undefined;
-let unregisterScheduler: (() => void) | undefined;
 const log = logger("grids:external-record-operation-retention");
 
 export type ExternalRecordIdentity = {
@@ -313,10 +312,6 @@ let retentionStarted = false;
 
 export const startExternalRecordOperationRetention = async (): Promise<void> => {
   if (!retentionStarted) {
-    unregisterScheduler ??= syncOps.registerScheduler({
-      name: "grids:external-record-operation-retention",
-      scheduler: externalRecordOperationScheduler(),
-    });
     retentionWorker = await externalRecordOperationScheduler().process();
     retentionStarted = true;
   }
@@ -340,7 +335,6 @@ export const stopExternalRecordOperationRetention = async (): Promise<void> => {
   if (!retentionStarted) return;
   await retentionWorker?.drain({ timeoutMs: 30_000 });
   retentionWorker = undefined;
-  unregisterScheduler?.();
-  unregisterScheduler = undefined;
+
   retentionStarted = false;
 };

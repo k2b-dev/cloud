@@ -131,7 +131,7 @@ describe("sync ops aggregation", () => {
       ["grids", "app-grids-queue", "app-grids-m1"],
       ["mail", "app-mail-queue", "app-mail-m1"],
     ]);
-    expect(overview.truncatedStores).toEqual(["mail/app-mail-queue"]);
+    expect(overview.truncatedStores).toEqual(["mail/queue/app-mail-queue"]);
     expect(overview.resources.map((row) => [row.appId, row.kind, row.deadLetters])).toEqual([
       ["mail", "queue", 1],
       ["mail", "topic", null],
@@ -192,19 +192,22 @@ describe("sync ops aggregation", () => {
     });
     const service = createSyncOpsService({ coreOrigin: async () => "http://core:3000", fetch, listApps: async () => [app("mail")] });
 
-    const requeued = await service.requeueDeadLetter({ appId: "mail", store: "mail/deliveries", messageId: "m 1" }, credentials);
+    const requeued = await service.requeueDeadLetter(
+      { appId: "mail", kind: "queue", store: "mail/deliveries", messageId: "m 1" },
+      credentials,
+    );
     expect(requeued).toEqual({
       ok: true,
       data: { receipt: { messageId: "m2", streamSequence: 7, duplicate: false }, idempotencyKey: "sync-ops:requeue:x" },
     });
     expect(calls[0]).toMatchObject({
-      url: "http://core:3000/api/admin/sync/mail/dead-letters/mail%2Fdeliveries/requeue",
+      url: "http://core:3000/api/admin/sync/mail/dead-letters/queue/mail%2Fdeliveries/requeue",
       method: "POST",
       body: JSON.stringify({ messageId: "m 1" }),
     });
     expect(calls[0]?.headers.get("content-type")).toBe("application/json");
 
-    const deleted = await service.deleteDeadLetter({ appId: "mail", store: "deliveries", messageId: "ghost" }, credentials);
+    const deleted = await service.deleteDeadLetter({ appId: "mail", kind: "queue", store: "deliveries", messageId: "ghost" }, credentials);
     expect(deleted.ok).toBe(false);
     if (!deleted.ok) expect(deleted.error).toMatchObject({ status: 404, message: "Dead letter not found" });
 
@@ -229,6 +232,18 @@ describe("sync ops aggregation", () => {
     expect(unknownApp.ok).toBe(false);
     if (!unknownApp.ok) expect(unknownApp.error.status).toBe(404);
     expect(calls).toHaveLength(4);
+  });
+
+  test("preserves kind when mutating same-name queue and job stores", async () => {
+    const { calls, fetch } = fakeFetch(() => json({ deleted: true }));
+    const service = createSyncOpsService({ coreOrigin: async () => "http://core:3000", fetch, listApps: async () => [app("mail")] });
+    for (const kind of ["queue", "job"] as const) {
+      expect((await service.deleteDeadLetter({ appId: "mail", kind, store: "same", messageId: "message" }, credentials)).ok).toBe(true);
+    }
+    expect(calls.map((call) => call.url)).toEqual([
+      "http://core:3000/api/admin/sync/mail/dead-letters/queue/same/message",
+      "http://core:3000/api/admin/sync/mail/dead-letters/job/same/message",
+    ]);
   });
 
   test("keeps healthy apps when another broker response is malformed", async () => {

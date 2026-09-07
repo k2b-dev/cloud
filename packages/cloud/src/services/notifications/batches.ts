@@ -6,7 +6,7 @@ import { lazySync } from "../../_internal/process-sync";
 import { markdown } from "../../shared/markdown";
 import { logger, trace } from "../logging";
 import { parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
-import { syncOps } from "../sync-ops";
+
 import { sendEmail } from "./email";
 
 const log = logger("notifications:batches");
@@ -361,7 +361,7 @@ const batchJob = lazySync((sync) => {
     owner: "core",
     delivery: { ackWaitMs: 180_000, maxAttempts: 4, backoffMs: [1_000, 2_000, 4_000] },
   });
-  syncOps.registerDeadLetters({ name: "notifications:batches", kind: "job", store: handle.deadLetters });
+
   return handle;
 });
 let batchWorker: Worker | undefined;

@@ -1,6 +1,6 @@
 import type { Scheduler, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeLifecycle, logger, syncOps, trace } from "@valentinkolb/cloud/services";
+import { createRuntimeLifecycle, logger, trace } from "@valentinkolb/cloud/services";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import {
   createWorkflowScheduleRegistration,
@@ -12,8 +12,6 @@ import {
 import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
-
-const unregisterSyncOps: Array<() => void> = [];
 
 const SCHEDULER_ID = "mail:workflow-schedules";
 const SCHEDULE_PREFIX = "mail:workflow-schedule:";
@@ -222,14 +220,12 @@ export const reconcileMailWorkflowSchedules = async (): Promise<void> => {
 
 const lifecycle = createRuntimeLifecycle({
   start: async () => {
-    unregisterSyncOps.push(syncOps.registerScheduler({ name: "mail:workflow-schedules", scheduler: transport() }));
     await reconcileMailWorkflowSchedules();
     transportWorker = await transport().process();
   },
   stop: async () => {
     await transportWorker?.drain();
     transportWorker = undefined;
-    for (const unregister of unregisterSyncOps.splice(0)) unregister();
   },
 });
 

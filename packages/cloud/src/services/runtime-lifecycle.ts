@@ -69,6 +69,7 @@ export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions
   }
 };
 
+/** Track process work outside Sync handlers, such as recovery scans and publishers. */
 export const createRuntimeTaskTracker = () => {
   const tasks = new Set<Promise<unknown>>();
   let accepting = false;
@@ -96,9 +97,9 @@ export const createRuntimeTaskTracker = () => {
 
 /**
  * Stop accepting runtime tasks, stop the @k2b/sync workers from pulling new
- * work, then drain accepted tasks and workers together. Worker draining must
- * start immediately so its timeout can abort handlers that tracked tasks await.
- * Tracked tasks use the same deadline, including handlers that ignore abort.
+ * work, then drain accepted process tasks and workers together. Sync owns
+ * handler tracking and cancellation; do not wrap worker handlers in tracker.run.
+ * Only work outside those handlers uses the tracker and its separate deadline.
  */
 export const stopRuntimeJobs = async (
   tracker: Pick<RuntimeTaskTracker, "close" | "drain">,

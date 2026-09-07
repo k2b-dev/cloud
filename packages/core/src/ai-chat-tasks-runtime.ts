@@ -2,7 +2,7 @@ import type { JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
 import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
 import { enqueueExistingAiTurn, validateAiTurnRequest } from "@valentinkolb/cloud/ai/runtime";
-import { accounts, coreSettings, logger, syncOps } from "@valentinkolb/cloud/services";
+import { accounts, coreSettings, logger } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
@@ -26,7 +26,7 @@ const taskMandate = (task: { mandateId: string | null; mandateRevision: number |
 
 const taskScheduler = lazySync((sync) => {
   const handle = sync.scheduler({ id: "core-ai-chat-tasks", delivery: { maxAttempts: 1 } });
-  syncOps.registerScheduler({ name: "core-ai-chat-tasks", scheduler: handle });
+
   return handle;
 });
 const reconcileMutex = lazySync((sync) => sync.mutex({ id: "core:ai-chat-tasks:reconcile", ttlMs: 60_000, retry: { maxAttempts: 1 } }));
@@ -39,7 +39,7 @@ const taskJob = lazySync((sync) => {
     delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [5_000, 10_000] },
     dedupeWindowMs: 24 * 60 * 60_000,
   });
-  syncOps.registerDeadLetters({ name: "core-ai-chat-task-occurrence", kind: "job", store: handle.deadLetters });
+
   return handle;
 });
 const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {

@@ -1,6 +1,6 @@
 import type { Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { logger, syncOps, trace } from "@valentinkolb/cloud/services";
+import { logger, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 
@@ -247,7 +247,7 @@ export const healthWebhookDeliveryJob = lazySync((sync) => {
     id: "gateway:health-webhook-delivery",
     delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },
   });
-  syncOps.registerDeadLetters({ name: "gateway:health-webhook-delivery", kind: "job", store: job.deadLetters });
+
   return job;
 });
 

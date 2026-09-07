@@ -141,8 +141,9 @@ batches recover `ready` and `running` records in bounded pages at startup;
 notification delivery also scans pending database records periodically.
 
 Queue and job handles expose `deadLetters.list()`, `requeue()` and `delete()`.
-A requeue requires a new idempotency key. Cloud's Sync operations registry makes
-registered stores available to the administrative inspection surface; keep
+A requeue requires a new idempotency key. Cloud automatically discovers declared
+stores through `sync.controls()` for administrative inspection. Queue and job
+IDs remain distinct even when their names match. No manual registration is needed; keep
 application failure records when users need domain-specific recovery.
 
 Validate untrusted payloads at the application boundary. TypeScript generics

@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 const gateway = "http://gateway:3000";
-const apiPaths = ["/api/admin/sync", "/api/admin/sync/core/resources", "/api/gateway/sync"];
+const apiPaths = ["/api/admin/sync", "/api/admin/sync/core/resources", "/api/admin/sync/core/dead-letters", "/api/gateway/sync"];
 const adminPaths = ["/admin/gateway/apps", "/admin/observability/sync", "/admin/observability/jobs"];
 const database = new URL(process.env.DATABASE_URL ?? "postgresql://invalid/invalid");
 if (
@@ -24,13 +24,42 @@ if (
 const appSchema = z.object({ id: z.string().min(1) });
 const resourcesSchema = z.object({
   health: z.object({ state: z.literal("ready"), connection: z.literal("connected") }),
-  resources: z.array(z.object({ state: z.literal("ready") })),
+  resources: z.array(z.object({ namespace: z.string().min(1), kind: z.string().min(1), id: z.string().min(1), state: z.literal("ready") })),
 });
-const schedulesSchema = z.object({ schedules: z.array(z.object({ id: z.string(), schedulerId: z.string() })) });
+const scheduleSchema = z.object({
+  id: z.string().min(1),
+  schedulerId: z.string().min(1),
+  handlerAvailable: z.boolean(),
+  runNumber: z.number().int().nonnegative(),
+  failureCount: z.number().int().nonnegative(),
+  lastRunId: z.string().nullable(),
+  lastCompletedAt: z.string().datetime().nullable(),
+});
+const schedulesSchema = z.object({ schedules: z.array(scheduleSchema) });
+const deadLetterSchema = z.object({
+  messageId: z.string().min(1),
+  tenantId: z.string().min(1),
+  attempts: z.number().int().nonnegative(),
+  failedAt: z.string().datetime(),
+  reason: z.string(),
+  error: z.string().nullable(),
+  dataPreview: z.string(),
+});
+const deadLettersSchema = z.object({
+  stores: z.array(
+    z.object({
+      name: z.string().min(1),
+      kind: z.enum(["queue", "job"]),
+      truncated: z.boolean(),
+      entries: z.array(deadLetterSchema),
+    }),
+  ),
+});
 const overviewSchema = z.object({
   apps: z.array(z.object({ appId: z.string(), status: z.literal("ok") })),
   resources: z.array(z.unknown()),
-  schedules: z.array(z.unknown()),
+  schedules: z.array(scheduleSchema.extend({ appId: z.string().min(1) })),
+  deadLetters: z.array(deadLetterSchema.extend({ appId: z.string().min(1), store: z.string().min(1), kind: z.enum(["queue", "job"]) })),
 });
 
 let checks = 0;
@@ -83,6 +112,8 @@ try {
   }
   let resources = 0;
   let schedules = 0;
+  let stores = 0;
+  const discoveredStores = new Set<string>();
   // Small request batches avoid competing with the fleet's own background work.
   for (let offset = 0; offset < fleet.apps.length; offset += 4) {
     await Promise.all(
@@ -92,18 +123,39 @@ try {
         const resourceResult = resourcesSchema.safeParse(await resourceResponse.json());
         if (!resourceResult.success) throw new Error(`${app.id}: Sync resources are not ready`);
         resources += resourceResult.data.resources.length;
+        const deadLetterResponse = await requireStatus(`${prefix}/dead-letters`, 200, token);
+        const deadLetterResult = deadLettersSchema.safeParse(await deadLetterResponse.json());
+        if (!deadLetterResult.success) throw new Error(`${app.id}: invalid dead-letter controls response`);
+        const storeKeys = new Set(deadLetterResult.data.stores.map((store) => `${store.kind}/${store.name}`));
+        if (storeKeys.size !== deadLetterResult.data.stores.length) throw new Error(`${app.id}: duplicate dead-letter control identity`);
+        for (const resource of resourceResult.data.resources) {
+          if ((resource.kind === "queue" || resource.kind === "job") && !storeKeys.has(`${resource.kind}/${resource.id}`)) {
+            throw new Error(`${app.id}: missing ${resource.kind} dead-letter control for ${resource.id}`);
+          }
+        }
+        for (const key of storeKeys) discoveredStores.add(`${app.id}/${key}`);
+        stores += storeKeys.size;
         const scheduleResponse = await requireStatus(`${prefix}/schedules`, 200, token);
         const scheduleResult = schedulesSchema.safeParse(await scheduleResponse.json());
         if (!scheduleResult.success) throw new Error(`${app.id}: invalid schedules response`);
+        const scheduleKeys = new Set(scheduleResult.data.schedules.map((schedule) => `${schedule.schedulerId}/${schedule.id}`));
+        if (scheduleKeys.size !== scheduleResult.data.schedules.length) throw new Error(`${app.id}: duplicate schedule identity`);
         schedules += scheduleResult.data.schedules.length;
       }),
     );
   }
-  console.log(`Core fleet proxy: ${fleet.apps.length} apps, ${resources} ready resources, ${schedules} schedules`);
+  console.log(
+    `Core fleet proxy: ${fleet.apps.length} apps, ${resources} ready resources, ${stores} dead-letter controls, ${schedules} schedules`,
+  );
   const overviewResult = overviewSchema.safeParse(await (await requireStatus("/api/gateway/sync", 200, token)).json());
   if (!overviewResult.success) throw new Error("Gateway Ops overview contains unavailable apps or an invalid response");
   const overview = overviewResult.data;
   if (overview.apps.length !== fleet.apps.length) throw new Error("Gateway Ops overview omitted registered apps");
+  for (const entry of overview.deadLetters) {
+    if (!discoveredStores.has(`${entry.appId}/${entry.kind}/${entry.store}`)) {
+      throw new Error("Gateway Ops dead letter does not identify a discovered app/kind/store");
+    }
+  }
   console.log(
     `Gateway Ops: ${overview.apps.length} healthy apps, ${overview.resources.length} resources, ${overview.schedules.length} schedules`,
   );

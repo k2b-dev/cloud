@@ -58,7 +58,6 @@ test("explicit batch retries retain a wakeup while the previous worker is comple
     mock.module(${JSON.stringify(new URL("./email.ts", import.meta.url).pathname)}, () => ({
       sendEmail: () => { throw new Error("Provider must not be called"); },
     }));
-    mock.module(${JSON.stringify(new URL("../sync-ops.ts", import.meta.url).pathname)}, () => ({ syncOps: {} }));
     const { retryFailed, retryRecipient } = await import(${JSON.stringify(new URL("./batches.ts", import.meta.url).pathname)});
     for (const retry of [() => retryFailed({ id: batchId }), () => retryRecipient({ id: batchId, userId })]) {
       recipientStatus = "error";

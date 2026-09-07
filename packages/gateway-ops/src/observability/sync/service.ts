@@ -278,7 +278,7 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
       }
       if (deadLetters.ok) {
         for (const store of deadLetters.data.stores) {
-          if (store.truncated) result.truncatedStores.push(`${app.id}/${store.name}`);
+          if (store.truncated) result.truncatedStores.push(`${app.id}/${store.kind}/${store.name}`);
           for (const entry of store.entries) {
             result.deadLetters.push({
               ...entry,
@@ -307,20 +307,26 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
 
   return {
     overview,
-    requeueDeadLetter: (input: { appId: string; store: string; messageId: string }, credentials: SyncOpsCredentials) =>
+    requeueDeadLetter: (
+      input: { appId: string; kind: SyncDeadLetterKind; store: string; messageId: string },
+      credentials: SyncOpsCredentials,
+    ) =>
       withApp(input.appId, (app) =>
         call<{ receipt: { messageId: string; streamSequence: number; duplicate: boolean }; idempotencyKey: string }>(
           app,
-          `/dead-letters/${encodeURIComponent(input.store)}/requeue`,
+          `/dead-letters/${input.kind}/${encodeURIComponent(input.store)}/requeue`,
           credentials,
           { method: "POST", body: { messageId: input.messageId } },
         ),
       ),
-    deleteDeadLetter: (input: { appId: string; store: string; messageId: string }, credentials: SyncOpsCredentials) =>
+    deleteDeadLetter: (
+      input: { appId: string; kind: SyncDeadLetterKind; store: string; messageId: string },
+      credentials: SyncOpsCredentials,
+    ) =>
       withApp(input.appId, (app) =>
         call<{ deleted: boolean }>(
           app,
-          `/dead-letters/${encodeURIComponent(input.store)}/${encodeURIComponent(input.messageId)}`,
+          `/dead-letters/${input.kind}/${encodeURIComponent(input.store)}/${encodeURIComponent(input.messageId)}`,
           credentials,
           { method: "DELETE" },
         ),

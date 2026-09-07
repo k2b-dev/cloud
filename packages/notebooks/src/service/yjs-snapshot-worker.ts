@@ -1,42 +1,37 @@
-import type { Worker } from "@k2b/sync";
+import { type JobConfig, RetentionGapError, type Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { logger, syncOps } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import * as Y from "yjs";
 import * as notes from "./notes";
 import { applyYjsTopicEvent, compareStreamCursor, createYjsTopic, NODE_ID, TOPIC_RETENTION_MS } from "./yjs-sync";
 
 const log = logger("yjs-snapshot-worker");
-const LEASE_MS = 120_000;
+const ACK_WAIT_MS = 120_000;
+// One partition keeps the existing one-document reconstruction budget and
+// serializes snapshots fleet-wide without per-partition idle polling delays.
+// Changing this budget requires another coordinated resource cutover.
+const SNAPSHOT_PARTITIONS = 1;
+export const SNAPSHOT_JOB_ID = "notebooks.yjs.snapshot.ordered";
 type SnapshotReason = "periodic" | "unload" | "shutdown";
 type SnapshotSaveJob = { noteId: string; targetCursor: string; reason: SnapshotReason };
-const snapshotJob = lazySync((sync) =>
-  sync.job<SnapshotSaveJob>({
-    id: "notebooks.yjs.snapshot",
-    delivery: { ackWaitMs: LEASE_MS, maxAttempts: 20, backoffMs: [5_000] },
-    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    terminalRetentionMs: 30 * 24 * 60 * 60 * 1000,
-    dedupeWindowMs: 24 * 60 * 60 * 1000,
-  }),
-);
-const snapshotMutex = lazySync((sync) =>
-  sync.mutex({
-    id: "notebooks.yjs.snapshot",
-    ttlMs: LEASE_MS,
-    retry: { maxAttempts: 1 },
-  }),
-);
-
+export const SNAPSHOT_JOB_CONFIG = {
+  id: SNAPSHOT_JOB_ID,
+  delivery: { ackWaitMs: ACK_WAIT_MS, maxAttempts: 20, backoffMs: [5_000] },
+  ordering: { mode: "partitioned", partitions: SNAPSHOT_PARTITIONS },
+  retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+  terminalRetentionMs: 30 * 24 * 60 * 60 * 1000,
+  dedupeWindowMs: 24 * 60 * 60 * 1000,
+} satisfies JobConfig;
+const snapshotJob = lazySync((sync) => sync.job<SnapshotSaveJob>(SNAPSHOT_JOB_CONFIG));
 const queueSnapshotSave = async (config: { noteId: string; targetCursor: string; reason: SnapshotReason }): Promise<void> => {
   const sequence = createYjsTopic(config.noteId).cursorSequence(config.targetCursor);
   // A final unload at a newer cursor must not coalesce with an already settling snapshot.
-  await snapshotJob().submit({ key: `${config.noteId}:${sequence}`, coalesce: true, input: config });
+  await snapshotJob().submit({ key: `${config.noteId}:${sequence}`, coalesce: true, orderingKey: config.noteId, input: config });
 };
 
 let worker: Worker | null = null;
-let unregister: (() => void) | undefined;
 const start = async (): Promise<void> => {
   if (worker) return;
-  unregister ??= syncOps.registerDeadLetters({ name: "notebooks.yjs.snapshot", kind: "job", store: snapshotJob().deadLetters });
   worker = await snapshotJob().process(
     {
       concurrency: 1,
@@ -46,29 +41,18 @@ const start = async (): Promise<void> => {
           error: error instanceof Error ? error.message : String(error),
           attempt: context.attempt,
         });
+        if (error instanceof RetentionGapError) {
+          return { action: "dead_letter", reason: "Document history is incomplete; recover a covering snapshot before requeueing" };
+        }
         return { action: "retry" };
       },
     },
     async (context) => {
       const { noteId } = context.input;
-      const mutex = snapshotMutex();
-      // A busy lock is normal coordination, not a failed snapshot attempt.
-      let lock = await mutex.acquire({ resource: noteId, signal: context.signal });
-      while (!lock) {
-        context.signal.throwIfAborted();
-        await context.heartbeat();
-        await Bun.sleep(200);
-        lock = await mutex.acquire({ resource: noteId, signal: context.signal });
-      }
-      const heldLock = lock;
-      let leaseError: unknown;
-      const heartbeat = async () => {
-        await context.heartbeat();
-        if (!(await mutex.extend(heldLock, { ttlMs: LEASE_MS }))) throw new Error("Snapshot lock ownership lost");
-      };
+      let heartbeatError: unknown;
       const timer = setInterval(() => {
-        void heartbeat().catch((error) => {
-          leaseError = error;
+        void context.heartbeat().catch((error) => {
+          heartbeatError = error;
         });
       }, 15_000);
       const topic = createYjsTopic(noteId);
@@ -98,9 +82,9 @@ const start = async (): Promise<void> => {
             reachedTarget = event.cursor === targetCursor;
           }
           context.signal.throwIfAborted();
-          if (leaseError) throw leaseError;
+          if (heartbeatError) throw heartbeatError;
           if (!reachedTarget) throw new Error("Snapshot replay did not reach its target");
-          await heartbeat();
+          await context.heartbeat();
           const result = await notes.save({
             noteId,
             yjsState: Y.encodeStateAsUpdate(doc),
@@ -118,7 +102,6 @@ const start = async (): Promise<void> => {
         }
       } finally {
         clearInterval(timer);
-        await mutex.release(heldLock);
       }
     },
   );
@@ -128,8 +111,6 @@ const stop = async (): Promise<void> => {
   const active = worker;
   worker = null;
   active?.stop();
-  await active?.drain({ timeoutMs: LEASE_MS });
-  unregister?.();
-  unregister = undefined;
+  await active?.drain({ timeoutMs: ACK_WAIT_MS });
 };
 export const yjsSnapshotWorker = { start, stop, queueSnapshotSave };

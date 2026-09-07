@@ -169,17 +169,14 @@ export type {
   TemplatePdfPreviewResult,
 } from "./pdf";
 
-export { createSyncOpsRegistry, createSyncOpsRoutes, SYNC_OPS_DEAD_LETTER_LIMIT, syncOps } from "./sync-ops";
+export { createSyncOpsRoutes, SYNC_OPS_DEAD_LETTER_LIMIT } from "./sync-ops";
 export type {
   SyncDeadLetterEntry,
   SyncDeadLetterKind,
-  SyncDeadLetterRegistration,
   SyncDeadLetterStoreView,
-  SyncOpsRegistry,
   SyncOpsRoutes,
   SyncOpsRoutesDependencies,
   SyncScheduleView,
-  SyncSchedulerRegistration,
 } from "./sync-ops";
 
 export { latestTopicCursor } from "./topic-cursor";

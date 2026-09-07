@@ -9,6 +9,14 @@ Keep Redis for Cloud caches, authentication flows, and Cloud-owned rate
 limits. Do not flush Redis or delete every `sync:*` key: existing rate-limit
 windows and unreviewed durable work can still matter.
 
+Already running Sync 6.2.0? Use the
+[coordinated 6.3.1 upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
+instead of repeating the Redis migration. Also follow the
+[notebook snapshot cutover](docs-site/docs/en/operations/notebooks-snapshot-cutover.md),
+[Grids runtime cutover](packages/grids/SYNC_RUNTIME_CUTOVER.md), and
+[FreeIPA backfill checks](docs-site/docs/en/operations/freeipa.md#backfill-account-expiry-dates).
+Retain existing broker resources and application data until those checks pass.
+
 ## Prepare the release and recovery point
 
 1. Choose one immutable `CLOUD_IMAGE_TAG=sha-<git-sha>` whose complete image

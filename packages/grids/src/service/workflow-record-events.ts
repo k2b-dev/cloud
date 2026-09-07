@@ -1,6 +1,6 @@
 import type { Result } from "@k2b/stdlib";
 import type { QueueMessage, Worker } from "@k2b/sync";
-import { logger, syncOps } from "@valentinkolb/cloud/services";
+import { logger } from "@valentinkolb/cloud/services";
 import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
 import { normalizeLocale, normalizeTimeZone } from "@valentinkolb/cloud/shared";
 import type { WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
@@ -11,11 +11,7 @@ import type { FilterTree } from "../contracts";
 import type { GridsWorkflow } from "../workflows/contracts";
 import { listByTable as listFields } from "./fields";
 import { compileFilter, renderClause } from "./filter-compiler";
-import {
-  getDeadRecordEventDeliveryFailure,
-  recordInvalidRecordEventDelivery,
-  recordRecordEventDeliveryFailure,
-} from "./record-event-delivery-failures";
+import { getRecordEventDeliveryFailure } from "./record-event-delivery-failures";
 import { redriveRecordEventOutbox } from "./record-event-outbox";
 import {
   type GridsRecordEvent,
@@ -29,87 +25,10 @@ import { listRecordEventWorkflows } from "./workflow-definitions";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
 const log = logger("grids:workflow-record-events");
-const CONSUMER_GROUP = "workflow-kernel-queue-v1";
-const RETRY_DELAY_MS = 1_000;
-const APPLICATION_MAX_DELIVERY_ATTEMPTS = 20;
 const LEASE_HEARTBEAT_MS = Math.floor(RECORD_EVENT_WORK_LEASE_MS / 3);
-const DELIVERY_FAILURE_BASE_FOREIGN_KEY = "record_event_delivery_failures_base_id_fkey";
-export const isDeletedRecordEventBaseError = (error: unknown): boolean => {
-  const postgresError = error as { code?: string; errno?: string; constraint?: string; constraint_name?: string; message?: string } | null;
-  if (postgresError?.code !== "23503" && postgresError?.errno !== "23503") return false;
-  const constraint = postgresError.constraint ?? postgresError.constraint_name;
-  return constraint === DELIVERY_FAILURE_BASE_FOREIGN_KEY || postgresError.message?.includes(DELIVERY_FAILURE_BASE_FOREIGN_KEY) === true;
-};
-
-// PostgreSQL owns the delivery budget. Failed dispatches rejoin the partition
-// tail so one unavailable workflow cannot hold unrelated records behind it.
-export const workflowRecordEventRetryDelayMs = (attempt: number): number =>
-  Math.min(5 * 60_000, RETRY_DELAY_MS * 2 ** Math.max(0, Math.min(attempt - 1, 12)));
-
-type ResendRecordEvent = (delivery: QueueMessage<GridsRecordEvent>, delayMs: number) => Promise<void>;
-const resendRecordEvent: ResendRecordEvent = async (delivery, delayMs) => {
-  await recordEventWorkQueue().send({
-    data: delivery.data,
-    tenantId: delivery.tenantId,
-    orderingKey: delivery.orderingKey,
-    // Preserve the failure-store identity across delayed transport messages.
-    meta: { ...delivery.meta, eventId: delivery.meta?.eventId ?? delivery.messageId },
-    idempotencyKey: `retry:${delivery.messageId}:${delivery.attempt}`,
-    delayMs,
-  });
-};
-const deliveryEventId = (delivery: QueueMessage<GridsRecordEvent>): string =>
-  typeof delivery.meta?.eventId === "string" ? delivery.meta.eventId : delivery.messageId;
-
-export const processInvalidWorkflowRecordEventDelivery = async (
-  delivery: QueueMessage<GridsRecordEvent>,
-  recordFailure: typeof recordInvalidRecordEventDelivery = recordInvalidRecordEventDelivery,
-  resend: ResendRecordEvent = resendRecordEvent,
-): Promise<void> => {
-  const baseId = GridsRecordEventSchema.shape.baseId.safeParse(delivery.meta?.baseId);
-  if (!baseId.success) throw new Error("record event base metadata is unavailable");
-  try {
-    const failure = await recordFailure({
-      baseId: baseId.data,
-      consumerGroup: CONSUMER_GROUP,
-      eventId: deliveryEventId(delivery),
-      payload: JSON.stringify(delivery.data),
-      error: "record event payload is invalid",
-    });
-    if (!failure.dead) await resend(delivery, workflowRecordEventRetryDelayMs(failure.attempts));
-  } catch (error) {
-    if (!isDeletedRecordEventBaseError(error)) throw error;
-  }
-};
-
-export const processFailedWorkflowRecordEventDelivery = async (
-  delivery: QueueMessage<GridsRecordEvent>,
-  event: GridsRecordEvent,
-  error: unknown,
-  recordFailure: typeof recordRecordEventDeliveryFailure = recordRecordEventDeliveryFailure,
-  resend: ResendRecordEvent = resendRecordEvent,
-): Promise<{ dead: boolean; attempts: number }> => {
-  let failure: { dead: boolean; attempts: number };
-  try {
-    failure = await recordFailure({
-      baseId: event.baseId,
-      consumerGroup: CONSUMER_GROUP,
-      eventId: deliveryEventId(delivery),
-      payload: JSON.stringify(event),
-      error: error instanceof Error ? error.message : String(error),
-      maxAttempts: APPLICATION_MAX_DELIVERY_ATTEMPTS,
-    });
-  } catch (failureStoreError) {
-    if (isDeletedRecordEventBaseError(failureStoreError)) return { dead: true, attempts: delivery.attempt };
-    // Only infrastructure failures retry in place (bounded by transport policy).
-    throw failureStoreError;
-  }
-  if (!failure.dead) await resend(delivery, workflowRecordEventRetryDelayMs(failure.attempts));
-  return failure;
-};
 
 export const replayWorkflowRecordEventDeliveryFailure = async (baseId: string, id: string): Promise<boolean> => {
-  const failure = await getDeadRecordEventDeliveryFailure(baseId, id);
+  const failure = await getRecordEventDeliveryFailure(baseId, id);
   if (!failure?.payload) return false;
   if (failure.consumerGroup === "record-event-outbox") return redriveRecordEventOutbox(failure.eventId);
   let payload: unknown;
@@ -229,19 +148,42 @@ const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPri
   serviceAccountId: null,
 });
 
+/** Let the native worker retry failures and retain the exhausted delivery. */
+export const processWorkflowRecordEventDelivery = async (
+  delivery: QueueMessage<GridsRecordEvent>,
+  dispatch: (event: GridsRecordEvent) => Promise<void>,
+): Promise<void> => {
+  delivery.signal.throwIfAborted();
+  const event = GridsRecordEventSchema.parse(delivery.data);
+  let renewalFailure: unknown;
+  const timer = setInterval(() => {
+    void delivery.heartbeat().catch((error) => {
+      renewalFailure = error;
+    });
+  }, LEASE_HEARTBEAT_MS);
+  try {
+    await dispatch(event);
+    delivery.signal.throwIfAborted();
+    if (renewalFailure) throw renewalFailure;
+    await delivery.heartbeat();
+  } finally {
+    clearInterval(timer);
+  }
+};
+
 export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
   let worker: Worker | undefined;
-  let unregisterDeadLetters: (() => void) | undefined;
 
   const dispatch = async (event: GridsRecordEvent): Promise<void> => {
     const name = eventName(event);
     if (!name) return;
+    const failures: unknown[] = [];
     for (const workflow of await listRecordEventWorkflows(event.baseId, event.occurredAt)) {
       const trigger = triggerFor(workflow);
       if (!trigger || trigger.config.event !== name) continue;
       if (triggerTableId(workflow) && triggerTableId(workflow) !== event.tableId) continue;
-      const principal = await ownerPrincipal(workflow);
       try {
+        const principal = await ownerPrincipal(workflow);
         const snapshot = await loadSnapshot(workflow, event);
         if (!snapshot.matched) continue;
         const inputs = evaluateWorkflowTriggerInputs(
@@ -274,6 +216,7 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
          * executed a step.
          */
         if (!result.ok) {
+          if (result.error.status === 409 || result.error.status >= 500) throw new Error(result.error.message);
           log.warn("Workflow record event invocation was rejected", {
             workflowId: workflow.id,
             recordId: event.recordId,
@@ -282,48 +225,24 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
           });
         }
       } catch (error) {
+        failures.push(error);
         const message = error instanceof Error ? error.message : String(error);
         log.warn("Workflow record event dispatch failed", { workflowId: workflow.id, recordId: event.recordId, error: message });
       }
     }
-  };
-
-  const processDelivery = async (delivery: QueueMessage<GridsRecordEvent>): Promise<void> => {
-    const parsed = GridsRecordEventSchema.safeParse(delivery.data);
-    if (!parsed.success) return processInvalidWorkflowRecordEventDelivery(delivery);
-    let renewalFailure: unknown;
-    const timer = setInterval(() => {
-      void delivery.heartbeat().catch((error) => {
-        renewalFailure = error;
-      });
-    }, LEASE_HEARTBEAT_MS);
-    try {
-      await dispatch(parsed.data);
-      if (renewalFailure) throw renewalFailure;
-      await delivery.heartbeat();
-    } catch (error) {
-      await processFailedWorkflowRecordEventDelivery(delivery, parsed.data, error);
-    } finally {
-      clearInterval(timer);
-    }
+    if (failures.length > 0) throw new AggregateError(failures, "Workflow record event dispatch failed");
   };
 
   return {
     dispatch,
     reconcile: async (): Promise<void> => {
-      unregisterDeadLetters ??= syncOps.registerDeadLetters({
-        name: "grids:workflow-record-events",
-        kind: "queue",
-        store: recordEventWorkQueue().deadLetters,
-        description: "Transport failures; workflow delivery failures are managed by the Grids application failure store.",
-      });
-      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, processDelivery);
+      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, (delivery) =>
+        processWorkflowRecordEventDelivery(delivery, dispatch),
+      );
     },
     stop: async (): Promise<void> => {
       await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
       worker = undefined;
-      unregisterDeadLetters?.();
-      unregisterDeadLetters = undefined;
     },
   };
 };

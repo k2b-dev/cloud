@@ -1,7 +1,7 @@
 import type { Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeTaskTracker, stopRuntimeJobs, syncOps } from "@valentinkolb/cloud/services";
+import { createRuntimeTaskTracker, stopRuntimeJobs } from "@valentinkolb/cloud/services";
 import { toPgTextArray } from "@valentinkolb/cloud/services/postgres";
 import { sql } from "bun";
 import { z } from "zod";
@@ -320,13 +320,11 @@ const maintenanceJob = lazySync((sync) =>
   }),
 );
 let maintenanceJobWorker: Worker | undefined;
-let unregisterMaintenanceSyncOps: (() => void) | undefined;
+
 const startMaintenanceJob = async (): Promise<void> => {
   maintenanceJobWorker = await maintenanceJob().process({}, async (ctx) => {
-    const data = await (maintenanceTasks.run(async () => ({
-      state: await executeMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat()),
-    })) ?? Promise.resolve(null));
-    if (data?.state === "queued") {
+    const state = await executeMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat());
+    if (state === "queued") {
       const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
       ctx.resubmit({
         delayMs: expBackoff(attempt, { baseMs: 2_000, maxMs: 60_000 }),
@@ -369,22 +367,12 @@ export const submitDueMaintenanceCommands = async (): Promise<{ queued: number; 
 export const startMaintenanceRuntime = async (): Promise<void> => {
   maintenanceTasks.open();
   await startMaintenanceJob();
-  unregisterMaintenanceSyncOps = syncOps.registerDeadLetters({
-    name: "mail:execute-maintenance-command",
-    kind: "job",
-    store: maintenanceJob().deadLetters,
-  });
 };
 
 export const stopMaintenanceRuntime = async (): Promise<void> => {
-  try {
-    await stopRuntimeJobs(
-      maintenanceTasks,
-      [maintenanceJobWorker].filter((worker): worker is Worker => worker !== undefined),
-    );
-    maintenanceJobWorker = undefined;
-  } finally {
-    unregisterMaintenanceSyncOps?.();
-    unregisterMaintenanceSyncOps = undefined;
-  }
+  await stopRuntimeJobs(
+    maintenanceTasks,
+    [maintenanceJobWorker].filter((worker): worker is Worker => worker !== undefined),
+  );
+  maintenanceJobWorker = undefined;
 };

@@ -80,7 +80,6 @@ mock.module("@valentinkolb/cloud/services", () => ({
     warn: () => {},
     error: () => {},
   }),
-  syncOps: { registerDeadLetters: () => {}, registerScheduler: () => {} },
   trace: {
     fromSyncJob: () => () => {},
     fromSyncSchedule: () => () => {},

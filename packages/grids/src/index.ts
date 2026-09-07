@@ -30,16 +30,16 @@ const gridsRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     await startControlledDestructionJobs();
     await startEvidenceExportJobs();
-    await startRecordEventOutbox();
     await startExternalRecordOperationRetention();
     await startWorkflowRuntime();
+    await startRecordEventOutbox();
     startFieldIndexMaintenance();
   },
   stop: () =>
     stopRuntimeResources([
       stopFieldIndexMaintenance,
-      stopWorkflowRuntime,
       stopRecordEventOutbox,
+      stopWorkflowRuntime,
       stopExternalRecordOperationRetention,
       stopBoundedQueryPool,
       stopControlledDestructionJobs,

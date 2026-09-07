@@ -3,7 +3,7 @@ import type { Job, Worker } from "@k2b/sync";
 import { z } from "zod";
 import { lazySync } from "../../_internal/process-sync";
 import { isAiSettingsError, type RunAiStructuredInput, runAiStructured } from "../../ai";
-import { syncOps } from "../../services/sync-ops";
+
 import type { WorkflowJsonValue } from "../contracts";
 import {
   claimWorkflowAiTask,
@@ -241,7 +241,6 @@ const workflowAiJob = (maxAttempts: number) =>
 
 let activeJob: Job<{ taskId: string }> | null = null;
 let activeWorker: Worker | null = null;
-let unregisterJob: (() => void) | null = null;
 
 export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {}): Promise<void> => {
   if (activeJob) return;
@@ -253,7 +252,6 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
   const next = workflowAiJob(options.maxAttempts)();
   activeJob = next;
   try {
-    unregisterJob = syncOps.registerDeadLetters({ name: JOB_ID, kind: "job", store: next.deadLetters });
     activeWorker = await next.process({ concurrency: 1 }, async (context) => {
       try {
         await processWorkflowAiTask(context.input.taskId, context, options);
@@ -281,8 +279,7 @@ export const submitWorkflowAiTask = async (taskId: string): Promise<void> => {
 
 export const stopWorkflowAiRuntime = (): void => {
   activeWorker?.stop();
-  unregisterJob?.();
-  unregisterJob = null;
+
   activeWorker = null;
   activeJob = null;
 };

@@ -213,3 +213,28 @@ Redis alone does not prove that a notebook snapshot includes its last update.
 Use the Sync view in Gateway Ops to inspect each application's resources,
 schedules and dead letters. Requeue and manual schedule runs are administrator
 actions routed through Core with target-bound invocation credentials.
+
+## Upgrade from Sync 6.2.0
+
+Deploy Cloud's locked Sync 6.3.1 version after stopping every old producer and
+worker. Old workers can overwrite or delete repaired coalescing claims, so
+these versions must not share a running fleet. Keep Postgres, Valkey, and NATS
+data and take backups before starting the new release.
+
+First quiesce new work while old workers can finish. Complete the
+[notebook snapshot checks](/en/docs/operations/notebooks-snapshot-cutover) and
+the [FreeIPA backfill checks](/en/docs/operations/freeipa#backfill-account-expiry-dates).
+Keep retired broker resources through verification. Grids resumes publication
+from its retained Postgres outbox; historical workflow failures keep their
+explicit replay path.
+
+If Sync reports a legacy pending claim without queued input, reconcile that
+specific job against its application's durable state before clearing its
+claim and resubmitting it. Do not clear claims in bulk or fabricate lost input.
+After startup, verify each application's resources, schedules, and dead letters
+through Core, plus normal domain reads and recovery.
+
+Application authors remove calls to `syncOps.registerDeadLetters()` and
+`syncOps.registerScheduler()`: Cloud discovers native handles automatically.
+Custom administration clients must include `queue` or `job` in dead-letter
+mutation paths, between `/dead-letters/` and the resource name.

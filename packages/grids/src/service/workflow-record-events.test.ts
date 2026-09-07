@@ -1,12 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { QueueMessage } from "@k2b/sync";
 import type { GridsRecordEvent } from "./record-events";
-import {
-  isDeletedRecordEventBaseError,
-  processFailedWorkflowRecordEventDelivery,
-  processInvalidWorkflowRecordEventDelivery,
-  workflowRecordEventRetryDelayMs,
-} from "./workflow-record-events";
+import { RECORD_EVENT_WORK_BACKOFF_MS, RECORD_EVENT_WORK_MAX_ATTEMPTS } from "./record-events";
+import { processWorkflowRecordEventDelivery } from "./workflow-record-events";
 
 const BASE_ID = "00000000-0000-4000-8000-000000000001";
 const delivery = (): QueueMessage<GridsRecordEvent> => ({
@@ -31,87 +27,58 @@ const delivery = (): QueueMessage<GridsRecordEvent> => ({
   heartbeat: async () => undefined,
 });
 
-describe("workflow record-event recovery", () => {
-  test("recognizes only the deleted-base foreign-key failure", () => {
-    expect(isDeletedRecordEventBaseError({ code: "23503", constraint: "record_event_delivery_failures_base_id_fkey" })).toBe(true);
-    expect(isDeletedRecordEventBaseError({ code: "23503", constraint: "another_foreign_key" })).toBe(false);
+describe("native workflow record-event recovery", () => {
+  test("preserves the twenty-attempt budget and five-minute capped backoff", () => {
+    expect(RECORD_EVENT_WORK_MAX_ATTEMPTS).toBe(20);
+    expect(RECORD_EVENT_WORK_BACKOFF_MS).toHaveLength(19);
+    expect(RECORD_EVENT_WORK_BACKOFF_MS.slice(0, 5)).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(RECORD_EVENT_WORK_BACKOFF_MS.at(-1)).toBe(300000);
   });
 
-  test("backs off without exceeding five minutes", () => {
-    expect(workflowRecordEventRetryDelayMs(1)).toBe(1_000);
-    expect(workflowRecordEventRetryDelayMs(5)).toBe(16_000);
-    expect(workflowRecordEventRetryDelayMs(20)).toBe(300_000);
-  });
-
-  test("persists the original identity and resends to the partition tail before acknowledging", async () => {
-    const message = delivery();
-    const resend = mock(async () => undefined);
-    const record = mock(async () => ({ attempts: 3, dead: false }));
-    await processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch failed"), record, resend);
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ eventId: "original-event", maxAttempts: 20, baseId: BASE_ID }));
-    expect(resend).toHaveBeenCalledWith(message, 4_000);
-  });
-
-  test("returns successfully without transport DLQ noise for application-terminal failures", async () => {
-    const message = delivery();
-    const resend = mock(async () => undefined);
-    const result = await processFailedWorkflowRecordEventDelivery(
-      message,
-      message.data,
-      new Error("permanent"),
-      async () => ({ attempts: 20, dead: true }),
-      resend,
-    );
-    expect(result).toEqual({ attempts: 20, dead: true });
-    expect(resend).not.toHaveBeenCalled();
-  });
-
-  test("throws when the failure store or delayed resend is unavailable", async () => {
-    const message = delivery();
-    const unavailable = async () => {
-      throw new Error("unavailable");
-    };
-    await expect(processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch"), unavailable)).rejects.toThrow(
-      "unavailable",
-    );
-    await expect(
-      processFailedWorkflowRecordEventDelivery(
-        message,
-        message.data,
-        new Error("dispatch"),
-        async () => ({ attempts: 1, dead: false }),
-        unavailable,
-      ),
-    ).rejects.toThrow("unavailable");
-  });
-
-  test("acknowledges obsolete work after its base has been deleted", async () => {
-    const message = delivery();
-    const record = async () => {
-      throw { code: "23503", constraint: "record_event_delivery_failures_base_id_fkey" };
-    };
-    const resend = mock(async () => undefined);
-    expect(await processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch"), record, resend)).toEqual({
-      attempts: 1,
-      dead: true,
+  test("propagates dispatch failures for native retry without publishing another message", async () => {
+    const error = new Error("workflow database unavailable");
+    const dispatch = mock(async () => {
+      throw error;
     });
-    await processInvalidWorkflowRecordEventDelivery(message, record, resend);
-    expect(resend).not.toHaveBeenCalled();
+    await expect(processWorkflowRecordEventDelivery(delivery(), dispatch)).rejects.toBe(error);
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
-  test("invalid payloads use the application budget and infrastructure failures remain retryable", async () => {
+  test("invalid payloads fail at the worker boundary", async () => {
+    const dispatch = mock(async () => undefined);
     const message = delivery();
-    const resend = mock(async () => undefined);
-    await processInvalidWorkflowRecordEventDelivery(message, async () => ({ attempts: 1, dead: false }), resend);
-    expect(resend).toHaveBeenCalledWith(message, 1_000);
-    resend.mockClear();
-    await processInvalidWorkflowRecordEventDelivery(message, async () => ({ attempts: 5, dead: true }), resend);
-    expect(resend).not.toHaveBeenCalled();
-    await expect(processInvalidWorkflowRecordEventDelivery({ ...message, meta: undefined })).rejects.toThrow("base metadata");
+    message.data = { ...message.data, version: -1 };
+    await expect(processWorkflowRecordEventDelivery(message, dispatch)).rejects.toThrow();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("does not dispatch aborted work and rechecks cancellation before acknowledgement", async () => {
+    const controller = new AbortController();
+    const message = { ...delivery(), signal: controller.signal };
+    const dispatch = mock(async () => {
+      controller.abort();
+    });
+    await expect(processWorkflowRecordEventDelivery(message, dispatch)).rejects.toThrow();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    dispatch.mockClear();
+    await expect(processWorkflowRecordEventDelivery(message, dispatch)).rejects.toThrow();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  test("heartbeats before returning and propagates lease failures", async () => {
+    const message = { ...delivery(), heartbeat: mock(async () => undefined) };
+    await processWorkflowRecordEventDelivery(message, async () => undefined);
+    expect(message.heartbeat).toHaveBeenCalledTimes(1);
     await expect(
-      processInvalidWorkflowRecordEventDelivery(message, async () => {
-        throw new Error("PG unavailable");
-      }),
-    ).rejects.toThrow("PG unavailable");
+      processWorkflowRecordEventDelivery(
+        {
+          ...message,
+          heartbeat: async () => {
+            throw new Error("disconnected");
+          },
+        },
+        async () => undefined,
+      ),
+    ).rejects.toThrow("disconnected");
   });
 });

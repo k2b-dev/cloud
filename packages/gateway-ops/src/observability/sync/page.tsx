@@ -180,13 +180,14 @@ export default ssr<AuthContext>(async (c) => {
           <DataTable
             rows={overview.deadLetters}
             columns={deadLetterColumns}
-            getRowId={(row) => `${row.appId}/${row.store}/${row.messageId}`}
+            getRowId={(row) => `${row.appId}/${row.kind}/${row.store}/${row.messageId}`}
             density="compact"
             hoverRows
             class="max-h-[34rem] overflow-auto"
             empty={t.syncNoDeadLetters}
             renderCell={({ row, col, value, render }) => {
-              if (col.id === "actions") return <DeadLetterActions appId={row.appId} store={row.store} messageId={row.messageId} />;
+              if (col.id === "actions")
+                return <DeadLetterActions kind={row.kind} appId={row.appId} store={row.store} messageId={row.messageId} />;
               if (col.id === "failedAt") return <span class="tabular-nums">{formatDateTime(row.failedAt, dateConfig)}</span>;
               if (col.id === "store") return <span title={row.description ?? row.kind}>{`${row.store} · ${row.kind}`}</span>;
               if (col.id === "reason")

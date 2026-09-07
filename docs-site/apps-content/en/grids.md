@@ -198,6 +198,13 @@ Document automation is available through `documents renderers|list|list-by-templ
 
 ## Deployment requirements
 
+Record events are committed in PostgreSQL before background publication.
+Workflow delivery retries up to 20 times, then retains the event in Sync's
+dead-letter queue for administrative replay. Retries preserve record ordering
+and can delay other records sharing the same queue partition. Existing
+PostgreSQL failure history remains available for inspection and explicit
+replay; upgrading does not automatically replay historical failures.
+
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.

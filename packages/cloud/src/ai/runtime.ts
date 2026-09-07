@@ -6,7 +6,7 @@ import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-import { syncOps } from "../services/sync-ops";
+
 import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { AiTurnExecutor } from "./executor";
@@ -59,7 +59,7 @@ const aiTurnQueue = lazySync((sync) => {
     owner: "cloud",
     delivery: { ackWaitMs: AI_TURN_LEASE_MS, maxAttempts: 50 },
   });
-  syncOps.registerDeadLetters({ name: "cloud-ai-turns", kind: "queue", store: handle.deadLetters });
+
   return handle;
 });
 

@@ -1,7 +1,7 @@
 import type { Worker } from "@k2b/sync";
 import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@valentinkolb/cloud";
 import type { AppLifecycle } from "@valentinkolb/cloud/contracts";
-import { get as getSetting, logger, superviseRuntimeTask, syncOps, trace } from "@valentinkolb/cloud/services";
+import { get as getSetting, logger, superviseRuntimeTask, trace } from "@valentinkolb/cloud/services";
 import { runHealthWebhookCheck, startHealthWebhookDelivery, stopHealthWebhookDelivery } from "./health-webhooks";
 import { migrate } from "./migrate";
 import { listRegisteredAppStatus, markOfflineLogged, upsertRegisteredApps } from "./registered-apps";
@@ -30,7 +30,7 @@ let telemetryAbort: AbortController | null = null;
 let telemetryTask: Promise<void> | null = null;
 let schedulerWorker: Worker | null = null;
 let offlineAuditWorker: Worker | null = null;
-let unregisterSyncOps: Array<() => void> = [];
+
 let registryRefreshInFlight = false;
 
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
@@ -301,10 +301,6 @@ export const gatewayOpsLifecycle: AppLifecycle = {
   },
 
   start: async () => {
-    unregisterSyncOps = [
-      syncOps.registerDeadLetters({ name: OFFLINE_AUDIT_ID, kind: "job", store: offlineAuditJob().deadLetters }),
-      syncOps.registerScheduler({ name: SCHEDULER_ID, scheduler: gatewayOpsScheduler() }),
-    ];
     startRegistryWatcher();
     await startScheduler();
     await startHealthWebhookDelivery();
@@ -317,7 +313,5 @@ export const gatewayOpsLifecycle: AppLifecycle = {
     await stopTelemetryConsumer();
     await stopScheduler();
     await stopHealthWebhookDelivery();
-    for (const unregister of unregisterSyncOps) unregister();
-    unregisterSyncOps = [];
   },
 };

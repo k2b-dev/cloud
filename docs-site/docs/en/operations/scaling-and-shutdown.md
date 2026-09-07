@@ -87,7 +87,13 @@ notification registration, the runtime watcher, and the registry heartbeat.
 
 Stop accepting new work before waiting for in-flight work.
 
-`createRuntimeTaskTracker()` tracks accepted promises. `stopRuntimeJobs()` stops
+Sync tracks each accepted worker handler and owns its drain and cancellation.
+Call the domain operation directly from the handler; a second task tracker can
+reject an already accepted delivery during shutdown and let it be acknowledged
+without running.
+
+Use `createRuntimeTaskTracker()` only for work outside Sync handlers, such as
+recovery scans and publishers. `stopRuntimeJobs()` stops
 new pulls, then drains workers and tracked tasks concurrently. Both have a
 30-second deadline by default; pass `{ timeoutMs }` as the third argument to
 match the application's shutdown budget. Starting the worker drain immediately

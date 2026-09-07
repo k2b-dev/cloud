@@ -513,6 +513,18 @@ attempts. Non-retryable failures move directly to `failed`.
 The delivery runtime also recovers an attempt left in `sending` after a worker
 stops. It returns the delivery to `pending` and records `lease_recovered`.
 
+PostgreSQL retains delivery state and retry times. Core checks for due work at
+startup and every 30 seconds. An interrupted `sending` attempt becomes eligible
+for recovery after five minutes.
+
+When upgrading from the queue-based delivery runtime to the job-based runtime,
+stop the old application instances before starting the new version. Preserve
+the notification tables: startup recovery resumes accepted pending deliveries,
+including work whose old queue message has not run. Future retries resume when
+their stored retry time arrives. The old queue is no longer consumed; removing
+its transport resources is separate operator cleanup, after delivery recovery
+has been verified.
+
 Calling `notifications.send()` again with the same idempotency key is safe, but
 it does not restart provider delivery. The existing event and current delivery
 state are returned. Cloud's delivery worker owns retries and recovery.

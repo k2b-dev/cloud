@@ -4,7 +4,7 @@ import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { gatewayOpsMessages } from "../../../messages";
 import { syncApiClient } from "../client";
 
-type Props = { appId: string; store: string; messageId: string };
+type Props = { kind: "queue" | "job"; appId: string; store: string; messageId: string };
 
 const readErrorMessage = async (response: Response, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -13,7 +13,7 @@ const readErrorMessage = async (response: Response, fallback: string): Promise<s
 
 export default function DeadLetterActions(props: Props) {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  const param = () => ({ app: props.appId, store: props.store });
+  const param = () => ({ app: props.appId, kind: props.kind, store: props.store });
 
   const requeue = mutation.create<boolean, void>({
     mutation: async () => {
@@ -23,7 +23,7 @@ export default function DeadLetterActions(props: Props) {
         confirmText: t.syncRequeue,
       });
       if (!confirmed) return false;
-      const response = await syncApiClient["dead-letters"][":app"][":store"].requeue.$post({
+      const response = await syncApiClient["dead-letters"][":app"][":kind"][":store"].requeue.$post({
         param: param(),
         json: { messageId: props.messageId },
       });
@@ -47,7 +47,7 @@ export default function DeadLetterActions(props: Props) {
         variant: "danger",
       });
       if (!confirmed) return false;
-      const response = await syncApiClient["dead-letters"][":app"][":store"][":messageId"].$delete({
+      const response = await syncApiClient["dead-letters"][":app"][":kind"][":store"][":messageId"].$delete({
         param: { ...param(), messageId: props.messageId },
       });
       if (!response.ok) throw new Error(await readErrorMessage(response, t.syncDeleteFailed));

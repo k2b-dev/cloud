@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { lazySync } from "@valentinkolb/cloud";
-import { syncOps } from "@valentinkolb/cloud/services";
+import { getProcessSync, lazySync } from "@valentinkolb/cloud";
 import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
 import {
   claimWorkflowRun,
@@ -1392,7 +1391,11 @@ suite("mail lifecycle control plane", () => {
       WHERE id = ${command.data.id}::uuid
     `;
     await startMaintenanceRuntime();
-    expect(syncOps.deadLetterStores().some((store) => store.name === "mail:execute-maintenance-command")).toBe(true);
+    expect(
+      getProcessSync()
+        .controls()
+        .some((control) => control.kind === "job" && control.id === "mail:execute-maintenance-command"),
+    ).toBe(true);
     try {
       const submitted = await submitDueMaintenanceCommands();
       expect(submitted.recovered).toBeGreaterThanOrEqual(1);
@@ -1406,7 +1409,12 @@ suite("mail lifecycle control plane", () => {
     } finally {
       await stopMaintenanceRuntime();
     }
-    expect(syncOps.deadLetterStores().some((store) => store.name === "mail:execute-maintenance-command")).toBe(false);
+    // Stopping workers preserves access to their retained diagnostic data.
+    expect(
+      getProcessSync()
+        .controls()
+        .some((control) => control.kind === "job" && control.id === "mail:execute-maintenance-command"),
+    ).toBe(true);
     await startMaintenanceRuntime();
     await stopMaintenanceRuntime();
   });

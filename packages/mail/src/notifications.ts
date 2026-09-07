@@ -9,7 +9,6 @@ import {
   notifications,
   stopRuntimeJobs,
   stopRuntimeResources,
-  syncOps,
   trace,
 } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
@@ -371,9 +370,9 @@ export const createMailNotificationService = (
   const recoveryScheduler = lazySync((sync) =>
     sync.scheduler({ id: "mail-collaboration-notifications", delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
   );
-  let unregisterRecoveryScheduler: (() => void) | undefined;
+
   let recoverySchedulerWorker: Worker | undefined;
-  const unregisterSyncOps: Array<() => void> = [];
+
   const send = options.sender ?? defaultSender(definitions);
   const deliveryTasks = createRuntimeTaskTracker();
   const deliveryJob = lazySync((sync) =>
@@ -384,13 +383,6 @@ export const createMailNotificationService = (
   );
   let deliveryJobWorker: Worker | undefined;
   const startDeliveryJob = async (): Promise<void> => {
-    unregisterSyncOps.push(
-      syncOps.registerDeadLetters({
-        name: options.jobId ?? "mail:collaboration-notification-delivery",
-        kind: "job",
-        store: deliveryJob().deadLetters,
-      }),
-    );
     deliveryJobWorker = await deliveryJob().process({}, async (ctx) => {
       const spanKey = trace.syncSpanKey("job", options.jobId ?? "mail:collaboration-notification-delivery", ctx.jobId);
       await trace.start({
@@ -401,23 +393,23 @@ export const createMailNotificationService = (
         spanKey,
         attributes: { "cloud.mail.notification_delivery_id": ctx.input.deliveryId },
       });
-      const result = await (deliveryTasks.run(async () => {
-        const claimed = await claimReservedDelivery(ctx.input.deliveryId);
-        if (!claimed) return { outcome: "skipped" };
-        try {
-          return {
-            outcome: await deliverClaimedNotification({
-              delivery: claimed.delivery,
-              claimId: claimed.claimId,
-              send,
-            }),
-          };
-        } catch (error) {
-          await retryClaimedDelivery(claimed.delivery, claimed.claimId, error);
-          throw error;
-        }
-      }) ?? Promise.resolve(null));
-      if (result) await trace.end({ spanKey, summary: result });
+      const claimed = await claimReservedDelivery(ctx.input.deliveryId);
+      if (!claimed) {
+        await trace.end({ spanKey, summary: { outcome: "skipped" } });
+        return;
+      }
+      let outcome: Awaited<ReturnType<typeof deliverClaimedNotification>>;
+      try {
+        outcome = await deliverClaimedNotification({
+          delivery: claimed.delivery,
+          claimId: claimed.claimId,
+          send,
+        });
+      } catch (error) {
+        await retryClaimedDelivery(claimed.delivery, claimed.claimId, error);
+        throw error;
+      }
+      await trace.end({ spanKey, summary: { outcome } });
     });
   };
 
@@ -427,9 +419,7 @@ export const createMailNotificationService = (
       await startDeliveryJob();
     },
     stop: async () => {
-      await stopRuntimeJobs(deliveryTasks, deliveryJobWorker ? [deliveryJobWorker] : []).finally(() => {
-        for (const unregister of unregisterSyncOps.splice(0)) unregister();
-      });
+      await stopRuntimeJobs(deliveryTasks, deliveryJobWorker ? [deliveryJobWorker] : []);
     },
   });
 
@@ -492,7 +482,7 @@ export const createMailNotificationService = (
       await deliveryLifecycle.start();
 
       const timezone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "Europe/Berlin";
-      unregisterRecoveryScheduler = syncOps.registerScheduler({ name: "mail-collaboration-notifications", scheduler: recoveryScheduler() });
+
       await recoveryScheduler().create({
         id: RECOVERY_SCHEDULE_ID,
         cron: "* * * * *",
@@ -531,8 +521,6 @@ export const createMailNotificationService = (
         });
     },
     stop: async () => {
-      unregisterRecoveryScheduler?.();
-      unregisterRecoveryScheduler = undefined;
       await stopRuntimeResources([
         () =>
           recoverySchedulerWorker?.drain().then(() => {

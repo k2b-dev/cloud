@@ -147,8 +147,10 @@ completion rather than acceptance.
 `list()` exposes the schedulers declared in the current process. `nextRunAt`
 is a `Date`; `handlerAvailable` describes whether this process has the callback.
 It does not describe whether another process can execute the schedule. Cloud
-registers scheduler handles for fleet inspection through its Sync operations
-service; Sync v6 has no separate `schedulerControl()` client.
+discovers scheduler controls automatically through `sync.controls()` for fleet
+inspection. The control view combines handler availability across local handles
+of the same scheduler without merging their workers or callbacks. No manual
+registration or separate scheduler client is needed.
 
 The lifecycle administration health endpoint reports local worker state:
 `started`, `registered`, `active`, and `capacity`. It is not a fleet-wide success

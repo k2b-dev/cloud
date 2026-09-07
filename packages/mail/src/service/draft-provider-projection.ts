@@ -2,7 +2,7 @@ import { type Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Lock, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { createRuntimeTaskTracker, logger, stopRuntimeJobs, syncOps, toPgTextArray } from "@valentinkolb/cloud/services";
+import { createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@valentinkolb/cloud/services";
 import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
@@ -24,8 +24,6 @@ import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
-
-const unregisterSyncOps: Array<() => void> = [];
 
 type SqlClient = typeof sql;
 type ProjectionState =
@@ -1396,7 +1394,6 @@ const exportJob = lazySync((sync) =>
 );
 let exportJobWorker: Worker | undefined;
 const startExportJob = async (): Promise<void> => {
-  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:project-draft", kind: "job", store: exportJob().deadLetters }));
   exportJobWorker = await exportJob().process(
     {
       onError: async ({ context, error }) => {
@@ -1411,7 +1408,7 @@ const startExportJob = async (): Promise<void> => {
     },
     async (ctx) => {
       try {
-        await tasks.run(() => processExportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat()));
+        await processExportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat());
       } catch (error) {
         if (failureCode(error, "DRAFT_EXPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
         throw error;
@@ -1428,7 +1425,6 @@ const importJob = lazySync((sync) =>
 );
 let importJobWorker: Worker | undefined;
 const startImportJob = async (): Promise<void> => {
-  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:import-draft", kind: "job", store: importJob().deadLetters }));
   importJobWorker = await importJob().process(
     {
       onError: async ({ context, error }) => {
@@ -1443,7 +1439,7 @@ const startImportJob = async (): Promise<void> => {
     },
     async (ctx) => {
       try {
-        await tasks.run(() => processImportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat()));
+        await processImportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat());
       } catch (error) {
         if (failureCode(error, "DRAFT_IMPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
         throw error;
@@ -1785,7 +1781,5 @@ export const stopDraftProjectionRuntime = async (): Promise<void> => {
   await stopRuntimeJobs(
     tasks,
     [exportJobWorker, importJobWorker].filter((worker): worker is Worker => worker !== undefined),
-  ).finally(() => {
-    for (const unregister of unregisterSyncOps.splice(0)) unregister();
-  });
+  );
 };

@@ -9,6 +9,10 @@ const TOPIC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const WORK_QUEUE_TENANT = "workflow-kernel";
 export const RECORD_EVENT_WORK_PARTITIONS = 32;
 export const RECORD_EVENT_WORK_LEASE_MS = 120_000;
+export const RECORD_EVENT_WORK_MAX_ATTEMPTS = 20;
+export const RECORD_EVENT_WORK_BACKOFF_MS = Array.from({ length: RECORD_EVENT_WORK_MAX_ATTEMPTS - 1 }, (_, index) =>
+  Math.min(300_000, 1_000 * 2 ** index),
+);
 
 export const GridsRecordEventSchema = z
   .object({
@@ -61,7 +65,11 @@ export const recordEventWorkQueue = lazySync((sync) =>
     ordering: { mode: "partitioned", partitions: RECORD_EVENT_WORK_PARTITIONS },
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
     maxPayloadBytes: 68_000,
-    delivery: { ackWaitMs: RECORD_EVENT_WORK_LEASE_MS, maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
+    delivery: {
+      ackWaitMs: RECORD_EVENT_WORK_LEASE_MS,
+      maxAttempts: RECORD_EVENT_WORK_MAX_ATTEMPTS,
+      backoffMs: RECORD_EVENT_WORK_BACKOFF_MS,
+    },
   }),
 );
 

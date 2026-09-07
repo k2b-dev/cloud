@@ -60,7 +60,7 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
       // Exercise the real durable snapshot worker against the retained gap. Only
       // the database seam is stubbed, so no application note is created or changed.
       const notes = await import("./notes");
-      const { yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
+      const { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
       const readState = spyOn(notes, "getYjsStateWithCursor").mockResolvedValue({
         yjsState: null,
         streamCursor: null,
@@ -75,13 +75,18 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         expect(readState).toHaveBeenCalled();
         await yjsSnapshotWorker.stop();
         expect(save).not.toHaveBeenCalled();
-        // Different target cursors must remain separately queued, even when the
-        // previous job is waiting to retry. A late unload cannot be coalesced away.
+        const failures = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.reason).toContain("Document history is incomplete");
+        expect(readState).toHaveBeenCalledTimes(1);
+        // Distinct target cursors stay separately queued. The failed target can
+        // be submitted again after its prior coalescing claim was released.
+        await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: second.cursor, reason: "unload" });
         await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: first.cursor, reason: "unload" });
         const pending = (await Array.fromAsync(manager.streams.list())).filter(
           (entry) =>
             entry.config.metadata?.["sync.namespace"] === namespace &&
-            entry.config.metadata?.["sync.id"] === "notebooks.yjs.snapshot" &&
+            entry.config.metadata?.["sync.id"] === "notebooks.yjs.snapshot.ordered" &&
             entry.state.messages === 2,
         );
         expect(pending.length).toBeGreaterThan(0);

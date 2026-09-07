@@ -2,7 +2,7 @@ import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { type BoundNotificationMap, lazySync, notification } from "@valentinkolb/cloud";
 import { AI_SHORT_ID_PATTERN } from "@valentinkolb/cloud/ai";
-import { coreSettings, logger, notifications, syncOps, trace } from "@valentinkolb/cloud/services";
+import { coreSettings, logger, notifications, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 
@@ -100,7 +100,7 @@ type AiNotificationRecoverySummary = {
 export const createAiNotificationService = (definitions: AiNotificationDefinitions) => {
   const recoveryScheduler = lazySync((sync) => {
     const handle = sync.scheduler({ id: "core-ai-notifications", delivery: { maxAttempts: 4, backoffMs: [5_000, 10_000, 20_000] } });
-    syncOps.registerScheduler({ name: "core-ai-notifications", scheduler: handle });
+
     return handle;
   });
   let worker: Worker | undefined;

@@ -3,8 +3,8 @@ import { lazySync } from "../../_internal/process-sync";
 import { logger, logging, trace } from "../logging";
 import { providers } from "../providers";
 import { get as getSetting } from "../settings";
-import { syncOps } from "../sync-ops";
 import { accountLifecycle } from "./index";
+import { declareIpaBackfill, prepareIpaBackfill, processIpaBackfillAccount } from "./ipa-backfill";
 import type { AccountLifecycleNotificationSender } from "./notification-sender";
 
 const log = logger("auth:lifecycle:scheduler");
@@ -13,7 +13,6 @@ const reminderLog = logger("auth:reminder:daily");
 const guestCleanupLog = logger("auth:guest:cleanup");
 const localUserCleanupLog = logger("auth:local-user:cleanup");
 const auditCleanupLog = logger("auth:lifecycle:audit:cleanup");
-const ipaBackfillLog = logger("auth:ipa:backfill");
 const localUserBackfillLog = logger("auth:local-user:backfill");
 const guestBackfillLog = logger("auth:guest:backfill");
 const logCleanupLog = logger("logging");
@@ -71,14 +70,12 @@ const getTimezoneSetting = async (): Promise<string> => {
 
 // ── Jobs ───────────────────────────────────────────────────────────────
 
-const ipaSyncJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const ipaSyncJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:ipa:sync",
     delivery: { ackWaitMs: IPA_SYNC_LEASE_MS, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:ipa:sync", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processIpaSyncJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -134,14 +131,12 @@ const processIpaSyncJob = async (ctx: JobContext<null>): Promise<void> => {
   );
 };
 
-const reminderJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const reminderJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:reminder:daily",
     delivery: { ackWaitMs: 180_000, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:reminder:daily", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processReminderJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -162,14 +157,12 @@ const processReminderJob = async (ctx: JobContext<null>): Promise<void> => {
   );
 };
 
-const guestCleanupJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const guestCleanupJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:guest:cleanup",
     delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:guest:cleanup", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processGuestCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -189,14 +182,12 @@ const processGuestCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   );
 };
 
-const localUserCleanupJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const localUserCleanupJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:local-user:cleanup",
     delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:local-user:cleanup", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processLocalUserCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -216,14 +207,12 @@ const processLocalUserCleanupJob = async (ctx: JobContext<null>): Promise<void> 
   );
 };
 
-const auditCleanupJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const auditCleanupJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:lifecycle:audit:cleanup",
     delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:lifecycle:audit:cleanup", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processAuditCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -243,14 +232,12 @@ const processAuditCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   );
 };
 
-const logCleanupJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const logCleanupJob = lazySync((sync) =>
+  sync.job<null>({
     id: "app:logs:cleanup",
     delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
-  });
-  syncOps.registerDeadLetters({ name: "app:logs:cleanup", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processLogCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -272,41 +259,14 @@ const processLogCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
   );
 };
 
-const ipaBackfillJob = lazySync((sync) => {
-  const handle = sync.job<null>({
-    id: "auth:ipa:backfill",
-    delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:ipa:backfill", kind: "job", store: handle.deadLetters });
-  return handle;
-});
-const processIpaBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
-  await trace.withSpan(
-    {
-      name: "IPA expiry backfill",
-      source: "auth:ipa:backfill",
-      appId: "core",
-      category: "job",
-      kind: "consumer",
-    },
-    async () => {
-      if (ctx.signal.aborted) return abortedSummary();
-      const summary = await accountLifecycle.runIpaBackfill();
-      ipaBackfillLog.info("IPA expiry backfill complete", toBackfillLog(summary));
-      return summary;
-    },
-    { summarize: (summary) => summary },
-  );
-};
+const ipaBackfill = lazySync(declareIpaBackfill);
 
-const guestBackfillJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const guestBackfillJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:guest:backfill",
     delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:guest:backfill", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processGuestBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -326,14 +286,12 @@ const processGuestBackfillJob = async (ctx: JobContext<null>): Promise<void> => 
   );
 };
 
-const localUserBackfillJob = lazySync((sync) => {
-  const handle = sync.job<null>({
+const localUserBackfillJob = lazySync((sync) =>
+  sync.job<null>({
     id: "auth:local-user:backfill",
     delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
-  });
-  syncOps.registerDeadLetters({ name: "auth:local-user:backfill", kind: "job", store: handle.deadLetters });
-  return handle;
-});
+  }),
+);
 const processLocalUserBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
   await trace.withSpan(
     {
@@ -355,11 +313,7 @@ const processLocalUserBackfillJob = async (ctx: JobContext<null>): Promise<void>
 
 // ── Scheduler ──────────────────────────────────────────────────────────
 
-const lifecycleScheduler = lazySync((sync) => {
-  const handle = sync.scheduler({ id: "auth-lifecycle", delivery: { maxAttempts: 1 } });
-  syncOps.registerScheduler({ name: "auth-lifecycle", scheduler: handle });
-  return handle;
-});
+const lifecycleScheduler = lazySync((sync) => sync.scheduler({ id: "auth-lifecycle", delivery: { maxAttempts: 1 } }));
 
 let started = false;
 let workers: Worker[] = [];
@@ -530,7 +484,8 @@ export const lifecycleJobs = {
       workers.push(await localUserCleanupJob().process({}, processLocalUserCleanupJob));
       workers.push(await auditCleanupJob().process({}, processAuditCleanupJob));
       workers.push(await logCleanupJob().process({}, processLogCleanupJob));
-      workers.push(await ipaBackfillJob().process({}, processIpaBackfillJob));
+      workers.push(await ipaBackfill().accounts.process({ concurrency: 1 }, processIpaBackfillAccount));
+      workers.push(await ipaBackfill().pump.process());
       workers.push(await guestBackfillJob().process({}, processGuestBackfillJob));
       workers.push(await localUserBackfillJob().process({}, processLocalUserBackfillJob));
       workers.push(await lifecycleScheduler().process());
@@ -558,7 +513,11 @@ export const lifecycleJobs = {
   },
 
   // Manual-only backfill triggers. Scheduled jobs are run through schedulerControl.
-  submitIpaBackfill: async (): Promise<string> => (await ipaBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,
+  submitIpaBackfill: async (): Promise<string> => {
+    const key = crypto.randomUUID();
+    await ipaBackfill().pump.start({ key, input: await prepareIpaBackfill(key) });
+    return key;
+  },
   submitLocalUserBackfill: async (): Promise<string> =>
     (await localUserBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,
   submitGuestBackfill: async (): Promise<string> => (await guestBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,

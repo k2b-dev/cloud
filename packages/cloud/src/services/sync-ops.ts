@@ -1,30 +1,6 @@
-/**
- * Process-local sync operations surface.
- *
- * `sync.resources()`, dead-letter stores, and `scheduler.list()` only see the
- * handles created in THIS process. Every app therefore registers its
- * queue/job dead-letter stores and schedulers here and mounts
- * `createSyncOpsRoutes()` under `/_internal/sync`; Gateway Ops aggregates the
- * fleet by calling that surface on every registered app.
- *
- * Auth: the router carries no gate of its own. The framework mounts it behind
- * the platform admin gate (`auth.requireRole("admin")`), so `c.get("actor")`
- * is always the administrator who triggered a mutation and is written to the
- * audit log.
- *
- * Topic consumers keep per-consumer dead-letter streams inside sync without a
- * public store API, so only queues and jobs can be registered.
- */
+/** Process-local Sync controls, exposed through Cloud's authenticated invocation boundary. */
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import {
-  type DeadLetter,
-  type DeadLetterStore,
-  NotFoundError,
-  type PublishReceipt,
-  type ScheduleInfo,
-  type Scheduler,
-  type Sync,
-} from "@k2b/sync";
+import { type DeadLetter, NotFoundError, type PublishReceipt, type ScheduleInfo, type Sync } from "@k2b/sync";
 import { Hono } from "hono";
 import { z } from "zod";
 import { respond } from "../server/api/respond";
@@ -33,20 +9,6 @@ import { v } from "../server/middleware/validator";
 import { type AuditActor, audit } from "./audit";
 
 export type SyncDeadLetterKind = "queue" | "job";
-
-export type SyncDeadLetterRegistration = {
-  /** The sync resource id (`sync.queue({ id })` / `sync.job({ id })`); unique per process. */
-  name: string;
-  kind: SyncDeadLetterKind;
-  store: DeadLetterStore<unknown>;
-  description?: string;
-};
-
-export type SyncSchedulerRegistration = {
-  /** The sync scheduler id (`sync.scheduler({ id })`); unique per process. */
-  name: string;
-  scheduler: Pick<Scheduler, "list" | "runNow" | "awaitRun">;
-};
 
 export type SyncDeadLetterEntry = {
   messageId: string;
@@ -89,32 +51,6 @@ export type SyncScheduleView = {
 export const SYNC_OPS_DEAD_LETTER_LIMIT = { default: 20, max: 100 } as const;
 const DATA_PREVIEW_BYTES = 1_024;
 const RUN_AWAIT_TIMEOUT = { default: 5_000, max: 30_000 } as const;
-
-export const createSyncOpsRegistry = () => {
-  const deadLetters = new Map<string, SyncDeadLetterRegistration>();
-  const schedulers = new Map<string, SyncSchedulerRegistration>();
-  const register = <T extends { name: string }>(map: Map<string, T>, label: string, registration: T): (() => void) => {
-    if (map.has(registration.name)) throw new Error(`Sync ${label} "${registration.name}" is already registered`);
-    map.set(registration.name, registration);
-    return () => {
-      if (map.get(registration.name) === registration) map.delete(registration.name);
-    };
-  };
-  return {
-    /** Register a queue/job dead-letter store. Returns the unregister function. */
-    registerDeadLetters: (registration: SyncDeadLetterRegistration): (() => void) =>
-      register(deadLetters, "dead-letter store", registration),
-    /** Register a scheduler. Returns the unregister function. */
-    registerScheduler: (registration: SyncSchedulerRegistration): (() => void) => register(schedulers, "scheduler", registration),
-    deadLetterStores: (): SyncDeadLetterRegistration[] => [...deadLetters.values()],
-    schedulers: (): SyncSchedulerRegistration[] => [...schedulers.values()],
-  };
-};
-
-export type SyncOpsRegistry = ReturnType<typeof createSyncOpsRegistry>;
-
-/** The process-wide registry every app feeds after creating its handles. */
-export const syncOps = createSyncOpsRegistry();
 
 const iso = (value: Date): string => value.toISOString();
 
@@ -171,7 +107,7 @@ const asFailure = <T>(error: unknown, notFoundLabel: string): Result<T> => {
 const DeadLettersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(SYNC_OPS_DEAD_LETTER_LIMIT.max).default(SYNC_OPS_DEAD_LETTER_LIMIT.default),
 });
-const DeadLetterNameParamSchema = z.object({ name: z.string().min(1).max(96) });
+const DeadLetterNameParamSchema = z.object({ kind: z.enum(["queue", "job"]), name: z.string().min(1).max(96) });
 const DeadLetterEntryParamSchema = DeadLetterNameParamSchema.extend({ messageId: z.string().min(1).max(256) });
 const RequeueBodySchema = z.object({ messageId: z.string().min(1).max(256) });
 const ScheduleParamSchema = z.object({ scheduler: z.string().min(1).max(96), id: z.string().min(1).max(96) });
@@ -182,7 +118,6 @@ const RunQuerySchema = z.object({
 });
 
 export type SyncOpsRoutesDependencies = {
-  registry?: SyncOpsRegistry;
   audit?: Pick<typeof audit, "recordResultAfterSideEffect">;
 };
 
@@ -192,11 +127,18 @@ export type SyncOpsRoutesDependencies = {
  * can be built before the sync runtime exists.
  */
 export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRoutesDependencies = {}) => {
-  const registry = dependencies.registry ?? syncOps;
   const auditLog = dependencies.audit ?? audit;
 
-  const findStore = (name: string) => registry.deadLetterStores().find((entry) => entry.name === name) ?? null;
-  const findScheduler = (name: string) => registry.schedulers().find((entry) => entry.name === name) ?? null;
+  const stores = () =>
+    getSync()
+      .controls()
+      .filter((entry) => entry.kind !== "scheduler");
+  const schedulers = () =>
+    getSync()
+      .controls()
+      .filter((entry) => entry.kind === "scheduler");
+  const findStore = (kind: SyncDeadLetterKind, name: string) => stores().find((entry) => entry.kind === kind && entry.id === name) ?? null;
+  const findScheduler = (name: string) => schedulers().find((entry) => entry.id === name) ?? null;
 
   return (
     new Hono<AuthContext>()
@@ -207,32 +149,32 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         return respond(c, ok({ health: sync.health(), resources }));
       })
 
-      /** Every registered dead-letter store with a bounded page of entries. */
+      /** Every declared dead-letter store with a bounded page of entries. */
       .get("/dead-letters", v("query", DeadLettersQuerySchema), async (c) => {
         const { limit } = c.req.valid("query");
-        const stores = await Promise.all(
-          registry.deadLetterStores().map(async (registration): Promise<SyncDeadLetterStoreView> => {
-            const page = await registration.store.list({ limit: limit + 1 });
+        const entries = await Promise.all(
+          stores().map(async (registration): Promise<SyncDeadLetterStoreView> => {
+            const page = await registration.deadLetters.list({ limit: limit + 1 });
             return {
-              name: registration.name,
+              name: registration.id,
               kind: registration.kind,
-              description: registration.description ?? null,
+              description: null,
               entries: page.slice(0, limit).map(toEntry),
               truncated: page.length > limit,
             };
           }),
         );
-        return respond(c, ok({ stores }));
+        return respond(c, ok({ stores: entries }));
       })
 
       /** Re-enqueue one dead letter with a fresh idempotency key; removes the DLQ entry. */
-      .post("/dead-letters/:name/requeue", v("param", DeadLetterNameParamSchema), v("json", RequeueBodySchema), async (c) => {
-        const { name } = c.req.valid("param");
+      .post("/dead-letters/:kind/:name/requeue", v("param", DeadLetterNameParamSchema), v("json", RequeueBodySchema), async (c) => {
+        const { kind, name } = c.req.valid("param");
         const { messageId } = c.req.valid("json");
-        const store = findStore(name);
+        const store = findStore(kind, name);
         if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
         const idempotencyKey = `sync-ops:requeue:${crypto.randomUUID()}`;
-        const result = await store.store
+        const result = await store.deadLetters
           .requeue({ messageId, idempotencyKey })
           .then((receipt) => ok({ receipt, idempotencyKey }))
           .catch((error: unknown) => asFailure<{ receipt: PublishReceipt; idempotencyKey: string }>(error, "Dead letter"));
@@ -248,11 +190,11 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
       })
 
       /** Drop one dead letter permanently. */
-      .delete("/dead-letters/:name/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {
-        const { name, messageId } = c.req.valid("param");
-        const store = findStore(name);
+      .delete("/dead-letters/:kind/:name/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {
+        const { kind, name, messageId } = c.req.valid("param");
+        const store = findStore(kind, name);
         if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
-        const result = await store.store
+        const result = await store.deadLetters
           .delete({ messageId })
           .then((deleted) => (deleted ? ok({ deleted: true }) : fail(err.notFound("Dead letter"))))
           .catch((error: unknown) => asFailure<{ deleted: boolean }>(error, "Dead letter"));
@@ -267,13 +209,13 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         return respond(c, result);
       })
 
-      /** Schedules of every registered scheduler, each row tagged with its scheduler id. */
+      /** Schedules of every declared scheduler, each row tagged with its scheduler id. */
       .get("/schedules", async (c) => {
         const schedules = (
           await Promise.all(
-            registry
-              .schedulers()
-              .map(async (registration) => (await registration.scheduler.list()).map((info) => toScheduleView(registration.name, info))),
+            schedulers().map(async (registration) =>
+              (await registration.scheduler.list()).map((info) => toScheduleView(registration.id, info)),
+            ),
           )
         ).flat();
         return respond(c, ok({ schedules }));

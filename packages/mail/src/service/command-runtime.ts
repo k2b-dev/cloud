@@ -7,7 +7,6 @@ import {
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
-  syncOps,
 } from "@valentinkolb/cloud/services";
 import { toPgTextArray } from "@valentinkolb/cloud/services/postgres";
 import { sql } from "bun";
@@ -2931,18 +2930,16 @@ const mutationJob = lazySync((sync) =>
 let mutationJobWorker: Worker | undefined;
 const startMutationJob = async (): Promise<void> => {
   mutationJobWorker = await mutationJob().process({}, async (ctx) => {
-    const data = await (commandTasks.run(async () => ({
-      state: await executeMutationCommandWithHeartbeat(ctx.input.commandId, async (fence) => {
-        try {
-          await ctx.heartbeat();
-        } catch (cause) {
-          throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
-        }
-        await heartbeatCommandFence(fence);
-      }),
-    })) ?? Promise.resolve(null));
-    if (data?.state === "ambiguous") ctx.resubmit({ delayMs: 2_000 });
-    else if (data?.state === "queued") ctx.resubmit({ delayMs: 30_000 });
+    const state = await executeMutationCommandWithHeartbeat(ctx.input.commandId, async (fence) => {
+      try {
+        await ctx.heartbeat();
+      } catch (cause) {
+        throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
+      }
+      await heartbeatCommandFence(fence);
+    });
+    if (state === "ambiguous") ctx.resubmit({ delayMs: 2_000 });
+    else if (state === "queued") ctx.resubmit({ delayMs: 30_000 });
   });
 };
 
@@ -2955,31 +2952,29 @@ const outboxJob = lazySync((sync) =>
 let outboxJobWorker: Worker | undefined;
 const startOutboxJob = async (): Promise<void> => {
   outboxJobWorker = await outboxJob().process({}, async (ctx) => {
-    const data = await (commandTasks.run(async () => {
-      const state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
-        try {
-          await ctx.heartbeat();
-        } catch (cause) {
-          throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
-        }
-        await heartbeatOutboxFence(loaded);
-      });
-      const [pending] = await sql<{ state: string; delay_ms: string | number }[]>`
-      SELECT
-        state,
-        GREATEST(
-          0,
-          EXTRACT(EPOCH FROM (GREATEST(scheduled_at, COALESCE(undo_until, scheduled_at)) - now())) * 1000
-        )::bigint AS delay_ms
-      FROM mail.outbox_submissions
-      WHERE id = ${ctx.input.outboxId}::uuid
-        AND state IN ('scheduled', 'undo_window')
-      `;
-      return {
-        state: state ?? pending?.state ?? null,
-        delayMs: pending ? Math.max(1_000, Math.min(Number(pending.delay_ms), 60_000)) : null,
-      };
-    }) ?? Promise.resolve(null));
+    const state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
+      try {
+        await ctx.heartbeat();
+      } catch (cause) {
+        throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
+      }
+      await heartbeatOutboxFence(loaded);
+    });
+    const [pending] = await sql<{ state: string; delay_ms: string | number }[]>`
+    SELECT
+      state,
+      GREATEST(
+        0,
+        EXTRACT(EPOCH FROM (GREATEST(scheduled_at, COALESCE(undo_until, scheduled_at)) - now())) * 1000
+      )::bigint AS delay_ms
+    FROM mail.outbox_submissions
+    WHERE id = ${ctx.input.outboxId}::uuid
+      AND state IN ('scheduled', 'undo_window')
+    `;
+    const data = {
+      state: state ?? pending?.state ?? null,
+      delayMs: pending ? Math.max(1_000, Math.min(Number(pending.delay_ms), 60_000)) : null,
+    };
     // Sync continuations are fresh deliveries; carry the logical attempt across them.
     const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
     const input = { ...ctx.input, continuationAttempt: attempt };
@@ -3069,7 +3064,6 @@ const commandScheduler = lazySync((sync) =>
   sync.scheduler({ id: "mail-commands", delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
 );
 let commandSchedulerWorker: Worker | undefined;
-const unregisterCommandSyncOps: Array<() => void> = [];
 
 const stopCommandJobs = async (): Promise<void> => {
   await stopRuntimeJobs(
@@ -3086,13 +3080,7 @@ const commandRuntimeLifecycle = createRuntimeLifecycle({
     await startMutationJob();
     await startOutboxJob();
     await startMaintenanceRuntime();
-    unregisterCommandSyncOps.push(
-      syncOps.registerDeadLetters({ name: "mail:execute-command", kind: "job", store: mutationJob().deadLetters }),
-    );
-    unregisterCommandSyncOps.push(
-      syncOps.registerDeadLetters({ name: "mail:execute-outbox", kind: "job", store: outboxJob().deadLetters }),
-    );
-    unregisterCommandSyncOps.push(syncOps.registerScheduler({ name: "mail-commands", scheduler: commandScheduler() }));
+
     await commandScheduler().create({
       id: "mail:commands-due",
       cron: "* * * * *",
@@ -3118,9 +3106,6 @@ const commandRuntimeLifecycle = createRuntimeLifecycle({
         }),
       stopMaintenanceRuntime,
       stopCommandJobs,
-      () => {
-        for (const unregister of unregisterCommandSyncOps.splice(0)) unregister();
-      },
     ]);
   },
 });

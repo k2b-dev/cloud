@@ -18,7 +18,7 @@
 
 import type { Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { logger, get as settingsGet, syncOps } from "@valentinkolb/cloud/services";
+import { logger, get as settingsGet } from "@valentinkolb/cloud/services";
 import { reindexAll } from "./note-refs";
 
 const log = logger("notebooks:reindex");
@@ -82,8 +82,6 @@ let jobWorker: Worker | undefined;
 let scheduleWorker: Worker | undefined;
 
 const startWorkers = async (): Promise<void> => {
-  syncOps.registerDeadLetters({ name: "notebooks:reindex", kind: "job", store: reindexJob().deadLetters });
-  syncOps.registerScheduler({ name: "notebooks:reindex", scheduler: reindexScheduler() });
   jobWorker ??= await reindexJob().process({}, async (ctx) => {
     ctx.signal.throwIfAborted();
     let lastHeartbeatAt = Date.now();
