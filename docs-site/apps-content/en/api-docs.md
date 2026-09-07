@@ -5,7 +5,7 @@ section: Platform
 order: 340
 description: Live OpenAPI references from the Cloud apps that publish an API contract.
 tags: [api-docs, openapi, cli]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # API Docs
@@ -65,3 +65,9 @@ cld api-docs search "account request" --app accounts --json
 
 Run `cld api-docs help` for operation lookup and raw specification output. A
 query can only return contracts that the current deployment is publishing.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

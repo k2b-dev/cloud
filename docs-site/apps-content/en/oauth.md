@@ -5,7 +5,7 @@ section: Platform
 order: 320
 description: OAuth 2.0 and OpenID Connect clients, callbacks, scopes, access rules, and secrets.
 tags: [oauth, oidc, identity]
-updated: 2026-08-07
+updated: 2026-09-07
 ---
 
 # OAuth
@@ -70,3 +70,9 @@ cld oauth clients get <client> --json
 Run `cld oauth help` for the available client operations. Run
 `cld oauth clients <command> --help` before creating, updating, deleting, or
 rotating a secret.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

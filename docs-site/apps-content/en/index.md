@@ -5,7 +5,7 @@ section: Start
 order: 10
 description: See what Cloud applications provide and where each application's responsibility begins.
 tags: [apps, products]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Built-in applications
@@ -68,6 +68,7 @@ The [UI catalog](/en/ui) in Fibel documents the reusable component package.
 | Question | Source |
 | --- | --- |
 | What does this application provide? | This Apps catalog |
+| What do I need to deploy these applications? | [Deployment requirements](/en/docs/operations/deployment-requirements) |
 | How do I use the product UI? | Help inside the running application |
 | How do I build or extend a Cloud application? | [Developer documentation](/en/docs) |
 | Which shared components can I use? | [UI catalog](/en/ui) |

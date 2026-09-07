@@ -5,7 +5,7 @@ section: Operations
 order: 400
 description: Admin console for application routing, health, observability, and platform diagnostics.
 tags: [gateway, operations, observability, admin]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Gateway Ops
@@ -85,3 +85,9 @@ cld admin routes list --errors --json
 Run `cld admin help` for logs, telemetry, jobs, workflows, notifications, and
 bounded storage diagnostics. Run `cld admin <area> <command> --help` before a
 maintenance action.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

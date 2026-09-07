@@ -13,6 +13,9 @@ updated: 2026-09-04
 Use environment variables for infrastructure. Use Cloud settings for product
 configuration.
 
+For the services and optional integrations needed by each app, start with
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
 

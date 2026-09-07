@@ -5,7 +5,7 @@ section: Platform
 order: 330
 description: Traefik ForwardAuth clients that protect external services with Cloud groups.
 tags: [proxy-auth, forward-auth, traefik]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Proxy Auth
@@ -69,3 +69,9 @@ cld api-docs show proxy-auth GET /api/proxy-auth --json
 
 Run `cld api-docs help` for reference lookup. The API requires administrator
 access and uses the same validation and authorization as the Proxy Auth page.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

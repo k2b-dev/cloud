@@ -5,7 +5,7 @@ section: Everyday
 order: 220
 description: Short audience-aware answers for visitors, guests, and signed-in users.
 tags: [faq, help, audiences, markdown]
-updated: 2026-09-01
+updated: 2026-09-07
 ---
 
 # FAQ
@@ -79,3 +79,9 @@ valid locale. Run `cld faq help` for file, standard-input, and structured-output
 options.
 FAQ CLI operations require an administrator; the public FAQ page performs its
 own audience filtering.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Contacts
@@ -71,3 +71,9 @@ cld contacts search "Ada Lovelace" --json
 Run `cld contacts help` for the available areas. Run
 `cld contacts <command> --help` before a mutation or destructive operation to
 read its current fields and confirmation requirements.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

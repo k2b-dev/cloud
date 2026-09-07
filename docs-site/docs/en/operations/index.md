@@ -5,7 +5,7 @@ section: Operations
 order: 1100
 description: Develop and operate an independent Cloud application through the shared gateway.
 tags: [operations, deployment, runtime]
-updated: 2026-08-12
+updated: 2026-09-07
 ---
 
 # Operations
@@ -32,12 +32,13 @@ container ownership.
 
 ## Deployment workflow
 
-1. [Build the application](/en/docs/operations/build-and-deploy).
-2. [Set infrastructure configuration](/en/docs/operations/runtime-configuration).
-3. Configure application values through [Settings](/en/docs/platform/settings).
-4. [Scale and stop services safely](/en/docs/operations/scaling-and-shutdown).
-5. Use [Observability](/en/docs/operations/observability) for health and failure.
-6. Use [Troubleshooting](/en/docs/operations/troubleshooting) when the registry,
+1. [Choose apps and their deployment requirements](/en/docs/operations/deployment-requirements).
+2. [Build the application](/en/docs/operations/build-and-deploy).
+3. [Set infrastructure configuration](/en/docs/operations/runtime-configuration).
+4. Configure application values through [Settings](/en/docs/platform/settings).
+5. [Scale and stop services safely](/en/docs/operations/scaling-and-shutdown).
+6. Use [Observability](/en/docs/operations/observability) for health and failure.
+7. Use [Troubleshooting](/en/docs/operations/troubleshooting) when the registry,
    gateway, or dependencies disagree.
 
 FreeIPA is optional. See [FreeIPA](/en/docs/operations/freeipa) only when

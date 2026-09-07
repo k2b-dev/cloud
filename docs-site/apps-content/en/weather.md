@@ -5,7 +5,7 @@ section: Everyday
 order: 240
 description: Saved locations, forecasts, radar, displays, and weather widgets.
 tags: [weather, forecasts, capabilities]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Weather
@@ -73,3 +73,9 @@ Run `cld capabilities catalog --json` to inspect the live schemas and safety
 metadata. Run `cld capabilities query --help` for the current invocation
 syntax. Capability calls use the current profile and do not bypass application
 authorization.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

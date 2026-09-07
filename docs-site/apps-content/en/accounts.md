@@ -5,7 +5,7 @@ section: Platform
 order: 310
 description: Account access, groups, requests, service credentials, notifications, and audit history.
 tags: [accounts, groups, access]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Accounts
@@ -73,3 +73,9 @@ cld accounts groups list --json
 Run `cld accounts help` to see requests, audit, and service-account areas. Run
 `cld accounts <area> <command> --help` before a mutation to read its current
 fields and confirmation requirements.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

@@ -5,7 +5,7 @@ section: Everyday
 order: 210
 description: A cached quote of the hour for dashboards and public API consumers.
 tags: [quotes, dashboard, widgets, api]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Quotes
@@ -64,3 +64,9 @@ cld api-docs spec quotes > quotes.openapi.json
 Run `cld api-docs help` for schema search and operation details. The public
 quote endpoint is still rate-limited; API discovery does not change that
 runtime behavior.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

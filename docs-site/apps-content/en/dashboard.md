@@ -5,7 +5,7 @@ section: Platform
 order: 360
 description: A personal Cloud start page with app widgets, shortcuts, and saved layout preferences.
 tags: [dashboard, widgets, shortcuts, personalization]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Dashboard
@@ -64,3 +64,9 @@ Dashboard does not register a dedicated `cld dashboard` module. Its primary
 surface is the signed-in web start page, and its personal layout is managed
 there. Run `cld help` to inspect the current CLI modules instead of depending
 on undocumented dashboard API calls.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

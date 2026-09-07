@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-08-22
+updated: 2026-09-07
 ---
 
 # Assistant
@@ -150,3 +150,9 @@ cld assistant models --json
 Run `cld assistant help` for chat flags and the management commands for chats,
 messages, files, preferences, Projects, and turn actions. Run
 `cld assistant <command> --help` before approving or changing stored state.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

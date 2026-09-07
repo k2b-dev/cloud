@@ -5,7 +5,7 @@ section: Platform
 order: 350
 description: Discover and run the live Queries and Actions published by Cloud applications.
 tags: [capabilities, queries, actions, automation]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Capabilities
@@ -71,3 +71,9 @@ cld capabilities catalog --limit 25 --json
 Run `cld capabilities help` for the available operation types. Run
 `cld capabilities query --help` or `cld capabilities action --help` before an
 invocation; the live manifest remains authoritative for IDs and schemas.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

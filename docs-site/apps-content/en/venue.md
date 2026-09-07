@@ -5,7 +5,7 @@ section: Everyday
 order: 200
 description: Opening hours, staffing shifts, public pages, calendars, and visitor feedback for staffed places.
 tags: [venues, shifts, schedules, public-pages, cli]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Venues
@@ -70,3 +70,9 @@ cld venue status "Cafe Counter" --json
 Run `cld venue help` for the available areas. Run
 `cld venue <command> --help` before changing access, schedules, shifts, or
 public content.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

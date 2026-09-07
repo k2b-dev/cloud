@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Personal and group storage with browsing, search, previews, uploads, and file operations.
 tags: [files, storage, search, capabilities]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Files
@@ -72,3 +72,9 @@ Run `cld capabilities catalog --json` to inspect the live schema and safety
 metadata. Run `cld capabilities query --help` for the current invocation
 syntax. Capability queries use the current profile and return only accessible
 bases and items.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

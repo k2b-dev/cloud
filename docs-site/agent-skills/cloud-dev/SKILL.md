@@ -116,6 +116,12 @@ SolidJS library remains independent of Cloud and application domains.
 
 ## Build and verify one complete slice
 
+For deployment questions, read **Deployment requirements** in the Docs
+collection (`/en/docs/operations/deployment-requirements`) before selecting
+services or secrets. Distinguish startup prerequisites from optional feature
+dependencies, then follow the linked runtime and migration guides for the
+deployed version. Do not infer feature readiness from container health.
+
 Build the smallest end-to-end behavior through its public seam. Avoid
 speculative paths, one-off abstractions, and unrelated cleanup.
 

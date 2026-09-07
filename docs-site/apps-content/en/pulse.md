@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Explore metrics, events, states, resources, queries, and dashboards in one telemetry workspace.
 tags: [pulse, telemetry, metrics, dashboards]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Pulse
@@ -73,3 +73,9 @@ Run `cld pulse help` for bases, sources, signals, queries, dashboards, and
 access. Run `cld pulse <command> --help` before ingesting data or changing a
 base; `compose.prod.yml` still needs an explicit Pulse service for these
 commands to reach a production installation.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

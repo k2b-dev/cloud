@@ -234,3 +234,9 @@ cld notebooks comments --notebook abc123 --note def456 --json
 Run `cld notebooks help` for the available resources. Run
 `cld notebooks <command> --help` before editing content, changing access, or
 running a snapshot.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

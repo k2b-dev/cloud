@@ -108,6 +108,10 @@ The final image contains only the bundle and Bun runtime. It listens on port
 
 ## Deploy the service
 
+First select the required services, secrets and feature integrations in
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+That reference includes every built-in app and the fresh-install startup order.
+
 Run every application on the private Cloud network.
 
 Give it:

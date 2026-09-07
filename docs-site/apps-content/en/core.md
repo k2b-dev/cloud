@@ -5,7 +5,7 @@ section: Platform
 order: 300
 description: Sign-in, profile, notifications, announcements, settings, and the shared Cloud administration entry point.
 tags: [core, accounts, administration]
-updated: 2026-09-01
+updated: 2026-09-07
 ---
 
 # Core
@@ -76,3 +76,9 @@ administration commands. Administrators can publish local Markdown or an
 external URL with `cld admin legal set`, and reset one complete document with
 `cld admin legal reset <document> --yes`. These commands use the current
 profile and the same authorization boundaries as the browser surfaces.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

@@ -110,3 +110,9 @@ calendar integrations.
 The `spaces.item.read` capability includes bounded task attachment metadata
 with authenticated preview and download links. Attachment content remains in
 Spaces rather than being embedded in capability results.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

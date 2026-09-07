@@ -5,7 +5,7 @@ section: Operations
 order: 410
 description: Administer FreeIPA hosts, hostgroups, mirrored membership, and synchronization.
 tags: [freeipa, hosts, hostgroups, operations]
-updated: 2026-08-02
+updated: 2026-09-07
 ---
 
 # Hosts
@@ -70,3 +70,9 @@ Run `cld ipa-hosts help` for the available areas. Run
 `cld ipa-hosts <area> <command> --help` before a write, membership change, or
 sync action; mutations require the same administrator access and confirmation
 rules as the supported CLI command.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

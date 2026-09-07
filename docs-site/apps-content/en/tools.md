@@ -5,7 +5,7 @@ section: Everyday
 order: 230
 description: Small generators, converters, security helpers, media utilities, and network tests.
 tags: [tools, utilities, generators, network, cli]
-updated: 2026-08-22
+updated: 2026-09-07
 ---
 
 # Tools
@@ -145,3 +145,9 @@ tools` commands. Signed-in users can use the Tools pages; authenticated
 integrations can call `/tools/api/documents/markdown` or
 `/tools/api/markdown/pdf`. Neither endpoint fetches URLs or resolves resources
 owned by another application.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

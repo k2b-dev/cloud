@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-08-22
+updated: 2026-09-07
 ---
 
 # Grids
@@ -195,3 +195,9 @@ documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.
 
 Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Every completed Document belongs to one template and Record and uses the same API shape, whether its renderer produces only a PDF or PDF plus structured artifacts. Generation requires Base Write and an explicit stable idempotency key; reads and artifact downloads require Base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

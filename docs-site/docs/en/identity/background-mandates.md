@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # Background authority mandates
@@ -172,7 +172,7 @@ revoke one exact credential with
 `DELETE /api/admin/identity/workloads/inventory/credentials/<credentialId>`.
 Rotate by creating a new credential, deploying it to the owning app, verifying
 broker calls, and then revoking the old credential. Do not reuse the OAuth
-app's separately scoped credential.
+broker secret; it is shared only by Core and OAuth for OAuth issuance.
 
 The same app-bound credential owns the remote mandate lifecycle under
 `/api/_internal/identity/v1/mandates/<mandateId>`. It may read its mandate,

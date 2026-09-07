@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-08-20
+updated: 2026-09-07
 ---
 
 # Mail
@@ -109,3 +109,9 @@ and extracted content remain separate bounded reads.
 Run `cld mail help` for mailbox, conversation, message, collaboration,
 provider, automation, and workflow commands. Run `cld mail <command> --help` before a
 mutation or delivery operation to read its current fields and safety checks.
+
+## Deployment requirements
+
+See [Deployment requirements](/en/docs/operations/deployment-requirements) for
+this app’s startup prerequisites, optional integrations, configuration and
+functional checks.

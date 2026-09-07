@@ -162,6 +162,20 @@
         "Language and theme persistence remain Cloud-owned and are not reimplemented in the application or moved into @k2b/ui.",
         "The response does not treat either layout as route or resource authorization."
       ]
+    },
+    {
+      "id": 15,
+      "prompt": "Plan a fresh production Cloud installation with OAuth, Mail, Notebooks and Assistant. Do we need Filegate, S3 and AI credentials before containers can start? Do not deploy anything.",
+      "expected_output": "Reads the canonical Deployment requirements page, separates common infrastructure and startup requirements from feature dependencies, assigns identity secrets only to their intended services, identifies initial administrator access and app-specific functional checks, and stays read-only.",
+      "files": [],
+      "expectations": [
+        "The response retrieves Deployment requirements through the current documentation contract or explicitly uses reduced documentation mode.",
+        "It distinguishes Core/OAuth readiness from mailbox connectivity, AI provider readiness and optional notebook S3 snapshots.",
+        "Only Core receives the identity KEK; Core and OAuth share the broker secret without an OAuth workload-credential provisioning step.",
+        "It does not require Filegate or S3 for the baseline Mail or Notebooks storage, and does not treat an installed Assistant as configured AI.",
+        "It identifies administrator bootstrap and production secret configuration rather than recommending development credentials.",
+        "It proposes per-feature verification and makes no deployment or credential changes."
+      ]
     }
   ]
 }
