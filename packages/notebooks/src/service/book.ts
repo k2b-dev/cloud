@@ -18,7 +18,7 @@ export const loadBookNote = async (params: {
     return null;
   const note = await notes.getWithContentByShortId({ shortId: params.noteShortId });
   if (!note || note.notebookId !== params.notebookId) return null;
-  const document = await renderBookDocument({ ...params, noteId: note.id, markdown: note.contentMd ?? "" });
+  const { document } = await renderBookDocument({ ...params, noteId: note.id, markdown: note.contentMd ?? "" });
   // Do not return a collaboration snapshot or raw notebook data to the Book surface.
   return { note, document };
 };
@@ -49,13 +49,18 @@ const renderBookDocument = async (params: {
       }),
     );
   }
-  return renderNotebookBook({
+  const document = renderNotebookBook({
     markdown,
     notebookId: params.notebookShortId,
     locale: params.locale,
     queryResults,
     linkMode: params.linkMode,
   });
+  const t = bookRendererMessages.resolve([params.locale]).t;
+  const diagnostics = [...queryResults].flatMap(([line, result]) =>
+    result.diagnostics.map(({ code }) => ({ line, message: code === "unavailable" ? t.unavailableQuery : t.invalidBlock({ line }) })),
+  );
+  return { document, diagnostics };
 };
 
 /** Drafts are never persisted. Read-only callers can preview only the saved document. */
@@ -76,7 +81,7 @@ export const loadBookBlockPreview = async (params: {
   if (!note || note.notebookId !== params.notebookId) return { kind: "not_found" as const };
   if (params.markdown !== undefined && note.lockedAt) return { kind: "denied" as const };
   const markdown = (params.markdown ?? note.contentMd ?? "").replace(/\r\n?/g, "\n");
-  const document = await renderBookDocument({
+  const { document, diagnostics: queryDiagnostics } = await renderBookDocument({
     ...params,
     noteId: note.id,
     markdown,
@@ -92,7 +97,7 @@ export const loadBookBlockPreview = async (params: {
       markdown,
       blocks: document.blocks,
       headings: document.headings.flatMap(({ id, line }) => (line === undefined ? [] : [{ id, line }])),
-      diagnostics,
+      diagnostics: [...diagnostics, ...queryDiagnostics],
     },
   };
 };

@@ -178,4 +178,19 @@ describe("authorized Book documents and server block previews", () => {
     expect(result.preview.diagnostics.every(({ message }) => message.includes("Ungültiger Block"))).toBe(true);
     expect(calls.queries).not.toHaveBeenCalled();
   });
+
+  test("query execution failures appear in diagnostics, not just rendered HTML", async () => {
+    const calls = fixture();
+    calls.queries.mockResolvedValue({
+      columns: [],
+      items: [],
+      total: 0,
+      limit: 25,
+      truncated: false,
+      diagnostics: [{ code: "unavailable" }],
+    });
+    const result = await loadBookBlockPreview({ ...params, locale: "de", markdown: ":::query\nsource: notes\n:::" });
+    expect(result.kind).toBe("ok");
+    if (result.kind === "ok") expect(result.preview.diagnostics).toEqual([{ line: 1, message: "Diese Abfrage ist nicht verfügbar." }]);
+  });
 });

@@ -13,8 +13,7 @@ const ResourceShortIdSchema = z
   .describe("Stable 6-character resource ID.");
 const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "unknown"]);
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
-const resourceRef = <Type extends string>(type: Type) =>
-  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
+const resourceRef = <Type extends string>(type: Type) => z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 
 const NotebookDataShape = {
   id: ResourceShortIdSchema,
@@ -165,6 +164,47 @@ export const CommentCreateInputSchema = z
   .object({
     noteId: ResourceShortIdSchema.describe("Writable note ID returned by note search/tree/read or a notebooks.note ref."),
     content: z.string().trim().min(1).max(5_000).describe("Markdown comment, limited to 5,000 characters."),
+  })
+  .strict();
+
+export const CommentUpdateInputSchema = z
+  .object({
+    commentId: ResourceShortIdSchema.describe(
+      "Own comment ID returned by comment.list or comment.read; editable for ten minutes after creation.",
+    ),
+    content: z.string().trim().min(1).max(5_000).describe("Replacement Markdown comment, limited to 5,000 characters."),
+  })
+  .strict();
+export const CommentDeleteInputSchema = z
+  .object({
+    commentId: ResourceShortIdSchema.describe(
+      "Own comment ID returned by comment.list or comment.read; deletable for ten minutes after creation.",
+    ),
+  })
+  .strict();
+export const CommentDeleteDataSchema = z.object({ id: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
+
+export const NotePreviewInputSchema = z
+  .object({
+    noteId: ResourceShortIdSchema.describe("Existing note ID returned by note.read, search or tree."),
+    markdown: z
+      .string()
+      .max(200_000)
+      .optional()
+      .describe(
+        "Complete draft Markdown, at most 200,000 characters. Omit for saved content. Drafts require write access and an unlocked note; nothing is saved.",
+      ),
+  })
+  .strict();
+export const NotePreviewDataSchema = z
+  .object({
+    valid: z.boolean(),
+    contentHash: ContentHashSchema,
+    blockCount: z.number().int().nonnegative(),
+    headingCount: z.number().int().nonnegative(),
+    // Leaves room in the 256 KiB capability envelope even for JSON-escaped text.
+    diagnostics: z.array(z.object({ line: z.number().int().positive(), message: z.string().max(500) }).strict()).max(50),
+    diagnosticsTruncated: z.boolean(),
   })
   .strict();
 

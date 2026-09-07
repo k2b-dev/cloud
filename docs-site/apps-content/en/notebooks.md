@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # Notebooks
@@ -188,6 +188,19 @@ with queries and heading lists with contents blocks. Script buttons, write
 actions, and hidden runtime state have no replacement.
 
 ## How Notebooks fits Cloud
+
+Assistant can check query and TOC drafts with `notebooks.note.preview` before
+saving them. This returns compact diagnostics through the same server preview
+as the editor, without saving a draft or returning HTML. Saved previews need
+read access; drafts need write access and an unlocked note. A user-backed
+identity is required. The check does not validate every Markdown feature or
+table formula, and queries still use saved data.
+
+Assistant can also read, create, edit, and delete page comments. Editing and
+deleting require the original author, write access, and the same ten-minute
+window as the app. Both changes have explicit reviews and recheck those rules
+when applied. The built-in `cloud-notebooks` Skill describes these workflows
+and the supported data, query, TOC, and table syntax.
 
 Notebooks owns notes, hierarchy, attachments, realtime document state, search,
 exports, and snapshots. Cloud supplies identity, resource access,

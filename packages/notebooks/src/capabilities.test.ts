@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -27,6 +28,7 @@ import {
   TagNotesInputSchema,
 } from "./capability-contracts";
 import { noteContentHash } from "./lib/note-edit";
+import * as bookStore from "./service/book";
 import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
 import * as notebookStore from "./service/notebooks";
@@ -145,12 +147,181 @@ afterEach(() => {
 });
 
 describe("notebooks capabilities", () => {
+  test("compiles the expanded public manifest", () => {
+    expect(() => compileCapabilityManifest("notebooks", notebooksCapabilities)).not.toThrow();
+  });
+  const commentFixture = () => ({
+    id: "66666666-6666-4666-8666-666666666666",
+    shortId: "mno345",
+    noteId,
+    authorUserId: userId,
+    authorDisplayName: user.displayName,
+    authorAvatarHash: null,
+    content: "An observation",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    canEdit: true,
+    canDelete: true,
+  });
+  const mockCommentAccess = () => {
+    trackedSpy(spyOn(noteStore, "get")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+    return trackedSpy(spyOn(commentStore, "getByShortId")).mockResolvedValue(commentFixture());
+  };
+
+  test("previews use the canonical service without returning source or HTML", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const preview = trackedSpy(spyOn(bookStore, "loadBookBlockPreview")).mockResolvedValue({
+      kind: "ok",
+      preview: {
+        markdown: "# Example",
+        blocks: [{ line: 1, html: "private html" }],
+        headings: [{ id: "heading-example", line: 1 }],
+        diagnostics: [],
+      },
+    });
+    const operation = notebooksCapabilities.queries["note.preview"];
+    const result = await operation.run({ noteId: note.shortId }, userContext);
+    expect(result.ok).toBeTrue();
+    if (result.ok) {
+      expect(result.data.data).toEqual({
+        valid: true,
+        contentHash: noteContentHash("# Example"),
+        blockCount: 1,
+        headingCount: 1,
+        diagnostics: [],
+        diagnosticsTruncated: false,
+      });
+      expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    }
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({ userId, notebookId, markdown: undefined, bypassAccess: false }));
+    expect((await operation.run({ noteId: note.shortId, markdown: "" }, userContext)).ok).toBeFalse();
+    expect(preview).toHaveBeenCalledTimes(1);
+    permission.mockResolvedValue("write");
+    await operation.run({ noteId: note.shortId, markdown: "" }, userContext);
+    expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ markdown: "" }));
+    expect((await operation.run({ noteId: note.shortId }, resourceContext(["admin"]))).ok).toBeFalse();
+    expect(preview).toHaveBeenCalledTimes(2);
+  });
+
+  test("preview bounds diagnostics without reporting truncated failures as valid", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+    const preview = trackedSpy(spyOn(bookStore, "loadBookBlockPreview")).mockResolvedValue({
+      kind: "ok",
+      preview: {
+        markdown: "",
+        blocks: [],
+        headings: [],
+        diagnostics: Array.from({ length: 70 }, () => ({ line: 1, message: "x".repeat(1500) })),
+      },
+    });
+    const operation = notebooksCapabilities.queries["note.preview"];
+    const result = await operation.run({ noteId: note.shortId }, userContext);
+    expect(result.ok).toBeTrue();
+    if (result.ok) {
+      expect(result.data.data.valid).toBeFalse();
+      expect(result.data.data.diagnostics).toHaveLength(50);
+      expect(result.data.data.diagnostics[0]!.message).toHaveLength(500);
+      expect(result.data.data.diagnosticsTruncated).toBeTrue();
+      expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    }
+    preview.mockResolvedValue({ kind: "denied" });
+    expect((await operation.run({ noteId: note.shortId, markdown: "" }, userContext)).ok).toBeFalse();
+    preview.mockResolvedValue({ kind: "not_found" });
+    expect((await operation.run({ noteId: note.shortId }, userContext)).ok).toBeFalse();
+    expect(operation.input.safeParse({ noteId: note.shortId, markdown: "x".repeat(200_001) }).success).toBeFalse();
+  });
+
+  test("comment update and deletion use author-scoped services and explicit reviews", async () => {
+    mockCommentAccess();
+    const update = trackedSpy(spyOn(commentStore, "update")).mockResolvedValue({
+      ok: true,
+      data: { ...commentFixture(), content: "Corrected" },
+    });
+    const remove = trackedSpy(spyOn(commentStore, "remove")).mockResolvedValue({ ok: true, data: undefined });
+    trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+    const input = { commentId: "mno345", content: "Corrected" };
+    const edit = notebooksCapabilities.actions["comment.update"];
+    const deletion = notebooksCapabilities.actions["comment.delete"];
+    for (const operation of [edit, deletion]) {
+      expect(operation.destructive).toBeTrue();
+      expect("approval" in operation).toBeFalse();
+      const review = await operation.review(input, userContext);
+      expect(review.ok).toBeTrue();
+      if (review.ok) expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
+    }
+    expect(update).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    const edited = await edit.run(input, userContext);
+    const deleted = await deletion.run({ commentId: input.commentId }, userContext);
+    expect(edited.ok).toBeTrue();
+    expect(deleted.ok).toBeTrue();
+    if (edited.ok) expect(capabilityResultSchema(edit.data).safeParse(edited.data).success).toBeTrue();
+    if (deleted.ok) expect(capabilityResultSchema(deletion.data).safeParse(deleted.data).success).toBeTrue();
+    expect(update).toHaveBeenCalledWith({ notebookId, noteId, commentId: input.commentId, authorUserId: userId, content: input.content });
+    expect(remove).toHaveBeenCalledWith({ notebookId, noteId, commentId: input.commentId, authorUserId: userId });
+  });
+
+  test("comment mutations reject foreign, expired, inaccessible and service-account actors", async () => {
+    const read = mockCommentAccess();
+    const update = trackedSpy(spyOn(commentStore, "update"));
+    const remove = trackedSpy(spyOn(commentStore, "remove"));
+    const input = { commentId: "mno345", content: "Corrected" };
+    for (const operation of [notebooksCapabilities.actions["comment.update"], notebooksCapabilities.actions["comment.delete"]]) {
+      expect((await operation.run(input, resourceContext(["admin"]))).ok).toBeFalse();
+      for (const comment of [
+        { ...commentFixture(), authorUserId: serviceAccountId },
+        { ...commentFixture(), createdAt },
+      ]) {
+        read.mockResolvedValue(comment);
+        expect((await operation.review(input, userContext)).ok).toBeFalse();
+        expect((await operation.run(input, userContext)).ok).toBeFalse();
+      }
+      read.mockResolvedValue(null);
+      expect((await operation.run(input, userContext)).ok).toBeFalse();
+    }
+    expect(update).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  test("comment authorization is checked again after review and store refusals stay failures", async () => {
+    const read = mockCommentAccess();
+    trackedSpy(spyOn(audit, "recordResult")).mockImplementation(async ({ result }) => result);
+    const update = trackedSpy(spyOn(commentStore, "update")).mockResolvedValue({
+      ok: false,
+      error: { status: 403, code: "FORBIDDEN", message: "Window expired" },
+    });
+    const remove = trackedSpy(spyOn(commentStore, "remove")).mockResolvedValue({
+      ok: false,
+      error: { status: 403, code: "FORBIDDEN", message: "Window expired" },
+    });
+    const input = { commentId: "mno345", content: "Corrected" };
+    for (const operation of [notebooksCapabilities.actions["comment.update"], notebooksCapabilities.actions["comment.delete"]]) {
+      read.mockResolvedValue(commentFixture());
+      expect((await operation.review(input, userContext)).ok).toBeTrue();
+      read.mockResolvedValue({ ...commentFixture(), createdAt });
+      expect((await operation.run(input, userContext)).ok).toBeFalse();
+      read.mockResolvedValue(commentFixture());
+      const result = await operation.run(input, { ...userContext, locale: "de" });
+      expect(result.ok).toBeFalse();
+      if (!result.ok) expect(result.error.message).toContain("zehn Minuten");
+    }
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
   test("declares the complete bounded wiki surface", () => {
     expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["comment", "note", "notebook"]);
     expect(Object.keys(notebooksCapabilities.queries).sort()).toEqual([
       "comment.list",
       "comment.read",
       "note.links",
+      "note.preview",
       "note.read",
       "note.search",
       "note.tree",
@@ -160,13 +331,20 @@ describe("notebooks capabilities", () => {
       "tag.list",
       "tag.notes",
     ]);
-    expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
+    expect(Object.keys(notebooksCapabilities.actions).sort()).toEqual([
+      "comment.create",
+      "comment.delete",
+      "comment.update",
+      "note.create",
+      "note.edit",
+      "note.move",
+    ]);
     expect(
       Object.entries(notebooksCapabilities.actions)
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id)
         .sort(),
-    ).toEqual(["comment.create", "note.create", "note.edit", "note.move"]);
+    ).toEqual(["comment.create", "comment.delete", "comment.update", "note.create", "note.edit", "note.move"]);
     expect(notebooksCapabilities.actions["comment.create"]).toMatchObject({
       destructive: false,
       openWorld: false,

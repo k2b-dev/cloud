@@ -19,6 +19,16 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "note.preview": {
+          title: "Notizblöcke prüfen",
+          description:
+            "Query- und Inhaltsverzeichnis-Blöcke mit der Servervorschau prüfen. Gibt kompakte Diagnosen statt HTML oder Ergebniszeilen zurück. Benötigt ein Benutzerkonto; Entwürfe benötigen Schreibzugriff. Speichert nichts und prüft nicht alle Markdown- oder Tabellenformeln.",
+          input: {
+            noteId: "Vorhandene Notiz-ID aus Lesevorgang, Suche oder Notizbaum.",
+            markdown:
+              "Vollständiger Markdown-Entwurf mit höchstens 200.000 Zeichen. Ohne Angabe wird die gespeicherte Notiz geprüft. Entwürfe benötigen Schreibzugriff und eine nicht gesperrte Notiz; nichts wird gespeichert.",
+          },
+        },
         "comment.list": {
           title: "Notizkommentare auflisten",
           description: "Dauerhafte Markdown-Kommentare zu einer bekannten Notiz auflisten, neueste zuerst.",
@@ -30,7 +40,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.read": {
           title: "Notizkommentar lesen",
-          description: "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
+          description:
+            "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
           input: {
             id: "Kommentar-ID aus comment.list oder einem notebooks.comment-Verweis.",
           },
@@ -141,6 +152,21 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "comment.update": {
+          title: "Notizkommentar bearbeiten",
+          description:
+            "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen ersetzen. Benötigt Schreibzugriff auf das Notizbuch.",
+          input: {
+            commentId: "Eigene Kommentar-ID aus comment.list oder comment.read; zehn Minuten nach dem Erstellen bearbeitbar.",
+            content: "Neuer Markdown-Kommentar mit höchstens 5.000 Zeichen.",
+          },
+        },
+        "comment.delete": {
+          title: "Notizkommentar löschen",
+          description:
+            "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen löschen. Benötigt Schreibzugriff auf das Notizbuch.",
+          input: { commentId: "Eigene Kommentar-ID aus comment.list oder comment.read; zehn Minuten nach dem Erstellen löschbar." },
+        },
         "comment.create": {
           title: "Notiz kommentieren",
           description: "Als aktueller Benutzer Markdown-Diskussionskontext zu einer beschreibbaren Notiz hinzufügen.",

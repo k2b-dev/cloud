@@ -181,6 +181,16 @@ access, and Skill administrators can edit, share, or delete them. A deleted
 seed is not recreated during later starts. Like every readable Skill, each
 starts enabled and can be disabled personally.
 
+New installations receive the current seed instructions. Upgrading Cloud does
+not replace an existing Skill's instructions. To update an existing
+`cloud-notebooks` Skill, first read and export it, compare it with the current
+seed in `packages/cloud/src/ai/skill-seeds.ts`, and apply the intended changes
+through the Skill editor or the revision-checked Skill update API. Preserve
+custom instructions, references, and extra frontmatter. Do not delete and
+recreate the Skill to refresh it: keep its identity, access grants, and personal
+enabled state. API updates must include retained references and frontmatter as
+well as the exact current revision.
+
 The Skill management Actions are reviewed and recheck the current actor's
 Cloud permission. Updates and reference changes require the exact revision
 returned by `core.ai.skill.read`; a stale revision fails instead of overwriting

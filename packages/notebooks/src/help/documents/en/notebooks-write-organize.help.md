@@ -23,6 +23,8 @@ Use **Comments** in the note details for questions, feedback, and decisions that
 
 Keep durable handbook content in the note itself. Use comments to discuss that content before or after it changes.
 
+**Edit with AI** opens Assistant with the page and its discussion. Assistant can also correct or delete your recent comments after review; the same author and ten-minute rules apply. Query and TOC drafts can be checked without saving. This check does not validate every Markdown feature or table formula.
+
 **Markdown**
 
 ## Write a useful note {icon="pencil"}

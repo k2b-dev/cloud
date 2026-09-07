@@ -5,6 +5,7 @@ import { notebookWorkspaceMessages } from "../../messages";
 const notebookEditTools: NonNullable<LaunchAssistantInput["preloadTools"]> = [
   { name: "text_editor" },
   { appId: "notebooks", kind: "query", id: "note.read" },
+  { appId: "notebooks", kind: "query", id: "note.preview" },
   { appId: "notebooks", kind: "query", id: "comment.list" },
   { appId: "notebooks", kind: "action", id: "note.edit" },
 ];
