@@ -115,6 +115,7 @@ type DbNote = {
 };
 
 type DbYjsState = {
+  yjs_restore_revision: string;
   yjs_snapshot: Buffer | null;
   yjs_stream_cursor: string | null;
   yjs_stream_seq: number | null;
@@ -953,6 +954,8 @@ export const save = async (params: {
   createdBy: string | null;
   createVersion?: boolean;
   streamCursor?: string | null;
+  /** Revision of the DB snapshot used for replay; a restore invalidates older bases. */
+  restoreRevision?: string;
   requestedAt?: number;
   contributors?: NoteVersionContributorInput[];
 }): Promise<MutationResult<void>> => {
@@ -986,6 +989,7 @@ export const save = async (params: {
             updated_at = now()
         WHERE id = ${noteId}::uuid
           AND locked_at IS NULL
+          AND yjs_restore_revision = ${params.restoreRevision ?? "0"}::bigint
           AND (
             (yjs_stream_cursor IS NULL AND COALESCE(yjs_snapshot_at, created_at) <= to_timestamp(${requestedAtSeconds}))
             OR (yjs_stream_cursor IS NOT NULL AND yjs_stream_seq < ${parsedCursor.seq})
@@ -1016,7 +1020,14 @@ export const save = async (params: {
     if (status.locked) {
       return { ok: false, error: "Cannot modify locked note", status: 403 };
     }
-    // A newer cursor was already persisted by another node.
+    if (streamCursor) {
+      const current = await getYjsStateWithCursor({ noteId });
+      // Only ACK work already covered by the current snapshot. A restore can
+      // invalidate our base while leaving later accepted edits unsnapshotted.
+      if (!current?.streamCursor || compareStreamCursor(current.streamCursor, streamCursor) < 0) {
+        return { ok: false, error: "Note snapshot changed during replay; retry from its current state", status: 409 };
+      }
+    }
     return { ok: true, data: undefined };
   }
 
@@ -1251,6 +1262,7 @@ export const editContent = async (params: {
       createdBy: params.createdBy,
       createVersion: true,
       streamCursor: published.cursor,
+      restoreRevision: initialState.restoreRevision,
       requestedAt,
       contributors: params.actor
         ? [{ ...params.actor, lastContributedAt: new Date(requestedAt) }]
@@ -1288,9 +1300,9 @@ export const editContent = async (params: {
  */
 export const getYjsStateWithCursor = async (params: {
   noteId: string;
-}): Promise<{ yjsState: Uint8Array | null; streamCursor: string | null } | null> => {
+}): Promise<{ yjsState: Uint8Array | null; streamCursor: string | null; restoreRevision: string } | null> => {
   const [row] = await sql<DbYjsState[]>`
-    SELECT yjs_snapshot, yjs_stream_cursor, yjs_stream_seq
+    SELECT yjs_snapshot, yjs_stream_cursor, yjs_stream_seq, yjs_restore_revision::text
     FROM notebooks.notes
     WHERE id = ${params.noteId}::uuid
   `;
@@ -1298,6 +1310,7 @@ export const getYjsStateWithCursor = async (params: {
   return {
     yjsState: row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null,
     streamCursor: row.yjs_stream_cursor,
+    restoreRevision: row.yjs_restore_revision,
   };
 };
 
@@ -1426,13 +1439,20 @@ export const restoreFromSnapshot = async (params: {
   }
   const restoredTitle = deriveNoteTitle(restoredContentMd);
   const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
+  // The restored snapshot replaces everything up to this real stream boundary.
+  // Preserve the zero boundary too: absence of retained events is not a new log.
+  const restoreTopic = createYjsTopic(noteId);
+  const restoreCursor =
+    (await restoreTopic.latestCursor()) ?? (await getYjsStateWithCursor({ noteId }))?.streamCursor ?? restoreTopic.cursorAt(0);
+  const restoreSequence = restoreTopic.cursorSequence(restoreCursor);
 
   const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
-          yjs_stream_cursor = NULL,
-          yjs_stream_seq = NULL,
+          yjs_stream_cursor = ${restoreCursor},
+          yjs_stream_seq = ${restoreSequence},
+          yjs_restore_revision = yjs_restore_revision + 1,
           yjs_snapshot_at = now(),
           content_md = ${restoredContentMd},
           data_properties = ${restoredDataProperties}::jsonb,

@@ -113,6 +113,13 @@ after one hour. Always end manually started spans.
 
 ## Trace storage and failures
 
+Cloud records Sync worker starts, completions, and dead letters automatically.
+To enrich the same span, use `trace.syncSpanKey(kind, resourceId, runId)` as
+the `spanKey`. For a durable topic handler, also pass the consumer name as the
+fourth argument: `trace.syncSpanKey("topic", resourceId, eventId, consumer)`.
+Each independent consumer receives its own span, even when processing the same
+event. Use the same key when starting, recording, or ending that span.
+
 Trace writes are operational telemetry. Write failures are reported to the
 process console and do not replace application error handling.
 

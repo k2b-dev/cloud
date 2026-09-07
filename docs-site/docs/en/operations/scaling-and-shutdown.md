@@ -43,8 +43,9 @@ A running replica refreshes the entry every 60 seconds.
 Registry entries expire after 180 seconds if refresh stops. A clean shutdown
 removes the entry immediately.
 
-The gateway watches registry changes and also refreshes its route table
-periodically.
+The gateway rebuilds its route table when registry entries change. It renews
+its own operations snapshot every five seconds, including when the registry is
+idle, so its 30-second presence lease and request counters stay current.
 
 When one of several replicas shuts down cleanly, it can briefly remove the
 shared entry. Another replica repairs it on its next refresh. Account for this
@@ -87,8 +88,13 @@ notification registration, the runtime watcher, and the registry heartbeat.
 Stop accepting new work before waiting for in-flight work.
 
 `createRuntimeTaskTracker()` tracks accepted promises. `stopRuntimeJobs()` stops
-workers and drains tracked tasks. `stopRuntimeResources()` attempts every
-cleanup function and combines failures.
+new pulls, then drains workers and tracked tasks concurrently. Both have a
+30-second deadline by default; pass `{ timeoutMs }` as the third argument to
+match the application's shutdown budget. Starting the worker drain immediately
+allows Sync to abort unfinished handlers at that deadline. Cleanup reports an
+error when tracked work exceeds the deadline, including work that ignores its
+abort signal. `stopRuntimeResources()` attempts every cleanup function and
+combines failures.
 
 Background frameworks may also provide leases and retry. Follow their shutdown
 contract. See [Lifecycle background work](/en/docs/automation/lifecycle-background-work).

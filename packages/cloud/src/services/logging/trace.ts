@@ -974,8 +974,11 @@ const SYNC_CATEGORY: Record<SyncRunKind, TraceCategory> = {
   pump: "backfill",
 };
 
-/** Span key of one Sync run: `runId` is the job/message id, topic event id, schedule run id or pump key. */
-const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string): string => `sync:${kind}:${resource}:${runId}`;
+/** Span key of one Sync run. Topic handlers also pass their independent consumer name. */
+const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string, consumer?: string): string =>
+  kind === "topic" && consumer !== undefined
+    ? `sync:topic:${JSON.stringify([resource, runId, consumer])}`
+    : `sync:${kind}:${resource}:${runId}`;
 
 const isSyncRunKind = (kind: string): kind is SyncRunKind => kind in SYNC_CATEGORY;
 
@@ -1017,6 +1020,7 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
   };
   // Topic dead letters carry the consumer instead of the run key.
   const key = detailString(detail, "key") ?? (kind === "topic" ? detailString(detail, "consumer") : undefined);
+  const consumer = kind === "topic" ? key : undefined;
   // Per-schedule and per-consumer names stay readable; job keys are unbounded.
   const name = (kind === "scheduler" || kind === "topic") && key ? key : resource;
   const base = { name, source: resource, appId, category, kind: "consumer" as const };
@@ -1025,13 +1029,13 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
     case "handler_started": {
       const id = detailString(detail, "id");
       if (!id) return;
-      await start({ ...base, spanKey: syncSpanKey(kind, resource, id), attributes, startedAt: event.at }, true);
+      await start({ ...base, spanKey: syncSpanKey(kind, resource, id, consumer), attributes, startedAt: event.at }, true);
       return;
     }
     case "handler_settled": {
       const id = detailString(detail, "id");
       if (!id) return;
-      const spanKey = syncSpanKey(kind, resource, id);
+      const spanKey = syncSpanKey(kind, resource, id, consumer);
       const status = detailString(detail, "status");
       const attempt = detailNumber(detail, "attempt");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
@@ -1067,7 +1071,7 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
     case "dead_letter": {
       const id = detailString(detail, "messageId") ?? detailString(detail, "eventId");
       if (!id) return;
-      const spanKey = syncSpanKey(kind, resource, id);
+      const spanKey = syncSpanKey(kind, resource, id, consumer);
       const reason = detailString(detail, "reason") ?? "dead letter";
       // A message can be dead-lettered without a handler run (attempts
       // exhausted on delivery, undecodable payload): the upsert closes the
@@ -1141,7 +1145,8 @@ export const observeSyncEvent = (event: SyncEvent, application?: string): void =
   const detail = event.detail ?? {};
   const id =
     detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
-  const key = syncSpanKey(event.kind, event.resource, id);
+  const consumer = event.kind === "topic" ? (detailString(detail, "key") ?? detailString(detail, "consumer")) : undefined;
+  const key = syncSpanKey(event.kind, event.resource, id, consumer);
   pendingSyncWriteCount++;
   const write = (pendingSyncWrites.get(key) ?? Promise.resolve())
     .then(() => traceSyncEvent(event, application))

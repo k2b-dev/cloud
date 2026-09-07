@@ -96,22 +96,33 @@ export const createRuntimeTaskTracker = () => {
 
 /**
  * Stop accepting runtime tasks, stop the @k2b/sync workers from pulling new
- * work, let accepted tasks finish, then drain the workers' in-flight handlers.
+ * work, then drain accepted tasks and workers together. Worker draining must
+ * start immediately so its timeout can abort handlers that tracked tasks await.
+ * Tracked tasks use the same deadline, including handlers that ignore abort.
  */
 export const stopRuntimeJobs = async (
   tracker: Pick<RuntimeTaskTracker, "close" | "drain">,
   workers: ReadonlyArray<Pick<Worker, "stop" | "drain">>,
+  options: { timeoutMs?: number } = {},
 ): Promise<void> => {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError("Runtime drain timeout must be positive and finite");
   tracker.close();
   const errors: unknown[] = [];
   for (const worker of workers) worker.stop();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tracked = Promise.race([
+    tracker.drain(),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Runtime tasks did not drain within ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
   try {
-    await tracker.drain();
-  } catch (error) {
-    errors.push(error);
-  }
-  for (const result of await Promise.allSettled(workers.map((worker) => worker.drain()))) {
-    if (result.status === "rejected") errors.push(result.reason);
+    for (const result of await Promise.allSettled([tracked, ...workers.map((worker) => worker.drain({ timeoutMs }))])) {
+      if (result.status === "rejected") errors.push(result.reason);
+    }
+  } finally {
+    clearTimeout(timer);
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, "Multiple runtime jobs failed to stop");

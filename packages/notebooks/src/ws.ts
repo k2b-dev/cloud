@@ -788,7 +788,7 @@ const startLiveStream = (
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
         flush();
         onCaughtUp();
-        yield* noteTopic.hub().subscribe({ after: head ?? noteTopic.cursorAt(0), signal: abort.signal });
+        yield* noteTopic.hub().subscribe({ after: head ?? afterCursor ?? noteTopic.cursorAt(0), signal: abort.signal });
       };
       for await (const event of replay()) {
         if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;

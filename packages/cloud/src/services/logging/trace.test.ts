@@ -22,6 +22,43 @@ const suite = (await canUseTraceDatabase()) ? describe : describe.skip;
 const syncEvent = (event: Omit<SyncEvent, "at"> & { at?: Date }): SyncEvent => ({ at: new Date(), ...event });
 
 suite("logging.trace", () => {
+  test("keeps independent topic consumer outcomes and dead letters separate", async () => {
+    const resource = `test-topic-consumers-${crypto.randomUUID()}`;
+    const id = crypto.randomUUID();
+    try {
+      for (const consumer of ["archive", "index"]) {
+        observeSyncEvent(syncEvent({ type: "handler_started", kind: "topic", resource, detail: { id, key: consumer, attempt: 1 } }));
+      }
+      observeSyncEvent(
+        syncEvent({ type: "handler_settled", kind: "topic", resource, detail: { id, key: "index", status: "dead_letter", attempt: 1 } }),
+      );
+      observeSyncEvent(
+        syncEvent({
+          type: "dead_letter",
+          kind: "topic",
+          resource,
+          detail: { eventId: id, consumer: "index", reason: "index unavailable" },
+        }),
+      );
+      observeSyncEvent(
+        syncEvent({ type: "handler_settled", kind: "topic", resource, detail: { id, key: "archive", status: "success", attempt: 1 } }),
+      );
+      await trace.end({ spanKey: trace.syncSpanKey("topic", resource, id, "archive"), summary: { archived: true } });
+      await flushSyncTraceEvents();
+      const result = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
+      expect(result.total).toBe(2);
+      const archive = result.spans.find((span) => span.name === "archive");
+      const index = result.spans.find((span) => span.name === "index");
+      expect(archive).toMatchObject({ status: "ok", summary: { archived: true }, eventCount: 0 });
+      expect(index).toMatchObject({ status: "error", statusMessage: "index unavailable", eventCount: 1 });
+      expect(archive?.spanKey).toBe(trace.syncSpanKey("topic", resource, id, "archive"));
+      expect(index?.spanKey).toBe(trace.syncSpanKey("topic", resource, id, "index"));
+    } finally {
+      await flushSyncTraceEvents();
+      await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+    }
+  });
+
   test("queued observer preserves an immediate handler summary and domain presentation", async () => {
     const resource = `test-observer-${crypto.randomUUID()}`;
     const id = crypto.randomUUID();

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { Worker } from "@k2b/sync";
+import type { ScheduleContext, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
 import { syncOps, toPgTextArray } from "@valentinkolb/cloud/services";
 import { type SQL, type SQLQuery, sql } from "bun";
@@ -29,6 +29,7 @@ const MAX_DURATION_MS = 5 * 60_000;
 const ASSET_CHUNK_BYTES = 1024 * 1024;
 const RETENTION_MS = 7 * 24 * 60 * 60_000;
 const JOB_LEASE_MS = 60_000;
+const CLEANUP_BATCH_SIZE = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type DbRow = Record<string, unknown>;
@@ -1147,14 +1148,33 @@ const expireByShortId = async (shortId: string): Promise<void> => {
   if (row) await expireOne(row.id);
 };
 
-export const expireCompletedExports = async (baseId: string | null = null): Promise<void> => {
+type CleanupContext = Pick<ScheduleContext, "signal" | "heartbeat">;
+
+const expireCompletedExportBatch = async (baseId: string | null, context?: CleanupContext): Promise<number> => {
+  context?.signal.throwIfAborted();
   const rows = await sql<Array<{ id: string }>>`
     SELECT id::text FROM grids.evidence_exports
     WHERE status = 'completed' AND expires_at <= now() AND (${baseId}::uuid IS NULL OR base_id = ${baseId}::uuid)
-    ORDER BY requested_at DESC, id DESC
-    LIMIT 100
+    ORDER BY expires_at, id
+    LIMIT ${CLEANUP_BATCH_SIZE}
   `;
-  for (const row of rows) await expireOne(row.id);
+  for (const row of rows) {
+    context?.signal.throwIfAborted();
+    await expireOne(row.id);
+    await context?.heartbeat();
+  }
+  return rows.length;
+};
+
+export const expireCompletedExports = async (baseId: string | null = null): Promise<void> => {
+  await expireCompletedExportBatch(baseId);
+};
+
+export const cleanupExpiredEvidenceExports = async (context: CleanupContext): Promise<void> => {
+  while (true) {
+    const count = await expireCompletedExportBatch(null, context);
+    if (count < CLEANUP_BATCH_SIZE) return;
+  }
 };
 
 export const retry = async (shortId: string, locale?: string): Promise<Result<EvidenceExport>> => {

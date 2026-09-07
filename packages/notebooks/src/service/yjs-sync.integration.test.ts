@@ -61,7 +61,11 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
       // the database seam is stubbed, so no application note is created or changed.
       const notes = await import("./notes");
       const { yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
-      const readState = spyOn(notes, "getYjsStateWithCursor").mockResolvedValue({ yjsState: null, streamCursor: null });
+      const readState = spyOn(notes, "getYjsStateWithCursor").mockResolvedValue({
+        yjsState: null,
+        streamCursor: null,
+        restoreRevision: "0",
+      });
       const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: undefined });
       try {
         await yjsSnapshotWorker.start();
@@ -86,6 +90,19 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         readState.mockRestore();
         save.mockRestore();
       }
+      // A fully saved idle document remains joinable after every retained update
+      // expires. Its saved cursor still covers that history; zero does not.
+      await manager.streams.deleteMessage(stream.config.name, second.streamSequence);
+      expect(await topic.latestCursor()).toBeNull();
+      const idleAbort = new AbortController();
+      const idleSubscription = topic.hub().subscribe({ after: second.cursor, signal: idleAbort.signal })[Symbol.asyncIterator]();
+      const nextLive = idleSubscription.next();
+      const third = await topic.publish({
+        data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: NODE_ID, originPeerId: null },
+      });
+      expect((await nextLive).value?.cursor).toBe(third.cursor);
+      idleAbort.abort();
+      await idleSubscription.return?.();
     } finally {
       source.destroy();
       replayed.destroy();

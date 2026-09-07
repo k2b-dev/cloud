@@ -20,6 +20,11 @@ let lastRouteWarnings: AppRouteWarning[] = [];
 let watcherAbort: AbortController | null = null;
 let watcherTask: Promise<void> | null = null;
 let processSync: ProcessSync | null = null;
+// Keep the 30-second presence lease and request counters fresh even when no
+// application registry entries change. This restores the previous 5s cadence.
+const SNAPSHOT_INTERVAL_MS = 5_000;
+let snapshotTimer: ReturnType<typeof setInterval> | null = null;
+let snapshotTask: Promise<void> | null = null;
 const startedAt = Date.now();
 
 export const getCurrentRuntime = () => currentRuntime;
@@ -95,13 +100,24 @@ export const gatewayRuntime = {
 
   start: async (): Promise<void> => {
     startRegistryWatcher();
+    snapshotTimer ??= setInterval(() => {
+      if (snapshotTask) return;
+      snapshotTask = publishSnapshot(lastRouteHash, lastRouteWarnings)
+        .catch((error) => log.error("Route snapshot renewal failed", { error: error instanceof Error ? error.message : String(error) }))
+        .finally(() => {
+          snapshotTask = null;
+        });
+    }, SNAPSHOT_INTERVAL_MS);
   },
 
   stop: async (): Promise<void> => {
+    if (snapshotTimer) clearInterval(snapshotTimer);
+    snapshotTimer = null;
     watcherAbort?.abort();
     await watcherTask;
     watcherAbort = null;
     watcherTask = null;
+    await snapshotTask;
     await removeGatewayRouteSnapshot(gatewayRouter.id);
     await processSync?.stop();
     processSync = null;

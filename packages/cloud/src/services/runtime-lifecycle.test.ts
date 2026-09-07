@@ -142,7 +142,7 @@ describe("runtime lifecycle", () => {
     expect(completed).toEqual(["outer", "inner"]);
   });
 
-  test("stops workers before draining accepted work and drains workers afterwards", async () => {
+  test("stops workers before draining and still waits for non-worker tasks", async () => {
     const tracker = createRuntimeTaskTracker();
     const events: string[] = [];
     let finish!: () => void;
@@ -160,12 +160,82 @@ describe("runtime lifecycle", () => {
         drain: async () => void events.push("worker drained"),
       },
     ]);
+    let stopped = false;
+    void stopping.then(() => {
+      stopped = true;
+    });
     await Promise.resolve();
-    expect(events).toEqual(["stopped"]);
+    expect(events).toEqual(["stopped", "worker drained"]);
+    expect(stopped).toBe(false);
     finish();
     await stopping;
 
-    expect(events).toEqual(["stopped", "tasks drained", "worker drained"]);
+    expect(events).toEqual(["stopped", "worker drained", "tasks drained"]);
+  });
+
+  test("reaches worker drain when a tracked handler waits for its abort signal", async () => {
+    const tracker = createRuntimeTaskTracker();
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    tracker.open();
+    const task = tracker.run(
+      () =>
+        new Promise<void>((resolve) => {
+          controller.signal.addEventListener("abort", () => resolve(), { once: true });
+          started.resolve();
+        }),
+    );
+    await started.promise;
+    let drainCalled = false;
+    const stopping = stopRuntimeJobs(tracker, [
+      {
+        // Sync stops pulls here; it aborts handler signals only during drain.
+        stop: () => {},
+        drain: async () => {
+          drainCalled = true;
+          controller.abort();
+        },
+      },
+    ]);
+    try {
+      await Promise.resolve();
+      expect(drainCalled).toBe(true);
+    } finally {
+      controller.abort();
+      await stopping;
+    }
+    await task;
+  });
+
+  test("bounds tracked handlers that remain pending after worker drain", async () => {
+    for (const failDrain of [false, true]) {
+      const tracker = createRuntimeTaskTracker();
+      const unfinished = Promise.withResolvers<void>();
+      tracker.open();
+      tracker.run(() => unfinished.promise);
+      let receivedTimeout: number | undefined;
+      try {
+        await expect(
+          stopRuntimeJobs(
+            tracker,
+            [
+              {
+                stop: () => {},
+                drain: async (options) => {
+                  receivedTimeout = options?.timeoutMs;
+                  if (failDrain) throw new Error("worker drain failed");
+                },
+              },
+            ],
+            { timeoutMs: 5 },
+          ),
+        ).rejects.toThrow(failDrain ? "Multiple runtime jobs failed to stop" : "Runtime tasks did not drain within 5ms");
+        expect(receivedTimeout).toBe(5);
+      } finally {
+        unfinished.resolve();
+        await tracker.drain();
+      }
+    }
   });
 
   test("drains every worker and reports all failures", async () => {
@@ -193,7 +263,7 @@ describe("runtime lifecycle", () => {
       ]),
     ).rejects.toBeInstanceOf(AggregateError);
 
-    expect(events).toEqual(["first stopped", "second stopped", "third stopped", "tasks drained", "first", "second"]);
+    expect(events).toEqual(["first stopped", "second stopped", "third stopped", "first", "second", "tasks drained"]);
   });
 
   test("serializes duplicate starts and stops", async () => {

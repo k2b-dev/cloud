@@ -108,6 +108,7 @@ const start = async (): Promise<void> => {
             createdBy: null,
             createVersion: true,
             streamCursor: targetCursor,
+            restoreRevision: initial.restoreRevision,
             requestedAt,
             contributors: [...contributors.values()],
           });

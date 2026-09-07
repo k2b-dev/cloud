@@ -49,7 +49,7 @@ import type {
 } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { gridsWorkflows } from "../workflows/module";
-import { expireCompletedExports } from "./evidence-exports";
+import { cleanupExpiredEvidenceExports } from "./evidence-exports";
 import { canExecuteWorkflow, resolveWorkflowExecutionRecordAccess, resolveWorkflowRunRecordAccess } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
@@ -657,7 +657,7 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
       id: "grids:evidence-export-cleanup",
       cron: "17 * * * *",
       timezone: "UTC",
-      process: async () => expireCompletedExports(),
+      process: cleanupExpiredEvidenceExports,
     });
     unregisterScheduler ??= syncOps.registerScheduler({ name: "grids:workflows", scheduler: workflowScheduler() });
     scheduleWorker = await workflowScheduler().process();

@@ -21,6 +21,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const queueEntered = Promise.withResolvers<void>();
   const replayReady = Promise.withResolvers<void>();
   const snapshots: unknown[] = [];
+  const subscribedAfter: string[] = [];
   let events: WSEvents | undefined;
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
@@ -44,7 +45,11 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   }));
   mock.module("./service", () => ({
     notebooksService: {
-      note: { getByShortId: async () => note, get: async () => note, getYjsStateWithCursor: async () => null },
+      note: {
+        getByShortId: async () => note,
+        get: async () => note,
+        getYjsStateWithCursor: async () => ({ yjsState: new Uint8Array([0, 0]), streamCursor: "s6t.fixture.9", restoreRevision: "0" }),
+      },
       notebook: { permission: { get: async () => "write" } },
       workspaceEvents: { live: waitUntilAborted },
       presence: {
@@ -63,7 +68,12 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     createYjsTopic: () => ({
       latestCursor: async () => null,
       cursorAt: () => "s6t.fixture.0",
-      hub: () => ({ subscribe: waitUntilAborted }),
+      hub: () => ({
+        subscribe: (config: { after: string; signal?: AbortSignal }) => {
+          subscribedAfter.push(config.after);
+          return waitUntilAborted(config);
+        },
+      }),
       publish: async () => {
         publishEntered.resolve();
         return published.promise;
@@ -104,6 +114,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       socket,
     );
     await replayReady.promise;
+    expect(subscribedAfter).toEqual(["s6t.fixture.9"]);
     handlers.onMessage?.(
       new MessageEvent("message", {
         data: JSON.stringify({ type: "notes.yjs.sync.publish", payload: { noteId: "abcdef", payload: "AAA=" } }),
@@ -118,9 +129,9 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     });
     await Bun.sleep(10);
     expect(drained).toBe(false);
-    published.resolve({ cursor: "s6t.fixture.1" });
+    published.resolve({ cursor: "s6t.fixture.10" });
     await queueEntered.promise;
-    expect(snapshots).toEqual([{ noteId: "test-note", targetCursor: "s6t.fixture.1", reason: "unload" }]);
+    expect(snapshots).toEqual([{ noteId: "test-note", targetCursor: "s6t.fixture.10", reason: "unload" }]);
     expect(drained).toBe(false);
     queued.resolve();
     expect(await remoteClose).toBeInstanceOf(Error);

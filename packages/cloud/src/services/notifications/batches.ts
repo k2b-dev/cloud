@@ -606,7 +606,9 @@ export const retryFailed = async (params: { id: string }): Promise<Result<{ batc
     WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
   `;
   const refreshed = await refreshBatchCounters(params.id);
-  const jobId = await submitBatch(params.id);
+  // A completing worker may already have sampled zero remaining recipients.
+  // Explicit retries need their own wakeup even while that worker holds its key.
+  const { jobId } = await batchJob().submit({ key: `${params.id}:retry:${crypto.randomUUID()}`, input: { batchId: params.id } });
   return ok({ batch: refreshed ?? batch, jobId });
 };
 
@@ -645,7 +647,10 @@ export const retryRecipient = async (params: {
     WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
   `;
   const refreshed = await refreshBatchCounters(params.id);
-  const jobId = await submitBatch(params.id);
+  const { jobId } = await batchJob().submit({
+    key: `${params.id}:retry:${crypto.randomUUID()}`,
+    input: { batchId: params.id },
+  });
   return ok({ batch: refreshed ?? batch, jobId });
 };
 

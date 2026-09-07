@@ -46,7 +46,8 @@ if (!databaseName) {
     const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@valentinkolb/cloud");
     const connection = await connect({ servers: "nats://127.0.0.1:4222" });
-    const sync = createSync({ connection, namespace: `snapshot-${crypto.randomUUID()}`, application: "notebooks" });
+    const namespace = `snapshot-${crypto.randomUUID()}`;
+    const sync = createSync({ connection, namespace, application: "notebooks" });
     bindProcessSync(sync);
     try {
       await sql`CREATE SCHEMA auth`.simple();
@@ -101,6 +102,10 @@ if (!databaseName) {
       const [saved] = await sql<{ content_md: string; position: number; yjs_stream_cursor: string; seq: string }[]>`
         SELECT content_md, position, yjs_stream_cursor, yjs_stream_seq::text AS seq FROM notebooks.notes WHERE id = ${noteId}::uuid`;
       expect(saved).toEqual({ content_md: "first v6", position: 42, yjs_stream_cursor: cursor, seq: "7" });
+      const restoreTopic = createYjsTopic(restoreId);
+      const pending = await restoreTopic.publish({
+        data: { kind: "sync", payload: Buffer.from(encode("PRE-RESTORE")).toString("base64"), originNodeId: "test", originPeerId: null },
+      });
       // A genuine restore changes the Yjs base and must defeat an older worker.
       expect(
         (
@@ -111,6 +116,7 @@ if (!databaseName) {
           })
         ).ok,
       ).toBe(true);
+      expect((await notes.getCurrentWithContent({ id: restoreId }))?.contentMd).toBe("restored");
       const stale = await notes.save({
         noteId: restoreId,
         streamCursor: createYjsTopic(restoreId).cursorAt(1),
@@ -122,7 +128,91 @@ if (!databaseName) {
       expect(stale.ok).toBe(true);
       const [restored] = await sql<{ content_md: string; yjs_stream_cursor: string | null }[]>`
         SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${restoreId}::uuid`;
-      expect(restored).toEqual({ content_md: "restored", yjs_stream_cursor: null });
+      expect(restored).toEqual({ content_md: "restored", yjs_stream_cursor: pending.cursor });
+      // Simulate a worker that read the old base before restore, but whose
+      // target includes a newer accepted event. Sequence alone cannot fence it.
+      const afterRestore = await restoreTopic.publish({
+        data: { kind: "sync", payload: Buffer.from(encode("POST")).toString("base64"), originNodeId: "test", originPeerId: null },
+      });
+      const staleBase = await notes.save({
+        noteId: restoreId,
+        streamCursor: afterRestore.cursor,
+        restoreRevision: "0",
+        requestedAt: Date.now(),
+        yjsState: encode("stale base"),
+        contentMd: "stale base",
+        createdBy: null,
+      });
+      expect(staleBase).toMatchObject({ ok: false, status: 409 });
+      expect((await notes.getWithContent({ id: restoreId }))?.contentMd).toBe("restored");
+      // A fresh worker using the restored base may persist post-barrier edits.
+      const restoredState = await notes.getYjsStateWithCursor({ noteId: restoreId });
+      const freshDoc = new Y.Doc();
+      try {
+        Y.applyUpdate(freshDoc, restoredState!.yjsState!);
+        for await (const event of restoreTopic.replay({ after: restoredState!.streamCursor!, until: afterRestore.cursor })) {
+          Y.applyUpdate(freshDoc, Buffer.from(event.data.payload, "base64"));
+        }
+        const freshContent = freshDoc.getText("codemirror").toString();
+        expect(freshContent).not.toContain("PRE-RESTORE");
+        expect(freshContent).toContain("POST");
+        await notes.save({
+          noteId: restoreId,
+          streamCursor: afterRestore.cursor,
+          restoreRevision: restoredState!.restoreRevision,
+          requestedAt: Date.now(),
+          yjsState: Y.encodeStateAsUpdate(freshDoc),
+          contentMd: freshContent,
+          createdBy: null,
+        });
+        expect((await notes.getWithContent({ id: restoreId }))?.contentMd).toBe(freshContent);
+      } finally {
+        freshDoc.destroy();
+      }
+
+      // A worker already holding the pre-restore base must retry its sole job,
+      // then rebuild from the restored snapshot and cover the later accepted edit.
+      const raceId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, created_at)
+        VALUES (${raceId}::uuid, 'race01', ${notebookId}::uuid, '', '2020-01-01')`;
+      const raceTopic = createYjsTopic(raceId);
+      await raceTopic.publish({
+        data: { kind: "sync", payload: Buffer.from(encode("OLD")).toString("base64"), originNodeId: "test", originPeerId: null },
+      });
+      const oldBase = await notes.getYjsStateWithCursor({ noteId: raceId });
+      await notes.restoreFromSnapshot({ noteId: raceId, yjsSnapshot: Buffer.from(encode("RESTORED")).toString("base64"), createdBy: null });
+      const later = await raceTopic.publish({
+        data: { kind: "sync", payload: Buffer.from(encode("LATER")).toString("base64"), originNodeId: "test", originPeerId: null },
+      });
+      const readState = spyOn(notes, "getYjsStateWithCursor").mockResolvedValueOnce(oldBase);
+      const saveCalls = spyOn(notes, "save");
+      const { yjsSnapshotWorker } = await import("./yjs-snapshot-worker");
+      try {
+        await yjsSnapshotWorker.start();
+        await yjsSnapshotWorker.queueSnapshotSave({ noteId: raceId, targetCursor: later.cursor, reason: "unload" });
+        const deadline = Date.now() + 20_000;
+        let persisted = false;
+        while (Date.now() < deadline) {
+          const [row] = await sql<
+            { content_md: string; yjs_stream_cursor: string | null }[]
+          >`SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${raceId}::uuid`;
+          if (row?.yjs_stream_cursor === later.cursor) {
+            expect(row.content_md).toContain("RESTORED");
+            expect(row.content_md).toContain("LATER");
+            expect(row.content_md).not.toContain("OLD");
+            persisted = true;
+            break;
+          }
+          await Bun.sleep(50);
+        }
+        expect(persisted).toBe(true);
+        expect(saveCalls.mock.calls.map(([input]) => input.restoreRevision)).toEqual(["0", "1"]);
+      } finally {
+        await yjsSnapshotWorker.stop();
+        readState.mockRestore();
+        saveCalls.mockRestore();
+      }
+
       await notes.save({
         noteId,
         streamCursor: createYjsTopic(noteId).cursorAt(6),
@@ -135,6 +225,11 @@ if (!databaseName) {
     } finally {
       await sync.drain();
       unbindProcessSync();
+      const { jetstreamManager } = await import("@nats-io/jetstream");
+      const manager = await jetstreamManager(connection);
+      for await (const stream of manager.streams.list()) {
+        if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+      }
       await connection.drain();
       await sql.close({ timeout: 5 });
     }

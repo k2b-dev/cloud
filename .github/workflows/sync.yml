@@ -20,6 +20,9 @@ jobs:
       NOTEBOOKS_NATS_TEST: "1"
       CLOUD_SYNC_NATS_TEST: "1"
       GRIDS_SYNC_TEST: "1"
+      NOTEBOOKS_SNAPSHOT_DB_TEST: "1"
+      GRIDS_EVIDENCE_CLEANUP_DB_TEST: "1"
+      DATABASE_URL: postgres://ipa:ipa@127.0.0.1:5432/ipa
       NATS_IGNORE_CLUSTER_UPDATES: "true"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
@@ -27,8 +30,8 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - name: Start persistent three-node JetStream cluster
-        run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3
+      - name: Start three-node JetStream cluster and isolated test database server
+        run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3 postgres
       - name: Verify replay and cursor boundaries
         run: |
           bun test packages/cloud/src/services/notifications/live.integration.test.ts
@@ -36,6 +39,12 @@ jobs:
           bun test packages/contacts/src/service/events.integration.test.ts
           bun test packages/spaces/src/service/events.integration.test.ts
           bun test packages/grids/src/service/record-events.integration.test.ts packages/grids/src/service/workflow-run-events.integration.test.ts
+      - name: Verify restore, shutdown and cleanup regressions
+        run: |
+          bun test packages/notebooks/src/ws-lifecycle.test.ts packages/notebooks/src/service/yjs-snapshot.integration.test.ts
+          bun test packages/grids/src/service/evidence-cleanup.integration.test.ts
+          bun test packages/cloud/src/services/runtime-lifecycle.test.ts packages/cloud/src/services/notifications/batches-retry.test.ts
+          bun test packages/gateway/src/runtime.test.ts
       - name: Cluster diagnostics
         if: failure()
         run: docker compose -f compose.yml logs --tail 100 nats-1 nats-2 nats-3
