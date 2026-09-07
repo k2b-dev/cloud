@@ -5,20 +5,20 @@ section: Build an app
 order: 130
 description: Start the service, prepare required state, run process work, and stop cleanly.
 tags: [applications, lifecycle, shutdown]
-updated: 2026-08-12
+updated: 2026-09-07
 ---
 
 # Start and stop an application
 
 `app.start()` is the boundary between an application's declarations and its
-running process. It registers the live service, prepares shared runtime state,
-runs application lifecycle hooks, and returns the Bun-compatible server
-definition.
+running process. It connects NATS, prepares shared runtime state, runs
+application lifecycle hooks, verifies declared Sync resources, then registers
+the live service and returns the Bun-compatible server definition.
 
 The returned server handles `/_cloud/ready` before the application router.
 Because Bun does not start serving until the awaited definition is returned,
-the endpoint becomes reachable only after registration, `setup`, and `start`
-have completed. Use it for direct container or pod readiness checks.
+the endpoint becomes reachable only after `setup`, `start`, Sync readiness,
+and registration have completed. Use it for direct container or pod readiness checks.
 
 Pass the Hono fetch handler:
 
@@ -110,9 +110,14 @@ failing migration.
 
 ## Clean up a failed start
 
-Cloud does not roll back work started by the application.
+Cloud calls the application's `stop` hook if `setup`, `start`, resource
+readiness, or registration fails. It then releases notification registration,
+watchers, registry entries, and its NATS connection. The application is not
+advertised before its hooks and declared Sync resources are ready. Database
+writes and external effects are not rolled back.
 
-If `start` has several steps, stop completed steps when a later step fails:
+Make `stop` safe after partial startup. When a hook has several steps, it can
+also release completed steps locally:
 
 ```ts
 start: async () => {
@@ -142,7 +147,9 @@ stop: async () => {
 ```
 
 After the hook, Cloud removes notification registration. It then stops the
-runtime watcher and removes the application registry entry.
+runtime watcher and removes the application registry entry. Sync workers
+drain before the NATS connection closes. Stop and drain application workers
+before releasing the database clients or other dependencies they use.
 
 See [Scaling and shutdown](/en/docs/operations/scaling-and-shutdown) for
 deployment behavior and shutdown deadlines.
@@ -165,7 +172,8 @@ The context contains:
 
 - `logger(source)` for structured application logs;
 - asynchronous `settings.get()` and `settings.set()`;
-- a snapshot of registered applications.
+- a snapshot of registered applications;
+- `sync`, the process-owned Sync instance for distributed primitives.
 
 Request handlers should use request middleware instead. See
 [Settings](/en/docs/platform/settings) and
@@ -175,14 +183,15 @@ Request handlers should use request middleware instead. See
 
 Cloud starts the application in this order:
 
-1. require the shared `APP_SECRET`;
-2. write the application registry entry;
-3. start the runtime watcher;
-4. run `setup`, unless skipped;
-5. register notification definitions;
-6. load the settings cache;
-7. run `start`;
-8. return the server definition.
+1. require the shared `APP_SECRET` and connect the process-owned NATS instance;
+2. declare registry resources and start the runtime watcher;
+3. run `setup`, unless skipped;
+4. register notification definitions;
+5. load the settings cache;
+6. run `start`;
+7. await readiness of all Sync resources declared during startup;
+8. publish Help and capability records, then advertise the application;
+9. return the server definition.
 
 Every application container needs the same non-empty `APP_SECRET`. Startup
 fails before registration when it is missing.

@@ -1,124 +1,117 @@
-import { RedisClient } from "bun";
+import cloudPackage from "../packages/cloud/package.json";
 import { assessRuntimeCompatibility } from "../packages/cloud/src/_internal/runtime-compatibility";
 import type { AppRegistryEntry } from "../packages/cloud/src/contracts/registry";
 
 const COMPOSE_FILE = "compose.prod.yml";
-const APP_REGISTRY_STATE_KEY = "sync:e:default:cloud-apps:state";
-const MAX_SYNC_KEYS = 10_000;
-const LEGACY_CLOUD_SYNC_PREFIXES = [
-  "cloud:contacts:events",
-  "cloud:grids:events",
-  "cloud:grids:workflow-events",
-  "cloud:grids:workflow-runs",
-  "cloud:grids:workflows",
-  "cloud:gateway:telemetry",
-  "cloud:mail:events",
-  "cloud:notebooks",
-  "cloud:notifications:live",
-  "cloud:spaces:events",
-] as const;
-
-export type SyncKeyInventory = {
-  currentDurable: string[];
-  legacyDurable: string[];
-  preservedScheduler: string[];
-  nonDurable: string[];
-  other: string[];
+const EXPECTED_SYNC_VERSION = cloudPackage.dependencies["@k2b/sync"];
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const record = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a JSON object");
+  return Object.fromEntries(Object.entries(value));
 };
-
-export type SyncStateAnalysis = {
-  inventory: SyncKeyInventory;
-  runtimeIssues: ReturnType<typeof assessRuntimeCompatibility>;
-  failures: string[];
+const string = (value: unknown): string => {
+  if (typeof value !== "string") throw new Error("Expected a string");
+  return value;
 };
-
-export const classifySyncKeys = (keys: readonly string[]): SyncKeyInventory => {
-  const inventory: SyncKeyInventory = {
-    currentDurable: [],
-    legacyDurable: [],
-    preservedScheduler: [],
-    nonDurable: [],
-    other: [],
+const number = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("Expected a finite number");
+  return value;
+};
+const array = (value: unknown): unknown[] => {
+  if (!Array.isArray(value)) throw new Error("Expected an array");
+  return value;
+};
+export const parseFleetInventory = (value: unknown): AppRegistryEntry[] =>
+  array(record(value).apps).map((entry) => {
+    const app = record(entry);
+    const runtime = app.runtime === undefined ? undefined : record(app.runtime);
+    return {
+      id: string(app.id),
+      name: string(app.name),
+      icon: string(app.icon),
+      description: string(app.description),
+      baseUrl: string(app.baseUrl),
+      routes: array(app.routes).map(string),
+      ...(runtime ? { runtime: { release: string(runtime.release), syncVersion: string(runtime.syncVersion) } } : {}),
+    };
+  });
+export const parseFleetResources = (value: unknown) => {
+  const result = record(value);
+  const health = record(result.health);
+  return {
+    health: {
+      state: string(health.state),
+      connection: string(health.connection),
+      pendingResources: number(health.pendingResources),
+      driftedResources: number(health.driftedResources),
+    },
+    resources: array(result.resources).map((entry) => {
+      const resource = record(entry);
+      return {
+        namespace: string(resource.namespace),
+        kind: string(resource.kind),
+        id: string(resource.id),
+        owner: string(resource.owner),
+        state: string(resource.state),
+        ...(resource.detail === undefined ? {} : { detail: record(resource.detail) }),
+      };
+    }),
   };
-  for (const key of [...keys].sort()) {
-    if (LEGACY_CLOUD_SYNC_PREFIXES.some((prefix) => key.startsWith(`${prefix}:`))) {
-      inventory.legacyDurable.push(key);
-    } else if (key.startsWith("sync:e:") || key.startsWith("sync:mutex:") || key.startsWith("sync:ratelimit:")) {
-      inventory.nonDurable.push(key);
-    } else if (key.startsWith("sync:scheduler:") && !key.startsWith("sync:scheduler:namespace:v4:")) {
-      inventory.preservedScheduler.push(key);
-    } else if (
-      key.startsWith("sync:queue:namespace:v2:") ||
-      key.startsWith("sync:topic:namespace:v2:") ||
-      key.startsWith("sync:pump:namespace:v2:") ||
-      key.startsWith("sync:scheduler:namespace:v4:") ||
-      key.startsWith("sync:job:claim:v2:") ||
-      key.startsWith("sync:job:enqueue-receipt:v2:") ||
-      /^sync:job:.+:seq$/.test(key)
-    ) {
-      inventory.currentDurable.push(key);
-    } else if (
-      key.startsWith("sync:queue:") ||
-      key.startsWith("sync:topic:") ||
-      key.startsWith("sync:pump:") ||
-      key.startsWith("sync:job:queue:") ||
-      (key.startsWith("sync:job:") && key.includes(":idempotency:")) ||
-      key.startsWith("sync:scheduler-control:")
-    ) {
-      inventory.legacyDurable.push(key);
-    } else {
-      inventory.other.push(key);
-    }
-  }
-  return inventory;
 };
-
-const asPairs = (raw: unknown): Array<[string, string]> => {
-  if (Array.isArray(raw)) {
-    const pairs: Array<[string, string]> = [];
-    for (let index = 0; index + 1 < raw.length; index += 2) pairs.push([String(raw[index]), String(raw[index + 1])]);
-    return pairs;
-  }
-  if (raw && typeof raw === "object") return Object.entries(raw).map(([key, value]) => [key, String(value)]);
-  return [];
-};
-
-export const parseAppRegistryState = (raw: unknown, now = Date.now()): { apps: AppRegistryEntry[]; invalid: string[] } => {
-  const apps: AppRegistryEntry[] = [];
-  const invalid: string[] = [];
-  for (const [key, encoded] of asPairs(raw)) {
-    try {
-      const stored = JSON.parse(encoded) as { dataJson?: unknown; data?: unknown; expiresAt?: unknown };
-      if (typeof stored.expiresAt === "number" && stored.expiresAt <= now) continue;
-      const value = typeof stored.dataJson === "string" ? JSON.parse(stored.dataJson) : stored.data;
-      if (!value || typeof value !== "object" || typeof value.id !== "string") throw new Error("missing app value");
-      apps.push(value as AppRegistryEntry);
-    } catch (error) {
-      invalid.push(`${key}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  return { apps, invalid };
-};
-
-export const analyzeSyncState = (
-  keys: readonly string[],
-  apps: readonly AppRegistryEntry[],
-  invalidRegistryRecords: readonly string[] = [],
-): SyncStateAnalysis => {
-  const inventory = classifySyncKeys(keys);
-  const runtimeIssues = assessRuntimeCompatibility(apps);
-  const failures: string[] = [];
-  if (inventory.legacyDurable.length > 0) failures.push("Legacy durable Sync keys require an operator-reviewed drain or cleanup.");
-  if (invalidRegistryRecords.length > 0) failures.push(`Invalid app registry records: ${invalidRegistryRecords.join("; ")}`);
-  failures.push(...runtimeIssues.filter((issue) => issue.severity === "error").map((issue) => issue.message));
-  return { inventory, runtimeIssues, failures };
-};
+export type FleetResourceReport = { appId: string; result: ReturnType<typeof parseFleetResources> | null; error?: string };
 
 export const findReleaseMismatches = (apps: readonly AppRegistryEntry[], expectedRelease: string): string[] =>
   apps.filter((app) => app.runtime?.release !== expectedRelease).map((app) => `${app.id}=${app.runtime?.release ?? "unknown"}`);
 
+export const assessFleetState = (input: {
+  apps: readonly AppRegistryEntry[];
+  reports: readonly FleetResourceReport[];
+  expectedAppIds: readonly string[];
+  expectedRelease?: string;
+  expectedNamespace: string;
+}): string[] => {
+  const failures: string[] = [];
+  const apps = new Set(input.apps.map((app) => app.id));
+  if (apps.size === 0) failures.push("Core reports no registered apps.");
+  for (const id of input.expectedAppIds) if (!apps.has(id)) failures.push(`Expected app ${id} is missing from the live registry.`);
+  failures.push(
+    ...assessRuntimeCompatibility(input.apps)
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.message),
+  );
+  for (const app of input.apps) {
+    if (app.runtime?.syncVersion !== EXPECTED_SYNC_VERSION) failures.push(`${app.id} does not report @k2b/sync ${EXPECTED_SYNC_VERSION}.`);
+    if (!input.reports.some((report) => report.appId === app.id)) failures.push(`${app.id} has no Sync resource report.`);
+  }
+  if (input.expectedRelease) {
+    const mismatches = findReleaseMismatches(input.apps, input.expectedRelease);
+    if (mismatches.length) failures.push(`Apps do not report ${input.expectedRelease}: ${mismatches.join(", ")}`);
+  }
+  for (const report of input.reports) {
+    if (!report.result) {
+      failures.push(`${report.appId}: ${report.error ?? "Sync resources unavailable"}`);
+      continue;
+    }
+    const { health, resources } = report.result;
+    if (health.state !== "ready" || health.connection !== "connected" || health.pendingResources || health.driftedResources) {
+      failures.push(
+        `${report.appId}: Sync is ${health.state}/${health.connection}, ${health.pendingResources} pending, ${health.driftedResources} drifted resources.`,
+      );
+    }
+    for (const resource of resources) {
+      if (resource.state !== "ready") failures.push(`${report.appId}/${resource.kind}/${resource.id}: ${resource.state}.`);
+      if (resource.namespace !== input.expectedNamespace)
+        failures.push(`${report.appId}/${resource.id}: unexpected namespace ${resource.namespace}.`);
+      const deadLetters = resource.detail?.deadLetters;
+      if (typeof deadLetters === "number" && deadLetters > 0)
+        failures.push(`${report.appId}/${resource.id}: ${deadLetters} dead letters require review.`);
+    }
+  }
+  return failures;
+};
+
 const run = async (command: string[]): Promise<string> => {
-  const child = Bun.spawn(command, { cwd: import.meta.dir + "/..", env: processEnv(), stdout: "pipe", stderr: "pipe" });
+  const child = Bun.spawn(command, { cwd: import.meta.dir + "/..", stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -128,112 +121,121 @@ const run = async (command: string[]): Promise<string> => {
   return stdout.trim();
 };
 
-const processEnv = (): Record<string, string> => {
-  const entries = Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined);
-  return Object.fromEntries(entries);
-};
-
-const scanSyncKeys = async (redis: RedisClient): Promise<string[]> => {
-  const keys = new Set<string>();
-  let scans = 0;
-  for (const pattern of ["sync:*", ...LEGACY_CLOUD_SYNC_PREFIXES.map((prefix) => `${prefix}:*`)]) {
-    let cursor = "0";
-    do {
-      scans += 1;
-      if (scans > 10_000) throw new Error("Redis Sync inventory exceeded the SCAN iteration safety limit");
-      const raw = await redis.send("SCAN", [cursor, "MATCH", pattern, "COUNT", "1000"]);
-      if (!Array.isArray(raw) || !Array.isArray(raw[1])) throw new Error("Redis returned an invalid SCAN response");
-      cursor = String(raw[0]);
-      for (const key of raw[1]) keys.add(String(key));
-      if (keys.size > MAX_SYNC_KEYS) throw new Error(`Redis Sync inventory exceeds the ${MAX_SYNC_KEYS}-key safety limit`);
-    } while (cursor !== "0");
+export const readCoreJson = async (origin: URL, path: string, token: string): Promise<unknown> => {
+  const response = await fetch(new URL(path, origin), {
+    headers: { authorization: `Bearer ${token}` },
+    redirect: "manual",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`Core ${path} returned HTTP ${response.status}`);
   }
-  return [...keys];
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error(`Core ${path} returned no body`);
+  let size = 0;
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let text = "";
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) throw new Error(`Core ${path} response exceeds ${MAX_RESPONSE_BYTES} bytes`);
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    return JSON.parse(text + decoder.decode());
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
 };
 
-const printKeys = (label: string, keys: readonly string[]): void => {
-  console.log(`${label}: ${keys.length}`);
-  for (const key of keys) console.log(`  ${key}`);
-};
-
+/** Read-only v6 fleet check. Legacy Redis/Yjs evidence is a separate pre-cutover command. */
 export const main = async (): Promise<number> => {
   const expectedTag = process.env.CLOUD_IMAGE_TAG?.trim();
   if (!expectedTag || !/^sha-[0-9a-f]{7,40}$/.test(expectedTag)) {
     console.error("CLOUD_IMAGE_TAG must be an immutable sha-<git-sha> tag.");
     return 1;
   }
-  const redisUrl = process.env.REDIS_URL?.trim();
-  if (!redisUrl) {
-    console.error("REDIS_URL is required for the read-only Sync inventory.");
+  const coreUrl = process.env.CLOUD_CORE_URL?.trim();
+  const token = process.env.CLOUD_ADMIN_TOKEN?.trim();
+  const namespace = process.env.SYNC_NAMESPACE?.trim();
+  if (!coreUrl || !token || !namespace) {
+    console.error("CLOUD_CORE_URL, CLOUD_ADMIN_TOKEN and SYNC_NAMESPACE are required for the read-only v6 fleet check.");
     return 1;
   }
-
+  let origin: URL;
+  try {
+    origin = new URL(coreUrl);
+  } catch {
+    console.error("CLOUD_CORE_URL must be a valid Core origin.");
+    return 1;
+  }
+  if (!["https:", "http:"].includes(origin.protocol) || origin.username || origin.password) {
+    console.error("CLOUD_CORE_URL must be an HTTP(S) Core origin without URL credentials.");
+    return 1;
+  }
   const failures: string[] = [];
-  let verifyExpectedRuntime = false;
-  console.log(`Expected Cloud release: ${expectedTag}`);
-
+  let expectedAppIds: string[] = [];
+  console.log(`Expected Cloud release: ${expectedTag}; Sync namespace: ${namespace}`);
   try {
     const images = (await run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--images"])).split(/\r?\n/).filter(Boolean);
     const mismatched = images.filter((image) => !image.endsWith(`:${expectedTag}`));
-    if (images.length === 0) failures.push("Production Compose rendered no runtime images.");
-    if (mismatched.length > 0) failures.push(`Compose contains images outside ${expectedTag}: ${mismatched.join(", ")}`);
-    console.log(`Compose images: ${images.length} on ${expectedTag}`);
-
+    if (!images.length) failures.push("Production Compose rendered no runtime images.");
+    if (mismatched.length) failures.push(`Compose contains images outside ${expectedTag}: ${mismatched.join(", ")}`);
+    expectedAppIds = (await run(["docker", "compose", "-f", COMPOSE_FILE, "config", "--services"]))
+      .split(/\r?\n/)
+      .filter((name) => name.startsWith("app-"))
+      .map((name) => name.slice(4));
     const containerIds = (await run(["docker", "compose", "-f", COMPOSE_FILE, "ps", "-q"])).split(/\r?\n/).filter(Boolean);
-    if (containerIds.length > 0) {
+    if (containerIds.length) {
       const runningImages = (await run(["docker", "inspect", "--format", "{{.Config.Image}}", ...containerIds]))
         .split(/\r?\n/)
         .filter(Boolean);
       const tags = new Set(runningImages.map((image) => image.slice(image.lastIndexOf(":") + 1)));
-      verifyExpectedRuntime = tags.size === 1 && tags.has(expectedTag);
-      console.log(`Running containers: ${containerIds.length}; image tags: ${[...tags].sort().join(", ")}`);
+      if (tags.size !== 1 || !tags.has(expectedTag)) failures.push(`Running containers do not use ${expectedTag}.`);
       if (tags.size > 1) failures.push(`Running Cloud containers use mixed image tags: ${[...tags].sort().join(", ")}`);
       if ([...tags].some((tag) => tag === "latest" || tag === "main")) failures.push("Running Cloud containers use a mutable image tag.");
-    } else {
-      console.log("Running containers: none (runtime version checks skipped)");
-    }
+      console.log(`Running containers: ${containerIds.length}; image tags: ${[...tags].sort().join(", ")}`);
+    } else failures.push("Production Compose has no running containers; live readiness is unverified.");
   } catch (error) {
     failures.push(error instanceof Error ? error.message : String(error));
   }
-
-  const redis = new RedisClient(redisUrl);
   try {
-    const [keys, registryRaw] = await Promise.all([scanSyncKeys(redis), redis.send("HGETALL", [APP_REGISTRY_STATE_KEY])]);
-    const registry = parseAppRegistryState(registryRaw);
-    const analysis = analyzeSyncState(keys, registry.apps, registry.invalid);
-    const { inventory } = analysis;
-    printKeys("Current durable Sync keys", inventory.currentDurable);
-    printKeys("Legacy durable Sync candidates", inventory.legacyDurable);
-    printKeys("Preserved legacy scheduler keys", inventory.preservedScheduler);
-    printKeys("Non-durable Sync keys", inventory.nonDurable);
-    printKeys("Unclassified Sync keys", inventory.other);
-    for (const app of registry.apps.sort((a, b) => a.id.localeCompare(b.id))) {
-      console.log(`${app.id}: release ${app.runtime?.release ?? "unknown"}, @k2b/sync ${app.runtime?.syncVersion ?? "unknown"}`);
-    }
-    for (const issue of analysis.runtimeIssues) {
-      console.log(`${issue.severity.toUpperCase()}: ${issue.message}`);
-    }
-    if (verifyExpectedRuntime) {
-      const releaseMismatches = findReleaseMismatches(registry.apps, expectedTag);
-      if (releaseMismatches.length > 0) {
-        failures.push(`Apps do not report ${expectedTag}: ${releaseMismatches.join(", ")}`);
+    const apps = parseFleetInventory(await readCoreJson(origin, "/api/admin/sync", token));
+    const reports: FleetResourceReport[] = [];
+    // Serial requests bound load even when the fleet is large.
+    for (const app of apps) {
+      try {
+        const result = parseFleetResources(await readCoreJson(origin, `/api/admin/sync/${encodeURIComponent(app.id)}/resources`, token));
+        reports.push({ appId: app.id, result });
+        console.log(
+          `${app.id}: release ${app.runtime?.release ?? "unknown"}, @k2b/sync ${app.runtime?.syncVersion ?? "unknown"}, ${result.resources.length} resources, ${result.health.state}`,
+        );
+      } catch (error) {
+        reports.push({ appId: app.id, result: null, error: error instanceof Error ? error.message : String(error) });
       }
     }
-    failures.push(...analysis.failures);
+    failures.push(
+      ...assessFleetState({
+        apps,
+        reports,
+        expectedAppIds,
+        expectedRelease: expectedTag,
+        expectedNamespace: namespace,
+      }),
+    );
   } catch (error) {
-    failures.push(`Redis preflight failed: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    redis.close();
+    failures.push(`Fleet preflight failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  if (failures.length > 0) {
-    console.error("\nPreflight blocked:");
+  if (failures.length) {
+    console.error("Preflight blocked:");
     for (const failure of failures) console.error(`- ${failure}`);
-    console.error("Create a Redis backup, then follow SYNC_5_9_MIGRATION.md. This command never changes Redis or containers.");
+    console.error("Follow SYNC_6_MIGRATION.md. This command never changes Redis, NATS resources, or containers.");
     return 1;
   }
-  console.log("Preflight passed. Create a Redis backup before any manual migration step.");
+  console.log("v6 fleet preflight passed. Legacy drain and Yjs snapshot evidence remain separate cutover requirements.");
   return 0;
 };
-
 if (import.meta.main) process.exitCode = await main();

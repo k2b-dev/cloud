@@ -27,7 +27,7 @@ Open `http://localhost:3000`.
 The local administrator login is `/auth/login?method=admin` with token
 `dev-admin`.
 
-`bun run dev` starts Postgres, Valkey, Geo, Filegate, and Gotenberg in the
+`bun run dev` starts Postgres, Valkey, a three-node NATS JetStream cluster, Geo, Filegate, and Gotenberg in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
 Core, Dashboard, Accounts, and Assistant.
 
@@ -110,7 +110,7 @@ compatibility ranges.
 
 `bun install` applies the three-day release-age gate when it resolves a new npm
 version. The first-party `@k2b/fibel`, `@k2b/nessi`, `@k2b/ssr`, `@k2b/stdlib`,
-and `@k2b/sync` packages are the only exceptions so a coordinated Cloud update
+`@k2b/sync`, and its pinned NATS client packages are the exceptions so a coordinated Cloud update
 can use a new release immediately. Dependency lifecycle scripts are denied by
 default. Add no trusted package without verifying why its install script is
 required.
@@ -175,3 +175,34 @@ The root typecheck also verifies import boundaries, package cycles, service API
 contracts, shared UI coverage, CSS architecture, and formatting.
 
 See [Frontend testing](/en/docs/frontend/testing) for browser-facing checks.
+
+### Run Sync integration checks
+
+The Compose cluster exposes NATS on `127.0.0.1:4222` and monitoring on
+`127.0.0.1:8222`. Host-side clients set `NATS_IGNORE_CLUSTER_UPDATES=true` so
+they keep using the reachable seed address. Containers use the three
+`ipa_nats_1` through `ipa_nats_3` addresses instead.
+
+After a dependency change, run `bun install --frozen-lockfile` and rebuild the
+affected applications. Restarting mounted source alone does not refresh the
+container's installed packages. Verify `/_cloud/ready`, an actual application
+route, and background job or schedule execution. A container marked healthy
+is only the first check.
+
+With the full development stack running, verify the fleet inventory, Sync
+resources, schedules, authorization, and admin pages over HTTP:
+
+```bash
+docker compose -f compose.dev.yml exec -T app-core bun packages/core/scripts/sync-dev-smoke.ts
+```
+
+This local-only check creates a temporary test account and session and removes
+them afterward. It does not invoke application jobs or provider operations.
+
+For isolated broker recovery, run
+`packages/cloud/scripts/sync-recovery-smoke.ts` with `prepare`, then `recover`
+using the same unique `SYNC_RECOVERY_NAMESPACE=cloud-recovery-smoke-<suffix>`.
+Leave NATS running across the printed minute boundary. The check verifies a
+retained job, a missed scheduled tick, and their acknowledgments, then removes
+its own broker resources. It can bracket a full application restart, but does
+not replace recovery tests for each application's domain work.

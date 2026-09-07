@@ -5,7 +5,7 @@ section: Automation
 order: 600
 description: Choose the smallest execution model that preserves the work and recovery guarantees you need.
 tags: [automation, jobs, workflows]
-updated: 2026-08-12
+updated: 2026-09-07
 ---
 
 # Automation
@@ -23,18 +23,20 @@ idempotency, retention, and operational state that simple work does not need.
 | --- | --- | --- |
 | Start and stop a local loop | Process-local; a restart discards current work | [Lifecycle work](/en/docs/automation/lifecycle-background-work) |
 | Retry one local operation | Process-local; the caller owns retry safety | [Retry](/en/docs/automation/jobs-and-queues#retry-an-operation) |
-| Run one durable task | Valkey-backed and at least once; the handler must be idempotent | [Jobs](/en/docs/automation/jobs-and-queues#run-a-job) |
-| Control receive, leases, and dead letters | Valkey-backed and at least once; the app settles each delivery | [Queues](/en/docs/automation/jobs-and-queues#use-a-queue) |
+| Run one durable task | NATS-backed and at least once; the handler must be idempotent | [Jobs](/en/docs/automation/jobs-and-queues#run-a-job) |
+| Control receive, leases, and dead letters | NATS-backed and at least once; the app settles each delivery | [Queues](/en/docs/automation/jobs-and-queues#use-a-queue) |
 | Run recurring work | Durable schedule state; occurrences may repeat during handover | [Schedulers](/en/docs/automation/schedulers) |
 | Replay events or update connected clients | Retained consumer stream or best-effort live fan-out | [Topics and live events](/en/docs/automation/topics-and-live-events) |
-| Coordinate app instances briefly | Expiring Valkey state, never the domain source of truth | [Coordination primitives](/en/docs/automation/coordination-primitives) |
+| Coordinate app instances briefly | Expiring NATS state, never the domain source of truth | [Coordination primitives](/en/docs/automation/coordination-primitives) |
 | Explain and recover a user-authored process | Immutable plan, durable run, outcomes, and effect journal | [Workflow overview](/en/docs/automation/workflow-overview) |
 
 Lifecycle callbacks belong to the Cloud application contract.
 
-Retries, jobs, queues, schedules, topics, rate limits, mutexes, and ephemeral
-state come from `@k2b/sync`. Distributed primitives use Valkey. These
-primitives do not use the Cloud workflow tables.
+Jobs, queues, schedules, topics, mutexes, and ephemeral state come from
+`@k2b/sync` and use NATS JetStream. Local retries use `@k2b/sync/retry`. Cloud
+rate limits remain on Valkey and are exported from
+`@valentinkolb/cloud/server`. These primitives do not use the Cloud workflow
+tables.
 
 The workflow kernel comes from `@valentinkolb/cloud/workflows`. It owns
 versioned plans, runs, leases, outcomes, effects, and operator visibility.

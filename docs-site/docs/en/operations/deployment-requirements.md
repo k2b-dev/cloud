@@ -31,7 +31,8 @@ this service set.
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Build or pull the matching immutable release images; see [Build and deploy](/en/docs/operations/build-and-deploy). |
 | Postgres | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. |
-| Valkey / Redis-compatible service | Registry, coordination, queues, schedules and live updates | Supply `REDIS_URL`. Keep its storage persistent where queued work must survive a restart. JWT browser sessions no longer use Redis session storage, but Cloud still needs Valkey. |
+| NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes and `max_payload: 16MB` for notebook updates. Production uses mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`. |
+| Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
 | Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming and WebSocket upgrades. Only the gateway receives public application traffic. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
@@ -80,7 +81,7 @@ signing-key rotation, KEK recovery and revocation. Keep these secrets independen
 
 ## Select applications and feature dependencies
 
-**Baseline** below means Postgres, Valkey, `APP_SECRET`, completed Core schema
+**Baseline** below means Postgres, Valkey, NATS JetStream, `APP_SECRET`, completed Core schema
 setup, and a reachable Core for authentication/authority operations. It is a
 deployment prerequisite, not a claim that every app synchronously probes Core
 at startup. A feature dependency is required when using that feature, not
@@ -94,8 +95,8 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Valkey and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
-| [Core](/en/apps/core) (`core`) | Postgres, Valkey, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
+| Gateway (`gateway`) | Valkey, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails require shared SMTP. | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
 | [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. Discovery alone is insufficient. |
@@ -160,7 +161,7 @@ server-side `FILE_PROXY_TOKEN` must match Cloud's Files token, and its
    production administrator-provisioning workflow. Do not carry `dev-admin` or
    an enabled `ADMIN_LOGIN_TOKEN` into production.
 2. Generate and store the independent deployment secrets. Set the public
-   origin, private service addresses, database and Valkey connections. Give
+   origin, private service addresses, database, Valkey and NATS connections. Give
    Core and OAuth the same broker secret if OAuth is selected; only Core gets
    the identity KEK.
 3. Start and check persistent infrastructure. Start Core and wait for schema
@@ -200,3 +201,15 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+## Upgrade from Sync v5
+
+The Redis-backed Sync v5 runtime cannot read or write Sync v6 state. Finish or
+explicitly reconcile accepted work before switching all applications together.
+Notebook updates must be fully snapshotted into Postgres before the cursor
+schema changes. Follow the repository's Sync v6 migration runbook; backing up
+Redis alone does not prove that a notebook snapshot includes its last update.
+
+Use the Sync view in Gateway Ops to inspect each application's resources,
+schedules and dead letters. Requeue and manual schedule runs are administrator
+actions routed through Core with target-bound invocation credentials.

@@ -5,35 +5,27 @@ section: Automation
 order: 620
 description: Run asynchronous work and control how tasks wait for workers.
 tags: [jobs, queues, sync]
-updated: 2026-07-27
+updated: 2026-09-07
 ---
 
 # Jobs and queues
 
 Use a job for one typed background operation. Use a queue when the application
-needs direct control over receive, lease, acknowledge, and dead-letter
-behavior.
-
-Both use `@k2b/sync` and provide at-least-once execution.
+needs manual acknowledgement, retry delays, or dead-letter handling. Both use
+NATS JetStream through `@k2b/sync` and execute at least once. Keep durable
+business state in Postgres and make repeated effects idempotent.
 
 ## Retry an operation
 
-Use `retry()` when one process-local operation can be repeated safely.
+`retry()` is process-local and does not survive a restart:
 
 ```ts
-import {
-  isRetryableTransportError,
-  retry,
-} from "@k2b/sync";
+import { isRetryableTransportError, retry } from "@k2b/sync/retry";
 
 const response = await retry({
   run: () => fetchInventory(),
   after: ({ ctx }) => {
-    if (
-      ctx.error &&
-      ctx.attempt < 5 &&
-      isRetryableTransportError(ctx.error)
-    ) {
+    if (ctx.error && ctx.attempt < 5 && isRetryableTransportError(ctx.error)) {
       ctx.reschedule({ delayMs: ctx.expBackoff() });
     }
   },
@@ -41,129 +33,118 @@ const response = await retry({
 });
 ```
 
-`run` receives the current attempt number. `after` receives either `data` or
-`error`. Call `reschedule()` to run another attempt.
-
-Without `reschedule()`, `retry()` returns the data or throws the original error.
-An aborted signal ends the loop with `AbortError`. Errors thrown by `after` are
-ignored.
-
-Use the exported `expBackoff(attempt, options)` helper when the caller owns the
-retry loop.
-
-`retry()` keeps no durable state. A process exit ends the operation. Use a job
-when the work must survive a restart.
+Without `reschedule()`, the loop returns the result or throws the original
+error. Pass an abort signal when the caller can cancel the work.
 
 ## Run a job
 
-```ts
-import { job } from "@k2b/sync";
+Cloud owns one Sync instance per application process. Declare handles with
+`lazySync()`; use them from lifecycle startup or request handlers after Cloud
+has connected NATS.
 
-const reindexItem = job<{ itemId: string }>({
+```ts
+import { lazySync } from "@valentinkolb/cloud";
+
+const reindexItem = lazySync((sync) => sync.job<{ itemId: string }>({
   id: "inventory.reindex-item",
-  process: async ({ ctx }) => {
-    await rebuildIndex(ctx.input.itemId);
+  delivery: {
+    ackWaitMs: 60_000,
+    maxAttempts: 4,
+    backoffMs: [1_000, 5_000, 30_000],
   },
-  after: async ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 5) {
-      ctx.reschedule({
-        delayMs: ctx.expBackoff({
-          baseMs: 1_000,
-          maxMs: 5 * 60_000,
-        }),
-      });
-    }
-  },
+}));
+
+// In lifecycle.start(): explicitly start the consumer, even with no new work.
+const worker = await reindexItem().process({ concurrency: 2 }, async (context) => {
+  await rebuildIndex(context.input.itemId);
+  await context.heartbeat();
 });
 
-await reindexItem.submit({
-  key: `item:${itemId}:${version}`,
+await reindexItem().submit({
+  key: `item:${itemId}`,
   input: { itemId },
+  coalesce: true,
 });
+
+// In lifecycle.stop(), before releasing handler dependencies:
+worker.stop();
+await worker.drain();
 ```
 
-`key` is required. Repeated submission returns the existing job ID while the
-idempotency key exists.
+A successful handler acknowledges its delivery. A thrown error retries using
+`delivery.backoffMs`; after `maxAttempts`, including the first attempt, it moves
+to dead letters. Call `heartbeat()` during long operations before `ackWaitMs`
+expires. `concurrency` limits local handlers; `delivery.maxInFlight` limits all
+workers sharing the durable consumer.
 
-`process` receives typed input, an abort signal, attempt state, and
-`heartbeat()`. Heartbeat long tasks so their lease does not expire.
+`key` is required and limited to 96 UTF-8 bytes. By default, it deduplicates
+within `dedupeWindowMs` (two minutes). `coalesce: true` instead keeps at most one
+queued or running job per key and releases the key after terminal settlement.
+Use it when cron scans or boot recovery repeatedly submit unfinished work.
+Permanent uniqueness belongs in the application database.
 
-`after` receives either `data` or `error`. The attempt is terminal unless it
-calls `reschedule()`.
+For successful continuation, call `context.resubmit({ delayMs, input })` inside
+the handler. It schedules a fresh attempt with the same key; omitted input
+keeps the current input. This is suitable for more pages of work, a busy
+dependency, or provider throttling that should not consume the failure budget.
 
-The worker starts when the first job is submitted. Call `stop()` during
-application shutdown.
-
-### Jobs run at least once
-
-A worker crash leaves the message leased until another worker receives it.
-The process callback can therefore run more than once.
-
-Make external effects idempotent under `ctx.key`. Do not treat a successful
-callback as a durable business record.
-
-The default key TTL is 24 hours. A terminal job releases its key.
-
-Set `keyTtlMs` to at least the maximum delay plus retry duration. A delayed or
-repeatedly rescheduled job can outlive its key. Once the key expires, the same
-logical submission can create another job.
-
-```ts
-await reindexItem.submit({
-  key: `item:${itemId}:${version}`,
-  keyTtlMs: 7 * 24 * 60 * 60 * 1_000,
-  input: { itemId },
-});
-```
+`process({ onError }, handler)` can return `{ action: "retry", delayMs }` or
+`{ action: "dead_letter", reason }` from `onError`. Write any terminal domain
+failure before choosing dead letters. Handle intentional cancellation inside
+the handler and return successfully when no work remains.
 
 ## Use a queue
 
 ```ts
-import { queue } from "@k2b/sync";
-
-const imports = queue<{ fileId: string }>({
+const imports = lazySync((sync) => sync.queue<{ fileId: string }>({
   id: "inventory.imports",
-  delivery: {
-    defaultLeaseMs: 30_000,
-    maxDeliveries: 10,
-  },
-});
+  delivery: { ackWaitMs: 30_000, maxAttempts: 10 },
+}));
 
-await imports.send({
-  data: { fileId },
-  idempotencyKey: `import:${fileId}`,
-});
-
-for await (const message of imports.stream({ signal })) {
-  try {
-    await importFile(message.data.fileId);
-    await message.ack();
-  } catch (error) {
-    await message.nack({
-      delayMs: 5_000,
-      error: error instanceof Error ? error.message : "Import failed",
-    });
+await imports().send({ data: { fileId }, idempotencyKey: `import:${fileId}` });
+const reader = await imports().reader();
+try {
+  for await (const delivery of reader.stream({ signal })) {
+    try {
+      await importFile(delivery.data.fileId);
+      await delivery.ack();
+    } catch (error) {
+      await delivery.retry({ delayMs: 5_000, reason: String(error) });
+    }
   }
+} finally {
+  await reader.close();
 }
 ```
 
-`recv()` and `stream()` return a leased delivery. Settle it with `ack()` or
-`nack()`. Call `touch()` when processing may outlive the lease.
+Use `queue.process()` for automatic acknowledgement and error retries. Manual
+readers support `ack()`, `retry()`, `deadLetter()`, and `heartbeat()`. A final
+retry moves the message to dead letters. Settlement failures can throw;
+late acknowledgements after redelivery can settle idempotently, so an
+acknowledgement is not proof that no other worker ran the handler.
 
-`ack()`, `nack()`, and `touch()` return `false` after lease ownership is lost.
-The work is then ambiguous because another worker may have received it.
+Ordering is enabled explicitly with
+`ordering: { mode: "partitioned", partitions: 32 }`. Each send then needs an
+`orderingKey`. Retries hold that partition, reducing parallelism for other keys
+in it. Manual readers are available only for unpartitioned queues.
 
-After `maxDeliveries`, the queue moves the message to its dead-letter queue.
-The default dead-letter retention is seven days.
+Queue retention defaults to seven days and 1 GiB. Retention is a hard loss
+boundary: choose a budget that covers queued delays, processing, and retry
+windows. Payloads default to 128 KiB including the JSON envelope. Pass large
+artifacts through a Sync object store instead of embedding them.
 
-Messages can use `delayMs`, an `orderingKey`, and an idempotency key.
-Partitioned ordering preserves order per key but reduces parallelism.
+## Recover unfinished work
 
-## Validate inputs
+Start consumers on every process startup. Database recovery scans should
+resubmit unfinished records with stable keys and coalescing. Cloud notification
+batches recover `ready` and `running` records in bounded pages at startup;
+notification delivery also scans pending database records periodically.
 
-The generic supplies TypeScript types. Sync does not validate payloads at
-runtime. Validate data before sending or at the worker boundary when a producer
-is not trusted.
+Queue and job handles expose `deadLetters.list()`, `requeue()` and `delete()`.
+A requeue requires a new idempotency key. Cloud's Sync operations registry makes
+registered stores available to the administrative inspection surface; keep
+application failure records when users need domain-specific recovery.
 
-Use [workflow effects](/en/docs/automation/effects-retry-and-reconciliation)
-when a user-authored, multi-step process needs a durable effect journal.
+Validate untrusted payloads at the application boundary. TypeScript generics
+do not provide runtime validation. Use [workflow effects](/en/docs/automation/effects-retry-and-reconciliation)
+when a multi-step process needs a durable effect journal.

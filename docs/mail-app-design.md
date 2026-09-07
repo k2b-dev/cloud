@@ -1251,14 +1251,14 @@ Native PostgreSQL full-text search requires the database engine to read message 
 
 ## Background work
 
-`@k2b/sync` supplies coordination; PostgreSQL stores domain progress and audit.
+`@k2b/sync` supplies NATS-backed coordination; PostgreSQL stores domain progress and audit. Cloud-owned rate limits continue to use Valkey.
 
 | Primitive | Use |
 | --- | --- |
 | `scheduler` | Periodic mailbox discovery, reconciliation, reminders, cleanup, and repair scans. |
 | `job` | Folder backfill, body hydration, workflow target, and outgoing-send work. The future AI slice will use the same primitive for artifact generation. |
 | `mutex` | One conflicting sync or command pipeline per mailbox/folder/placement and one sync-leader election per remote resource. |
-| `ratelimit` | Provider-host and mailbox request budgets. |
+| Cloud `ratelimit` service | Provider-host and mailbox request budgets in Valkey. |
 | `topic` | Best-effort UI invalidation with cursor replay. |
 | `ephemeral` | Viewing, composing, and reply-presence leases. |
 | `retry` | Bounded transport retries for known retryable failures. |

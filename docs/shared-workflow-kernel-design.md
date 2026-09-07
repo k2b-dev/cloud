@@ -666,7 +666,7 @@ The kernel supplies the opaque dependency contract, waiting execution outcome, a
 
 ### Time and schedules
 
-Current schedule support provides normalization, stable registration and slot keys, and a reconciliation planner. App adapters connect those registrations to `@k2b/sync`, revalidate the current activation before materializing a run, and retain PostgreSQL authority. The current Grids and Mail misfire policy skips cron slots missed while their scheduler process is offline; delivered duplicate slots are deduplicated. A future timer dependency may pause an already-running workflow without letting actions create unmanaged cron schedules.
+Current schedule support provides normalization, stable registration and slot keys, and a reconciliation planner. App adapters connect those registrations to `@k2b/sync`, revalidate the current activation before materializing a run, and retain PostgreSQL authority. Grids and Mail use the broker-durable scheduler with the default `latest` misfire policy: after downtime, the latest missed cron slot runs and earlier missed slots are collapsed. Delivered duplicate slots are deduplicated. A future timer dependency may pause an already-running workflow without letting actions create unmanaged cron schedules.
 
 An action must not register its own persistent scheduler entry. Recurring starts belong to triggers; delayed continuation belongs to the dependency protocol. This keeps schedules inspectable and prevents orphaned registrations.
 

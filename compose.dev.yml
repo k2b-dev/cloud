@@ -6,7 +6,7 @@
 #
 # `bun run dev` and `bun run dev:full` start the infrastructure automatically.
 #
-# Gateway replaces Traefik — routes are discovered dynamically from the Redis
+# Gateway replaces Traefik — routes are discovered dynamically from the NATS
 # app registry, so ad-hoc containers joining the same docker network (= same
 # compose project name = folder name "cloud") are picked up automatically.
 

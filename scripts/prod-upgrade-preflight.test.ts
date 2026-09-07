@@ -1,91 +1,73 @@
 import { describe, expect, test } from "bun:test";
-import { analyzeSyncState, classifySyncKeys, findReleaseMismatches, parseAppRegistryState } from "./prod-upgrade-preflight";
+import { assessFleetState, type FleetResourceReport, findReleaseMismatches } from "./prod-upgrade-preflight";
 
 const scriptSource = await Bun.file(new URL("./prod-upgrade-preflight.ts", import.meta.url)).text();
-
-describe("production upgrade preflight", () => {
-  test("contains no Redis or container mutation commands", () => {
-    expect(scriptSource).not.toMatch(/redis\.send\("(?:DEL|FLUSHDB|FLUSHALL|SET|HSET|XADD|ZADD)"/);
-    expect(scriptSource).not.toMatch(/"docker",\s*"compose"[^\n]+"(?:up|down|pull|stop|restart)"/);
-  });
-
-  test("separates current, legacy, preserved, and ephemeral Sync keys", () => {
-    const result = classifySyncKeys([
-      "sync:queue:namespace:v2:tenant:jobs:ready",
-      "sync:job:enqueue-receipt:v2:tenant",
-      "sync:job:mail:seq",
-      "sync:queue:tenant:jobs:ready",
-      "sync:job:mail:idempotency:message-1",
-      "cloud:notebooks:default:snapshots:ready",
-      "sync:scheduler:tenant:jobs:definitions",
-      "sync:e:default:cloud-apps:state",
-    ]);
-    expect(result.currentDurable).toHaveLength(3);
-    expect(result.legacyDurable).toEqual([
-      "cloud:notebooks:default:snapshots:ready",
-      "sync:job:mail:idempotency:message-1",
-      "sync:queue:tenant:jobs:ready",
-    ]);
-    expect(result.preservedScheduler).toHaveLength(1);
-    expect(result.nonDurable).toHaveLength(1);
-  });
-
-  test("reads both 5.9 dataJson and 5.8 data registry records", () => {
-    const modern = {
-      id: "core",
-      name: "Core",
-      icon: "cloud",
-      description: "Core",
-      baseUrl: "http://core:3000",
-      routes: ["/"],
-      runtime: { release: "sha-aabbccd", syncVersion: "5.9.1" },
-    };
-    const legacy = {
-      id: "gateway",
-      name: "Gateway",
-      icon: "route",
-      description: "Gateway",
-      baseUrl: "http://gateway:3000",
-      routes: [],
-    };
-    const raw = ["apps/core", JSON.stringify({ dataJson: JSON.stringify(modern) }), "apps/gateway", JSON.stringify({ data: legacy })];
-    expect(parseAppRegistryState(raw)).toEqual({ apps: [modern, legacy], invalid: [] });
-  });
-
-  test("reports malformed registry records", () => {
-    expect(parseAppRegistryState(["apps/core", "not-json"]).invalid[0]).toContain("apps/core");
-  });
-
-  test("ignores expired registry records", () => {
-    const raw = ["apps/old", JSON.stringify({ data: modernApp, expiresAt: 99 })];
-    expect(parseAppRegistryState(raw, 100)).toEqual({ apps: [], invalid: [] });
-  });
-
-  test("blocks mixed Sync generations and unresolved legacy durable state", () => {
-    const old = { ...modernApp, id: "old", runtime: { ...modernApp.runtime, syncVersion: "5.8.9" } };
-    const result = analyzeSyncState(["sync:queue:tenant:jobs:ready"], [old, modernApp]);
-    expect(result.failures).toHaveLength(2);
-  });
-
-  test("passes a consistent post-migration state", () => {
-    const result = analyzeSyncState(["sync:queue:namespace:v2:tenant:jobs:ready"], [modernApp]);
-    expect(result.failures).toEqual([]);
-  });
-
-  test("finds missing and unexpected runtime releases", () => {
-    expect(findReleaseMismatches([modernApp, { ...modernApp, id: "old", runtime: undefined }], "sha-other")).toEqual([
-      "core=sha-aabbccd",
-      "old=unknown",
-    ]);
-  });
-});
-
-const modernApp = {
+const app = {
   id: "core",
   name: "Core",
   icon: "cloud",
   description: "Core",
   baseUrl: "http://core:3000",
   routes: ["/"],
-  runtime: { release: "sha-aabbccd", syncVersion: "5.9.1" },
+  runtime: { release: "sha-aabbccd", syncVersion: "6.2.0" },
 };
+const report: FleetResourceReport = {
+  appId: "core",
+  result: {
+    health: { state: "ready", connection: "connected", pendingResources: 0, driftedResources: 0 },
+    resources: [{ namespace: "prod", kind: "job", id: "jobs", owner: "core", state: "ready", detail: { deadLetters: 0 } }],
+  },
+};
+const assess = (overrides: Partial<Parameters<typeof assessFleetState>[0]> = {}) =>
+  assessFleetState({
+    apps: [app],
+    reports: [report],
+    expectedAppIds: ["core"],
+    expectedRelease: "sha-aabbccd",
+    expectedNamespace: "prod",
+    ...overrides,
+  });
+
+describe("production v6 fleet preflight", () => {
+  test("uses only the Core inventory and resource broker with no mutation commands", () => {
+    expect(scriptSource).not.toMatch(/"(?:POST|PUT|DELETE|PATCH)"/);
+    expect(scriptSource).not.toMatch(/"docker",\s*"compose"[^\n]+"(?:up|down|pull|stop|restart)"/);
+    expect(scriptSource).toContain('"/api/admin/sync"');
+    expect(scriptSource).not.toContain('"/api/apps"');
+  });
+  test("passes a complete ready fleet on the expected release and namespace", () => {
+    expect(assess()).toEqual([]);
+  });
+  test("missing app registration cannot produce a successful partial fleet report", () => {
+    expect(assess({ expectedAppIds: ["core", "mail"] })).toContain("Expected app mail is missing from the live registry.");
+    expect(assess({ apps: [], reports: [], expectedAppIds: [] })).toContain("Core reports no registered apps.");
+    expect(assess({ reports: [] })).toContain("core has no Sync resource report.");
+  });
+  test("blocks an old-only fleet and unavailable app diagnostics", () => {
+    expect(assess({ apps: [{ ...app, runtime: { ...app.runtime, syncVersion: "5.9.1" } }] })).toContain(
+      "core does not report @k2b/sync 6.2.0.",
+    );
+    expect(assess({ reports: [{ appId: "core", result: null, error: "HTTP 503" }] })).toContain("core: HTTP 503");
+  });
+  test("blocks disconnected health, drift, wrong namespace and dead letters", () => {
+    const failures = assess({
+      reports: [
+        {
+          appId: "core",
+          result: {
+            health: { state: "degraded", connection: "reconnecting", pendingResources: 1, driftedResources: 1 },
+            resources: [{ namespace: "development", kind: "job", id: "jobs", owner: "core", state: "drifted", detail: { deadLetters: 2 } }],
+          },
+        },
+      ],
+    });
+    expect(failures).toHaveLength(4);
+    expect(failures.join(" ")).toContain("2 dead letters require review");
+  });
+  test("finds missing and unexpected runtime releases", () => {
+    expect(findReleaseMismatches([app, { ...app, id: "old", runtime: undefined }], "sha-other")).toEqual([
+      "core=sha-aabbccd",
+      "old=unknown",
+    ]);
+  });
+});

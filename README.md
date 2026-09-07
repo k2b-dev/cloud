@@ -14,8 +14,8 @@ Cloud bundles a set of apps that cover the common operational needs of an organi
 
 - **Built around your own apps.** Adding an app is one config file plus a Dockerfile. The platform picks it up at runtime.
 - **Per-app deployment.** Every feature is a separate Bun container, started, updated and scaled on its own.
-- **Horizontal scaling.** Apps are stateless and discovered through a Redis-backed registry — `docker compose up --scale notebooks=3` and the gateway routes across all instances.
-- **Bun + Hono + SolidJS + Postgres + Redis.** End-to-end TypeScript.
+- **Horizontal scaling.** Apps are stateless and discovered through a NATS-backed registry — `docker compose up --scale notebooks=3` and the gateway routes across all instances.
+- **Bun + Hono + SolidJS + Postgres + NATS + Redis.** End-to-end TypeScript.
 - **Admin surface for everything.** Per-app admin pages, settings managed in the UI, requests route-traced through the gateway.
 
 ## What ships
@@ -81,19 +81,19 @@ contract.
        └────┬────┘     └────┬────┘     └────┬────┘   one container per app
             └───────────────┴────────────────┘
                             │
-                ┌───────────┴───────────┐
-                ▼                       ▼
-           ┌─────────┐            ┌──────────┐
-           │  Redis  │            │ Postgres │
-           │  Valkey │            │          │
-           └─────────┘            └──────────┘
-       sessions, service           per-app
-       registry, cache             schemas
+            ┌───────────────┼───────────────┐
+            ▼               ▼               ▼
+       ┌─────────┐     ┌─────────┐     ┌──────────┐
+       │  NATS   │     │ Valkey  │     │ Postgres │
+       │JetStream│     │         │     │          │
+       └─────────┘     └─────────┘     └──────────┘
+       registry, jobs,  caches,         per-app
+       schedules, live  rate limits     schemas
 ```
 
-Each app boots, registers itself with the gateway through Redis, and starts handling requests at its declared URL prefix. The gateway holds no per-app code — adding an app touches only that app's own files and the compose file.
+Each app boots, registers itself with the gateway through NATS, and starts handling requests at its declared URL prefix. The gateway holds no per-app code — adding an app touches only that app's own files and the compose file.
 
-Apps share the Postgres instance (each owns its own schema) and the Redis instance (sessions, service registry, ratelimits, snapshot cache). Per-app traffic, latency and route-trace data live in the gateway and are visible in the admin UI.
+Apps share Postgres (each owns its own schema), NATS JetStream (registry, jobs, schedules and live events), and Redis/Valkey (rate limits, caches and short-lived authentication flows). Browser sessions use JWTs. Per-app traffic, latency and route-trace data live in the gateway and are visible in the admin UI.
 
 ## Quick start
 
@@ -113,7 +113,7 @@ Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the 
 |---|---|
 | `bun run dev` | Start infrastructure and the core 6 services |
 | `bun run dev:full` | Start infrastructure, core, and all 17 extras |
-| `bun run dev:infra` | Start Postgres, Valkey, Geo, Filegate, and Gotenberg |
+| `bun run dev:infra` | Start Postgres, Valkey, three-node NATS JetStream, Geo, Filegate, and Gotenberg |
 | `bun run dev:infra:down` | Stop the development infrastructure |
 | `bun run dev:start <app...>` | Add one or more extra apps to the running stack |
 | `bun run dev:stop <app...>` | Stop one or more apps |

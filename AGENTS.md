@@ -102,7 +102,7 @@ Before calling a change complete, decide which of these apply:
   notification senders pass locale metadata to both renderers rather than
   adding locale to application payload schemas.
 - **Data and effects:** applications own durable domain data in Postgres;
-  Valkey coordinates bounded runtime work. Commit domain state before
+  NATS JetStream coordinates distributed work; Valkey owns caches and rate limits. Commit domain state before
   retryable notifications or external effects. Bound work that can grow or
   repeat: input sizes, pagination, batches, queues and buffers, concurrency,
   retries, and tool or agent loops. Define cancellation and overload behavior

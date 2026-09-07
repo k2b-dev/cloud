@@ -5,82 +5,70 @@ section: Automation
 order: 630
 description: Run recurring work without coupling it to HTTP requests.
 tags: [scheduler, cron, sync]
-updated: 2026-07-27
+updated: 2026-09-07
 ---
 
 # Schedulers
 
-Use a scheduler for recurring work shared by every instance of an application.
-
-`@k2b/sync` stores schedule state in Valkey and elects one dispatcher.
-All app instances should register the same schedules.
-
-This is separate from a schedule trigger in a user-authored workflow. The
-application maps those triggers to the same scheduler through the workflow
-schedule runtime described below.
+Use a scheduler for recurring work shared by application instances. Sync stores
+schedules in NATS JetStream. The broker produces ticks while application
+processes are offline; workers process retained ticks after startup. Every
+instance should register the same schedule definitions and callbacks.
 
 ## Register a schedule
 
 ```ts
-import { scheduler } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 
-const inventoryScheduler = scheduler({ id: "inventory" });
+const inventoryScheduler = lazySync((sync) => sync.scheduler({
+  id: "inventory",
+  delivery: { maxAttempts: 4, backoffMs: [5_000, 20_000, 60_000] },
+}));
 
-await inventoryScheduler.create({
+await inventoryScheduler().create({
   id: "cleanup",
   cron: "0 * * * *",
-  tz: "UTC",
-  process: async ({ ctx }) => {
-    return {
-      deleted: await deleteExpiredImports(ctx.slotTs),
-    };
-  },
-  after: async ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 5) {
-      ctx.reschedule({
-        delayMs: ctx.expBackoff({ baseMs: 60_000 }),
-      });
-    }
+  timezone: "UTC",
+  misfire: "latest",
+  process: async (context) => {
+    await deleteExpiredImports(context.slot);
   },
 });
+const worker = await inventoryScheduler().process();
 
-inventoryScheduler.start();
+// During shutdown, before releasing handler dependencies:
+worker.stop();
+await worker.drain();
 ```
 
-Call `start()` after every schedule is registered. Call `stop()` during
-graceful shutdown.
+Register and start workers during application lifecycle startup.
+`create()` is idempotent by schedule ID and updates changed definitions. New
+schedules created after `process()` starts are served too.
 
-`cron` uses five fields. `tz` is an IANA time zone and defaults to UTC.
-Invalid values fail during `create()`.
-
-`create()` is idempotent by schedule ID. It updates an existing definition.
+`cron` uses five fields. `timezone` is an IANA zone and defaults to UTC.
+`misfire: "latest"` runs only the newest retained missed slot; `"all"` processes
+all retained slots. Retention still bounds how far downtime can be recovered.
 
 ## Use the run context
-
-The process context includes:
 
 | Field | Meaning |
 | --- | --- |
 | `scheduleId` | Registered schedule |
-| `slotTs` | Time of the cron slot |
-| `runNumber` | Persistent, increasing run number |
-| `failureCount` | Consecutive failures before this run |
-| `trigger` | `cron` or `manual` |
-| `signal` | Shutdown signal |
+| `runId` | Run identity |
+| `slot` | Cron slot as a `Date` |
+| `runNumber` | Persistent increasing run number |
+| `attempt` | Delivery attempt, including the first |
+| `trigger` | `schedule` or `manual` |
+| `signal`, `heartbeat()` | Cancellation and lease renewal |
 
-Use `slotTs` as the identity of a scheduled occurrence. Current time can change
-the meaning of a delayed run.
+Use the slot as occurrence identity; using current time changes the meaning of
+a delayed run. A thrown error retries according to scheduler-wide `delivery`;
+after `maxAttempts`, the slot fails. Schedules execute serially per schedule.
+Keep handlers idempotent because a crash can repeat a slot.
 
-Schedules skip missed slots after downtime. They do not replay every missed
-cron occurrence.
-
-## Retry or fan out
-
-Call `ctx.reschedule()` from `after` to retry. Without it, the run is terminal.
-
-When each item needs independent retry, let the schedule submit one
-[job](/en/docs/automation/jobs-and-queues#run-a-job) per item. Do not retry an
-entire large batch because one item failed.
+For independent per-item retries, submit [jobs](/en/docs/automation/jobs-and-queues#run-a-job).
+Schedule handlers do not support job continuations; perform bounded loops with
+heartbeats or dispatch jobs.
 
 ## Register workflow schedule triggers
 
@@ -133,7 +121,7 @@ import {
   emitWorkflowEvent,
 } from "@valentinkolb/cloud/workflows/store";
 
-const slot = new Date(ctx.slotTs).toISOString();
+const slot = context.slot.toISOString();
 
 await emitWorkflowEvent({
   appId: "inventory",
@@ -145,19 +133,25 @@ await emitWorkflowEvent({
 });
 ```
 
-The slot key prevents a leader handover from starting the same workflow twice.
+The slot key prevents a redelivery from starting the same workflow twice.
 See [Start workflow runs](/en/docs/automation/emit-events-and-start-runs) for
 event fields and dispatch behavior.
 
-## Trigger a run
+## Trigger and inspect a run
 
-`runNow({ id })` starts a manual run without moving the next cron slot.
+`runNow({ id, requestId })` durably accepts a manual run without moving the next
+cron slot and returns `{ runId }`. Supply a stable request ID to deduplicate
+repeated requests. Use `awaitRun({ id, runId, timeoutMs })` when the caller needs
+completion rather than acceptance.
 
-An external admin process can use `schedulerControl().runNow()`. It returns
-when a live scheduler accepts the request, not when the work finishes.
+`list()` exposes the schedulers declared in the current process. `nextRunAt`
+is a `Date`; `handlerAvailable` describes whether this process has the callback.
+It does not describe whether another process can execute the schedule. Cloud
+registers scheduler handles for fleet inspection through its Sync operations
+service; Sync v6 has no separate `schedulerControl()` client.
 
-Use tracing or application audit data for completion status. See
-[Tracing](/en/docs/platform/tracing).
-
-Multiple instances coordinate dispatch, but a brief leader handover can still
-deliver a slot more than once. Keep schedule work idempotent.
+The lifecycle administration health endpoint reports local worker state:
+`started`, `registered`, `active`, and `capacity`. It is not a fleet-wide success
+count. Use [Tracing](/en/docs/platform/tracing) and application audit records to
+inspect outcomes. Handler summaries must be written explicitly; Sync observer
+events do not include handler return values.

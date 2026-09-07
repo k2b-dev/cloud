@@ -20,7 +20,8 @@ Choose storage by how the value is used, not by its TypeScript type.
 | One fixed password or API token | `secret` setting |
 | Many credentials created at runtime | Encrypted application table |
 | Domain data | Application Postgres schema |
-| Locks, queues, topics, rate limits, or short-lived cache | Valkey |
+| Locks, queues, topics and schedules | NATS JetStream |
+| Rate limits or short-lived cache | Valkey |
 | Large files or shared file trees | External storage |
 
 Do not store durable domain state in Valkey or container memory.
@@ -121,17 +122,17 @@ Cloud refuses to start without `APP_SECRET`.
 See [Runtime configuration](/en/docs/operations/runtime-configuration) for
 container configuration.
 
-## Use Valkey for coordination
+## Coordinate work through Sync
 
-Use `@k2b/sync` for:
+Use `@k2b/sync` on NATS JetStream for:
 
 - durable jobs and queues;
 - schedulers;
 - distributed mutexes;
-- rate limits;
 - topics and live events;
 - ephemeral service registration.
 
+Use `ratelimit` from `@valentinkolb/cloud/server` for rate limits.
 Use a direct Valkey key only for a bounded cache or protocol that no shared API
 owns. Give cache keys a namespace and an expiry.
 

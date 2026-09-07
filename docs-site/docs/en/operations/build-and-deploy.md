@@ -158,7 +158,7 @@ docker compose -f compose.prod.yml pull
 ```
 
 Pull every image successfully before stopping or recreating services. For the
-Sync 5.8 to 5.9 durable namespace boundary, follow `SYNC_5_9_MIGRATION.md` and
+Sync 5.8 to 5.9 durable namespace boundary, follow `SYNC_6_MIGRATION.md` and
 stop the complete old runtime before starting the new release set.
 
 ## Check the rollout

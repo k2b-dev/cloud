@@ -1,9 +1,7 @@
-import { ephemeral, expBackoff, isRetryableTransportError, job, mutex, queue, ratelimit, retry, scheduler, topic } from "@k2b/sync";
-import {
-  type WorkflowBoundPlan,
-  defineWorkflowModule,
-  workflowAction,
-} from "@valentinkolb/cloud/workflows";
+import { expBackoff, isRetryableTransportError, retry } from "@k2b/sync/retry";
+import { lazySync } from "@valentinkolb/cloud";
+import { ratelimit } from "@valentinkolb/cloud/server";
+import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@valentinkolb/cloud/workflows";
 import { bindWorkflow, compileWorkflow } from "@valentinkolb/cloud/workflows/language";
 import {
   createWorkflowScheduleRegistration,
@@ -28,15 +26,16 @@ import {
 import { directOnlyProcessFixture, runWorkflowProcessFixture } from "@valentinkolb/cloud/workflows/testing";
 import type { SQL } from "bun";
 
-export const inventoryJobs = job<{ itemId: string }>({
-  id: "inventory.reindex",
-  process: async ({ ctx }) => ({ itemId: ctx.input.itemId }),
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff() });
-    }
-  },
-});
+export const inventoryJobs = lazySync((sync) =>
+  sync.job<{ itemId: string }>({
+    id: "inventory.reindex",
+    delivery: { maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
+  }),
+);
+export const startInventoryJobs = (rebuildIndex: (itemId: string) => Promise<void>) =>
+  inventoryJobs().process({ concurrency: 2 }, async (context) => {
+    await rebuildIndex(context.input.itemId);
+  });
 
 export const fetchInventoryWithRetry = (signal: AbortSignal) =>
   retry({
@@ -51,23 +50,32 @@ export const fetchInventoryWithRetry = (signal: AbortSignal) =>
 
 export const nextRetryDelay = (attempt: number) => expBackoff(attempt, { baseMs: 500, maxMs: 30_000 });
 
-export const inventoryQueue = queue<{ itemId: string }>({
-  id: "inventory.imports",
-});
+export const inventoryQueue = lazySync((sync) =>
+  sync.queue<{ itemId: string }>({
+    id: "inventory.imports",
+  }),
+);
 
-export const inventoryTopic = topic<{ itemId: string }>({
-  id: "inventory.events",
-});
+export const inventoryTopic = lazySync((sync) =>
+  sync.topic<{ itemId: string }>({
+    id: "inventory.events",
+    retention: { maxAgeMs: 7 * 24 * 60 * 60_000, maxBytes: 64 * 1024 * 1024 },
+  }),
+);
 
-export const inventoryPresence = ephemeral<{ userId: string }>({
-  id: "inventory.editors",
-  ttlMs: 30_000,
-});
+export const inventoryPresence = lazySync((sync) =>
+  sync.ephemeral<{ userId: string }>({
+    id: "inventory.editors",
+    ttlMs: 30_000,
+  }),
+);
 
-export const inventoryMutex = mutex({
-  id: "inventory.stock",
-  defaultTtl: 10_000,
-});
+export const inventoryMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "inventory.stock",
+    ttlMs: 10_000,
+  }),
+);
 
 export const inventoryRateLimit = ratelimit({
   id: "inventory.exports",
@@ -75,7 +83,7 @@ export const inventoryRateLimit = ratelimit({
   windowSecs: 60,
 });
 
-export const inventoryScheduler = scheduler({ id: "inventory" });
+export const inventoryScheduler = lazySync((sync) => sync.scheduler({ id: "inventory", delivery: { maxAttempts: 1 } }));
 
 export const INVENTORY_EVENT = { itemChanged: "inventory.itemChanged" } as const;
 

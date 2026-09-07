@@ -28,12 +28,13 @@ hold grants, but the application remains authoritative for its resources.
 | Operator-controlled runtime configuration | Cloud settings |
 | One fixed credential for a setting | A `secret` setting |
 | Credentials created for users or resources | Encrypted application table |
-| Locks, rate limits, queues, topics, and short-lived cache entries | Valkey through `@k2b/sync` or a bounded cache |
+| Locks, queues, topics and schedules | NATS JetStream through `@k2b/sync` |
+| Rate limits and short-lived cache entries | Cloud rate limiting or bounded Valkey caches |
 | Large files or shared file trees | External storage, with ownership metadata in Postgres |
 
 Postgres is the default for state that must survive a restart.
 
-Valkey coordinates work. Durable domain records stay in Postgres.
+NATS coordinates distributed work; Valkey provides bounded caches and rate limits. Durable domain records stay in Postgres.
 
 ## Continue by task
 

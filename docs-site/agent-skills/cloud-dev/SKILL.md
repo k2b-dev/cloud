@@ -58,7 +58,8 @@ and durable data.
   workload credential and never stores the user's session or personal API key.
 - Keep transport conversion in handlers and domain rules in the application.
 - Store durable state explicitly, never in process memory or container files.
-  Use Valkey only for bounded coordination. Commit state before retryable
+  Use NATS-backed Sync for distributed coordination and Valkey for caches
+  and Cloud rate limits. Commit state before retryable
   effects and give those effects stable keys.
 
 ## Reuse public building blocks
@@ -74,10 +75,17 @@ alternative:
   primitives;
 - `@k2b/ssr` together with `@valentinkolb/cloud/ssr` for SSR, islands, and
   navigation;
-- `@k2b/sync` for retries, jobs, queues, schedulers, topics, rate limits,
-  mutexes, and bounded distributed coordination;
+- `@k2b/sync` for jobs, queues, schedulers, topics, mutexes, and bounded
+  distributed coordination, `@k2b/sync/retry` for local retries, and
+  `@valentinkolb/cloud/server` for rate limits;
 - `@valentinkolb/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
+
+Declare Sync handles with Cloud's public `lazySync()` and access them after
+`app.start()` connects the process-owned NATS instance. Start workers explicitly
+with `process()` during lifecycle startup. Stop pulls and drain active handlers
+before releasing their dependencies. Resources shared across applications need
+one explicit owner and identical delivery and retention configuration.
 
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.

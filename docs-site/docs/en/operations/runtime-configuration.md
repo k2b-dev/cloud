@@ -24,7 +24,12 @@ encrypted with `APP_SECRET`.
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection used by Bun SQL |
-| `REDIS_URL` | Valkey connection used by Bun Redis |
+| `REDIS_URL` | Valkey connection used by Bun Redis for caches and rate limits |
+| `NATS_SERVERS` | Comma-separated NATS JetStream bootstrap URLs |
+| `SYNC_NAMESPACE` | Deployment namespace shared by all application processes |
+| `NATS_CREDS_FILE` | Optional mounted NATS credentials file |
+| `NATS_TLS_CA_FILE` | Optional trusted CA file for NATS TLS |
+| `NATS_IGNORE_CLUSTER_UPDATES` | Keep reachable seed addresses when advertised Docker hostnames are inaccessible |
 | `APP_SECRET` | Encrypts settings and credentials |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
@@ -205,7 +210,7 @@ Read the page for that service before setting environment fallbacks.
 Check configuration in this order:
 
 1. the container received the expected variables;
-2. Postgres and Valkey names resolve on the private network;
+2. Postgres, Valkey and NATS names resolve on the private network;
 3. every container shares `APP_SECRET`;
 4. only Core has the current identity KEK;
 5. only Core and OAuth share the OAuth broker secret, and background callers

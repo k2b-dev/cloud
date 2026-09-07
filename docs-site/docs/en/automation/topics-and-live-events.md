@@ -5,78 +5,117 @@ section: Automation
 order: 640
 description: Publish transient events to application processes and connected browsers.
 tags: [topics, events, realtime]
-updated: 2026-07-27
+updated: 2026-09-07
 ---
 
 # Topics and live events
 
-Use a topic when several consumers need an ordered event stream.
-
-A consumer group provides at-least-once work distribution. A live reader
-provides best-effort fan-out for connected clients.
+Use a Sync topic for retained events, independent consumer groups, or live
+updates. Cloud owns the NATS connection; declare topics through `lazySync()`.
 
 ## Publish an event
 
 ```ts
-import { topic } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 
-const inventoryEvents = topic<{
-  type: "item.updated";
-  itemId: string;
-}>({
+const inventoryEvents = lazySync((sync) => sync.topic<{ itemId: string }>({
   id: "inventory.events",
-  retentionMs: 7 * 24 * 60 * 60 * 1_000,
-});
+  retention: { maxAgeMs: 7 * 24 * 60 * 60_000, maxBytes: 64 * 1024 * 1024 },
+}));
 
-const published = await inventoryEvents.pub({
-  data: { type: "item.updated", itemId },
+const published = await inventoryEvents().publish({
+  data: { itemId },
   idempotencyKey: `item:${itemId}:${version}`,
 });
 ```
 
-The result contains an event ID and cursor. An idempotency key deduplicates a
-repeated publish within its TTL.
+The receipt includes `eventId`, an opaque `cursor`, and `streamSequence`.
+Idempotency keys deduplicate within `dedupeWindowMs`, two minutes by default.
+Choose both retention age and byte capacity: reaching either limit can remove
+old events. Payload size includes the JSON envelope and defaults to 128 KiB.
+
+Resources opened by different applications need the same explicit `owner` and
+identical retention and delivery settings. A conflicting declaration fails
+with `ResourceDriftError`; it does not update the existing resource.
 
 ## Consume durable events
 
 ```ts
-const reader = inventoryEvents.reader("search-index");
+const worker = await inventoryEvents().process({
+  consumer: "search-index",
+  start: "earliest",
+  delivery: { maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
+}, async (event) => {
+  await updateSearchIndex(event.data.itemId);
+});
+```
 
-for await (const delivery of reader.stream({ signal })) {
-  await updateSearchIndex(delivery.data.itemId);
-  await delivery.commit();
+The same consumer name shares deliveries across instances. Different names
+receive independent copies. Successful handlers acknowledge; errors retry and
+then move to that consumer's dead-letter stream. Execution is at least once.
+Stop and drain the returned worker before releasing its dependencies.
+
+## Replay and resume
+
+```ts
+const topic = inventoryEvents();
+const until = await topic.latestCursor();
+if (until) {
+  for await (const event of topic.replay({ after: savedCursor, until, signal })) {
+    await applyEvent(event);
+  }
 }
 ```
 
-One consumer in the group receives each event. Another group gets its own
-copy.
+`replay()` is finite; without `until`, it captures the head at startup.
+`follow()` replays and stays open. Omitting `after` on `follow()` starts from the
+first retained event, which is unsuitable for a fresh live-only connection.
 
-A crash can leave a delivery pending. Call `reclaim()` before the long-running
-loop and process idle pending entries. Continue with the returned cursor until
-it returns `0-0`.
+Cursors use the opaque `s6t.…` format. Do not parse them as Redis IDs or compare
+them lexically. `cursorSequence()` and `cursorAt()` translate between a topic's
+cursor and a persisted numeric stream sequence when the application needs it.
 
-Malformed payloads are acknowledged by default. Use `invalidPayload: "throw"`
-only when the application has a deliberate poison-message policy.
+`RetentionGapError` means the requested history is incomplete.
+`CursorMismatchError` means the cursor belongs to another topic. Reload an
+authorized snapshot; never save a partial replay as a complete document.
+
+Notebooks applies this rule to document synchronization: each note has a
+retained Yjs topic. It replays to a captured head before joining the live hub
+and explicitly reports when replay is ready. A history gap blocks snapshot
+persistence; the incomplete document is never saved as a replacement. Awareness
+uses a separate shared, short-lived topic and is not part of document recovery.
 
 ## Stream live updates
 
-```ts
-const after =
-  (await inventoryEvents.latestCursor()) ?? "0-0";
+Use `live({ tenantId, signal })` for best-effort broadcast. It has no cursor or
+replay and filters the tenant on the server. It is suitable when missed events
+are harmless and the application can read canonical state again.
 
-for await (const event of inventoryEvents.live({ after, signal })) {
-  sendToBrowser(event.data);
+For resumable browser streams, use a memoized hub:
+
+```ts
+const topic = inventoryEvents();
+const after = (await topic.latestCursor()) ?? topic.cursorAt(0);
+const snapshot = await loadAuthorizedSnapshot();
+sendSnapshot(snapshot);
+for await (const event of topic.hub().subscribe({ after, signal })) {
+  sendToBrowser(event);
 }
 ```
 
-Every live listener receives the event. Delivery has no acknowledgement and
-may be lost while a listener is disconnected or slow.
+Capturing the cursor before the snapshot prevents writes during the snapshot
+read from disappearing. Deduplicate replayed changes against the snapshot.
+`hub().subscribe()` without `after` is live-only. Slow subscribers can receive
+`RetentionGapError` and must resynchronize.
 
-Use a cursor to replay retained events after reconnect. `live()` does not
-report that an older cursor was trimmed. Load a fresh authorized snapshot on
-reconnect when a complete view matters.
+A hub shares one follower among local subscribers. Replay, follow, and hubs
+filter tenants locally, so one hub per tenant reads the full topic stream for
+each active tenant. Prefer server-filtered `live()` for transient high-volume
+fan-out, or separate topics when retained data is naturally isolated.
 
-Use [Realtime UI](/en/docs/frontend/realtime-ui) for the browser integration.
-Use a queue or consumer group when processing cannot be lost.
+Foreground Cloud notifications resume with these cursors. Stored Redis cursors
+are discarded at cutover; a retention gap or foreign cursor reconnects at the
+current head. Durable notification history remains available in Postgres.
 
-The generic supplies TypeScript types but no runtime payload validation.
+Use [Realtime UI](/en/docs/frontend/realtime-ui) for browser integration. Validate
+untrusted payloads at the application boundary.
