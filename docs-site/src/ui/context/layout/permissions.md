@@ -108,3 +108,10 @@ a fixture token as if the backend created a credential.
   }
 />
 ```
+
+For a dialog that saves permissions with other fields, callbacks may update a
+local draft. `grantAccess` receives an optional third argument containing the
+selected principal's `displayName`; keep it on the draft `AccessEntry` so newly
+selected users and groups remain recognizable. It is presentation metadata,
+not an authorization input. Commit the draft through the owning resource
+service when the whole form is saved; cancelling must discard it.

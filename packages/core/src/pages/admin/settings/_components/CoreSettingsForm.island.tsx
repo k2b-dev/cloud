@@ -50,6 +50,9 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
+import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
+import type { AccessEntry } from "@valentinkolb/cloud/contracts/shared";
+import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/ai/admin";
 import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "@valentinkolb/cloud/shared";
@@ -107,6 +110,7 @@ type Props = {
   aiEnrichmentOverview?: AiEnrichmentOverview | null;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   aiCredentialProfileIds?: string[];
+  aiModelAccess?: AiModelAccessMap;
   /** Which slice of the AI settings this page shows (the AI sidebar group splits them). */
   aiSection?: "general" | "providers" | "jobs";
   showAiJobsLink?: boolean;
@@ -117,6 +121,7 @@ type AiDataBoundary = "hosted" | "private";
 type AiLegacyDataBoundary = AiDataBoundary | "local" | "internal";
 
 type AiModelProfileDraft = {
+  assistantAccess?: AiModelAccessDraft;
   id: string;
   label: string;
   provider: AiProviderId;
@@ -145,6 +150,9 @@ type AiModelProfileDraft = {
   creditsPerInputToken?: number;
   creditsPerOutputToken?: number;
 } & Record<string, unknown>;
+
+const assistantAccessGrants = (entries: AccessEntry[]): AiModelAccessDraft["entries"] =>
+  entries.flatMap(({ principal }) => (principal.type === "public" ? [] : [{ principal, permission: "read" }]));
 
 const AI_PROFILE_SETTING_KEY = "ai.model_profiles_json";
 const AI_DEFAULT_MODEL_SETTING_KEY = "ai.default_model_id";
@@ -356,7 +364,24 @@ export default function CoreSettingsForm(props: Props) {
       const resets = resetKeyList().filter((key) => changedKeys().includes(key));
       const updates: Record<string, unknown> = {};
       for (const k of changedKeys()) {
-        if (!resets.includes(k)) updates[k] = drafts()[k];
+        if (resets.includes(k)) continue;
+        updates[k] = drafts()[k];
+        if (k === AI_PROFILE_SETTING_KEY) {
+          const parsed = parseAiProfiles(drafts()[k], aiSettingsMessages.resolve([locale()]).t);
+          if (!parsed.error) {
+            updates[k] = serializeAiProfiles(
+              parsed.profiles.map((profile) => {
+                const snapshot = props.aiModelAccess?.[profile.id];
+                return profile.assistantAccess || !snapshot
+                  ? profile
+                  : {
+                      ...profile,
+                      assistantAccess: { expectedRevision: snapshot.revision, entries: assistantAccessGrants(snapshot.entries) },
+                    };
+              }),
+            );
+          }
+        }
       }
 
       const response = await coreClient.admin.core.settings.$put({
@@ -523,6 +548,7 @@ export default function CoreSettingsForm(props: Props) {
           onChange={setDraft}
           enrichmentOverview={props.aiEnrichmentOverview ?? null}
           credentialProfileIds={props.aiCredentialProfileIds ?? []}
+          modelAccess={props.aiModelAccess ?? {}}
           section={props.aiSection ?? "general"}
           showJobsLink={props.showAiJobsLink}
         />
@@ -982,6 +1008,7 @@ function AiSettingsPanel(props: {
   onChange: (key: string, value: unknown) => void;
   enrichmentOverview: AiEnrichmentOverview | null;
   credentialProfileIds: string[];
+  modelAccess: AiModelAccessMap;
   section: "general" | "providers" | "jobs";
   showJobsLink?: boolean;
 }) {
@@ -996,6 +1023,37 @@ function AiSettingsPanel(props: {
   const hasCredential = (profile: AiModelProfileDraft) =>
     Boolean(profile.apiKey?.trim()) || props.credentialProfileIds.includes(profile.id);
   const profiles = () => profilesState().profiles;
+  // Display metadata is a local dialog draft, never part of the settings payload.
+  const accessDisplay = new Map<string, AccessEntry[]>();
+  const accessEntriesFor = (profile?: AiModelProfileDraft): AccessEntry[] => {
+    if (!profile)
+      return [{ id: crypto.randomUUID(), principal: { type: "authenticated" }, permission: "read", createdAt: new Date().toISOString() }];
+    const stored = props.modelAccess[profile.id]?.entries;
+    const display = accessDisplay.get(profile.id) ?? stored ?? [];
+    return profile.assistantAccess
+      ? profile.assistantAccess.entries.map((entry) => ({
+          ...entry,
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          displayName: display.find((item) => JSON.stringify(item.principal) === JSON.stringify(entry.principal))?.displayName,
+        }))
+      : (stored ?? accessEntriesFor());
+  };
+  const openProfile = (profile?: AiModelProfileDraft) =>
+    openAiProfileDialog({
+      profiles: profiles(),
+      profile,
+      hasCredential: profile ? hasCredential(profile) : false,
+      accessEntries: accessEntriesFor(profile),
+      accessRevision: profile?.assistantAccess
+        ? profile.assistantAccess.expectedRevision
+        : profile
+          ? (props.modelAccess[profile.id]?.revision ?? null)
+          : null,
+      accessSourceProfileId:
+        profile?.assistantAccess?.sourceProfileId ?? (profile && props.modelAccess[profile.id] ? profile.id : undefined),
+      onAccessDraft: (id, entries) => accessDisplay.set(id, entries),
+    });
   const defaultModelId = () => asString(props.valueOf(AI_DEFAULT_MODEL_SETTING_KEY));
   const maxToolResultChars = () => {
     const value = Number(props.valueOf(AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY));
@@ -1008,7 +1066,7 @@ function AiSettingsPanel(props: {
   const firstEnabledProfileId = (items: AiModelProfileDraft[]) => items.find((item) => item.enabled)?.id ?? "";
 
   const addProvider = async () => {
-    const result = await openAiProfileDialog({ profiles: profiles() });
+    const result = await openProfile();
     if (!result) return;
 
     const nextProfiles = [...profiles(), result];
@@ -1017,7 +1075,7 @@ function AiSettingsPanel(props: {
   };
 
   const editProfile = async (profile: AiModelProfileDraft) => {
-    const result = await openAiProfileDialog({ profiles: profiles(), profile, hasCredential: hasCredential(profile) });
+    const result = await openProfile(profile);
     if (!result) return;
 
     const nextProfiles = profiles().map((item) => (item.id === profile.id ? result : item));
@@ -1030,7 +1088,23 @@ function AiSettingsPanel(props: {
     const id = uniqueProfileId(`${profile.id}-copy`, profiles());
     // The copy keeps the enabled state — a duplicate that silently turns
     // itself off reads as a bug, not a safety feature.
-    setProfiles([...profiles(), { ...profile, id, label: `${profile.label} Copy` }]);
+    const entries = accessEntriesFor(profile);
+    accessDisplay.set(id, entries);
+    setProfiles([
+      ...profiles(),
+      {
+        ...profile,
+        id,
+        label: `${profile.label} Copy`,
+        assistantAccess: {
+          sourceProfileId: profile.assistantAccess?.sourceProfileId ?? (props.modelAccess[profile.id] ? profile.id : undefined),
+          expectedRevision: profile.assistantAccess
+            ? profile.assistantAccess.expectedRevision
+            : (props.modelAccess[profile.id]?.revision ?? null),
+          entries: assistantAccessGrants(entries),
+        },
+      },
+    ]);
   };
 
   const removeProfile = async (profile: AiModelProfileDraft) => {
@@ -1048,7 +1122,7 @@ function AiSettingsPanel(props: {
   };
 
   const importJson = async () => {
-    const current = asString(props.valueOf(AI_PROFILE_SETTING_KEY));
+    const current = serializeAiProfiles(profiles().map(({ assistantAccess: _access, ...profile }) => profile));
     const result = await prompts.dialog<string>(
       (close) => {
         const [draft, setDraft] = createSignal(current);
@@ -1060,7 +1134,7 @@ function AiSettingsPanel(props: {
             setError(parsed.error);
             return;
           }
-          close(serializeAiProfiles(parsed.profiles));
+          close(serializeAiProfiles(parsed.profiles.map(({ assistantAccess: _access, ...profile }) => profile)));
         };
 
         return (
@@ -1101,16 +1175,19 @@ function AiSettingsPanel(props: {
       prompts.error(parsed.error);
       return;
     }
-    // Merge-by-id: exports never contain API keys — an import must not wipe
-    // the keys of profiles that already exist under the same id.
-    // No merging here any more: keys live server-side, and a profile that keeps
-    // its id keeps its key because the import sends none.
-    setProfiles(parsed.profiles);
+    // Imported profiles keep server credentials and local permission drafts for matching IDs.
+    const accessDrafts = new Map(profiles().map((profile) => [profile.id, profile.assistantAccess]));
+    setProfiles(
+      parsed.profiles.map((profile) => {
+        const assistantAccess = accessDrafts.get(profile.id);
+        return assistantAccess ? { ...profile, assistantAccess } : profile;
+      }),
+    );
   };
 
   /** Download all profiles as JSON — API keys are never exported. */
   const exportJson = () => {
-    const sanitized = profiles().map(({ apiKey: _apiKey, ...profile }) => profile);
+    const sanitized = profiles().map(({ apiKey: _apiKey, assistantAccess: _access, ...profile }) => profile);
     const blob = new Blob([JSON.stringify(sanitized, null, 2)], { type: "application/json" });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1570,6 +1647,10 @@ async function openAiProfileDialog(input: {
   profile?: AiModelProfileDraft;
   /** Whether a key is already stored for this profile — the value is never available here. */
   hasCredential?: boolean;
+  accessEntries: AccessEntry[];
+  accessRevision: number | null;
+  accessSourceProfileId?: string;
+  onAccessDraft: (id: string, entries: AccessEntry[]) => void;
 }): Promise<AiModelProfileDraft | undefined> {
   const initialProvider = input.profile?.provider ?? "openrouter";
   const initialProviderOption = providerOption(initialProvider);
@@ -1583,6 +1664,17 @@ async function openAiProfileDialog(input: {
     const [model, setModel] = createSignal(input.profile?.model ?? initialProviderOption.defaultModel);
     const [baseURL, setBaseURL] = createSignal(input.profile?.baseURL ?? initialProviderOption.defaultBaseURL ?? "");
     const [apiKey, setApiKey] = createSignal("");
+    const [accessEntries, setAccessEntries] = createSignal([...input.accessEntries]);
+    const restricted = () => !accessEntries().some((entry) => entry.principal.type === "authenticated");
+    const setRestricted = (value: boolean) =>
+      setAccessEntries((entries) =>
+        value
+          ? entries.filter((entry) => entry.principal.type !== "authenticated")
+          : [
+              ...entries,
+              { id: crypto.randomUUID(), principal: { type: "authenticated" }, permission: "read", createdAt: new Date().toISOString() },
+            ],
+      );
     const [enabled, setEnabled] = createSignal(input.profile?.enabled ?? true);
     const [capabilities, setCapabilities] = createSignal<string[]>(input.profile?.capabilities ?? ["streaming"]);
     const [dataBoundary, setDataBoundary] = createSignal<AiDataBoundary>(
@@ -1683,6 +1775,18 @@ async function openAiProfileDialog(input: {
       if (typeof toolRoundLimit === "number") nextProfile.maxToolRounds = Math.trunc(toolRoundLimit);
       else delete nextProfile.maxToolRounds;
 
+      const accessDraft = assistantAccessGrants(accessEntries());
+      const initialAccess = assistantAccessGrants(input.accessEntries);
+      if (!input.profile || nextId !== input.profile.id || JSON.stringify(accessDraft) !== JSON.stringify(initialAccess)) {
+        nextProfile.assistantAccess = {
+          expectedRevision: input.accessRevision,
+          ...(nextId !== input.accessSourceProfileId && input.accessSourceProfileId
+            ? { sourceProfileId: input.accessSourceProfileId }
+            : {}),
+          entries: accessDraft,
+        };
+      }
+      input.onAccessDraft(nextId, accessEntries());
       close(nextProfile);
     };
 
@@ -1710,6 +1814,41 @@ async function openAiProfileDialog(input: {
                 value={enabled}
                 onValueChange={setEnabled}
               />
+
+              <CheckboxCard
+                label={t().restrictAssistantAccess}
+                description={t().restrictAssistantAccessDescription}
+                icon="ti ti-lock"
+                value={restricted}
+                onValueChange={setRestricted}
+              />
+              <Show when={restricted()}>
+                <PermissionEditor
+                  initialEntries={accessEntries()}
+                  allowPublic={false}
+                  allowAuthenticated={false}
+                  allowServiceAccounts
+                  allowedLevels={[{ level: "read", label: t().useModel }]}
+                  grantAccess={async (principal, _permission, display) => {
+                    const entry: AccessEntry = {
+                      id: crypto.randomUUID(),
+                      principal,
+                      permission: "read",
+                      createdAt: new Date().toISOString(),
+                      ...display,
+                    };
+                    setAccessEntries((entries) => [...entries, entry]);
+                    return entry;
+                  }}
+                  updateAccess={async () => {}}
+                  revokeAccess={async (id) => {
+                    setAccessEntries((entries) => entries.filter((entry) => entry.id !== id));
+                  }}
+                />
+                <Show when={accessEntries().length === 0}>
+                  <NoticeCard tone="warning">{t().assistantAccessEmpty}</NoticeCard>
+                </Show>
+              </Show>
 
               <Select
                 label={t().provider}

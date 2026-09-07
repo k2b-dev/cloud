@@ -1,3 +1,4 @@
+export { assistantAiSettingsState, listAssistantAiModels } from "./assistant-models";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   type AiToolApprovalContext,

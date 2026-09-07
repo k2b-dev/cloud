@@ -66,7 +66,8 @@ export type AiSettingsErrorCode =
   | "missing_default_model"
   | "default_model_disabled"
   | "missing_provider_credential"
-  | "model_policy_mismatch";
+  | "model_policy_mismatch"
+  | "model_access_denied";
 
 export type AiSettingsError = {
   code: AiSettingsErrorCode;
@@ -529,6 +530,8 @@ export type AiConversationFileSnapshot = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Server-owned marker: model grants apply only to interactive Assistant chat. */
+  assistantChat?: true;
   kind?: "chat";
   input: Input;
   /** Stable public ID exposed as runtime context, not instructions. */

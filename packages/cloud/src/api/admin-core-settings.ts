@@ -11,6 +11,7 @@ import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { listAiCredentialProfileIds, pruneAiCredentials, setAiCredential, splitAiProfileCredentials } from "../ai/credentials";
 import { enrichDirtyAiConversations } from "../ai/enrich";
+import { type AiModelAccessChange, AiModelAccessConflict, AiModelAccessInvalid, aiModelAccess, splitAiModelAccess } from "../ai/model-access";
 import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
 import { type AuthContext, auth, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
@@ -34,13 +35,13 @@ const TestEmailSchema = z.object({
   recipient: z.email(),
 });
 
-type FieldErrors = Record<string, string>;
 const LEGAL_DOCUMENTS = [
   { kind: "terms", path: "/legal/terms" },
   { kind: "privacy", path: "/legal/privacy" },
   { kind: "imprint", path: "/impressum" },
 ] as const;
 
+type FieldErrors = Record<string, string>;
 
 const isKnownSetting = (key: string): boolean => SETTINGS_MAP.has(key);
 
@@ -84,6 +85,7 @@ const storeAiCredentials = async (
 type AiSettingsMutationPlan = {
   errors: FieldErrors;
   keepCredentialProfileIds?: string[];
+  modelProfileIds?: string[];
 };
 
 const valueAfterMutation = <T>(key: string, current: T, updates: Record<string, unknown>, resets: readonly string[]): T => {
@@ -149,7 +151,11 @@ const prepareAiSettingsMutation = async (
     profiles: nextParsed.profiles,
     credentialProfileIds: keepCredentialProfileIds ?? existingCredentialProfileIds,
   });
-  return { errors, keepCredentialProfileIds };
+  return {
+    errors,
+    keepCredentialProfileIds,
+    modelProfileIds: profilesUpdated || profilesReset ? nextParsed.profiles.map((profile) => profile.id) : undefined,
+  };
 };
 
 const invalidateCommittedSettings = async (keys: readonly string[]): Promise<void> => {
@@ -162,12 +168,6 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
-  .get("/legacy", auth.requireRole("admin"), async (c) => {
-    return c.json(await settingsListLegacyKeys(await liveSettingKeys()));
-  })
-  .delete("/legacy", auth.requireRole("admin"), async (c) => {
-    return c.json(await settingsDeleteLegacyKeys(await liveSettingKeys()));
-  })
   .get("/legal", auth.requireRole("admin"), async (c) => {
     const items = await Promise.all(
       LEGAL_DOCUMENTS.map(async ({ kind, path }) => {
@@ -186,6 +186,12 @@ const app = new Hono<AuthContext>()
       }),
     );
     return c.json({ items });
+  })
+  .get("/legacy", auth.requireRole("admin"), async (c) => {
+    return c.json(await settingsListLegacyKeys(await liveSettingKeys()));
+  })
+  .delete("/legacy", auth.requireRole("admin"), async (c) => {
+    return c.json(await settingsDeleteLegacyKeys(await liveSettingKeys()));
   })
   .post("/test-email", auth.requireRole("admin"), v("json", TestEmailSchema), async (c) => {
     const { recipient } = c.req.valid("json");
@@ -262,6 +268,19 @@ const app = new Hono<AuthContext>()
       // value as posted would put them back in a setting the browser reads.
       return c.json({ message: "Invalid values", errors: { [AI_PROFILES_KEY]: "Model profiles must be a JSON array" } }, 400);
     }
+    let accessChanges: AiModelAccessChange[] = [];
+    if (aiSplit) {
+      try {
+        const split = splitAiModelAccess(aiSplit.profilesJson);
+        aiSplit.profilesJson = split.profilesJson;
+        accessChanges = split.changes;
+      } catch {
+        return c.json({
+          message: "Invalid model permissions",
+          errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
+        }, 400);
+      }
+    }
     const finalValues: Record<string, unknown> = aiSplit ? { ...updates, [AI_PROFILES_KEY]: aiSplit.profilesJson } : updates;
 
     // Validate everything up front. settings.set validates as it writes, so a
@@ -324,8 +343,17 @@ const app = new Hono<AuthContext>()
         } else if (aiPlan.keepCredentialProfileIds) {
           await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
         }
+        if (aiPlan.modelProfileIds) {
+          await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, accessChanges, tx);
+        }
       });
     } catch (error) {
+      if (error instanceof AiModelAccessConflict || error instanceof AiModelAccessInvalid) {
+        return c.json(
+          { message: error.message, errors: { [AI_PROFILES_KEY]: error.message } },
+          error instanceof AiModelAccessConflict ? 409 : 400,
+        );
+      }
       console.error("[settings] failed to commit settings update", error);
       return c.json(
         {
@@ -362,7 +390,12 @@ const app = new Hono<AuthContext>()
     try {
       await sql.begin(async (tx) => {
         await settings.remove(key, tx);
-        if (aiPlan.keepCredentialProfileIds) await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
+        if (aiPlan.keepCredentialProfileIds) {
+          await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
+        }
+        if (aiPlan.modelProfileIds) {
+          await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, [], tx);
+        }
       });
     } catch (error) {
       console.error(`[settings] failed to reset "${key}"`, error);

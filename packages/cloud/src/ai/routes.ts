@@ -17,6 +17,7 @@ import {
 } from "../server";
 import { coreSettings } from "../services/settings/api";
 import type { AiToolApprovalContext } from "./approvals";
+import { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiProjectFilePathFromMount } from "./file-mount";
@@ -53,7 +54,7 @@ import {
   submitAiCompaction,
   submitAiTurnAction,
 } from "./runtime";
-import { listAiModels, readAiSettingsState, selectAiModelProfile, toPublicAiSettingsState } from "./settings";
+import { readAiSettingsState, selectAiModelProfile } from "./settings";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
@@ -264,10 +265,10 @@ export const aiRoutes = (() => {
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
       .get("/status", async (c) => {
-        return respond(c, ok(await toPublicAiSettingsState(personalAiModelPolicy.allowedDataBoundaries)));
+        return respond(c, ok(await assistantAiSettingsState(c.get("accessSubject"))));
       })
       .get("/models", async (c) => {
-        return respond(c, ok(await listAiModels(personalAiModelPolicy)));
+        return respond(c, ok(await listAssistantAiModels(c.get("accessSubject"))));
       })
       .get("/prefs", async (c) => {
         const ctx = await resolveContext(c);
@@ -342,12 +343,12 @@ export const aiRoutes = (() => {
         const state = await readAiSettingsState();
         let previewProfile: ReturnType<typeof selectAiModelProfile> | null = null;
         if (state.ok && state.enabled) {
-          try {
-            previewProfile = selectAiModelProfile(state, ctx.modelPolicy, prefs?.lastModelId || undefined);
-          } catch (error) {
-            if (!prefs?.lastModelId) return toAiErrorResponse(c, error);
-            previewProfile = selectAiModelProfile(state, ctx.modelPolicy);
-          }
+          const models = await listAssistantAiModels(c.get("accessSubject"), ctx.modelPolicy);
+          const preferredId =
+            models.find((model) => model.id === prefs?.lastModelId)?.id ??
+            models.find((model) => model.id === state.defaultModelId)?.id ??
+            models[0]?.id;
+          if (preferredId) previewProfile = selectAiModelProfile(state, ctx.modelPolicy, preferredId);
         }
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
         const availableSkills = toolsSupported ? (await aiSkills.list(c.get("accessSubject"))).filter((skill) => skill.enabled) : [];
@@ -745,6 +746,7 @@ export const aiRoutes = (() => {
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
         try {
           const result = await submitAiChatTurn({
+            assistantChat: true,
             conversationId: conversation.id,
             chatId: conversation.shortId,
             input,
@@ -831,17 +833,23 @@ export const aiRoutes = (() => {
         if (originalProject && !currentProject) return respond(c, fail(err.notFound("Project")));
 
         try {
+          const requestedModelId = await selectAssistantAiModelId(
+            c.get("accessSubject"),
+            body.modelProfileId ?? originalProject?.defaultModelProfileId ?? undefined,
+            ctx.modelPolicy,
+          );
           if ((await prepareConversationForMessageRetry(conversation.id)) === "busy") {
             return respond(c, fail(err.conflict("Stop the active response before trying a message again.")));
           }
           const result = await submitAiChatTurn({
+            assistantChat: true,
             conversationId: conversation.id,
             chatId: conversation.shortId,
             input,
             userMessage: message,
             actor: ctx.actor,
             locale: getLocale(c),
-            requestedModelId: body.modelProfileId ?? originalProject?.defaultModelProfileId ?? undefined,
+            requestedModelId,
             modelPolicy: ctx.modelPolicy,
             systemPrompt,
             project: originalProject,

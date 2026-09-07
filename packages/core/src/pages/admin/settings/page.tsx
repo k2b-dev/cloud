@@ -9,7 +9,14 @@ import {
   aiSkills,
   listAiCredentialProfileIds,
 } from "@valentinkolb/cloud/ai";
-import { AI_USAGE_RANGES, type AiUsageRange, type AiUsageReport, aiUsage } from "@valentinkolb/cloud/ai/admin";
+import {
+  aiModelAccess,
+  type AiModelAccessMap,
+  AI_USAGE_RANGES,
+  type AiUsageRange,
+  type AiUsageReport,
+  aiUsage,
+} from "@valentinkolb/cloud/ai/admin";
 import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
 import { settingsService } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
@@ -191,6 +198,7 @@ export default ssr<AuthContext>(async (c) => {
   // Which profiles have a stored provider key. The keys themselves never leave
   // the server, so the form shows presence instead of a value.
   let aiCredentialProfileIds: string[] = [];
+  let modelAccess: AiModelAccessMap = {};
   let aiProjectItems: AiProjectAdminListItem[] = [];
   let aiProjectSummary: AiProjectAdminSummary | null = null;
   let aiProjectTotal = 0;
@@ -212,7 +220,9 @@ export default ssr<AuthContext>(async (c) => {
     if (tab.id === "mail") entries = entries.filter((entry) => entry.kind !== "template");
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
-    if (tab.id === "ai-providers") aiCredentialProfileIds = await listAiCredentialProfileIds();
+    if (tab.id === "ai-providers") {
+      [aiCredentialProfileIds, modelAccess] = await Promise.all([listAiCredentialProfileIds(), aiModelAccess.listForAdmin()]);
+    }
   } else if (tab.id === "legal") {
     entries = await buildEntries("legal", locale);
     legalInitial = buildLegalInitial(entries);
@@ -260,6 +270,7 @@ export default ssr<AuthContext>(async (c) => {
             showLegacySettings={tab.id === "general"}
             aiEnrichmentOverview={aiEnrichmentOverview}
             aiCredentialProfileIds={aiCredentialProfileIds}
+            aiModelAccess={modelAccess}
             aiSection={aiSection}
             showAiJobsLink={showAiJobsLink}
           />

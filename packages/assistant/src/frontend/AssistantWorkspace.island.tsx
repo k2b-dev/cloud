@@ -842,15 +842,17 @@ export default function AssistantWorkspace(props: Props) {
           focusToken={projectComposer() ? undefined : composerFocusToken()}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
-            props.status.enabled
-              ? projectComposer()
-                ? t().startProjectChat({ project: composerProps.projectName ?? t().thisProject })
-                : chat.runStatus() === "stopping"
-                  ? t().stopping
-                  : chat.running()
-                    ? t().queueMessage
-                    : t().askAnything
-              : t().aiNotConfigured
+            props.status.enabled && props.models.length === 0
+              ? t().noModelsAvailable
+              : props.status.enabled
+                ? projectComposer()
+                  ? t().startProjectChat({ project: composerProps.projectName ?? t().thisProject })
+                  : chat.runStatus() === "stopping"
+                    ? t().stopping
+                    : chat.running()
+                      ? t().queueMessage
+                      : t().askAnything
+                : t().aiNotConfigured
           }
           error={projectComposer() ? (chat.error() ?? undefined) : undefined}
           onSubmit={(input) =>
@@ -1063,8 +1065,7 @@ export default function AssistantWorkspace(props: Props) {
                                   if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                 },
                                 onFrontendToolResult: async (request, result) => {
-                                  if (!(await chat.submitFrontendToolResult(request, result)))
-                                    throw new Error(t().submitToolFailed);
+                                  if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
                                 },
                                 onForkMessage: async (entry, input) => {
                                   const conversation = await chat.forkMessage(entry.id, input);

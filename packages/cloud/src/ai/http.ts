@@ -225,6 +225,8 @@ const conflict = (message: string) => ({ code: "CONFLICT" as const, message, sta
 
 const aiSettingsServiceError = (error: AiSettingsError) => {
   switch (error.code) {
+    case "model_access_denied":
+      return err.forbidden(error.message);
     case "invalid_model_profiles":
     case "model_policy_mismatch":
       return err.badInput(error.message);

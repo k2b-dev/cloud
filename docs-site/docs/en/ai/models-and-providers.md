@@ -5,7 +5,7 @@ section: AI
 order: 1020
 description: Configure models and providers without exposing credentials to application clients.
 tags: [ai, models, providers]
-updated: 2026-08-17
+updated: 2026-09-05
 ---
 
 # Models and providers
@@ -60,6 +60,39 @@ end a chat independently of the tool-round policy.
 
 Model responses sent to the browser omit credentials and private
 configuration.
+
+## Restrict a model in Assistant
+
+In the model profile dialog, enable **Restrict use in Assistant** and add the
+users, groups, or service accounts that may use it. The permission editor uses
+Cloud's normal [access grants](/en/docs/identity/authorization), including
+nested group membership. **Use** is the model's read permission.
+
+By default, each profile grants use to authenticated users. Enabling the
+restriction removes that general grant. A restricted profile with no grants
+is unavailable to everyone, including administrators. Disabling the restriction
+restores authenticated access and retains individual grants. Confirm the profile
+dialog, then save the settings to apply the changes together. Canceling the
+dialog leaves its permissions unchanged. JSON profile exports omit permissions;
+importing a new profile gives it the default authenticated access.
+
+Assistant shows only models the caller may use. Direct chat submissions and
+message retries enforce the same permission. An explicitly selected model or
+Project default that is no longer allowed returns an error; it does not
+silently switch providers. When no model was selected, Assistant can choose an
+allowed model. If none is available, the composer asks the user to contact an
+administrator.
+
+New interactive turns check access again when execution starts or resumes.
+Revoking a grant can therefore stop a queued or suspended turn. Already running
+provider calls are not canceled by a permission change. Turns queued before
+this feature was introduced keep their previous access behavior.
+
+These grants apply only to interactive Assistant chat, including its chat API
+and CLI. Background jobs, scheduled chat tasks, workflows, enrichment,
+background messages between chats, Vision inspection, and compaction keep their
+existing model policies. The restriction does not configure budgets or cost
+limits.
 
 ## Supported providers
 

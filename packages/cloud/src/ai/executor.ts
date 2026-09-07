@@ -14,6 +14,7 @@ import {
   aiTurnAllowsRememberedApprovals,
   hasRememberedAiToolApproval,
 } from "./approvals";
+import { isAssistantChatTurn } from "./assistant-models";
 import { createAiToolResolver } from "./capabilities";
 import { executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { createCloudCompactFn } from "./compaction";
@@ -22,6 +23,7 @@ import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
+import { aiModelAccess } from "./model-access";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -653,6 +655,9 @@ export class AiTurnExecutor {
         }
         resolvedProjectId = project.id;
       }
+      if (isAssistantChatTurn(config) && claim.turn.modelProfileId) {
+        await aiModelAccess.assertAllowed(claim.turn.modelProfileId, accessSubjectForActor(material.actor));
+      }
       validated = await (this.config.validateTurn ?? validateAiTurnRequest)({
         input: config.input,
         hasImageAttachments: config.files?.attached.some((file) => isAiImageMediaType(file.mediaType)),
@@ -660,8 +665,13 @@ export class AiTurnExecutor {
           material.tools.some((tool) => tool.def.name === "view_image") &&
           (await isAiVisionModelConfigured(material.modelPolicy?.allowedDataBoundaries)),
         modelPolicy: material.modelPolicy,
-        requestedModelId: material.requestedModelId,
+        requestedModelId: isAssistantChatTurn(config)
+          ? (claim.turn.modelProfileId ?? material.requestedModelId)
+          : material.requestedModelId,
       });
+      if (isAssistantChatTurn(config)) {
+        await aiModelAccess.assertAllowed(validated.resolved.profile.id, accessSubjectForActor(material.actor));
+      }
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
       await this.finalize(conversationId, turnId, pipeline, "failed", error instanceof Error ? error.message : "AI turn failed", "chat");

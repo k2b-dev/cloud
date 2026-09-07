@@ -15,3 +15,5 @@ export {
   type AiUsageUser,
   aiUsage,
 } from "./usage";
+
+export { type AiModelAccessDraft, type AiModelAccessMap, type AiModelAccessState, aiModelAccess } from "./model-access";

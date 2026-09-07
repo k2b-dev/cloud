@@ -9,8 +9,8 @@ import type { CloudRuntime, User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import * as services from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
-import * as sidebar from "../sidebar";
 import * as projectContext from "../project-context";
+import * as sidebar from "../sidebar";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-page-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -57,7 +57,7 @@ afterEach(() => {
 beforeEach(() => {
   spies.push(spyOn(live, "latestAiInvalidationCursor").mockResolvedValue("0-0"));
   spies.push(
-    spyOn(ai, "toPublicAiSettingsState").mockResolvedValue({
+    spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
       ok: true,
       enabled: false,
       defaultModelId: "",
@@ -67,7 +67,7 @@ beforeEach(() => {
       models: [],
     }),
   );
-  spies.push(spyOn(ai, "listAiModels").mockResolvedValue([]));
+  spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
   spies.push(
     spyOn(ai.aiUserPrefs, "get").mockResolvedValue({
       userId: user.id,

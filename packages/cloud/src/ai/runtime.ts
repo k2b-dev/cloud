@@ -6,6 +6,7 @@ import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { AiTurnExecutor } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { startAiInvalidationRuntime, stopAiInvalidationRuntime } from "./live-outbox";
@@ -67,6 +68,8 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
+  /** Only interactive Assistant HTTP handlers set this server-owned marker. */
+  assistantChat?: true;
   conversationId: string;
   /** Stable public ID exposed as runtime context, not instructions. */
   chatId?: string;
@@ -108,21 +111,25 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
   const canInspectAttachedImages =
     input.canInspectAttachedImages ??
     (input.toolSource?.kind === "default" && (await isAiVisionModelConfigured(input.modelPolicy?.allowedDataBoundaries)));
+  const requestedModelId = input.assistantChat
+    ? await selectAssistantAiModelId(aiChatAccessSubject(input.actor), input.requestedModelId, input.modelPolicy)
+    : input.requestedModelId;
   const { resolved } = await validateAiTurnRequest({
     input: canonicalInput,
     hasImageAttachments,
     canInspectAttachedImages,
     modelPolicy: input.modelPolicy,
-    requestedModelId: input.requestedModelId,
+    requestedModelId,
   });
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    ...(input.assistantChat ? { assistantChat: true } : {}),
     input: canonicalInput,
     chatId: input.chatId,
     actor: input.actor,
     ...(input.locale ? { locale: input.locale } : {}),
     modelPolicy: input.modelPolicy,
-    requestedModelId: input.requestedModelId,
+    requestedModelId,
     systemPrompt: input.systemPrompt,
     project: input.project,
     files,

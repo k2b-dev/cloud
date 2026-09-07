@@ -4,6 +4,10 @@ export const aiSettingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      restrictAssistantAccess: "Restrict use in Assistant",
+      restrictAssistantAccessDescription: "Choose who can use this model in Assistant chats. Background jobs and workflows are unaffected.",
+      useModel: "Use",
+      assistantAccessEmpty: "Nobody can use this model in Assistant until you add a permission.",
       dirtyChats: "Dirty chats",
       oldest: ({ date }: { date: string }) => `Oldest ${date}`,
       failedChats: "Failed chats",
@@ -182,6 +186,11 @@ export const aiSettingsMessages = i18n.define({
       private: "Private",
     },
     de: {
+      restrictAssistantAccess: "Verwendung in Assistant beschränken",
+      restrictAssistantAccessDescription:
+        "Lege fest, wer dieses Modell in Assistant-Chats verwenden darf. Hintergrundjobs und Workflows bleiben unverändert.",
+      useModel: "Verwenden",
+      assistantAccessEmpty: "Ohne Freigabe kann niemand dieses Modell in Assistant verwenden.",
       dirtyChats: "Geänderte Chats",
       oldest: ({ date }) => `Ältester: ${date}`,
       failedChats: "Fehlgeschlagene Chats",

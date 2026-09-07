@@ -28,8 +28,9 @@ type PermissionEditorProps = {
    *  delete buttons, no add form. */
   canEdit?: boolean;
 
-  /** Grant access. The caller closes over the resource id. */
-  grantAccess: (principal: Principal, permission: GrantableLevel) => Promise<AccessEntry>;
+  /** Grant access. The caller closes over the resource id. The optional
+   *  display metadata lets deferred form drafts retain the selected name. */
+  grantAccess: (principal: Principal, permission: GrantableLevel, display?: { displayName: string }) => Promise<AccessEntry>;
 
   /** Update an existing entry's permission level. */
   updateAccess: (accessId: string, permission: GrantableLevel) => Promise<void>;
@@ -190,7 +191,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const hasPublicEntry = () => entries().some((entry) => entry.principal.type === "public");
 
   const grantMut = mutation.create({
-    mutation: async (data: { principal: Principal; permission: GrantableLevel }) => props.grantAccess(data.principal, data.permission),
+    mutation: async (data: { principal: Principal; permission: GrantableLevel; display: { displayName: string } }) =>
+      props.grantAccess(data.principal, data.permission, data.display),
     onSuccess: (newEntry) => {
       setEntries([...entries(), newEntry as AccessEntry]);
     },
@@ -325,7 +327,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     if (!principal) return;
     const firstLevel = allowed()[0]?.level;
     if (!firstLevel) return; // dev-warned above; bail silently
-    grantMut.mutate({ principal, permission: firstLevel });
+    grantMut.mutate({ principal, permission: firstLevel, display: { displayName: option.label } });
   };
 
   return (

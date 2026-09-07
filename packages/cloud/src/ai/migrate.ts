@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { migrateAiModelAccess } from "./model-access-migrate";
 import { withAiShortId } from "./short-id";
 import { migrateAiTurnUsage } from "./usage-migrate";
 
@@ -2066,6 +2067,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   }
 
   await migrateAiTurnUsage();
+  await migrateAiModelAccess();
 
   console.log("  ✓ ai conversation tables");
 };

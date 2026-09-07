@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-08-23
+updated: 2026-09-05
 ---
 
 # Chat runtime and streaming
@@ -14,6 +14,11 @@ Core mounts one authenticated conversation API at `/api/ai`. Conversations do
 not belong to an application and have no primary resource. Assistant renders
 the standard GUI; another application may create a conversation and redirect
 the user there.
+
+Interactive submissions and retries enforce the caller's
+[Assistant model access](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+The model list and status return only permitted models. A denied explicit model
+selection returns HTTP 403 before a retry changes the conversation.
 
 ## Create a conversation draft
 

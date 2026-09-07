@@ -2,10 +2,9 @@ import {
   aiConversations,
   aiProjects,
   aiUserPrefs,
-  listAiModels,
+  assistantAiSettingsState,
+  listAssistantAiModels,
   loadAiStreamState,
-  personalAiModelPolicy,
-  toPublicAiSettingsState,
 } from "@valentinkolb/cloud/ai";
 import { latestAiInvalidationCursor } from "@valentinkolb/cloud/ai/live";
 import type { AuthContext } from "@valentinkolb/cloud/server";
@@ -30,8 +29,8 @@ export default ssr<AuthContext>(async (c) => {
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = (await latestAiInvalidationCursor(user.id)) ?? "0-0";
   const [status, models, prefs, sidebar, appUrl] = await Promise.all([
-    toPublicAiSettingsState(),
-    listAiModels(personalAiModelPolicy),
+    assistantAiSettingsState(subject),
+    listAssistantAiModels(subject),
     aiUserPrefs.get(user.id),
     loadAssistantSidebarSnapshot(user.id),
     coreSettings.get<string>("app.url"),
