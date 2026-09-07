@@ -44,6 +44,17 @@ Postgres row counts are planner estimates. Valkey prefixes come from a bounded
 sample rather than a raw key browser. Use these views to direct an
 investigation, not as exact replacements for database administration tools.
 
+PostgreSQL connection counts and limits describe the database server, including
+connections to other databases on that server. They do not report PgBouncer
+clients, pool limits, or time spent waiting for a pool connection. A pool can be
+full while PostgreSQL still has free connections. With transaction pooling,
+sessions describe shared PostgreSQL backends rather than persistent application
+connections. Monitor PgBouncer separately for pool pressure.
+
+Session and index panels report failed queries as unavailable, so a loading
+failure is not mistaken for an empty database. The corresponding administrator
+API endpoints return an error instead of a successful empty list.
+
 ## How Gateway Ops fits Cloud
 
 The gateway owns registry-driven routing. Gateway Ops owns the administrator

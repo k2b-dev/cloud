@@ -616,56 +616,51 @@ const SESSION_LIMIT = 50;
  * visible rather than merely true.
  */
 export const listPostgresSessions = async (): Promise<PostgresSession[]> => {
-  try {
-    const rows = await sql<
-      {
-        pid: number;
-        application: string | null;
-        usename: string | null;
-        state: string | null;
-        wait_event_type: string | null;
-        wait_event: string | null;
-        query_age_seconds: number | null;
-        transaction_age_seconds: number | null;
-        blocked_by: number[] | null;
-        query: string | null;
-      }[]
-    >`
-      SELECT
-        pid,
-        NULLIF(application_name, '') AS application,
-        usename,
-        state,
-        wait_event_type,
-        wait_event,
-        EXTRACT(EPOCH FROM (now() - query_start))::float AS query_age_seconds,
-        EXTRACT(EPOCH FROM (now() - xact_start))::float AS transaction_age_seconds,
-        pg_blocking_pids(pid) AS blocked_by,
-        left(query, 500) AS query
-      FROM pg_stat_activity
-      WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()
-      ORDER BY
-        cardinality(pg_blocking_pids(pid)) DESC,
-        xact_start ASC NULLS LAST,
-        query_start ASC NULLS LAST
-      LIMIT ${SESSION_LIMIT}
-    `;
-    return rows.map((row) => ({
-      pid: row.pid,
-      application: row.application,
-      user: row.usename,
-      state: row.state,
-      waitEventType: row.wait_event_type,
-      waitEvent: row.wait_event,
-      queryAgeSeconds: row.query_age_seconds,
-      transactionAgeSeconds: row.transaction_age_seconds,
-      blockedBy: row.blocked_by ?? [],
-      query: row.query,
-    }));
-  } catch {
-    // Same contract as the other diagnostics: degrade, never take the page down.
-    return [];
-  }
+  const rows = await sql<
+    {
+      pid: number;
+      application: string | null;
+      usename: string | null;
+      state: string | null;
+      wait_event_type: string | null;
+      wait_event: string | null;
+      query_age_seconds: number | null;
+      transaction_age_seconds: number | null;
+      blocked_by: number[] | null;
+      query: string | null;
+    }[]
+  >`
+    SELECT
+      pid,
+      NULLIF(application_name, '') AS application,
+      usename,
+      state,
+      wait_event_type,
+      wait_event,
+      EXTRACT(EPOCH FROM (now() - query_start))::float AS query_age_seconds,
+      EXTRACT(EPOCH FROM (now() - xact_start))::float AS transaction_age_seconds,
+      pg_blocking_pids(pid) AS blocked_by,
+      left(query, 500) AS query
+    FROM pg_stat_activity
+    WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()
+    ORDER BY
+      cardinality(pg_blocking_pids(pid)) DESC,
+      xact_start ASC NULLS LAST,
+      query_start ASC NULLS LAST
+    LIMIT ${SESSION_LIMIT}
+  `;
+  return rows.map((row) => ({
+    pid: row.pid,
+    application: row.application,
+    user: row.usename,
+    state: row.state,
+    waitEventType: row.wait_event_type,
+    waitEvent: row.wait_event,
+    queryAgeSeconds: row.query_age_seconds,
+    transactionAgeSeconds: row.transaction_age_seconds,
+    blockedBy: row.blocked_by ?? [],
+    query: row.query,
+  }));
 };
 
 const INDEX_LIMIT = 50;
@@ -680,41 +675,37 @@ const INDEX_LIMIT = 50;
  * unnecessary.
  */
 export const listPostgresIndexes = async (): Promise<PostgresIndexDiagnostic[]> => {
-  try {
-    const rows = await sql<
-      {
-        schemaname: string;
-        relname: string;
-        indexrelname: string;
-        size_bytes: number | string;
-        idx_scan: number | string;
-        is_unique: boolean;
-        is_primary: boolean;
-      }[]
-    >`
-      SELECT
-        s.schemaname,
-        s.relname,
-        s.indexrelname,
-        pg_relation_size(s.indexrelid)::bigint AS size_bytes,
-        COALESCE(s.idx_scan, 0)::bigint AS idx_scan,
-        i.indisunique AS is_unique,
-        i.indisprimary AS is_primary
-      FROM pg_stat_user_indexes s
-      JOIN pg_index i ON i.indexrelid = s.indexrelid
-      ORDER BY pg_relation_size(s.indexrelid) DESC
-      LIMIT ${INDEX_LIMIT}
-    `;
-    return rows.map((row) => ({
-      schema: row.schemaname,
-      table: row.relname,
-      name: row.indexrelname,
-      sizeBytes: toNumber(row.size_bytes),
-      scans: toNumber(row.idx_scan),
-      isUnique: row.is_unique,
-      isPrimary: row.is_primary,
-    }));
-  } catch {
-    return [];
-  }
+  const rows = await sql<
+    {
+      schemaname: string;
+      relname: string;
+      indexrelname: string;
+      size_bytes: number | string;
+      idx_scan: number | string;
+      is_unique: boolean;
+      is_primary: boolean;
+    }[]
+  >`
+    SELECT
+      s.schemaname,
+      s.relname,
+      s.indexrelname,
+      pg_relation_size(s.indexrelid)::bigint AS size_bytes,
+      COALESCE(s.idx_scan, 0)::bigint AS idx_scan,
+      i.indisunique AS is_unique,
+      i.indisprimary AS is_primary
+    FROM pg_stat_user_indexes s
+    JOIN pg_index i ON i.indexrelid = s.indexrelid
+    ORDER BY pg_relation_size(s.indexrelid) DESC
+    LIMIT ${INDEX_LIMIT}
+  `;
+  return rows.map((row) => ({
+    schema: row.schemaname,
+    table: row.relname,
+    name: row.indexrelname,
+    sizeBytes: toNumber(row.size_bytes),
+    scans: toNumber(row.idx_scan),
+    isUnique: row.is_unique,
+    isPrimary: row.is_primary,
+  }));
 };

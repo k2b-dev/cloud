@@ -28,3 +28,5 @@ Gateway Ops fasst Signale der Plattform zusammen. Es zeigt keine rohen Redis-Sch
 :::info Grenzen der Diagnosen
 Redis-Präfixe stammen aus einer begrenzten Stichprobe und nicht aus einer vollständigen Ansicht aller Rohschlüssel. Zeilenzahlen in Postgres sind Schätzungen des Planners und keine exakten Werte aus vollständigen Tabellenscans.
 :::
+
+PostgreSQL-Verbindungen und ihr Limit beziehen sich auf den Datenbankserver. PgBouncer-Clients, Pool-Limits und Wartezeiten im Pool sind nicht enthalten; überwache PgBouncer separat. Bei Transaction-Pooling zeigen die Sitzungen gemeinsam genutzte PostgreSQL-Backends. Fehlgeschlagene Sitzungs- oder Indexabfragen erscheinen als Ladefehler statt als leere Listen.

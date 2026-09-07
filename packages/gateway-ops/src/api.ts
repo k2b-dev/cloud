@@ -170,8 +170,20 @@ export const apiRoutes = new Hono<AuthContext>()
   .get("/data", async (c) => respond(c, ok(await getDataDiagnostics(getLocale(c)))))
   .get("/data/postgres", async (c) => respond(c, ok(await getPostgresDiagnostics(getLocale(c)))))
   .get("/data/redis", async (c) => respond(c, ok(await getRedisDiagnostics(getLocale(c)))))
-  .get("/data/postgres/sessions", async (c) => respond(c, ok({ items: await listPostgresSessions() })))
-  .get("/data/postgres/indexes", async (c) => respond(c, ok({ items: await listPostgresIndexes() })))
+  .get("/data/postgres/sessions", async (c) => {
+    try {
+      return respond(c, ok({ items: await listPostgresSessions() }));
+    } catch {
+      return respond(c, fail(err.internal(gatewayOpsMessages.resolve([getLocale(c)]).t.postgresSessionsUnavailable)));
+    }
+  })
+  .get("/data/postgres/indexes", async (c) => {
+    try {
+      return respond(c, ok({ items: await listPostgresIndexes() }));
+    } catch {
+      return respond(c, fail(err.internal(gatewayOpsMessages.resolve([getLocale(c)]).t.postgresIndexesUnavailable)));
+    }
+  })
   .get("/telemetry/summary", v("query", TelemetrySummaryQuerySchema), async (c) => {
     const { hours } = c.req.valid("query");
     return respond(c, ok(await getTelemetrySummary(hours)));

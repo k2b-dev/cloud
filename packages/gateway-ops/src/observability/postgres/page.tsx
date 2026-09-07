@@ -63,7 +63,12 @@ export default ssr<AuthContext>(async (c) => {
   const search = url.searchParams.get("search")?.trim() ?? "";
   const selectedSchema = url.searchParams.get("schema")?.trim() || "all";
   const selectedSort = url.searchParams.get("sort")?.trim() || "size-desc";
-  const [diagnostics, sessions, indexes] = await Promise.all([getPostgresDiagnostics(locale), listPostgresSessions(), listPostgresIndexes()]);
+  const [diagnostics, [sessionsResult, indexesResult]] = await Promise.all([
+    getPostgresDiagnostics(locale),
+    Promise.allSettled([listPostgresSessions(), listPostgresIndexes()]),
+  ]);
+  const sessions = sessionsResult.status === "fulfilled" ? sessionsResult.value : [];
+  const indexes = indexesResult.status === "fulfilled" ? indexesResult.value : [];
   const blockedSessions = sessions.filter((session) => session.blockedBy.length > 0);
   const unnamedSessions = sessions.filter((session) => !session.application).length;
   // Cumulative since the last statistics reset, so this is "not used since
@@ -201,6 +206,8 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.postgresDescription}</p>
         </div>
 
+        <p class="text-xs text-dimmed">{t.postgresConnectionsDescription}</p>
+
         <StatGrid columns={5}>
           <StatCell
             label={t.storage}
@@ -333,10 +340,13 @@ export default ssr<AuthContext>(async (c) => {
         <DataPanel
           title={t.sessions}
           subtitle={
-            sessions.length === 0
-              ? t.noClientBackendsReported
-              : t.sessionSummary({ total: sessions.length, blocked: blockedSessions.length, unnamed: unnamedSessions })
+            sessionsResult.status === "rejected"
+              ? undefined
+              : sessions.length === 0
+                ? t.noClientBackendsReported
+                : t.sessionSummary({ total: sessions.length, blocked: blockedSessions.length, unnamed: unnamedSessions })
           }
+          error={sessionsResult.status === "rejected" ? t.postgresSessionsUnavailable : null}
           isEmpty={sessions.length === 0}
           empty={t.noClientBackends}
         >
@@ -384,7 +394,8 @@ export default ssr<AuthContext>(async (c) => {
 
         <DataPanel
           title={t.indexes}
-          subtitle={t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) })}
+          subtitle={indexesResult.status === "fulfilled" ? t.indexesSummary({ count: indexes.length, size: formatBytes(unusedIndexBytes, { locale }) }) : undefined}
+          error={indexesResult.status === "rejected" ? t.postgresIndexesUnavailable : null}
           isEmpty={indexes.length === 0}
           empty={t.noUserIndexes}
         >

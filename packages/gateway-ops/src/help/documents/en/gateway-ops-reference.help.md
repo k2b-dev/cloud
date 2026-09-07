@@ -28,3 +28,5 @@ Gateway Ops summarizes platform signals. It avoids listing raw Redis keys and re
 :::info Diagnostics limits
 Redis prefixes come from a bounded sample, not a full raw key browser. Postgres row counts are planner estimates, not exact counts from full table scans.
 :::
+
+PostgreSQL connections and their limit describe the database server. PgBouncer clients, pool limits, and pool wait times are not included; monitor PgBouncer separately. With transaction pooling, sessions represent shared PostgreSQL backends. Failed session or index queries appear as loading errors rather than empty lists.
