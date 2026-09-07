@@ -5,7 +5,7 @@ section: Platform
 order: 300
 description: Sign-in, profile, notifications, announcements, settings, and the shared Cloud administration entry point.
 tags: [core, accounts, administration]
-updated: 2026-08-02
+updated: 2026-09-01
 ---
 
 # Core
@@ -67,8 +67,12 @@ platform administration are grouped by task:
 ```bash
 cld account whoami --json
 cld admin apps list --json
+cld admin legal list
+cld admin legal get terms --json
 ```
 
 Run `cld account help` for personal account commands and `cld admin help` for
-administration commands. These commands use the current profile and the same
-authorization boundaries as the browser surfaces.
+administration commands. Administrators can publish local Markdown or an
+external URL with `cld admin legal set`, and reset one complete document with
+`cld admin legal reset <document> --yes`. These commands use the current
+profile and the same authorization boundaries as the browser surfaces.

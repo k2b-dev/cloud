@@ -118,6 +118,23 @@ cld admin notification-batches finalize <batch-id> --yes
 
 Use the exact command help to prepare the audience-selection JSON and to retry failed recipients. Deleting a draft cannot be undone.
 
+## Legal documents
+
+Terms, Privacy, and Imprint can use local Markdown or redirect to an external
+URL. Inspect the effective source before changing it:
+
+```bash
+cld admin legal list
+cld admin legal get terms --json
+cld admin legal set terms --content-file ./terms.md
+cld admin legal set privacy --url https://example.org/privacy
+cld admin legal reset imprint --yes
+```
+
+`set` accepts exactly one content source or URL. Local Markdown can be passed
+directly, from a file, or through standard input. `reset` clears the complete
+document configuration and requires confirmation.
+
 ## Webhooks and metrics
 
 ```bash
@@ -148,5 +165,6 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Notifications | `notifications list`, `notifications summary`, `notifications get`, `notifications resend`, `notifications pending-system`, `notifications send-pending-system` |
 | Notification batches | `notification-batches list`, `notification-batches preview`, `notification-batches create`, `notification-batches get`, `notification-batches finalize`, `notification-batches recipients`, `notification-batches retry-failed`, `notification-batches retry-recipient`, `notification-batches delete-draft` |
 | Announcements | `announcements list`, `announcements create`, `announcements update`, `announcements delete` |
+| Legal documents | `legal list`, `legal get`, `legal set`, `legal reset` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |

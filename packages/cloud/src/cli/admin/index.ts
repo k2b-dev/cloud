@@ -10,6 +10,7 @@ import { dataCommands } from "./data";
 import { gatewayCommands } from "./gateway";
 import { instanceCommands } from "./instance";
 import { jobCommands } from "./jobs";
+import { legalCommands } from "./legal";
 import { logCommands } from "./logs";
 import { metricsCommands } from "./metrics";
 import { notificationCommands } from "./notifications";
@@ -20,12 +21,14 @@ import { workflowCommands } from "./workflows";
 export default defineCliCommands({
   name: "admin",
   summary: "Inspect and operate Cloud administration surfaces.",
+  groupSummaries: { legal: "Manage Terms, Privacy, and Imprint." },
   commands: [
     ...instanceCommands,
     ...gatewayCommands,
     ...logCommands,
     ...telemetryCommands,
     ...jobCommands,
+    ...legalCommands,
     ...workflowCommands,
     ...dataCommands,
     ...notificationCommands,

@@ -35,6 +35,12 @@ const TestEmailSchema = z.object({
 });
 
 type FieldErrors = Record<string, string>;
+const LEGAL_DOCUMENTS = [
+  { kind: "terms", path: "/legal/terms" },
+  { kind: "privacy", path: "/legal/privacy" },
+  { kind: "imprint", path: "/impressum" },
+] as const;
+
 
 const isKnownSetting = (key: string): boolean => SETTINGS_MAP.has(key);
 
@@ -161,6 +167,25 @@ const app = new Hono<AuthContext>()
   })
   .delete("/legacy", auth.requireRole("admin"), async (c) => {
     return c.json(await settingsDeleteLegacyKeys(await liveSettingKeys()));
+  })
+  .get("/legal", auth.requireRole("admin"), async (c) => {
+    const items = await Promise.all(
+      LEGAL_DOCUMENTS.map(async ({ kind, path }) => {
+        const [rawMode, content, url] = await Promise.all([
+          settings.get<string>(`legal.${kind}.mode`),
+          settings.get<string>(`legal.${kind}.content`),
+          settings.get<string>(`legal.${kind}.url`),
+        ]);
+        return {
+          kind,
+          path,
+          mode: rawMode === "external" ? "external" : "local",
+          content: content ?? "",
+          url: url ?? "",
+        };
+      }),
+    );
+    return c.json({ items });
   })
   .post("/test-email", auth.requireRole("admin"), v("json", TestEmailSchema), async (c) => {
     const { recipient } = c.req.valid("json");

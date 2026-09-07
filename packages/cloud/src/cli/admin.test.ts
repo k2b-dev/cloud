@@ -50,6 +50,67 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  const legalDocuments = [
+    { kind: "terms", path: "/legal/terms", mode: "local", content: "# Terms", url: "" },
+    { kind: "privacy", path: "/legal/privacy", mode: "external", content: "", url: "https://example.org/privacy" },
+    { kind: "imprint", path: "/impressum", mode: "local", content: "# Imprint", url: "" },
+  ];
+
+  test("lists the effective legal document sources", async () => {
+    const { ctx, calls, tables } = createContext(["legal", "list"], {}, [jsonResponse({ items: legalDocuments })]);
+
+    await adminCli.run(ctx);
+
+    expect(calls[0]?.path).toBe("/api/admin/core/settings/legal");
+    expect(tables[0]).toEqual([
+      { document: "terms", source: "local", target: "/legal/terms" },
+      { document: "privacy", source: "external", target: "https://example.org/privacy" },
+      { document: "imprint", source: "local", target: "/impressum" },
+    ]);
+  });
+
+  test("publishes legal Markdown through the atomic settings endpoint", async () => {
+    const { ctx, calls, lines } = createContext(["legal", "set", "terms"], { content: "# Updated terms" }, [textResponse("", 204)]);
+
+    await adminCli.run(ctx);
+
+    expect(calls[0]?.path).toBe("/api/admin/core/settings");
+    expect(calls[0]?.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      updates: {
+        "legal.terms.mode": "local",
+        "legal.terms.content": "# Updated terms",
+      },
+    });
+    expect(lines).toEqual(["Updated terms."]);
+  });
+
+  test("switches a legal document to an external URL", async () => {
+    const { ctx, calls } = createContext(["legal", "set", "privacy"], { url: "https://example.org/privacy" }, [textResponse("", 204)]);
+
+    await adminCli.run(ctx);
+
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      updates: {
+        "legal.privacy.mode": "external",
+        "legal.privacy.url": "https://example.org/privacy",
+      },
+    });
+  });
+
+  test("guards a complete legal document reset", async () => {
+    const guarded = createContext(["legal", "reset", "privacy"]);
+    await expect(adminCli.run(guarded.ctx)).rejects.toThrow("without --yes");
+    expect(guarded.calls).toHaveLength(0);
+
+    const confirmed = createContext(["legal", "reset", "privacy"], { yes: true }, [textResponse("", 204)]);
+    await adminCli.run(confirmed.ctx);
+
+    expect(JSON.parse(String(confirmed.calls[0]?.init?.body))).toEqual({
+      resets: ["legal.privacy.mode", "legal.privacy.content", "legal.privacy.url"],
+    });
+  });
+
   test("lists gateway routes with filters", async () => {
     const { ctx, calls, tables, tableColumns } = createContext(
       ["routes", "list"],
