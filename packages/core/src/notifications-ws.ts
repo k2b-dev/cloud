@@ -1,3 +1,4 @@
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import {
   NOTIFICATION_LIVE_WS_TYPE,
   NotificationLiveClientMessageSchema,
@@ -99,7 +100,7 @@ const startAccessRefresh = (ctx: WsContext, userId: string) => {
   }, ACCESS_REFRESH_INTERVAL_MS);
 };
 
-const startStream = (ctx: WsContext, userId: string, after: string) => {
+const startStream = (ctx: WsContext, userId: string, after: string | undefined) => {
   ctx.streamAbort?.abort();
   const abort = new AbortController();
   ctx.streamAbort = abort;
@@ -124,6 +125,10 @@ const startStream = (ctx: WsContext, userId: string, after: string) => {
       }
     } catch (error) {
       if (abort.signal.aborted || isClosing(ctx)) return;
+      if (error instanceof RetentionGapError || error instanceof CursorMismatchError) {
+        await handleSubscribe(ctx, null);
+        return;
+      }
       log.error("Notification WebSocket stream failed", {
         userId,
         error: error instanceof Error ? error.message : String(error),
@@ -144,7 +149,9 @@ const handleSubscribe = async (ctx: WsContext, fromCursor: string | null) => {
     return;
   }
 
-  const cursor = fromCursor ?? (await notifications.live.latestCursor(userId)) ?? "0-0";
+  const requested = fromCursor === notifications.live.emptyCursor() ? null : fromCursor;
+  const after = requested ?? (await notifications.live.latestCursor(userId)) ?? undefined;
+  const cursor = after ?? notifications.live.emptyCursor();
   if (isClosing(ctx)) return;
   stopSubscription(ctx);
   ctx.phase = "subscribed";
@@ -153,7 +160,7 @@ const handleSubscribe = async (ctx: WsContext, fromCursor: string | null) => {
     closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
     return;
   }
-  startStream(ctx, userId, cursor);
+  startStream(ctx, userId, after);
   startAccessRefresh(ctx, userId);
 };
 

@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
@@ -9,6 +9,7 @@ import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { notebookHelp } from "./help";
 import { migrate } from "./migrate";
 import { notebooksService, reindexRuntime, snapshotRuntime, yjsSnapshotWorker } from "./service";
+import { drainNotebookConnections } from "./ws";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -31,7 +32,7 @@ const result = await app.start({
       await migrate();
     },
     start: async () => {
-      yjsSnapshotWorker.start();
+      await yjsSnapshotWorker.start();
       try {
         await reindexRuntime.start();
         await snapshotRuntime.start();
@@ -43,6 +44,7 @@ const result = await app.start({
       }
     },
     stop: async () => {
+      await drainNotebookConnections();
       await snapshotRuntime.stop();
       await reindexRuntime.stop();
       await yjsSnapshotWorker.stop();

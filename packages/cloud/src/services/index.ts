@@ -181,3 +181,5 @@ export type {
   SyncScheduleView,
   SyncSchedulerRegistration,
 } from "./sync-ops";
+
+export { latestTopicCursor } from "./topic-cursor";

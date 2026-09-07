@@ -1,3 +1,4 @@
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import { auth, getLocale, hasPermission } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
 import type { ServerWebSocket } from "bun";
@@ -156,6 +157,10 @@ const startStream = (ctx: WsContext, spaceId: string, spaceShortId: string, afte
       }
     } catch (error) {
       if (abort.signal.aborted || ctx.phase === "closing") return;
+      if (error instanceof RetentionGapError || error instanceof CursorMismatchError) {
+        closeWithError(ctx, "resync_required", ctx.messages.liveStreamFailed, 1012);
+        return;
+      }
       log.error("Space WebSocket event stream failed", {
         spaceId,
         error: error instanceof Error ? error.message : String(error),
@@ -169,6 +174,10 @@ const startStream = (ctx: WsContext, spaceId: string, spaceShortId: string, afte
 
 const handleSubscribe = async (ctx: WsContext, spaceShortId: string, fromCursor: string | null) => {
   if (isClosing(ctx)) return;
+  if (fromCursor !== null && !/^s6t\.[A-Za-z0-9_-]+\.\d+$/.test(fromCursor)) {
+    closeWithError(ctx, "resync_required", ctx.messages.liveStreamFailed, 1012);
+    return;
+  }
   const spaceId = await spacesPublicResources.resolvePublicId("spaces", spaceShortId);
   if (!spaceId) {
     ctx.spaceShortId = spaceShortId;
@@ -184,7 +193,7 @@ const handleSubscribe = async (ctx: WsContext, spaceShortId: string, fromCursor:
     return;
   }
 
-  const cursor = fromCursor ?? (await latestSpaceEventCursor(spaceId)) ?? "0-0";
+  const cursor = fromCursor ?? (await latestSpaceEventCursor(spaceId));
   if (isClosing(ctx)) return;
   stopSubscription(ctx);
   ctx.phase = "subscribed";

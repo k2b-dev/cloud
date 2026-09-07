@@ -1,10 +1,13 @@
-import { job, scheduler } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { expBackoff } from "@k2b/sync/retry";
+import { lazySync } from "@valentinkolb/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
+  syncOps,
 } from "@valentinkolb/cloud/services";
 import { toPgTextArray } from "@valentinkolb/cloud/services/postgres";
 import { sql } from "bun";
@@ -1501,7 +1504,10 @@ const runFolderOperation = async (
     return;
   }
   const operation = await prepareFolderOperation(command);
-  const lock = await mailProviderOperationMutex.acquire(operation.binding.remote_resource_id, MAIL_PROVIDER_OPERATION_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({
+    resource: operation.binding.remote_resource_id,
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
   if (!lock) {
     await requeueCommand(command, "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or administered");
     return;
@@ -1511,7 +1517,7 @@ const runFolderOperation = async (
       intervalMs: JOB_HEARTBEAT_INTERVAL_MS,
       heartbeat: async () => {
         await assertJobLeaseActive();
-        if (!(await mailProviderOperationMutex.extend(lock, MAIL_PROVIDER_OPERATION_LEASE_MS))) {
+        if (!(await mailProviderOperationMutex().extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS }))) {
           throw Object.assign(new Error("Remote mailbox operation lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
         }
       },
@@ -1519,7 +1525,7 @@ const runFolderOperation = async (
         const assertLeaseActive = async (): Promise<void> => {
           await assertHeartbeatActive();
           await assertJobLeaseActive();
-          if (!(await mailProviderOperationMutex.extend(lock, MAIL_PROVIDER_OPERATION_LEASE_MS))) {
+          if (!(await mailProviderOperationMutex().extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS }))) {
             throw Object.assign(new Error("Remote mailbox operation lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
           }
         };
@@ -1541,7 +1547,9 @@ const runFolderOperation = async (
       },
     });
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
@@ -1554,7 +1562,10 @@ const runMessageMutation = async (
     return;
   }
   const binding = await loadPinnedBinding(claimed.command);
-  const lock = await mailProviderOperationMutex.acquire(binding.remote_resource_id, MAIL_PROVIDER_OPERATION_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({
+    resource: binding.remote_resource_id,
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
   if (!lock) {
     await requeueCommand(claimed.command, "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or changed");
     return;
@@ -1564,7 +1575,7 @@ const runMessageMutation = async (
       intervalMs: JOB_HEARTBEAT_INTERVAL_MS,
       heartbeat: async () => {
         await assertJobLeaseActive();
-        if (!(await mailProviderOperationMutex.extend(lock, MAIL_PROVIDER_OPERATION_LEASE_MS))) {
+        if (!(await mailProviderOperationMutex().extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS }))) {
           throw Object.assign(new Error("Remote mailbox operation lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
         }
       },
@@ -1580,7 +1591,9 @@ const runMessageMutation = async (
       },
     });
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
@@ -2767,7 +2780,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
 ): Promise<string | null> => {
   const remoteResourceId = await loadOutboxRemoteResourceId(outboxId);
   if (!remoteResourceId) return null;
-  const lock = await mailProviderOperationMutex.acquire(remoteResourceId, MAIL_PROVIDER_OPERATION_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({ resource: remoteResourceId, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
   if (!lock) throw Object.assign(new Error("Remote mailbox is currently being synchronized or changed"), { code: "REMOTE_RESOURCE_BUSY" });
   let claim: OutboxClaim | null = null;
   try {
@@ -2784,7 +2797,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
     return await withLeaseHeartbeat({
       intervalMs: JOB_HEARTBEAT_INTERVAL_MS,
       heartbeat: async () => {
-        if (!(await mailProviderOperationMutex.extend(lock, MAIL_PROVIDER_OPERATION_LEASE_MS))) {
+        if (!(await mailProviderOperationMutex().extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS }))) {
           throw Object.assign(new Error("Remote mailbox operation lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
         }
         await heartbeat?.(loaded);
@@ -2814,7 +2827,9 @@ export const executeOutboxSubmissionWithHeartbeat = async (
     }
     throw error;
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
@@ -2907,35 +2922,43 @@ const recoverStaleExecutions = async (): Promise<number> => {
   return result;
 };
 
-const mutationJob = job<{ commandId: string }, { state: CommandState | null } | null>({
-  id: "mail:execute-command",
-  defaults: { leaseMs: MUTATION_JOB_LEASE_MS, keyTtlMs: 7 * 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    commandTasks.run(async () => ({
+const mutationJob = lazySync((sync) =>
+  sync.job<{ commandId: string }>({
+    id: "mail:execute-command",
+    delivery: { ackWaitMs: MUTATION_JOB_LEASE_MS, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+  }),
+);
+let mutationJobWorker: Worker | undefined;
+const startMutationJob = async (): Promise<void> => {
+  mutationJobWorker = await mutationJob().process({}, async (ctx) => {
+    const data = await (commandTasks.run(async () => ({
       state: await executeMutationCommandWithHeartbeat(ctx.input.commandId, async (fence) => {
         try {
-          await ctx.heartbeat({ leaseMs: MUTATION_JOB_LEASE_MS });
+          await ctx.heartbeat();
         } catch (cause) {
           throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
         }
         await heartbeatCommandFence(fence);
       }),
-    })) ?? Promise.resolve(null),
-  after: ({ ctx }) => {
-    if (ctx.data?.state === "ambiguous") ctx.reschedule({ delayMs: 2_000 });
-    else if (ctx.data?.state === "queued") ctx.reschedule({ delayMs: 30_000 });
-    else if (ctx.error && ctx.failureCount < 5) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-  },
-});
+    })) ?? Promise.resolve(null));
+    if (data?.state === "ambiguous") ctx.resubmit({ delayMs: 2_000 });
+    else if (data?.state === "queued") ctx.resubmit({ delayMs: 30_000 });
+  });
+};
 
-const outboxJob = job<{ outboxId: string }, { state: string | null; delayMs: number | null } | null>({
-  id: "mail:execute-outbox",
-  defaults: { leaseMs: OUTBOX_JOB_LEASE_MS, keyTtlMs: 7 * 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    commandTasks.run(async () => {
+const outboxJob = lazySync((sync) =>
+  sync.job<{ outboxId: string; continuationAttempt?: number }>({
+    id: "mail:execute-outbox",
+    delivery: { ackWaitMs: OUTBOX_JOB_LEASE_MS, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+  }),
+);
+let outboxJobWorker: Worker | undefined;
+const startOutboxJob = async (): Promise<void> => {
+  outboxJobWorker = await outboxJob().process({}, async (ctx) => {
+    const data = await (commandTasks.run(async () => {
       const state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
         try {
-          await ctx.heartbeat({ leaseMs: OUTBOX_JOB_LEASE_MS });
+          await ctx.heartbeat();
         } catch (cause) {
           throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
         }
@@ -2956,25 +2979,29 @@ const outboxJob = job<{ outboxId: string }, { state: string | null; delayMs: num
         state: state ?? pending?.state ?? null,
         delayMs: pending ? Math.max(1_000, Math.min(Number(pending.delay_ms), 60_000)) : null,
       };
-    }) ?? Promise.resolve(null),
-  after: ({ ctx }) => {
-    if (ctx.data?.delayMs != null) ctx.reschedule({ delayMs: ctx.data.delayMs });
-    else if (ctx.data?.state === "unknown") ctx.reschedule({ delayMs: 2_000 });
-    else if (ctx.data?.state === "sent_sync_pending") ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 10_000, maxMs: 10 * 60_000 }) });
-    else if (ctx.error && ctx.failureCount < 5) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-  },
-});
+    }) ?? Promise.resolve(null));
+    // Sync continuations are fresh deliveries; carry the logical attempt across them.
+    const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
+    const input = { ...ctx.input, continuationAttempt: attempt };
+    if (data?.delayMs != null) ctx.resubmit({ delayMs: data.delayMs, input });
+    else if (data?.state === "unknown") ctx.resubmit({ delayMs: 2_000, input });
+    else if (data?.state === "sent_sync_pending")
+      ctx.resubmit({ delayMs: expBackoff(attempt, { baseMs: 10_000, maxMs: 10 * 60_000 }), input });
+  });
+};
 
 const submitMutationJob = async (commandId: string): Promise<void> => {
-  await (commandTasks.run(() => mutationJob.submit({ key: `command:${commandId}`, input: { commandId } })) ?? Promise.resolve());
+  await (commandTasks.run(() => mutationJob().submit({ coalesce: true, key: `command:${commandId}`, input: { commandId } })) ??
+    Promise.resolve());
 };
 
 const submitOutboxJob = async (outboxId: string, at?: number): Promise<void> => {
   await (commandTasks.run(() =>
-    outboxJob.submit({
+    outboxJob().submit({
+      coalesce: true,
       key: `outbox:${outboxId}`,
       input: { outboxId },
-      ...(at === undefined ? {} : { at }),
+      ...(at === undefined ? {} : { at: new Date(Math.min(at, Date.now() + 6 * 24 * 60 * 60_000)) }),
     }),
   ) ?? Promise.resolve());
 };
@@ -3038,28 +3065,63 @@ const submitDueCommands = async (): Promise<{ commands: number; maintenance: num
   };
 };
 
-const commandScheduler = scheduler({ id: "mail-commands" });
+const commandScheduler = lazySync((sync) =>
+  sync.scheduler({ id: "mail-commands", delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
+);
+let commandSchedulerWorker: Worker | undefined;
+const unregisterCommandSyncOps: Array<() => void> = [];
 
 const stopCommandJobs = async (): Promise<void> => {
-  await stopRuntimeJobs(commandTasks, [mutationJob, outboxJob]);
+  await stopRuntimeJobs(
+    commandTasks,
+    [mutationJobWorker, outboxJobWorker].filter((worker): worker is Worker => worker !== undefined),
+  );
+  mutationJobWorker = undefined;
+  outboxJobWorker = undefined;
 };
 
 const commandRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     commandTasks.open();
-    startMaintenanceRuntime();
-    await commandScheduler.create({
+    await startMutationJob();
+    await startOutboxJob();
+    await startMaintenanceRuntime();
+    unregisterCommandSyncOps.push(
+      syncOps.registerDeadLetters({ name: "mail:execute-command", kind: "job", store: mutationJob().deadLetters }),
+    );
+    unregisterCommandSyncOps.push(
+      syncOps.registerDeadLetters({ name: "mail:execute-outbox", kind: "job", store: outboxJob().deadLetters }),
+    );
+    unregisterCommandSyncOps.push(syncOps.registerScheduler({ name: "mail-commands", scheduler: commandScheduler() }));
+    await commandScheduler().create({
       id: "mail:commands-due",
       cron: "* * * * *",
+      misfire: "latest",
       meta: { appId: "mail", family: "mail:commands", label: "Mail command dispatch" },
-      process: async () => submitDueCommands(),
+      process: async () => {
+        await submitDueCommands();
+      },
     });
-    commandScheduler.start();
+    commandSchedulerWorker = await commandScheduler().process();
     await submitDueCommands();
   },
   stop: async () => {
+    // Stop every command delivery before a scheduler drain can yield with the tracker closed.
+    mutationJobWorker?.stop();
+    outboxJobWorker?.stop();
+    commandSchedulerWorker?.stop();
     commandTasks.close();
-    await stopRuntimeResources([() => commandScheduler.stop(), stopMaintenanceRuntime, stopCommandJobs]);
+    await stopRuntimeResources([
+      () =>
+        commandSchedulerWorker?.drain().then(() => {
+          commandSchedulerWorker = undefined;
+        }),
+      stopMaintenanceRuntime,
+      stopCommandJobs,
+      () => {
+        for (const unregister of unregisterCommandSyncOps.splice(0)) unregister();
+      },
+    ]);
   },
 });
 

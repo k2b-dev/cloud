@@ -258,7 +258,7 @@ suite("reversible mailbox lifecycle", () => {
       VALUES (${grantTokenHash}, ${attachmentLink.id}::uuid, now() + interval '30 minutes')
     `;
 
-    const providerLock = await mailProviderOperationMutex.acquire(resource!.id, MAIL_PROVIDER_OPERATION_LEASE_MS);
+    const providerLock = await mailProviderOperationMutex().acquire({ resource: resource!.id, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
     expect(providerLock).not.toBeNull();
     if (!providerLock) return;
     const deletion = deleteMailbox(ownerContext, mailboxId);
@@ -270,7 +270,7 @@ suite("reversible mailbox lifecycle", () => {
       `;
       expect(beforeRelease?.deleted).toBe(false);
     } finally {
-      await mailProviderOperationMutex.release(providerLock);
+      await mailProviderOperationMutex().release(providerLock);
       deletionResult = await deletion;
     }
     expect(deletionResult.ok).toBe(true);

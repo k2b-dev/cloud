@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { job } from "@k2b/sync";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { syncOps, toPgTextArray } from "@valentinkolb/cloud/services";
 import { type SQL, type SQLQuery, sql } from "bun";
 import {
   EVIDENCE_EXPORT_SECTIONS,
@@ -1033,16 +1034,6 @@ const processExportLocked = async (exportId: string, heartbeat: () => Promise<vo
     `;
     if (completedRows.length === 0) throw new DOMException("Evidence export canceled", "AbortError");
   });
-  const [completed] = await sql<Array<{ expires_at: Date | string }>>`
-    SELECT expires_at FROM grids.evidence_exports WHERE id = ${exportId}::uuid AND status = 'completed'
-  `;
-  if (completed)
-    await cleanupJob.submit({
-      key: `expire:${exportId}`,
-      input: { exportId },
-      delayMs: RETENTION_MS,
-      keyTtlMs: RETENTION_MS + 24 * 60 * 60_000,
-    });
 };
 
 export const processExport = async (exportId: string, heartbeat: () => Promise<void> = async () => undefined): Promise<void> => {
@@ -1090,29 +1081,37 @@ const markFailed = async (exportId: string, error: Error): Promise<void> => {
   await sql`DELETE FROM grids.evidence_export_chunks WHERE export_id = ${exportId}::uuid`;
 };
 
-const exportJob = job<{ exportId: string; attempt: number }, void>({
-  id: "grids:evidence-export",
-  defaults: { leaseMs: JOB_LEASE_MS, keyTtlMs: 24 * 60 * 60_000 },
-  process: async ({ ctx }) => processExport(ctx.input.exportId, () => ctx.heartbeat({ leaseMs: JOB_LEASE_MS })),
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.error.name !== "AbortError" && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 1_000, maxMs: 30_000 }) });
-      return;
-    }
-    await markFailed(ctx.input.exportId, ctx.error);
-  },
-});
+const exportJob = lazySync((sync) =>
+  sync.job<{ exportId: string; attempt: number }>({
+    id: "grids:evidence-export",
+    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 3, backoffMs: [1_000, 2_000] },
+  }),
+);
+let exportWorker: Worker | undefined;
+let unregisterDeadLetters: (() => void) | undefined;
+export const startEvidenceExportJobs = async (): Promise<void> => {
+  unregisterDeadLetters ??= syncOps.registerDeadLetters({ name: "grids:evidence-export", kind: "job", store: exportJob().deadLetters });
+  exportWorker ??= await exportJob().process(
+    {
+      onError: async ({ context, error }) => {
+        if (context.attempt < 3) return { action: "retry" };
+        await markFailed(context.input.exportId, error);
+        return { action: "dead_letter", reason: error.message };
+      },
+    },
+    async (context) => {
+      try {
+        await processExport(context.input.exportId, () => context.heartbeat());
+      } catch (error) {
+        if (!(error instanceof Error) || error.name !== "AbortError") throw error;
+        await markFailed(context.input.exportId, error);
+      }
+    },
+  );
+};
 
-const cleanupJob = job<{ exportId: string }, void>({
-  id: "grids:evidence-export-cleanup",
-  process: async ({ ctx }) => {
-    await expireOne(ctx.input.exportId);
-  },
-});
-
-const submitExport = (exportId: string, attempt: number): Promise<string> =>
-  exportJob.submit({ key: `export:${exportId}:${attempt}`, input: { exportId, attempt } });
+const submitExport = (exportId: string, attempt: number) =>
+  exportJob().submit({ key: `export:${exportId}:${attempt}`, input: { exportId, attempt }, coalesce: true });
 
 const queueExport = async (exportId: string, attempt: number): Promise<void> => {
   try {
@@ -1209,9 +1208,11 @@ export const download = async (
   return ok({ filename: row.package_filename, sizeBytes: Number(row.package_size_bytes), sha256: row.package_sha256, body });
 };
 
-export const stopEvidenceExportJobs = (): void => {
-  exportJob.stop();
-  cleanupJob.stop();
+export const stopEvidenceExportJobs = async (): Promise<void> => {
+  await exportWorker?.drain({ timeoutMs: JOB_LEASE_MS });
+  exportWorker = undefined;
+  unregisterDeadLetters?.();
+  unregisterDeadLetters = undefined;
 };
 
 export const evidenceExportLimits = {

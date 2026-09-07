@@ -1,8 +1,8 @@
-import { scheduler } from "@k2b/sync";
 import { i18n } from "@k2b/stdlib";
-import { type BoundNotificationMap, notification } from "@valentinkolb/cloud";
+import type { Worker } from "@k2b/sync";
+import { type BoundNotificationMap, lazySync, notification } from "@valentinkolb/cloud";
 import { AI_SHORT_ID_PATTERN } from "@valentinkolb/cloud/ai";
-import { coreSettings, logger, notifications, trace } from "@valentinkolb/cloud/services";
+import { coreSettings, logger, notifications, syncOps, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 
@@ -98,8 +98,12 @@ type AiNotificationRecoverySummary = {
 };
 
 export const createAiNotificationService = (definitions: AiNotificationDefinitions) => {
-  const recoveryScheduler = scheduler({ id: "core-ai-notifications" });
-  let started = false;
+  const recoveryScheduler = lazySync((sync) => {
+    const handle = sync.scheduler({ id: "core-ai-notifications", delivery: { maxAttempts: 4, backoffMs: [5_000, 10_000, 20_000] } });
+    syncOps.registerScheduler({ name: "core-ai-notifications", scheduler: handle });
+    return handle;
+  });
+  let worker: Worker | undefined;
 
   const recoverCompletions = async (input: { turnId?: string; limit?: number } = {}): Promise<AiNotificationRecoverySummary> => {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? RECOVERY_BATCH_SIZE), 1), 1_000);
@@ -150,9 +154,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
 
-  const recoverTaskAttention = async (
-    input: { occurrenceId?: string; limit?: number } = {},
-  ): Promise<AiNotificationRecoverySummary> => {
+  const recoverTaskAttention = async (input: { occurrenceId?: string; limit?: number } = {}): Promise<AiNotificationRecoverySummary> => {
     const limit = Math.min(Math.max(Math.floor(input.limit ?? RECOVERY_BATCH_SIZE), 1), 1_000);
     const candidates = await sql<TaskAttentionCandidate[]>`
       SELECT occurrence.id AS occurrence_id,
@@ -226,15 +228,14 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       recoverTaskAttention({ occurrenceId, limit: 1 }),
 
     start: async (): Promise<void> => {
-      if (started) return;
-      recoveryScheduler.start();
-      started = true;
+      if (worker) return;
       try {
         const timezone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
-        await recoveryScheduler.create({
+        await recoveryScheduler().create({
           id: RECOVERY_SCHEDULE_ID,
           cron: "* * * * *",
-          tz: timezone,
+          timezone,
+          misfire: "latest",
           meta: {
             appId: "core",
             family: "ai:chat",
@@ -245,34 +246,33 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
             resourceLabel: "Assistant chats",
             detailHref: "/me/notifications",
           },
-          trace: trace.fromSyncSchedule<AiNotificationRecoverySummary>({
-            name: "Assistant completion notification recovery",
-            source: RECOVERY_SCHEDULE_ID,
-            appId: "core",
-            summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-          }),
-          process: () => recover(),
-          after: ({ ctx }) => {
-            if (!ctx.error || ctx.failureCount >= 3) return;
-            ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
+          process: async () => {
+            await trace.withSpan(
+              {
+                name: "Assistant completion notification recovery",
+                source: RECOVERY_SCHEDULE_ID,
+                appId: "core",
+                category: "schedule",
+                kind: "consumer",
+              },
+              recover,
+              { summarize: (summary) => summary },
+            );
           },
         });
-        await recoveryScheduler.runNow({ id: RECOVERY_SCHEDULE_ID }).catch((error) => {
-          log.warn("Initial Assistant notification recovery failed", {
-            error: error instanceof Error ? error.message : "Notification recovery failed",
-          });
-        });
+        worker = await recoveryScheduler().process();
       } catch (error) {
-        await recoveryScheduler.stop().catch(() => undefined);
-        started = false;
+        worker?.stop();
+        await worker?.drain();
+        worker = undefined;
         throw error;
       }
     },
 
     stop: async (): Promise<void> => {
-      if (!started) return;
-      await recoveryScheduler.stop();
-      started = false;
+      worker?.stop();
+      await worker?.drain();
+      worker = undefined;
     },
   } as const;
 };

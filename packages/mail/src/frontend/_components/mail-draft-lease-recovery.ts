@@ -1,4 +1,4 @@
-import { retry } from "@k2b/sync/browser";
+import { retry } from "@k2b/sync/retry";
 import type { AcquiredDraftLease } from "../../contracts";
 
 export type DraftLeaseHeartbeatResult = { kind: "ok"; lease: AcquiredDraftLease } | { kind: "rejected" } | { kind: "unavailable" };

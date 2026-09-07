@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
+import { startGridsTestSync } from "../sync-test-utils";
 import type { GridsWorkflowRun, GridsWorkflowStepRun } from "../workflows/contracts";
 import {
   createWorkflowRunEventNotifier,
@@ -8,7 +9,7 @@ import {
   notifyWorkflowRunEvent,
 } from "./workflow-run-events";
 
-const redisTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const natsTest = process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip;
 
 describe("workflow run events", () => {
   test("uses explicit transition ids to distinguish repeated run states", async () => {
@@ -67,7 +68,8 @@ describe("workflow run events", () => {
     await expect(notify(run)).resolves.toBeUndefined();
   });
 
-  redisTest("publishes run state and terminal step summaries across replicas", async () => {
+  natsTest("publishes run state and terminal step summaries across replicas", async () => {
+    const stop = await startGridsTestSync();
     const baseId = Bun.randomUUIDv7();
     const workflowId = Bun.randomUUIDv7();
     const run: GridsWorkflowRun = {
@@ -102,11 +104,10 @@ describe("workflow run events", () => {
       startedAt: "2026-07-11T00:00:00.100Z",
       finishedAt: "2026-07-11T00:00:00.200Z",
     };
-    const streamKey = `cloud:grids:workflow-runs:${baseId}:${workflowId}:runs:stream`;
-    const idempotencyKey = `cloud:grids:workflow-runs:${baseId}:${workflowId}:runs:idempotency:${run.id}:${run.status}:${run.finishedAt}`;
     const abort = new AbortController();
     try {
-      const after = (await latestWorkflowRunEventCursor(baseId, workflowId)) ?? "0-0";
+      await notifyWorkflowRunEvent({ ...run, status: "running", finishedAt: null });
+      const after = await latestWorkflowRunEventCursor(baseId, workflowId);
       const iterator = liveWorkflowRunEvents({ baseId, workflowId, after, signal: abort.signal })[Symbol.asyncIterator]();
       const delivery = iterator.next();
       await notifyWorkflowRunEvent(run, [step]);
@@ -132,7 +133,7 @@ describe("workflow run events", () => {
       ]);
     } finally {
       abort.abort();
-      await Bun.redis.send("DEL", [streamKey, idempotencyKey]);
+      await stop();
     }
   });
 });

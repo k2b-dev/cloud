@@ -48,37 +48,39 @@ describe("sync ops aggregation", () => {
   test("merges dead letters, resources, and schedules across apps and tags rows with the app", async () => {
     const { calls, fetch } = fakeFetch((call) => {
       const url = new URL(call.url);
-      if (url.pathname === "/_internal/sync/resources") {
+      const targetAppId = url.pathname.split("/")[4];
+      const targetHost = `app-${targetAppId}`;
+      if (url.pathname.endsWith("/resources")) {
         return json({
           health,
           resources: [
             {
               namespace: "dev",
               kind: "queue",
-              id: `${url.hostname}-queue`,
-              owner: url.hostname,
+              id: `${targetHost}-queue`,
+              owner: targetHost,
               state: "ready",
               natsNames: [],
               detail: { deadLetters: 1, messages: 3 },
             },
-            { namespace: "dev", kind: "topic", id: "events", owner: url.hostname, state: "ready", natsNames: [] },
+            { namespace: "dev", kind: "topic", id: "events", owner: targetHost, state: "ready", natsNames: [] },
           ],
         });
       }
-      if (url.pathname === "/_internal/sync/dead-letters") {
+      if (url.pathname.endsWith("/dead-letters")) {
         return json({
           stores: [
             {
-              name: `${url.hostname}-queue`,
+              name: `${targetHost}-queue`,
               kind: "queue",
               description: null,
-              truncated: url.hostname === "app-mail",
+              truncated: targetHost === "app-mail",
               entries: [
                 {
-                  messageId: `${url.hostname}-m1`,
+                  messageId: `${targetHost}-m1`,
                   tenantId: "default",
                   attempts: 5,
-                  failedAt: url.hostname === "app-mail" ? "2026-09-07T10:00:00.000Z" : "2026-09-07T11:00:00.000Z",
+                  failedAt: targetHost === "app-mail" ? "2026-09-07T10:00:00.000Z" : "2026-09-07T11:00:00.000Z",
                   reason: "max attempts exhausted",
                   error: null,
                   dataPreview: "{}",
@@ -88,16 +90,16 @@ describe("sync ops aggregation", () => {
           ],
         });
       }
-      if (url.pathname === "/_internal/sync/schedules") {
+      if (url.pathname.endsWith("/schedules")) {
         return json({
           schedules: [
             {
-              schedulerId: url.hostname,
-              id: `${url.hostname}:tick`,
+              schedulerId: targetHost,
+              id: `${targetHost}:tick`,
               cron: "* * * * *",
               timezone: "UTC",
               misfire: "latest",
-              nextRunAt: url.hostname === "app-mail" ? "2026-09-07T10:01:00.000Z" : "2026-09-07T10:00:30.000Z",
+              nextRunAt: targetHost === "app-mail" ? "2026-09-07T10:01:00.000Z" : "2026-09-07T10:00:30.000Z",
               runNumber: 1,
               failureCount: 0,
               lastError: null,
@@ -113,7 +115,11 @@ describe("sync ops aggregation", () => {
       }
       return json({ message: "not found" }, 404);
     });
-    const service = createSyncOpsService({ fetch, listApps: async () => [app("mail", "Mail"), app("grids", "Grids")] });
+    const service = createSyncOpsService({
+      coreOrigin: async () => "http://core:3000",
+      fetch,
+      listApps: async () => [app("mail", "Mail"), app("grids", "Grids")],
+    });
 
     const overview = await service.overview(credentials);
 
@@ -138,7 +144,7 @@ describe("sync ops aggregation", () => {
     ]);
 
     expect(calls).toHaveLength(6);
-    expect(new Set(calls.map((call) => new URL(call.url).origin))).toEqual(new Set(["http://app-mail:3000", "http://app-grids:3000"]));
+    expect(new Set(calls.map((call) => new URL(call.url).origin))).toEqual(new Set(["http://core:3000"]));
     for (const call of calls) {
       expect(call.headers.get("cookie")).toBe("session_token=abc");
       expect(call.headers.get("authorization")).toBeNull();
@@ -149,13 +155,19 @@ describe("sync ops aggregation", () => {
   test("keeps the other apps when one app is unreachable or has no sync surface", async () => {
     const { fetch } = fakeFetch((call) => {
       const url = new URL(call.url);
-      if (url.hostname === "app-down") throw new Error("connect ECONNREFUSED");
-      if (url.hostname === "app-old") return json({ message: "Not Found" }, 404);
+      const targetAppId = url.pathname.split("/")[4];
+      const targetHost = `app-${targetAppId}`;
+      if (targetHost === "app-down") throw new Error("connect ECONNREFUSED");
+      if (targetHost === "app-old") return json({ message: "Not Found" }, 404);
       if (url.pathname.endsWith("/resources")) return json({ health, resources: [] });
       if (url.pathname.endsWith("/dead-letters")) return json({ stores: [] });
       return json({ schedules: [] });
     });
-    const service = createSyncOpsService({ fetch, listApps: async () => [app("ok"), app("down"), app("old")] });
+    const service = createSyncOpsService({
+      coreOrigin: async () => "http://core:3000",
+      fetch,
+      listApps: async () => [app("ok"), app("down"), app("old")],
+    });
 
     const overview = await service.overview(credentials);
 
@@ -178,7 +190,7 @@ describe("sync ops aggregation", () => {
       if (url.pathname.includes("/runs/")) return json({ completed: false, error: null });
       return json({ message: "boom" }, 500);
     });
-    const service = createSyncOpsService({ fetch, listApps: async () => [app("mail")] });
+    const service = createSyncOpsService({ coreOrigin: async () => "http://core:3000", fetch, listApps: async () => [app("mail")] });
 
     const requeued = await service.requeueDeadLetter({ appId: "mail", store: "mail/deliveries", messageId: "m 1" }, credentials);
     expect(requeued).toEqual({
@@ -186,7 +198,7 @@ describe("sync ops aggregation", () => {
       data: { receipt: { messageId: "m2", streamSequence: 7, duplicate: false }, idempotencyKey: "sync-ops:requeue:x" },
     });
     expect(calls[0]).toMatchObject({
-      url: "http://app-mail:3000/_internal/sync/dead-letters/mail%2Fdeliveries/requeue",
+      url: "http://core:3000/api/admin/sync/mail/dead-letters/mail%2Fdeliveries/requeue",
       method: "POST",
       body: JSON.stringify({ messageId: "m 1" }),
     });
@@ -202,7 +214,7 @@ describe("sync ops aggregation", () => {
     );
     expect(run).toEqual({ ok: true, data: { runId: "run-1", requestId: "given" } });
     expect(calls[2]).toMatchObject({
-      url: "http://app-mail:3000/_internal/sync/schedules/mail/mail%3Async-due/run-now",
+      url: "http://core:3000/api/admin/sync/mail/schedules/mail/mail%3Async-due/run-now",
       body: JSON.stringify({ requestId: "given" }),
     });
 
@@ -211,12 +223,55 @@ describe("sync ops aggregation", () => {
       credentials,
     );
     expect(pending).toEqual({ ok: true, data: { completed: false, error: null } });
-    expect(calls[3]?.url).toBe("http://app-mail:3000/_internal/sync/schedules/mail/mail%3Async-due/runs/run-1?timeoutMs=100");
+    expect(calls[3]?.url).toBe("http://core:3000/api/admin/sync/mail/schedules/mail/mail%3Async-due/runs/run-1?timeoutMs=100");
 
     const unknownApp = await service.runScheduleNow({ appId: "nope", schedulerId: "x", scheduleId: "y" }, credentials);
     expect(unknownApp.ok).toBe(false);
     if (!unknownApp.ok) expect(unknownApp.error.status).toBe(404);
     expect(calls).toHaveLength(4);
+  });
+
+  test("keeps healthy apps when another broker response is malformed", async () => {
+    for (const invalid of ["not-json", "null", "{}", '{"resources":[null],"stores":[],"schedules":[{}]}']) {
+      const { fetch } = fakeFetch((call) => {
+        if (new URL(call.url).pathname.includes("/bad/")) return new Response(invalid);
+        if (call.url.endsWith("/resources")) return json({ health, resources: [] });
+        if (call.url.endsWith("/dead-letters")) return json({ stores: [] });
+        return json({ schedules: [] });
+      });
+      const service = createSyncOpsService({
+        coreOrigin: async () => "http://core:3000",
+        fetch,
+        listApps: async () => [app("ok"), app("bad")],
+      });
+      const overview = await service.overview(credentials);
+      expect(overview.apps.map((row) => [row.appId, row.status])).toEqual([
+        ["ok", "ok"],
+        ["bad", "unavailable"],
+      ]);
+    }
+  });
+
+  test("cancels chunked responses at the byte budget without trusting Content-Length", async () => {
+    let cancelled = 0;
+    const { fetch } = fakeFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(new Uint8Array(1024 * 1024));
+            },
+            cancel() {
+              cancelled++;
+            },
+          }),
+          { headers: { "content-length": "1" } },
+        ),
+    );
+    const service = createSyncOpsService({ coreOrigin: async () => "http://core:3000", fetch, listApps: async () => [app("bad")] });
+    const overview = await service.overview(credentials);
+    expect(overview.apps[0]).toMatchObject({ status: "unavailable", error: "Response too large" });
+    expect(cancelled).toBe(3);
   });
 
   test("lists work resources always and other kinds only when they need attention", () => {

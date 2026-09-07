@@ -1,5 +1,5 @@
+import { lazySync } from "@valentinkolb/cloud";
 import type { NotebookPresenceParticipant } from "@valentinkolb/cloud/contracts";
-import { ephemeral } from "@k2b/sync";
 import { getNotebookPresenceColor } from "../lib/yjs";
 import { NODE_ID } from "./yjs-sync";
 
@@ -20,11 +20,14 @@ type PresenceEntry = {
   joinedAt: number;
 };
 
-const presenceStore = ephemeral<PresenceEntry>({
-  id: "notebooks.presence",
-  ttlMs: PRESENCE_TTL_MS,
-  limits: { maxEntries: 250, maxPayloadBytes: 4_000 },
-});
+const presenceStore = lazySync((sync) =>
+  sync.ephemeral<PresenceEntry>({
+    id: "notebooks.presence",
+    ttlMs: PRESENCE_TTL_MS,
+    maxEntries: 250,
+    maxValueBytes: 4_000,
+  }),
+);
 
 export type NotebookPresenceSnapshot = {
   participants: NotebookPresenceParticipant[];
@@ -83,17 +86,18 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
 };
 
 export const snapshot = async (config: { noteId: string }): Promise<NotebookPresenceSnapshot> => {
-  const state = await presenceStore.snapshot({ tenantId: config.noteId });
+  const state = await presenceStore().snapshot({ tenantId: config.noteId });
   return {
     participants: toParticipants(state.entries),
-    cursor: state.cursor,
+    cursor: state.revision,
   };
 };
 
-export const reader = (config: { noteId: string; after?: string }) =>
-  presenceStore.reader({
+export const watch = (config: { noteId: string; after?: string; signal?: AbortSignal }) =>
+  presenceStore().watch({
     tenantId: config.noteId,
     after: config.after,
+    signal: config.signal,
   });
 
 export const join = async (config: {
@@ -103,7 +107,7 @@ export const join = async (config: {
   displayName: string;
   avatarHash: string | null;
 }): Promise<void> => {
-  await presenceStore.upsert({
+  await presenceStore().upsert({
     tenantId: config.noteId,
     key: config.peerId,
     value: {
@@ -119,17 +123,16 @@ export const join = async (config: {
 };
 
 export const heartbeat = async (config: { noteId: string; peerId: string }): Promise<{ ok: boolean }> => {
-  const result = await presenceStore.touch({
+  const result = await presenceStore().touch({
     tenantId: config.noteId,
     key: config.peerId,
   });
 
-  return { ok: result.ok };
+  return { ok: result };
 };
 
 export const leave = async (config: { noteId: string; peerId: string; reason?: string }): Promise<boolean> =>
-  presenceStore.remove({
+  presenceStore().delete({
     tenantId: config.noteId,
     key: config.peerId,
-    reason: config.reason,
   });

@@ -1,4 +1,5 @@
-import { topic } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor } from "@valentinkolb/cloud/services";
 import { createPgOutbox } from "@valentinkolb/cloud/services/outbox";
 import type { sql } from "bun";
 import type { MailInvalidation } from "../live-events";
@@ -40,12 +41,13 @@ type OutboxRow = {
   created_at: Date | string;
 };
 
-const invalidationTopic = topic<MailInvalidation>({
-  id: "invalidations",
-  prefix: "cloud:mail:events",
-  retentionMs: RETENTION_MS,
-  limits: { payloadBytes: 8_000 },
-});
+const invalidationTopic = lazySync((sync) =>
+  sync.topic<MailInvalidation>({
+    id: "mail:invalidations",
+    retention: { maxAgeMs: RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: 8_000,
+  }),
+);
 
 export const enqueueMailInvalidation = async (
   db: SqlClient,
@@ -69,7 +71,7 @@ const publishMailInvalidation = (row: OutboxRow): Promise<unknown> => {
     changeId: row.id,
     at: new Date(row.created_at).toISOString(),
   };
-  return invalidationTopic.pub({
+  return invalidationTopic().publish({
     tenantId: row.mailbox_id,
     orderingKey: row.conversation_id ?? row.mailbox_id,
     idempotencyKey: event.changeId,
@@ -99,11 +101,12 @@ export const publishMailCollaborationEvent = async (_event: LegacyConversationIn
 export const publishMailMailboxEvent = async (_event: LegacyMailboxInvalidation): Promise<void> => notifyMailInvalidations();
 
 export const liveMailInvalidations = (params: { mailboxId: string; after?: string | null; signal?: AbortSignal }) =>
-  invalidationTopic.live({
-    tenantId: params.mailboxId,
-    after: params.after ?? undefined,
-    signal: params.signal,
-  });
+  invalidationTopic()
+    .hub({ tenantId: params.mailboxId })
+    .subscribe({
+      after: params.after ?? undefined,
+      signal: params.signal,
+    });
 
-export const latestMailInvalidationCursor = (mailboxId: string): Promise<string | null> =>
-  invalidationTopic.latestCursor({ tenantId: mailboxId });
+export const latestMailInvalidationCursor = (mailboxId: string): Promise<string> =>
+  latestTopicCursor({ topic: invalidationTopic(), resourceId: "mail:invalidations", tenantId: mailboxId });

@@ -1,3 +1,4 @@
+import { syncOps } from "@valentinkolb/cloud/services";
 /**
  * What Grids still owns now that the kernel owns runs.
  *
@@ -9,7 +10,8 @@
  */
 
 import { err, fail, type Result } from "@k2b/stdlib";
-import { scheduler } from "@k2b/sync";
+import { CursorMismatchError, RetentionGapError, type Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeResources, trace } from "@valentinkolb/cloud/services";
 import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
 import { normalizeLocale } from "@valentinkolb/cloud/shared";
@@ -47,6 +49,7 @@ import type {
 } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { gridsWorkflows } from "../workflows/module";
+import { expireCompletedExports } from "./evidence-exports";
 import { canExecuteWorkflow, resolveWorkflowExecutionRecordAccess, resolveWorkflowRunRecordAccess } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
@@ -72,8 +75,11 @@ import {
 } from "./workflow-values";
 
 const log = logger("grids:workflows");
-const workflowScheduler = scheduler({ id: "grids:workflows" });
-const WORKFLOW_SCHEDULE_MAX_RETRIES = 3;
+const workflowScheduler = lazySync((sync) =>
+  sync.scheduler({ id: "grids:workflows", delivery: { maxAttempts: 4, backoffMs: [5_000, 20_000, 60_000] } }),
+);
+let scheduleWorker: Worker | undefined;
+let unregisterScheduler: (() => void) | undefined;
 const RECONCILE_INTERVAL_MS = 60_000;
 /** Short, because a button press waits for it. Dispatch is cheap when there is nothing to do. */
 const WORKER_INTERVAL_MS = 1_000;
@@ -88,9 +94,9 @@ const workflowScheduleIdPrefix = (workflowId: string): string => `${SCHEDULE_PRE
 const deleteWorkflowSchedules = async (workflowId: string): Promise<void> => {
   const prefix = workflowScheduleIdPrefix(workflowId);
   await Promise.all(
-    (await workflowScheduler.list())
+    (await workflowScheduler().list())
       .filter((schedule) => schedule.id === `${SCHEDULE_PREFIX}${workflowId}` || schedule.id.startsWith(prefix))
-      .map((schedule) => workflowScheduler.delete({ id: schedule.id })),
+      .map((schedule) => workflowScheduler().delete({ id: schedule.id })),
   );
 };
 
@@ -103,8 +109,6 @@ export const workflowScheduleMetadata = (workflow: Pick<GridsWorkflow, "id" | "n
   workflowId: workflow.id,
   revision: workflow.revision,
 });
-
-type WorkflowScheduleResult = { runId: string; status: string };
 
 export type InvokeGridsWorkflowInput = {
   workflowId: string;
@@ -417,13 +421,13 @@ export const workflowScheduleConfig = (workflow: Pick<GridsWorkflow, "plan">): W
   };
 };
 
-type RegisteredWorkflowSchedule = Awaited<ReturnType<typeof workflowScheduler.get>>;
+type RegisteredWorkflowSchedule = Awaited<ReturnType<ReturnType<typeof workflowScheduler>["get"]>>;
 type WorkflowScheduleRuntimeState = NonNullable<WorkflowTriggerRuntimeState["schedule"]>;
 
 const scheduleRegistrationMatches = (registered: RegisteredWorkflowSchedule, schedule: WorkflowScheduleConfig, revision: number): boolean =>
   registered !== null &&
   registered.cron === schedule.cron &&
-  registered.tz === schedule.timezone &&
+  registered.timezone === schedule.timezone &&
   Number(registered.meta?.revision) === revision;
 
 const scheduleRuntimeState = (
@@ -453,7 +457,7 @@ const scheduleRuntimeState = (
   return {
     ...schedule,
     state: "reconciled",
-    nextRunAt: Number.isFinite(registered.nextRunAt) ? new Date(registered.nextRunAt).toISOString() : null,
+    nextRunAt: registered.nextRunAt?.toISOString() ?? null,
     problem: null,
   };
 };
@@ -475,7 +479,7 @@ export const getWorkflowTriggerRuntimeState = async (
   workflow: Pick<GridsWorkflow, "id" | "revision" | "enabled" | "plan">,
 ): Promise<WorkflowTriggerRuntimeState> => {
   const schedule = workflowScheduleConfig(workflow);
-  const registered = schedule ? await workflowScheduler.get({ id: workflowScheduleId(workflow) }) : null;
+  const registered = schedule ? await workflowScheduler().get({ id: workflowScheduleId(workflow) }) : null;
 
   return {
     schedule: schedule ? scheduleRuntimeState(workflow, schedule, registered) : null,
@@ -502,60 +506,62 @@ const registerSchedule = async (workflowId: string): Promise<void> => {
   const trigger = workflow.plan.triggers.find((item) => item.kind === "schedule");
   if (!trigger) return;
   const scheduleId = workflowScheduleId(workflow);
-  await workflowScheduler.create({
+  await workflowScheduler().create({
     id: scheduleId,
     cron: schedule.cron,
-    tz: schedule.timezone,
+    timezone: schedule.timezone,
     meta: workflowScheduleMetadata(workflow),
-    trace: trace.fromSyncSchedule<WorkflowScheduleResult>({
-      name: `Grid workflow schedule: ${workflow.name}`,
-      source: scheduleId,
-      appId: "grids",
-      attributes: { "cloud.grids.workflow_id": workflow.id },
-    }),
-    process: async ({ ctx }) => {
-      const current = await getWorkflow(workflow.id);
-      if (!current?.enabled) return { runId: "", status: "disabled" };
-      const currentTrigger = current.plan.triggers.find((item) => item.kind === "schedule");
-      if (!currentTrigger) return { runId: "", status: "removed" };
-      if (!workflowScheduleMatches(current, schedule)) {
-        // Registration is intentionally left to the external reconcile loop. Mutating this schedule inside its callback races its own persistence.
-        return { runId: "", status: "stale" };
-      }
-      const principal: GridsWorkflowPrincipal = {
-        userId: current.ownerUserId,
-        groupIds: await loadWorkflowUserGroupIds(current.ownerUserId),
-        serviceAccountId: null,
-      };
-      const slot = new Date(ctx.slotTs).toISOString();
-      const locale = normalizeLocale(await settingsGet<string>("app.locale"));
-      const result = await invokeGridsWorkflow({
-        workflowId: current.id,
-        mode: "execute",
-        channel: "schedule",
-        inputs: evaluateWorkflowTriggerInputs({ occurredAt: slot, slot }, currentTrigger.with, slot),
-        idempotencyKey: `schedule:${current.id}:${ctx.slotTs}`,
-        expectedRevision: current.revision,
-        principal,
-        occurredAt: slot,
-        context: { locale },
-      });
-      if (!result.ok) {
-        if (workflowScheduleShouldRetry(result.error.status)) throw new Error(result.error.message);
-        log.warn("Scheduled workflow invocation was rejected", {
-          workflowId: current.id,
-          slot,
-          status: result.error.status,
-          error: result.error.message,
-        });
-        return { runId: "", status: "rejected" };
-      }
-      return { runId: result.data.runId, status: result.data.status };
-    },
-    after: async ({ ctx }) => {
-      if (ctx.error && ctx.failureCount < WORKFLOW_SCHEDULE_MAX_RETRIES) {
-        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-      }
+    process: async (ctx) => {
+      await trace.withSpan(
+        {
+          spanKey: trace.syncSpanKey("scheduler", "grids:workflows", ctx.runId),
+          name: `Grid workflow schedule: ${workflow.name}`,
+          source: scheduleId,
+          appId: "grids",
+          category: "schedule",
+          attributes: { "cloud.grids.workflow_id": workflow.id },
+        },
+        async () => {
+          const current = await getWorkflow(workflow.id);
+          if (!current?.enabled) return { runId: "", status: "disabled" };
+          const currentTrigger = current.plan.triggers.find((item) => item.kind === "schedule");
+          if (!currentTrigger) return { runId: "", status: "removed" };
+          if (!workflowScheduleMatches(current, schedule)) {
+            // Registration is intentionally left to the external reconcile loop. Mutating this schedule inside its callback races its own persistence.
+            return { runId: "", status: "stale" };
+          }
+          const principal: GridsWorkflowPrincipal = {
+            userId: current.ownerUserId,
+            groupIds: await loadWorkflowUserGroupIds(current.ownerUserId),
+            serviceAccountId: null,
+          };
+          const slot = new Date(ctx.slot.getTime()).toISOString();
+          const locale = normalizeLocale(await settingsGet<string>("app.locale"));
+          const result = await invokeGridsWorkflow({
+            workflowId: current.id,
+            mode: "execute",
+            channel: "schedule",
+            inputs: evaluateWorkflowTriggerInputs({ occurredAt: slot, slot }, currentTrigger.with, slot),
+            idempotencyKey: `schedule:${current.id}:${ctx.slot.getTime()}`,
+            expectedRevision: current.revision,
+            principal,
+            occurredAt: slot,
+            context: { locale },
+          });
+          if (!result.ok) {
+            if (workflowScheduleShouldRetry(result.error.status)) throw new Error(result.error.message);
+            log.warn("Scheduled workflow invocation was rejected", {
+              workflowId: current.id,
+              slot,
+              status: result.error.status,
+              error: result.error.message,
+            });
+            return { runId: "", status: "rejected" };
+          }
+          return { runId: result.data.runId, status: result.data.status };
+        },
+        { summarize: (result) => result },
+      );
     },
   });
 };
@@ -582,11 +588,11 @@ export const reconcileWorkflowRuntime = async (): Promise<void> => {
   // Snapshot the registrations BEFORE deriving the active set. A workflow another
   // pod enables in between then lands in `activeIds` (kept) rather than only in
   // `registered` (deleted). The reverse order drops a just-registered schedule.
-  const registered = await workflowScheduler.list();
+  const registered = await workflowScheduler().list();
   const activeIds = new Set((await listScheduledWorkflows()).map(workflowScheduleId));
   for (const item of registered) {
     if (!item.id.startsWith(SCHEDULE_PREFIX) || activeIds.has(item.id)) continue;
-    await workflowScheduler.delete({ id: item.id });
+    await workflowScheduler().delete({ id: item.id });
   }
   await workflowRecordEvents.reconcile();
 };
@@ -613,9 +619,13 @@ const startRuntimeEventReader = (after: string | null): void => {
   runtimeEventController = new AbortController();
   const signal = runtimeEventController.signal;
   runtimeEventTask = workflowRuntimeTasks.run(async () => {
-    let cursor = after ?? "0-0";
+    let cursor = after ?? undefined;
     while (!signal.aborted) {
       try {
+        if (!cursor) {
+          cursor = await latestWorkflowRuntimeEventCursor();
+          await reconcileWorkflowRuntime();
+        }
         for await (const event of liveWorkflowRuntimeEvents({ after: cursor, signal })) {
           cursor = await applyWorkflowRuntimeEvent(event, async (data) => {
             await Promise.all([registerSchedule(data.workflowId), workflowRecordEvents.reconcile()]);
@@ -624,6 +634,10 @@ const startRuntimeEventReader = (after: string | null): void => {
       } catch (error) {
         if (signal.aborted) return;
         log.warn("Workflow runtime event reader failed", { error: errorMessage(error) });
+        if (error instanceof RetentionGapError || error instanceof CursorMismatchError) {
+          // Capture a new baseline before rebuilding registrations from Postgres.
+          cursor = undefined;
+        }
         await Bun.sleep(1_000);
       }
     }
@@ -639,7 +653,14 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
       return null;
     });
     await reconcileWorkflowRuntime();
-    workflowScheduler.start();
+    await workflowScheduler().create({
+      id: "grids:evidence-export-cleanup",
+      cron: "17 * * * *",
+      timezone: "UTC",
+      process: async () => expireCompletedExports(),
+    });
+    unregisterScheduler ??= syncOps.registerScheduler({ name: "grids:workflows", scheduler: workflowScheduler() });
+    scheduleWorker = await workflowScheduler().process();
     startRuntimeEventReader(eventCursor);
     workerTimer = setInterval(() => {
       // A tick that outlives the interval must not start a second one: two
@@ -670,7 +691,12 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
         await workflowRuntimeTasks.drain();
       },
       () => workflowRecordEvents.stop(),
-      () => workflowScheduler.stop(),
+      async () => {
+        await scheduleWorker?.drain({ timeoutMs: 30_000 });
+        scheduleWorker = undefined;
+        unregisterScheduler?.();
+        unregisterScheduler = undefined;
+      },
     ]);
     draining = false;
     runtimeEventController = null;

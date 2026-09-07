@@ -1,14 +1,7 @@
-import { TRACE_STUCK_AFTER_MS, type TraceCategory, type TraceSourceGroup } from "@valentinkolb/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import {
-  type SchedulerControl,
-  type SchedulerControlInfo,
-  SchedulerControlNotFoundError,
-  type SchedulerControlState,
-  SchedulerControlTimeoutError,
-  SchedulerControlUnavailableError,
-  schedulerControl,
-} from "@k2b/sync";
+import { TRACE_STUCK_AFTER_MS, type TraceCategory, type TraceSourceGroup } from "@valentinkolb/cloud/services";
+import { syncOpsService } from "../sync/runtime";
+import type { SyncOpsCredentials, SyncScheduleRow } from "../sync/service";
 
 export type ScheduleMetadata = {
   appId: string | null;
@@ -32,7 +25,7 @@ export type ScheduleOverviewRow = ScheduleMetadata & {
   nextRunAt: number;
   runNumber: number;
   failureCount: number;
-  state: SchedulerControlState;
+  state: "available" | "unavailable";
   lastError: string | null;
   trace: TraceSourceGroup | null;
 };
@@ -85,8 +78,6 @@ export type RunScheduleNowAccepted = {
   acceptedAt: string;
 };
 
-type SchedulerControlLike = Pick<SchedulerControl, "list" | "runNow">;
-
 const clean = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -100,15 +91,13 @@ const cleanDetailHref = (value: unknown): string | null => {
   return href;
 };
 
-export const normalizeScheduleMetadata = (
-  schedule: Pick<SchedulerControlInfo, "scheduleId" | "schedulerId" | "meta">,
-): ScheduleMetadata => {
+export const normalizeScheduleMetadata = (schedule: Pick<SyncScheduleRow, "id" | "schedulerId" | "meta" | "appId">): ScheduleMetadata => {
   const meta = schedule.meta && typeof schedule.meta === "object" ? schedule.meta : {};
-  const source = clean(meta.source) ?? schedule.scheduleId;
+  const source = clean(meta.source) ?? schedule.id;
   return {
-    appId: clean(meta.appId),
+    appId: schedule.appId ?? clean(meta.appId),
     family: clean(meta.family) ?? source,
-    label: clean(meta.label) ?? schedule.scheduleId,
+    label: clean(meta.label) ?? schedule.id,
     source,
     resourceKind: clean(meta.resourceKind),
     resourceId: clean(meta.resourceId),
@@ -119,7 +108,7 @@ export const normalizeScheduleMetadata = (
 
 const traceOnlyLabel = (group: TraceSourceGroup): string => group.latestName ?? group.names[0] ?? group.source;
 
-export const buildBackgroundJobRows = (schedules: SchedulerControlInfo[], groups: TraceSourceGroup[]): BackgroundJobOverviewRow[] => {
+export const buildBackgroundJobRows = (schedules: SyncScheduleRow[], groups: TraceSourceGroup[]): BackgroundJobOverviewRow[] => {
   const groupsBySource = new Map(groups.map((group) => [group.source, group]));
   const scheduledSources = new Set<string>();
 
@@ -129,15 +118,15 @@ export const buildBackgroundJobRows = (schedules: SchedulerControlInfo[], groups
     return {
       kind: "schedule",
       schedulerId: schedule.schedulerId,
-      scheduleId: schedule.scheduleId,
+      scheduleId: schedule.id,
       cron: schedule.cron,
-      tz: schedule.tz,
-      createdAt: schedule.createdAt,
-      updatedAt: schedule.updatedAt,
-      nextRunAt: schedule.nextRunAt,
+      tz: schedule.timezone,
+      createdAt: Date.parse(schedule.createdAt),
+      updatedAt: Date.parse(schedule.updatedAt),
+      nextRunAt: Date.parse(schedule.nextRunAt),
       runNumber: schedule.runNumber,
       failureCount: schedule.failureCount,
-      state: schedule.state,
+      state: schedule.handlerAvailable ? "available" : "unavailable",
       lastError: schedule.lastError ?? null,
       trace: groupsBySource.get(meta.source) ?? null,
       ...meta,
@@ -236,48 +225,32 @@ export const filterBackgroundJobRows = (
     return true;
   });
 
-export const listSchedulesWithControl = (control: SchedulerControlLike): Promise<SchedulerControlInfo[]> => control.list();
-
-const scheduleControlError = (error: unknown) => {
-  if (error instanceof SchedulerControlNotFoundError) return err.notFound("Schedule not found");
-  if (error instanceof SchedulerControlTimeoutError)
-    return err.conflict("Timed out while waiting for the schedule handler to accept the run");
-  if (error instanceof SchedulerControlUnavailableError)
-    return err.conflict("Schedule is unavailable because no live handler registered it");
-  return err.internal(error instanceof Error ? error.message : String(error));
-};
-
-export const runScheduleNowWithControl = async (
-  control: SchedulerControlLike,
-  input: RunScheduleNowInput,
-): Promise<Result<RunScheduleNowAccepted>> => {
-  const schedulerId = input.schedulerId.trim();
-  const scheduleId = input.scheduleId.trim();
-  if (!schedulerId) return fail(err.badInput("Scheduler ID is required"));
-  if (!scheduleId) return fail(err.badInput("Schedule ID is required"));
-
-  try {
-    await control.runNow({
-      schedulerId,
-      scheduleId,
-      requestId: input.requestId,
-      timeoutMs: input.timeoutMs ?? 5000,
-    });
+export const jobsObservabilityService = {
+  listSchedules: async (credentials: SyncOpsCredentials): Promise<{ schedules: SyncScheduleRow[]; warnings: string[] }> => {
+    const overview = await syncOpsService.overview(credentials);
+    return {
+      schedules: overview.schedules,
+      warnings: overview.apps
+        .filter((app) => app.status === "unavailable")
+        .map((app) => `${app.appName}: ${app.error ?? "Sync operations unavailable"}`),
+    };
+  },
+  runScheduleNow: async (
+    input: RunScheduleNowInput & { appId: string },
+    credentials: SyncOpsCredentials,
+  ): Promise<Result<RunScheduleNowAccepted>> => {
+    if (!input.appId.trim() || !input.schedulerId.trim() || !input.scheduleId.trim()) {
+      return fail(err.badInput("App, scheduler and schedule IDs are required"));
+    }
+    const result = await syncOpsService.runScheduleNow(input, credentials);
+    if (!result.ok) return result;
     return ok({
       message: "Schedule run accepted",
-      schedulerId,
-      scheduleId,
+      schedulerId: input.schedulerId,
+      scheduleId: input.scheduleId,
       acceptedAt: new Date().toISOString(),
     });
-  } catch (error) {
-    return fail(scheduleControlError(error));
-  }
-};
-
-export const jobsObservabilityService = {
-  listSchedules: (): Promise<SchedulerControlInfo[]> => listSchedulesWithControl(schedulerControl()),
-  runScheduleNow: (input: RunScheduleNowInput): Promise<Result<RunScheduleNowAccepted>> =>
-    runScheduleNowWithControl(schedulerControl(), input),
+  },
 };
 
 /**

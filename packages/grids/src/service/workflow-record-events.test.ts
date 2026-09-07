@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { QueueReceived } from "@k2b/sync";
+import type { QueueMessage } from "@k2b/sync";
 import type { GridsRecordEvent } from "./record-events";
 import {
   isDeletedRecordEventBaseError,
@@ -9,162 +9,109 @@ import {
 } from "./workflow-record-events";
 
 const BASE_ID = "00000000-0000-4000-8000-000000000001";
-
-const invalidDelivery = (input: { ack?: () => Promise<boolean>; nack?: () => Promise<boolean> } = {}): QueueReceived<GridsRecordEvent> => ({
-  data: { invalid: true } as unknown as GridsRecordEvent,
-  messageId: "event-1",
-  deliveryId: "delivery-1",
+const delivery = (): QueueMessage<GridsRecordEvent> => ({
+  data: {
+    v: 1,
+    type: "record.updated",
+    baseId: BASE_ID,
+    tableId: "00000000-0000-4000-8000-000000000002",
+    recordId: "00000000-0000-4000-8000-000000000003",
+    version: 2,
+    changedFieldIds: [],
+    actorId: null,
+    occurredAt: "2026-07-15T12:00:00.000Z",
+  },
+  messageId: "transport-2",
   attempt: 1,
-  leaseUntil: Date.now() + 60_000,
-  meta: { baseId: BASE_ID },
-  ack: input.ack ?? (async () => true),
-  nack: input.nack ?? (async () => true),
-  touch: async () => true,
+  publishedAt: new Date(),
+  tenantId: "workflow-kernel",
+  orderingKey: "00000000-0000-4000-8000-000000000003",
+  meta: { baseId: BASE_ID, eventId: "original-event" },
+  signal: new AbortController().signal,
+  heartbeat: async () => undefined,
 });
 
 describe("workflow record-event recovery", () => {
   test("recognizes only the deleted-base foreign-key failure", () => {
-    expect(
-      isDeletedRecordEventBaseError({
-        code: "23503",
-        constraint: "record_event_delivery_failures_base_id_fkey",
-      }),
-    ).toBe(true);
+    expect(isDeletedRecordEventBaseError({ code: "23503", constraint: "record_event_delivery_failures_base_id_fkey" })).toBe(true);
     expect(isDeletedRecordEventBaseError({ code: "23503", constraint: "another_foreign_key" })).toBe(false);
-    expect(isDeletedRecordEventBaseError(new Error("PostgreSQL unavailable"))).toBe(false);
   });
 
-  test("backs off failed deliveries without exceeding five minutes", () => {
+  test("backs off without exceeding five minutes", () => {
     expect(workflowRecordEventRetryDelayMs(1)).toBe(1_000);
     expect(workflowRecordEventRetryDelayMs(5)).toBe(16_000);
     expect(workflowRecordEventRetryDelayMs(20)).toBe(300_000);
   });
 
-  test("retries invalid queue work until the failure budget is exhausted", async () => {
-    const ack = mock(async () => true);
-    const nack = mock(async () => true);
-    const retrying = mock(async () => ({ attempts: 1, dead: false }));
-    const dead = mock(async () => ({ attempts: 5, dead: true }));
-
-    await processInvalidWorkflowRecordEventDelivery(invalidDelivery({ ack, nack }), retrying);
-    expect(ack).not.toHaveBeenCalled();
-    expect(nack).toHaveBeenCalledTimes(1);
-
-    await processInvalidWorkflowRecordEventDelivery(invalidDelivery({ ack, nack }), dead);
-    expect(ack).toHaveBeenCalledTimes(1);
+  test("persists the original identity and resends to the partition tail before acknowledging", async () => {
+    const message = delivery();
+    const resend = mock(async () => undefined);
+    const record = mock(async () => ({ attempts: 3, dead: false }));
+    await processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch failed"), record, resend);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ eventId: "original-event", maxAttempts: 20, baseId: BASE_ID }));
+    expect(resend).toHaveBeenCalledWith(message, 4_000);
   });
 
-  test("surfaces a rejected acknowledgement for dead invalid events", async () => {
-    const delivery = invalidDelivery({ ack: mock(async () => false) });
-    const dead = mock(async () => ({ attempts: 5, dead: true }));
-
-    await expect(processInvalidWorkflowRecordEventDelivery(delivery, dead)).rejects.toThrow(
-      "record event acknowledgement was not accepted",
+  test("returns successfully without transport DLQ noise for application-terminal failures", async () => {
+    const message = delivery();
+    const resend = mock(async () => undefined);
+    const result = await processFailedWorkflowRecordEventDelivery(
+      message,
+      message.data,
+      new Error("permanent"),
+      async () => ({ attempts: 20, dead: true }),
+      resend,
     );
+    expect(result).toEqual({ attempts: 20, dead: true });
+    expect(resend).not.toHaveBeenCalled();
   });
 
-  test("rejects invalid work without trustworthy base metadata", async () => {
-    const nack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ nack }), meta: undefined };
-    const recordFailure = mock(async () => ({ attempts: 1, dead: false }));
-
-    await processInvalidWorkflowRecordEventDelivery(delivery, recordFailure);
-
-    expect(recordFailure).not.toHaveBeenCalled();
-    expect(nack).toHaveBeenCalledTimes(1);
-  });
-
-  test("keeps invalid work retryable when its failure cannot be persisted", async () => {
-    const nack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ nack }), attempt: 6 };
-    const recordFailure = mock(async () => {
-      throw new Error("PostgreSQL unavailable");
-    });
-
-    await processInvalidWorkflowRecordEventDelivery(delivery, recordFailure);
-
-    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ delayMs: 32_000, reason: "failure_store_unavailable" }));
-  });
-
-  test("acknowledges invalid work whose base was deleted", async () => {
-    const ack = mock(async () => true);
-    const nack = mock(async () => true);
-    const recordFailure = mock(async () => {
-      throw {
-        code: "23503",
-        constraint: "record_event_delivery_failures_base_id_fkey",
-      };
-    });
-
-    await processInvalidWorkflowRecordEventDelivery(invalidDelivery({ ack, nack }), recordFailure);
-
-    expect(ack).toHaveBeenCalledTimes(1);
-    expect(nack).not.toHaveBeenCalled();
-  });
-
-  test("persists dispatch failures and retries with backoff", async () => {
-    const nack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ nack }), data: validEvent() };
-    const recordFailure = mock(async () => ({ attempts: 3, dead: false }));
-
-    await processFailedWorkflowRecordEventDelivery(delivery, delivery.data, new Error("database unavailable"), recordFailure);
-
-    expect(recordFailure).toHaveBeenCalledWith(
-      expect.objectContaining({ maxAttempts: 20, error: "database unavailable", baseId: BASE_ID }),
+  test("throws when the failure store or delayed resend is unavailable", async () => {
+    const message = delivery();
+    const unavailable = async () => {
+      throw new Error("unavailable");
+    };
+    await expect(processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch"), unavailable)).rejects.toThrow(
+      "unavailable",
     );
-    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ delayMs: 4_000, reason: "dispatch_failed" }));
+    await expect(
+      processFailedWorkflowRecordEventDelivery(
+        message,
+        message.data,
+        new Error("dispatch"),
+        async () => ({ attempts: 1, dead: false }),
+        unavailable,
+      ),
+    ).rejects.toThrow("unavailable");
   });
 
-  test("keeps retrying when the application failure store is unavailable", async () => {
-    const nack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ nack }), attempt: 7, data: validEvent() };
-    const recordFailure = mock(async () => {
-      throw new Error("PostgreSQL unavailable");
+  test("acknowledges obsolete work after its base has been deleted", async () => {
+    const message = delivery();
+    const record = async () => {
+      throw { code: "23503", constraint: "record_event_delivery_failures_base_id_fkey" };
+    };
+    const resend = mock(async () => undefined);
+    expect(await processFailedWorkflowRecordEventDelivery(message, message.data, new Error("dispatch"), record, resend)).toEqual({
+      attempts: 1,
+      dead: true,
     });
-
-    const result = await processFailedWorkflowRecordEventDelivery(delivery, delivery.data, new Error("dispatch failed"), recordFailure);
-
-    expect(result).toEqual({ attempts: 7, dead: false });
-    expect(nack).toHaveBeenCalledWith(expect.objectContaining({ delayMs: 64_000, reason: "failure_store_unavailable" }));
+    await processInvalidWorkflowRecordEventDelivery(message, record, resend);
+    expect(resend).not.toHaveBeenCalled();
   });
 
-  test("acknowledges dispatch work whose base was deleted", async () => {
-    const ack = mock(async () => true);
-    const nack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ ack, nack }), attempt: 4, data: validEvent() };
-    const recordFailure = mock(async () => {
-      throw {
-        code: "23503",
-        constraint_name: "record_event_delivery_failures_base_id_fkey",
-      };
-    });
-
-    const result = await processFailedWorkflowRecordEventDelivery(delivery, delivery.data, new Error("dispatch failed"), recordFailure);
-
-    expect(result).toEqual({ attempts: 4, dead: true });
-    expect(ack).toHaveBeenCalledTimes(1);
-    expect(nack).not.toHaveBeenCalled();
+  test("invalid payloads use the application budget and infrastructure failures remain retryable", async () => {
+    const message = delivery();
+    const resend = mock(async () => undefined);
+    await processInvalidWorkflowRecordEventDelivery(message, async () => ({ attempts: 1, dead: false }), resend);
+    expect(resend).toHaveBeenCalledWith(message, 1_000);
+    resend.mockClear();
+    await processInvalidWorkflowRecordEventDelivery(message, async () => ({ attempts: 5, dead: true }), resend);
+    expect(resend).not.toHaveBeenCalled();
+    await expect(processInvalidWorkflowRecordEventDelivery({ ...message, meta: undefined })).rejects.toThrow("base metadata");
+    await expect(
+      processInvalidWorkflowRecordEventDelivery(message, async () => {
+        throw new Error("PG unavailable");
+      }),
+    ).rejects.toThrow("PG unavailable");
   });
-
-  test("acknowledges dispatch failures after the application retry budget", async () => {
-    const ack = mock(async () => true);
-    const delivery = { ...invalidDelivery({ ack }), data: validEvent() };
-    const recordFailure = mock(async () => ({ attempts: 20, dead: true }));
-
-    await processFailedWorkflowRecordEventDelivery(delivery, delivery.data, new Error("permanent failure"), recordFailure);
-
-    expect(ack).toHaveBeenCalledTimes(1);
-  });
-});
-
-const validEvent = (): GridsRecordEvent => ({
-  v: 1,
-  type: "record.updated",
-  baseId: BASE_ID,
-  tableId: "00000000-0000-4000-8000-000000000002",
-  recordId: "00000000-0000-4000-8000-000000000003",
-  version: 2,
-  changedFieldIds: [],
-  actorId: null,
-  occurredAt: "2026-07-15T12:00:00.000Z",
 });

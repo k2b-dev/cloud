@@ -1,18 +1,14 @@
-import { queue, topic } from "@k2b/sync";
+import { createHash } from "node:crypto";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { projectPublicIds } from "./public-resources";
 
-const TOPIC_PREFIX = "cloud:grids:events";
 const TOPIC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const TOPIC_ID = "records";
-const WORK_QUEUE_PREFIX = "cloud:grids:workflow-events";
 const WORK_QUEUE_TENANT = "workflow-kernel";
 export const RECORD_EVENT_WORK_PARTITIONS = 32;
 export const RECORD_EVENT_WORK_LEASE_MS = 120_000;
-// At the five-minute retry cap this outlives the queue's 30-day message-age limit.
-// The application dead-letter budget remains intentionally smaller and is tracked in PostgreSQL.
-export const RECORD_EVENT_WORK_MAX_DELIVERIES = 10_000;
 
 export const GridsRecordEventSchema = z
   .object({
@@ -51,59 +47,43 @@ export const toPublicRecordEvent = async (event: GridsRecordEvent) => {
   };
 };
 
-const recordTopic = topic<GridsRecordEvent>({
-  id: TOPIC_ID,
-  prefix: TOPIC_PREFIX,
-  retentionMs: TOPIC_RETENTION_MS,
-  limits: { payloadBytes: 64_000 },
-});
-
-const recordWorkQueues = Array.from({ length: RECORD_EVENT_WORK_PARTITIONS }, (_, partition) =>
-  queue<GridsRecordEvent>({
-    id: `records:${partition}`,
-    prefix: WORK_QUEUE_PREFIX,
-    tenantId: WORK_QUEUE_TENANT,
-    // Each record hashes to one queue, and the reader holds a distributed
-    // partition mutex while processing. Queue-level key ordering was never
-    // implemented by Sync <= 5.8 and is rejected explicitly by 5.9.
-    ordering: { mode: "best_effort" },
-    limits: {
-      payloadBytes: 64_000,
-      maxMessageAgeMs: TOPIC_RETENTION_MS,
-      dlqRetentionMs: TOPIC_RETENTION_MS,
-    },
-    delivery: { defaultLeaseMs: RECORD_EVENT_WORK_LEASE_MS, maxDeliveries: RECORD_EVENT_WORK_MAX_DELIVERIES },
+const recordTopic = lazySync((sync) =>
+  sync.topic<GridsRecordEvent>({
+    id: "grids:records",
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: 68_000,
   }),
 );
 
-export const recordEventWorkPartition = (recordId: string): number => {
-  let hash = 2_166_136_261;
-  for (let index = 0; index < recordId.length; index += 1) {
-    hash ^= recordId.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return (hash >>> 0) % RECORD_EVENT_WORK_PARTITIONS;
-};
+export const recordEventWorkQueue = lazySync((sync) =>
+  sync.queue<GridsRecordEvent>({
+    id: "grids:workflow-record-events",
+    ordering: { mode: "partitioned", partitions: RECORD_EVENT_WORK_PARTITIONS },
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: 68_000,
+    delivery: { ackWaitMs: RECORD_EVENT_WORK_LEASE_MS, maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
+  }),
+);
+
+const hashEventKey = (key: string): string => createHash("sha256").update(key).digest("hex");
 
 const recordEventIdempotencyKey = (event: GridsRecordEvent): string =>
   `${event.type}:${event.tableId}:${event.recordId}:${event.version ?? "deleted"}:${event.occurredAt}`;
 
 export const publishRecordEvent = async (event: GridsRecordEvent, options: { replayKey?: string } = {}): Promise<void> => {
-  const idempotencyKey = recordEventIdempotencyKey(event);
+  const idempotencyKey = hashEventKey(recordEventIdempotencyKey(event));
   const workIdempotencyKey = options.replayKey ? `${idempotencyKey}:replay:${options.replayKey}` : idempotencyKey;
-  const workQueue = recordWorkQueues[recordEventWorkPartition(event.recordId)];
-  if (!workQueue) throw new Error("record event work partition is unavailable");
   await Promise.all([
-    recordTopic.pub({
+    recordTopic().publish({
       tenantId: event.baseId,
       orderingKey: event.recordId,
       idempotencyKey,
       data: event,
     }),
-    workQueue.send({
+    recordEventWorkQueue().send({
       orderingKey: event.recordId,
-      idempotencyKey: `${event.baseId}:${workIdempotencyKey}`,
-      idempotencyTtlMs: TOPIC_RETENTION_MS,
+      tenantId: WORK_QUEUE_TENANT,
+      idempotencyKey: hashEventKey(`${event.baseId}:${workIdempotencyKey}`),
       meta: { baseId: event.baseId },
       data: event,
     }),
@@ -179,19 +159,13 @@ export const publishRecordEventWithFederatedTargets = async (
   ]);
 };
 
-export const recordEventReader = (group: string) => recordTopic.reader(group);
-
-export const recordEventWorkReader = (partition: number) => {
-  const workQueue = recordWorkQueues[partition];
-  if (!workQueue) throw new RangeError(`record event work partition ${partition} is unavailable`);
-  return workQueue.reader();
-};
-
 export const liveRecordEvents = (config: { baseId: string; after?: string | null; signal?: AbortSignal }) =>
-  recordTopic.live({
-    tenantId: config.baseId,
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  recordTopic()
+    .hub({ tenantId: config.baseId })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });
 
-export const latestRecordEventCursor = (baseId: string): Promise<string | null> => recordTopic.latestCursor({ tenantId: baseId });
+export const latestRecordEventCursor = async (baseId: string): Promise<string> =>
+  latestTopicCursor({ topic: recordTopic(), resourceId: "grids:records", tenantId: baseId });

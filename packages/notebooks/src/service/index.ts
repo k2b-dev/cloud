@@ -217,7 +217,7 @@ export const notebooksService = {
     heartbeat: presence.heartbeat,
     leave: presence.leave,
     snapshot: presence.snapshot,
-    reader: presence.reader,
+    watch: presence.watch,
   },
   workspaceEvents: {
     live: workspaceEvents.live,
@@ -292,8 +292,8 @@ export const notebooksService = {
   },
 };
 
-export type { Attachment, AttachmentContent, AttachmentKind } from "./attachments";
 export type { NotebookActivityActor, NotebookActivityEvent, NotebookActivityPage } from "./activity";
+export type { Attachment, AttachmentContent, AttachmentKind } from "./attachments";
 export type { NoteComment } from "./comments";
 export type { Backlink, GraphEdge, GraphNode, NoteGraph, NoteLink } from "./links";
 // Re-export commonly used types

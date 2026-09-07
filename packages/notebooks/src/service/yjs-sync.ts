@@ -1,5 +1,5 @@
 import { fromBase64Strict } from "@k2b/stdlib";
-import { topic } from "@k2b/sync";
+import { getProcessSync, lazySync } from "@valentinkolb/cloud";
 import * as Y from "yjs";
 import { notebooksYjs } from "../lib/yjs";
 
@@ -30,40 +30,36 @@ export type YjsAwarenessEvent = YjsTopicEvent & { kind: "awareness" };
 const STREAM_CURSOR_REGEX = new RegExp(notebooksYjs.streamCursorPattern);
 
 export const createYjsTopic = (noteId: string) =>
-  topic<YjsSyncEvent>({
-    id: noteId,
-    prefix: TOPIC_PREFIX,
-    retentionMs: TOPIC_RETENTION_MS,
-    limits: { payloadBytes: MAX_SYNC_TOPIC_PAYLOAD_BYTES },
+  getProcessSync().topic<YjsSyncEvent>({
+    id: `${TOPIC_PREFIX}:${noteId}`,
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: MAX_SYNC_TOPIC_PAYLOAD_BYTES + 4096,
   });
 
-export const createYjsAwarenessTopic = (noteId: string) =>
-  topic<YjsAwarenessEvent>({
-    id: noteId,
-    prefix: AWARENESS_TOPIC_PREFIX,
-    retentionMs: AWARENESS_RETENTION_MS,
-    limits: { payloadBytes: MAX_AWARENESS_TOPIC_PAYLOAD_BYTES },
-  });
+// Awareness is transient and filtered by note on the server, unlike the retained document log.
+export const createYjsAwarenessTopic = lazySync((sync) =>
+  sync.topic<YjsAwarenessEvent>({
+    id: AWARENESS_TOPIC_PREFIX,
+    retention: { maxAgeMs: AWARENESS_RETENTION_MS, maxBytes: 64 * 1024 * 1024 },
+    maxPayloadBytes: MAX_AWARENESS_TOPIC_PAYLOAD_BYTES + 4096,
+  }),
+);
 
 export const toBase64 = (data: Uint8Array): string => Buffer.from(data).toString("base64");
 export const fromBase64 = fromBase64Strict;
 
-export const parseStreamCursor = (cursor: string | null | undefined): { ms: number; seq: number } | null => {
-  if (!cursor) return null;
-  if (!STREAM_CURSOR_REGEX.test(cursor)) return null;
-  const [msValue, seqValue] = cursor.split("-");
-  if (!msValue || !seqValue) return null;
-  return {
-    ms: Number.parseInt(msValue, 10),
-    seq: Number.parseInt(seqValue, 10),
-  };
+export const parseStreamCursor = (cursor: string | null | undefined): { resource: string; seq: number } | null => {
+  if (!cursor || !STREAM_CURSOR_REGEX.test(cursor)) return null;
+  const [, resource, sequence] = cursor.split(".");
+  const seq = Number(sequence);
+  if (!resource || !Number.isSafeInteger(seq) || seq < 0) return null;
+  return { resource, seq };
 };
 
 export const compareStreamCursor = (left: string, right: string): number => {
   const l = parseStreamCursor(left);
   const r = parseStreamCursor(right);
-  if (!l || !r) throw new Error(`Invalid stream cursor comparison: "${left}" vs "${right}"`);
-  if (l.ms !== r.ms) return l.ms - r.ms;
+  if (!l || !r || l.resource !== r.resource) throw new Error(`Invalid stream cursor comparison: "${left}" vs "${right}"`);
   return l.seq - r.seq;
 };
 
@@ -86,41 +82,18 @@ export const applyYjsTopicEvent = (doc: Y.Doc, event: { cursor: string; data: Yj
 
 export const replayYjsTopicToCursor = async (config: {
   noteId: string;
-  after: string;
+  after: string | null;
   targetCursor: string;
   doc: Y.Doc;
   signal?: AbortSignal;
-  timeoutMs?: number;
 }): Promise<void> => {
-  const abort = new AbortController();
-  const timeout = setTimeout(() => abort.abort("replay-timeout"), config.timeoutMs ?? 5_000);
-  const onAbort = () => abort.abort("caller-aborted");
-  config.signal?.addEventListener("abort", onAbort, { once: true });
-
+  const topic = createYjsTopic(config.noteId);
+  const after = config.after ?? topic.cursorAt(0);
+  if (compareStreamCursor(after, config.targetCursor) >= 0) return;
   let reachedTarget = false;
-  try {
-    const noteTopic = createYjsTopic(config.noteId);
-    for await (const event of noteTopic.live({
-      after: config.after,
-      signal: abort.signal,
-      timeoutMs: 1_000,
-    })) {
-      const comparison = compareStreamCursor(event.cursor, config.targetCursor);
-      if (comparison > 0) {
-        break;
-      }
-      applyYjsTopicEvent(config.doc, event, config.noteId);
-      if (comparison === 0) {
-        reachedTarget = true;
-        break;
-      }
-    }
-  } finally {
-    clearTimeout(timeout);
-    config.signal?.removeEventListener("abort", onAbort);
+  for await (const event of topic.replay({ after, until: config.targetCursor, signal: config.signal })) {
+    applyYjsTopicEvent(config.doc, event, config.noteId);
+    reachedTarget = event.cursor === config.targetCursor;
   }
-
-  if (!reachedTarget) {
-    throw new Error(`Target cursor "${config.targetCursor}" was not reached during replay`);
-  }
+  if (!reachedTarget) throw new Error(`Target cursor "${config.targetCursor}" was not reached during replay`);
 };

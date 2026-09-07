@@ -58,6 +58,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@nats-io/transport-node": "catalog:",
+    "@nats-io/jetstream": "catalog:",
     "@types/bun": "catalog:",
     "@types/d3-force": "3.0.10",
     "@types/sanitize-html": "catalog:",

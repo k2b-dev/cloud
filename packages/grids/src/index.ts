@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, middleware } from "@valentinkolb/cloud/server";
 import { createRuntimeLifecycle, stopRuntimeResources } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -10,14 +10,11 @@ import { gridsHelp } from "./help";
 import { migrate } from "./migrate";
 import { gridsService } from "./service";
 import { stopBoundedQueryPool } from "./service/bounded-query";
-import { stopControlledDestructionJobs } from "./service/controlled-destruction";
-import { stopEvidenceExportJobs } from "./service/evidence-exports";
+import { startControlledDestructionJobs, stopControlledDestructionJobs } from "./service/controlled-destruction";
+import { startEvidenceExportJobs, stopEvidenceExportJobs } from "./service/evidence-exports";
 import { startFieldIndexMaintenance, stopFieldIndexMaintenance } from "./service/field-index-maintenance";
 import { startRecordEventOutbox, stopRecordEventOutbox } from "./service/record-event-outbox";
-import {
-  startExternalRecordOperationRetention,
-  stopExternalRecordOperationRetention,
-} from "./service/record-external-identity";
+import { startExternalRecordOperationRetention, stopExternalRecordOperationRetention } from "./service/record-external-identity";
 import { startWorkflowRuntime, stopWorkflowRuntime } from "./service/workflow-runtime";
 
 const router = new Hono<AuthContext>()
@@ -31,6 +28,8 @@ const router = new Hono<AuthContext>()
 
 const gridsRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
+    await startControlledDestructionJobs();
+    await startEvidenceExportJobs();
     await startRecordEventOutbox();
     await startExternalRecordOperationRetention();
     await startWorkflowRuntime();

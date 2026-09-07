@@ -64,7 +64,7 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
     await attachmentExtractionRuntime.start();
     await scheduledMailRuntime.start();
     await imapPushRuntime.start();
-    incomingAutomations.startIncomingAutomationBackfillRuntime();
+    await incomingAutomations.startIncomingAutomationBackfillRuntime();
   },
   stop: () =>
     stopRuntimeResources([

@@ -22,7 +22,7 @@ export const MailInvalidationSchema = z
 
 export type MailInvalidation = z.infer<typeof MailInvalidationSchema>;
 
-export const MailLiveCursorSchema = z.string().regex(/^\d+-\d+$/);
+export const MailLiveCursorSchema = z.string().min(1).max(512);
 const MailLiveRevocationCodeSchema = z.enum(["login_required", "not_found", "access_denied"]);
 const MailLiveErrorCodeSchema = z.enum(["invalid_json", "invalid_message", "backpressure", "internal_error", "stream_failed"]);
 

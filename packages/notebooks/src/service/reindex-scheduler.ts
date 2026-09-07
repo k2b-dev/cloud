@@ -14,13 +14,11 @@
  * Cron string is read from `notebooks.reindex_cron` setting; admins can
  * change it from `/admin/notebooks` → Settings.
  *
- * One-shot startup backfill: `runtime.start` also kicks off a single
- * background reindex so newly-deployed schema changes get picked up
- * without waiting up to 12h for the first scheduled tick.
  */
 
-import { job, scheduler } from "@k2b/sync";
-import { logger, get as settingsGet, trace } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { logger, get as settingsGet, syncOps } from "@valentinkolb/cloud/services";
 import { reindexAll } from "./note-refs";
 
 const log = logger("notebooks:reindex");
@@ -39,7 +37,7 @@ const getTimezone = async (): Promise<string> => {
 };
 
 /** Run a single reindex pass with start/end logging + duration metric. */
-const runReindex = async (params: { trigger: "scheduler" | "startup"; onProgress?: () => Promise<void> }): Promise<void> => {
+const runReindex = async (params: { trigger: "scheduler"; onProgress?: () => Promise<void> }): Promise<void> => {
   const startedAt = Date.now();
   log.info("Notebook derived-data reindex started", { trigger: params.trigger });
   try {
@@ -71,38 +69,36 @@ const runReindex = async (params: { trigger: "scheduler" | "startup"; onProgress
   }
 };
 
-type ReindexTrigger = "scheduler" | "startup";
+type ReindexTrigger = "scheduler";
 
-const reindexJob = job<{ trigger: ReindexTrigger }, void>({
-  id: "notebooks:reindex",
-  defaults: { leaseMs: 300_000 },
-  trace: trace.fromSyncJob<{ trigger: ReindexTrigger }, void>({
-    name: "Notebook references reindex",
-    source: "notebooks:reindex",
-    appId: "notebooks",
-    attributes: (event) => ("input" in event && event.input ? { "cloud.notebooks.reindex_trigger": event.input.trigger } : {}),
+const reindexJob = lazySync((sync) =>
+  sync.job<{ trigger: ReindexTrigger }>({
+    id: "notebooks:reindex",
+    delivery: { ackWaitMs: 300_000, maxInFlight: 1, maxAttempts: 3, backoffMs: [5_000, 10_000] },
   }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return;
+);
+const reindexScheduler = lazySync((sync) => sync.scheduler({ id: "notebooks:reindex" }));
+let jobWorker: Worker | undefined;
+let scheduleWorker: Worker | undefined;
+
+const startWorkers = async (): Promise<void> => {
+  syncOps.registerDeadLetters({ name: "notebooks:reindex", kind: "job", store: reindexJob().deadLetters });
+  syncOps.registerScheduler({ name: "notebooks:reindex", scheduler: reindexScheduler() });
+  jobWorker ??= await reindexJob().process({}, async (ctx) => {
+    ctx.signal.throwIfAborted();
     let lastHeartbeatAt = Date.now();
     await runReindex({
       trigger: ctx.input.trigger,
       onProgress: async () => {
+        ctx.signal.throwIfAborted();
         if (Date.now() - lastHeartbeatAt < 60_000) return;
-        await ctx.heartbeat({ leaseMs: 300_000 });
+        await ctx.heartbeat();
         lastHeartbeatAt = Date.now();
       },
     });
-  },
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= 3) return;
-    // Backoff if we crashed — same pattern as ipa-hosts sync.
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000 }) });
-  },
-});
-
-const reindexScheduler = scheduler({ id: "notebooks:reindex" });
+  });
+  scheduleWorker ??= await reindexScheduler().process({});
+};
 
 // Module-local lifecycle state. App lifecycle hooks fire sequentially so
 // plain flags are enough — no mutex needed.
@@ -111,23 +107,18 @@ let registered = false;
 let registerPromise: Promise<void> | null = null;
 
 const createSchedule = async (cron: string, tz: string): Promise<void> => {
-  await reindexScheduler.create({
+  await reindexScheduler().create({
     id: "notebooks:reindex",
     cron,
-    tz,
+    timezone: tz,
     meta: {
       appId: "notebooks",
       family: "notebooks:maintenance",
       label: "Notebook references reindex",
       source: "notebooks:reindex",
     },
-    trace: trace.fromSyncSchedule<void>({
-      name: "Notebook references reindex schedule",
-      source: "notebooks:reindex",
-      appId: "notebooks",
-    }),
-    process: async ({ ctx }) => {
-      await reindexJob.submit({ key: `slot:${ctx.slotTs}`, input: { trigger: "scheduler" } });
+    process: async (ctx) => {
+      await reindexJob().submit({ key: ctx.runId, input: { trigger: "scheduler" } });
     },
   });
   log.info("Reindex schedule registered", { cron, tz });
@@ -170,23 +161,19 @@ const ensureRegistered = async (): Promise<void> => {
 export const reindexRuntime = {
   start: async (): Promise<void> => {
     if (!started) {
-      reindexScheduler.start();
+      await ensureRegistered();
+      await startWorkers();
       started = true;
     }
     await ensureRegistered();
-
-    // Fire-and-forget startup backfill via the distributed job. Don't await:
-    // app boot stays snappy and only one container owns the job key.
-    void reindexJob.submit({ key: "startup:derived-v1", input: { trigger: "startup" } }).catch((error) => {
-      log.error("Failed to submit startup derived-data reindex", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
   },
 
   stop: async (): Promise<void> => {
-    if (!started) return;
-    await reindexScheduler.stop();
+    scheduleWorker?.stop();
+    jobWorker?.stop();
+    await Promise.all([scheduleWorker?.drain(), jobWorker?.drain()]);
+    scheduleWorker = undefined;
+    jobWorker = undefined;
     started = false;
     registered = false;
     registerPromise = null;
@@ -200,7 +187,8 @@ export const reindexRuntime = {
     const normalized = cron.trim();
     if (!normalized) throw new Error("Reindex cron must not be empty.");
     if (!started) {
-      reindexScheduler.start();
+      await ensureRegistered();
+      await startWorkers();
       started = true;
     }
     await registerSchedule(normalized);

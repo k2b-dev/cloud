@@ -1,10 +1,12 @@
 import { isDeepStrictEqual } from "node:util";
 import type { InboundEvent, Input, Message } from "@k2b/nessi";
-import { type QueueReceived, queue } from "@k2b/sync";
+import type { QueueMessage } from "@k2b/sync";
 import { z } from "zod";
+import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { syncOps } from "../services/sync-ops";
 import { type AiToolApprovalContext, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
 import { AiTurnExecutor } from "./executor";
@@ -51,14 +53,19 @@ const AI_SWEEP_INTERVAL_MS = 15_000;
 
 type AiTurnJob = { conversationId: string; turnId: string };
 
-const aiTurnQueue = queue<AiTurnJob>({
-  id: "cloud-ai-turns",
-  delivery: { defaultLeaseMs: AI_TURN_LEASE_MS, maxDeliveries: 50 },
+const aiTurnQueue = lazySync((sync) => {
+  const handle = sync.queue<AiTurnJob>({
+    id: "cloud-ai-turns",
+    owner: "cloud",
+    delivery: { ackWaitMs: AI_TURN_LEASE_MS, maxAttempts: 50 },
+  });
+  syncOps.registerDeadLetters({ name: "cloud-ai-turns", kind: "queue", store: handle.deadLetters });
+  return handle;
 });
 
 // No idempotency key: the DB claim is the only gate, so re-enqueues (recovery,
 // continuation, stale-sweep) are always allowed and never silently swallowed.
-const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue.send({ data: job, orderingKey: job.conversationId });
+const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({ data: job, orderingKey: job.conversationId });
 
 /** Enqueue a turn created atomically by another durable AI workflow. */
 export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enqueueAiTurn(input);
@@ -385,12 +392,12 @@ const runClaimedTurn = async (
 };
 
 const processMessage = async (
-  message: QueueReceived<AiTurnJob>,
+  message: QueueMessage<AiTurnJob>,
   signal: AbortSignal,
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
 ): Promise<void> => {
-  const leaseOwner = `${AI_WORKER_ID}:${message.deliveryId}`;
-  const touch = setInterval(() => void message.touch({ leaseMs: AI_TURN_LEASE_MS }).catch(() => undefined), AI_TURN_HEARTBEAT_MS);
+  const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
+  const touch = setInterval(() => void message.heartbeat().catch(() => undefined), AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
     await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized);
@@ -402,7 +409,6 @@ const processMessage = async (
     });
   } finally {
     clearInterval(touch);
-    await message.ack().catch(() => undefined);
   }
 };
 
@@ -470,30 +476,29 @@ export const startAiRuntime = (
     if (errors.length > 0) throw new AggregateError(errors, `${errors.length} AI turn finalized listener(s) failed`);
   };
 
-  for (let index = 0; index < concurrency; index += 1) {
-    const consumerId = `${AI_WORKER_ID}:${index}`;
-    void superviseRuntimeTask({
-      name: `AI turn reader ${consumerId}`,
-      signal: controller.signal,
-      run: async (signal) => {
-        const reader = aiTurnQueue.reader();
-        for await (const message of reader.stream({ wait: true, leaseMs: AI_TURN_LEASE_MS, consumerId, signal })) {
-          if (signal.aborted) {
-            await message.nack({ delayMs: 1_000, reason: "worker_stopped" }).catch(() => undefined);
-            continue;
-          }
-          await processMessage(message, signal, dispatchTurnFinalized);
-        }
-      },
-      onError: ({ error, failureCount, retryInMs }) =>
-        log.error("AI turn reader stopped; restarting", {
-          consumerId,
-          error: error instanceof Error ? error.message : "AI turn worker failed",
-          failureCount,
-          retryInMs,
-        }),
-    });
-  }
+  void superviseRuntimeTask({
+    name: "AI turn worker",
+    signal: controller.signal,
+    run: async (signal) => {
+      const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
+        processMessage(message, message.signal, dispatchTurnFinalized),
+      );
+      try {
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      } finally {
+        worker.stop();
+      }
+    },
+    onError: ({ error, failureCount, retryInMs }) =>
+      log.error("AI turn worker failed to start; retrying", {
+        error: error instanceof Error ? error.message : String(error),
+        failureCount,
+        retryInMs,
+      }),
+  });
 
   const runSweep = () =>
     void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>

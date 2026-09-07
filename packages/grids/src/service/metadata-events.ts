@@ -1,13 +1,9 @@
-import { topic } from "@k2b/sync";
-import { logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { type PublicResourceType, projectPublicIds } from "./public-resources";
 
 const log = logger("grids:metadata-events");
-
-const TOPIC_PREFIX = "cloud:grids:events";
-const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
-const TOPIC_ID = "metadata";
 
 export type GridsMetadataEvent = {
   v: 1;
@@ -68,12 +64,13 @@ export const toPublicMetadataEvent = async (event: GridsMetadataEvent) => {
   };
 };
 
-const metadataTopic = topic<GridsMetadataEvent>({
-  id: TOPIC_ID,
-  prefix: TOPIC_PREFIX,
-  retentionMs: TOPIC_RETENTION_MS,
-  limits: { payloadBytes: 16_000 },
-});
+const metadataTopic = lazySync((sync) =>
+  sync.topic<GridsMetadataEvent>({
+    id: "grids:metadata",
+    retention: { maxAgeMs: 86400000, maxBytes: 67108864 },
+    maxPayloadBytes: 18000,
+  }),
+);
 
 export const publishMetadataEvent = async (event: GridsMetadataEvent): Promise<void> => {
   // Metadata events invalidate an SSR workspace; canonical state remains in
@@ -81,7 +78,7 @@ export const publishMetadataEvent = async (event: GridsMetadataEvent): Promise<v
   // best-effort publication, so this path must not turn a committed mutation
   // into a misleading API failure.
   try {
-    await metadataTopic.pub({
+    await metadataTopic().publish({
       tenantId: event.baseId,
       orderingKey: event.resource.kind === "base" ? event.baseId : `${event.resource.kind}:${event.resource.id}`,
       idempotencyKey: `${event.type}:${event.resource.id}:${event.occurredAt}`,
@@ -98,13 +95,15 @@ export const publishMetadataEvent = async (event: GridsMetadataEvent): Promise<v
 };
 
 export const liveMetadataEvents = (config: { baseId: string; after?: string | null; signal?: AbortSignal }) =>
-  metadataTopic.live({
-    tenantId: config.baseId,
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  metadataTopic()
+    .hub({ tenantId: config.baseId })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });
 
-export const latestMetadataEventCursor = (baseId: string): Promise<string | null> => metadataTopic.latestCursor({ tenantId: baseId });
+export const latestMetadataEventCursor = async (baseId: string): Promise<string> =>
+  latestTopicCursor({ topic: metadataTopic(), resourceId: "grids:metadata", tenantId: baseId });
 
 export const emitMetadataEvent = (event: Omit<GridsMetadataEvent, "v" | "occurredAt"> & { occurredAt?: string }): Promise<void> =>
   publishMetadataEvent({

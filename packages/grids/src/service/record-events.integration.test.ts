@@ -1,20 +1,23 @@
-import { describe, expect, test } from "bun:test";
-import { TopicPayloadError } from "@k2b/sync";
-import { type GridsRecordEvent, publishRecordEvent, recordEventReader } from "./record-events";
+import { expect, test } from "bun:test";
+import { startGridsTestSync } from "../sync-test-utils";
+import {
+  type GridsRecordEvent,
+  latestRecordEventCursor,
+  liveRecordEvents,
+  publishRecordEvent,
+  recordEventWorkQueue,
+} from "./record-events";
 
-const redisTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+const natsTest = process.env.GRIDS_SYNC_TEST === "1" ? test : test.skip;
 
-const topicNamespace = (baseId: string): string =>
-  `sync:topic:namespace:v2:${encodeURIComponent(JSON.stringify(["cloud:grids:events", baseId, "records"]))}`;
-
-describe("record event topic recovery", () => {
-  redisTest("distributes one event to only one replica reader in the consumer group", async () => {
-    const baseId = Bun.randomUUIDv7();
-    const group = `replicas-${Bun.randomUUIDv7()}`;
+natsTest(
+  "record events replay from opaque cursors and competing workers preserve per-record order",
+  async () => {
+    const stop = await startGridsTestSync();
     const event: GridsRecordEvent = {
       v: 1,
       type: "record.updated",
-      baseId,
+      baseId: Bun.randomUUIDv7(),
       tableId: Bun.randomUUIDv7(),
       recordId: Bun.randomUUIDv7(),
       version: 1,
@@ -22,77 +25,36 @@ describe("record event topic recovery", () => {
       actorId: null,
       occurredAt: new Date().toISOString(),
     };
-    const namespace = topicNamespace(baseId);
-    const streamKey = `${namespace}:stream`;
-    const idempotencyKey = `${namespace}:idempotency:${event.type}:${event.tableId}:${event.recordId}:${event.version}:${event.occurredAt}`;
+    const abort = new AbortController();
     try {
+      const origin = await latestRecordEventCursor(event.baseId);
+      expect(origin).toMatch(/\.0$/);
       await publishRecordEvent(event);
-      const [first, second] = await Promise.all([
-        recordEventReader(group).recv({ tenantId: baseId, wait: false }),
-        recordEventReader(group).recv({ tenantId: baseId, wait: false }),
-      ]);
-      const deliveries = [first, second].filter((delivery) => delivery !== null);
-
-      expect(deliveries).toHaveLength(1);
-      expect(deliveries[0]?.data).toEqual(event);
-      expect(await deliveries[0]?.commit()).toBe(true);
+      // Capture the empty origin before the first publish, then subscribe later.
+      const initial = liveRecordEvents({ baseId: event.baseId, after: origin, signal: abort.signal })[Symbol.asyncIterator]();
+      expect((await initial.next()).value?.data.version).toBe(1);
+      await initial.return?.();
+      const baseline = await latestRecordEventCursor(event.baseId);
+      expect(baseline).toMatch(/^s6t\./);
+      const versions: Array<number | null> = [];
+      const handle = async (message: { data: GridsRecordEvent }) => {
+        versions.push(message.data.version);
+      };
+      await recordEventWorkQueue().process({ concurrency: 32 }, handle);
+      await recordEventWorkQueue().process({ concurrency: 32 }, handle);
+      await publishRecordEvent({ ...event, version: 2 });
+      const iterator = liveRecordEvents({ baseId: event.baseId, after: baseline, signal: abort.signal })[Symbol.asyncIterator]();
+      const next = await iterator.next();
+      expect(next.value?.data.version).toBe(2);
+      const deadline = Date.now() + 5_000;
+      while (versions.length < 2 && Date.now() < deadline) await Bun.sleep(20);
+      expect(versions).toEqual([1, 2]);
+      abort.abort();
+      await iterator.return?.();
     } finally {
-      await Bun.redis.send("DEL", [streamKey, idempotencyKey]);
+      abort.abort();
+      await stop();
     }
-  });
-
-  redisTest("reclaims an abandoned consumer-group delivery", async () => {
-    const baseId = Bun.randomUUIDv7();
-    const group = `reclaim-${Bun.randomUUIDv7()}`;
-    const event: GridsRecordEvent = {
-      v: 1,
-      type: "record.updated",
-      baseId,
-      tableId: Bun.randomUUIDv7(),
-      recordId: Bun.randomUUIDv7(),
-      version: 2,
-      changedFieldIds: [],
-      actorId: null,
-      occurredAt: new Date().toISOString(),
-    };
-    const namespace = topicNamespace(baseId);
-    const streamKey = `${namespace}:stream`;
-    const idempotencyKey = `${namespace}:idempotency:${event.type}:${event.tableId}:${event.recordId}:${event.version}:${event.occurredAt}`;
-    try {
-      await publishRecordEvent(event);
-      const reader = recordEventReader(group);
-      const original = await reader.recv({ tenantId: baseId, wait: false });
-      expect(original?.data).toEqual(event);
-
-      const reclaimed = await reader.reclaim?.({ tenantId: baseId, minIdleMs: 0 });
-      if (!reclaimed) throw new Error("Expected topic reclaim support");
-      expect(reclaimed.entries).toHaveLength(1);
-      const recovered = reclaimed.entries[0];
-      if (recovered?.kind !== "delivery") throw new Error("Expected a recovered record event");
-      expect(recovered.delivery.data).toEqual(event);
-      expect(await recovered.delivery.commit()).toBe(true);
-    } finally {
-      await Bun.redis.send("DEL", [streamKey, idempotencyKey]);
-    }
-  });
-
-  redisTest("surfaces and reclaims malformed transport envelopes", async () => {
-    const baseId = Bun.randomUUIDv7();
-    const group = `invalid-${Bun.randomUUIDv7()}`;
-    const streamKey = `${topicNamespace(baseId)}:stream`;
-    try {
-      await Bun.redis.send("XADD", [streamKey, "*", "payload", "{broken"]);
-      const reader = recordEventReader(group);
-
-      await expect(reader.recv({ tenantId: baseId, wait: false, invalidPayload: "throw" })).rejects.toBeInstanceOf(TopicPayloadError);
-      const reclaimed = await reader.reclaim({ tenantId: baseId, minIdleMs: 0 });
-      expect(reclaimed.entries).toHaveLength(1);
-      const recovered = reclaimed.entries[0];
-      if (recovered?.kind !== "invalid") throw new Error("Expected an invalid recovered record event");
-      expect(recovered.rawPayload).toBe("{broken");
-      expect(await recovered.commit()).toBe(true);
-    } finally {
-      await Bun.redis.send("DEL", [streamKey]);
-    }
-  });
-});
+  },
+  30_000,
+);

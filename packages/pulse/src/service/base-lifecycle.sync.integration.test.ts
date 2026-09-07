@@ -1,0 +1,61 @@
+import { expect, test } from "bun:test";
+import { sql } from "bun";
+
+const syncTest = process.env.PULSE_SYNC_NATS_TEST === "1" ? test : test.skip;
+
+syncTest(
+  "a coalesced deletion runs through NATS and keeps one observed span with its summary",
+  async () => {
+    const { createSync } = await import("@k2b/sync");
+    const { connect } = await import("@nats-io/transport-node");
+    const { bindProcessSync, unbindProcessSync } = await import("@valentinkolb/cloud");
+    const { observeSyncEvent } = await import("@valentinkolb/cloud/services/logging/trace");
+    const { startPulseBaseJobs, submitBaseDeletionJob, stopPulseBaseDeletionJob, stopPulseBaseDataClearJob } = await import(
+      "./base-lifecycle"
+    );
+    const { newShortId } = await import("../lib/short-id");
+    const connection = await connect({
+      servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
+      ignoreClusterUpdates: true,
+      name: "pulse-deletion-test",
+    });
+    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "pulse", observe: observeSyncEvent });
+    const baseId = crypto.randomUUID();
+    const publicBaseId = newShortId();
+    bindProcessSync(sync);
+    try {
+      await sql`INSERT INTO pulse.bases (id, short_id, name, deletion_started_at) VALUES (${baseId}::uuid, ${publicBaseId}, 'Sync lifecycle test', now())`;
+      // Queue duplicate recovery submissions before starting either worker.
+      await submitBaseDeletionJob(baseId, publicBaseId);
+      await submitBaseDeletionJob(baseId, publicBaseId);
+      await startPulseBaseJobs();
+      const deadline = Date.now() + 20_000;
+      let complete = false;
+      while (Date.now() < deadline) {
+        const [state] = await sql<Array<{ exists: boolean; spans: number; summarized: number }>>`
+        SELECT EXISTS (SELECT 1 FROM pulse.bases WHERE id = ${baseId}::uuid) AS exists,
+          COUNT(*)::int AS spans,
+          COUNT(*) FILTER (WHERE summary->>'done' = 'true')::int AS summarized
+        FROM logging.trace_spans
+        WHERE source = 'pulse:base-delete' AND attributes->>'cloud.pulse.base_id' = ${publicBaseId}
+      `;
+        if (state && !state.exists && state.summarized > 0) {
+          expect(state.spans).toBe(1);
+          expect(state.summarized).toBe(1);
+          complete = true;
+          break;
+        }
+        await Bun.sleep(50);
+      }
+      expect(complete).toBe(true);
+    } finally {
+      await stopPulseBaseDeletionJob();
+      await stopPulseBaseDataClearJob();
+      await sync.drain({ timeoutMs: 5_000 });
+      unbindProcessSync();
+      await connection.drain();
+      await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+    }
+  },
+  30_000,
+);

@@ -78,6 +78,7 @@ export const createWorkflowRunEventsProvider = (options: WorkflowRunEventsProvid
       }
       if (message.type === gridsWorkspace.wsType.workflowRunsError) {
         const error = parseError(message.payload, { code: "stream_failed", message: t.workflowUpdatesFailed });
+        if (error.code === "resync_required") controls.resetCursor();
         if (isTerminalWorkflowRunLiveErrorCode(error.code)) controls.terminate(error);
         else options.onError?.(error);
         return;

@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ephemeral } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { sql } from "bun";
 import type { ConversationPresenceHeartbeat, ConversationPresenceMode } from "../contracts";
 import { type MailRequestContext, userBackedActor } from "./auth";
@@ -31,11 +31,14 @@ export type ConversationPresenceSnapshot = {
   participants: ConversationPresenceParticipant[];
 };
 
-const presenceStore = ephemeral<PresenceEntry>({
-  id: "mail.conversation-presence",
-  ttlMs: PRESENCE_TTL_MS,
-  limits: { maxEntries: 250, maxPayloadBytes: 4_000 },
-});
+const presenceStore = lazySync((sync) =>
+  sync.ephemeral<PresenceEntry>({
+    id: "mail.conversation-presence",
+    ttlMs: PRESENCE_TTL_MS,
+    maxEntries: 250,
+    maxValueBytes: 4_000,
+  }),
+);
 
 const authorizeConversation = async (params: {
   context: MailRequestContext;
@@ -77,7 +80,7 @@ const summarizeParticipants = (entries: Array<{ value: PresenceEntry }>): Conver
 };
 
 const snapshotState = async (mailboxId: string, conversationId: string): Promise<ConversationPresenceSnapshot> => {
-  const presence = await presenceStore.snapshot({ tenantId: conversationId });
+  const presence = await presenceStore().snapshot({ tenantId: conversationId });
   const readableUserIds = await currentMailboxUserIds({
     mailboxId,
     userIds: presence.entries.map((entry) => entry.value.userId),
@@ -110,9 +113,9 @@ export const heartbeatConversationPresence = async (params: {
   });
   if (!user.ok) return user;
   const key = `${user.data.id}:${params.input.peerId}`;
-  const state = await presenceStore.snapshot({ tenantId: params.conversationId, prefix: key });
+  const state = await presenceStore().snapshot({ tenantId: params.conversationId, prefix: key });
   const joinedAt = state.entries.find((entry) => entry.key === key)?.value.joinedAt ?? Date.now();
-  await presenceStore.upsert({
+  await presenceStore().upsert({
     tenantId: params.conversationId,
     key,
     value: {
@@ -135,10 +138,9 @@ export const leaveConversationPresence = async (params: {
 }): Promise<Result<ConversationPresenceSnapshot>> => {
   const user = await authorizeConversation({ ...params, permission: "read" });
   if (!user.ok) return user;
-  await presenceStore.remove({
+  await presenceStore().delete({
     tenantId: params.conversationId,
     key: `${user.data.id}:${params.peerId}`,
-    reason: "client-left",
   });
   return ok(await snapshotState(params.mailboxId, params.conversationId));
 };

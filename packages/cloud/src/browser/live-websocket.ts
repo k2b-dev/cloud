@@ -13,6 +13,8 @@ export type LiveWebSocketClose = {
 
 export type LiveWebSocketControls = {
   markApplied: (cursor: string | null | undefined) => void;
+  /** Forget an expired cursor before resubscribing from a fresh snapshot. */
+  resetCursor: () => void;
   send: (message: unknown) => boolean;
   terminate: (error: LiveWebSocketError, close?: LiveWebSocketClose) => void;
 };
@@ -38,6 +40,8 @@ export type LiveWebSocketOptions<TMessage> = {
 export type LiveWebSocket = {
   connect: () => void;
   markApplied: (cursor: string | null | undefined) => void;
+  /** Forget an expired cursor before resubscribing from a fresh snapshot. */
+  resetCursor: () => void;
   send: (message: unknown) => boolean;
   dispose: () => void;
 };
@@ -100,6 +104,10 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     if (cursor) lastAppliedCursor = cursor;
   };
 
+  const resetCursor = () => {
+    lastAppliedCursor = null;
+  };
+
   const send = (message: unknown): boolean => {
     if (!socket || socket.readyState !== WebSocket.OPEN || disposed || terminated) return false;
     try {
@@ -137,6 +145,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
 
   const controls: LiveWebSocketControls = {
     markApplied,
+    resetCursor,
     send,
     terminate: fatal,
   };
@@ -243,6 +252,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       openSocket();
     },
     markApplied,
+    resetCursor,
     send,
     dispose: () => {
       if (disposed) return;

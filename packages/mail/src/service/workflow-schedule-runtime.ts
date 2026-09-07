@@ -1,4 +1,6 @@
-import { createRuntimeLifecycle, logger, trace } from "@valentinkolb/cloud/services";
+import type { Scheduler, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { createRuntimeLifecycle, logger, syncOps, trace } from "@valentinkolb/cloud/services";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import {
   createWorkflowScheduleRegistration,
@@ -8,13 +10,13 @@ import {
   workflowScheduleSlotKey,
 } from "@valentinkolb/cloud/workflows/runtime";
 import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
-import { type Scheduler, scheduler } from "@k2b/sync";
 import { sql } from "bun";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 
+const unregisterSyncOps: Array<() => void> = [];
+
 const SCHEDULER_ID = "mail:workflow-schedules";
 const SCHEDULE_PREFIX = "mail:workflow-schedule:";
-const MAX_RETRIES = 5;
 const log = logger("mail:workflow-schedules");
 
 type DbActivation = {
@@ -136,16 +138,19 @@ const currentRegistration = (item: Awaited<ReturnType<Scheduler["list"]>>[number
   workflowId: typeof item.meta?.workflowId === "string" ? item.meta.workflowId : item.id,
   triggerId: typeof item.meta?.triggerId === "string" ? item.meta.triggerId : "stale",
   revision: typeof item.meta?.revision === "string" ? item.meta.revision : "stale",
-  schedule: { cron: item.cron, timezone: item.tz },
+  schedule: { cron: item.cron, timezone: item.timezone },
 });
 
-const transport = scheduler({ id: SCHEDULER_ID });
+const transport = lazySync((sync) =>
+  sync.scheduler({ id: SCHEDULER_ID, delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
+);
+let transportWorker: Worker | undefined;
 
 const register = async (registration: WorkflowScheduleRegistration, activation: MailWorkflowScheduleActivation): Promise<void> => {
-  await transport.create({
+  await transport().create({
     id: registration.id,
     cron: registration.schedule.cron,
-    tz: registration.schedule.timezone,
+    timezone: registration.schedule.timezone,
     meta: {
       appId: MAIL_WORKFLOW_APP_ID,
       family: SCHEDULER_ID,
@@ -158,16 +163,22 @@ const register = async (registration: WorkflowScheduleRegistration, activation: 
       revision: registration.revision,
       triggerId: registration.triggerId,
     },
-    trace: trace.fromSyncSchedule<{ runId: string | null; status: string }>({
-      name: `Mail workflow schedule: ${activation.workflowName}`,
-      source: registration.id,
-      appId: MAIL_WORKFLOW_APP_ID,
-      attributes: { "cloud.mail.workflow_id": registration.workflowId },
-    }),
-    process: async ({ ctx }) => {
+    process: async (ctx) => {
+      const spanKey = trace.syncSpanKey("scheduler", SCHEDULER_ID, ctx.runId);
+      await trace.start({
+        name: `Mail workflow schedule: ${activation.workflowName}`,
+        source: SCHEDULER_ID,
+        appId: MAIL_WORKFLOW_APP_ID,
+        category: "schedule",
+        spanKey,
+        attributes: { "cloud.mail.workflow_id": registration.workflowId },
+      });
       const current = await loadCurrent(registration);
-      if (!current || current.registration.revision !== registration.revision) return { runId: null, status: "stale" };
-      const slot = new Date(ctx.slotTs).toISOString();
+      if (!current || current.registration.revision !== registration.revision) {
+        await trace.end({ spanKey, summary: { runId: null, status: "stale" } });
+        return;
+      }
+      const slot = new Date(ctx.slot).toISOString();
       const triggerValues = { occurredAt: slot, slot };
       const withValues = isJsonObject(current.config.with) ? current.config.with : {};
       const emission = await emitWorkflowEvent(
@@ -182,12 +193,7 @@ const register = async (registration: WorkflowScheduleRegistration, activation: 
         },
         { dispatch: "now" },
       );
-      return { runId: emission.runIds[0] ?? null, status: emission.runIds.length ? "queued" : "ignored" };
-    },
-    after: ({ ctx }) => {
-      if (ctx.error && ctx.failureCount < MAX_RETRIES) {
-        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-      }
+      await trace.end({ spanKey, summary: { runId: emission.runIds[0] ?? null, status: emission.runIds.length ? "queued" : "ignored" } });
     },
   });
 };
@@ -199,7 +205,7 @@ export const reconcileMailWorkflowSchedules = async (): Promise<void> => {
   const activations = await listActive();
   const desired = activations.map((item) => item.registration);
   const byId = new Map(activations.map((item) => [item.registration.id, item]));
-  const current = (await transport.list()).filter((item) => item.id.startsWith(SCHEDULE_PREFIX)).map(currentRegistration);
+  const current = (await transport().list()).filter((item) => item.id.startsWith(SCHEDULE_PREFIX)).map(currentRegistration);
   await reconcileWorkflowSchedules({
     desired,
     current,
@@ -207,17 +213,24 @@ export const reconcileMailWorkflowSchedules = async (): Promise<void> => {
       create: (registration) => register(registration, byId.get(registration.id)!),
       update: (_current, registration) => register(registration, byId.get(registration.id)!),
       register: (registration) => register(registration, byId.get(registration.id)!),
-      remove: (registration) => transport.delete({ id: registration.id }),
+      remove: async (registration) => {
+        await transport().delete({ id: registration.id });
+      },
     },
   });
 };
 
 const lifecycle = createRuntimeLifecycle({
   start: async () => {
+    unregisterSyncOps.push(syncOps.registerScheduler({ name: "mail:workflow-schedules", scheduler: transport() }));
     await reconcileMailWorkflowSchedules();
-    transport.start();
+    transportWorker = await transport().process();
   },
-  stop: () => transport.stop(),
+  stop: async () => {
+    await transportWorker?.drain();
+    transportWorker = undefined;
+    for (const unregister of unregisterSyncOps.splice(0)) unregister();
+  },
 });
 
 export const startMailWorkflowScheduleRuntime = lifecycle.start;

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { getProcessSync } from "@valentinkolb/cloud";
 import { mandates, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
 import { deleteWorkflowScope } from "@valentinkolb/cloud/workflows/store";
@@ -14,6 +15,8 @@ import {
   listIncomingAutomations,
   setIncomingAutomationEnabled,
   startIncomingAutomationBackfill,
+  startIncomingAutomationBackfillRuntime,
+  stopIncomingAutomationBackfillRuntime,
   updateIncomingAutomation,
 } from "./incoming-automations";
 import { createMailbox } from "./mailboxes";
@@ -143,6 +146,65 @@ suite("incoming automations", () => {
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     }
     if (userIds.length > 0) await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(userIds)}::uuid[])`;
+  });
+
+  test("completes an empty durable backfill and preserves its terminal state and activity on replay", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Durable backfill",
+        enabled: true,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const operationId = crypto.randomUUID();
+    const request = {
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { operationId, expectedRevision: created.data.revision },
+    };
+    // Simulate a second request arriving while another process owns the complete start critical section.
+    const mutex = getProcessSync().mutex({ id: "mail:incoming-automation-start", ttlMs: 30_000, retry: { maxAttempts: 1 } });
+    const lock = await mutex.acquire({ resource: created.data.id });
+    expect(lock).not.toBeNull();
+    if (!lock) return;
+    try {
+      const concurrent = await startIncomingAutomationBackfill(request);
+      expect(concurrent.ok).toBe(false);
+      if (!concurrent.ok) expect(concurrent.error.message).toContain("being started");
+    } finally {
+      await mutex.release(lock);
+    }
+    await startIncomingAutomationBackfillRuntime();
+    try {
+      let result = await startIncomingAutomationBackfill(request);
+      for (let attempt = 0; attempt < 100 && result.ok && result.data.state !== "completed"; attempt++) {
+        await Bun.sleep(20);
+        result = await startIncomingAutomationBackfill(request);
+      }
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.data.state).toBe("completed");
+      expect(result.data.newlyAcceptedCount).toBe(0);
+      const repeated = await startIncomingAutomationBackfill(request);
+      expect(repeated.ok && repeated.data.updatedAt).toBe(result.data.updatedAt);
+      const [span] = await sql<{ attributes: Record<string, unknown>; summary: Record<string, unknown> }[]>`
+        SELECT attributes, summary FROM logging.trace_spans
+        WHERE source = 'mail:incoming-automation-backfill'
+          AND attributes ->> 'mail.backfill.operation_id' = ${operationId}
+          AND ended_at IS NOT NULL
+      `;
+      expect(span?.attributes["mail.mailbox.id"]).toBe(mailboxId);
+      expect(span?.summary.status).toBe("completed");
+      expect(span?.summary.dispatched).toBe(0);
+    } finally {
+      await stopIncomingAutomationBackfillRuntime();
+    }
   });
 
   test("requires admin and persists one unified managed workflow", async () => {

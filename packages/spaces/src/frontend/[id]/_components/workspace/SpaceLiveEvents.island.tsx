@@ -29,6 +29,10 @@ export default function SpaceLiveEvents(props: Props) {
       onMessage: (message, controls) => {
         if (disposed) return;
         if (message.payload.spaceId && message.payload.spaceId !== props.spaceId) return;
+        if (message.type === SPACE_LIVE_WS_TYPE.error && message.payload.code === "resync_required") {
+          controls.terminate({ code: message.payload.code, message: message.payload.message });
+          return;
+        }
         if (message.type === SPACE_LIVE_WS_TYPE.ready) {
           void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
           return;

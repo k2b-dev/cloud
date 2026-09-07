@@ -27,12 +27,12 @@ describe("AI live cursors", () => {
     let latestReads = 0;
     const latest = async () => {
       latestReads += 1;
-      return "9-2";
+      return "s6t.test.9";
     };
-    expect(await resolveAiLiveCursor("user-1", "8-1", false, latest)).toBe("8-1");
+    expect(await resolveAiLiveCursor("user-1", "s6t.test.8", false, latest)).toBe("s6t.test.8");
     expect(latestReads).toBe(0);
-    expect(await resolveAiLiveCursor("user-1", "8-1", true, latest)).toBe("9-2");
-    expect(await resolveAiLiveCursor("user-1", null, false, async () => null)).toBe("0-0");
+    expect(await resolveAiLiveCursor("user-1", "s6t.test.8", true, latest)).toBe("s6t.test.9");
+    expect(await resolveAiLiveCursor("user-1", null, false, async () => "s6t.test.0")).toBe("s6t.test.0");
   });
 
   test("validates cursors and events", () => {
@@ -44,7 +44,7 @@ describe("AI live cursors", () => {
       domains: ["conversation-list"],
       at: "2026-08-12T16:00:00.000Z",
     } satisfies AiInvalidation;
-    expect(parseAiLiveReplayEvent({ cursor: "10-1", data: event })).toEqual({ cursor: "10-1", event });
+    expect(parseAiLiveReplayEvent({ cursor: "s6t.test.10", data: event })).toEqual({ cursor: "s6t.test.10", event });
     expect(parseAiLiveReplayEvent({ cursor: "latest", data: event })).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe("AI live cursors", () => {
         send: () => sendStatus,
         getBufferedAmount: () => bufferedAmount,
       }) as unknown as Parameters<typeof sendAiLiveMessage>[0];
-    const message = { type: "ai.live.ready", payload: { cursor: "0-0", recovered: false } } as const;
+    const message = { type: "ai.live.ready", payload: { cursor: "s6t.test.0", recovered: false } } as const;
 
     expect(sendAiLiveMessage(socket(1, 0), message)).toBe(true);
     expect(sendAiLiveMessage(socket(0, 0), message)).toBe(true);

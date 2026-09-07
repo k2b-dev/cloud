@@ -124,8 +124,8 @@ export const resolveAiLiveCursor = async (
   userId: string,
   fromCursor: string | null,
   recover: boolean,
-  latest: (userId: string) => Promise<string | null> = latestAiInvalidationCursor,
-): Promise<string> => AiLiveCursorSchema.parse(recover || !fromCursor ? ((await latest(userId)) ?? "0-0") : fromCursor);
+  latest: (userId: string) => Promise<string> = latestAiInvalidationCursor,
+): Promise<string> => AiLiveCursorSchema.parse(recover || !fromCursor ? await latest(userId) : fromCursor);
 
 export const parseAiLiveReplayEvent = (item: { cursor: unknown; data: unknown }): { cursor: string; event: AiInvalidation } | null => {
   const cursor = AiLiveCursorSchema.safeParse(item.cursor);

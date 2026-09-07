@@ -4,7 +4,7 @@ import type { PermissionLevel, User } from "@valentinkolb/cloud/contracts";
 import type { ServiceAccount } from "@valentinkolb/cloud/services";
 
 const cloudServices = await import("@valentinkolb/cloud/services");
-const sync = await import("@k2b/sync");
+const cloud = await import("@valentinkolb/cloud");
 const accessModule = await import("./access");
 const noteRefsModule = await import("./note-refs");
 
@@ -49,8 +49,8 @@ type SubmittedJob = {
 type CreatedSchedule = {
   id: string;
   cron: string;
-  tz: string;
-  process: (config: { ctx: { slotTs: number } }) => Promise<void>;
+  timezone: string;
+  process: (config: { runId: string }) => Promise<void>;
 };
 
 let serviceAccountLookupCount = 0;
@@ -62,6 +62,11 @@ let submittedJobs: SubmittedJob[] = [];
 let createdSchedules: CreatedSchedule[] = [];
 let schedulerStarts = 0;
 let reindexRuns = 0;
+let jobHandler:
+  | ((context: { input: { trigger: "scheduler" }; signal: AbortSignal; heartbeat: () => Promise<void> }) => Promise<void>)
+  | undefined;
+let workerStops = 0;
+let workerDrains = 0;
 
 mock.module("@valentinkolb/cloud/services", () => ({
   ...cloudServices,
@@ -75,6 +80,7 @@ mock.module("@valentinkolb/cloud/services", () => ({
     warn: () => {},
     error: () => {},
   }),
+  syncOps: { registerDeadLetters: () => {}, registerScheduler: () => {} },
   trace: {
     fromSyncJob: () => () => {},
     fromSyncSchedule: () => () => {},
@@ -113,30 +119,41 @@ mock.module("@valentinkolb/cloud/services", () => ({
   },
 }));
 
-mock.module("@k2b/sync", () => ({
-  ...sync,
-  SchedulerControlNotFoundError: class SchedulerControlNotFoundError extends Error {},
-  SchedulerControlTimeoutError: class SchedulerControlTimeoutError extends Error {},
-  SchedulerControlUnavailableError: class SchedulerControlUnavailableError extends Error {},
+const fakeWorker = {
+  stop: () => {
+    workerStops += 1;
+  },
+  drain: async () => {
+    workerDrains += 1;
+  },
+};
+const fakeSync = {
   job: () => ({
+    process: async (_options: unknown, handler: typeof jobHandler) => {
+      jobHandler = handler;
+      return fakeWorker;
+    },
     submit: async (config: SubmittedJob) => {
       submittedJobs.push(config);
-      return `job:${config.key}`;
+      return { jobId: `job:${config.key}` };
     },
-  }),
-  schedulerControl: () => ({
-    list: async () => [],
-    runNow: async () => {},
   }),
   scheduler: () => ({
-    start: () => {
+    process: async () => {
       schedulerStarts += 1;
+      return fakeWorker;
     },
-    stop: async () => {},
     create: async (config: CreatedSchedule) => {
       createdSchedules.push(config);
     },
   }),
+};
+mock.module("@valentinkolb/cloud", () => ({
+  ...cloud,
+  lazySync: (create: (sync: typeof fakeSync) => unknown) => {
+    const handle = create(fakeSync);
+    return () => handle;
+  },
 }));
 
 mock.module("./access", () => ({
@@ -185,6 +202,8 @@ beforeEach(async () => {
   createdSchedules = [];
   schedulerStarts = 0;
   reindexRuns = 0;
+  workerStops = 0;
+  workerDrains = 0;
 });
 
 describe("notebook resource API keys", () => {
@@ -234,7 +253,7 @@ describe("notebook resource API keys", () => {
 });
 
 describe("notebook reindex runtime", () => {
-  test("submits startup and scheduled reindex work through the sync job", async () => {
+  test("submits scheduled reindex work without a startup backfill", async () => {
     await reindexRuntime.start();
 
     expect(schedulerStarts).toBe(1);
@@ -242,14 +261,25 @@ describe("notebook reindex runtime", () => {
     expect(createdSchedules[0]).toMatchObject({
       id: "notebooks:reindex",
       cron: "0 */12 * * *",
-      tz: "Europe/Berlin",
+      timezone: "Europe/Berlin",
     });
-    expect(submittedJobs).toEqual([{ key: "startup:derived-v1", input: { trigger: "startup" } }]);
+    expect(submittedJobs).toEqual([]);
     expect(reindexRuns).toBe(0);
 
-    await createdSchedules[0]!.process({ ctx: { slotTs: 12345 } });
+    await createdSchedules[0]!.process({ runId: "run:12345" });
 
-    expect(submittedJobs).toContainEqual({ key: "slot:12345", input: { trigger: "scheduler" } });
+    expect(submittedJobs).toContainEqual({ key: "run:12345", input: { trigger: "scheduler" } });
     expect(reindexRuns).toBe(0);
   });
+});
+
+test("reindex runtime executes jobs and drains both workers before restart", async () => {
+  await reindexRuntime.start();
+  await jobHandler!({ input: { trigger: "scheduler" }, signal: new AbortController().signal, heartbeat: async () => {} });
+  expect(reindexRuns).toBe(1);
+  await reindexRuntime.stop();
+  expect(workerStops).toBe(2);
+  expect(workerDrains).toBe(2);
+  await reindexRuntime.start();
+  expect(schedulerStarts).toBe(2);
 });

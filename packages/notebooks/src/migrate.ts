@@ -71,6 +71,9 @@ export const migrate = async (): Promise<void> => {
       locked_at TIMESTAMPTZ DEFAULT NULL
     )
   `.simple();
+  // Redis stream coordinates remain available for cutover verification. The new
+  // log has its own opaque cursor and sequence; never reinterpret old coordinates.
+  await sql`ALTER TABLE notebooks.notes ADD COLUMN IF NOT EXISTS yjs_stream_cursor TEXT`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_notes_notebook
     ON notebooks.notes(notebook_id)

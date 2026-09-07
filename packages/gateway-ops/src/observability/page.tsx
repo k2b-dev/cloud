@@ -18,10 +18,10 @@ import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import ObservabilityChart from "../frontend/ObservabilityChart.island";
 import { buildGatewayHealth } from "../health";
+import { gatewayOpsMessages } from "../messages";
 import { buildOverviewSignals, type OverviewSignalSeverity, overviewVerdict } from "./overview";
 import { DEFAULT_TELEMETRY_RANGE, isTelemetryRange, TELEMETRY_RANGES, type TelemetryRange } from "./telemetry/contracts";
 import { getTelemetryOverview, getTelemetryTimeseries, listTelemetryRoutes } from "./telemetry/service";
-import { gatewayOpsMessages } from "../messages";
 
 const RANGE_KEYS = Object.keys(TELEMETRY_RANGES) as TelemetryRange[];
 
@@ -56,27 +56,30 @@ export default ssr<AuthContext>(async (c) => {
     settled(() => listTelemetryRoutes({ range }, "errorRate", { errorsOnly: true, slowOnly: false }), []),
     settled(() => logging.summary(), null),
     settled(() => logging.timeseries({ sinceHours: TELEMETRY_RANGES[range].hours }), []),
-    settled(() => trace.stats({ filter: { window: jobsWindow, excludeDefinitions: true } }), null),
+    settled(() => trace.stats({ filter: { window: jobsWindow } }), null),
   ]);
 
   const offlineApps = health.value?.apps.filter((app) => app.status !== "ok") ?? [];
   const worstRoutes = failingRoutes.value.slice(0, 5);
-  const signals = buildOverviewSignals({
-    range,
-    jobsWindow,
-    offlineApps: offlineApps.map((app) => app.id),
-    serverErrors: telemetry.value?.serverErrors ?? 0,
-    rateLimited: telemetry.value?.rateLimited ?? 0,
-    failedRuns: jobStats.value?.failed ?? 0,
-    stuckRuns: jobStats.value?.stuck ?? 0,
-    logErrors: logSummary.value?.errors24h ?? 0,
-    unavailable: {
-      apps: health.error ?? undefined,
-      telemetry: telemetry.error ?? telemetryTimeseries.error ?? failingRoutes.error ?? undefined,
-      runs: jobStats.error ?? undefined,
-      logs: logSummary.error ?? logTimeseries.error ?? undefined,
+  const signals = buildOverviewSignals(
+    {
+      range,
+      jobsWindow,
+      offlineApps: offlineApps.map((app) => app.id),
+      serverErrors: telemetry.value?.serverErrors ?? 0,
+      rateLimited: telemetry.value?.rateLimited ?? 0,
+      failedRuns: jobStats.value?.failed ?? 0,
+      stuckRuns: jobStats.value?.stuck ?? 0,
+      logErrors: logSummary.value?.errors24h ?? 0,
+      unavailable: {
+        apps: health.error ?? undefined,
+        telemetry: telemetry.error ?? telemetryTimeseries.error ?? failingRoutes.error ?? undefined,
+        runs: jobStats.error ?? undefined,
+        logs: logSummary.error ?? logTimeseries.error ?? undefined,
+      },
     },
-  }, locale);
+    locale,
+  );
   const verdict = overviewVerdict(signals, locale);
   const serverErrorSeries = [
     {

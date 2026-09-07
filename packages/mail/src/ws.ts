@@ -1,4 +1,5 @@
 import type { Result } from "@k2b/stdlib";
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import type { PermissionLevel } from "@valentinkolb/cloud/server";
 import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
@@ -84,8 +85,8 @@ export const evaluateMailLiveAccess = async (
 export const resolveMailLiveCursor = async (
   mailboxId: string,
   fromCursor: string | null,
-  latestCursor: (mailboxId: string) => Promise<string | null> = latestMailInvalidationCursor,
-): Promise<string> => MailLiveCursorSchema.parse(fromCursor ?? (await latestCursor(mailboxId)) ?? "0-0");
+  latestCursor: (mailboxId: string) => Promise<string> = latestMailInvalidationCursor,
+): Promise<string> => MailLiveCursorSchema.parse(fromCursor ?? (await latestCursor(mailboxId)));
 
 export const parseMailLiveReplayEvent = (mailboxId: string, event: { cursor: string; data: unknown }) => {
   const cursor = MailLiveCursorSchema.safeParse(event.cursor);
@@ -221,8 +222,30 @@ const startStream = (ctx: WsContext, mailboxId: string, internalMailboxId: strin
 
   void (async () => {
     try {
-      for await (const event of liveMailInvalidations({ mailboxId: internalMailboxId, after, signal: abort.signal })) {
-        if (!(await deliverReplayEvent(ctx, mailboxId, internalMailboxId, abort, event))) break;
+      let cursor = after;
+      while (subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) {
+        try {
+          for await (const event of liveMailInvalidations({ mailboxId: internalMailboxId, after: cursor, signal: abort.signal })) {
+            if (!(await deliverReplayEvent(ctx, mailboxId, internalMailboxId, abort, event))) return;
+          }
+          break;
+        } catch (error) {
+          if (!(error instanceof RetentionGapError || error instanceof CursorMismatchError)) throw error;
+          if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return;
+          const access = await currentAccess(ctx, internalMailboxId);
+          if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return;
+          if (!access.ok) {
+            revoke(ctx, mailboxId, access);
+            return;
+          }
+          // A repeated ready makes each browser consumer refresh its canonical snapshot.
+          cursor = await resolveMailLiveCursor(internalMailboxId, null);
+          if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return;
+          if (!send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId, cursor } })) {
+            closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
+            return;
+          }
+        }
       }
       if (subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) {
         log.warn("Mail WebSocket event stream ended unexpectedly", { mailboxId });

@@ -1,5 +1,6 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
+import { syncOpsCredentials } from "../sync/service";
 import { jobsObservabilityService } from "./service";
 
 const baseUrl = "/admin/observability/jobs";
@@ -33,11 +34,15 @@ export const runScheduleNowAction = async (c: Context<AuthContext>) => {
   const schedulerId = field(body, "schedulerId");
   const scheduleId = field(body, "scheduleId");
 
-  const result = await jobsObservabilityService.runScheduleNow({
-    schedulerId,
-    scheduleId,
-    requestId: crypto.randomUUID(),
-  });
+  const result = await jobsObservabilityService.runScheduleNow(
+    {
+      appId: field(body, "appId"),
+      schedulerId,
+      scheduleId,
+      requestId: crypto.randomUUID(),
+    },
+    syncOpsCredentials(c.req.raw),
+  );
 
   if (!result.ok) {
     return c.redirect(withFeedback(redirectTo, "error", result.error.message), 303);

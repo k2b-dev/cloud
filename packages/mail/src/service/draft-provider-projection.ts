@@ -1,7 +1,8 @@
 import { type Readable, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { job, type Lock } from "@k2b/sync";
-import { createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@valentinkolb/cloud/services";
+import type { Lock, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { createRuntimeTaskTracker, logger, stopRuntimeJobs, syncOps, toPgTextArray } from "@valentinkolb/cloud/services";
 import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
@@ -23,6 +24,8 @@ import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+
+const unregisterSyncOps: Array<() => void> = [];
 
 type SqlClient = typeof sql;
 type ProjectionState =
@@ -94,7 +97,7 @@ const withDraftProjectionLeases = async <T>(params: {
           cause,
         });
       }
-      if (!(await mailProviderOperationMutex.extend(params.lock, MAIL_PROVIDER_OPERATION_LEASE_MS))) {
+      if (!(await mailProviderOperationMutex().extend(params.lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS }))) {
         throw Object.assign(new Error("Draft projection provider lease was lost"), {
           code: "DRAFT_PROJECTION_PROVIDER_LEASE_LOST",
         });
@@ -514,7 +517,10 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
     folderId: roleFolder.data.id,
     rights: snapshot.state === "retiring" ? ["read", "delete_messages"] : ["read", "insert"],
   });
-  const lock = await mailProviderOperationMutex.acquire(initial.execution.remoteResourceId!, MAIL_PROVIDER_OPERATION_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({
+    resource: initial.execution.remoteResourceId!,
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
   if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY" });
   try {
     await withDraftProjectionLeases({
@@ -713,7 +719,9 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
       },
     });
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
@@ -1249,7 +1257,10 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
     folderId: snapshot.folder_id,
     rights: ["read"],
   });
-  const lock = await mailProviderOperationMutex.acquire(current.execution.remoteResourceId!, MAIL_PROVIDER_OPERATION_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({
+    resource: current.execution.remoteResourceId!,
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
   if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY" });
   try {
     await withDraftProjectionLeases({
@@ -1371,58 +1382,88 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
       },
     });
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
-const exportJob = job<{ snapshotId: string }, void>({
-  id: "mail:project-draft",
-  defaults: { leaseMs: JOB_LEASE_MS, keyTtlMs: 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    tasks.run(() => processExportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat({ leaseMs: JOB_LEASE_MS }))) ?? Promise.resolve(),
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount < 8) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 10 * 60_000 }) });
-      return;
-    }
-    await markProjectionFailure(ctx.input.snapshotId, "needs_attention", ctx.error);
-    log.error("Draft export exhausted retries", {
-      snapshotId: ctx.input.snapshotId,
-      code: failureCode(ctx.error, "DRAFT_EXPORT_FAILED"),
-    });
-  },
-});
+const exportJob = lazySync((sync) =>
+  sync.job<{ snapshotId: string }>({
+    id: "mail:project-draft",
+    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 8, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+  }),
+);
+let exportJobWorker: Worker | undefined;
+const startExportJob = async (): Promise<void> => {
+  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:project-draft", kind: "job", store: exportJob().deadLetters }));
+  exportJobWorker = await exportJob().process(
+    {
+      onError: async ({ context, error }) => {
+        if (context.attempt >= 8) {
+          await markProjectionFailure(context.input.snapshotId, "needs_attention", error);
+          log.error("Draft projection exhausted retries", { snapshotId: context.input.snapshotId, error: error.message });
+        }
+        return context.attempt >= 8
+          ? { action: "dead_letter", reason: error instanceof Error ? error.message : String(error) }
+          : { action: "retry" };
+      },
+    },
+    async (ctx) => {
+      try {
+        await tasks.run(() => processExportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat()));
+      } catch (error) {
+        if (failureCode(error, "DRAFT_EXPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
+        throw error;
+      }
+    },
+  );
+};
 
-const importJob = job<{ snapshotId: string }, void>({
-  id: "mail:import-draft",
-  defaults: { leaseMs: JOB_LEASE_MS, keyTtlMs: 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    tasks.run(() => processImportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat({ leaseMs: JOB_LEASE_MS }))) ?? Promise.resolve(),
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount < 8) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 10 * 60_000 }) });
-      return;
-    }
-    await markProjectionFailure(ctx.input.snapshotId, "needs_attention", ctx.error);
-    log.error("Draft import exhausted retries", {
-      snapshotId: ctx.input.snapshotId,
-      code: failureCode(ctx.error, "DRAFT_IMPORT_FAILED"),
-    });
-  },
-});
+const importJob = lazySync((sync) =>
+  sync.job<{ snapshotId: string }>({
+    id: "mail:import-draft",
+    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 8, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+  }),
+);
+let importJobWorker: Worker | undefined;
+const startImportJob = async (): Promise<void> => {
+  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:import-draft", kind: "job", store: importJob().deadLetters }));
+  importJobWorker = await importJob().process(
+    {
+      onError: async ({ context, error }) => {
+        if (context.attempt >= 8) {
+          await markProjectionFailure(context.input.snapshotId, "needs_attention", error);
+          log.error("Draft projection exhausted retries", { snapshotId: context.input.snapshotId, error: error.message });
+        }
+        return context.attempt >= 8
+          ? { action: "dead_letter", reason: error instanceof Error ? error.message : String(error) }
+          : { action: "retry" };
+      },
+    },
+    async (ctx) => {
+      try {
+        await tasks.run(() => processImportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat()));
+      } catch (error) {
+        if (failureCode(error, "DRAFT_IMPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
+        throw error;
+      }
+    },
+  );
+};
 
 export const draftExportJobKey = (snapshotId: string): string => `snapshot:${snapshotId}`;
 
 const submitExport = async (snapshotId: string): Promise<void> => {
-  await (tasks.run(() => exportJob.submit({ key: draftExportJobKey(snapshotId), input: { snapshotId } })) ?? Promise.resolve());
+  await (tasks.run(() => exportJob().submit({ coalesce: true, key: draftExportJobKey(snapshotId), input: { snapshotId } })) ??
+    Promise.resolve());
 };
 
 export const enqueueDraftProjectionSnapshot = submitExport;
 
 const submitImport = async (snapshotId: string): Promise<void> => {
-  await (tasks.run(() => importJob.submit({ key: `snapshot:${snapshotId}`, input: { snapshotId } })) ?? Promise.resolve());
+  await (tasks.run(() => importJob().submit({ coalesce: true, key: `snapshot:${snapshotId}`, input: { snapshotId } })) ??
+    Promise.resolve());
 };
 
 export const enqueueDraftProjection = async (draftId: string): Promise<void> => {
@@ -1734,10 +1775,17 @@ export const submitDueDraftProjectionWork = async (): Promise<{ exports: number;
 
 export const startDraftProjectionRuntime = async (): Promise<void> => {
   tasks.open();
+  await startExportJob();
+  await startImportJob();
   await submitDueDraftProjectionWork();
 };
 
 export const stopDraftProjectionRuntime = async (): Promise<void> => {
   tasks.close();
-  await stopRuntimeJobs(tasks, [exportJob, importJob]);
+  await stopRuntimeJobs(
+    tasks,
+    [exportJobWorker, importJobWorker].filter((worker): worker is Worker => worker !== undefined),
+  ).finally(() => {
+    for (const unregister of unregisterSyncOps.splice(0)) unregister();
+  });
 };

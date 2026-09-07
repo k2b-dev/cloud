@@ -1,11 +1,17 @@
-import { scheduler } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 
 const log = logger("contacts:capability-retention");
 const RETENTION_DAYS = 30;
 const DELETE_BATCH_SIZE = 10_000;
-const retentionScheduler = scheduler({ id: "contacts-capability-retention" });
+const retentionScheduler = lazySync((sync) =>
+  sync.scheduler({
+    id: "contacts-capability-retention",
+    delivery: { maxAttempts: 3, backoffMs: [5_000, 10_000] },
+  }),
+);
 
 const deleteExpiredResults = async (): Promise<number> => {
   const rows = await sql<{ idempotency_key_hash: string }[]>`
@@ -25,43 +31,28 @@ const deleteExpiredResults = async (): Promise<number> => {
   return rows.length;
 };
 
-let started = false;
+let worker: Worker | undefined;
 
 export const capabilityRetention = {
   start: async (): Promise<void> => {
-    if (!started) {
-      retentionScheduler.start();
-      started = true;
-    }
-    await retentionScheduler.create({
+    if (worker) return;
+    await retentionScheduler().create({
       id: "contacts:capability-results:cleanup",
       cron: "17 * * * *",
-      tz: "UTC",
-      meta: {
-        appId: "contacts",
-        family: "maintenance",
-        label: "Capability idempotency retention",
-      },
-      process: async () => ({ deleted: await deleteExpiredResults() }),
-      after: ({ ctx }) => {
-        if (ctx.error && ctx.failureCount < 3) {
-          ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-          return;
+      timezone: "UTC",
+      misfire: "latest",
+      meta: { appId: "contacts", family: "maintenance", label: "Capability idempotency retention" },
+      process: async (context) => {
+        while (!context.signal.aborted && (await deleteExpiredResults()) === DELETE_BATCH_SIZE) {
+          await context.heartbeat();
         }
-        if (ctx.error) {
-          log.error("Capability idempotency retention exhausted retries", {
-            failureCount: ctx.failureCount,
-            error: ctx.error.message,
-          });
-          return;
-        }
-        if (ctx.data?.deleted === DELETE_BATCH_SIZE) ctx.reschedule({ delayMs: 0 });
+        context.signal.throwIfAborted();
       },
     });
+    worker = await retentionScheduler().process();
   },
   stop: async (): Promise<void> => {
-    if (!started) return;
-    await retentionScheduler.stop();
-    started = false;
+    await worker?.stop();
+    worker = undefined;
   },
 };

@@ -1,5 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { job } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { syncOps } from "@valentinkolb/cloud/services";
 import { type SQL, sql } from "bun";
 import {
   CONTROLLED_DESTRUCTION_BATCH_MAX,
@@ -332,18 +334,26 @@ export const processRun = async (runId: string, heartbeat: () => Promise<void> =
   });
 };
 
-const destructionJob = job<{ runId: string }, void>({
-  id: "grids:controlled-destruction",
-  defaults: { leaseMs: 30_000, keyTtlMs: 24 * 60 * 60_000 },
-  process: async ({ ctx }) => processRun(ctx.input.runId, () => ctx.heartbeat({ leaseMs: 30_000 })),
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 1_000, maxMs: 30_000 }) });
-      return;
-    }
-    await sql.begin(async (tx) => {
-      await tx`
+const destructionJob = lazySync((sync) =>
+  sync.job<{ runId: string }>({
+    id: "grids:controlled-destruction",
+    delivery: { ackWaitMs: 30_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },
+  }),
+);
+let destructionWorker: Worker | undefined;
+let unregisterDeadLetters: (() => void) | undefined;
+export const startControlledDestructionJobs = async (): Promise<void> => {
+  unregisterDeadLetters ??= syncOps.registerDeadLetters({
+    name: "grids:controlled-destruction",
+    kind: "job",
+    store: destructionJob().deadLetters,
+  });
+  destructionWorker ??= await destructionJob().process(
+    {
+      onError: async ({ context: ctx, error }) => {
+        if (ctx.attempt < 3) return { action: "retry" };
+        await sql.begin(async (tx) => {
+          await tx`
         UPDATE grids.controlled_destruction_items
         SET status = 'failed', message = 'Destruction failed. Ask an operator to inspect the Grids logs.', processed_at = now()
         WHERE run_id = ${ctx.input.runId}::uuid AND status = 'pending'
@@ -353,18 +363,22 @@ const destructionJob = job<{ runId: string }, void>({
             ORDER BY position LIMIT 1
           )
       `;
-      await tx`
+          await tx`
         UPDATE grids.controlled_destruction_runs
         SET status = 'failed', completed_at = now(), last_error = 'The destruction job failed. Ask an operator to inspect the Grids logs.'
         WHERE id = ${ctx.input.runId}::uuid AND status IN ('queued', 'running', 'cancel_requested')
       `;
-    });
-  },
-});
+        });
+        return { action: "dead_letter", reason: error.message };
+      },
+    },
+    async (ctx) => processRun(ctx.input.runId, () => ctx.heartbeat()),
+  );
+};
 
 const queueRun = async (runId: string): Promise<void> => {
   try {
-    await destructionJob.submit({ key: `run:${runId}`, input: { runId } });
+    await destructionJob().submit({ coalesce: true, key: `run:${runId}`, input: { runId } });
   } catch (error) {
     await sql`
       UPDATE grids.controlled_destruction_runs
@@ -454,4 +468,9 @@ export const cancel = async (baseId: string, runPublicId: string, locale?: strin
   return ok(run);
 };
 
-export const stopControlledDestructionJobs = (): void => destructionJob.stop();
+export const stopControlledDestructionJobs = async (): Promise<void> => {
+  await destructionWorker?.drain({ timeoutMs: 30_000 });
+  destructionWorker = undefined;
+  unregisterDeadLetters?.();
+  unregisterDeadLetters = undefined;
+};

@@ -3,6 +3,7 @@ import type { GridsWorkflowRunEvent } from "../../lib/workflow-run-events";
 
 type ProviderError = { code: string; message: string };
 type ProviderControls = {
+  resetCursor: () => void;
   markApplied: (cursor: string | null | undefined) => void;
   terminate: (error: ProviderError) => void;
 };
@@ -57,6 +58,10 @@ const WORKFLOW_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_WORKFLOW_ID = "22222222-2222-4222-8222-222222222222";
 
 const controlsFor = (call: ProviderCall, order?: string[]): ProviderControls => ({
+  resetCursor: () => {
+    call.controlCursors.push(null);
+    order?.push("reset");
+  },
   markApplied: (cursor) => {
     order?.push(`mark:${cursor}`);
     call.controlCursors.push(cursor);
@@ -74,7 +79,7 @@ const deliver = (call: ProviderCall, message: unknown, order?: string[]) => {
   call.options.onMessage(parsed, controlsFor(call, order));
 };
 
-const recordEvent = (tableId = TABLE_ID, cursor = "7-1") => ({
+const recordEvent = (tableId = TABLE_ID, cursor = "s6t.test.7") => ({
   type: "grids.records.event",
   payload: {
     tableId,
@@ -93,7 +98,7 @@ const recordEvent = (tableId = TABLE_ID, cursor = "7-1") => ({
   },
 });
 
-const metadataEvent = (baseId = BASE_ID, cursor = "8-1") => ({
+const metadataEvent = (baseId = BASE_ID, cursor = "s6t.test.8") => ({
   type: "grids.metadata.event",
   payload: {
     baseId,
@@ -109,7 +114,7 @@ const metadataEvent = (baseId = BASE_ID, cursor = "8-1") => ({
   },
 });
 
-const workflowEvent = (workflowId = WORKFLOW_ID, cursor = "9-1") => {
+const workflowEvent = (workflowId = WORKFLOW_ID, cursor = "s6t.test.9") => {
   const event: GridsWorkflowRunEvent = {
     v: 1,
     baseId: BASE_ID,
@@ -141,17 +146,17 @@ beforeEach(() => {
 
 describe("Grids record live events adapter", () => {
   test("subscribes with table, cursor, and visible activity", () => {
-    const provider = createGridsRecordEventsProvider({ tableId: TABLE_ID, initialCursor: "6-9" });
+    const provider = createGridsRecordEventsProvider({ tableId: TABLE_ID, initialCursor: "s6t.test.6" });
     const call = providerCalls[0]!;
 
     provider.connect();
 
     expect(call.options.url).toBe("/api/grids/ws");
     expect(call.options.activity).toBe("visible");
-    expect(call.options.initialCursor).toBe("6-9");
-    expect(call.options.subscribe("7-1")).toEqual({
+    expect(call.options.initialCursor).toBe("s6t.test.6");
+    expect(call.options.subscribe("s6t.test.7")).toEqual({
       type: "grids.records.subscribe",
-      payload: { tableId: TABLE_ID, fromCursor: "7-1" },
+      payload: { tableId: TABLE_ID, fromCursor: "s6t.test.7" },
     });
     expect(call.connectCount).toBe(1);
   });
@@ -161,11 +166,11 @@ describe("Grids record live events adapter", () => {
     createGridsRecordEventsProvider({ tableId: TABLE_ID, onReady: () => order.push("ready") });
     const call = providerCalls[0]!;
 
-    deliver(call, { type: "grids.records.ready", payload: { tableId: OTHER_TABLE_ID, cursor: "6-8" } }, order);
-    deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "6-9" } }, order);
+    deliver(call, { type: "grids.records.ready", payload: { tableId: OTHER_TABLE_ID, cursor: "s6t.test.6" } }, order);
+    deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "s6t.test.6" } }, order);
 
-    expect(order).toEqual(["ready", "mark:6-9"]);
-    expect(call.controlCursors).toEqual(["6-9"]);
+    expect(order).toEqual(["ready", "mark:s6t.test.6"]);
+    expect(call.controlCursors).toEqual(["s6t.test.6"]);
   });
 
   test("does not mark a ready baseline rejected by the consumer", () => {
@@ -177,7 +182,9 @@ describe("Grids record live events adapter", () => {
     });
     const call = providerCalls[0]!;
 
-    expect(() => deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "6-9" } })).toThrow("Ready failed");
+    expect(() => deliver(call, { type: "grids.records.ready", payload: { tableId: TABLE_ID, cursor: "s6t.test.6" } })).toThrow(
+      "Ready failed",
+    );
     expect(call.controlCursors).toEqual([]);
   });
 
@@ -206,15 +213,15 @@ describe("Grids record live events adapter", () => {
 
     deliver(call, recordEvent(OTHER_TABLE_ID));
     deliver(call, recordEvent());
-    deliver(call, { type: "grids.records.event", payload: { tableId: TABLE_ID, cursor: "7-2" } });
+    deliver(call, { type: "grids.records.event", payload: { tableId: TABLE_ID, cursor: "s6t.test.7" } });
 
     expect(received).toHaveLength(2);
-    expect(received[0]?.cursor).toBe("7-1");
-    expect(received[1]).toEqual({ event: null, cursor: "7-2" });
+    expect(received[0]?.cursor).toBe("s6t.test.7");
+    expect(received[1]).toEqual({ event: null, cursor: "s6t.test.7" });
     expect(call.controlCursors).toEqual([]);
 
-    provider.markApplied("7-2");
-    expect(call.markedCursors).toEqual(["7-2"]);
+    provider.markApplied("s6t.test.7");
+    expect(call.markedCursors).toEqual(["s6t.test.7"]);
   });
 
   test("keeps recoverable errors separate and terminates after revocation", () => {
@@ -255,36 +262,36 @@ describe("Grids metadata live events adapter", () => {
     createGridsMetadataEventsProvider({ baseId: BASE_ID, onReady: () => order.push("ready") });
     const call = providerCalls[0]!;
 
-    deliver(call, { type: "grids.metadata.ready", payload: { baseId: OTHER_BASE_ID, cursor: "7-8" } }, order);
-    deliver(call, { type: "grids.metadata.ready", payload: { baseId: BASE_ID, cursor: "7-9" } }, order);
+    deliver(call, { type: "grids.metadata.ready", payload: { baseId: OTHER_BASE_ID, cursor: "s6t.test.7" } }, order);
+    deliver(call, { type: "grids.metadata.ready", payload: { baseId: BASE_ID, cursor: "s6t.test.7" } }, order);
 
-    expect(order).toEqual(["ready", "mark:7-9"]);
-    expect(call.controlCursors).toEqual(["7-9"]);
+    expect(order).toEqual(["ready", "mark:s6t.test.7"]);
+    expect(call.controlCursors).toEqual(["s6t.test.7"]);
   });
 
   test("subscribes by base and accepts only matching metadata without implicit acknowledgement", () => {
     const cursors: Array<string | null> = [];
     const provider = createGridsMetadataEventsProvider({
       baseId: BASE_ID,
-      initialCursor: "7-9",
+      initialCursor: "s6t.test.7",
       onEvent: (cursor) => cursors.push(cursor),
     });
     const call = providerCalls[0]!;
 
     expect(call.options.activity).toBe("visible");
-    expect(call.options.initialCursor).toBe("7-9");
-    expect(call.options.subscribe("8-0")).toEqual({
+    expect(call.options.initialCursor).toBe("s6t.test.7");
+    expect(call.options.subscribe("s6t.test.8")).toEqual({
       type: "grids.metadata.subscribe",
-      payload: { baseId: BASE_ID, fromCursor: "8-0" },
+      payload: { baseId: BASE_ID, fromCursor: "s6t.test.8" },
     });
 
     deliver(call, metadataEvent(OTHER_BASE_ID));
     deliver(call, metadataEvent());
-    expect(cursors).toEqual(["8-1"]);
+    expect(cursors).toEqual(["s6t.test.8"]);
     expect(call.controlCursors).toEqual([]);
 
-    provider.markApplied("8-1");
-    expect(call.markedCursors).toEqual(["8-1"]);
+    provider.markApplied("s6t.test.8");
+    expect(call.markedCursors).toEqual(["s6t.test.8"]);
   });
 
   test("routes transient errors and terminates terminal metadata errors", () => {
@@ -311,11 +318,11 @@ describe("Grids workflow-run live events adapter", () => {
     createWorkflowRunEventsProvider({ workflowId: WORKFLOW_ID, onReady: () => order.push("ready") });
     const call = providerCalls[0]!;
 
-    deliver(call, { type: "grids.workflow-runs.ready", payload: { workflowId: OTHER_WORKFLOW_ID, cursor: "8-8" } }, order);
-    deliver(call, { type: "grids.workflow-runs.ready", payload: { workflowId: WORKFLOW_ID, cursor: "8-9" } }, order);
+    deliver(call, { type: "grids.workflow-runs.ready", payload: { workflowId: OTHER_WORKFLOW_ID, cursor: "s6t.test.8" } }, order);
+    deliver(call, { type: "grids.workflow-runs.ready", payload: { workflowId: WORKFLOW_ID, cursor: "s6t.test.8" } }, order);
 
-    expect(order).toEqual(["ready", "mark:8-9"]);
-    expect(call.controlCursors).toEqual(["8-9"]);
+    expect(order).toEqual(["ready", "mark:s6t.test.8"]);
+    expect(call.controlCursors).toEqual(["s6t.test.8"]);
   });
 
   test("subscribes to the workflow and marks accepted events after the callback", () => {
@@ -338,8 +345,8 @@ describe("Grids workflow-run live events adapter", () => {
     deliver(call, workflowEvent(OTHER_WORKFLOW_ID), order);
     deliver(call, workflowEvent(), order);
 
-    expect(order).toEqual(["event", "mark:9-1"]);
-    expect(call.controlCursors).toEqual(["9-1"]);
+    expect(order).toEqual(["event", "mark:s6t.test.9"]);
+    expect(call.controlCursors).toEqual(["s6t.test.9"]);
   });
 
   test("does not mark a workflow event when its consumer rejects it", () => {
@@ -385,5 +392,25 @@ describe("Grids workflow-run live events adapter", () => {
 
     expect(callbacks).toEqual(["fatal:access_denied"]);
     expect(call.terminations).toEqual([{ code: "access_denied", message: "Denied" }]);
+  });
+});
+
+describe("Grids cursor resynchronization", () => {
+  test("drops pre-migration initial cursors", () => {
+    createGridsRecordEventsProvider({ tableId: TABLE_ID, initialCursor: "1-0" });
+    createGridsMetadataEventsProvider({ baseId: BASE_ID, initialCursor: "1-0" });
+    expect(providerCalls.map((call) => call.options.initialCursor)).toEqual([null, null]);
+  });
+
+  test("resets stale cursors on every stream before reconnecting", () => {
+    createGridsRecordEventsProvider({ tableId: TABLE_ID });
+    createGridsMetadataEventsProvider({ baseId: BASE_ID });
+    createWorkflowRunEventsProvider({ workflowId: WORKFLOW_ID });
+    for (const [index, kind] of ["records", "metadata", "workflow-runs"].entries()) {
+      const call = providerCalls[index]!;
+      deliver(call, { type: `grids.${kind}.error`, payload: { code: "resync_required", message: "Reload" } });
+      expect(call.controlCursors).toEqual([null]);
+      expect(call.terminations).toEqual([]);
+    }
   });
 });

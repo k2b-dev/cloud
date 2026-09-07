@@ -268,6 +268,18 @@ describe("Yjs provider workspace cursor coverage", () => {
     doc.getText("content").insert(0, "x");
     expect(socket.sent.map((value) => JSON.parse(value)).some((value) => value.type === notebooksYjs.wsType.syncPublish)).toBe(false);
 
+    const remote = new Y.Doc();
+    remote.getText("content").insert(0, "remote");
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: {
+        noteId: NOTE_ID,
+        updates: [{ cursor: "s6t.test.1", payload: Buffer.from(Y.encodeStateAsUpdate(remote)).toString("base64") }],
+      },
+    });
+    expect(socket.sent.map((value) => JSON.parse(value)).some((value) => value.type === notebooksYjs.wsType.syncPublish)).toBe(false);
+    remote.destroy();
+
     socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
     const publish = socket.sent.map((value) => JSON.parse(value)).find((value) => value.type === notebooksYjs.wsType.syncPublish);
     expect(publish.payload.noteId).toBe(NOTE_ID);

@@ -25,6 +25,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@nats-io/transport-node": "catalog:",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   },

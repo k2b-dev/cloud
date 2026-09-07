@@ -1,5 +1,5 @@
+import { lazySync } from "@valentinkolb/cloud";
 import { decryptSecret, encryptSecret } from "@valentinkolb/cloud/services";
-import { mutex } from "@k2b/sync";
 import { sql } from "bun";
 import { z } from "zod";
 import type { MailOAuthProviderId, ProviderSecret } from "../contracts";
@@ -8,7 +8,9 @@ import { postOAuthForm } from "./provider-oauth-http";
 import { getConfiguredOAuthProvider } from "./provider-oauth-providers";
 
 const REFRESH_LEAD_MS = 5 * 60_000;
-const refreshMutex = mutex({ id: "mail:provider-oauth-refresh", defaultTtl: 60_000, retryCount: 80, retryDelay: 250 });
+const refreshMutex = lazySync((sync) =>
+  sync.mutex({ id: "mail:provider-oauth-refresh", ttlMs: 60_000, retry: { maxAttempts: 81, delayMs: 250 } }),
+);
 
 const tokenResponseSchema = z
   .object({
@@ -120,7 +122,7 @@ export const commitManagedOAuthRefresh = async (params: {
 };
 
 export const refreshManagedOAuthConnection = async (connectionId: string): Promise<void> => {
-  const locked = await refreshMutex.withLock(connectionId, async () => {
+  const locked = await refreshMutex().withLock({ resource: connectionId }, async () => {
     const row = await loadManagedOAuthRow(connectionId);
     if (!row || !needsRefresh(row.oauth_expires_at)) return;
     const secret = providerSecretSchema.parse(await decryptSecret<ProviderSecret>(row.encrypted_secret));

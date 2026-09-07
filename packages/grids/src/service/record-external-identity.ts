@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
-import { scheduler } from "@k2b/sync";
-import { logger } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { logger, syncOps } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
 import type { SqlClient } from "./audit";
@@ -15,7 +16,11 @@ import type { ExpansionViewer } from "./relations";
 
 export const EXTERNAL_RECORD_OPERATION_RETENTION_DAYS = 30;
 const EXTERNAL_RECORD_OPERATION_DELETE_BATCH = 10_000;
-const externalRecordOperationScheduler = scheduler({ id: "grids:external-record-operation-retention" });
+const externalRecordOperationScheduler = lazySync((sync) =>
+  sync.scheduler({ id: "grids:external-record-operation-retention", delivery: { maxAttempts: 4, backoffMs: [5_000, 20_000, 60_000] } }),
+);
+let retentionWorker: Worker | undefined;
+let unregisterScheduler: (() => void) | undefined;
 const log = logger("grids:external-record-operation-retention");
 
 export type ExternalRecordIdentity = {
@@ -308,34 +313,34 @@ let retentionStarted = false;
 
 export const startExternalRecordOperationRetention = async (): Promise<void> => {
   if (!retentionStarted) {
-    externalRecordOperationScheduler.start();
+    unregisterScheduler ??= syncOps.registerScheduler({
+      name: "grids:external-record-operation-retention",
+      scheduler: externalRecordOperationScheduler(),
+    });
+    retentionWorker = await externalRecordOperationScheduler().process();
     retentionStarted = true;
   }
-  await externalRecordOperationScheduler.create({
+  await externalRecordOperationScheduler().create({
     id: "grids:external-record-operations:cleanup",
     cron: "23 * * * *",
-    tz: "UTC",
+    timezone: "UTC",
     meta: { appId: "grids", family: "maintenance", label: "External Record idempotency retention" },
-    process: async () => ({ deleted: await deleteExpiredExternalRecordOperations() }),
-    after: ({ ctx }) => {
-      if (ctx.error && ctx.failureCount < 3) {
-        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-        return;
+    process: async (context) => {
+      while (!context.signal.aborted) {
+        const deleted = await deleteExpiredExternalRecordOperations();
+        if (deleted < EXTERNAL_RECORD_OPERATION_DELETE_BATCH) return;
+        await context.heartbeat();
       }
-      if (ctx.error) {
-        log.error("External Record idempotency retention exhausted retries", {
-          failureCount: ctx.failureCount,
-          error: ctx.error.message,
-        });
-        return;
-      }
-      if (ctx.data?.deleted === EXTERNAL_RECORD_OPERATION_DELETE_BATCH) ctx.reschedule({ delayMs: 0 });
+      throw context.signal.reason;
     },
   });
 };
 
 export const stopExternalRecordOperationRetention = async (): Promise<void> => {
   if (!retentionStarted) return;
-  await externalRecordOperationScheduler.stop();
+  await retentionWorker?.drain({ timeoutMs: 30_000 });
+  retentionWorker = undefined;
+  unregisterScheduler?.();
+  unregisterScheduler = undefined;
   retentionStarted = false;
 };

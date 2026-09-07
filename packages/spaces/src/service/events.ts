@@ -1,12 +1,10 @@
-import { topic } from "@k2b/sync";
-import { logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { type PublicSpaceEvent, type SpaceServiceEvent, type SpaceServiceEventData, toPublicSpaceEvent } from "../live-events";
 
 const log = logger("spaces:events");
-const TOPIC_PREFIX = "cloud:spaces:events";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
-const TOPIC_ID = "items";
 
 type StoredSpaceEvent = {
   internal: SpaceServiceEvent;
@@ -19,12 +17,13 @@ type KnownPublicIds = {
   wormholeId?: string;
 };
 
-const spaceTopic = topic<StoredSpaceEvent>({
-  id: TOPIC_ID,
-  prefix: TOPIC_PREFIX,
-  retentionMs: TOPIC_RETENTION_MS,
-  limits: { payloadBytes: 16_000 },
-});
+const spaceTopic = lazySync((sync) =>
+  sync.topic<StoredSpaceEvent>({
+    id: "cloud:spaces:events:items",
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: 16_000,
+  }),
+);
 
 const shortId = async (table: "spaces" | "items" | "wormholes", id: string): Promise<string | null> => {
   let rows: { short_id: string }[];
@@ -49,7 +48,7 @@ export const publishSpaceEvent = async (event: SpaceServiceEventData, known: Kno
     ]);
     if (!spaceId) throw new Error("Missing public Space ID for live event");
     const publicEvent = toPublicSpaceEvent(payload, { spaceId, itemId: itemId ?? undefined, wormholeId: wormholeId ?? undefined });
-    await spaceTopic.pub({
+    await spaceTopic().publish({
       tenantId: payload.spaceId,
       orderingKey: resourceId,
       idempotencyKey: `${payload.type}:${resourceId}:${payload.at}`,
@@ -66,12 +65,13 @@ export const publishSpaceEvent = async (event: SpaceServiceEventData, known: Kno
 };
 
 export const liveSpaceEvents = (config: { spaceId: string; after?: string | null; signal?: AbortSignal }) =>
-  spaceTopic.live({
-    tenantId: config.spaceId,
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  spaceTopic()
+    .hub({ tenantId: config.spaceId })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });
 
-export const latestSpaceEventCursor = async (spaceId: string): Promise<string | null> => {
-  return spaceTopic.latestCursor({ tenantId: spaceId });
+export const latestSpaceEventCursor = async (spaceId: string): Promise<string> => {
+  return latestTopicCursor({ topic: spaceTopic(), resourceId: "cloud:spaces:events:items", tenantId: spaceId });
 };

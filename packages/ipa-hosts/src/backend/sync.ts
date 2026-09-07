@@ -1,6 +1,7 @@
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { freeipa } from "@valentinkolb/cloud/server/services";
 import { getFreeIpaConfig, logger, get as settingsGet, set as settingsSet, trace } from "@valentinkolb/cloud/services";
-import { job, scheduler } from "@k2b/sync";
 import { sql } from "bun";
 
 type DbRow = Record<string, unknown>;
@@ -245,39 +246,15 @@ export const syncFromIpaHosts = async (): Promise<SyncSummary> => {
   return summary;
 };
 
-const syncJob = job<void, SyncSummary>({
-  id: "ipa-hosts:sync",
-  defaults: { leaseMs: 180_000 },
-  trace: trace.fromSyncJob<void, SyncSummary>({
-    name: "IPA hosts sync",
-    source: "ipa-hosts:sync",
-    appId: "ipa-hosts",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+const syncJob = lazySync((sync) =>
+  sync.job<void>({
+    id: "ipa-hosts:sync",
+    delivery: { ackWaitMs: 180_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },
   }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) {
-      return {
-        durationMs: 0,
-        remoteHostsFetched: 0,
-        remoteHostgroupsFetched: 0,
-        hostsSynced: 0,
-        deletedHosts: 0,
-        hostgroupsSynced: 0,
-        deletedHostgroups: 0,
-        localHostsBefore: 0,
-        localHostgroupsBefore: 0,
-      };
-    }
-    return syncFromIpaHosts();
-  },
-  after: async ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= 2) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 1000 }) });
-  },
-});
-
-const syncScheduler = scheduler({ id: "ipa-hosts" });
+);
+const syncScheduler = lazySync((sync) => sync.scheduler({ id: "ipa-hosts" }));
+let syncWorker: Worker | undefined;
+let schedulerWorker: Worker | undefined;
 
 // App lifecycle hooks call start/stop sequentially, so lightweight module state is sufficient here.
 let started = false;
@@ -285,23 +262,19 @@ let registered = false;
 let registerPromise: Promise<void> | null = null;
 
 const createSchedule = async (cron: string, tz: string): Promise<void> => {
-  await syncScheduler.create({
+  await syncScheduler().create({
     id: "ipa-hosts:sync",
     cron,
-    tz,
+    timezone: tz,
+    misfire: "latest",
     meta: {
       appId: "ipa-hosts",
       family: "ipa-hosts:sync",
       label: "IPA hosts sync",
       source: "ipa-hosts:sync",
     },
-    trace: trace.fromSyncSchedule<void>({
-      name: "IPA hosts sync schedule",
-      source: "ipa-hosts:sync",
-      appId: "ipa-hosts",
-    }),
-    process: async ({ ctx }) => {
-      await syncJob.submit({ key: `slot:${ctx.slotTs}` });
+    process: async (context) => {
+      await syncJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
     },
   });
 };
@@ -338,31 +311,48 @@ const ensureRegistered = async (): Promise<void> => {
   await registerPromise;
 };
 
+const startWorkers = async (): Promise<void> => {
+  if (started) return;
+  syncWorker = await syncJob().process({}, async (context) => {
+    context.signal.throwIfAborted();
+    await trace.withSpan(
+      {
+        spanKey: trace.syncSpanKey("job", "ipa-hosts:sync", context.jobId),
+        name: "IPA hosts sync",
+        source: "ipa-hosts:sync",
+        appId: "ipa-hosts",
+        category: "job",
+      },
+      syncFromIpaHosts,
+      { summarize: (result) => result },
+    );
+  });
+  schedulerWorker = await syncScheduler().process();
+  started = true;
+};
+
 export const ipaHostsSyncRuntime = {
   start: async (): Promise<void> => {
-    if (!started) {
-      syncScheduler.start();
-      started = true;
-    }
+    await startWorkers();
     await ensureRegistered();
   },
   stop: async (): Promise<void> => {
     if (!started) return;
-    await syncScheduler.stop();
+    await schedulerWorker?.stop();
+    await syncWorker?.stop();
+    schedulerWorker = undefined;
+    syncWorker = undefined;
     started = false;
     registered = false;
     registerPromise = null;
   },
-  submitSync: (): Promise<string> => syncJob.submit({ key: `manual:${Date.now()}` }),
+  submitSync: () => syncJob().submit({ key: `manual:${crypto.randomUUID()}`, input: undefined }),
   getSyncCron: async (): Promise<string> => getSyncCron(),
   getTimezone: async (): Promise<string> => getTimezone(),
   updateSyncCron: async (cron: string): Promise<void> => {
     const normalized = cron.trim();
     if (!normalized) throw new Error("Sync cron must not be empty.");
-    if (!started) {
-      syncScheduler.start();
-      started = true;
-    }
+    await startWorkers();
     await registerSchedule(normalized);
     await settingsSet(SYNC_CRON_KEY, normalized);
   },

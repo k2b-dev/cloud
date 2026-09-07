@@ -1,3 +1,4 @@
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import type { User } from "@valentinkolb/cloud/contracts";
 import { auth, getLocale } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
@@ -181,7 +182,8 @@ export const isWorkspaceAccessRefreshCurrent = (
 
 export const workspaceCloseCodeForError = (code: string): number => {
   if (code === "internal_error") return 1011;
-  if (code === "backpressure" || code === "stream_failed" || code === "stream_ended") return CLOSE_SERVICE_RESTART;
+  if (code === "backpressure" || code === "stream_failed" || code === "stream_ended" || code === "resync_required")
+    return CLOSE_SERVICE_RESTART;
   return 1008;
 };
 
@@ -412,7 +414,7 @@ const startStream = (ctx: WsContext, runtime: WorkspaceRuntime, afterCursor: str
       closeWithError(
         ctx,
         runtime,
-        "stream_failed",
+        error instanceof RetentionGapError || error instanceof CursorMismatchError ? "resync_required" : "stream_failed",
         messages(ctx.locale).workspaceStreamFailed,
         subscription.kind === "records" ? subscription.tableId : undefined,
       );
@@ -457,14 +459,14 @@ const startAccessRefresh = (ctx: WsContext, runtime: WorkspaceRuntime) => {
 
 export const resolveWorkspaceEventCursor = async (
   fromCursor: string | null | undefined,
-  latestCursor: () => Promise<string | null>,
-): Promise<string> => fromCursor ?? (await latestCursor()) ?? "0-0";
+  latestCursor: () => Promise<string>,
+): Promise<string> => fromCursor ?? (await latestCursor());
 
 const resolveSubscriptionCursor = async (
   ctx: WsContext,
   runtime: WorkspaceRuntime,
   fromCursor: string | null | undefined,
-  latestCursor: () => Promise<string | null>,
+  latestCursor: () => Promise<string>,
 ): Promise<string | null> => {
   try {
     return await resolveWorkspaceEventCursor(fromCursor, latestCursor);

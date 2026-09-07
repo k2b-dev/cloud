@@ -1,4 +1,4 @@
 [install]
 linker = "isolated"
 minimumReleaseAge = 259200
-minimumReleaseAgeExcludes = ["@k2b/fibel", "@k2b/nessi", "@k2b/ssr", "@k2b/stdlib", "@k2b/sync"]
+minimumReleaseAgeExcludes = ["@k2b/fibel", "@k2b/nessi", "@k2b/ssr", "@k2b/stdlib", "@k2b/sync", "@nats-io/transport-node", "@nats-io/jetstream"]

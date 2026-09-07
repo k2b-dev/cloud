@@ -474,7 +474,7 @@ const updateSpan = async (
   `.catch((error: Error) => console.error("[logging:trace] span update failed:", error.message));
 };
 
-const start = async (params: TraceStartParams): Promise<TraceContext> => {
+const start = async (params: TraceStartParams, preservePresentation = false): Promise<TraceContext> => {
   const context = newContext(params.spanKey, params.parent);
   const attributes = sanitizeAttributes(params.attributes);
   const attributesJson = attributes ? JSON.stringify(attributes) : null;
@@ -514,11 +514,11 @@ const start = async (params: TraceStartParams): Promise<TraceContext> => {
     SET
       span_key = COALESCE(logging.trace_spans.span_key, EXCLUDED.span_key),
       parent_span_id = COALESCE(logging.trace_spans.parent_span_id, EXCLUDED.parent_span_id),
-      name = EXCLUDED.name,
-      source = EXCLUDED.source,
+      name = CASE WHEN ${preservePresentation} THEN logging.trace_spans.name ELSE EXCLUDED.name END,
+      source = CASE WHEN ${preservePresentation} THEN logging.trace_spans.source ELSE EXCLUDED.source END,
       app_id = COALESCE(EXCLUDED.app_id, logging.trace_spans.app_id),
-      category = EXCLUDED.category,
-      kind = EXCLUDED.kind,
+      category = CASE WHEN ${preservePresentation} THEN logging.trace_spans.category ELSE EXCLUDED.category END,
+      kind = CASE WHEN ${preservePresentation} THEN logging.trace_spans.kind ELSE EXCLUDED.kind END,
       attributes = COALESCE(logging.trace_spans.attributes, '{}'::jsonb) || COALESCE(EXCLUDED.attributes, '{}'::jsonb),
       started_at = LEAST(logging.trace_spans.started_at, EXCLUDED.started_at),
       updated_at = now()
@@ -534,7 +534,7 @@ const start = async (params: TraceStartParams): Promise<TraceContext> => {
  * Persists a span whose complete lifecycle is already known. Hot request paths
  * can retain exact tracing without a start/update round-trip pair.
  */
-const complete = async (params: TraceCompleteParams): Promise<TraceContext> => {
+const complete = async (params: TraceCompleteParams, preservePresentation = false): Promise<TraceContext> => {
   const context = newContext(params.spanKey, params.parent);
   const attributes = sanitizeAttributes(params.attributes);
   const summary = sanitizeRecord(params.summary);
@@ -586,11 +586,11 @@ const complete = async (params: TraceCompleteParams): Promise<TraceContext> => {
     SET
       span_key = COALESCE(logging.trace_spans.span_key, EXCLUDED.span_key),
       parent_span_id = COALESCE(logging.trace_spans.parent_span_id, EXCLUDED.parent_span_id),
-      name = EXCLUDED.name,
-      source = EXCLUDED.source,
+      name = CASE WHEN ${preservePresentation} THEN logging.trace_spans.name ELSE EXCLUDED.name END,
+      source = CASE WHEN ${preservePresentation} THEN logging.trace_spans.source ELSE EXCLUDED.source END,
       app_id = COALESCE(EXCLUDED.app_id, logging.trace_spans.app_id),
-      category = EXCLUDED.category,
-      kind = EXCLUDED.kind,
+      category = CASE WHEN ${preservePresentation} THEN logging.trace_spans.category ELSE EXCLUDED.category END,
+      kind = CASE WHEN ${preservePresentation} THEN logging.trace_spans.kind ELSE EXCLUDED.kind END,
       status = EXCLUDED.status,
       status_message = EXCLUDED.status_message,
       attributes = COALESCE(logging.trace_spans.attributes, '{}'::jsonb) || COALESCE(EXCLUDED.attributes, '{}'::jsonb),
@@ -610,19 +610,22 @@ const complete = async (params: TraceCompleteParams): Promise<TraceContext> => {
   return stored ? contextFor(stored.trace_id, stored.span_id) : context;
 };
 
-const record = async (params: TraceRecordParams): Promise<TraceContext> => {
+const record = async (params: TraceRecordParams, preservePresentation = false): Promise<TraceContext> => {
   const standalone = !params.context && !params.spanKey;
   const context =
     params.context ??
-    (await start({
-      name: params.name ?? params.event,
-      source: params.source ?? DEFAULT_SOURCE,
-      spanKey: params.spanKey,
-      appId: params.appId,
-      category: params.category ?? "custom",
-      kind: params.kind ?? "internal",
-      startedAt: params.occurredAt,
-    }));
+    (await start(
+      {
+        name: params.name ?? params.event,
+        source: params.source ?? DEFAULT_SOURCE,
+        spanKey: params.spanKey,
+        appId: params.appId,
+        category: params.category ?? "custom",
+        kind: params.kind ?? "internal",
+        startedAt: params.occurredAt,
+      },
+      preservePresentation,
+    ));
   const occurredAt = normalizeDate(params.occurredAt);
   const attributes = sanitizeAttributes(params.attributes);
   const attributesJson = attributes ? JSON.stringify(attributes) : null;
@@ -647,6 +650,9 @@ const record = async (params: TraceRecordParams): Promise<TraceContext> => {
 };
 
 const end = async (params: TraceEndParams): Promise<void> => {
+  // An application may attach a summary immediately after Sync emits start.
+  // Wait for that queued insert before updating the same deterministic span.
+  if (params.spanKey) await pendingSyncWrites.get(params.spanKey);
   const context = contextFromParams(params);
   if (!context) return;
   await updateSpan(context, {
@@ -996,12 +1002,12 @@ const detailAttributes = (detail: Record<string, unknown>): TraceAttributes => {
 /** The app hosting this process; Sync events carry no app name. */
 const processAppId = (): string | undefined => process.env.APP_ID?.trim() || undefined;
 
-const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
+const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<void> => {
   const resource = event.resource;
   const kind = event.kind;
   if (!resource || !kind || !isSyncRunKind(kind)) return;
   const detail: Record<string, unknown> = event.detail ?? {};
-  const appId = processAppId();
+  const appId = application ?? processAppId();
   const category = SYNC_CATEGORY[kind];
   const attributes: TraceAttributes = {
     "sync.kind": kind,
@@ -1019,7 +1025,7 @@ const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
     case "handler_started": {
       const id = detailString(detail, "id");
       if (!id) return;
-      await start({ ...base, spanKey: syncSpanKey(kind, resource, id), attributes, startedAt: event.at });
+      await start({ ...base, spanKey: syncSpanKey(kind, resource, id), attributes, startedAt: event.at }, true);
       return;
     }
     case "handler_settled": {
@@ -1030,26 +1036,32 @@ const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
       const attempt = detailNumber(detail, "attempt");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
       if (status === "retry") {
-        await record({
-          ...base,
-          spanKey,
-          event: "sync.retry",
-          severity: "warn",
-          status: "error",
-          attributes,
-          occurredAt: event.at,
-        });
+        await record(
+          {
+            ...base,
+            spanKey,
+            event: "sync.retry",
+            severity: "warn",
+            status: "error",
+            attributes,
+            occurredAt: event.at,
+          },
+          true,
+        );
         return;
       }
-      await complete({
-        ...base,
-        spanKey,
-        status: status === "success" ? "ok" : "error",
-        statusMessage: status === "success" ? undefined : `Dead-lettered after ${attempt ?? "?"} attempt(s)`,
-        attributes,
-        startedAt: event.at.getTime() - durationMs,
-        endedAt: event.at,
-      });
+      await complete(
+        {
+          ...base,
+          spanKey,
+          status: status === "success" ? "ok" : "error",
+          statusMessage: status === "success" ? undefined : `Dead-lettered after ${attempt ?? "?"} attempt(s)`,
+          attributes,
+          startedAt: event.at.getTime() - durationMs,
+          endedAt: event.at,
+        },
+        true,
+      );
       return;
     }
     case "dead_letter": {
@@ -1060,15 +1072,18 @@ const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
       // A message can be dead-lettered without a handler run (attempts
       // exhausted on delivery, undecodable payload): the upsert closes the
       // span either way, and the event records the reason.
-      await complete({
-        ...base,
-        spanKey,
-        status: "error",
-        statusMessage: reason,
-        attributes,
-        startedAt: event.at,
-        endedAt: event.at,
-      });
+      await complete(
+        {
+          ...base,
+          spanKey,
+          status: "error",
+          statusMessage: reason,
+          attributes,
+          startedAt: event.at,
+          endedAt: event.at,
+        },
+        true,
+      );
       await record({ context: newContext(spanKey), event: "sync.dead_letter", severity: "error", attributes, occurredAt: event.at });
       return;
     }
@@ -1079,23 +1094,26 @@ const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
     }
     case "pump_run_started": {
       if (!key) return;
-      await start({ ...base, spanKey: syncSpanKey("pump", resource, key), attributes, startedAt: event.at });
+      await start({ ...base, spanKey: syncSpanKey("pump", resource, key), attributes, startedAt: event.at }, true);
       return;
     }
     case "pump_run_settled": {
       if (!key) return;
       const status = detailString(detail, "status");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
-      await complete({
-        ...base,
-        spanKey: syncSpanKey("pump", resource, key),
-        status: status === "failed" ? "error" : "ok",
-        statusMessage: detailString(detail, "error"),
-        attributes,
-        summary: { status, dispatched: detailNumber(detail, "dispatched"), failureCount: detailNumber(detail, "failureCount") },
-        startedAt: event.at.getTime() - durationMs,
-        endedAt: event.at,
-      });
+      await complete(
+        {
+          ...base,
+          spanKey: syncSpanKey("pump", resource, key),
+          status: status === "failed" ? "error" : "ok",
+          statusMessage: detailString(detail, "error"),
+          attributes,
+          summary: { status, dispatched: detailNumber(detail, "dispatched"), failureCount: detailNumber(detail, "failureCount") },
+          startedAt: event.at.getTime() - durationMs,
+          endedAt: event.at,
+        },
+        true,
+      );
       return;
     }
     default:
@@ -1103,19 +1121,44 @@ const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
   }
 };
 
-/**
- * `createSync({ observe })` adapter: mirrors Sync run lifecycles into trace
- * spans. Synchronous, fire-and-forget and never throws — an observer must not
- * affect transport work.
- */
-export const observeSyncEvent = (event: SyncEvent): void => {
-  try {
-    traceSyncEvent(event).catch((error: unknown) => {
-      console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
-    });
-  } catch (error) {
-    console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
+// Match Sync's event subscription buffer budget. Observer overload drops
+// diagnostics rather than retaining unbounded SQL promises or delaying jobs.
+const SYNC_TRACE_PENDING_LIMIT = 1024;
+const pendingSyncWrites = new Map<string, Promise<void>>();
+let pendingSyncWriteCount = 0;
+let reportedSyncOverflow = false;
+
+/** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
+export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
+  if (!event.resource || !event.kind || !isSyncRunKind(event.kind)) return;
+  if (!["handler_started", "handler_settled", "dead_letter", "redelivery", "pump_run_started", "pump_run_settled"].includes(event.type))
+    return;
+  if (pendingSyncWriteCount >= SYNC_TRACE_PENDING_LIMIT) {
+    if (!reportedSyncOverflow) console.error("[logging:trace] sync trace buffer full; dropping diagnostics");
+    reportedSyncOverflow = true;
+    return;
   }
+  const detail = event.detail ?? {};
+  const id =
+    detailString(detail, "id") ?? detailString(detail, "messageId") ?? detailString(detail, "eventId") ?? detailString(detail, "key") ?? "";
+  const key = syncSpanKey(event.kind, event.resource, id);
+  pendingSyncWriteCount++;
+  const write = (pendingSyncWrites.get(key) ?? Promise.resolve())
+    .then(() => traceSyncEvent(event, application))
+    .catch((error: unknown) => {
+      console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
+    })
+    .finally(() => {
+      pendingSyncWriteCount--;
+      if (pendingSyncWrites.get(key) === write) pendingSyncWrites.delete(key);
+      if (pendingSyncWriteCount === 0) reportedSyncOverflow = false;
+    });
+  pendingSyncWrites.set(key, write);
+};
+
+/** Flush diagnostics after Sync workers stop producing events during shutdown. */
+export const flushSyncTraceEvents = async (): Promise<void> => {
+  while (pendingSyncWrites.size > 0) await Promise.all(pendingSyncWrites.values());
 };
 
 /** Awaitable form of {@link observeSyncEvent} for tests. */

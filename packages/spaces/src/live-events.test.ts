@@ -5,11 +5,28 @@ const SPACE_ID = "Space1";
 const ITEM_ID = "Item01";
 
 describe("Spaces live event protocol", () => {
+  test("accepts legacy subscription cursors for resync but rejects them in server events", () => {
+    expect(
+      SpaceLiveClientMessageSchema.safeParse({
+        type: SPACE_LIVE_WS_TYPE.subscribe,
+        payload: { spaceId: SPACE_ID, fromCursor: "123-4" },
+      }).success,
+    ).toBe(true);
+    expect(
+      parseSpaceLiveServerMessage(
+        JSON.stringify({
+          type: SPACE_LIVE_WS_TYPE.ready,
+          payload: { spaceId: SPACE_ID, cursor: "123-4" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   test("validates subscriptions with optional replay cursors", () => {
     expect(
       SpaceLiveClientMessageSchema.safeParse({
         type: SPACE_LIVE_WS_TYPE.subscribe,
-        payload: { spaceId: SPACE_ID, fromCursor: "8-3" },
+        payload: { spaceId: SPACE_ID, fromCursor: "s6t.test.3" },
       }).success,
     ).toBeTrue();
     expect(
@@ -32,7 +49,7 @@ describe("Spaces live event protocol", () => {
         type: SPACE_LIVE_WS_TYPE.event,
         payload: {
           spaceId: SPACE_ID,
-          cursor: "9-1",
+          cursor: "s6t.test.1",
           event: {
             type: "item.updated",
             spaceId: SPACE_ID,
@@ -56,7 +73,7 @@ describe("Spaces live event protocol", () => {
         parseSpaceLiveServerMessage(
           JSON.stringify({
             type: SPACE_LIVE_WS_TYPE.event,
-            payload: { spaceId: SPACE_ID, cursor: "10-1", event: { type, spaceId: SPACE_ID, at: "2026-07-21T10:00:00.000Z" } },
+            payload: { spaceId: SPACE_ID, cursor: "s6t.test.1", event: { type, spaceId: SPACE_ID, at: "2026-07-21T10:00:00.000Z" } },
           }),
         ),
       ).not.toBeNull();

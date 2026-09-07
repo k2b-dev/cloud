@@ -15,11 +15,28 @@ const PUBLIC_BOOK_ID = "Book01";
 const AT = "2026-07-16T12:00:00.000Z";
 
 describe("Contacts live protocol", () => {
+  test("accepts legacy subscription cursors for resync but rejects them in server events", () => {
+    expect(
+      ContactLiveClientMessageSchema.safeParse({
+        type: CONTACTS_LIVE_WS_TYPE.subscribe,
+        payload: { scope: { kind: "all" }, fromCursor: "123-4" },
+      }).success,
+    ).toBe(true);
+    expect(
+      parseContactLiveServerMessage(
+        JSON.stringify({
+          type: CONTACTS_LIVE_WS_TYPE.ready,
+          payload: { cursor: "123-4" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   test("accepts all and short-ID book subscriptions", () => {
     expect(
       ContactLiveClientMessageSchema.safeParse({
         type: CONTACTS_LIVE_WS_TYPE.subscribe,
-        payload: { scope: { kind: "all" }, fromCursor: "4-2" },
+        payload: { scope: { kind: "all" }, fromCursor: "s6t.test.2" },
       }).success,
     ).toBe(true);
     expect(
@@ -46,7 +63,9 @@ describe("Contacts live protocol", () => {
   });
 
   test("rejects unknown server messages", () => {
-    expect(parseContactLiveServerMessage(JSON.stringify({ type: "contacts.live.checkpoint", payload: { cursor: "8-1" } }))).toBeNull();
+    expect(
+      parseContactLiveServerMessage(JSON.stringify({ type: "contacts.live.checkpoint", payload: { cursor: "s6t.test.1" } })),
+    ).toBeNull();
     expect(parseContactLiveServerMessage("not-json")).toBeNull();
   });
 
@@ -54,7 +73,7 @@ describe("Contacts live protocol", () => {
     const message = {
       type: CONTACTS_LIVE_WS_TYPE.event,
       payload: {
-        cursor: "8-1",
+        cursor: "s6t.test.1",
         event: { type: "contact.updated", bookId: "Book01", contactId: "Cont01", at: AT },
       },
     } as const;

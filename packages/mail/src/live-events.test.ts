@@ -16,13 +16,13 @@ describe("Mail live protocol", () => {
     expect(
       MailLiveClientMessageSchema.safeParse({
         type: MAIL_LIVE_WS_TYPE.subscribe,
-        payload: { mailboxId: MAILBOX_ID, fromCursor: "12-4" },
+        payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.124" },
       }).success,
     ).toBeTrue();
     expect(
       MailLiveClientMessageSchema.safeParse({
         type: MAIL_LIVE_WS_TYPE.subscribe,
-        payload: { mailboxId: MAILBOX_ID, fromCursor: "latest" },
+        payload: { mailboxId: MAILBOX_ID, fromCursor: "" },
       }).success,
     ).toBeFalse();
     expect(MailLiveClientMessageSchema.safeParse({ type: "mail.live.legacy", payload: {} }).success).toBeFalse();
@@ -39,7 +39,7 @@ describe("Mail live protocol", () => {
       type: MAIL_LIVE_WS_TYPE.event,
       payload: {
         mailboxId: MAILBOX_ID,
-        cursor: "13-1",
+        cursor: "s6t.mailtest.131",
         event: {
           type: "mail.invalidated",
           mailboxId: MAILBOX_ID,
@@ -50,7 +50,7 @@ describe("Mail live protocol", () => {
       },
     } satisfies MailLiveServerMessage;
     const messages = [
-      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "12-4" } },
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.124" } },
       event,
       {
         type: MAIL_LIVE_WS_TYPE.revoked,
@@ -69,7 +69,7 @@ describe("Mail live protocol", () => {
         type: MAIL_LIVE_WS_TYPE.event,
         payload: {
           mailboxId: MAILBOX_ID,
-          cursor: "14-1",
+          cursor: "s6t.mailtest.141",
           event: {
             type: "mail.invalidated",
             mailboxId: MAILBOX_ID,

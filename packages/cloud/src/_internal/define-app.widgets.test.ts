@@ -72,7 +72,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
   // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
-  const fakeSync = { ephemeral: () => ({}) } as unknown as Sync;
+  const fakeSync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(fakeSync);

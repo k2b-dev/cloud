@@ -10,10 +10,11 @@
 import { hostname } from "node:os";
 import { createSync, type Sync } from "@k2b/sync";
 import { env } from "../config/env";
-import { observeSyncEvent } from "../services/logging/trace";
+import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
 
 let current: Sync | undefined;
+let starting = false;
 
 /** Bind the process instance. `startProcessSync()` does this; tests may bind their own. */
 export const bindProcessSync = (sync: Sync): void => {
@@ -71,25 +72,46 @@ export const startProcessSync = async ({ application }: { application: string })
         "must share the same @k2b/sync namespace.",
     );
   }
-  const connection = await connectNats({ name: `${application}@${hostname()}` });
-  const sync = createSync({ connection, namespace: env.SYNC_NAMESPACE, application, observe: observeSyncEvent });
-  bindProcessSync(sync);
+  if (current || starting) throw new Error("A Sync instance is already starting or bound to this process");
+  starting = true;
   try {
-    await sync.ready();
-  } catch (error) {
-    unbindProcessSync();
-    await connection.close();
-    throw error;
+    const connection = await connectNats({ name: `${application}@${hostname()}` });
+    let sync: Sync | undefined;
+    try {
+      sync = createSync({
+        connection,
+        namespace: env.SYNC_NAMESPACE,
+        application,
+        defaults: { replicas: 3 },
+        observe: (event) => observeSyncEvent(event, application),
+      });
+      bindProcessSync(sync);
+      await sync.ready();
+    } catch (error) {
+      if (current === sync) unbindProcessSync();
+      await flushSyncTraceEvents();
+      await connection.close();
+      throw error;
+    }
+    const active = sync;
+    let stopPromise: Promise<void> | undefined;
+    return {
+      sync: active,
+      stop: () =>
+        (stopPromise ??= (async () => {
+          try {
+            await active.drain();
+          } finally {
+            try {
+              await flushSyncTraceEvents();
+            } finally {
+              if (current === active) unbindProcessSync();
+              await connection.drain();
+            }
+          }
+        })()),
+    };
+  } finally {
+    starting = false;
   }
-  return {
-    sync,
-    stop: async () => {
-      try {
-        await sync.drain();
-      } finally {
-        unbindProcessSync();
-        await connection.drain();
-      }
-    },
-  };
 };

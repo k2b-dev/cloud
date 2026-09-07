@@ -1,9 +1,10 @@
-import { job, scheduler } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "../_internal/process-sync";
 import { coreSettings } from "../services";
 import { logger, trace } from "../services/logging";
-import type { AiEnrichmentRunSummary } from "./enrich";
+import { syncOps } from "../services/sync-ops";
 import { enrichDirtyAiConversations } from "./enrich";
-import { type AiMemoryLearningRunSummary, learnAiMemoriesFromPrivateChats } from "./memory-learning";
+import { learnAiMemoriesFromPrivateChats } from "./memory-learning";
 
 const log = logger("ai:maintenance");
 
@@ -23,82 +24,100 @@ const getTimezoneSetting = async (): Promise<string> => {
 
 // ── Job ────────────────────────────────────────────────────────────────
 
-const enrichJob = job<void, AiEnrichmentRunSummary>({
-  id: "ai:chat:enrich",
-  // Generous lease: one slow local model call can take minutes; heartbeat per
-  // conversation extends it, but the lease must cover the slowest single item.
-  defaults: { leaseMs: 900_000 },
-  trace: trace.fromSyncJob<void, AiEnrichmentRunSummary>({
-    name: "AI chat enrichment",
-    source: "ai:chat:enrich",
-    appId: "ai",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    const summary = await enrichDirtyAiConversations({
-      signal: ctx.signal,
-      heartbeat: () => ctx.heartbeat(),
-    });
-    if (summary.scanned > 0) log.info("Chat enrichment run complete", { ...summary });
-    return summary;
-  },
-  after: ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= 2) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 2_000, maxMs: 60_000 }) });
-  },
+const enrichJob = lazySync((sync) => {
+  const handle = sync.job<void>({
+    id: "ai:chat:enrich",
+    owner: "cloud",
+    delivery: { ackWaitMs: 900_000, maxAttempts: 3, backoffMs: [2_000, 4_000] },
+  });
+  syncOps.registerDeadLetters({ name: "ai:chat:enrich", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const reindexJob = lazySync((sync) => {
+  const handle = sync.job<{ conversationId: string }>({
+    id: "ai:chat:reindex",
+    owner: "cloud",
+    delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2_000] },
+  });
+  syncOps.registerDeadLetters({ name: "ai:chat:reindex", kind: "job", store: handle.deadLetters });
+  return handle;
+});
+const memoryLearningJob = lazySync((sync) => {
+  const handle = sync.job<void>({
+    id: "ai:memory:learn",
+    owner: "cloud",
+    delivery: { ackWaitMs: 900_000, maxAttempts: 3, backoffMs: [2_000, 4_000] },
+  });
+  syncOps.registerDeadLetters({ name: "ai:memory:learn", kind: "job", store: handle.deadLetters });
+  return handle;
+});
+const workers: Worker[] = [];
 
-/**
- * User-triggered single-chat reindex. Its own job (and therefore its own
- * queue worker) so a click never waits behind a long scheduled batch run.
- */
-const reindexJob = job<{ conversationId: string }, AiEnrichmentRunSummary>({
-  id: "ai:chat:reindex",
-  defaults: { leaseMs: 300_000 },
-  trace: trace.fromSyncJob<{ conversationId: string }, AiEnrichmentRunSummary>({
-    name: "AI chat reindex (manual)",
-    source: "ai:chat:reindex",
-    appId: "ai",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    return enrichDirtyAiConversations({
-      conversationId: ctx.input.conversationId,
-      signal: ctx.signal,
-      heartbeat: () => ctx.heartbeat(),
-    });
-  },
-  after: ({ ctx }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= 1) return;
-    ctx.reschedule({ delayMs: 2_000 });
-  },
-});
-
-const memoryLearningJob = job<void, AiMemoryLearningRunSummary>({
-  id: "ai:memory:learn",
-  defaults: { leaseMs: 900_000 },
-  trace: trace.fromSyncJob<void, AiMemoryLearningRunSummary>({
-    name: "AI memory learning",
-    source: "ai:memory:learn",
-    appId: "ai",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    const summary = await learnAiMemoriesFromPrivateChats({ signal: ctx.signal, heartbeat: () => ctx.heartbeat() });
-    if (summary.scanned > 0) log.info("Memory learning run complete", { ...summary });
-    return summary;
-  },
-  after: ({ ctx }) => {
-    if (!ctx.error || ctx.failureCount >= 2) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 2_000, maxMs: 60_000 }) });
-  },
-});
+const startWorkers = async (): Promise<void> => {
+  workers.push(
+    await enrichJob().process({ concurrency: 1 }, async (context) => {
+      const summary = await trace.withSpan(
+        {
+          name: "AI chat enrichment",
+          source: "ai:chat:enrich",
+          appId: "ai",
+          category: "job",
+          kind: "consumer",
+          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+        },
+        () => enrichDirtyAiConversations({ signal: context.signal, heartbeat: () => context.heartbeat() }),
+        { summarize: (summary) => summary },
+      );
+      if (summary.scanned > 0) log.info("Chat enrichment run complete", { ...summary });
+    }),
+  );
+  workers.push(
+    await reindexJob().process({ concurrency: 1 }, async (context) => {
+      await trace.withSpan(
+        {
+          name: "AI chat reindex (manual)",
+          source: "ai:chat:reindex",
+          appId: "ai",
+          category: "job",
+          kind: "consumer",
+          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+        },
+        () =>
+          enrichDirtyAiConversations({
+            conversationId: context.input.conversationId,
+            signal: context.signal,
+            heartbeat: () => context.heartbeat(),
+          }),
+        { summarize: (summary) => summary },
+      );
+    }),
+  );
+  workers.push(
+    await memoryLearningJob().process({ concurrency: 1 }, async (context) => {
+      const summary = await trace.withSpan(
+        {
+          name: "AI memory learning",
+          source: "ai:memory:learn",
+          appId: "ai",
+          category: "job",
+          kind: "consumer",
+          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+        },
+        () => learnAiMemoriesFromPrivateChats({ signal: context.signal, heartbeat: () => context.heartbeat() }),
+        { summarize: (summary) => summary },
+      );
+      if (summary.scanned > 0) log.info("Memory learning run complete", { ...summary });
+    }),
+  );
+};
 
 // ── Schedule ───────────────────────────────────────────────────────────
 
-const aiScheduler = scheduler({ id: "ai-maintenance" });
+const aiScheduler = lazySync((sync) => {
+  const handle = sync.scheduler({ id: "ai-maintenance", owner: "cloud", delivery: { maxAttempts: 1 } });
+  syncOps.registerScheduler({ name: "ai-maintenance", scheduler: handle });
+  return handle;
+});
 
 let started = false;
 let registered = false;
@@ -114,10 +133,10 @@ const createSchedule = async (config: {
   resourceKind: string;
   resourceId: string;
 }): Promise<void> => {
-  await aiScheduler.create({
+  await aiScheduler().create({
     id: config.id,
     cron: config.cron,
-    tz: config.tz,
+    timezone: config.tz,
     meta: {
       appId: "ai",
       family: config.family,
@@ -128,9 +147,8 @@ const createSchedule = async (config: {
       resourceLabel: config.label,
       detailHref: "/admin/settings?tab=ai",
     },
-    trace: trace.fromSyncSchedule<void>({ name: config.id, source: config.id, appId: "ai" }),
-    process: async ({ ctx }) => {
-      await config.submit(`slot:${ctx.slotTs}`);
+    process: async (context) => {
+      await config.submit(`slot:${context.slot.getTime()}`);
     },
   });
 };
@@ -140,10 +158,16 @@ const createSchedule = async (config: {
  * most one scheduled run is queued or running at a time. On slow models a run
  * can outlast the cron interval — extra slots must not pile up in the queue
  * (they would also starve manual work); the dirty scan catches up next slot.
- * The key is released on completion; the TTL is only a crash backstop.
+ * The key is released on completion.
  */
-const submitScheduledRun = (): Promise<string> => enrichJob.submit({ key: "scheduled", keyTtlMs: 30 * 60_000 });
-const submitMemoryLearning = (): Promise<string> => memoryLearningJob.submit({ key: "run", keyTtlMs: 30 * 60_000 });
+const submitScheduledRun = (): Promise<string> =>
+  enrichJob()
+    .submit({ key: "scheduled", input: undefined, coalesce: true })
+    .then((receipt) => receipt.jobId);
+const submitMemoryLearning = (): Promise<string> =>
+  memoryLearningJob()
+    .submit({ key: "run", input: undefined, coalesce: true })
+    .then((receipt) => receipt.jobId);
 
 const doRegister = async (): Promise<void> => {
   const [tz, enrichCron, memoryLearningCron] = await Promise.all([
@@ -224,40 +248,37 @@ const ensureRegistered = async (): Promise<void> => {
   await registerPromise;
 };
 
-/** Well-formed but never-existing id — boot warm-up submit that starts the reindex queue worker as a no-op. */
-const WARMUP_CONVERSATION_ID = "00000000-0000-0000-0000-000000000000";
-
 /** AI maintenance jobs (chat enrichment). Started next to the AI runtime; leases make this horizontally safe. */
 export const aiMaintenanceJobs = {
   start: async (): Promise<void> => {
-    if (!started) {
-      aiScheduler.start();
+    if (started) return;
+    try {
+      await ensureRegistered();
+      await startWorkers();
+      workers.push(await aiScheduler().process());
       started = true;
+      await submitScheduledRun();
+      await submitMemoryLearning();
+    } catch (error) {
+      await aiMaintenanceJobs.stop();
+      throw error;
     }
-    await ensureRegistered();
-    // Queue workers only start on submit — kick both at boot so (a) a deploy
-    // catches up on dirty chats immediately and (b) reindex requests queued
-    // before a restart drain without waiting for the next user click.
-    await submitScheduledRun().catch(() => undefined);
-    await submitMemoryLearning().catch(() => undefined);
-    await reindexJob
-      .submit({ key: "boot-warmup", keyTtlMs: 60_000, input: { conversationId: WARMUP_CONVERSATION_ID } })
-      .catch(() => undefined);
   },
 
   stop: async (): Promise<void> => {
-    if (!started) return;
-    await aiScheduler.stop();
-    enrichJob.stop();
-    reindexJob.stop();
-    memoryLearningJob.stop();
+    const active = workers.splice(0);
+    for (const worker of active) worker.stop();
+    await Promise.all(active.map((worker) => worker.drain()));
     started = false;
     registered = false;
     registerPromise = null;
   },
 
   /** Manual full run (admin/testing). */
-  submitEnrichmentRun: (): Promise<string> => enrichJob.submit({ key: `manual:${Date.now()}` }),
+  submitEnrichmentRun: (): Promise<string> =>
+    enrichJob()
+      .submit({ key: `manual:${crypto.randomUUID()}`, input: undefined })
+      .then((receipt) => receipt.jobId),
 
   /** Manual full memory-learning run (admin/testing). */
   submitMemoryLearningRun: (): Promise<string> => submitMemoryLearning(),
@@ -269,9 +290,11 @@ export const aiMaintenanceJobs = {
    * released on completion, so the next click after that starts a fresh run.
    */
   submitConversationReindex: (conversationId: string): Promise<string> =>
-    reindexJob.submit({
-      key: `reindex:${conversationId}`,
-      keyTtlMs: 15 * 60_000,
-      input: { conversationId },
-    }),
+    reindexJob()
+      .submit({
+        key: `reindex:${conversationId}`,
+        coalesce: true,
+        input: { conversationId },
+      })
+      .then((receipt) => receipt.jobId),
 };

@@ -1,4 +1,5 @@
-import type { TopicLiveEvent } from "@k2b/sync";
+import { CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
+import { retry } from "@k2b/sync/retry";
 import type { NotebookPresenceParticipant, User } from "@valentinkolb/cloud/contracts";
 import { auth, getLocale } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
@@ -63,7 +64,8 @@ const ReplayRequestMessageSchema = z.object({
   type: z.literal(WS_TYPE.replayRequest),
   payload: z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
-    fromCursor: z.string().regex(notebooksYjs.streamCursorPattern).nullable().optional(),
+    // A bounded opaque cursor is validated by the owning topic; stale formats resync.
+    fromCursor: z.string().max(256).nullable().optional(),
   }),
 });
 
@@ -87,7 +89,7 @@ const WorkspaceSubscribeMessageSchema = z.object({
   type: z.literal(WORKSPACE_WS_TYPE.subscribe),
   payload: z.object({
     notebookId: z.string().regex(SHORT_ID_REGEX),
-    fromCursor: z.string().regex(notebooksWorkspace.streamCursorPattern).nullable().optional(),
+    fromCursor: z.string().max(256).nullable().optional(),
   }),
 });
 
@@ -201,6 +203,7 @@ const warn = (socket: ServerWebSocket<unknown>, code: NotebooksYjsErrorCode, mes
 };
 
 const closeCodeForError = (code: NotebooksYjsErrorCode): number => {
+  if (code === ERROR_CODE.resyncRequired) return 1012;
   if (code === ERROR_CODE.internalError) return 1011;
   if (code === ERROR_CODE.backpressure) return 1013;
   return 1008;
@@ -275,16 +278,10 @@ const broadcastPresenceChanged = async (noteId: string) => {
 const runPresenceChannel = async (channel: PresenceChannel): Promise<void> => {
   while (!channel.abort.signal.aborted) {
     try {
-      const state = await notebooksService.presence.snapshot({ noteId: channel.noteId });
-      const reader = notebooksService.presence.reader({
-        noteId: channel.noteId,
-        after: state.cursor,
-      });
-
-      for await (const event of reader.stream({ signal: channel.abort.signal })) {
+      for await (const event of notebooksService.presence.watch({ noteId: channel.noteId, signal: channel.abort.signal })) {
         if (channel.abort.signal.aborted) break;
         await broadcastPresenceChanged(channel.noteId);
-        if (event.type === "overflow") break;
+        if (event.type === "resync_required") break;
       }
     } catch (error) {
       if (channel.abort.signal.aborted) break;
@@ -373,14 +370,15 @@ const startPresenceHeartbeat = (ctx: WsContext) => {
 const queueSnapshotIfNeeded = async (ctx: WsContext, reason: "periodic" | "unload") => {
   if (!ctx.noteId || !ctx.dirty || !ctx.lastPublishedCursor) return;
 
+  const queuedCursor = ctx.lastPublishedCursor;
   try {
     await yjsSnapshotWorker.queueSnapshotSave({
       noteId: ctx.noteId,
-      targetCursor: ctx.lastPublishedCursor,
+      targetCursor: queuedCursor,
       reason,
     });
-    ctx.dirty = false;
-    stopSnapshotScheduler(ctx);
+    ctx.dirty = ctx.lastPublishedCursor !== queuedCursor;
+    if (!ctx.dirty) stopSnapshotScheduler(ctx);
     log.debug("Queued snapshot save", {
       noteId: ctx.noteId,
       cursor: ctx.lastPublishedCursor,
@@ -393,6 +391,7 @@ const queueSnapshotIfNeeded = async (ctx: WsContext, reason: "periodic" | "unloa
       reason,
       error: error instanceof Error ? error.message : String(error),
     });
+    if (reason === "unload") throw error;
   }
 };
 
@@ -711,8 +710,8 @@ const markDirty = (ctx: WsContext, cursor: string) => {
   startSnapshotScheduler(ctx);
 };
 
-const toPushUpdate = (event: TopicLiveEvent<YjsTopicEvent>): PushUpdate => ({
-  cursor: event.cursor,
+const toPushUpdate = (event: TopicEvent<YjsTopicEvent> | TopicLiveEvent<YjsTopicEvent>): PushUpdate => ({
+  cursor: "cursor" in event ? event.cursor : null,
   payload: event.data.payload,
   originPeerId: event.data.originPeerId,
 });
@@ -720,61 +719,12 @@ const toPushUpdate = (event: TopicLiveEvent<YjsTopicEvent>): PushUpdate => ({
 const pushTypeForKind = (kind: YjsTopicEvent["kind"]): typeof WS_TYPE.syncPush | typeof WS_TYPE.awarenessPush =>
   kind === "sync" ? WS_TYPE.syncPush : WS_TYPE.awarenessPush;
 
-/**
- * Catch-up "drain quiet" window. After every event we pull from
- * the topic (forwarded OR skipped), we arm a timer for this
- * duration; if no further event arrives before it fires, the
- * backlog has *very likely* drained.
- *
- * Caveat (codex review on commit 3a121e0, finding 1): this remains
- * a wall-clock silence heuristic, not a "stream is actually empty"
- * signal. `@k2b/sync`'s `topic.live()` swallows the
- * "XREAD BLOCK timed out" case internally (its impl's
- * `if (!entry) continue`) and never surfaces it to the consumer,
- * so we can't observe "no more retained entries" deterministically
- * from this side. If Redis latency or a transient retry pause
- * exceeds 150 ms between yields, the timer can fire while real
- * backlog is still queued. The proper fix is to either:
- *   1. Add a head-cursor query to `@k2b/sync` so we know
- *      a deterministic stop condition at subscribe time, or
- *   2. Surface the empty-read signal from `topic.live()` itself.
- * Both require library changes; deferred. In practice 150 ms is
- * comfortably above local Redis round-trip times (typically
- * sub-ms) and the impact of misfiring is one Y.js merge with
- * slightly out-of-order updates — correct under CRDT semantics,
- * just not perfectly ordered.
- *
- * Picked at 150 ms: long enough to absorb single-digit-ms jitter
- * between rapid-fire events, short enough that a fresh-note
- * connect with empty topic feels instant (~150 ms gate before
- * `replayReady`).
- */
-const CATCH_UP_DRAIN_QUIET_MS = 150;
-
-/**
- * Hard cap on the catch-up phase. Even with the drain-quiet timer,
- * a truly continuous stream (multi-tab session, bot writes) might
- * never go quiet — at which point we fall back to "we've replayed
- * 2 s worth of backlog, anything still arriving is live enough."
- */
-const CATCH_UP_MAX_MS = 2000;
-
 const startLiveStream = (
   ctx: WsContext,
   noteId: string,
   noteShortId: string,
   afterCursor: string | null,
-  /**
-   * Fired exactly once when the catch-up phase ends — either because
-   * we hit a "live edge" event (within `CATCH_UP_LIVE_EDGE_MS` of
-   * now) or the `CATCH_UP_MAX_MS` fallback timer expires. The caller
-   * should send `replayReady` from this callback so the client only
-   * opens its send gate AFTER all retained sync events have been
-   * forwarded. Critical for the fresh-note path (`afterCursor === null`):
-   * without this, the user could reload, type, and the resulting
-   * publish would be merged on top of an incomplete document — see
-   * codex review on commit d87df13.
-   */
+  // Fired only after deterministic replay to the captured head.
   onCaughtUp: () => void,
 ) => {
   stopLiveStream(ctx);
@@ -784,9 +734,9 @@ const startLiveStream = (
   // Awareness is transient collaboration state. Keep it off the retained
   // document stream so cursor movement never bloats snapshot replay.
   void (async () => {
-    const awarenessTopic = createYjsAwarenessTopic(noteId);
+    const awarenessTopic = createYjsAwarenessTopic();
     try {
-      for await (const event of awarenessTopic.live({ signal: abort.signal })) {
+      for await (const event of awarenessTopic.live({ tenantId: noteId, signal: abort.signal })) {
         if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;
         send(ctx.socket, WS_TYPE.awarenessPush, {
           noteId: noteShortId,
@@ -810,69 +760,6 @@ const startLiveStream = (
     let pendingEvents = 0;
     let pendingBytes = 0;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    let caughtUp = false;
-    let drainQuietTimer: ReturnType<typeof setTimeout> | null = null;
-    let hardCapTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const clearCatchUpTimers = () => {
-      if (drainQuietTimer) {
-        clearTimeout(drainQuietTimer);
-        drainQuietTimer = null;
-      }
-      if (hardCapTimer) {
-        clearTimeout(hardCapTimer);
-        hardCapTimer = null;
-      }
-    };
-
-    const markCaughtUp = () => {
-      if (caughtUp) return;
-      caughtUp = true;
-      clearCatchUpTimers();
-      // Stale-stream guard (codex review on 696680a, finding 3): if
-      // this stream was already replaced (note switch, reconnect)
-      // before we hit caught-up, the active stream now belongs to a
-      // different `replayRequest`. Sending `replayReady` here would
-      // race with the new replay and could open the client's send
-      // gate against the wrong note.
-      if (ctx.streamAbort !== abort) {
-        log.debug("Suppressing replayReady for stopped stream", { noteId });
-        return;
-      }
-      // Flush any sync events we accumulated during catch-up before
-      // signalling ready, so the client's first applyUpdate sequence
-      // is contiguous with the eventual replayReady.
-      flush();
-      try {
-        onCaughtUp();
-      } catch (error) {
-        log.warn("onCaughtUp callback threw", {
-          noteId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    };
-
-    /**
-     * Reset the drain-quiet timer. Called after every forwarded
-     * event during catch-up. If no further event arrives within
-     * `CATCH_UP_DRAIN_QUIET_MS`, the topic backlog has drained
-     * (XREAD BLOCK returned empty) and we're at head.
-     */
-    const armDrainQuietTimer = () => {
-      if (drainQuietTimer) clearTimeout(drainQuietTimer);
-      drainQuietTimer = setTimeout(markCaughtUp, CATCH_UP_DRAIN_QUIET_MS);
-    };
-
-    // Hard cap: continuous streams (multi-tab session, bots) might
-    // never go quiet. At 2 s we've replayed plenty of backlog and
-    // call it live.
-    hardCapTimer = setTimeout(markCaughtUp, CATCH_UP_MAX_MS);
-    // Initial arm — handles the empty-topic case where no events
-    // ever arrive: the drain-quiet timer fires after 150 ms and we
-    // mark caught-up immediately.
-    armDrainQuietTimer();
-
     const flush = () => {
       if (flushTimer) {
         clearTimeout(flushTimer);
@@ -893,24 +780,22 @@ const startLiveStream = (
     };
 
     try {
-      for await (const event of noteTopic.live({
-        // `"0-0"` = Redis Streams "from the very beginning" sentinel —
-        // when there's no DB cursor yet (fresh note, snapshot worker
-        // hasn't fired) we still need to replay every topic event the
-        // user produced before reconnecting. Passing `undefined` would
-        // fall through to `@k2b/sync`'s default of `"$"`,
-        // which means "deliver only NEW events from now on" and
-        // silently drops the in-flight history. Mirrors the pattern
-        // used by `yjs-snapshot-worker.ts:waitUntilTargetCursor`.
-        after: afterCursor ?? "0-0",
-        signal: abort.signal,
-      })) {
+      const head = await noteTopic.latestCursor();
+      const replay = async function* () {
+        if (head) {
+          yield* noteTopic.replay({ after: afterCursor ?? noteTopic.cursorAt(0), until: head, signal: abort.signal });
+        }
+        if (abort.signal.aborted || ctx.streamAbort !== abort) return;
+        flush();
+        onCaughtUp();
+        yield* noteTopic.hub().subscribe({ after: head ?? noteTopic.cursorAt(0), signal: abort.signal });
+      };
+      for await (const event of replay()) {
         if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;
 
         // Ignore awareness entries written by pre-split deployments. New
         // awareness updates use the short-lived awareness topic above.
         if ((event.data as YjsTopicEvent).kind !== "sync") {
-          if (!caughtUp) armDrainQuietTimer();
           continue;
         }
 
@@ -935,13 +820,7 @@ const startLiveStream = (
         } else {
           scheduleFlush();
         }
-
-        if (!caughtUp) armDrainQuietTimer();
       }
-      // Loop exited normally (signal aborted / topic ended). The
-      // `finally` clause below handles `markCaughtUp` — but only
-      // for the active stream. A stopped/replaced stream's gate
-      // resolution is suppressed by the stale-stream guard.
       flush();
     } catch (error) {
       if (!abort.signal.aborted) {
@@ -949,16 +828,14 @@ const startLiveStream = (
           noteId,
           error: error instanceof Error ? error.message : String(error),
         });
-        await fatal(ctx, ERROR_CODE.internalError, ctx.messages.liveSyncStreamFailed, noteShortId);
+        await fatal(
+          ctx,
+          error instanceof CursorMismatchError || error instanceof RetentionGapError ? ERROR_CODE.resyncRequired : ERROR_CODE.internalError,
+          ctx.messages.liveSyncStreamFailed,
+          noteShortId,
+        );
       }
     } finally {
-      clearCatchUpTimers();
-      // Last-ditch resolve — but `markCaughtUp` itself drops the
-      // call when this stream isn't the active one anymore (note
-      // switch, fatal error mid-replay), so a stopped/failed
-      // stream doesn't fire a stale `replayReady` for the next
-      // note's connection on the same socket.
-      markCaughtUp();
       if (flushTimer) clearTimeout(flushTimer);
       flush();
       if (ctx.streamAbort === abort) {
@@ -1076,6 +953,22 @@ const startWorkspaceStream = (ctx: WsContext, notebookId: string, notebookShortI
       }
     } catch (error) {
       if (!abort.signal.aborted) {
+        if (error instanceof CursorMismatchError || error instanceof RetentionGapError) {
+          const head = await notebooksService.workspaceEvents.latestCursor({ notebookId });
+          send(ctx.socket, WORKSPACE_WS_TYPE.event, {
+            notebookId: notebookShortId,
+            cursor: head,
+            event: {
+              v: 1,
+              type: "workspace.invalidated",
+              notebookId: notebookShortId,
+              reason: "unknown",
+              scopes: ["notebook", "tree", "tags", "references", "permissions"],
+            },
+          });
+          startWorkspaceStream(ctx, notebookId, notebookShortId, head);
+          return;
+        }
         log.error("Workspace event stream failed", {
           notebookId,
           error: error instanceof Error ? error.message : String(error),
@@ -1153,7 +1046,7 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   await broadcastPresenceChanged(dbNoteId);
   startPresenceHeartbeat(ctx);
 
-  let replayCursor = payload.fromCursor ?? null;
+  let replayCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
   if (!replayCursor) {
     const snapshot = await notebooksService.note.getYjsStateWithCursor({ noteId: dbNoteId });
     if (snapshot?.yjsState) {
@@ -1200,7 +1093,7 @@ const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPub
 
   // Topic keys stay UUID-backed below the public short-id boundary.
   const noteTopic = createYjsTopic(ctx.noteId!);
-  const published = await noteTopic.pub({
+  const published = await noteTopic.publish({
     data: {
       kind: "sync",
       payload: payload.payload,
@@ -1220,8 +1113,9 @@ const handleAwarenessPublish = async (ctx: WsContext, payload: z.infer<typeof Aw
     return;
   }
 
-  const awarenessTopic = createYjsAwarenessTopic(ctx.noteId!);
-  await awarenessTopic.pub({
+  const awarenessTopic = createYjsAwarenessTopic();
+  await awarenessTopic.publish({
+    tenantId: ctx.noteId!,
     data: {
       kind: "awareness",
       payload: payload.payload,
@@ -1309,6 +1203,22 @@ const handleClientMessage = async (ctx: WsContext, raw: string): Promise<void> =
   await dispatchClientMessage(ctx, message.data);
 };
 
+const activeConnections = new Set<() => Promise<void>>();
+let stoppingConnections = false;
+
+/** Flush accepted edits and enqueue their snapshots before Sync workers drain. */
+export const drainNotebookConnections = async (): Promise<void> => {
+  stoppingConnections = true;
+  // Match Sync's default 30-second drain budget and snapshot job retry delay.
+  await retry({
+    signal: AbortSignal.timeout(30_000),
+    run: () => Promise.all([...activeConnections].map((close) => close())),
+    after: ({ ctx }) => {
+      if (ctx.error) ctx.reschedule({ delayMs: 5_000 });
+    },
+  });
+};
+
 const app = new Hono().get(
   "/",
   upgradeWebSocket((c) => {
@@ -1320,14 +1230,39 @@ const app = new Hono().get(
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();
     let pendingMessages = 0;
+    let closing: Promise<void> | null = null;
+    const close = (): Promise<void> => {
+      closing ??= (async () => {
+        await processing.catch(() => undefined);
+        if (!ctx) return;
+        ctx.phase = "closing";
+        await leaveCurrentNote(ctx);
+        leaveCurrentWorkspace(ctx);
+        ctx.socket.close(1012, "Restarting");
+      })().then(
+        () => {
+          activeConnections.delete(close);
+        },
+        (error) => {
+          closing = null;
+          throw error;
+        },
+      );
+      return closing;
+    };
 
     return {
       onOpen(_, ws) {
         ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
+        if (stoppingConnections) {
+          void close();
+          return;
+        }
+        activeConnections.add(close);
       },
 
       async onMessage(event) {
-        if (!ctx) return;
+        if (!ctx || stoppingConnections || closing) return;
         if (ctx.phase === "closing") return;
         if (typeof event.data !== "string") {
           warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.jsonTextOnly);
@@ -1361,12 +1296,7 @@ const app = new Hono().get(
       },
 
       async onClose() {
-        if (!ctx) return;
-        await processing.catch(() => undefined);
-        if (ctx.phase === "closing") return;
-        ctx.phase = "closing";
-        await leaveCurrentNote(ctx);
-        leaveCurrentWorkspace(ctx);
+        await close();
       },
     };
   }),

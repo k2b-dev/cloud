@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { SyncEvent } from "@k2b/sync";
 import { sql } from "bun";
-import { observeSyncEvent, trace, traceSyncEvent } from "./trace";
+import { flushSyncTraceEvents, observeSyncEvent, trace, traceSyncEvent } from "./trace";
 
 const canUseTraceDatabase = async (): Promise<boolean> => {
   try {
@@ -22,6 +22,43 @@ const suite = (await canUseTraceDatabase()) ? describe : describe.skip;
 const syncEvent = (event: Omit<SyncEvent, "at"> & { at?: Date }): SyncEvent => ({ at: new Date(), ...event });
 
 suite("logging.trace", () => {
+  test("queued observer preserves an immediate handler summary and domain presentation", async () => {
+    const resource = `test-observer-${crypto.randomUUID()}`;
+    const id = crypto.randomUUID();
+    const spanKey = trace.syncSpanKey("job", resource, id);
+    try {
+      observeSyncEvent(syncEvent({ type: "handler_started", resource, kind: "job", detail: { id, attempt: 1 } }), "test-app");
+      await trace.end({ spanKey, summary: { immediate: true } });
+      await trace.withSpan(
+        { name: "Domain operation", source: resource, category: "job", kind: "consumer", spanKey },
+        async () => ({ rows: 4 }),
+        { summarize: (result) => result },
+      );
+      observeSyncEvent(
+        syncEvent({ type: "handler_settled", resource, kind: "job", detail: { id, status: "retry", attempt: 1 } }),
+        "test-app",
+      );
+      observeSyncEvent(syncEvent({ type: "handler_started", resource, kind: "job", detail: { id, attempt: 2 } }), "test-app");
+      observeSyncEvent(
+        syncEvent({ type: "handler_settled", resource, kind: "job", detail: { id, status: "success", attempt: 2 } }),
+        "test-app",
+      );
+      await flushSyncTraceEvents();
+      const result = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
+      expect(result.total).toBe(1);
+      expect(result.spans[0]).toMatchObject({
+        name: "Domain operation",
+        appId: "test-app",
+        status: "ok",
+        summary: { immediate: true, rows: 4 },
+      });
+      expect(result.spans[0]?.attributes).toMatchObject({ "sync.attempt": 2 });
+    } finally {
+      await flushSyncTraceEvents();
+      await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+    }
+  });
+
   test("maps one Sync job run across a retry to one span", async () => {
     const resource = `test-job-${crypto.randomUUID()}`;
     const jobId = crypto.randomUUID();

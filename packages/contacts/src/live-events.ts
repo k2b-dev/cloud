@@ -11,7 +11,10 @@ export const CONTACTS_LIVE_WS_TYPE = {
 } as const;
 
 const InternalIdSchema = z.uuid();
-const StreamCursorSchema = z.string().regex(/^\d+-\d+$/);
+const StreamCursorSchema = z
+  .string()
+  .max(256)
+  .regex(/^s6t\.[A-Za-z0-9_-]+\.\d+$/);
 
 const contactEventSchema = (bookId: z.ZodType<string>, contactId: z.ZodType<string>) =>
   z.discriminatedUnion("type", [
@@ -68,7 +71,12 @@ export const ContactLiveClientMessageSchema = z.object({
   type: z.literal(CONTACTS_LIVE_WS_TYPE.subscribe),
   payload: z.object({
     scope: ContactLiveScopeSchema,
-    fromCursor: StreamCursorSchema.nullable(),
+    // Legacy cursors are accepted only so the server can request a fresh snapshot.
+    fromCursor: z
+      .string()
+      .max(256)
+      .regex(/^(?:s6t\.[A-Za-z0-9_-]+\.\d+|\d+-\d+)$/)
+      .nullable(),
   }),
 });
 

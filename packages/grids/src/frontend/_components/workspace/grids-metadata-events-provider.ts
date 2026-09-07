@@ -57,7 +57,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
 
   return createLiveWebSocket<ProviderMessage>({
     url: "/api/grids/ws",
-    initialCursor: opts.initialCursor,
+    initialCursor: isGridsStreamCursor(opts.initialCursor) ? opts.initialCursor : null,
     activity: "visible",
     subscribe: (cursor) => ({
       type: gridsWorkspace.wsType.metadataSubscribe,
@@ -89,6 +89,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
 
       if (message.type === gridsWorkspace.wsType.metadataError) {
         const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveMetadataFailed });
+        if (error.code === "resync_required") controls.resetCursor();
         if (TERMINAL_ERROR_CODES.has(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;

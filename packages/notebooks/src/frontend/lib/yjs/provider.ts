@@ -101,6 +101,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     INVALID_PAYLOAD: "Invalid websocket payload",
     BACKPRESSURE: "Websocket backpressure",
     INTERNAL_ERROR: "Internal websocket error",
+    RESYNC_REQUIRED: "Reload collaborative state",
   };
 
   const sendJson = (type: string, payload?: unknown): boolean => {
@@ -249,6 +250,10 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (msg.type !== WS_TYPE.error) return false;
     const error = normalizeError(msg.payload);
     opts.onError?.(error);
+    if (error.code === notebooksYjs.errorCode.resyncRequired) {
+      lastCursor = null;
+      replayReady = false;
+    }
     if (TERMINAL_ERROR_CODES.has(error.code)) {
       terminate(error);
     }
@@ -264,6 +269,9 @@ export function createYjsProvider(opts: YjsProviderOptions) {
               message: "Workspace access was revoked",
             }
           : normalizeError(msg.payload);
+      if (error.code === notebooksYjs.errorCode.resyncRequired) {
+        lastWorkspaceCursor = null;
+      }
       opts.workspace?.onError?.(error);
       if (WORKSPACE_TERMINAL_ERROR_CODES.has(error.code)) {
         terminate(error);
@@ -361,8 +369,6 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       }
     }
 
-    replayReady = true;
-    sendLocalStateIfNeeded();
     return true;
   };
 

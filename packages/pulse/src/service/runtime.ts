@@ -1,15 +1,15 @@
-import { job, scheduler } from "@k2b/sync";
-import { logger, trace } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import {
   resumePulseBaseDataClearJobs,
   resumePulseBaseDeletionJobs,
+  startPulseBaseJobs,
   stopPulseBaseDataClearJob,
   stopPulseBaseDeletionJob,
 } from "./base-lifecycle";
 import { scrapeMetricsSource } from "./index";
-
-const log = logger("pulse:runtime");
 
 type ScrapeInput = {
   baseId: string;
@@ -58,42 +58,12 @@ const clearExpiredEventSensitiveChunk = async (baseId?: string): Promise<number>
   return result.count ?? 0;
 };
 
-const scrapeJob = job<ScrapeInput, { metrics: number; events: number; states: number }>({
-  id: "pulse:metrics:scrape",
-  defaults: { leaseMs: 60_000 },
-  trace: trace.fromSyncJob<ScrapeInput, { metrics: number; events: number; states: number }>({
-    name: "Pulse metrics scrape",
-    source: "pulse:metrics:scrape",
-    appId: "pulse",
-    attributes: (event) =>
-      "input" in event && event.input
-        ? {
-            "cloud.pulse.base_id": event.input.publicBaseId,
-            "cloud.pulse.source_id": event.input.publicSourceId,
-          }
-        : {},
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+const scrapeJob = lazySync((sync) =>
+  sync.job<ScrapeInput>({
+    id: "pulse:metrics:scrape",
+    delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [30_000, 60_000] },
   }),
-  process: async ({ ctx }) => {
-    const result = await scrapeMetricsSource(ctx.input);
-    if (!result.ok) throw new Error(result.error.message);
-    return result.data;
-  },
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 30_000, maxMs: 5 * 60_000 }) });
-      return;
-    }
-    if (ctx.error) {
-      log.error("Pulse metrics scrape exhausted retries", {
-        baseId: ctx.input.publicBaseId,
-        sourceId: ctx.input.publicSourceId,
-        failureCount: ctx.failureCount,
-        error: ctx.error.message,
-      });
-    }
-  },
-});
+);
 
 const deleteExpiredMetricSamplesChunk = async (baseId?: string): Promise<number> => {
   const scopedBaseId = baseId ?? null;
@@ -242,43 +212,20 @@ export const runRetentionBatch = async (baseId?: string): Promise<RetentionResul
   };
 };
 
-const retentionJob = job<void, RetentionResult>({
-  id: "pulse:retention",
-  defaults: { leaseMs: 5 * 60_000 },
-  trace: trace.fromSyncJob<void, RetentionResult>({
-    name: "Pulse retention cleanup",
-    source: "pulse:retention",
-    appId: "pulse",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+const retentionJob = lazySync((sync) =>
+  sync.job<void>({
+    id: "pulse:retention",
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 3, backoffMs: [60_000, 120_000] },
   }),
-  process: () => runRetentionBatch(),
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 60_000, maxMs: 10 * 60_000 }) });
-      return;
-    }
-    if (ctx.error) {
-      log.error("Pulse retention cleanup exhausted retries", {
-        failureCount: ctx.failureCount,
-        error: ctx.error.message,
-      });
-      return;
-    }
-    if (ctx.data && !ctx.data.done) ctx.reschedule({ delayMs: 0 });
-  },
-});
-
-const hourlyRollupJob = job<void, { buckets: number }>({
-  id: "pulse:rollup:hourly",
-  defaults: { leaseMs: 5 * 60_000 },
-  trace: trace.fromSyncJob<void, { buckets: number }>({
-    name: "Pulse hourly rollup",
-    source: "pulse:rollup:hourly",
-    appId: "pulse",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+);
+const hourlyRollupJob = lazySync((sync) =>
+  sync.job<void>({
+    id: "pulse:rollup:hourly",
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 3, backoffMs: [60_000, 120_000] },
   }),
-  process: async () => {
-    const result = await sql`
+);
+const runHourlyRollup = async () => {
+  const result = await sql`
       INSERT INTO pulse.metric_rollups_hourly (
         base_id,
         series_id,
@@ -312,24 +259,15 @@ const hourlyRollupJob = job<void, { buckets: number }>({
         last_value = EXCLUDED.last_value,
         updated_at = now()
     `;
-    return { buckets: result.count ?? 0 };
-  },
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 60_000, maxMs: 10 * 60_000 }) });
-      return;
-    }
-    if (ctx.error) {
-      log.error("Pulse hourly rollup exhausted retries", {
-        failureCount: ctx.failureCount,
-        error: ctx.error.message,
-      });
-    }
-  },
-});
-
-const pulseScheduler = scheduler({ id: "pulse" });
-
+  return { buckets: result.count ?? 0 };
+};
+const pulseScheduler = lazySync((sync) =>
+  sync.scheduler({
+    id: "pulse",
+    delivery: { maxAttempts: 3, backoffMs: [60_000, 120_000] },
+  }),
+);
+let workers: Worker[] = [];
 let started = false;
 
 const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> => {
@@ -363,7 +301,7 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
   `;
 
   for (const row of rows) {
-    await scrapeJob.submit({
+    await scrapeJob().submit({
       key: `source:${row.id}:slot:${slotTs}`,
       input: {
         baseId: row.base_id,
@@ -380,120 +318,105 @@ const submitDueScrapes = async (slotTs: number): Promise<{ submitted: number }> 
 export const pulseRuntime = {
   start: async (): Promise<void> => {
     if (started) return;
-    await pulseScheduler.create({
+    workers.push(
+      await scrapeJob().process({}, async (context) => {
+        await trace.withSpan(
+          {
+            spanKey: trace.syncSpanKey("job", "pulse:metrics:scrape", context.jobId),
+            name: "Pulse metrics scrape",
+            source: "pulse:metrics:scrape",
+            appId: "pulse",
+            category: "job",
+            attributes: { "cloud.pulse.base_id": context.input.publicBaseId, "cloud.pulse.source_id": context.input.publicSourceId },
+          },
+          async () => {
+            const result = await scrapeMetricsSource(context.input);
+            if (!result.ok) throw new Error(result.error.message);
+            return result.data;
+          },
+          { summarize: (result) => result },
+        );
+      }),
+    );
+    workers.push(
+      await retentionJob().process({}, async (context) => {
+        const result = await trace.withSpan(
+          {
+            spanKey: trace.syncSpanKey("job", "pulse:retention", context.jobId),
+            name: "Pulse retention cleanup",
+            source: "pulse:retention",
+            appId: "pulse",
+            category: "job",
+          },
+          () => runRetentionBatch(),
+          { summarize: (result) => result },
+        );
+        if (!result.done) context.resubmit();
+      }),
+    );
+    workers.push(
+      await hourlyRollupJob().process({}, async (context) => {
+        await trace.withSpan(
+          {
+            spanKey: trace.syncSpanKey("job", "pulse:rollup:hourly", context.jobId),
+            name: "Pulse hourly rollup",
+            source: "pulse:rollup:hourly",
+            appId: "pulse",
+            category: "job",
+          },
+          runHourlyRollup,
+          { summarize: (result) => result },
+        );
+      }),
+    );
+    await pulseScheduler().create({
       id: "pulse:metrics:scrape-due",
       cron: "* * * * *",
-      meta: {
-        appId: "pulse",
-        family: "pulse:metrics",
-        label: "Pulse due metrics scrape",
-        source: "pulse:metrics:scrape-due",
-      },
-      trace: trace.fromSyncSchedule<{ submitted: number }>({
-        name: "Pulse due metrics scrape schedule",
-        source: "pulse:metrics:scrape-due",
-        appId: "pulse",
-        summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-      }),
-      process: async ({ ctx }) => submitDueScrapes(ctx.slotTs),
-      after: ({ ctx }) => {
-        if (ctx.error && ctx.failureCount < 3) {
-          log.warn("Pulse scrape scheduler failed", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-          ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 30_000, maxMs: 5 * 60_000 }) });
-          return;
-        }
-        if (ctx.error) {
-          log.error("Pulse scrape scheduler exhausted retries", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-        }
+      misfire: "latest",
+      meta: { appId: "pulse", family: "pulse:metrics", label: "Pulse due metrics scrape", source: "pulse:metrics:scrape-due" },
+      process: async (context) => {
+        await trace.withSpan(
+          {
+            spanKey: trace.syncSpanKey("scheduler", "pulse", context.runId),
+            name: "Pulse due metrics scrape schedule",
+            source: "pulse",
+            appId: "pulse",
+            category: "schedule",
+          },
+          () => submitDueScrapes(context.slot.getTime()),
+          { summarize: (result) => result },
+        );
       },
     });
-    await pulseScheduler.create({
+    await pulseScheduler().create({
       id: "pulse:rollup:hourly",
       cron: "23 * * * *",
-      meta: {
-        appId: "pulse",
-        family: "pulse:rollups",
-        label: "Pulse hourly rollup",
-        source: "pulse:rollup:hourly",
-      },
-      trace: trace.fromSyncSchedule<void>({
-        name: "Pulse hourly rollup schedule",
-        source: "pulse:rollup:hourly",
-        appId: "pulse",
-      }),
-      process: async ({ ctx }) => {
-        await hourlyRollupJob.submit({ key: `slot:${ctx.slotTs}` });
-      },
-      after: ({ ctx }) => {
-        if (ctx.error && ctx.failureCount < 3) {
-          log.warn("Pulse hourly rollup scheduler failed", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-          ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 60_000, maxMs: 10 * 60_000 }) });
-          return;
-        }
-        if (ctx.error) {
-          log.error("Pulse hourly rollup scheduler exhausted retries", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-        }
+      misfire: "latest",
+      meta: { appId: "pulse", family: "pulse:rollups", label: "Pulse hourly rollup", source: "pulse:rollup:hourly" },
+      process: async (context) => {
+        await hourlyRollupJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
       },
     });
-    await pulseScheduler.create({
+    await pulseScheduler().create({
       id: "pulse:retention",
       cron: "17 3 * * *",
-      meta: {
-        appId: "pulse",
-        family: "pulse:retention",
-        label: "Pulse retention",
-        source: "pulse:retention",
-      },
-      trace: trace.fromSyncSchedule<void>({
-        name: "Pulse retention schedule",
-        source: "pulse:retention",
-        appId: "pulse",
-      }),
-      process: async ({ ctx }) => {
-        await retentionJob.submit({ key: `slot:${ctx.slotTs}` });
-      },
-      after: ({ ctx }) => {
-        if (ctx.error && ctx.failureCount < 3) {
-          log.warn("Pulse retention scheduler failed", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-          ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 60_000, maxMs: 10 * 60_000 }) });
-          return;
-        }
-        if (ctx.error) {
-          log.error("Pulse retention scheduler exhausted retries", {
-            error: ctx.error.message,
-            failureCount: ctx.failureCount,
-          });
-        }
+      misfire: "latest",
+      meta: { appId: "pulse", family: "pulse:retention", label: "Pulse retention", source: "pulse:retention" },
+      process: async (context) => {
+        await retentionJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
       },
     });
-    pulseScheduler.start();
+    workers.push(await pulseScheduler().process());
+    await startPulseBaseJobs();
     await resumePulseBaseDeletionJobs();
     await resumePulseBaseDataClearJobs();
     started = true;
   },
   stop: async (): Promise<void> => {
-    if (!started) return;
-    await pulseScheduler.stop();
-    scrapeJob.stop();
-    hourlyRollupJob.stop();
-    retentionJob.stop();
-    stopPulseBaseDeletionJob();
-    stopPulseBaseDataClearJob();
+    await Promise.all(workers.map((worker) => worker.stop()));
+    workers = [];
+    await stopPulseBaseDeletionJob();
+    await stopPulseBaseDataClearJob();
     started = false;
   },
 };

@@ -1,7 +1,8 @@
-import { job, mutex, scheduler } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
 import { enqueueExistingAiTurn, validateAiTurnRequest } from "@valentinkolb/cloud/ai/runtime";
-import { accounts, coreSettings, logger } from "@valentinkolb/cloud/services";
+import { accounts, coreSettings, logger, syncOps } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
@@ -23,94 +24,101 @@ const taskMandate = (task: { mandateId: string | null; mandateRevision: number |
   return { id: task.mandateId, revision: task.mandateRevision };
 };
 
-const taskScheduler = scheduler({ id: "core-ai-chat-tasks" });
-const reconcileMutex = mutex({ id: "core:ai-chat-tasks:reconcile", defaultTtl: 60_000, retryCount: 0 });
+const taskScheduler = lazySync((sync) => {
+  const handle = sync.scheduler({ id: "core-ai-chat-tasks", delivery: { maxAttempts: 1 } });
+  syncOps.registerScheduler({ name: "core-ai-chat-tasks", scheduler: handle });
+  return handle;
+});
+const reconcileMutex = lazySync((sync) => sync.mutex({ id: "core:ai-chat-tasks:reconcile", ttlMs: 60_000, retry: { maxAttempts: 1 } }));
 let started = false;
+let workers: Worker[] = [];
 
-const taskJob = job<{ occurrenceId: string }, { status: "gone" | "failed" | "not_found" | "busy" | "stale" | "delivered"; retry: boolean }>(
-  {
+const taskJob = lazySync((sync) => {
+  const handle = sync.job<{ occurrenceId: string }>({
     id: "core-ai-chat-task-occurrence",
-    defaults: { leaseMs: 60_000, keyTtlMs: 24 * 60 * 60_000 },
-    process: async ({ ctx }) => {
-      const pending = await aiChatTasks.getQueuedOccurrence(ctx.input.occurrenceId);
-      if (!pending) return { status: "gone" as const, retry: false };
-      const { occurrence, task } = pending;
-      const [user, conversation] = await Promise.all([
-        accounts.users.get({ id: task.sponsorUserId }),
-        aiConversations.getConversation({ conversationId: task.conversationId, ownerUserId: task.sponsorUserId }),
-      ]);
-      if (!user || isAccountExpired(user.accountExpires) || !conversation) {
-        const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Task sponsor or chat is unavailable" });
-        return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
-      }
-      const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
-      if (conversation.projectId && !project) {
-        const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
-        return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
-      }
-      const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
-      const { resolved } = await validateAiTurnRequest({
-        input: text,
-        modelPolicy: personalAiModelPolicy,
-        requestedModelId: project?.defaultModelProfileId ?? undefined,
-      });
-      const delivered = await aiChatTasks.deliverOccurrence({
-        occurrenceId: occurrence.id,
-        modelProfileId: resolved.profile.id,
-        runConfig: {
-          kind: "chat",
-          input: text,
-          chatId: conversation.shortId,
-          actor: { kind: "user", user },
-          modelPolicy: personalAiModelPolicy,
-          requestedModelId: project?.defaultModelProfileId ?? undefined,
-          project: project ?? undefined,
-          toolSource: { kind: "default", appTools: true },
-          toolApprovalContext: { actorUserId: user.id },
-          mandate: taskMandate(task),
-        },
-        userMessage: { role: "user", content: [{ type: "text", text }] },
-        expectedRevision: task.revision,
-      });
-      if (!delivered.delivered)
-        return {
-          status: delivered.reason,
-          retry: delivered.reason === "busy" || delivered.reason === "stale",
-        };
-      await enqueueExistingAiTurn({ conversationId: delivered.conversationId, turnId: delivered.turnId });
-      return { status: "delivered" as const, retry: false };
+    delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [5_000, 10_000] },
+    dedupeWindowMs: 24 * 60 * 60_000,
+  });
+  syncOps.registerDeadLetters({ name: "core-ai-chat-task-occurrence", kind: "job", store: handle.deadLetters });
+  return handle;
+});
+const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
+  const pending = await aiChatTasks.getQueuedOccurrence(ctx.input.occurrenceId);
+  if (!pending) return { status: "gone" as const, retry: false };
+  const { occurrence, task } = pending;
+  const [user, conversation] = await Promise.all([
+    accounts.users.get({ id: task.sponsorUserId }),
+    aiConversations.getConversation({ conversationId: task.conversationId, ownerUserId: task.sponsorUserId }),
+  ]);
+  if (!user || isAccountExpired(user.accountExpires) || !conversation) {
+    const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Task sponsor or chat is unavailable" });
+    return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
+  }
+  const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, { type: "user", userId: user.id }) : null;
+  if (conversation.projectId && !project) {
+    const status = await aiChatTasks.failOccurrence({ occurrenceId: occurrence.id, error: "Current Project access is unavailable" });
+    return { status: status === "gone" ? ("not_found" as const) : status, retry: status === "stale" };
+  }
+  const text = `Scheduled task ${task.shortId} (${occurrence.scheduledFor}):\n\n${task.prompt}`;
+  const { resolved } = await validateAiTurnRequest({
+    input: text,
+    modelPolicy: personalAiModelPolicy,
+    requestedModelId: project?.defaultModelProfileId ?? undefined,
+  });
+  const delivered = await aiChatTasks.deliverOccurrence({
+    occurrenceId: occurrence.id,
+    modelProfileId: resolved.profile.id,
+    runConfig: {
+      kind: "chat",
+      input: text,
+      chatId: conversation.shortId,
+      actor: { kind: "user", user },
+      modelPolicy: personalAiModelPolicy,
+      requestedModelId: project?.defaultModelProfileId ?? undefined,
+      project: project ?? undefined,
+      toolSource: { kind: "default", appTools: true },
+      toolApprovalContext: { actorUserId: user.id },
+      mandate: taskMandate(task),
     },
-    after: async ({ ctx }) => {
-      // Keep an already submitted job retryable; completing it would retain its dedupe key while the occurrence is still queued.
-      if (ctx.data?.retry) {
-        ctx.reschedule({ delayMs: 60_000 });
-        return;
-      }
-      if (!ctx.error) return;
-      if (ctx.failureCount < 2) {
-        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-        return;
-      }
-      const status = await aiChatTasks
-        .failOccurrence({
-          occurrenceId: ctx.input.occurrenceId,
-          error: ctx.error instanceof Error ? ctx.error.message : "Scheduled task delivery failed",
-        })
-        .catch(() => "gone" as const);
-      if (status === "stale") ctx.reschedule({ delayMs: 60_000 });
-    },
-  },
-);
+    userMessage: { role: "user", content: [{ type: "text", text }] },
+    expectedRevision: task.revision,
+  });
+  if (!delivered.delivered)
+    return {
+      status: delivered.reason,
+      retry: delivered.reason === "busy" || delivered.reason === "stale",
+    };
+  await enqueueExistingAiTurn({ conversationId: delivered.conversationId, turnId: delivered.turnId });
+  return { status: "delivered" as const, retry: false };
+};
+const startTaskWorker = () =>
+  taskJob().process({}, async (ctx) => {
+    try {
+      const result = await processOccurrence(ctx);
+      if (result.retry) await ctx.resubmit({ delayMs: 60_000 });
+    } catch (error) {
+      if (ctx.attempt < 3) throw error;
+      // Persist the terminal domain outcome before transport settlement. A stale
+      // revision is a fresh continuation, not a failed delivery attempt.
+      const status = await aiChatTasks.failOccurrence({
+        occurrenceId: ctx.input.occurrenceId,
+        error: error instanceof Error ? error.message : "Scheduled task delivery failed",
+      });
+      if (status === "stale") await ctx.resubmit({ delayMs: 60_000 });
+      else throw error;
+    }
+  });
 
-const submitOccurrence = (occurrenceId: string): Promise<string> =>
-  taskJob.submit({ key: `occurrence:${occurrenceId}`, input: { occurrenceId } });
+const submitOccurrence = async (occurrenceId: string): Promise<string> =>
+  (await taskJob().submit({ key: `occurrence:${occurrenceId}`, input: { occurrenceId }, coalesce: true })).jobId;
 
 const registerRecurringTask = async (task: Awaited<ReturnType<typeof aiChatTasks.listActiveCron>>[number]): Promise<void> => {
   if (task.schedule.kind !== "cron") return;
-  await taskScheduler.create({
+  await taskScheduler().create({
     id: `${SCHEDULE_PREFIX}${task.id}`,
     cron: task.schedule.cron,
-    tz: task.timezone,
+    timezone: task.timezone,
+    misfire: "latest",
     meta: {
       appId: APP_ID,
       family: "ai:chat-task",
@@ -118,8 +126,8 @@ const registerRecurringTask = async (task: Awaited<ReturnType<typeof aiChatTasks
       resourceId: task.shortId,
       resourceLabel: task.prompt.slice(0, 200),
     },
-    process: async ({ ctx }) => {
-      const slot = new Date(ctx.slotTs).toISOString();
+    process: async (ctx) => {
+      const slot = ctx.slot.toISOString();
       const occurrence = await aiChatTasks.createOccurrence({
         taskId: task.id,
         scheduledFor: slot,
@@ -151,19 +159,21 @@ export const reconcileAiChatTaskSchedules = async (input: {
 };
 
 export const reconcileAiChatTasks = async (): Promise<void> => {
-  const lock = await reconcileMutex.acquire(APP_ID, 60_000);
+  const lock = await reconcileMutex().acquire({ resource: APP_ID, ttlMs: 60_000 });
   if (!lock) return;
   try {
     const tasks = await aiChatTasks.listActiveCron();
     await reconcileAiChatTaskSchedules({
       tasks,
       register: registerRecurringTask,
-      list: () => taskScheduler.list(),
-      remove: (id) => taskScheduler.delete({ id }),
+      list: () => taskScheduler().list(),
+      remove: (id) => taskScheduler().delete({ id }),
       removeObsolete: true,
     });
   } finally {
-    await reconcileMutex.release(lock).catch(() => undefined);
+    await reconcileMutex()
+      .release(lock)
+      .catch(() => undefined);
   }
 };
 
@@ -209,23 +219,27 @@ const recover = (): Promise<{ queued: number }> =>
 export const aiChatTaskRuntime = {
   start: async (): Promise<void> => {
     if (started) return;
-    taskScheduler.start();
-    started = true;
+
     try {
       const timezone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
       await reconcileAiChatTasks();
-      await taskScheduler.create({
+      await taskScheduler().create({
         id: RECOVERY_ID,
         cron: "* * * * *",
-        tz: timezone,
+        timezone,
+        misfire: "latest",
         meta: { appId: APP_ID, family: "ai:chat-task", label: "Scheduled chat task recovery" },
-        process: recover,
+        process: async () => {
+          await recover();
+        },
       });
-      await taskScheduler.runNow({ id: RECOVERY_ID }).catch((error) => {
-        log.warn("Initial scheduled chat task recovery failed", { error: error instanceof Error ? error.message : String(error) });
-      });
+      workers.push(await startTaskWorker());
+      workers.push(await taskScheduler().process());
+      started = true;
     } catch (error) {
-      await taskScheduler.stop().catch(() => undefined);
+      for (const worker of workers) worker.stop();
+      await Promise.all(workers.map((worker) => worker.drain()));
+      workers = [];
       started = false;
       throw error;
     }
@@ -233,8 +247,9 @@ export const aiChatTaskRuntime = {
 
   stop: async (): Promise<void> => {
     if (!started) return;
-    taskJob.stop();
-    await taskScheduler.stop();
+    for (const worker of workers) worker.stop();
+    await Promise.all(workers.map((worker) => worker.drain()));
+    workers = [];
     started = false;
   },
 

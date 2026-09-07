@@ -3,6 +3,7 @@ import {
   NOTIFICATION_LIVE_WS_TYPE,
   NotificationLiveClientMessageSchema,
   NotificationLiveEventSchema,
+  NotificationStreamCursorSchema,
   parseNotificationLiveServerMessage,
 } from "./notification-live";
 
@@ -11,7 +12,7 @@ describe("notification live WebSocket contract", () => {
     expect(
       NotificationLiveClientMessageSchema.safeParse({
         type: NOTIFICATION_LIVE_WS_TYPE.subscribe,
-        payload: { fromCursor: "8-3" },
+        payload: { fromCursor: "s6t.notification.3" },
       }).success,
     ).toBeTrue();
     expect(
@@ -26,6 +27,12 @@ describe("notification live WebSocket contract", () => {
         payload: { fromCursor: "invalid" },
       }).success,
     ).toBeFalse();
+  });
+
+  test("rejects Redis cursors and zero sentinels after the NATS cutover", () => {
+    expect(NotificationStreamCursorSchema.safeParse("8-3").success).toBeFalse();
+    expect(NotificationStreamCursorSchema.safeParse("0-0").success).toBeFalse();
+    expect(NotificationStreamCursorSchema.safeParse("s6t.notification.0").success).toBeTrue();
   });
 
   test("validates safe notification targets", () => {
@@ -60,7 +67,7 @@ describe("notification live WebSocket contract", () => {
       JSON.stringify({
         type: NOTIFICATION_LIVE_WS_TYPE.event,
         payload: {
-          cursor: "9-1",
+          cursor: "s6t.notification.1",
           event: { type: "cloud-notification", eventId: "event-2", title: "Complete", targetHref: "/app/assistant" },
         },
       }),

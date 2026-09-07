@@ -1,6 +1,8 @@
-import { createRuntimeTaskTracker, stopRuntimeJobs } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { expBackoff } from "@k2b/sync/retry";
+import { lazySync } from "@valentinkolb/cloud";
+import { createRuntimeTaskTracker, stopRuntimeJobs, syncOps } from "@valentinkolb/cloud/services";
 import { toPgTextArray } from "@valentinkolb/cloud/services/postgres";
-import { job } from "@k2b/sync";
 import { sql } from "bun";
 import { z } from "zod";
 import { type CommandState, type MaintenanceCommandInput, maintenanceCommandInputSchema } from "../contracts";
@@ -311,20 +313,32 @@ export const executeMaintenanceCommand = async (
   }
 };
 
-const maintenanceJob = job<{ commandId: string }, { state: CommandState | null } | null>({
-  id: "mail:execute-maintenance-command",
-  defaults: { leaseMs: MAINTENANCE_JOB_LEASE_MS, keyTtlMs: 7 * 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    maintenanceTasks.run(async () => ({
-      state: await executeMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat({ leaseMs: MAINTENANCE_JOB_LEASE_MS })),
-    })) ?? Promise.resolve(null),
-  after: ({ ctx }) => {
-    if (ctx.data?.state === "queued") ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 2_000, maxMs: 60_000 }) });
-  },
-});
+const maintenanceJob = lazySync((sync) =>
+  sync.job<{ commandId: string; continuationAttempt?: number }>({
+    id: "mail:execute-maintenance-command",
+    delivery: { ackWaitMs: MAINTENANCE_JOB_LEASE_MS, maxAttempts: 1, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+  }),
+);
+let maintenanceJobWorker: Worker | undefined;
+let unregisterMaintenanceSyncOps: (() => void) | undefined;
+const startMaintenanceJob = async (): Promise<void> => {
+  maintenanceJobWorker = await maintenanceJob().process({}, async (ctx) => {
+    const data = await (maintenanceTasks.run(async () => ({
+      state: await executeMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat()),
+    })) ?? Promise.resolve(null));
+    if (data?.state === "queued") {
+      const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
+      ctx.resubmit({
+        delayMs: expBackoff(attempt, { baseMs: 2_000, maxMs: 60_000 }),
+        input: { ...ctx.input, continuationAttempt: attempt },
+      });
+    }
+  });
+};
 
 export const enqueueMaintenanceCommand = async (commandId: string): Promise<void> => {
-  await (maintenanceTasks.run(() => maintenanceJob.submit({ key: `maintenance:${commandId}`, input: { commandId } })) ?? Promise.resolve());
+  await (maintenanceTasks.run(() => maintenanceJob().submit({ coalesce: true, key: `maintenance:${commandId}`, input: { commandId } })) ??
+    Promise.resolve());
 };
 
 export const submitDueMaintenanceCommands = async (): Promise<{ queued: number; recovered: number }> => {
@@ -352,8 +366,25 @@ export const submitDueMaintenanceCommands = async (): Promise<{ queued: number; 
   return { queued: queued.length, recovered: recovered.length };
 };
 
-export const startMaintenanceRuntime = (): void => maintenanceTasks.open();
+export const startMaintenanceRuntime = async (): Promise<void> => {
+  maintenanceTasks.open();
+  await startMaintenanceJob();
+  unregisterMaintenanceSyncOps = syncOps.registerDeadLetters({
+    name: "mail:execute-maintenance-command",
+    kind: "job",
+    store: maintenanceJob().deadLetters,
+  });
+};
 
 export const stopMaintenanceRuntime = async (): Promise<void> => {
-  await stopRuntimeJobs(maintenanceTasks, [maintenanceJob]);
+  try {
+    await stopRuntimeJobs(
+      maintenanceTasks,
+      [maintenanceJobWorker].filter((worker): worker is Worker => worker !== undefined),
+    );
+    maintenanceJobWorker = undefined;
+  } finally {
+    unregisterMaintenanceSyncOps?.();
+    unregisterMaintenanceSyncOps = undefined;
+  }
 };

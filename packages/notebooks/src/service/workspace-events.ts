@@ -1,4 +1,4 @@
-import { topic } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type {
@@ -14,16 +14,17 @@ type InvalidationReason = Extract<NotebookWorkspaceEvent, { type: "workspace.inv
 const TOPIC_PREFIX = "cloud:notebooks:events";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
 
-const workspaceTopic = topic<NotebookWorkspaceEvent>({
-  id: "workspace",
-  prefix: TOPIC_PREFIX,
-  retentionMs: TOPIC_RETENTION_MS,
-  limits: { payloadBytes: 64_000 },
-});
+const workspaceTopic = lazySync((sync) =>
+  sync.topic<NotebookWorkspaceEvent>({
+    id: `${TOPIC_PREFIX}:workspace`,
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 256 * 1024 * 1024 },
+    maxPayloadBytes: 68_096,
+  }),
+);
 
 const publish = async (event: NotebookWorkspaceEvent, idempotencyKey?: string): Promise<void> => {
   try {
-    await workspaceTopic.pub({
+    await workspaceTopic().publish({
       tenantId: event.notebookId,
       orderingKey: event.notebookId,
       idempotencyKey,
@@ -39,14 +40,15 @@ const publish = async (event: NotebookWorkspaceEvent, idempotencyKey?: string): 
 };
 
 export const live = (config: { notebookId: string; after?: string | null; signal?: AbortSignal }) =>
-  workspaceTopic.live({
-    tenantId: config.notebookId,
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  workspaceTopic()
+    .hub({ tenantId: config.notebookId })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });
 
 export const latestCursor = (config: { notebookId: string }): Promise<string | null> =>
-  workspaceTopic.latestCursor({ tenantId: config.notebookId });
+  workspaceTopic().latestCursor({ tenantId: config.notebookId });
 
 export const notebookUpdated = (notebook: NotebookWorkspaceNotebook): Promise<void> =>
   publish({

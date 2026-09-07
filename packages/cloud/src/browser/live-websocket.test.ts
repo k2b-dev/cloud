@@ -99,6 +99,29 @@ afterEach(() => {
 });
 
 describe("createLiveWebSocket", () => {
+  test("clears a rejected cursor before the next subscription", () => {
+    installBrowser();
+    const client = createLiveWebSocket<{ reset: boolean }>({
+      url: "/live",
+      initialCursor: "expired",
+      activity: "always",
+      subscribe: (cursor) => ({ cursor }),
+      parse: (raw) => JSON.parse(raw),
+      onMessage: (_message, controls) => controls.resetCursor(),
+    });
+    client.connect();
+    const first = FakeWebSocket.instances[0]!;
+    first.open();
+    expect(JSON.parse(first.sent[0]!).cursor).toBe("expired");
+    first.message({ reset: true });
+    first.close(1006);
+    runNextTimer();
+    const second = FakeWebSocket.instances[1]!;
+    second.open();
+    expect(JSON.parse(second.sent[0]!).cursor).toBeNull();
+    client.dispose();
+  });
+
   test("can be disposed before browser setup", () => {
     const connection = createLiveWebSocket({
       url: "/api/example/ws",

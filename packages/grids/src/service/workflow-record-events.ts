@@ -1,6 +1,6 @@
 import type { Result } from "@k2b/stdlib";
-import { type Lock, mutex, type QueueReceived } from "@k2b/sync";
-import { logger } from "@valentinkolb/cloud/services";
+import type { QueueMessage, Worker } from "@k2b/sync";
+import { logger, syncOps } from "@valentinkolb/cloud/services";
 import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
 import { normalizeLocale, normalizeTimeZone } from "@valentinkolb/cloud/shared";
 import type { WorkflowInvocationReceipt, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
@@ -23,7 +23,7 @@ import {
   publishRecordEvent,
   RECORD_EVENT_WORK_LEASE_MS,
   RECORD_EVENT_WORK_PARTITIONS,
-  recordEventWorkReader,
+  recordEventWorkQueue,
 } from "./record-events";
 import { listRecordEventWorkflows } from "./workflow-definitions";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
@@ -34,12 +34,6 @@ const RETRY_DELAY_MS = 1_000;
 const APPLICATION_MAX_DELIVERY_ATTEMPTS = 20;
 const LEASE_HEARTBEAT_MS = Math.floor(RECORD_EVENT_WORK_LEASE_MS / 3);
 const DELIVERY_FAILURE_BASE_FOREIGN_KEY = "record_event_delivery_failures_base_id_fkey";
-const recordEventWorkMutex = mutex({
-  id: "grids:workflow-record-events:v1",
-  retryCount: 0,
-  defaultTtl: RECORD_EVENT_WORK_LEASE_MS,
-});
-
 export const isDeletedRecordEventBaseError = (error: unknown): boolean => {
   const postgresError = error as { code?: string; errno?: string; constraint?: string; constraint_name?: string; message?: string } | null;
   if (postgresError?.code !== "23503" && postgresError?.errno !== "23503") return false;
@@ -47,125 +41,70 @@ export const isDeletedRecordEventBaseError = (error: unknown): boolean => {
   return constraint === DELIVERY_FAILURE_BASE_FOREIGN_KEY || postgresError.message?.includes(DELIVERY_FAILURE_BASE_FOREIGN_KEY) === true;
 };
 
-const acknowledgeObsoleteDelivery = async (delivery: QueueReceived<GridsRecordEvent>, error: unknown): Promise<boolean> => {
-  if (!isDeletedRecordEventBaseError(error)) return false;
-  if (!(await delivery.ack())) throw new Error("obsolete record event acknowledgement was not accepted", { cause: error });
-  return true;
-};
-
-export const processInvalidWorkflowRecordEventDelivery = async (
-  delivery: QueueReceived<GridsRecordEvent>,
-  recordFailure: typeof recordInvalidRecordEventDelivery = recordInvalidRecordEventDelivery,
-): Promise<void> => {
-  const baseId = GridsRecordEventSchema.shape.baseId.safeParse(delivery.meta?.baseId);
-  if (!baseId.success) {
-    if (!(await delivery.nack({ reason: "invalid", error: "record event base metadata is unavailable" }))) {
-      throw new Error("record event rejection was not accepted");
-    }
-    return;
-  }
-  let failure: { dead: boolean; attempts: number };
-  try {
-    failure = await recordFailure({
-      baseId: baseId.data,
-      consumerGroup: CONSUMER_GROUP,
-      eventId: delivery.messageId,
-      payload: JSON.stringify(delivery.data),
-      error: "record event payload is invalid",
-    });
-  } catch (failureStoreError) {
-    if (await acknowledgeObsoleteDelivery(delivery, failureStoreError)) {
-      log.info("Discarded record event for a deleted base", {
-        baseId: baseId.data,
-        eventId: delivery.messageId,
-      });
-      return;
-    }
-    const accepted = await delivery.nack({
-      delayMs: workflowRecordEventRetryDelayMs(delivery.attempt),
-      reason: "failure_store_unavailable",
-      error: "record event payload is invalid",
-    });
-    if (!accepted) throw new Error("record event rejection was not accepted", { cause: failureStoreError });
-    log.error("Could not persist invalid record event delivery", {
-      baseId: baseId.data,
-      eventId: delivery.messageId,
-      attempt: delivery.attempt,
-      error: failureStoreError instanceof Error ? failureStoreError.message : String(failureStoreError),
-    });
-    return;
-  }
-  const accepted = failure.dead
-    ? await delivery.ack()
-    : await delivery.nack({
-        delayMs: workflowRecordEventRetryDelayMs(failure.attempts),
-        reason: "invalid",
-        error: "record event payload is invalid",
-      });
-  if (!accepted) throw new Error(`record event ${failure.dead ? "acknowledgement" : "rejection"} was not accepted`);
-};
-
+// PostgreSQL owns the delivery budget. Failed dispatches rejoin the partition
+// tail so one unavailable workflow cannot hold unrelated records behind it.
 export const workflowRecordEventRetryDelayMs = (attempt: number): number =>
   Math.min(5 * 60_000, RETRY_DELAY_MS * 2 ** Math.max(0, Math.min(attempt - 1, 12)));
 
+type ResendRecordEvent = (delivery: QueueMessage<GridsRecordEvent>, delayMs: number) => Promise<void>;
+const resendRecordEvent: ResendRecordEvent = async (delivery, delayMs) => {
+  await recordEventWorkQueue().send({
+    data: delivery.data,
+    tenantId: delivery.tenantId,
+    orderingKey: delivery.orderingKey,
+    // Preserve the failure-store identity across delayed transport messages.
+    meta: { ...delivery.meta, eventId: delivery.meta?.eventId ?? delivery.messageId },
+    idempotencyKey: `retry:${delivery.messageId}:${delivery.attempt}`,
+    delayMs,
+  });
+};
+const deliveryEventId = (delivery: QueueMessage<GridsRecordEvent>): string =>
+  typeof delivery.meta?.eventId === "string" ? delivery.meta.eventId : delivery.messageId;
+
+export const processInvalidWorkflowRecordEventDelivery = async (
+  delivery: QueueMessage<GridsRecordEvent>,
+  recordFailure: typeof recordInvalidRecordEventDelivery = recordInvalidRecordEventDelivery,
+  resend: ResendRecordEvent = resendRecordEvent,
+): Promise<void> => {
+  const baseId = GridsRecordEventSchema.shape.baseId.safeParse(delivery.meta?.baseId);
+  if (!baseId.success) throw new Error("record event base metadata is unavailable");
+  try {
+    const failure = await recordFailure({
+      baseId: baseId.data,
+      consumerGroup: CONSUMER_GROUP,
+      eventId: deliveryEventId(delivery),
+      payload: JSON.stringify(delivery.data),
+      error: "record event payload is invalid",
+    });
+    if (!failure.dead) await resend(delivery, workflowRecordEventRetryDelayMs(failure.attempts));
+  } catch (error) {
+    if (!isDeletedRecordEventBaseError(error)) throw error;
+  }
+};
+
 export const processFailedWorkflowRecordEventDelivery = async (
-  delivery: QueueReceived<GridsRecordEvent>,
+  delivery: QueueMessage<GridsRecordEvent>,
   event: GridsRecordEvent,
   error: unknown,
   recordFailure: typeof recordRecordEventDeliveryFailure = recordRecordEventDeliveryFailure,
+  resend: ResendRecordEvent = resendRecordEvent,
 ): Promise<{ dead: boolean; attempts: number }> => {
-  const message = error instanceof Error ? error.message : String(error);
   let failure: { dead: boolean; attempts: number };
   try {
     failure = await recordFailure({
       baseId: event.baseId,
       consumerGroup: CONSUMER_GROUP,
-      eventId: delivery.messageId,
+      eventId: deliveryEventId(delivery),
       payload: JSON.stringify(event),
-      error: message,
+      error: error instanceof Error ? error.message : String(error),
       maxAttempts: APPLICATION_MAX_DELIVERY_ATTEMPTS,
     });
   } catch (failureStoreError) {
-    if (await acknowledgeObsoleteDelivery(delivery, failureStoreError)) {
-      log.info("Discarded record event for a deleted base", {
-        baseId: event.baseId,
-        eventId: delivery.messageId,
-        recordId: event.recordId,
-      });
-      return { dead: true, attempts: delivery.attempt };
-    }
-    const accepted = await delivery.nack({
-      delayMs: workflowRecordEventRetryDelayMs(delivery.attempt),
-      reason: "failure_store_unavailable",
-      error: message,
-    });
-    if (!accepted) throw new Error("record event rejection was not accepted", { cause: failureStoreError });
-    log.error("Could not persist workflow record event delivery failure", {
-      baseId: event.baseId,
-      eventId: delivery.messageId,
-      recordId: event.recordId,
-      attempt: delivery.attempt,
-      error: failureStoreError instanceof Error ? failureStoreError.message : String(failureStoreError),
-    });
-    return { dead: false, attempts: delivery.attempt };
+    if (isDeletedRecordEventBaseError(failureStoreError)) return { dead: true, attempts: delivery.attempt };
+    // Only infrastructure failures retry in place (bounded by transport policy).
+    throw failureStoreError;
   }
-  const accepted = failure.dead
-    ? await delivery.ack()
-    : await delivery.nack({
-        delayMs: workflowRecordEventRetryDelayMs(failure.attempts),
-        reason: "dispatch_failed",
-        error: message,
-      });
-  if (!accepted) throw new Error(`record event ${failure.dead ? "acknowledgement" : "rejection"} was not accepted`);
-  if (failure.dead) {
-    log.error("Workflow record event moved to the application dead-letter store", {
-      baseId: event.baseId,
-      eventId: delivery.messageId,
-      recordId: event.recordId,
-      attempts: failure.attempts,
-      error: message,
-    });
-  }
+  if (!failure.dead) await resend(delivery, workflowRecordEventRetryDelayMs(failure.attempts));
   return failure;
 };
 
@@ -291,7 +230,8 @@ const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPri
 });
 
 export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
-  const readers = new Map<number, { controller: AbortController; task: Promise<void> }>();
+  let worker: Worker | undefined;
+  let unregisterDeadLetters: (() => void) | undefined;
 
   const dispatch = async (event: GridsRecordEvent): Promise<void> => {
     const name = eventName(event);
@@ -348,96 +288,42 @@ export const createWorkflowRecordEventRuntime = (invoke: InvokeWorkflow) => {
     }
   };
 
-  const processDelivery = async (delivery: QueueReceived<GridsRecordEvent>, lock: Lock): Promise<void> => {
+  const processDelivery = async (delivery: QueueMessage<GridsRecordEvent>): Promise<void> => {
     const parsed = GridsRecordEventSchema.safeParse(delivery.data);
-    if (!parsed.success) {
-      await processInvalidWorkflowRecordEventDelivery(delivery);
-      return;
-    }
-
-    let renewalFailure: unknown = null;
-    let renewal: Promise<void> | null = null;
-    const renew = (): Promise<void> => {
-      if (renewalFailure) return Promise.reject(renewalFailure);
-      if (renewal) return renewal;
-      renewal = Promise.all([
-        delivery.touch({ leaseMs: RECORD_EVENT_WORK_LEASE_MS }),
-        recordEventWorkMutex.extend(lock, RECORD_EVENT_WORK_LEASE_MS),
-      ])
-        .then(([deliveryActive, lockActive]) => {
-          if (!deliveryActive || !lockActive) throw new Error("record event work lease is no longer active");
-        })
-        .catch((error) => {
-          renewalFailure ??= error;
-          throw error;
-        })
-        .finally(() => {
-          renewal = null;
-        });
-      return renewal;
-    };
+    if (!parsed.success) return processInvalidWorkflowRecordEventDelivery(delivery);
+    let renewalFailure: unknown;
     const timer = setInterval(() => {
-      void renew().catch(() => undefined);
+      void delivery.heartbeat().catch((error) => {
+        renewalFailure = error;
+      });
     }, LEASE_HEARTBEAT_MS);
     try {
       await dispatch(parsed.data);
-      await renew();
-      if (!(await delivery.ack())) throw new Error("record event acknowledgement was not accepted");
+      if (renewalFailure) throw renewalFailure;
+      await delivery.heartbeat();
     } catch (error) {
-      const failure = await processFailedWorkflowRecordEventDelivery(delivery, parsed.data, error);
-      if (!failure.dead) throw error;
+      await processFailedWorkflowRecordEventDelivery(delivery, parsed.data, error);
     } finally {
       clearInterval(timer);
     }
   };
 
-  const startReader = (partition: number): void => {
-    if (readers.has(partition)) return;
-    const controller = new AbortController();
-    const reader = recordEventWorkReader(partition);
-    const task = (async () => {
-      while (!controller.signal.aborted) {
-        const lock = await recordEventWorkMutex.acquire(`partition:${partition}`, RECORD_EVENT_WORK_LEASE_MS).catch(() => null);
-        if (!lock) {
-          await Bun.sleep(RETRY_DELAY_MS);
-          continue;
-        }
-        try {
-          const delivery = await reader.recv({
-            wait: true,
-            timeoutMs: 30_000,
-            leaseMs: RECORD_EVENT_WORK_LEASE_MS,
-            signal: controller.signal,
-          });
-          if (delivery) await processDelivery(delivery, lock);
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          log.warn("Workflow record event reader failed", {
-            partition,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          await Bun.sleep(RETRY_DELAY_MS);
-        } finally {
-          await recordEventWorkMutex.release(lock).catch(() => undefined);
-        }
-      }
-    })();
-    readers.set(partition, { controller, task });
-  };
-
-  const stopReader = async (partition: number): Promise<void> => {
-    const active = readers.get(partition);
-    if (!active) return;
-    readers.delete(partition);
-    active.controller.abort();
-    await active.task;
-  };
-
   return {
     dispatch,
     reconcile: async (): Promise<void> => {
-      for (let partition = 0; partition < RECORD_EVENT_WORK_PARTITIONS; partition += 1) startReader(partition);
+      unregisterDeadLetters ??= syncOps.registerDeadLetters({
+        name: "grids:workflow-record-events",
+        kind: "queue",
+        store: recordEventWorkQueue().deadLetters,
+        description: "Transport failures; workflow delivery failures are managed by the Grids application failure store.",
+      });
+      worker ??= await recordEventWorkQueue().process({ concurrency: RECORD_EVENT_WORK_PARTITIONS }, processDelivery);
     },
-    stop: async (): Promise<void> => Promise.all([...readers.keys()].map(stopReader)).then(() => undefined),
+    stop: async (): Promise<void> => {
+      await worker?.drain({ timeoutMs: RECORD_EVENT_WORK_LEASE_MS });
+      worker = undefined;
+      unregisterDeadLetters?.();
+      unregisterDeadLetters = undefined;
+    },
   };
 };

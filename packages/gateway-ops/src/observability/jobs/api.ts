@@ -1,3 +1,5 @@
+import { syncOpsCredentials } from "../sync/service";
+
 /**
  * Background job / trace read API.
  *
@@ -11,10 +13,10 @@
  * where it is an explicit human action.
  */
 
+import { ok } from "@k2b/stdlib";
 import { createPagination, parsePagination } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
 import { trace } from "@valentinkolb/cloud/services";
-import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
 import { buildBackgroundJobRows, filterBackgroundJobRows, jobsObservabilityService } from "./service";
@@ -43,7 +45,7 @@ const StatsQuerySchema = z.object({
  * run totals and durations, so every read here excludes them — matching the
  * admin page.
  */
-const baseTraceFilter = (window: string) => ({ window: window as never, excludeDefinitions: true });
+const baseTraceFilter = (window: string) => ({ window: window as never });
 
 const RunsQuerySchema = z.object({
   source: z.string().optional(),
@@ -70,14 +72,17 @@ const app = new Hono<AuthContext>()
   .get("/", v("query", OverviewQuerySchema), async (c) => {
     const query = c.req.valid("query");
     // A dead scheduler must degrade to trace-only rows, not fail the request.
-    const schedules = await jobsObservabilityService.listSchedules().catch(() => []);
+    const { schedules, warnings } = await jobsObservabilityService.listSchedules(syncOpsCredentials(c.req.raw)).catch((error) => ({
+      schedules: [],
+      warnings: [error instanceof Error ? error.message : String(error)],
+    }));
     const groups = await trace.sourceGroups({ filter: baseTraceFilter(query.window) });
     const items = filterBackgroundJobRows(buildBackgroundJobRows(schedules, groups), {
       search: query.search,
       type: query.type,
       health: query.health,
     });
-    return respond(c, ok({ items }));
+    return respond(c, ok({ items, warnings }));
   })
 
   /** Aggregate run counts and durations across the current trace window. */

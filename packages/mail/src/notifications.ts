@@ -1,6 +1,6 @@
-import { job, scheduler } from "@k2b/sync";
 import { i18n } from "@k2b/stdlib";
-import { type BoundNotificationMap, notification } from "@valentinkolb/cloud";
+import type { Worker } from "@k2b/sync";
+import { type BoundNotificationMap, lazySync, notification } from "@valentinkolb/cloud";
 import {
   coreSettings,
   createRuntimeLifecycle,
@@ -9,6 +9,7 @@ import {
   notifications,
   stopRuntimeJobs,
   stopRuntimeResources,
+  syncOps,
   trace,
 } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
@@ -111,12 +112,7 @@ type ClaimedDeliveryBatch = {
   deliveries: DeliveryRow[];
 };
 
-type DeliveryJobInput =
-  | { kind: "bootstrap" }
-  | {
-      kind: "delivery";
-      deliveryId: string;
-    };
+type DeliveryJobInput = { kind: "delivery"; deliveryId: string };
 
 const defaultSender =
   (definitions: MailNotificationDefinitions): MailNotificationSender =>
@@ -372,23 +368,40 @@ export const createMailNotificationService = (
   definitions: MailNotificationDefinitions,
   options: { sender?: MailNotificationSender; jobId?: string } = {},
 ) => {
-  const recoveryScheduler = scheduler({ id: "mail-collaboration-notifications" });
+  const recoveryScheduler = lazySync((sync) =>
+    sync.scheduler({ id: "mail-collaboration-notifications", delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
+  );
+  let unregisterRecoveryScheduler: (() => void) | undefined;
+  let recoverySchedulerWorker: Worker | undefined;
+  const unregisterSyncOps: Array<() => void> = [];
   const send = options.sender ?? defaultSender(definitions);
   const deliveryTasks = createRuntimeTaskTracker();
-  const deliveryJob = job<DeliveryJobInput, { outcome: "sent" | "skipped" } | null>({
-    id: options.jobId ?? "mail:collaboration-notification-delivery",
-    defaults: { leaseMs: 120_000, keyTtlMs: 24 * 60 * 60 * 1_000 },
-    trace: trace.fromSyncJob<DeliveryJobInput, { outcome: "sent" | "skipped" } | null>({
-      name: "Mail collaboration notification delivery",
-      source: "mail:collaboration-notification-delivery",
-      appId: "mail",
-      attributes: (event) =>
-        "input" in event && event.input?.kind === "delivery" ? { "cloud.mail.notification_delivery_id": event.input.deliveryId } : {},
-      summarize: (event) => (event.type === "succeeded" ? (event.data ?? undefined) : undefined),
+  const deliveryJob = lazySync((sync) =>
+    sync.job<DeliveryJobInput>({
+      id: options.jobId ?? "mail:collaboration-notification-delivery",
+      delivery: { ackWaitMs: 120_000, maxAttempts: 1, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
     }),
-    process: ({ ctx }) =>
-      deliveryTasks.run(async () => {
-        if (ctx.input.kind === "bootstrap") return { outcome: "skipped" };
+  );
+  let deliveryJobWorker: Worker | undefined;
+  const startDeliveryJob = async (): Promise<void> => {
+    unregisterSyncOps.push(
+      syncOps.registerDeadLetters({
+        name: options.jobId ?? "mail:collaboration-notification-delivery",
+        kind: "job",
+        store: deliveryJob().deadLetters,
+      }),
+    );
+    deliveryJobWorker = await deliveryJob().process({}, async (ctx) => {
+      const spanKey = trace.syncSpanKey("job", options.jobId ?? "mail:collaboration-notification-delivery", ctx.jobId);
+      await trace.start({
+        name: "Mail collaboration notification delivery",
+        source: options.jobId ?? "mail:collaboration-notification-delivery",
+        appId: "mail",
+        category: "job",
+        spanKey,
+        attributes: { "cloud.mail.notification_delivery_id": ctx.input.deliveryId },
+      });
+      const result = await (deliveryTasks.run(async () => {
         const claimed = await claimReservedDelivery(ctx.input.deliveryId);
         if (!claimed) return { outcome: "skipped" };
         try {
@@ -403,24 +416,20 @@ export const createMailNotificationService = (
           await retryClaimedDelivery(claimed.delivery, claimed.claimId, error);
           throw error;
         }
-      }) ?? Promise.resolve(null),
-  });
+      }) ?? Promise.resolve(null));
+      if (result) await trace.end({ spanKey, summary: result });
+    });
+  };
 
   const deliveryLifecycle = createRuntimeLifecycle({
     start: async () => {
       deliveryTasks.open();
-      const bootstrap = deliveryTasks.run(() =>
-        deliveryJob.submit({
-          key: `worker-bootstrap:${crypto.randomUUID()}`,
-          keyTtlMs: 1_000,
-          input: { kind: "bootstrap" },
-        }),
-      );
-      if (!bootstrap) throw new Error("Mail notification delivery runtime is closed");
-      await bootstrap;
+      await startDeliveryJob();
     },
     stop: async () => {
-      await stopRuntimeJobs(deliveryTasks, [deliveryJob]);
+      await stopRuntimeJobs(deliveryTasks, deliveryJobWorker ? [deliveryJobWorker] : []).finally(() => {
+        for (const unregister of unregisterSyncOps.splice(0)) unregister();
+      });
     },
   });
 
@@ -460,10 +469,7 @@ export const createMailNotificationService = (
       deliveryIds.map(async (deliveryId) => {
         try {
           const submitted = deliveryTasks.run(() =>
-            deliveryJob.submit({
-              key: `delivery:${deliveryId}`,
-              input: { kind: "delivery", deliveryId },
-            }),
+            deliveryJob().submit({ coalesce: true, key: `delivery:${deliveryId}`, input: { kind: "delivery", deliveryId } }),
           );
           if (!submitted) {
             await releaseReservedDelivery(deliveryId);
@@ -486,10 +492,12 @@ export const createMailNotificationService = (
       await deliveryLifecycle.start();
 
       const timezone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "Europe/Berlin";
-      await recoveryScheduler.create({
+      unregisterRecoveryScheduler = syncOps.registerScheduler({ name: "mail-collaboration-notifications", scheduler: recoveryScheduler() });
+      await recoveryScheduler().create({
         id: RECOVERY_SCHEDULE_ID,
         cron: "* * * * *",
-        tz: timezone,
+        misfire: "latest",
+        timezone: timezone,
         meta: {
           appId: "mail",
           family: "mail:collaboration",
@@ -500,28 +508,38 @@ export const createMailNotificationService = (
           resourceLabel: "Mail collaboration",
           detailHref: "/me/notifications",
         },
-        trace: trace.fromSyncSchedule<{ reserved: number; enqueued: number }>({
-          name: "Mail collaboration notification recovery",
-          source: RECOVERY_SCHEDULE_ID,
-          appId: "mail",
-          summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-        }),
-        process: () => dispatch(),
-        after: ({ ctx }) => {
-          if (ctx.error && ctx.failureCount < 3) {
-            ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
-          }
+        process: async (ctx) => {
+          const spanKey = trace.syncSpanKey("scheduler", "mail-collaboration-notifications", ctx.runId);
+          await trace.start({
+            name: "Mail collaboration notification recovery",
+            source: "mail-collaboration-notifications",
+            appId: "mail",
+            category: "schedule",
+            spanKey,
+          });
+          const summary = await dispatch();
+          await trace.end({ spanKey, summary });
         },
       });
-      recoveryScheduler.start();
-      await recoveryScheduler.runNow({ id: RECOVERY_SCHEDULE_ID }).catch((error) => {
-        log.warn("Initial Mail collaboration notification recovery failed", {
-          error: error instanceof Error ? error.message : "Notification recovery failed",
+      recoverySchedulerWorker = await recoveryScheduler().process();
+      await recoveryScheduler()
+        .runNow({ id: RECOVERY_SCHEDULE_ID, requestId: crypto.randomUUID() })
+        .catch((error) => {
+          log.warn("Initial Mail collaboration notification recovery failed", {
+            error: error instanceof Error ? error.message : "Notification recovery failed",
+          });
         });
-      });
     },
     stop: async () => {
-      await stopRuntimeResources([() => recoveryScheduler.stop(), () => deliveryLifecycle.stop()]);
+      unregisterRecoveryScheduler?.();
+      unregisterRecoveryScheduler = undefined;
+      await stopRuntimeResources([
+        () =>
+          recoverySchedulerWorker?.drain().then(() => {
+            recoverySchedulerWorker = undefined;
+          }),
+        () => deliveryLifecycle.stop(),
+      ]);
     },
   });
 

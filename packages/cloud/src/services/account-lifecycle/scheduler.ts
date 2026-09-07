@@ -1,7 +1,9 @@
-import { job, mutex, scheduler } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
+import { lazySync } from "../../_internal/process-sync";
 import { logger, logging, trace } from "../logging";
 import { providers } from "../providers";
 import { get as getSetting } from "../settings";
+import { syncOps } from "../sync-ops";
 import { accountLifecycle } from "./index";
 import type { AccountLifecycleNotificationSender } from "./notification-sender";
 
@@ -17,7 +19,7 @@ const guestBackfillLog = logger("auth:guest:backfill");
 const logCleanupLog = logger("logging");
 const DEFAULT_IPA_SYNC_CRON = "*/5 * * * *";
 const IPA_SYNC_LEASE_MS = 120_000;
-const ipaSyncMutex = mutex({ id: "auth:ipa:sync", defaultTtl: IPA_SYNC_LEASE_MS, retryCount: 0 });
+const ipaSyncMutex = lazySync((sync) => sync.mutex({ id: "auth:ipa:sync", ttlMs: IPA_SYNC_LEASE_MS, retry: { maxAttempts: 1 } }));
 let notificationSender: AccountLifecycleNotificationSender | null = null;
 
 type JobSummary = {
@@ -67,234 +69,300 @@ const getTimezoneSetting = async (): Promise<string> => {
   return value.length > 0 ? value : "Europe/Berlin";
 };
 
-/**
- * Retry policy shared by all lifecycle jobs: on transient failure, reschedule
- * up to `maxAttempts - 1` times with exponential backoff from `baseMs`. Beyond
- * that we go terminal and the next cron slot picks up the work.
- */
-const retryOnError =
-  (cfg: { maxAttempts: number; baseMs: number; maxMs?: number }) =>
-  ({
-    ctx,
-  }: {
-    ctx: {
-      error?: Error;
-      failureCount: number;
-      reschedule: (cfg: { delayMs: number }) => void;
-      expBackoff: (cfg: { baseMs: number; maxMs?: number }) => number;
-    };
-  }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= cfg.maxAttempts - 1) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: cfg.baseMs, maxMs: cfg.maxMs }) });
-  };
-
 // ── Jobs ───────────────────────────────────────────────────────────────
 
-const ipaSyncJob = job<void, JobSummary>({
-  id: "auth:ipa:sync",
-  defaults: { leaseMs: IPA_SYNC_LEASE_MS },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "FreeIPA account sync",
-    source: "auth:ipa:sync",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const lock = await ipaSyncMutex.acquire("global");
-    if (!lock) {
-      ipaSyncLog.info("Sync skipped", { reason: "already_running" });
-      return abortedSummary();
-    }
-    const heartbeat = async () => {
-      await ctx.heartbeat();
-      if (!(await ipaSyncMutex.extend(lock, IPA_SYNC_LEASE_MS))) {
-        throw new Error("Lost FreeIPA synchronization lock");
+const ipaSyncJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:ipa:sync",
+    delivery: { ackWaitMs: IPA_SYNC_LEASE_MS, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:ipa:sync", kind: "job", store: handle.deadLetters });
+  return handle;
+});
+const processIpaSyncJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "FreeIPA account sync",
+      source: "auth:ipa:sync",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const lock = await ipaSyncMutex().acquire({ resource: "global" });
+      if (!lock) {
+        ipaSyncLog.info("Sync skipped", { reason: "already_running" });
+        return abortedSummary();
       }
-    };
-    try {
+      const heartbeat = async () => {
+        await ctx.heartbeat();
+        if (!(await ipaSyncMutex().extend(lock, { ttlMs: IPA_SYNC_LEASE_MS }))) {
+          throw new Error("Lost FreeIPA synchronization lock");
+        }
+      };
       try {
-        await providers.ipa.sync.run({ signal: ctx.signal, heartbeat });
-      } catch (error) {
-        ipaSyncLog.error("Sync step failed", { step: "sync", error: error instanceof Error ? error.message : String(error) });
-        throw error;
+        try {
+          await providers.ipa.sync.run({ signal: ctx.signal, heartbeat });
+        } catch (error) {
+          ipaSyncLog.error("Sync step failed", { step: "sync", error: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+        await heartbeat();
+        try {
+          const summary = await accountLifecycle.demoteExpiredIpaUsers({ signal: ctx.signal, heartbeat });
+          ipaSyncLog.info("Expired IPA demotion complete", toDemotionLog(summary));
+          return summary;
+        } catch (error) {
+          ipaSyncLog.error("Expired IPA demotion step failed", {
+            step: "demote-expired",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
+      } finally {
+        await ipaSyncMutex()
+          .release(lock)
+          .catch((error) => {
+            ipaSyncLog.error("Failed to release synchronization lock", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
       }
-      await heartbeat();
-      try {
-        const summary = await accountLifecycle.demoteExpiredIpaUsers({ signal: ctx.signal, heartbeat });
-        ipaSyncLog.info("Expired IPA demotion complete", toDemotionLog(summary));
-        return summary;
-      } catch (error) {
-        ipaSyncLog.error("Expired IPA demotion step failed", {
-          step: "demote-expired",
-          error: error instanceof Error ? error.message : String(error),
-        });
-        throw error;
-      }
-    } finally {
-      await ipaSyncMutex.release(lock).catch((error) => {
-        ipaSyncLog.error("Failed to release synchronization lock", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
-});
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const reminderJob = job<void, JobSummary>({
-  id: "auth:reminder:daily",
-  defaults: { leaseMs: 180_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Account expiry reminders",
-    source: "auth:reminder:daily",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    if (!notificationSender) throw new Error("Account lifecycle notification sender is not configured");
-    const summary = await accountLifecycle.sendExpiryReminders(notificationSender);
-    reminderLog.info("Reminder run complete", toReminderLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
+const reminderJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:reminder:daily",
+    delivery: { ackWaitMs: 180_000, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:reminder:daily", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processReminderJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Account expiry reminders",
+      source: "auth:reminder:daily",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      if (!notificationSender) throw new Error("Account lifecycle notification sender is not configured");
+      const summary = await accountLifecycle.sendExpiryReminders(notificationSender);
+      reminderLog.info("Reminder run complete", toReminderLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const guestCleanupJob = job<void, JobSummary>({
-  id: "auth:guest:cleanup",
-  defaults: { leaseMs: 120_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Expired guest cleanup",
-    source: "auth:guest:cleanup",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.cleanupExpiredGuests();
-    guestCleanupLog.info("Expired guest cleanup complete", toCleanupLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
+const guestCleanupJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:guest:cleanup",
+    delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:guest:cleanup", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processGuestCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Expired guest cleanup",
+      source: "auth:guest:cleanup",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.cleanupExpiredGuests();
+      guestCleanupLog.info("Expired guest cleanup complete", toCleanupLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const localUserCleanupJob = job<void, JobSummary>({
-  id: "auth:local-user:cleanup",
-  defaults: { leaseMs: 120_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Expired local user cleanup",
-    source: "auth:local-user:cleanup",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.cleanupExpiredLocalUsers();
-    localUserCleanupLog.info("Expired local user cleanup complete", toCleanupLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
+const localUserCleanupJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:local-user:cleanup",
+    delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:local-user:cleanup", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processLocalUserCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Expired local user cleanup",
+      source: "auth:local-user:cleanup",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.cleanupExpiredLocalUsers();
+      localUserCleanupLog.info("Expired local user cleanup complete", toCleanupLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const auditCleanupJob = job<void, JobSummary>({
-  id: "auth:lifecycle:audit:cleanup",
-  defaults: { leaseMs: 120_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Lifecycle audit cleanup",
-    source: "auth:lifecycle:audit:cleanup",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.cleanupLifecycleAudit();
-    auditCleanupLog.info("Lifecycle audit cleanup complete", toCleanupLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
+const auditCleanupJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:lifecycle:audit:cleanup",
+    delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:lifecycle:audit:cleanup", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processAuditCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Lifecycle audit cleanup",
+      source: "auth:lifecycle:audit:cleanup",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.cleanupLifecycleAudit();
+      auditCleanupLog.info("Lifecycle audit cleanup complete", toCleanupLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const logCleanupJob = job<void, { deleted: number; retentionDays: number }>({
-  id: "app:logs:cleanup",
-  defaults: { leaseMs: 120_000 },
-  trace: trace.fromSyncJob<void, { deleted: number; retentionDays: number }>({
-    name: "Log cleanup",
-    source: "logging",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return { deleted: 0, retentionDays: 0 };
-    const configured = Number((await getSetting<number | string | null>("logs.retention_days")) ?? 30);
-    const retentionDays = Number.isFinite(configured) ? configured : 30;
-    const summary = await logging.cleanup(retentionDays);
-    logCleanupLog.info("Log cleanup complete", { deleted: summary.deleted, retentionDays });
-    return { deleted: summary.deleted, retentionDays };
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
+const logCleanupJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "app:logs:cleanup",
+    delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1000, 2000] },
+  });
+  syncOps.registerDeadLetters({ name: "app:logs:cleanup", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processLogCleanupJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Log cleanup",
+      source: "logging",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return { deleted: 0, retentionDays: 0 };
+      const configured = Number((await getSetting<number | string | null>("logs.retention_days")) ?? 30);
+      const retentionDays = Number.isFinite(configured) ? configured : 30;
+      const summary = await logging.cleanup(retentionDays);
+      logCleanupLog.info("Log cleanup complete", { deleted: summary.deleted, retentionDays });
+      return { deleted: summary.deleted, retentionDays };
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const ipaBackfillJob = job<void, JobSummary>({
-  id: "auth:ipa:backfill",
-  defaults: { leaseMs: 300_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "IPA expiry backfill",
-    source: "auth:ipa:backfill",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.runIpaBackfill();
-    ipaBackfillLog.info("IPA expiry backfill complete", toBackfillLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 2, baseMs: 2000 }),
+const ipaBackfillJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:ipa:backfill",
+    delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:ipa:backfill", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processIpaBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "IPA expiry backfill",
+      source: "auth:ipa:backfill",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.runIpaBackfill();
+      ipaBackfillLog.info("IPA expiry backfill complete", toBackfillLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const guestBackfillJob = job<void, JobSummary>({
-  id: "auth:guest:backfill",
-  defaults: { leaseMs: 300_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Guest expiry backfill",
-    source: "auth:guest:backfill",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.runGuestBackfill();
-    guestBackfillLog.info("Guest expiry backfill complete", toBackfillLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 2, baseMs: 2000 }),
+const guestBackfillJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:guest:backfill",
+    delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:guest:backfill", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processGuestBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Guest expiry backfill",
+      source: "auth:guest:backfill",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.runGuestBackfill();
+      guestBackfillLog.info("Guest expiry backfill complete", toBackfillLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
-const localUserBackfillJob = job<void, JobSummary>({
-  id: "auth:local-user:backfill",
-  defaults: { leaseMs: 300_000 },
-  trace: trace.fromSyncJob<void, JobSummary>({
-    name: "Local user expiry backfill",
-    source: "auth:local-user:backfill",
-    appId: "core",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return abortedSummary();
-    const summary = await accountLifecycle.runLocalUserBackfill();
-    localUserBackfillLog.info("Local user expiry backfill complete", toBackfillLog(summary));
-    return summary;
-  },
-  after: retryOnError({ maxAttempts: 2, baseMs: 2000 }),
+const localUserBackfillJob = lazySync((sync) => {
+  const handle = sync.job<null>({
+    id: "auth:local-user:backfill",
+    delivery: { ackWaitMs: 300_000, maxAttempts: 2, backoffMs: [2000, 4000] },
+  });
+  syncOps.registerDeadLetters({ name: "auth:local-user:backfill", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+const processLocalUserBackfillJob = async (ctx: JobContext<null>): Promise<void> => {
+  await trace.withSpan(
+    {
+      name: "Local user expiry backfill",
+      source: "auth:local-user:backfill",
+      appId: "core",
+      category: "job",
+      kind: "consumer",
+    },
+    async () => {
+      if (ctx.signal.aborted) return abortedSummary();
+      const summary = await accountLifecycle.runLocalUserBackfill();
+      localUserBackfillLog.info("Local user expiry backfill complete", toBackfillLog(summary));
+      return summary;
+    },
+    { summarize: (summary) => summary },
+  );
+};
 
 // ── Scheduler ──────────────────────────────────────────────────────────
 
-const lifecycleScheduler = scheduler({ id: "auth-lifecycle" });
+const lifecycleScheduler = lazySync((sync) => {
+  const handle = sync.scheduler({ id: "auth-lifecycle", delivery: { maxAttempts: 1 } });
+  syncOps.registerScheduler({ name: "auth-lifecycle", scheduler: handle });
+  return handle;
+});
 
 let started = false;
+let workers: Worker[] = [];
 let registered = false;
 let registerPromise: Promise<void> | null = null;
 
@@ -311,26 +379,22 @@ const createSchedule = async (config: {
   family: string;
   label: string;
   source?: string;
-  submit: (key: string) => Promise<string>;
+  submit: (key: string) => Promise<unknown>;
 }): Promise<void> => {
   const source = config.source ?? config.id;
-  await lifecycleScheduler.create({
+  await lifecycleScheduler().create({
     id: config.id,
     cron: config.cron,
-    tz: config.tz,
+    timezone: config.tz,
+    misfire: "latest",
     meta: {
       appId: "core",
       family: config.family,
       label: config.label,
       source,
     },
-    trace: trace.fromSyncSchedule<void>({
-      name: config.id,
-      source,
-      appId: "core",
-    }),
-    process: async ({ ctx }) => {
-      await config.submit(`slot:${ctx.slotTs}`);
+    process: async (ctx) => {
+      await config.submit(`slot:${ctx.slot.getTime()}`);
     },
   });
 };
@@ -340,7 +404,7 @@ const createScheduleWithFallback = async (config: {
   cron: string;
   fallbackCron: string;
   tz: string;
-  submit: (key: string) => Promise<string>;
+  submit: (key: string) => Promise<unknown>;
   settingsKey: string;
   family: string;
   label: string;
@@ -393,7 +457,7 @@ const doRegister = async (): Promise<void> => {
     settingsKey: "freeipa.sync_cron",
     family: "auth:ipa",
     label: "FreeIPA account sync",
-    submit: (key) => ipaSyncJob.submit({ key }),
+    submit: (key) => ipaSyncJob().submit({ key, input: null, coalesce: true }),
   });
 
   await createSchedule({
@@ -402,7 +466,7 @@ const doRegister = async (): Promise<void> => {
     tz: scheduleTz,
     family: "auth:reminders",
     label: "Daily account reminders",
-    submit: (key) => reminderJob.submit({ key }),
+    submit: (key) => reminderJob().submit({ key, input: null, coalesce: true }),
   });
 
   await createSchedule({
@@ -411,7 +475,7 @@ const doRegister = async (): Promise<void> => {
     tz: scheduleTz,
     family: "auth:cleanup",
     label: "Guest account cleanup",
-    submit: (key) => guestCleanupJob.submit({ key }),
+    submit: (key) => guestCleanupJob().submit({ key, input: null, coalesce: true }),
   });
 
   await createSchedule({
@@ -420,7 +484,7 @@ const doRegister = async (): Promise<void> => {
     tz: scheduleTz,
     family: "auth:cleanup",
     label: "Local user cleanup",
-    submit: (key) => localUserCleanupJob.submit({ key }),
+    submit: (key) => localUserCleanupJob().submit({ key, input: null, coalesce: true }),
   });
 
   await createSchedule({
@@ -429,7 +493,7 @@ const doRegister = async (): Promise<void> => {
     tz: scheduleTz,
     family: "auth:cleanup",
     label: "Account lifecycle audit cleanup",
-    submit: (key) => auditCleanupJob.submit({ key }),
+    submit: (key) => auditCleanupJob().submit({ key, input: null, coalesce: true }),
   });
 
   await createSchedule({
@@ -438,7 +502,7 @@ const doRegister = async (): Promise<void> => {
     tz: scheduleTz,
     family: "app:cleanup",
     label: "Application log cleanup",
-    submit: (key) => logCleanupJob.submit({ key }),
+    submit: (key) => logCleanupJob().submit({ key, input: null, coalesce: true }),
   });
 
   registered = true;
@@ -457,11 +521,26 @@ const ensureRegistered = async (): Promise<void> => {
 export const lifecycleJobs = {
   start: async (config: { notificationSender: AccountLifecycleNotificationSender }): Promise<void> => {
     notificationSender = config.notificationSender;
-    if (!started) {
-      lifecycleScheduler.start();
-      started = true;
-    }
+    if (started) return;
     await ensureRegistered();
+    try {
+      workers.push(await ipaSyncJob().process({}, processIpaSyncJob));
+      workers.push(await reminderJob().process({}, processReminderJob));
+      workers.push(await guestCleanupJob().process({}, processGuestCleanupJob));
+      workers.push(await localUserCleanupJob().process({}, processLocalUserCleanupJob));
+      workers.push(await auditCleanupJob().process({}, processAuditCleanupJob));
+      workers.push(await logCleanupJob().process({}, processLogCleanupJob));
+      workers.push(await ipaBackfillJob().process({}, processIpaBackfillJob));
+      workers.push(await guestBackfillJob().process({}, processGuestBackfillJob));
+      workers.push(await localUserBackfillJob().process({}, processLocalUserBackfillJob));
+      workers.push(await lifecycleScheduler().process());
+      started = true;
+    } catch (error) {
+      for (const worker of workers) worker.stop();
+      await Promise.all(workers.map((worker) => worker.drain()));
+      workers = [];
+      throw error;
+    }
   },
 
   stop: async (): Promise<void> => {
@@ -469,7 +548,9 @@ export const lifecycleJobs = {
       notificationSender = null;
       return;
     }
-    await lifecycleScheduler.stop();
+    for (const worker of workers) worker.stop();
+    await Promise.all(workers.map((worker) => worker.drain()));
+    workers = [];
     started = false;
     registered = false;
     registerPromise = null;
@@ -477,10 +558,16 @@ export const lifecycleJobs = {
   },
 
   // Manual-only backfill triggers. Scheduled jobs are run through schedulerControl.
-  submitIpaBackfill: (): Promise<string> => ipaBackfillJob.submit({ key: `manual:${Date.now()}` }),
-  submitLocalUserBackfill: (): Promise<string> => localUserBackfillJob.submit({ key: `manual:${Date.now()}` }),
-  submitGuestBackfill: (): Promise<string> => guestBackfillJob.submit({ key: `manual:${Date.now()}` }),
+  submitIpaBackfill: async (): Promise<string> => (await ipaBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,
+  submitLocalUserBackfill: async (): Promise<string> =>
+    (await localUserBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,
+  submitGuestBackfill: async (): Promise<string> => (await guestBackfillJob().submit({ key: `manual:${Date.now()}`, input: null })).jobId,
 
-  metrics: () => lifecycleScheduler.metric(),
-  listSchedules: async () => lifecycleScheduler.list(),
+  metrics: () => ({
+    started,
+    registered,
+    active: workers.reduce((total, worker) => total + worker.active, 0),
+    capacity: workers.reduce((total, worker) => total + worker.capacity, 0),
+  }),
+  listSchedules: async () => lifecycleScheduler().list(),
 };

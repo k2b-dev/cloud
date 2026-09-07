@@ -1,5 +1,6 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { ephemeral, type Lock, mutex } from "@k2b/sync";
+import type { Lock } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { sql } from "bun";
 import type { AcquiredDraftLease, DraftLease, DraftLeaseHolder } from "../contracts";
 import { requireMailboxPermission } from "./access";
@@ -14,33 +15,39 @@ export const DRAFT_LEASE_HEARTBEAT_INTERVAL_MS = 10_000;
 type DraftLeaseEntry = {
   holder: DraftLeaseHolder;
   token: string;
-  lock: Lock;
+  lock: { resource: string; ownerToken: string; fence: string; expiresAt: string };
   acquiredAt: number;
 };
 
-const leaseStore = ephemeral<DraftLeaseEntry>({
-  id: "mail.draft-leases",
-  ttlMs: DRAFT_LEASE_TTL_MS,
-  limits: { maxEntries: 1, maxPayloadBytes: 4_000 },
-});
+const leaseStore = lazySync((sync) =>
+  sync.ephemeral<DraftLeaseEntry>({
+    id: "mail.draft-leases",
+    ttlMs: DRAFT_LEASE_TTL_MS,
+    maxEntries: 1,
+    maxValueBytes: 4_000,
+  }),
+);
 
-const leaseMutex = mutex({
-  id: "mail:draft-leases",
-  defaultTtl: DRAFT_LEASE_TTL_MS,
-  retryCount: 0,
-});
+const leaseMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:draft-leases",
+    ttlMs: DRAFT_LEASE_TTL_MS,
+    retry: { maxAttempts: 1 },
+  }),
+);
 
-const stateMutex = mutex({
-  id: "mail:draft-lease-state",
-  defaultTtl: DRAFT_LEASE_STATE_TTL_MS,
-  retryCount: 3,
-  retryDelay: 25,
-});
+const stateMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:draft-lease-state",
+    ttlMs: DRAFT_LEASE_STATE_TTL_MS,
+    retry: { maxAttempts: 4, delayMs: 25 },
+  }),
+);
 
 const conflict = (message: string): Result<never> => fail({ code: "CONFLICT", message, status: 409 });
 
 const withLeaseState = async <T>(draftId: string, operation: () => Promise<Result<T>>): Promise<Result<T>> => {
-  const result = await stateMutex.withLock(draftId, operation, DRAFT_LEASE_STATE_TTL_MS);
+  const result = await stateMutex().withLock({ resource: draftId, ttlMs: DRAFT_LEASE_STATE_TTL_MS }, operation);
   return result ?? conflict("Draft lease state is being updated; retry the request");
 };
 
@@ -78,12 +85,26 @@ const resolveAuthorizedDraft = async (params: {
   return draft ? ok(draft.id) : fail(err.notFound("Editable draft"));
 };
 
-const currentEntry = async (draftId: string): Promise<{ value: DraftLeaseEntry; expiresAt: number } | null> =>
-  (await leaseStore.snapshot({ tenantId: draftId, prefix: "lease" })).entries.find((entry) => entry.key === "lease") ?? null;
+const restoreLock = (lock: DraftLeaseEntry["lock"]): Lock => ({
+  ...lock,
+  fence: BigInt(lock.fence),
+  expiresAt: new Date(lock.expiresAt),
+});
 
-const removeEntry = async (draftId: string, entry: DraftLeaseEntry, reason: string): Promise<void> => {
-  await leaseStore.remove({ tenantId: draftId, key: "lease", reason });
-  await leaseMutex.release(entry.lock).catch(() => false);
+const storeLock = (lock: Lock): DraftLeaseEntry["lock"] => ({
+  ...lock,
+  fence: lock.fence.toString(),
+  expiresAt: lock.expiresAt.toISOString(),
+});
+
+const currentEntry = async (draftId: string): Promise<{ value: DraftLeaseEntry; updatedAt: Date } | null> =>
+  (await leaseStore().snapshot({ tenantId: draftId, prefix: "lease" })).entries.find((entry) => entry.key === "lease") ?? null;
+
+const removeEntry = async (draftId: string, entry: DraftLeaseEntry): Promise<void> => {
+  await leaseStore().delete({ tenantId: draftId, key: "lease" });
+  await leaseMutex()
+    .release(restoreLock(entry.lock))
+    .catch(() => false);
 };
 
 export const invalidateDraftLeaseAfterSend = async (draftId: string): Promise<Result<void>> => {
@@ -94,7 +115,7 @@ export const invalidateDraftLeaseAfterSend = async (draftId: string): Promise<Re
       `;
       if (!draft || draft.state === "draft") return ok();
       const entry = await currentEntry(draftId);
-      if (entry) await removeEntry(draftId, entry.value, "draft-sent");
+      if (entry) await removeEntry(draftId, entry.value);
       return ok();
     });
   } catch {
@@ -111,14 +132,14 @@ const currentValidEntry = async (mailboxId: string, draftId: string) => {
     minimumPermission: "write",
   });
   if (active) return entry;
-  await removeEntry(draftId, entry.value, "access-revoked");
+  await removeEntry(draftId, entry.value);
   return null;
 };
 
-const mapLease = (entry: { value: DraftLeaseEntry; expiresAt: number }): DraftLease => ({
+const mapLease = (entry: { value: DraftLeaseEntry; updatedAt: Date }): DraftLease => ({
   holder: entry.value.holder,
   acquiredAt: new Date(entry.value.acquiredAt).toISOString(),
-  expiresAt: new Date(entry.expiresAt).toISOString(),
+  expiresAt: new Date(Math.min(entry.updatedAt.getTime() + DRAFT_LEASE_TTL_MS, Date.parse(entry.value.lock.expiresAt))).toISOString(),
 });
 
 export const getDraftLease = async (params: {
@@ -153,19 +174,19 @@ export const acquireDraftLease = async (params: {
             : `This draft is being edited by ${current.value.holder.displayName}`,
         );
       }
-      await removeEntry(draft.data, current.value, "taken-over");
+      await removeEntry(draft.data, current.value);
     }
 
-    const lock = await leaseMutex.acquire(draft.data, DRAFT_LEASE_TTL_MS);
+    const lock = await leaseMutex().acquire({ resource: draft.data, ttlMs: DRAFT_LEASE_TTL_MS });
     if (!lock) return conflict("Another collaborator acquired the draft lease");
     const token = crypto.randomUUID();
     const acquiredAt = Date.now();
     let stored = false;
     try {
-      const entry = await leaseStore.upsert({
+      const entry = await leaseStore().upsert({
         tenantId: draft.data,
         key: "lease",
-        value: { holder, token, lock, acquiredAt },
+        value: { holder, token, lock: storeLock(lock), acquiredAt },
       });
       stored = true;
       if (current) {
@@ -187,8 +208,13 @@ export const acquireDraftLease = async (params: {
       }
       return ok({ ...mapLease(entry), token });
     } catch (error) {
-      if (stored) await leaseStore.remove({ tenantId: draft.data, key: "lease", reason: "acquire-failed" }).catch(() => false);
-      await leaseMutex.release(lock).catch(() => false);
+      if (stored)
+        await leaseStore()
+          .delete({ tenantId: draft.data, key: "lease" })
+          .catch(() => false);
+      await leaseMutex()
+        .release(lock)
+        .catch(() => false);
       throw error;
     }
   });
@@ -228,11 +254,13 @@ export const heartbeatDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
     if (!lease) return conflict("Draft lease is no longer owned by this session");
-    if (!(await leaseMutex.extend(lease.lock, DRAFT_LEASE_TTL_MS))) {
-      await leaseStore.remove({ tenantId: draft.data, key: "lease", reason: "mutex-expired" });
+    const lock = restoreLock(lease.lock);
+    if (!(await leaseMutex().extend(lock, { ttlMs: DRAFT_LEASE_TTL_MS }))) {
+      await leaseStore().delete({ tenantId: draft.data, key: "lease" });
       return conflict("Draft lease expired");
     }
-    const entry = await leaseStore.upsert({ tenantId: draft.data, key: "lease", value: lease });
+    lease.lock = storeLock(lock);
+    const entry = await leaseStore().upsert({ tenantId: draft.data, key: "lease", value: lease });
     return ok({ ...mapLease(entry), token: lease.token });
   });
 };
@@ -249,7 +277,7 @@ export const releaseDraftLease = async (params: {
   return withLeaseState(draft.data, async () => {
     const lease = await ownedEntry(draft.data, holder, params.token);
     if (!lease) return conflict("Draft lease is no longer owned by this session");
-    await removeEntry(draft.data, lease, "released");
+    await removeEntry(draft.data, lease);
     return ok();
   });
 };

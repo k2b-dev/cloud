@@ -3036,14 +3036,17 @@ suite("mail PostgreSQL foundation", () => {
       WHERE outbox.id = ${collaboratorOutbox!.id}::uuid
     `;
     expect(outboxResource?.id).toBe(resource!.id);
-    const outboxLock = await mailProviderOperationMutex.acquire(outboxResource!.id, MAIL_PROVIDER_OPERATION_LEASE_MS);
+    const outboxLock = await mailProviderOperationMutex().acquire({
+      resource: outboxResource!.id,
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
     expect(outboxLock).not.toBeNull();
     if (!outboxLock) return;
     try {
       const blockedExecution = await executeOutboxSubmission(collaboratorOutbox!.id).catch((error: unknown) => error);
       expect(blockedExecution).toMatchObject({ code: "REMOTE_RESOURCE_BUSY" });
     } finally {
-      await mailProviderOperationMutex.release(outboxLock);
+      await mailProviderOperationMutex().release(outboxLock);
     }
 
     const preDispatchLeaseFailure = await executeOutboxSubmissionWithHeartbeat(collaboratorOutbox!.id, async () => {
@@ -3422,10 +3425,10 @@ suite("mail PostgreSQL foundation", () => {
     });
     try {
       verify.mockClear();
-      const mailboxCredentialLock = await mailProviderOperationMutex.acquire(
-        `mailbox:${mailbox.data.id}`,
-        MAIL_PROVIDER_OPERATION_LEASE_MS,
-      );
+      const mailboxCredentialLock = await mailProviderOperationMutex().acquire({
+        resource: `mailbox:${mailbox.data.id}`,
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
       expect(mailboxCredentialLock).not.toBeNull();
       if (!mailboxCredentialLock) return;
       const creation = createProviderConnection({
@@ -3445,14 +3448,17 @@ suite("mail PostgreSQL foundation", () => {
         await Bun.sleep(100);
         expect(verify).not.toHaveBeenCalled();
       } finally {
-        await mailProviderOperationMutex.release(mailboxCredentialLock);
+        await mailProviderOperationMutex().release(mailboxCredentialLock);
         created = await creation;
       }
       expect(created.ok).toBe(false);
       if (!created.ok) expect(created.error.code).toBe("CONFLICT");
       expect(verify).toHaveBeenCalledTimes(1);
 
-      const credentialLock = await mailProviderOperationMutex.acquire(resource!.id, MAIL_PROVIDER_OPERATION_LEASE_MS);
+      const credentialLock = await mailProviderOperationMutex().acquire({
+        resource: resource!.id,
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
       expect(credentialLock).not.toBeNull();
       if (!credentialLock) return;
       verify.mockClear();
@@ -3477,7 +3483,7 @@ suite("mail PostgreSQL foundation", () => {
         expect(beforeCredentialRelease?.secret_revision).toBe(1);
         expect(verify).not.toHaveBeenCalled();
       } finally {
-        await mailProviderOperationMutex.release(credentialLock);
+        await mailProviderOperationMutex().release(credentialLock);
         replaced = await replacement;
       }
       expect(replaced.ok).toBe(true);

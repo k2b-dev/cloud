@@ -1,4 +1,5 @@
-import { job } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { logger, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 
@@ -445,100 +446,117 @@ export const purgeBaseDataClearBatch = async (baseId: string): Promise<BaseDelet
   return { phase: "completed", deletedRows: 0, done: true };
 };
 
-const baseDeletionJob = job<BaseJobInput, BaseDeletionBatch>({
-  id: "pulse:base-delete",
-  defaults: { leaseMs: 2 * 60_000 },
-  trace: trace.fromSyncJob<BaseJobInput, BaseDeletionBatch>({
-    name: "Pulse base deletion",
-    source: "pulse:base-delete",
-    appId: "pulse",
-    attributes: (event) => ("input" in event && event.input ? { "cloud.pulse.base_id": event.input.publicBaseId } : {}),
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+const baseDeletionJob = lazySync((sync) =>
+  sync.job<BaseJobInput>({
+    id: "pulse:base-delete",
+    delivery: { ackWaitMs: 2 * 60_000, maxAttempts: 10, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
   }),
-  process: async ({ ctx }) => purgeBaseDeletionBatch(ctx.input.baseId),
-  after: async ({ ctx }) => {
-    if (ctx.error) {
-      const message = ctx.error instanceof Error ? ctx.error.message : "Pulse base deletion failed";
-      const failed = ctx.failureCount >= 10;
-      await sql`
+);
+let baseDeletionJobWorker: Worker | undefined;
+const baseDeletionJobError = async ({ context, error }: { context: JobContext<BaseJobInput>; error: Error }) => {
+  const message = error instanceof Error ? error.message : "Pulse base deletion failed";
+  const failed = context.attempt >= 10;
+  await sql`
         UPDATE pulse.base_deletions
         SET status = ${failed ? "failed" : "deleting"},
             error_message = ${message},
             updated_at = now()
-        WHERE base_id = ${ctx.input.baseId}::uuid
+        WHERE base_id = ${context.input.baseId}::uuid
       `;
-      await sql`
+  await sql`
         UPDATE pulse.bases
         SET deletion_failed_at = CASE WHEN ${failed} THEN now() ELSE deletion_failed_at END,
             deletion_error = ${message},
             updated_at = now()
-        WHERE id = ${ctx.input.baseId}::uuid
+        WHERE id = ${context.input.baseId}::uuid
       `;
-      if (!failed) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-      else
-        log.error("Pulse base deletion exhausted retries", {
-          baseId: ctx.input.publicBaseId,
-          error: message,
-          failureCount: ctx.failureCount,
-        });
-      return;
-    }
-    if (ctx.data && !ctx.data.done) ctx.reschedule({ delayMs: 0 });
-  },
-});
+  if (failed)
+    log.error("Pulse base deletion exhausted retries", {
+      baseId: context.input.publicBaseId,
+      error: message,
+      failureCount: context.failureCount,
+    });
 
-const baseDataClearJob = job<BaseJobInput, BaseDeletionBatch>({
-  id: "pulse:base-data-clear",
-  defaults: { leaseMs: 2 * 60_000 },
-  trace: trace.fromSyncJob<BaseJobInput, BaseDeletionBatch>({
-    name: "Pulse base data clear",
-    source: "pulse:base-data-clear",
-    appId: "pulse",
-    attributes: (event) => ("input" in event && event.input ? { "cloud.pulse.base_id": event.input.publicBaseId } : {}),
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+  return failed ? { action: "dead_letter" as const, reason: message } : { action: "retry" as const };
+};
+const baseDataClearJob = lazySync((sync) =>
+  sync.job<BaseJobInput>({
+    id: "pulse:base-data-clear",
+    delivery: { ackWaitMs: 2 * 60_000, maxAttempts: 10, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
   }),
-  process: async ({ ctx }) => purgeBaseDataClearBatch(ctx.input.baseId),
-  after: async ({ ctx }) => {
-    if (ctx.error) {
-      const message = ctx.error instanceof Error ? ctx.error.message : "Pulse data clear failed";
-      const failed = ctx.failureCount >= 10;
-      await sql`
+);
+let baseDataClearJobWorker: Worker | undefined;
+const baseDataClearJobError = async ({ context, error }: { context: JobContext<BaseJobInput>; error: Error }) => {
+  const message = error instanceof Error ? error.message : "Pulse data clear failed";
+  const failed = context.attempt >= 10;
+  await sql`
         UPDATE pulse.base_data_clears
         SET status = ${failed ? "failed" : "clearing"},
             error_message = ${message},
             updated_at = now()
-        WHERE base_id = ${ctx.input.baseId}::uuid
+        WHERE base_id = ${context.input.baseId}::uuid
       `;
-      await sql`
+  await sql`
         UPDATE pulse.bases
         SET data_clear_failed_at = CASE WHEN ${failed} THEN now() ELSE data_clear_failed_at END,
             data_clear_error = ${message},
             updated_at = now()
-        WHERE id = ${ctx.input.baseId}::uuid
+        WHERE id = ${context.input.baseId}::uuid
       `;
-      if (!failed) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-      else
-        log.error("Pulse data clear exhausted retries", {
-          baseId: ctx.input.publicBaseId,
-          error: message,
-          failureCount: ctx.failureCount,
-        });
-      return;
-    }
-    if (ctx.data && !ctx.data.done) ctx.reschedule({ delayMs: 0 });
-  },
-});
+  if (failed)
+    log.error("Pulse data clear exhausted retries", {
+      baseId: context.input.publicBaseId,
+      error: message,
+      failureCount: context.failureCount,
+    });
+
+  return failed ? { action: "dead_letter" as const, reason: message } : { action: "retry" as const };
+};
+export const startPulseBaseJobs = async (): Promise<void> => {
+  baseDeletionJobWorker ??= await baseDeletionJob().process({ onError: baseDeletionJobError }, async (context) => {
+    const result = await trace.withSpan(
+      {
+        spanKey: trace.syncSpanKey("job", "pulse:base-delete", context.jobId),
+        name: "Pulse base deletion",
+        source: "pulse:base-delete",
+        appId: "pulse",
+        category: "job",
+        attributes: { "cloud.pulse.base_id": context.input.publicBaseId },
+      },
+      () => purgeBaseDeletionBatch(context.input.baseId),
+      { summarize: (result) => result },
+    );
+    if (!result.done) context.resubmit();
+  });
+  baseDataClearJobWorker ??= await baseDataClearJob().process({ onError: baseDataClearJobError }, async (context) => {
+    const result = await trace.withSpan(
+      {
+        spanKey: trace.syncSpanKey("job", "pulse:base-data-clear", context.jobId),
+        name: "Pulse base data clear",
+        source: "pulse:base-data-clear",
+        appId: "pulse",
+        category: "job",
+        attributes: { "cloud.pulse.base_id": context.input.publicBaseId },
+      },
+      () => purgeBaseDataClearBatch(context.input.baseId),
+      { summarize: (result) => result },
+    );
+    if (!result.done) context.resubmit();
+  });
+};
 
 export const submitBaseDeletionJob = async (baseId: string, publicBaseId: string): Promise<void> => {
-  await baseDeletionJob.submit({
+  await baseDeletionJob().submit({
     key: `base:${baseId}`,
+    coalesce: true,
     input: { baseId, publicBaseId },
   });
 };
 
 export const submitBaseDataClearJob = async (baseId: string, publicBaseId: string): Promise<void> => {
-  await baseDataClearJob.submit({
+  await baseDataClearJob().submit({
     key: `base:${baseId}`,
+    coalesce: true,
     input: { baseId, publicBaseId },
   });
 };
@@ -567,5 +585,11 @@ export const resumePulseBaseDataClearJobs = async (): Promise<void> => {
   for (const row of rows) await submitBaseDataClearJob(row.base_id, row.public_base_id);
 };
 
-export const stopPulseBaseDeletionJob = (): void => baseDeletionJob.stop();
-export const stopPulseBaseDataClearJob = (): void => baseDataClearJob.stop();
+export const stopPulseBaseDeletionJob = async (): Promise<void> => {
+  await baseDeletionJobWorker?.stop();
+  baseDeletionJobWorker = undefined;
+};
+export const stopPulseBaseDataClearJob = async (): Promise<void> => {
+  await baseDataClearJobWorker?.stop();
+  baseDataClearJobWorker = undefined;
+};

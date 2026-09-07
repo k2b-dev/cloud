@@ -1,5 +1,6 @@
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
-import { type PumpHandle, type PumpState, pump } from "@k2b/sync";
+import type { PumpState, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
@@ -43,6 +44,7 @@ import {
   incomingAutomationHasAi,
   incomingAutomationHasSpaces,
 } from "./incoming-automation-definition";
+import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import type { SqlClient } from "./workflow-data";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
@@ -217,10 +219,7 @@ type IncomingAutomationBackfillItem = {
   remoteMessageRefId: string;
 };
 
-type IncomingAutomationBackfillPump = PumpHandle<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor>;
-
-const incomingAutomationBackfillKey = (automationId: string, operationId: string): string =>
-  `incoming-automation:${automationId}:backfill:${operationId}`;
+const incomingAutomationBackfillKey = (automationId: string, operationId: string): string => `${automationId}:${operationId}`;
 
 const requestActor = (context: MailRequestContext): AutomationActor => {
   const actor = actorRefFromRequest(context);
@@ -763,29 +762,16 @@ const loadCurrentBackfillAutomation = async (
   return automation;
 };
 
-let incomingAutomationBackfillPump: IncomingAutomationBackfillPump | null = null;
+const backfillMutationMutex = lazySync((sync) =>
+  sync.mutex({ id: "mail:incoming-automation-start", ttlMs: 30_000, retry: { maxAttempts: 1 } }),
+);
 
-const getIncomingAutomationBackfillPump = (): IncomingAutomationBackfillPump => {
-  if (incomingAutomationBackfillPump) return incomingAutomationBackfillPump;
-  incomingAutomationBackfillPump = pump<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor, IncomingAutomationBackfillItem>({
-    id: "mail.mail-automation-backfill",
+const BACKFILL_PUMP_ID = "mail:incoming-automation-backfill";
+const getIncomingAutomationBackfillPump = lazySync((sync) =>
+  sync.pump<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor, IncomingAutomationBackfillItem>({
+    id: BACKFILL_PUMP_ID,
     batchSize: 100,
-    retry: { maxAttempts: 3, baseMs: 1_000, maxMs: 10_000, jitter: 0.2 },
-    trace: trace.fromSyncPump<IncomingAutomationBackfillInput, IncomingAutomationBackfillCursor>({
-      name: "Mail automation backfill",
-      source: "mail:incoming-automation-backfill",
-      appId: "mail",
-      attributes: (event) =>
-        event.type === "submitted"
-          ? {
-              "mail.mailbox.id": event.input.mailboxId,
-              "mail.incoming_automation.id": event.input.automationId,
-              "mail.workflow.id": event.input.workflowId,
-              "mail.workflow.version_id": event.input.workflowVersionId,
-              "mail.backfill.operation_id": event.input.operationId,
-            }
-          : undefined,
-    }),
+    retry: { maxAttempts: 3, backoffMs: [1_000, 2_000, 4_000] },
     pull: async ({ input, cursor, limit }) => {
       await loadCurrentBackfillAutomation(input, sql);
       const afterCursor = cursor
@@ -856,17 +842,17 @@ const getIncomingAutomationBackfillPump = (): IncomingAutomationBackfillPump => 
         );
       });
     },
-  });
-  return incomingAutomationBackfillPump;
+  }),
+);
+
+let backfillWorker: Worker | undefined;
+export const startIncomingAutomationBackfillRuntime = async (): Promise<void> => {
+  backfillWorker = await getIncomingAutomationBackfillPump().process();
 };
 
-export const startIncomingAutomationBackfillRuntime = (): void => {
-  getIncomingAutomationBackfillPump();
-};
-
-export const stopIncomingAutomationBackfillRuntime = (): void => {
-  incomingAutomationBackfillPump?.stop();
-  incomingAutomationBackfillPump = null;
+export const stopIncomingAutomationBackfillRuntime = async (): Promise<void> => {
+  await backfillWorker?.drain();
+  backfillWorker = undefined;
 };
 
 const loadIncomingAutomationBackfillCounts = async (
@@ -905,7 +891,7 @@ const mapIncomingAutomationBackfill = async (
     operationId: state.input.operationId,
     automationId: state.input.automationId,
     workflowVersionId: state.input.workflowVersionId,
-    state: state.state,
+    state: state.status,
     candidateCount: counts.candidates,
     alreadyAcceptedCount: Math.max(0, counts.accepted - newlyAcceptedCount),
     newlyAcceptedCount,
@@ -941,7 +927,7 @@ const incomingAutomationHasActiveBackfill = async (automation: IncomingAutomatio
   const state = await getIncomingAutomationBackfillPump().get({
     key: incomingAutomationBackfillKey(automation.id, automation.latestBackfillOperationId),
   });
-  return Boolean(state && activeIncomingAutomationBackfillStates.has(state.state));
+  return Boolean(state && activeIncomingAutomationBackfillStates.has(state.status));
 };
 
 const rejectActiveBackfillMutation = async (automation: IncomingAutomation, allowedOperationId?: string): Promise<Result<void>> =>
@@ -958,46 +944,49 @@ export const startIncomingAutomationBackfill = async (params: {
   const parsed = startIncomingAutomationBackfillInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid mail automation backfill"));
   try {
-    const automation = await sql.begin(async (tx) => {
-      unwrap(await requireMailboxPermission(params.context, params.mailboxId, "admin", tx));
-      const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
-      if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Mail automation was changed")));
-      if (!current.enabled) unwrap(fail(err.badInput("Enable the mail automation before applying it to existing messages")));
-      if (incomingAutomationHasAi(current.steps)) {
-        unwrap(fail(err.badInput("Flows with AI run only for future incoming mail")));
-      }
-      unwrap(await rejectActiveBackfillMutation(current, parsed.data.operationId));
-      unwrap(
-        await protectMailboxSenders({
-          mailboxId: params.mailboxId,
-          conditions: scopeConditions(current.scope),
-          actions: incomingAutomationActions(current.steps),
-          db: tx,
-        }),
-      );
-      return current;
-    });
-    const state = await getIncomingAutomationBackfillPump().start({
-      key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
-      input: {
-        operationId: parsed.data.operationId,
-        mailboxId: params.mailboxId,
-        automationId: automation.id,
-        workflowId: automation.workflowId,
-        workflowVersionId: automation.workflowVersionId,
-        scope: automation.scope,
-        cutoffAt: new Date().toISOString(),
-      },
-    });
-    if (
-      state.input.mailboxId !== params.mailboxId ||
-      state.input.automationId !== automation.id ||
-      state.input.operationId !== parsed.data.operationId ||
-      state.input.workflowVersionId !== automation.workflowVersionId
-    ) {
-      return fail(err.conflict("Backfill operation id is already in use"));
-    }
-    const [associated] = await sql<{ id: string }[]>`
+    const mutex = backfillMutationMutex();
+    const lock = await mutex.acquire({ resource: params.automationId });
+    if (!lock) return fail(err.conflict("Mail automation backfill is being started; retry shortly"));
+    try {
+      return await withLeaseHeartbeat({
+        intervalMs: 10_000,
+        heartbeat: async () => {
+          if (!(await mutex.extend(lock, { ttlMs: 30_000 }))) throw new Error("Mail automation start lease was lost");
+        },
+        work: async (assertLeaseActive) => {
+          const automation = await sql.begin(async (tx) => {
+            unwrap(await requireMailboxPermission(params.context, params.mailboxId, "admin", tx));
+            const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
+            if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Mail automation was changed")));
+            if (!current.enabled) unwrap(fail(err.badInput("Enable the mail automation before applying it to existing messages")));
+            if (incomingAutomationHasAi(current.steps)) {
+              unwrap(fail(err.badInput("Flows with AI run only for future incoming mail")));
+            }
+            unwrap(await rejectActiveBackfillMutation(current, parsed.data.operationId));
+            unwrap(
+              await protectMailboxSenders({
+                mailboxId: params.mailboxId,
+                conditions: scopeConditions(current.scope),
+                actions: incomingAutomationActions(current.steps),
+                db: tx,
+              }),
+            );
+            return current;
+          });
+          const pump = getIncomingAutomationBackfillPump();
+          const key = incomingAutomationBackfillKey(automation.id, parsed.data.operationId);
+          const existing = await pump.get({ key });
+          if (
+            existing &&
+            (existing.input.mailboxId !== params.mailboxId ||
+              existing.input.automationId !== automation.id ||
+              existing.input.operationId !== parsed.data.operationId ||
+              existing.input.workflowVersionId !== automation.workflowVersionId)
+          ) {
+            return fail(err.conflict("Backfill operation id is already in use"));
+          }
+          await assertLeaseActive();
+          const [associated] = await sql<{ id: string }[]>`
       UPDATE mail.incoming_automations
       SET latest_backfill_operation_id = ${parsed.data.operationId}::uuid
       WHERE mailbox_id = ${params.mailboxId}::uuid
@@ -1013,26 +1002,59 @@ export const startIncomingAutomationBackfill = async (params: {
         ) = ${automation.workflowVersionId}::uuid
       RETURNING id
     `;
-    if (!associated) {
-      await getIncomingAutomationBackfillPump().cancel({
-        key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
+          if (!associated) {
+            return fail(err.conflict("Mail automation changed before the backfill started"));
+          }
+          if (!existing) {
+            await trace.start({
+              name: "Mail automation backfill",
+              source: BACKFILL_PUMP_ID,
+              appId: "mail",
+              category: "backfill",
+              spanKey: trace.syncSpanKey("pump", BACKFILL_PUMP_ID, key),
+              attributes: {
+                "mail.mailbox.id": params.mailboxId,
+                "mail.incoming_automation.id": automation.id,
+                "mail.workflow.id": automation.workflowId,
+                "mail.workflow.version_id": automation.workflowVersionId,
+                "mail.backfill.operation_id": parsed.data.operationId,
+              },
+            });
+            await assertLeaseActive();
+            await pump.start({
+              key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
+              input: {
+                operationId: parsed.data.operationId,
+                mailboxId: params.mailboxId,
+                automationId: automation.id,
+                workflowId: automation.workflowId,
+                workflowVersionId: automation.workflowVersionId,
+                scope: automation.scope,
+                cutoffAt: new Date().toISOString(),
+              },
+            });
+          }
+          const state = existing ?? (await pump.get({ key }));
+          if (!state) throw new Error("Mail automation backfill was not persisted");
+          const result = ok(await mapIncomingAutomationBackfill(state));
+          return audit.recordResultAfterSideEffect({
+            action: "mail.incoming_automation.backfill.start",
+            actor: auditActorFromRequest(params.context),
+            target: { type: "incoming_automation", id: automation.id, label: automation.name },
+            requestId: params.context.requestId,
+            metadata: {
+              mailboxId: params.mailboxId,
+              workflowId: automation.workflowId,
+              workflowVersionId: automation.workflowVersionId,
+              operationId: parsed.data.operationId,
+            },
+            result,
+          });
+        },
       });
-      return fail(err.conflict("Mail automation changed before the backfill started"));
+    } finally {
+      await mutex.release(lock);
     }
-    const result = ok(await mapIncomingAutomationBackfill(state));
-    return audit.recordResultAfterSideEffect({
-      action: "mail.incoming_automation.backfill.start",
-      actor: auditActorFromRequest(params.context),
-      target: { type: "incoming_automation", id: automation.id, label: automation.name },
-      requestId: params.context.requestId,
-      metadata: {
-        mailboxId: params.mailboxId,
-        workflowId: automation.workflowId,
-        workflowVersionId: automation.workflowVersionId,
-        operationId: parsed.data.operationId,
-      },
-      result,
-    });
   } catch (error) {
     return mutationFailure(error, "Failed to start mail automation backfill");
   }

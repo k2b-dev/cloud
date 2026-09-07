@@ -437,7 +437,8 @@ export const gatewayOpsMessages = i18n.define({
       storage: "Storage",
       tablesCount: ({ count }: { count: string }) => `${count} tables`,
       connections: "PostgreSQL connections",
-      postgresConnectionsDescription: "Connections and their limit refer to the PostgreSQL server. PgBouncer client connections, pool limits, and pool wait times are not included. With transaction pooling, sessions represent shared PostgreSQL backends.",
+      postgresConnectionsDescription:
+        "Connections and their limit refer to the PostgreSQL server. PgBouncer client connections, pool limits, and pool wait times are not included. With transaction pooling, sessions represent shared PostgreSQL backends.",
       postgresSessionsUnavailable: "PostgreSQL sessions could not be loaded. Reload the page to try again.",
       postgresIndexesUnavailable: "PostgreSQL indexes could not be loaded. Reload the page to try again.",
       activeCount: ({ count }: { count: string }) => `${count} active`,
@@ -519,8 +520,7 @@ export const gatewayOpsMessages = i18n.define({
       requestManualRun: "Request a manual scheduler run.",
       runNow: "Run now",
       schedulesAndFamilies: "Schedules and job families",
-      schedulesAndFamiliesDescription:
-        "Schedules come from sync schedulerControl. Runtime statistics remain SQL-based and are joined by source.",
+      schedulesAndFamiliesDescription: "Schedules from all available applications appear alongside their recent runs.",
       noJobSources: "No background job schedules or sources match the current filters",
       expectedAt: ({ time }: { time: string }) => `Expected at ${time}`,
       overdue: ({ duration }: { duration: string }) => `overdue ${duration}`,
@@ -1290,8 +1290,10 @@ export const gatewayOpsMessages = i18n.define({
       storage: "Speicher",
       tablesCount: ({ count }) => `${count} Tabellen`,
       connections: "PostgreSQL-Verbindungen",
-      postgresConnectionsDescription: "Verbindungen und ihr Limit beziehen sich auf den PostgreSQL-Server. PgBouncer-Clientverbindungen, Pool-Limits und Wartezeiten im Pool sind nicht enthalten. Bei Transaction-Pooling zeigen die Sitzungen gemeinsam genutzte PostgreSQL-Backends.",
-      postgresSessionsUnavailable: "PostgreSQL-Sitzungen konnten nicht geladen werden. Lade die Seite erneut, um es noch einmal zu versuchen.",
+      postgresConnectionsDescription:
+        "Verbindungen und ihr Limit beziehen sich auf den PostgreSQL-Server. PgBouncer-Clientverbindungen, Pool-Limits und Wartezeiten im Pool sind nicht enthalten. Bei Transaction-Pooling zeigen die Sitzungen gemeinsam genutzte PostgreSQL-Backends.",
+      postgresSessionsUnavailable:
+        "PostgreSQL-Sitzungen konnten nicht geladen werden. Lade die Seite erneut, um es noch einmal zu versuchen.",
       postgresIndexesUnavailable: "PostgreSQL-Indizes konnten nicht geladen werden. Lade die Seite erneut, um es noch einmal zu versuchen.",
       activeCount: ({ count }) => `${count} aktiv`,
       lockWaits: "Sperrwartezeiten",
@@ -1370,8 +1372,7 @@ export const gatewayOpsMessages = i18n.define({
       requestManualRun: "Manuellen Scheduler-Lauf anfordern.",
       runNow: "Jetzt ausführen",
       schedulesAndFamilies: "Zeitpläne und Jobfamilien",
-      schedulesAndFamiliesDescription:
-        "Zeitpläne stammen aus sync schedulerControl. Laufzeitstatistiken bleiben SQL-basiert und werden über die Quelle zugeordnet.",
+      schedulesAndFamiliesDescription: "Zeitpläne aller verfügbaren Anwendungen erscheinen zusammen mit ihren letzten Ausführungen.",
       noJobSources: "Keine Zeitpläne oder Quellen für Hintergrundjobs entsprechen den aktuellen Filtern",
       expectedAt: ({ time }) => `Erwartet um ${time}`,
       overdue: ({ duration }) => `seit ${duration} überfällig`,

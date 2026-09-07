@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { job, scheduler } from "@k2b/sync";
-import { type LogEntry, logger, get as settingsGet, settingsService, trace } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { type LogEntry, logger, get as settingsGet, settingsService, syncOps } from "@valentinkolb/cloud/services";
 import { parsePgJsonRecord } from "@valentinkolb/cloud/services/postgres";
 import { decryptValue, encryptValue } from "@valentinkolb/cloud/services/settings/crypto";
 import { sql } from "bun";
@@ -609,48 +610,46 @@ const runScheduledSnapshots = async (onProgress?: () => Promise<void>): Promise<
   log.info("Scheduled S3 snapshots finished", { notebooks: notebookIds.length, succeeded, failed });
 };
 
-const snapshotJob = job<void, void>({
-  id: "notebooks:snapshot:s3",
-  defaults: { leaseMs: 900_000 },
-  trace: trace.fromSyncJob<void, void>({
-    name: "Notebook S3 snapshots",
-    source: SNAPSHOT_LOG_SOURCE,
-    appId: "notebooks",
+const snapshotJob = lazySync((sync) =>
+  sync.job<null>({
+    id: "notebooks:snapshot:s3",
+    delivery: { ackWaitMs: 900_000, maxInFlight: 1, maxAttempts: 3, backoffMs: [10_000, 20_000] },
   }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return;
-    await runScheduledSnapshots(() => ctx.heartbeat({ leaseMs: 900_000 }));
-  },
-  after: async ({ ctx }) => {
-    if (!ctx.error || ctx.failureCount >= 3) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 10_000 }) });
-  },
-});
+);
+const snapshotScheduler = lazySync((sync) => sync.scheduler({ id: "notebooks:snapshot:s3" }));
+let jobWorker: Worker | undefined;
+let scheduleWorker: Worker | undefined;
 
-const snapshotScheduler = scheduler({ id: "notebooks:snapshot:s3" });
+const startWorkers = async (): Promise<void> => {
+  syncOps.registerDeadLetters({ name: "notebooks:snapshot:s3", kind: "job", store: snapshotJob().deadLetters });
+  syncOps.registerScheduler({ name: "notebooks:snapshot:s3", scheduler: snapshotScheduler() });
+  jobWorker ??= await snapshotJob().process({}, async (ctx) => {
+    ctx.signal.throwIfAborted();
+    await runScheduledSnapshots(async () => {
+      ctx.signal.throwIfAborted();
+      await ctx.heartbeat();
+    });
+  });
+  scheduleWorker ??= await snapshotScheduler().process({});
+};
 
 let started = false;
 let registered = false;
 let registerPromise: Promise<void> | null = null;
 
 const createSchedule = async (cron: string, tz: string): Promise<void> => {
-  await snapshotScheduler.create({
+  await snapshotScheduler().create({
     id: "notebooks:snapshot:s3",
     cron,
-    tz,
+    timezone: tz,
     meta: {
       appId: "notebooks",
       family: "notebooks:snapshots",
       label: "Notebook S3 snapshot",
       source: SNAPSHOT_LOG_SOURCE,
     },
-    trace: trace.fromSyncSchedule<void>({
-      name: "Notebook S3 snapshot schedule",
-      source: SNAPSHOT_LOG_SOURCE,
-      appId: "notebooks",
-    }),
-    process: async ({ ctx }) => {
-      await snapshotJob.submit({ key: `slot:${ctx.slotTs}` });
+    process: async (ctx) => {
+      await snapshotJob().submit({ key: ctx.runId, input: null });
     },
   });
   log.info("S3 snapshot schedule registered", { cron, tz });
@@ -690,15 +689,19 @@ const ensureRegistered = async (): Promise<void> => {
 export const snapshotRuntime = {
   start: async (): Promise<void> => {
     if (!started) {
-      snapshotScheduler.start();
+      await ensureRegistered();
+      await startWorkers();
       started = true;
     }
     await ensureRegistered();
   },
 
   stop: async (): Promise<void> => {
-    if (!started) return;
-    await snapshotScheduler.stop();
+    scheduleWorker?.stop();
+    jobWorker?.stop();
+    await Promise.all([scheduleWorker?.drain(), jobWorker?.drain()]);
+    scheduleWorker = undefined;
+    jobWorker = undefined;
     started = false;
     registered = false;
     registerPromise = null;
@@ -708,7 +711,8 @@ export const snapshotRuntime = {
     const normalized = cron.trim();
     if (!normalized) throw new Error("Snapshot cron must not be empty.");
     if (!started) {
-      snapshotScheduler.start();
+      await ensureRegistered();
+      await startWorkers();
       started = true;
     }
     await registerSchedule(normalized);

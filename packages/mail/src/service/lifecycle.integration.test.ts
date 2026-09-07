@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
-import { mutex } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { syncOps } from "@valentinkolb/cloud/services";
 import type { WorkflowBoundPlan } from "@valentinkolb/cloud/workflows";
 import {
   claimWorkflowRun,
@@ -268,12 +269,14 @@ suite("mail lifecycle control plane", () => {
   test("binding attach waits for the mailbox provider barrier before remote verification", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([remoteFolder("INBOX", "10", "inbox")]);
-    const barrierMutex = mutex({
-      id: "mail:remote-resource-sync",
-      defaultTtl: 30_000,
-      retryCount: 0,
-    });
-    const heldBarrier = await barrierMutex.acquire(`mailbox:${mailboxId}`, 30_000);
+    const barrierMutex = lazySync((sync) =>
+      sync.mutex({
+        id: "mail:remote-resource-sync",
+        ttlMs: 30_000,
+        retry: { maxAttempts: 1 },
+      }),
+    );
+    const heldBarrier = await barrierMutex().acquire({ resource: `mailbox:${mailboxId}`, ttlMs: 30_000 });
     expect(heldBarrier).not.toBeNull();
     if (!heldBarrier) {
       discover.mockRestore();
@@ -292,7 +295,7 @@ suite("mail lifecycle control plane", () => {
         expect(verify).not.toHaveBeenCalled();
         expect(discover).not.toHaveBeenCalled();
       } finally {
-        await barrierMutex.release(heldBarrier);
+        await barrierMutex().release(heldBarrier);
       }
 
       const result = await attachment;
@@ -1388,7 +1391,8 @@ suite("mail lifecycle control plane", () => {
         worker_heartbeat_at = now() - interval '20 minutes'
       WHERE id = ${command.data.id}::uuid
     `;
-    startMaintenanceRuntime();
+    await startMaintenanceRuntime();
+    expect(syncOps.deadLetterStores().some((store) => store.name === "mail:execute-maintenance-command")).toBe(true);
     try {
       const submitted = await submitDueMaintenanceCommands();
       expect(submitted.recovered).toBeGreaterThanOrEqual(1);
@@ -1402,6 +1406,9 @@ suite("mail lifecycle control plane", () => {
     } finally {
       await stopMaintenanceRuntime();
     }
+    expect(syncOps.deadLetterStores().some((store) => store.name === "mail:execute-maintenance-command")).toBe(false);
+    await startMaintenanceRuntime();
+    await stopMaintenanceRuntime();
   });
 
   test("maintenance commands are admin-only, idempotent, durable, and expose health", async () => {
@@ -1479,12 +1486,14 @@ suite("mail lifecycle control plane", () => {
     const [hydrationResource] = await sql<{ id: string }[]>`
       SELECT remote_resource_id AS id FROM mail.provider_bindings WHERE id = ${bindingId}::uuid
     `;
-    const hydrationMutex = mutex({
-      id: "mail:remote-resource-sync",
-      defaultTtl: 30_000,
-      retryCount: 0,
-    });
-    const heldHydrationLock = await hydrationMutex.acquire(hydrationResource!.id, 30_000);
+    const hydrationMutex = lazySync((sync) =>
+      sync.mutex({
+        id: "mail:remote-resource-sync",
+        ttlMs: 30_000,
+        retry: { maxAttempts: 1 },
+      }),
+    );
+    const heldHydrationLock = await hydrationMutex().acquire({ resource: hydrationResource!.id, ttlMs: 30_000 });
     expect(heldHydrationLock).not.toBeNull();
     if (!heldHydrationLock) return;
     const blockedDownload = spyOn(imapSmtpConnector, "downloadSourceBatch").mockRejectedValue(new Error("locked hydration reached IMAP"));
@@ -1499,7 +1508,7 @@ suite("mail lifecycle control plane", () => {
       expect(blockedDownload).not.toHaveBeenCalled();
     } finally {
       blockedDownload.mockRestore();
-      await hydrationMutex.release(heldHydrationLock);
+      await hydrationMutex().release(heldHydrationLock);
     }
     const fencedDownload = spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(
       async (_runtime, _folderPath, requests, consume) => {
@@ -2383,12 +2392,14 @@ suite("mail lifecycle control plane", () => {
         FROM mail.provider_bindings
         WHERE id = ${bindingId}::uuid
       `;
-      const syncLock = mutex({
-        id: "mail:remote-resource-sync",
-        defaultTtl: 30_000,
-        retryCount: 0,
-      });
-      const heldSyncLock = await syncLock.acquire(resource!.id, 30_000);
+      const syncLock = lazySync((sync) =>
+        sync.mutex({
+          id: "mail:remote-resource-sync",
+          ttlMs: 30_000,
+          retry: { maxAttempts: 1 },
+        }),
+      );
+      const heldSyncLock = await syncLock().acquire({ resource: resource!.id, ttlMs: 30_000 });
       expect(heldSyncLock).not.toBeNull();
       if (!heldSyncLock) return;
       try {
@@ -2400,7 +2411,7 @@ suite("mail lifecycle control plane", () => {
         `;
         expect(blocked?.last_error_code).toBe("REMOTE_RESOURCE_BUSY");
       } finally {
-        await syncLock.release(heldSyncLock);
+        await syncLock().release(heldSyncLock);
       }
       effectCommandId = command.data.id;
       expect(await executeMutationCommand(command.data.id)).toBe("confirmed");

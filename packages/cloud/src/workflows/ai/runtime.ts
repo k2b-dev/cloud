@@ -1,7 +1,9 @@
 import { StructuredOutputError } from "@k2b/nessi";
-import { job } from "@k2b/sync";
+import type { Job, Worker } from "@k2b/sync";
 import { z } from "zod";
+import { lazySync } from "../../_internal/process-sync";
 import { isAiSettingsError, type RunAiStructuredInput, runAiStructured } from "../../ai";
+import { syncOps } from "../../services/sync-ops";
 import type { WorkflowJsonValue } from "../contracts";
 import {
   claimWorkflowAiTask,
@@ -17,7 +19,6 @@ import {
 import type { WorkflowAiRequest, WorkflowAiTask } from "./types";
 
 const JOB_ID = "cloud.workflow-ai";
-const JOB_KEY_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_CANCEL_POLL_MS = 500;
 const HEARTBEAT_INTERVAL_MS = 10_000;
@@ -228,59 +229,60 @@ export const processWorkflowAiTask = async (
   }
 };
 
-const createWorkflowAiJob = (input: WorkflowAiRuntimeOptions = {}) => {
+const workflowAiJob = (maxAttempts: number) =>
+  lazySync((sync) => {
+    const handle = sync.job<{ taskId: string }>({
+      id: JOB_ID,
+      owner: "cloud",
+      delivery: { ackWaitMs: 30_000, maxAttempts, backoffMs: [1_000, 2_000] },
+    });
+    return handle;
+  });
+
+let activeJob: Job<{ taskId: string }> | null = null;
+let activeWorker: Worker | null = null;
+let unregisterJob: (() => void) | null = null;
+
+export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {}): Promise<void> => {
+  if (activeJob) return;
   const options: Required<WorkflowAiRuntimeOptions> = {
     runStructured: input.runStructured ?? runAiStructured,
     maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
     cancelPollMs: input.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
   };
-  return job<{ taskId: string }>({
-    id: JOB_ID,
-    defaults: { leaseMs: 30_000, keyTtlMs: JOB_KEY_TTL_MS },
-    process: ({ ctx }) => processWorkflowAiTask(ctx.input.taskId, ctx, options),
-    after: async ({ ctx }) => {
-      if (!ctx.error) return;
-      const error =
-        ctx.error instanceof WorkflowAiAttemptError
-          ? ctx.error
-          : new WorkflowAiAttemptError("WORKFLOW_AI_RUNTIME_ERROR", ctx.error.message, true);
-      const delayMs = ctx.expBackoff({ baseMs: 1_000, maxMs: 30_000 });
-      try {
-        const outcome = await settleWorkflowAiAttemptFailure(ctx.input.taskId, error, ctx.failureCount, options.maxAttempts);
-        if (outcome === "retry") {
-          ctx.reschedule({ delayMs });
-        }
-      } catch {
-        // `after` errors are swallowed by @k2b/sync. Explicitly reschedule so a
-        // temporary database failure cannot acknowledge unfinished durable work.
-        ctx.reschedule({ delayMs });
-      }
-    },
-  });
-};
-
-type WorkflowAiJob = ReturnType<typeof createWorkflowAiJob>;
-let activeJob: WorkflowAiJob | null = null;
-
-export const startWorkflowAiRuntime = async (options: WorkflowAiRuntimeOptions = {}): Promise<void> => {
-  if (activeJob) return;
-  const next = createWorkflowAiJob(options);
+  const next = workflowAiJob(options.maxAttempts)();
   activeJob = next;
   try {
+    unregisterJob = syncOps.registerDeadLetters({ name: JOB_ID, kind: "job", store: next.deadLetters });
+    activeWorker = await next.process({ concurrency: 1 }, async (context) => {
+      try {
+        await processWorkflowAiTask(context.input.taskId, context, options);
+      } catch (caught) {
+        const error =
+          caught instanceof WorkflowAiAttemptError
+            ? caught
+            : new WorkflowAiAttemptError("WORKFLOW_AI_RUNTIME_ERROR", caught instanceof Error ? caught.message : String(caught), true);
+        const outcome = await settleWorkflowAiAttemptFailure(context.input.taskId, error, context.failureCount, options.maxAttempts);
+        if (outcome === "retry") throw error;
+        // Postgres owns the terminal result, including intentional cancellation.
+      }
+    });
     for (const taskId of await listRecoverableWorkflowAiTaskIds()) await submitWorkflowAiTask(taskId);
   } catch (error) {
-    next.stop();
-    activeJob = null;
+    stopWorkflowAiRuntime();
     throw error;
   }
 };
 
 export const submitWorkflowAiTask = async (taskId: string): Promise<void> => {
   if (!activeJob) throw new Error("Workflow AI runtime is not started.");
-  await activeJob.submit({ key: `task:${taskId}`, keyTtlMs: JOB_KEY_TTL_MS, input: { taskId } });
+  await activeJob.submit({ key: `task:${taskId}`, coalesce: true, input: { taskId } });
 };
 
 export const stopWorkflowAiRuntime = (): void => {
-  activeJob?.stop();
+  activeWorker?.stop();
+  unregisterJob?.();
+  unregisterJob = null;
+  activeWorker = null;
   activeJob = null;
 };

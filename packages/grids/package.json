@@ -46,7 +46,8 @@
   "devDependencies": {
     "@types/bun": "catalog:",
     "playwright": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@nats-io/transport-node": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
 }

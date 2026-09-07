@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { type JobCtx, job, scheduler } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
+  syncOps,
 } from "@valentinkolb/cloud/services";
 import { toPgTextArray, toPgUuidArray } from "@valentinkolb/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
@@ -34,6 +36,7 @@ import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
@@ -47,6 +50,8 @@ import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
+
+const unregisterSyncOps: Array<() => void> = [];
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -94,7 +99,7 @@ type SyncBatchResult = {
   removed: number;
 };
 
-type SyncLock = NonNullable<Awaited<ReturnType<typeof mailProviderOperationMutex.acquire>>>;
+type SyncLock = NonNullable<Awaited<ReturnType<ReturnType<typeof mailProviderOperationMutex>["acquire"]>>>;
 
 const retryAfterMs = (error: unknown, fallback: number): number => {
   const value = Number((error as { retryAfterMs?: unknown } | null)?.retryAfterMs);
@@ -102,7 +107,7 @@ const retryAfterMs = (error: unknown, fallback: number): number => {
 };
 
 const extendSyncLease = async (lock: SyncLock, phase: string): Promise<void> => {
-  if (await mailProviderOperationMutex.extend(lock, SYNC_LEASE_MS)) return;
+  if (await mailProviderOperationMutex().extend(lock, { ttlMs: SYNC_LEASE_MS })) return;
   throw Object.assign(new Error(`Mail sync lease was lost ${phase}`), { code: "SYNC_LEASE_LOST" });
 };
 
@@ -1221,7 +1226,7 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
   const folder = await loadSyncFolder(folderId);
   if (!folder) return { hasMore: false, imported: 0, flagsUpdated: 0, removed: 0 };
 
-  const lock = await mailProviderOperationMutex.acquire(folder.remote_resource_id, SYNC_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({ resource: folder.remote_resource_id, ttlMs: SYNC_LEASE_MS });
   if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY" });
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
@@ -1362,7 +1367,9 @@ const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<voi
     }
     throw error;
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
@@ -1370,56 +1377,56 @@ const normalizeSyncErrorCode = (error: unknown): string => {
   return providerErrorCode(error, "MAIL_SYNC_FAILED");
 };
 
-const syncFolderJob = job<{ folderId: string }, SyncBatchResult | null>({
-  id: "mail:sync-folder",
-  defaults: { leaseMs: 3 * 60_000, keyTtlMs: 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    syncTasks.run(async () => {
-      try {
-        return await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat({ leaseMs: 3 * 60_000 }));
-      } catch (error) {
-        if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && !isConcurrentCredentialRefresh(error) && ctx.failureCount >= 5) {
+const syncFolderJob = lazySync((sync) =>
+  sync.job<{ folderId: string }>({
+    id: "mail:sync-folder",
+    delivery: { ackWaitMs: 3 * 60_000, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000] },
+  }),
+);
+let syncFolderJobWorker: Worker | undefined;
+const startSyncFolderJob = async (): Promise<void> => {
+  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:sync-folder", kind: "job", store: syncFolderJob().deadLetters }));
+  syncFolderJobWorker = await syncFolderJob().process(
+    {
+      onError: async ({ context, error }) => {
+        if (context.attempt >= 5) {
+          await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${context.input.folderId}::uuid`;
           log.error("Mail folder sync exhausted retries", {
-            folderId: ctx.input.folderId,
-            failureCount: ctx.failureCount,
+            folderId: context.input.folderId,
+            attempt: context.attempt,
             code: normalizeSyncErrorCode(error),
           });
-          await sql`
-            UPDATE mail.folders
-            SET sync_status = 'degraded'
-            WHERE id = ${ctx.input.folderId}::uuid
-          `.catch(() => undefined);
+          return { action: "dead_letter", reason: error.message };
+        }
+        return { action: "retry" };
+      },
+    },
+    async (ctx) => {
+      try {
+        const data = await syncTasks.run(() => syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat()));
+        if (data?.hasMore) ctx.resubmit({ delayMs: 0 });
+      } catch (error) {
+        if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
+        if (isConcurrentCredentialRefresh(error)) {
+          ctx.resubmit({ delayMs: 2_000 });
+          return;
+        }
+        if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+          ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
+          return;
         }
         throw error;
       }
-    }) ?? Promise.resolve(null),
-  after: async ({ ctx }) => {
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAILBOX_TRANSPORT_CHANGED") return;
-    if (ctx.error && isConcurrentCredentialRefresh(ctx.error)) {
-      ctx.reschedule({ delayMs: 2_000 });
-      return;
-    }
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAIL_RATE_LIMITED") {
-      ctx.reschedule({ delayMs: retryAfterMs(ctx.error, 5_000) });
-      return;
-    }
-    if (ctx.error && ctx.failureCount < 5) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-      return;
-    }
-    if (ctx.data?.hasMore) {
-      ctx.reschedule({ delayMs: 0 });
-      return;
-    }
-  },
-});
+    },
+  );
+};
 
-export const hydrateMessageBatch = async (ctx: JobCtx<{ messageId: string }>): Promise<{ hydrated: boolean }> => {
+export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>): Promise<{ hydrated: boolean }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
     intervalMs: 60_000,
     heartbeat: async () => {
-      await ctx.heartbeat({ leaseMs: 5 * 60_000 });
+      await ctx.heartbeat();
       if (!activeClaim) return;
       await sql`
         UPDATE mail.message_contents
@@ -1456,7 +1463,7 @@ export const hydrateMessageBatch = async (ctx: JobCtx<{ messageId: string }>): P
         LIMIT 1
       `;
       if (!message) return { hydrated: false };
-      const lock = await mailProviderOperationMutex.acquire(message.remote_resource_id, SYNC_LEASE_MS);
+      const lock = await mailProviderOperationMutex().acquire({ resource: message.remote_resource_id, ttlMs: SYNC_LEASE_MS });
       if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY" });
       try {
         return await withLeaseHeartbeat({
@@ -1554,42 +1561,49 @@ export const hydrateMessageBatch = async (ctx: JobCtx<{ messageId: string }>): P
           },
         });
       } finally {
-        await mailProviderOperationMutex.release(lock).catch(() => false);
+        await mailProviderOperationMutex()
+          .release(lock)
+          .catch(() => false);
       }
     },
   });
 };
 
-const hydrationJob = job<{ messageId: string }, { hydrated: boolean } | null>({
-  id: "mail:hydrate-message",
-  defaults: { leaseMs: 5 * 60_000, keyTtlMs: 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    syncTasks.run(async () => {
-      try {
-        return await hydrateMessageBatch(ctx);
-      } catch (error) {
-        if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.failureCount >= 5) {
-          log.error("Mail message hydration exhausted retries", {
-            messageId: ctx.input.messageId,
-            failureCount: ctx.failureCount,
-            code: normalizeSyncErrorCode(error),
-          });
+const hydrationJob = lazySync((sync) =>
+  sync.job<{ messageId: string }>({
+    id: "mail:hydrate-message",
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 5, backoffMs: [10_000, 20_000, 40_000, 80_000] },
+  }),
+);
+let hydrationJobWorker: Worker | undefined;
+const startHydrationJob = async (): Promise<void> => {
+  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:hydrate-message", kind: "job", store: hydrationJob().deadLetters }));
+  hydrationJobWorker = await hydrationJob().process({}, async (ctx) => {
+    try {
+      await (syncTasks.run(async () => {
+        try {
+          return await hydrateMessageBatch(ctx);
+        } catch (error) {
+          if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.attempt >= 5) {
+            log.error("Mail message hydration exhausted retries", {
+              messageId: ctx.input.messageId,
+              failureCount: ctx.failureCount,
+              code: normalizeSyncErrorCode(error),
+            });
+          }
+          throw error;
         }
-        throw error;
+      }) ?? Promise.resolve(null));
+    } catch (error) {
+      if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
+      if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+        ctx.resubmit({ delayMs: retryAfterMs(error, 10_000) });
+        return;
       }
-    }) ?? Promise.resolve(null),
-  after: async ({ ctx }) => {
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAILBOX_TRANSPORT_CHANGED") return;
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAIL_RATE_LIMITED") {
-      ctx.reschedule({ delayMs: retryAfterMs(ctx.error, 10_000) });
-      return;
+      throw error;
     }
-    if (ctx.error && ctx.failureCount < 5) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 10_000, maxMs: 10 * 60_000 }) });
-      return;
-    }
-  },
-});
+  });
+};
 
 export const enqueueMessageHydration = async (messageId: string): Promise<void> => {
   await submitHydrationJob(messageId);
@@ -1607,7 +1621,7 @@ export const executeBindingRediscovery = async (
       AND (state IN ('active', 'degraded') OR (${allowCredentialRevision} AND state = 'pending'))
   `;
   if (!binding) throw Object.assign(new Error("Provider binding is unavailable for rediscovery"), { code: "BINDING_UNAVAILABLE" });
-  const lock = await mailProviderOperationMutex.acquire(binding.remote_resource_id, SYNC_LEASE_MS);
+  const lock = await mailProviderOperationMutex().acquire({ resource: binding.remote_resource_id, ttlMs: SYNC_LEASE_MS });
   if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY" });
   try {
     return await withLeaseHeartbeat({
@@ -1622,61 +1636,67 @@ export const executeBindingRediscovery = async (
       },
     });
   } finally {
-    await mailProviderOperationMutex.release(lock).catch(() => false);
+    await mailProviderOperationMutex()
+      .release(lock)
+      .catch(() => false);
   }
 };
 
-const rediscoveryJob = job<{ bindingId: string; allowCredentialRevision: boolean }, BindingRediscoveryResult | null>({
-  id: "mail:rediscover-binding",
-  defaults: { leaseMs: 5 * 60_000, keyTtlMs: 24 * 60 * 60_000 },
-  process: ({ ctx }) =>
-    syncTasks.run(async () => {
-      try {
-        return await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () =>
-          ctx.heartbeat({ leaseMs: 5 * 60_000 }),
-        );
-      } catch (error) {
-        if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.failureCount >= 5) {
-          log.error("Mail provider rediscovery exhausted retries", {
-            bindingId: ctx.input.bindingId,
-            failureCount: ctx.failureCount,
-            code: normalizeSyncErrorCode(error),
-          });
+const rediscoveryJob = lazySync((sync) =>
+  sync.job<{ bindingId: string; allowCredentialRevision: boolean }>({
+    id: "mail:rediscover-binding",
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 5, backoffMs: [15_000, 30_000, 60_000, 120_000] },
+  }),
+);
+let rediscoveryJobWorker: Worker | undefined;
+const startRediscoveryJob = async (): Promise<void> => {
+  unregisterSyncOps.push(
+    syncOps.registerDeadLetters({ name: "mail:rediscover-binding", kind: "job", store: rediscoveryJob().deadLetters }),
+  );
+  rediscoveryJobWorker = await rediscoveryJob().process({}, async (ctx) => {
+    try {
+      await (syncTasks.run(async () => {
+        try {
+          return await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () => ctx.heartbeat());
+        } catch (error) {
+          if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.attempt >= 5) {
+            log.error("Mail provider rediscovery exhausted retries", {
+              bindingId: ctx.input.bindingId,
+              failureCount: ctx.failureCount,
+              code: normalizeSyncErrorCode(error),
+            });
+          }
+          throw error;
         }
-        throw error;
+      }) ?? Promise.resolve(null));
+    } catch (error) {
+      if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
+      if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+        ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
+        return;
       }
-    }) ?? Promise.resolve(null),
-  after: ({ ctx }) => {
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAILBOX_TRANSPORT_CHANGED") return;
-    if (ctx.error && normalizeSyncErrorCode(ctx.error) === "MAIL_RATE_LIMITED") {
-      ctx.reschedule({ delayMs: retryAfterMs(ctx.error, 15_000) });
-      return;
+      throw error;
     }
-    if (ctx.error && ctx.failureCount < 5) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 15_000, maxMs: 15 * 60_000 }) });
-      return;
-    }
-  },
-});
+  });
+};
 
 const submitSyncFolderJob = async (folderId: string): Promise<void> => {
-  await (syncTasks.run(() => syncFolderJob.submit({ key: `folder:${folderId}`, input: { folderId } })) ?? Promise.resolve());
+  await (syncTasks.run(() => syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } })) ??
+    Promise.resolve());
 };
 
 const submitHydrationJob = async (messageId: string): Promise<void> => {
-  await (syncTasks.run(() => hydrationJob.submit({ key: `message:${messageId}`, input: { messageId } })) ?? Promise.resolve());
+  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key: `message:${messageId}`, input: { messageId } })) ??
+    Promise.resolve());
 };
 
 const submitRediscoveryJob = async (bindingId: string, allowCredentialRevision: boolean): Promise<void> => {
   await (syncTasks.run(() =>
-    rediscoveryJob.submit({
-      key: `binding:${bindingId}`,
-      input: { bindingId, allowCredentialRevision },
-    }),
+    rediscoveryJob().submit({ coalesce: true, key: `binding:${bindingId}`, input: { bindingId, allowCredentialRevision } }),
   ) ?? Promise.resolve());
 };
 
-const mailScheduler = scheduler({ id: "mail" });
+let mailSchedulerWorker: Worker | undefined;
 
 const submitDueWork = async (): Promise<{
   bindings: number;
@@ -1845,75 +1865,91 @@ export const enqueueBindingRediscovery = async (bindingId: string, allowCredenti
 const mailRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     syncTasks.open();
+    await startSyncFolderJob();
+    await startHydrationJob();
+    await startRediscoveryJob();
     await startDraftProjectionRuntime();
-    await mailScheduler.create({
+    unregisterSyncOps.push(syncOps.registerScheduler({ name: "mail", scheduler: mailScheduler() }));
+    await mailScheduler().create({
       id: "mail:sync-due",
       cron: "* * * * *",
+      misfire: "latest",
       meta: { appId: "mail", family: "mail:sync", label: "Mail synchronization" },
-      process: async () => submitDueWork(),
-      after: ({ ctx }) => {
-        if (ctx.error && ctx.failureCount < 5) {
-          ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 15_000, maxMs: 5 * 60_000 }) });
-        } else if (ctx.error) {
-          log.error("Mail synchronization scheduler exhausted retries", { failureCount: ctx.failureCount });
-        }
+      process: async () => {
+        await submitDueWork();
       },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:snooze-wake",
       cron: "* * * * *",
+      misfire: "latest",
       meta: { appId: "mail", family: "mail:collaboration", label: "Mail snooze wake-up" },
-      process: () => releaseDueSnoozes(),
+      process: async () => {
+        await releaseDueSnoozes();
+      },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:blob-upload-cleanup",
       cron: "17 * * * *",
       meta: { appId: "mail", family: "mail:storage", label: "Mail blob upload cleanup" },
-      process: async () => ({
-        draftUploads: await deleteAbandonedDraftAttachmentUploads(),
-        abandoned: await deleteAbandonedBlobUploads(),
-        orphaned: await deleteOrphanedBlobs(),
-      }),
+      process: async () => {
+        await deleteAbandonedDraftAttachmentUploads();
+        await deleteAbandonedBlobUploads();
+        await deleteOrphanedBlobs();
+      },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:attachment-link-cleanup",
       cron: "29 * * * *",
       meta: { appId: "mail", family: "mail:storage", label: "Mail attachment link cleanup" },
-      process: cleanupPublicAttachmentLinks,
+      process: async () => {
+        await cleanupPublicAttachmentLinks();
+      },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:oauth-flow-cleanup",
       cron: "37 * * * *",
       meta: { appId: "mail", family: "mail:oauth", label: "Mail OAuth flow cleanup" },
-      process: cleanupProviderOAuthFlows,
+      process: async () => {
+        await cleanupProviderOAuthFlows();
+      },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:runtime-history-cleanup",
       cron: "43 * * * *",
       meta: { appId: "mail", family: "mail:runtime", label: "Mail runtime history cleanup" },
-      process: () => cleanupMailRuntimeHistory(),
+      process: async () => {
+        await cleanupMailRuntimeHistory();
+      },
     });
-    await mailScheduler.create({
+    await mailScheduler().create({
       id: "mail:storage-usage",
       cron: "23 * * * *",
       meta: { appId: "mail", family: "mail:storage", label: "Mail storage usage reconciliation" },
-      process: reconcileMailStorageUsage,
+      process: async () => {
+        await reconcileMailStorageUsage();
+      },
     });
-    mailScheduler.start();
-    void mailScheduler.runNow({ id: "mail:storage-usage" }).catch((error) => {
-      log.warn("Could not queue initial Mail storage reconciliation", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
+    mailSchedulerWorker = await mailScheduler().process();
     await submitDueWork();
   },
   stop: async () => {
+    for (const worker of [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker]) worker?.stop();
     syncTasks.close();
     await stopRuntimeResources([
-      () => mailScheduler.stop(),
+      () =>
+        mailSchedulerWorker?.drain().then(() => {
+          mailSchedulerWorker = undefined;
+        }),
       () => stopDraftProjectionRuntime(),
-      () => stopRuntimeJobs(syncTasks, [rediscoveryJob, syncFolderJob, hydrationJob]),
-    ]);
+      () =>
+        stopRuntimeJobs(
+          syncTasks,
+          [rediscoveryJobWorker, syncFolderJobWorker, hydrationJobWorker].filter((worker): worker is Worker => worker !== undefined),
+        ),
+    ]).finally(() => {
+      for (const unregister of unregisterSyncOps.splice(0)) unregister();
+    });
   },
 });
 

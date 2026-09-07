@@ -5,19 +5,23 @@
  * process-local, so every app exposes them under `/_internal/sync` (see
  * `createSyncOpsRoutes` in `@valentinkolb/cloud/services`). This service walks
  * the live app registry, calls that surface on each app's internal base URL
- * with the administrator's own credentials, and merges the answers. One
+ * through the Core invocation broker, and merges the answers. One
  * unreachable app degrades to a warning row; it never hides the others.
  */
+
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SyncHealth, SyncResourceSummary } from "@k2b/sync";
 import type { AppRegistryEntry } from "@valentinkolb/cloud/contracts";
 import type { SyncDeadLetterEntry, SyncDeadLetterKind, SyncDeadLetterStoreView, SyncScheduleView } from "@valentinkolb/cloud/services";
+import { get } from "@valentinkolb/cloud/services";
+import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
+import { z } from "zod";
 
 export const SYNC_OPS_PATH = "/_internal/sync";
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-/** Headers copied from the administrator's request so each app applies its own admin gate. */
+/** Source credentials are sent only to Core, which issues a target-bound invocation. */
 export type SyncOpsCredentials = { cookie?: string | null; authorization?: string | null; requestId?: string | null };
 
 export const syncOpsCredentials = (request: Request): SyncOpsCredentials => ({
@@ -60,11 +64,79 @@ type ResourcesPayload = { health: SyncHealth; resources: SyncResourceSummary[] }
 type DeadLettersPayload = { stores: SyncDeadLetterStoreView[] };
 type SchedulesPayload = { schedules: SyncScheduleView[] };
 
+// An invalid response must degrade only its app, including structurally invalid JSON.
+const resourcesPayload: z.ZodType<ResourcesPayload> = z.object({
+  health: z.object({
+    state: z.enum(["starting", "ready", "degraded", "draining", "stopped"]),
+    connection: z.enum(["connected", "reconnecting", "closed"]),
+    pendingResources: z.number(),
+    driftedResources: z.number(),
+    activeWorkers: z.number(),
+    activeHandlers: z.number(),
+    droppedEvents: z.number(),
+  }),
+  resources: z.array(
+    z.object({
+      namespace: z.string(),
+      kind: z.string(),
+      id: z.string(),
+      owner: z.string(),
+      state: z.enum(["pending", "ready", "drifted", "failed"]),
+      natsNames: z.array(z.string()),
+      error: z.string().optional(),
+      detail: z.record(z.string(), z.json()).optional(),
+    }),
+  ),
+});
+const deadLettersPayload: z.ZodType<DeadLettersPayload> = z.object({
+  stores: z.array(
+    z.object({
+      name: z.string(),
+      kind: z.enum(["queue", "job"]),
+      description: z.string().nullable(),
+      truncated: z.boolean(),
+      entries: z.array(
+        z.object({
+          messageId: z.string(),
+          tenantId: z.string(),
+          attempts: z.number(),
+          failedAt: z.string(),
+          reason: z.string(),
+          error: z.string().nullable(),
+          dataPreview: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+const schedulesPayload: z.ZodType<SchedulesPayload> = z.object({
+  schedules: z.array(
+    z.object({
+      schedulerId: z.string(),
+      id: z.string(),
+      cron: z.string(),
+      timezone: z.string(),
+      misfire: z.enum(["latest", "all"]),
+      nextRunAt: z.string(),
+      runNumber: z.number(),
+      failureCount: z.number(),
+      lastError: z.string().nullable(),
+      lastRunId: z.string().nullable(),
+      lastCompletedAt: z.string().nullable(),
+      handlerAvailable: z.boolean(),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+      meta: z.record(z.string(), z.json()).nullable(),
+    }),
+  ),
+});
+
 export type SyncOpsServiceDependencies = {
   /** Live app registry; injected so the service stays free of registry runtime imports. */
   listApps: () => Promise<readonly AppRegistryEntry[]>;
   fetch?: (input: URL, init: RequestInit) => Promise<Response>;
   timeoutMs?: number;
+  coreOrigin?: () => Promise<string>;
 };
 
 type AppRef = Pick<AppRegistryEntry, "id" | "name" | "icon" | "baseUrl">;
@@ -77,9 +149,27 @@ const readJson = async (response: Response): Promise<unknown> => {
     await response.body?.cancel().catch(() => undefined);
     throw new Error("Response too large");
   }
-  const text = await response.text();
-  if (text.length > MAX_RESPONSE_BYTES) throw new Error("Response too large");
-  return JSON.parse(text) as unknown;
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Invalid Sync operations response");
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let text = "";
+  let bytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) throw new Error("Response too large");
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    return JSON.parse(text) as unknown;
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
 };
 
 /** Keeps the app's own error message and only maps the status class. */
@@ -106,7 +196,7 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     app: AppRef,
     path: string,
     credentials: SyncOpsCredentials,
-    init: { method?: "GET" | "POST" | "DELETE"; body?: unknown } = {},
+    init: { method?: "GET" | "POST" | "DELETE"; body?: unknown; schema?: z.ZodType<T> } = {},
   ): Promise<Result<T>> => {
     const headers = new Headers({ accept: "application/json" });
     if (credentials.cookie) headers.set("cookie", credentials.cookie);
@@ -114,15 +204,33 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     if (credentials.requestId) headers.set("x-request-id", credentials.requestId);
     if (init.body !== undefined) headers.set("content-type", "application/json");
     try {
-      const response = await doFetch(new URL(`${SYNC_OPS_PATH}${path}`, app.baseUrl), {
-        method: init.method ?? "GET",
-        headers,
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        signal: AbortSignal.timeout(timeoutMs),
-        redirect: "manual",
+      const response = await doFetch(
+        new URL(
+          `/api/admin/sync/${encodeURIComponent(app.id)}${path}`,
+          await (
+            dependencies.coreOrigin ??
+            (async () => process.env.CLOUD_CORE_INTERNAL_ORIGIN?.trim() || publicCloudOrigin(await get<string>("app.url")))
+          )(),
+        ),
+        {
+          method: init.method ?? "GET",
+          headers,
+          body: init.body === undefined ? undefined : JSON.stringify(init.body),
+          signal: AbortSignal.timeout(timeoutMs),
+          redirect: "manual",
+        },
+      );
+      const body = await readJson(response).catch((error) => {
+        if (response.ok) throw error;
+        return null;
       });
-      const body = await readJson(response).catch(() => null);
       if (!response.ok) return upstreamFailure(response.status, body);
+      if (body === null || typeof body !== "object") throw new Error("Invalid Sync operations response");
+      if (init.schema) {
+        const parsed = init.schema.safeParse(body);
+        if (!parsed.success) throw new Error("Invalid Sync operations response");
+        return ok(parsed.data);
+      }
       return ok(body as T);
     } catch (error) {
       return fail(err.internal(errorMessage(error)));
@@ -140,9 +248,9 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     const perApp = await Promise.all(
       apps.map(async (app) => {
         const [resources, deadLetters, schedules] = await Promise.all([
-          call<ResourcesPayload>(app, "/resources", credentials),
-          call<DeadLettersPayload>(app, "/dead-letters", credentials),
-          call<SchedulesPayload>(app, "/schedules", credentials),
+          call(app, "/resources", credentials, { schema: resourcesPayload }),
+          call(app, "/dead-letters", credentials, { schema: deadLettersPayload }),
+          call(app, "/schedules", credentials, { schema: schedulesPayload }),
         ]);
         return { app, resources, deadLetters, schedules };
       }),

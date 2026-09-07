@@ -1,5 +1,5 @@
-import { logger } from "@valentinkolb/cloud/services";
-import { topic } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
 import {
   type GridsWorkflowRunEvent,
   toWorkflowRunEventSummary,
@@ -9,16 +9,17 @@ import {
 import type { GridsWorkflowRun, GridsWorkflowStepRun } from "../workflows/contracts";
 
 const log = logger("grids:workflow-run-events");
-const workflowRunTopic = topic<GridsWorkflowRunEvent>({
-  id: "runs",
-  prefix: "cloud:grids:workflow-runs",
-  retentionMs: 24 * 60 * 60 * 1000,
-  limits: { payloadBytes: 64_000 },
-});
+const workflowRunTopic = lazySync((sync) =>
+  sync.topic<GridsWorkflowRunEvent>({
+    id: "grids:workflow-runs",
+    retention: { maxAgeMs: 86400000, maxBytes: 268435456 },
+    maxPayloadBytes: 68000,
+  }),
+);
 
 const tenantId = (baseId: string, workflowId: string): string => `${baseId}:${workflowId}`;
 
-type WorkflowRunEventPublisher = (event: Parameters<typeof workflowRunTopic.pub>[0]) => Promise<unknown>;
+type WorkflowRunEventPublisher = (event: Parameters<ReturnType<typeof workflowRunTopic>["publish"]>[0]) => Promise<unknown>;
 
 export const createWorkflowRunEventNotifier =
   (publish: WorkflowRunEventPublisher) =>
@@ -53,14 +54,15 @@ export const createWorkflowRunEventNotifier =
     }
   };
 
-export const notifyWorkflowRunEvent = createWorkflowRunEventNotifier((event) => workflowRunTopic.pub(event));
+export const notifyWorkflowRunEvent = createWorkflowRunEventNotifier((event) => workflowRunTopic().publish(event));
 
-export const latestWorkflowRunEventCursor = (baseId: string, workflowId: string): Promise<string | null> =>
-  workflowRunTopic.latestCursor({ tenantId: tenantId(baseId, workflowId) });
+export const latestWorkflowRunEventCursor = async (baseId: string, workflowId: string): Promise<string> =>
+  latestTopicCursor({ topic: workflowRunTopic(), resourceId: "grids:workflow-runs", tenantId: tenantId(baseId, workflowId) });
 
 export const liveWorkflowRunEvents = (config: { baseId: string; workflowId: string; after?: string | null; signal?: AbortSignal }) =>
-  workflowRunTopic.live({
-    tenantId: tenantId(config.baseId, config.workflowId),
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  workflowRunTopic()
+    .hub({ tenantId: tenantId(config.baseId, config.workflowId) })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });

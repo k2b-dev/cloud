@@ -33,6 +33,7 @@ import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
 import { createSearchRoutes } from "./search";
+import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
 
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
@@ -65,6 +66,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/announcements", adminAnnouncementRoutes)
     .route("/admin/core/settings", adminCoreSettingsRoutes)
     .route("/admin/identity", adminIdentityRoutes)
+    .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)
     .route("/ai/approval-preferences", approvalPreferenceRoutes)
     .route("/ai/projects", aiProjectsRoutes)

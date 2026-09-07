@@ -1,10 +1,12 @@
-import { job, scheduler } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
   logger,
   stopRuntimeJobs,
   stopRuntimeResources,
+  syncOps,
   trace,
 } from "@valentinkolb/cloud/services";
 import {
@@ -17,6 +19,8 @@ import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contr
 import { sha256Text } from "./canonical";
 import { createBlobReadable, getStoredBlob } from "./message-blobs";
 import { splitSearchText } from "./search-chunks";
+
+const unregisterSyncOps: Array<() => void> = [];
 
 export { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 
@@ -438,23 +442,29 @@ export const extractMailAttachmentBlob = async (blobId: string, signal: AbortSig
   }
 };
 
-const extractionJob = job<{ blobId: string }, ExtractionResult | null>({
-  id: "mail:extract-attachment",
-  defaults: { leaseMs: 5 * 60_000, keyTtlMs: 24 * 60 * 60_000 },
-  trace: trace.fromSyncJob<{ blobId: string }, ExtractionResult | null>({
-    name: "Mail attachment extraction",
-    source: "mail:extract-attachment",
-    appId: "mail",
-    attributes: { "cloud.mail.extractor_version": MAIL_ATTACHMENT_EXTRACTOR_VERSION },
-    summarize: (event) => (event.type === "succeeded" && event.data ? event.data : undefined),
+const extractionJob = lazySync((sync) =>
+  sync.job<{ blobId: string }>({
+    id: "mail:extract-attachment",
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
   }),
-  process: ({ ctx }) => extractionTasks.run(() => extractMailAttachmentBlob(ctx.input.blobId, ctx.signal)) ?? Promise.resolve(null),
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < MAX_ATTEMPTS - 1) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 5 * 60_000 }) });
-    }
-  },
-});
+);
+let extractionJobWorker: Worker | undefined;
+const startExtractionJob = async (): Promise<void> => {
+  unregisterSyncOps.push(syncOps.registerDeadLetters({ name: "mail:extract-attachment", kind: "job", store: extractionJob().deadLetters }));
+  extractionJobWorker = await extractionJob().process({}, async (ctx) => {
+    const spanKey = trace.syncSpanKey("job", "mail:extract-attachment", ctx.jobId);
+    await trace.start({
+      name: "Mail attachment extraction",
+      source: "mail:extract-attachment",
+      appId: "mail",
+      category: "job",
+      spanKey,
+      attributes: { "cloud.mail.extractor_version": MAIL_ATTACHMENT_EXTRACTOR_VERSION },
+    });
+    const result = await extractionTasks.run(() => extractMailAttachmentBlob(ctx.input.blobId, ctx.signal));
+    if (result) await trace.end({ spanKey, summary: result });
+  });
+};
 
 export const attachmentExtractionJobKey = (blobId: string, extractionHint = "detected"): string =>
   `blob:${sha256Text(`${blobId}:${MAIL_ATTACHMENT_EXTRACTOR_VERSION}:${extractionHint}`)}`;
@@ -481,7 +491,8 @@ export const enqueueAttachmentExtraction = async (blobId: string): Promise<void>
   if (await reprojectCompleteExtraction(blobId)) return;
   const filename = await filenameForBlob(blobId);
   await (extractionTasks.run(() =>
-    extractionJob.submit({
+    extractionJob().submit({
+      coalesce: true,
       key: attachmentExtractionJobKey(blobId, isCsvFilename(filename) ? "csv" : "detected"),
       input: { blobId },
     }),
@@ -534,23 +545,43 @@ export const recoverAttachmentExtractions = async (): Promise<number> => {
   return blobs.length;
 };
 
-const extractionScheduler = scheduler({ id: "mail:attachment-extraction" });
+const extractionScheduler = lazySync((sync) =>
+  sync.scheduler({ id: "mail:attachment-extraction", delivery: { maxAttempts: 5, backoffMs: [5_000, 20_000, 60_000, 120_000] } }),
+);
+let extractionSchedulerWorker: Worker | undefined;
 
 const extractionRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     extractionTasks.open();
-    await extractionScheduler.create({
+    await startExtractionJob();
+    unregisterSyncOps.push(syncOps.registerScheduler({ name: "mail:attachment-extraction", scheduler: extractionScheduler() }));
+    await extractionScheduler().create({
       id: "mail:attachment-extraction:recover",
       cron: "*/5 * * * *",
       meta: { appId: "mail", family: "mail:search", label: "Mail attachment extraction recovery" },
-      process: async () => ({ submitted: await recoverAttachmentExtractions() }),
+      process: async () => {
+        await recoverAttachmentExtractions();
+      },
     });
-    extractionScheduler.start();
+    extractionSchedulerWorker = await extractionScheduler().process();
     await recoverAttachmentExtractions();
   },
   stop: async () => {
+    extractionJobWorker?.stop();
     extractionTasks.close();
-    await stopRuntimeResources([() => extractionScheduler.stop(), () => stopRuntimeJobs(extractionTasks, [extractionJob])]);
+    await stopRuntimeResources([
+      () =>
+        extractionSchedulerWorker?.drain().then(() => {
+          extractionSchedulerWorker = undefined;
+        }),
+      () =>
+        stopRuntimeJobs(
+          extractionTasks,
+          [extractionJobWorker].filter((worker): worker is Worker => worker !== undefined),
+        ),
+    ]).finally(() => {
+      for (const unregister of unregisterSyncOps.splice(0)) unregister();
+    });
   },
 });
 

@@ -1,41 +1,63 @@
-import { type Lock, mutex } from "@k2b/sync";
+import type { Lock } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 
-export const mailProviderOperationMutex = mutex({
-  id: "mail:remote-resource-sync",
-  defaultTtl: MAIL_PROVIDER_OPERATION_LEASE_MS,
-  retryCount: 0,
-});
+export const mailProviderOperationMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:remote-resource-sync",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    retry: { maxAttempts: 1 },
+  }),
+);
 
-const lifecycleBarrierMutex = mutex({
-  id: "mail:remote-resource-sync",
-  defaultTtl: MAIL_PROVIDER_OPERATION_LEASE_MS,
-  retryCount: 40,
-  retryDelay: 250,
-});
+const lifecycleBarrierMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:remote-resource-sync",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    retry: { maxAttempts: 41, delayMs: 250 },
+  }),
+);
 
 const acquireMailboxProviderBarrier = async (remoteResourceIds: readonly string[]): Promise<Lock[] | null> => {
   const locks: Lock[] = [];
   try {
     for (const remoteResourceId of [...new Set(remoteResourceIds)].sort()) {
-      const lock = await lifecycleBarrierMutex.acquire(remoteResourceId, MAIL_PROVIDER_OPERATION_LEASE_MS);
+      const lock = await lifecycleBarrierMutex().acquire({ resource: remoteResourceId, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
       if (!lock) {
-        await Promise.all(locks.map((held) => lifecycleBarrierMutex.release(held).catch(() => undefined)));
+        await Promise.all(
+          locks.map((held) =>
+            lifecycleBarrierMutex()
+              .release(held)
+              .catch(() => undefined),
+          ),
+        );
         return null;
       }
       locks.push(lock);
     }
     return locks;
   } catch (error) {
-    await Promise.all(locks.map((held) => lifecycleBarrierMutex.release(held).catch(() => undefined)));
+    await Promise.all(
+      locks.map((held) =>
+        lifecycleBarrierMutex()
+          .release(held)
+          .catch(() => undefined),
+      ),
+    );
     throw error;
   }
 };
 
 const releaseMailboxProviderBarrier = async (locks: readonly Lock[]): Promise<void> => {
-  await Promise.all(locks.map((lock) => lifecycleBarrierMutex.release(lock).catch(() => undefined)));
+  await Promise.all(
+    locks.map((lock) =>
+      lifecycleBarrierMutex()
+        .release(lock)
+        .catch(() => undefined),
+    ),
+  );
 };
 
 type ProviderOperationBarrierResult<T> = { acquired: false } | { acquired: true; value: T };
@@ -53,7 +75,11 @@ export const withProviderOperationBarrier = async <T>(
       intervalMs: Math.floor(MAIL_PROVIDER_OPERATION_LEASE_MS / 3),
       heartbeat: async () => {
         const extended = await Promise.all(
-          locks.map((lock) => lifecycleBarrierMutex.extend(lock, MAIL_PROVIDER_OPERATION_LEASE_MS).catch(() => false)),
+          locks.map((lock) =>
+            lifecycleBarrierMutex()
+              .extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS })
+              .catch(() => false),
+          ),
         );
         if (extended.some((active) => !active)) {
           throw Object.assign(new Error("Mailbox provider operation barrier was lost"), {

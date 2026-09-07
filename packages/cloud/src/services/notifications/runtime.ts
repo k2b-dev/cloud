@@ -1,26 +1,33 @@
-import { type QueueReceived, queue } from "@k2b/sync";
+import type { QueueDelivery } from "@k2b/sync";
+import { lazySync } from "../../_internal/process-sync";
 import { logger, trace } from "../logging";
 import { superviseRuntimeTask } from "../runtime-lifecycle";
+import { syncOps } from "../sync-ops";
 import { processNotificationDelivery, recoverNotificationDeliveries } from "./dispatcher";
 
 type DeliveryMessage = { deliveryId: string };
 
 const log = logger("notifications:delivery");
 const ENQUEUE_DEDUPLICATION_WINDOW_MS = 60_000;
-const deliveryQueue = queue<DeliveryMessage>({
-  id: "cloud-notification-deliveries",
-  delivery: { defaultLeaseMs: 60_000, maxDeliveries: 20 },
+const deliveryQueue = lazySync((sync) => {
+  const handle = sync.queue<DeliveryMessage>({
+    id: "cloud-notification-deliveries",
+    owner: "core",
+    delivery: { ackWaitMs: 60_000, maxAttempts: 20 },
+    dedupeWindowMs: ENQUEUE_DEDUPLICATION_WINDOW_MS * 2,
+  });
+  syncOps.registerDeadLetters({ name: "cloud-notification-deliveries", kind: "queue", store: handle.deadLetters });
+  return handle;
 });
 
 export const enqueueNotificationDelivery = async (deliveryId: string, delayMs?: number): Promise<void> => {
   const bucket = Math.floor(Date.now() / ENQUEUE_DEDUPLICATION_WINDOW_MS);
-  await deliveryQueue.send({
+  await deliveryQueue().send({
     data: { deliveryId },
     ...(delayMs ? { delayMs } : {}),
     // Recovery scans are intentionally repetitive. A time bucket suppresses
     // queue noise without permanently blocking a later recovery attempt.
     idempotencyKey: `delivery:${deliveryId}:${bucket}`,
-    idempotencyTtlMs: ENQUEUE_DEDUPLICATION_WINDOW_MS * 2,
   });
 };
 
@@ -28,7 +35,7 @@ export const enqueueNotificationDeliveries = async (deliveryIds: readonly string
   await Promise.all(deliveryIds.map((id) => enqueueNotificationDelivery(id)));
 };
 
-const handleDelivery = async (message: QueueReceived<DeliveryMessage>): Promise<void> => {
+const handleDelivery = async (message: QueueDelivery<DeliveryMessage>): Promise<void> => {
   try {
     const result = await trace.withSpan(
       {
@@ -43,14 +50,14 @@ const handleDelivery = async (message: QueueReceived<DeliveryMessage>): Promise<
     );
     if (result.activatedIds?.length) await enqueueNotificationDeliveries(result.activatedIds);
     if (result.status === "retry") {
-      await message.nack({ delayMs: result.retryAfterMs, reason: "provider_retry", error: result.error });
+      await message.retry({ delayMs: result.retryAfterMs, reason: result.error ?? "provider_retry" });
       return;
     }
     await message.ack();
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Notification worker failed";
     log.error("Delivery worker failed", { deliveryId: message.data.deliveryId, error: messageText });
-    await message.nack({ delayMs: 5_000, reason: "worker_error", error: messageText }).catch(() => false);
+    await message.retry({ delayMs: 5_000, reason: messageText }).catch(() => false);
   }
 };
 
@@ -78,7 +85,12 @@ export const startNotificationRuntime = async (input: { concurrency?: number; re
       name: `Notification delivery reader ${index}`,
       signal: controller.signal,
       run: async (signal) => {
-        for await (const message of deliveryQueue.stream({ signal })) await handleDelivery(message);
+        const reader = await deliveryQueue().reader();
+        try {
+          for await (const message of reader.stream({ signal })) await handleDelivery(message);
+        } finally {
+          await reader.close();
+        }
       },
       onError: ({ error, failureCount, retryInMs }) =>
         log.error("Delivery reader stopped; restarting", {

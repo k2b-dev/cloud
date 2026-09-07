@@ -49,7 +49,7 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
 
   return createLiveWebSocket<ProviderMessage>({
     url: "/api/grids/ws",
-    initialCursor: opts.initialCursor,
+    initialCursor: isGridsStreamCursor(opts.initialCursor) ? opts.initialCursor : null,
     activity: "visible",
     subscribe: (cursor) => ({
       type: gridsWorkspace.wsType.recordsSubscribe,
@@ -81,6 +81,7 @@ export const createGridsRecordEventsProvider = (opts: GridsRecordEventsProviderO
 
       if (message.type === gridsWorkspace.wsType.recordsError) {
         const error = errorFromPayload(message.payload, { code: "internal_error", message: t.liveUnavailable });
+        if (error.code === "resync_required") controls.resetCursor();
         if (isTerminalLiveErrorCode(error.code)) controls.terminate(error);
         else opts.onError?.(error);
         return;

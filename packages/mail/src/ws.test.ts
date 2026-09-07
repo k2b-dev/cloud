@@ -99,26 +99,26 @@ describe("Mail live cursors", () => {
   test("preserves explicit replay cursors without reading the stream tail", async () => {
     let latestReads = 0;
     expect(
-      await resolveMailLiveCursor(MAILBOX_ID, "8-2", async () => {
+      await resolveMailLiveCursor(MAILBOX_ID, "s6t.mailtest.82", async () => {
         latestReads++;
-        return "9-1";
+        return "s6t.mailtest.91";
       }),
-    ).toBe("8-2");
+    ).toBe("s6t.mailtest.82");
     expect(latestReads).toBe(0);
   });
 
   test("uses the current stream tail and the empty-stream baseline", async () => {
-    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => "9-1")).toBe("9-1");
-    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => null)).toBe("0-0");
+    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => "s6t.mailtest.91")).toBe("s6t.mailtest.91");
+    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => "s6t.mailtest.0")).toBe("s6t.mailtest.0");
   });
 
   test("rejects malformed cursors returned by the replay log", async () => {
-    await expect(resolveMailLiveCursor(MAILBOX_ID, null, async () => "latest")).rejects.toThrow();
+    await expect(resolveMailLiveCursor(MAILBOX_ID, null, async () => "")).rejects.toThrow();
   });
 
   test("validates replay cursors, payloads, and mailbox isolation", () => {
     const event = {
-      cursor: "10-2",
+      cursor: "s6t.mailtest.102",
       data: {
         type: "mail.invalidated",
         mailboxId: MAILBOX_ID,
@@ -130,6 +130,6 @@ describe("Mail live cursors", () => {
 
     expect(parseMailLiveReplayEvent(MAILBOX_ID, event)).toEqual({ cursor: event.cursor, event: event.data });
     expect(parseMailLiveReplayEvent("Box002", event)).toBeNull();
-    expect(parseMailLiveReplayEvent(MAILBOX_ID, { ...event, cursor: "latest" })).toBeNull();
+    expect(parseMailLiveReplayEvent(MAILBOX_ID, { ...event, cursor: "" })).toBeNull();
   });
 });

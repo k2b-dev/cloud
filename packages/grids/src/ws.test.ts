@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import type { ServerWebSocket } from "bun";
 import {
   createWorkspaceWebSocketSession,
@@ -35,19 +36,19 @@ const testSocket = (sendStatus = 1) => {
 const metadataSubscribe = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
     type: "grids.metadata.subscribe",
-    payload: { baseId: publicBaseId, sessionToken: "session", fromCursor: "1-0", ...overrides },
+    payload: { baseId: publicBaseId, sessionToken: "session", fromCursor: "s6t.test.1", ...overrides },
   });
 
 const workflowSubscribe = () =>
   JSON.stringify({
     type: "grids.workflow-runs.subscribe",
-    payload: { workflowId: publicWorkflowId, sessionToken: "session", fromCursor: "1-0" },
+    payload: { workflowId: publicWorkflowId, sessionToken: "session", fromCursor: "s6t.test.1" },
   });
 
 const recordsSubscribe = () =>
   JSON.stringify({
     type: "grids.records.subscribe",
-    payload: { tableId: publicTableId, sessionToken: "session", fromCursor: "1-0" },
+    payload: { tableId: publicTableId, sessionToken: "session", fromCursor: "s6t.test.1" },
   });
 
 const socket = (status: number) =>
@@ -129,18 +130,18 @@ describe("Grids websocket access refresh", () => {
 describe("Grids websocket cursor baseline", () => {
   test("preserves a client cursor without loading a new baseline", async () => {
     let latestCalls = 0;
-    const cursor = await resolveWorkspaceEventCursor("7-4", async () => {
+    const cursor = await resolveWorkspaceEventCursor("s6t.test.7", async () => {
       latestCalls++;
-      return "9-1";
+      return "s6t.test.9";
     });
 
-    expect(cursor).toBe("7-4");
+    expect(cursor).toBe("s6t.test.7");
     expect(latestCalls).toBe(0);
   });
 
   test("uses the latest cursor or the empty-stream baseline", async () => {
-    expect(await resolveWorkspaceEventCursor(null, async () => "9-1")).toBe("9-1");
-    expect(await resolveWorkspaceEventCursor(undefined, async () => null)).toBe("0-0");
+    expect(await resolveWorkspaceEventCursor(null, async () => "s6t.test.9")).toBe("s6t.test.9");
+    expect(await resolveWorkspaceEventCursor(undefined, async () => "s6t.test.0")).toBe("s6t.test.0");
   });
 });
 
@@ -219,10 +220,10 @@ describe("Grids websocket server sessions", () => {
       evaluateBaseAccess: async () => ({ ok: true, baseId }),
       evaluateSubscriptionAccess: async () =>
         readable ? { ok: true, baseId } : { ok: false, code: "access_denied", message: "Access denied" },
-      latestMetadataCursor: async () => "9-0",
+      latestMetadataCursor: async () => "s6t.test.9",
       metadataEvents: async function* ({ signal }: { signal?: AbortSignal }) {
         yield {
-          cursor: "9-1",
+          cursor: "s6t.test.9",
           data: {
             v: 1,
             type: "table.updated",
@@ -248,8 +249,8 @@ describe("Grids websocket server sessions", () => {
     await Bun.sleep(0);
 
     expect(socket.messages.slice(0, 2).map((message) => message.type)).toEqual(["grids.metadata.ready", "grids.metadata.event"]);
-    expect(socket.messages[0]?.payload?.cursor).toBe("9-0");
-    expect(socket.messages[1]?.payload?.cursor).toBe("9-1");
+    expect(socket.messages[0]?.payload?.cursor).toBe("s6t.test.9");
+    expect(socket.messages[1]?.payload?.cursor).toBe("s6t.test.9");
 
     readable = false;
     if (!refresh.current) throw new Error("Expected access refresh callback");
@@ -271,7 +272,7 @@ describe("Grids websocket server sessions", () => {
       {
         evaluateBaseAccess: async () => ({ ok: true, baseId }),
         evaluateSubscriptionAccess: async () => ({ ok: false, code: "access_denied", message: "ignored" }),
-        latestMetadataCursor: async () => "1-0",
+        latestMetadataCursor: async () => "s6t.test.1",
         metadataEvents: async function* ({ signal }: { signal?: AbortSignal }) {
           await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
         } as never,
@@ -304,11 +305,11 @@ describe("Grids websocket server sessions", () => {
     const session = workspaceSession("session", {
       evaluateBaseAccess: async () => ({ ok: true, baseId }),
       evaluateSubscriptionAccess: async () => ({ ok: true, baseId }),
-      latestMetadataCursor: async () => "9-0",
+      latestMetadataCursor: async () => "s6t.test.9",
       metadataEvents: async function* ({ signal }: { signal?: AbortSignal }) {
         for (let index = 0; index < tableIds.length; index++) {
           yield {
-            cursor: `9-${index + 1}`,
+            cursor: `s6t.test.${10 + index}`,
             data: {
               v: 1,
               type: "table.updated",
@@ -331,8 +332,8 @@ describe("Grids websocket server sessions", () => {
 
     expect(socket.messages.filter((message) => message.type === "grids.metadata.event")).toHaveLength(2);
     expect(socket.messages.filter((message) => message.type === "grids.metadata.event").map((message) => message.payload?.cursor)).toEqual([
-      "9-1",
-      "9-2",
+      "s6t.test.10",
+      "s6t.test.11",
     ]);
     await session.close();
   });
@@ -343,10 +344,10 @@ describe("Grids websocket server sessions", () => {
     const session = workspaceSession("session", {
       evaluateRecordsAccess: async () => access,
       evaluateSubscriptionAccess: async () => access,
-      latestRecordCursor: async () => "1-0",
+      latestRecordCursor: async () => "s6t.test.1",
       recordEvents: async function* ({ signal }: { signal?: AbortSignal }) {
         yield {
-          cursor: "1-1",
+          cursor: "s6t.test.1",
           data: {
             v: 1,
             type: "record.updated",
@@ -371,7 +372,7 @@ describe("Grids websocket server sessions", () => {
     await Bun.sleep(0);
 
     const eventMessage = socket.messages.find((message) => message.type === "grids.records.event");
-    expect(eventMessage?.payload?.cursor).toBe("1-1");
+    expect(eventMessage?.payload?.cursor).toBe("s6t.test.1");
     expect(eventMessage?.payload?.tableId).toBe(publicTableId);
     expect(eventMessage?.payload?.event).toMatchObject({ recordId: publicRecordId, version: 2 });
     await session.close();
@@ -383,7 +384,7 @@ describe("Grids websocket server sessions", () => {
     const socket = testSocket();
     const session = workspaceSession("session", {
       evaluateBaseAccess: async () => ({ ok: true, baseId }),
-      latestMetadataCursor: async () => "1-0",
+      latestMetadataCursor: async () => "s6t.test.1",
       metadataEvents: (({ signal }: { signal?: AbortSignal }) => {
         if (signal) signals.push(signal);
         return (async function* () {
@@ -398,7 +399,7 @@ describe("Grids websocket server sessions", () => {
     session.open(socket.socket);
     session.message(metadataSubscribe());
     await session.drain();
-    session.message(metadataSubscribe({ fromCursor: "2-0" }));
+    session.message(metadataSubscribe({ fromCursor: "s6t.test.2" }));
     await session.drain();
 
     expect(signals).toHaveLength(2);
@@ -427,5 +428,28 @@ describe("Grids websocket server sessions", () => {
     expect(socket.closes).toEqual([{ code: 1012, reason: "backpressure" }]);
     release();
     await session.drain();
+  });
+});
+
+describe("Grids cursor recovery protocol", () => {
+  test("asks clients to resnapshot when retained history is lost or the topic changes", async () => {
+    for (const error of [new CursorMismatchError("foreign topic"), new RetentionGapError("s6t.test.1", "s6t.test.9")]) {
+      const socket = testSocket();
+      const session = workspaceSession("session", {
+        evaluateBaseAccess: async () => ({ ok: true, baseId }),
+        metadataEvents: async function* () {
+          throw error;
+        },
+        schedule: (() => 1) as never,
+        cancel: (() => undefined) as never,
+      });
+      session.open(socket.socket);
+      session.message(metadataSubscribe());
+      await session.drain();
+      await Bun.sleep(0);
+      expect(socket.messages.at(-1)?.payload?.code).toBe("resync_required");
+      expect(socket.closes).toEqual([{ code: 1012, reason: "resync_required" }]);
+      await session.close();
+    }
   });
 });

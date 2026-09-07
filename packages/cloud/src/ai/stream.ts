@@ -1,5 +1,6 @@
-import { topic } from "@k2b/sync";
+import { lazySync } from "../_internal/process-sync";
 import { logger } from "../services/logging";
+import { latestTopicCursor } from "../services/topic-cursor";
 import {
   type AiStreamEvent,
   type AiTurnSnapshot,
@@ -20,22 +21,28 @@ const log = logger("ai:stream");
  * path never touches Postgres; durable state lives in ai.messages plus the
  * throttled ai.turns.live_blocks snapshot.
  */
-export const aiStreamTopic = topic<AiWireEvent>({
-  id: "cloud-ai-stream",
-  retentionMs: 15 * 60 * 1000,
-  limits: { payloadBytes: 256 * 1024 },
-});
+export const aiStreamTopic = lazySync((sync) =>
+  sync.topic<AiWireEvent>({
+    id: "cloud-ai-stream",
+    owner: "cloud",
+    retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 256 * 1024 * 1024 },
+    maxPayloadBytes: 257 * 1024,
+  }),
+);
 
 export type AiTurnControlEvent = { type: "abort"; conversationId: string; turnId: string };
 
-export const aiTurnControlsTopic = topic<AiTurnControlEvent>({
-  id: "cloud-ai-turn-controls",
-  retentionMs: 15 * 60 * 1000,
-  limits: { payloadBytes: 4 * 1024 },
-});
+export const aiTurnControlsTopic = lazySync((sync) =>
+  sync.topic<AiTurnControlEvent>({
+    id: "cloud-ai-turn-controls",
+    owner: "cloud",
+    retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 256 * 1024 * 1024 },
+    maxPayloadBytes: 5 * 1024,
+  }),
+);
 
 export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
-  await aiStreamTopic.pub({
+  await aiStreamTopic().publish({
     tenantId: event.conversationId,
     orderingKey: event.turnId,
     data: event,
@@ -44,7 +51,7 @@ export const publishAiWireEvent = async (event: AiWireEvent): Promise<void> => {
 };
 
 export const publishAiTurnAbort = async (input: { conversationId: string; turnId: string }): Promise<void> => {
-  await aiTurnControlsTopic.pub({
+  await aiTurnControlsTopic().publish({
     tenantId: input.conversationId,
     orderingKey: input.turnId,
     data: { type: "abort", conversationId: input.conversationId, turnId: input.turnId },
@@ -136,6 +143,9 @@ async function* streamSnapshotThenTail<TCursor, TSnapshot, TEvent>(input: {
  * that races the snapshot is replayed from the tail and deduplicated via
  * (attempt, seq). Events of unknown turns are dropped until their
  * `turn_started` arrives, which makes stale retention entries harmless.
+ * A memoized per-conversation hub preserves this snapshot race guarantee; it
+ * costs one full-topic follower per open conversation per process because Sync
+ * filters replay tenants locally. live() has no subscription-ready barrier.
  */
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
@@ -143,9 +153,9 @@ export async function* streamAiConversationEvents(input: {
 }): AsyncGenerator<AiStreamEvent> {
   let current: { turnId: string; publicTurnId: string; attempt: number; seq: number } | null = null;
   for await (const item of streamSnapshotThenTail({
-    captureCursor: async () => (await aiStreamTopic.latestCursor({ tenantId: input.conversation.id }).catch(() => null)) ?? "0-0",
+    captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
     loadSnapshot: () => loadAiStreamState(input.conversation),
-    tail: (after) => aiStreamTopic.live({ tenantId: input.conversation.id, after, signal: input.signal }),
+    tail: (after) => aiStreamTopic().hub({ tenantId: input.conversation.id }).subscribe({ after, signal: input.signal }),
   })) {
     if (item.kind === "snapshot") {
       const state = item.value;

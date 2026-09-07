@@ -204,8 +204,11 @@ const collectWire = async (conversationId: string, until: (event: AiWireEvent) =
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const after = (await aiStreamTopic.latestCursor({ tenantId: conversationId }).catch(() => null)) ?? "0-0";
-    for await (const received of aiStreamTopic.live({ tenantId: conversationId, after, signal: controller.signal })) {
+    const after =
+      (await aiStreamTopic()
+        .latestCursor({ tenantId: conversationId })
+        .catch(() => null)) ?? aiStreamTopic().cursorAt(0);
+    for await (const received of aiStreamTopic().hub({ tenantId: conversationId }).subscribe({ after, signal: controller.signal })) {
       events.push(received.data);
       if (until(received.data)) break;
     }

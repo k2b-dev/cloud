@@ -1,6 +1,6 @@
 import { currentPathWithQuery } from "@k2b/ssr/nav";
 import { i18n } from "@k2b/stdlib";
-import { retry } from "@k2b/sync/browser";
+import { retry } from "@k2b/sync/retry";
 import { useLocale } from "@k2b/ui";
 import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { onCleanup, onMount } from "solid-js";
@@ -115,6 +115,11 @@ export default function ContactsLiveEvents(props: Props) {
       parse: parseContactLiveServerMessage,
       classifyClose: ({ code, reason }) => (code === 1008 ? { code: reason || "access_denied", message: t().liveAccessChanged } : null),
       onMessage: (message, controls) => {
+        if (message.type === CONTACTS_LIVE_WS_TYPE.error && message.payload.code === "resync_required") {
+          controls.terminate({ code: message.payload.code, message: message.payload.message });
+          void waitForEditorsToClose(lifecycle.signal).then(replaceCurrentPage);
+          return;
+        }
         if (message.type === CONTACTS_LIVE_WS_TYPE.ready) {
           controls.markApplied(message.payload.cursor);
           return;

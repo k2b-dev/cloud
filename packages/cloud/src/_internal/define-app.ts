@@ -36,6 +36,7 @@ import { settings as settingsMiddleware } from "../server/middleware/settings";
 import {
   capabilityInvocationOperation,
   searchInvocationOperation,
+  syncInvocationOperation,
   widgetInvocationOperation,
 } from "../services/identity/invocation-operations";
 import { logger } from "../services/logging";
@@ -46,8 +47,8 @@ import { registerSettings, toLegacySettingDefs } from "../services/settings/defa
 import { createSyncOpsRoutes } from "../services/sync-ops";
 import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
-import { themeBootstrapScript } from "../shared/theme";
 import { escapeHtml } from "../shared/markdown/shared";
+import { themeBootstrapScript } from "../shared/theme";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -55,13 +56,13 @@ import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
 import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
+import { createPageResponses } from "./page-responses";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry, helpRegistry } from "./registry";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
-import { createPageResponses } from "./page-responses";
 
 /** Cache-busting version stamp — changes on every server start / rebuild. */
 const v = Date.now();
@@ -383,373 +384,400 @@ export const defineApp = <
     // One NATS connection and one Sync instance per process. Ready before
     // anything registers, so a discoverable app can always serve sync work.
     const processSync = await startProcessSync({ application: meta.id });
-    const startedAt = Date.now();
+    const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
+    let cleanupPromise: Promise<void> | undefined;
+    const stopStartedResources = (): Promise<void> =>
+      (cleanupPromise ??= (async () => {
+        for (const stop of cleanup.toReversed()) {
+          try {
+            await stop();
+          } catch (error) {
+            log.error("Application cleanup failed", { appId: meta.id, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      })());
+    try {
+      const startedAt = Date.now();
 
-    // OpenAPI advertised in the registry only when there's a router to
-    // derive the spec from. The mount block lower down uses the same
-    // flag so the registry never points at a URL that 404s.
-    const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
-    const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities) : undefined;
-    const compiledHelp = startOpts.help
-      ? compileHelp({
-          appId: meta.id,
-          appName: meta.name,
-          appIcon: meta.icon,
-          basePath: opts.basePath,
-          definition: startOpts.help,
-        })
-      : undefined;
+      // OpenAPI advertised in the registry only when there's a router to
+      // derive the spec from. The mount block lower down uses the same
+      // flag so the registry never points at a URL that 404s.
+      const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
+      const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities) : undefined;
+      const compiledHelp = startOpts.help
+        ? compileHelp({
+            appId: meta.id,
+            appName: meta.name,
+            appIcon: meta.icon,
+            basePath: opts.basePath,
+            definition: startOpts.help,
+          })
+        : undefined;
 
-    // Registry entry
-    const entry: AppRegistryEntry = {
-      id: meta.id,
-      name: meta.name,
-      icon: meta.icon,
-      description: meta.description,
-      presentation: meta.presentation,
-      appearance: meta.appearance,
-      baseUrl,
-      runtime: appRuntimeMetadata,
-      startedAt,
-      routes: [...meta.routes],
-      nav:
-        meta.nav || meta.adminHref
+      // Registry entry
+      const entry: AppRegistryEntry = {
+        id: meta.id,
+        name: meta.name,
+        icon: meta.icon,
+        description: meta.description,
+        presentation: meta.presentation,
+        appearance: meta.appearance,
+        baseUrl,
+        runtime: appRuntimeMetadata,
+        startedAt,
+        routes: [...meta.routes],
+        nav:
+          meta.nav || meta.adminHref
+            ? {
+                href: meta.nav?.href ?? "",
+                match: meta.nav?.match,
+                section: meta.nav?.section ?? "hidden",
+                requiresAuth: meta.nav?.requiresAuth,
+                requiresRoles: meta.nav?.requiresRoles,
+                adminHref: meta.adminHref,
+              }
+            : undefined,
+        adminNav: meta.adminNav?.map((group) => ({
+          id: group.id,
+          label: group.label,
+          links: group.links.map((link) => ({ ...link })),
+        })),
+        capabilities: compiledCapabilities
           ? {
-              href: meta.nav?.href ?? "",
-              match: meta.nav?.match,
-              section: meta.nav?.section ?? "hidden",
-              requiresAuth: meta.nav?.requiresAuth,
-              requiresRoles: meta.nav?.requiresRoles,
-              adminHref: meta.adminHref,
+              protocolVersion: compiledCapabilities.manifest.protocolVersion,
+              manifestHash: compiledCapabilities.manifest.manifestHash,
             }
           : undefined,
-      adminNav: meta.adminNav?.map((group) => ({
-        id: group.id,
-        label: group.label,
-        links: group.links.map((link) => ({ ...link })),
-      })),
-      capabilities: compiledCapabilities
-        ? {
-            protocolVersion: compiledCapabilities.manifest.protocolVersion,
-            manifestHash: compiledCapabilities.manifest.manifestHash,
-          }
-        : undefined,
-      help: compiledHelp?.summary,
-      legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
-      widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
-      settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
-      openapi: advertiseOpenapi ? opts.openapi : undefined,
-    };
-
-    // Heartbeat
-    const heartbeat = createHeartbeat(meta.id, entry, {
-      registry: appRegistry(),
-      onError: (error) =>
-        log.error("Registry heartbeat failed", {
-          appId: meta.id,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      onStale: (error) => {
-        log.error("Registry heartbeat could not renew the app lease; restarting", {
-          appId: meta.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        process.exit(1);
-      },
-    });
-    const capabilityEntry: CapabilityRegistryRecord | undefined = compiledCapabilities
-      ? {
-          appId: meta.id,
-          manifest: compiledCapabilities.manifest,
-          presentation: compiledCapabilities.presentation,
-        }
-      : undefined;
-    const capabilityHeartbeat = capabilityEntry
-      ? createHeartbeat(meta.id, capabilityEntry, {
-          key: `capabilities/${meta.id}`,
-          registry: capabilityRegistry(),
-          onError: (error) =>
-            log.error("Capability registry heartbeat failed", {
-              appId: meta.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          onStale: (error) => {
-            log.error("Capability registry lease expired; restarting", {
-              appId: meta.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            process.exit(1);
-          },
-        })
-      : undefined;
-    const helpHeartbeat = compiledHelp
-      ? createHeartbeat(meta.id, compiledHelp.registryEntry, {
-          key: `help/${meta.id}`,
-          registry: helpRegistry(),
-          onError: (error) =>
-            log.error("Help registry heartbeat failed", {
-              appId: meta.id,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          onStale: (error) => {
-            log.error("Help registry lease expired; restarting", {
-              appId: meta.id,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            process.exit(1);
-          },
-        })
-      : undefined;
-    try {
-      // Publish the corpus before the app advertises its manifest.
-      await helpHeartbeat?.start();
-      await heartbeat.start();
-      await capabilityHeartbeat?.start();
-    } catch (error) {
-      await capabilityHeartbeat?.stop();
-      await heartbeat.stop();
-      await helpHeartbeat?.stop();
-      throw error;
-    }
-    log.info(`Registered "${meta.id}"`, { baseUrl });
-
-    // Runtime context — start the registry watcher so middleware.runtime() and
-    // the lifecycle context below see populated cluster state. Idempotent: the
-    // watcher is a module-level singleton, only one runs per process.
-    await ensureRuntimeWatcher();
-
-    // Build Hono server. Framework owns these mounts (registered first so
-    // they take precedence over any catch-all in the user's fetch):
-    //   /_ssr/*                 island chunks (SSR adapter)
-    //   /public/*               serveStatic + terminal 404
-    //   /api/_internal/capabilities/v1/* when capabilities are declared
-    //   /api/_internal/widgets/v1/*     when widget handlers are bound
-    //   /_internal/sync/*       process-local sync operations (admin only)
-    //   <opts.openapi>          OpenAPI JSON spec, when both opts.openapi
-    //                            and startOpts.openapi are set
-    const ssrMountPath = config.basePath ? `${config.basePath}/_ssr` : "/_ssr";
-
-    // Framework-owned mounts answer before the app's router ever runs, so the
-    // app middleware cannot report their template. Without this, every hashed
-    // island chunk would land in telemetry as its own route.
-    const server = new Hono<AuthContext>()
-      .use("*", routeTemplate)
-      .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
-      .route(ssrMountPath, routes(config))
-      .all(`${ssrMountPath}/*`, (c) => c.notFound())
-      .all("/public/*", servePublicAsset(isDevelopment))
-      .use("/_internal/sync/*", auth.requireRole("admin"))
-      .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
-
-    if (compiledHelp) {
-      const pageBase = compiledHelp.summary.pageBase;
-      const centralPageBase = `/help/apps/${encodeURIComponent(meta.id)}`;
-      server.get(pageBase, (c) => c.redirect(centralPageBase, 302));
-      server.get(`${pageBase}/:topic`, (c) => c.redirect(`${centralPageBase}/${encodeURIComponent(c.req.param("topic"))}`, 302));
-    }
-
-    if (compiledCapabilities) {
-      const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") => {
-        // Framework-owned endpoints run before the app's settings middleware,
-        // so the operator default is read directly instead of via a snapshot.
-        const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
-        const messages = capabilityMessages(requestLocale);
-        const parsedBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-        if (!parsedBody.ok) {
-          const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
-          return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
-        }
-        if (
-          typeof parsedBody.data !== "object" ||
-          parsedBody.data === null ||
-          Array.isArray(parsedBody.data) ||
-          !Object.hasOwn(parsedBody.data, "input") ||
-          Object.keys(parsedBody.data).length !== 1
-        ) {
-          return c.json(
-            {
-              code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
-              message: messages.requestInputOnly,
-            },
-            400,
-          );
-        }
-        const body = parsedBody.data as { input: unknown };
-        const actor = c.get("actor");
-        const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-        const idempotencyKey = c.req.header("idempotency-key") || undefined;
-        const invocation = {
-          compiled: compiledCapabilities,
-          localId: c.req.param("capabilityId") ?? "",
-          input: body.input,
-          expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
-          context: {
-            actor,
-            accessSubject: c.get("accessSubject"),
-            user,
-            idempotencyKey,
-            locale: requestLocale,
-            signal: c.req.raw.signal,
-          },
-          onUnexpectedError: (error: unknown) =>
-            log.error(kind === "review" ? "Capability review failed" : "Capability execution failed", {
-              appId: meta.id,
-              kind,
-              capabilityId: c.req.param("capabilityId") ?? "",
-              error: error instanceof Error ? error.message : String(error),
-            }),
-        };
-        const result =
-          kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
-        const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
-        const serialized = serializeCapabilityProviderResult(result, {
-          nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
-        });
-        return new Response(serialized.body, {
-          status: serialized.status,
-          headers: { "content-type": "application/json" },
-        });
+        help: compiledHelp?.summary,
+        legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
+        widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
+        settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
+        openapi: advertiseOpenapi ? opts.openapi : undefined,
       };
-      const capabilityAuth = (kind: "queries" | "actions", review = false) =>
-        requireInvocation((c) => {
-          const localId = c.req.param("capabilityId") ?? "";
-          const operation = kind === "queries" ? compiledCapabilities.queries.get(localId) : compiledCapabilities.actions.get(localId);
-          if (!operation) return null;
-          const requestedOperation = c.req.header("x-cloud-invocation-operation");
-          const invocationOperation =
-            kind === "queries" &&
-            requestedOperation === searchInvocationOperation &&
-            "universalSearch" in operation.manifest &&
-            operation.manifest.universalSearch
-              ? searchInvocationOperation
-              : capabilityInvocationOperation(kind, localId, review);
-          return {
-            targetAppId: meta.id,
-            operation: invocationOperation,
-            schemaHash: operation.manifest.schemaHash,
-          };
-        });
-      const capabilityReadScope = auth.requireOAuthScope("read", "admin");
-      const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
-      server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
-        invoke(c, "query"),
-      );
-      server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth("actions"), capabilityWriteScope, (c) =>
-        invoke(c, "action"),
-      );
-      server.post(
-        "/api/_internal/capabilities/v1/actions/:capabilityId/review",
-        capabilityAuth("actions", true),
-        capabilityReadScope,
-        (c) => invoke(c, "review"),
-      );
-    }
 
-    if (startOpts.widgets) {
-      const declaredWidgetIds = new Set(meta.widgets?.map((widget) => widget.id) ?? []);
-      for (const widgetId of Object.keys(startOpts.widgets)) {
-        if (!declaredWidgetIds.has(widgetId)) throw new Error(`Widget handler "${widgetId}" is not declared by app "${meta.id}"`);
-      }
-      server.get(
-        "/api/_internal/widgets/v1/:widgetId",
-        requireInvocation((c) => {
-          const widgetId = c.req.param("widgetId") ?? "";
-          if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
-          return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
-        }),
-        auth.requireOAuthScope("read", "admin"),
-        runtimeMiddleware(),
-        settingsMiddleware(),
-        async (c) => {
-          const handler = startOpts.widgets?.[c.req.param("widgetId") ?? ""];
-          return handler ? handler(c, async () => {}) : c.json({ message: "Widget not found" }, 404);
-        },
-      );
-    }
-
-    // OpenAPI spec mount. Registered on the framework server (before the
-    // user-fetch catch-all below) so it bypasses any auth / rate-limit
-    // middleware on the api router — the spec must stay reachable without
-    // a session for `app-api-docs` to render it.
-    //
-    // The `servers` override is load-bearing: hono-openapi walks the
-    // BARE api router and emits paths relative to its own root (e.g.
-    // `/{id}`, `/{id}/notes`), without the `/api/<id>` prefix it ends
-    // up under in the user's outer router. We derive that prefix from
-    // `opts.openapi` (everything before the trailing `/openapi.json`)
-    // so combined Scalar URLs resolve to the real public paths.
-    if (advertiseOpenapi) {
-      const apiPrefix = opts.openapi!.replace(/\/openapi\.json$/, "") || "/";
-      const spec = await generateSpecs(startOpts.openapi!, {
-        documentation: {
-          info: {
-            title: meta.name,
-            version: "0.0.1",
-            description: meta.description,
-          },
-          servers: [{ url: apiPrefix }],
+      // Heartbeat
+      const heartbeat = createHeartbeat(meta.id, entry, {
+        registry: appRegistry(),
+        onError: (error) =>
+          log.error("Registry heartbeat failed", {
+            appId: meta.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        onStale: (error) => {
+          log.error("Registry heartbeat could not renew the app lease; restarting", {
+            appId: meta.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          process.exit(1);
         },
       });
-      server.get(opts.openapi!, (c) => c.json(spec));
-    }
+      const capabilityEntry: CapabilityRegistryRecord | undefined = compiledCapabilities
+        ? {
+            appId: meta.id,
+            manifest: compiledCapabilities.manifest,
+            presentation: compiledCapabilities.presentation,
+          }
+        : undefined;
+      const capabilityHeartbeat = capabilityEntry
+        ? createHeartbeat(meta.id, capabilityEntry, {
+            key: `capabilities/${meta.id}`,
+            registry: capabilityRegistry(),
+            onError: (error) =>
+              log.error("Capability registry heartbeat failed", {
+                appId: meta.id,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            onStale: (error) => {
+              log.error("Capability registry lease expired; restarting", {
+                appId: meta.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              process.exit(1);
+            },
+          })
+        : undefined;
+      const helpHeartbeat = compiledHelp
+        ? createHeartbeat(meta.id, compiledHelp.registryEntry, {
+            key: `help/${meta.id}`,
+            registry: helpRegistry(),
+            onError: (error) =>
+              log.error("Help registry heartbeat failed", {
+                appId: meta.id,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            onStale: (error) => {
+              log.error("Help registry lease expired; restarting", {
+                appId: meta.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              process.exit(1);
+            },
+          })
+        : undefined;
+      cleanup.push(async () => {
+        await helpHeartbeat?.stop();
+      });
+      cleanup.push(async () => {
+        await capabilityHeartbeat?.stop();
+      });
+      cleanup.push(() => heartbeat.stop());
 
-    // User's fetch handles everything else. The framework doesn't inject any
-    // context vars here — the user's router is expected to register the
-    // middlewares it needs (middleware.runtime, middleware.settings, …).
-    //
-    // env is threaded through so Bun-specific helpers inside the user's
-    // router still work — most importantly `upgradeWebSocket` from hono/bun,
-    // which reads the Bun server off `c.env`.
-    server.all("*", (c) => Promise.resolve(startOpts.fetch(c.req.raw, c.env)));
+      // Runtime context — start the registry watcher so middleware.runtime() and
+      // the lifecycle context below see populated cluster state. Idempotent: the
+      // watcher is a module-level singleton, only one runs per process.
+      cleanup.push(() => stopRuntimeWatcher());
+      await ensureRuntimeWatcher();
 
-    // Lifecycle
-    const cloudCtx: CloudLifecycleContext = {
-      logger,
-      settings: { get, set },
-      runtime: getCurrentRuntime(),
-      sync: processSync.sync,
-    };
+      // Build Hono server. Framework owns these mounts (registered first so
+      // they take precedence over any catch-all in the user's fetch):
+      //   /_ssr/*                 island chunks (SSR adapter)
+      //   /public/*               serveStatic + terminal 404
+      //   /api/_internal/capabilities/v1/* when capabilities are declared
+      //   /api/_internal/widgets/v1/*     when widget handlers are bound
+      //   /_internal/sync/*       process-local sync operations (admin only)
+      //   <opts.openapi>          OpenAPI JSON spec, when both opts.openapi
+      //                            and startOpts.openapi are set
+      const ssrMountPath = config.basePath ? `${config.basePath}/_ssr` : "/_ssr";
 
-    if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
-      log.info(`Setup: ${meta.id}`);
-      await startOpts.lifecycle.setup(cloudCtx);
-    }
+      // Framework-owned mounts answer before the app's router ever runs, so the
+      // app middleware cannot report their template. Without this, every hashed
+      // island chunk would land in telemetry as its own route.
+      const server = new Hono<AuthContext>()
+        .use("*", routeTemplate)
+        .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
+        .route(ssrMountPath, routes(config))
+        .all(`${ssrMountPath}/*`, (c) => c.notFound())
+        .all("/public/*", servePublicAsset(isDevelopment))
+        .use(
+          "/_internal/sync/*",
+          requireInvocation((c) => ({
+            targetAppId: meta.id,
+            operation: syncInvocationOperation(c.req.method, new URL(c.req.url).pathname.slice("/_internal/sync".length)),
+            schemaHash: null,
+          })),
+        )
+        .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
+        .use("/_internal/sync/*", async (c, next) => {
+          if (!c.get("user")?.roles.includes("admin")) return c.json({ message: "Insufficient permissions" }, 403);
+          return next();
+        })
+        .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
 
-    const stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
-
-    await loadSettingsCache();
-
-    if (startOpts.lifecycle?.start) {
-      log.info(`Start: ${meta.id}`);
-      await startOpts.lifecycle.start(cloudCtx);
-    }
-
-    // Graceful shutdown
-    let stopping = false;
-    const shutdown = async () => {
-      if (stopping) return;
-      stopping = true;
-      log.info(`Stopping: ${meta.id}`);
-      try {
-        if (startOpts.lifecycle?.stop) await startOpts.lifecycle.stop(cloudCtx);
-      } catch {}
-      stopNotificationRegistration();
-      await stopRuntimeWatcher();
-      await capabilityHeartbeat?.stop();
-      await heartbeat.stop();
-      await helpHeartbeat?.stop();
-      // Sync work drains before the NATS connection; the registry writes above needed both.
-      try {
-        await processSync.stop();
-      } catch (error) {
-        log.error("Sync shutdown failed", { appId: meta.id, error: error instanceof Error ? error.message : String(error) });
+      if (compiledHelp) {
+        const pageBase = compiledHelp.summary.pageBase;
+        const centralPageBase = `/help/apps/${encodeURIComponent(meta.id)}`;
+        server.get(pageBase, (c) => c.redirect(centralPageBase, 302));
+        server.get(`${pageBase}/:topic`, (c) => c.redirect(`${centralPageBase}/${encodeURIComponent(c.req.param("topic"))}`, 302));
       }
-    };
 
-    process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
-    process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
+      if (compiledCapabilities) {
+        const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") => {
+          // Framework-owned endpoints run before the app's settings middleware,
+          // so the operator default is read directly instead of via a snapshot.
+          const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
+          const messages = capabilityMessages(requestLocale);
+          const parsedBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+          if (!parsedBody.ok) {
+            const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
+            return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
+          }
+          if (
+            typeof parsedBody.data !== "object" ||
+            parsedBody.data === null ||
+            Array.isArray(parsedBody.data) ||
+            !Object.hasOwn(parsedBody.data, "input") ||
+            Object.keys(parsedBody.data).length !== 1
+          ) {
+            return c.json(
+              {
+                code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
+                message: messages.requestInputOnly,
+              },
+              400,
+            );
+          }
+          const body = parsedBody.data as { input: unknown };
+          const actor = c.get("actor");
+          const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+          const idempotencyKey = c.req.header("idempotency-key") || undefined;
+          const invocation = {
+            compiled: compiledCapabilities,
+            localId: c.req.param("capabilityId") ?? "",
+            input: body.input,
+            expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
+            context: {
+              actor,
+              accessSubject: c.get("accessSubject"),
+              user,
+              idempotencyKey,
+              locale: requestLocale,
+              signal: c.req.raw.signal,
+            },
+            onUnexpectedError: (error: unknown) =>
+              log.error(kind === "review" ? "Capability review failed" : "Capability execution failed", {
+                appId: meta.id,
+                kind,
+                capabilityId: c.req.param("capabilityId") ?? "",
+                error: error instanceof Error ? error.message : String(error),
+              }),
+          };
+          const result =
+            kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
+          const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
+          const serialized = serializeCapabilityProviderResult(result, {
+            nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
+          });
+          return new Response(serialized.body, {
+            status: serialized.status,
+            headers: { "content-type": "application/json" },
+          });
+        };
+        const capabilityAuth = (kind: "queries" | "actions", review = false) =>
+          requireInvocation((c) => {
+            const localId = c.req.param("capabilityId") ?? "";
+            const operation = kind === "queries" ? compiledCapabilities.queries.get(localId) : compiledCapabilities.actions.get(localId);
+            if (!operation) return null;
+            const requestedOperation = c.req.header("x-cloud-invocation-operation");
+            const invocationOperation =
+              kind === "queries" &&
+              requestedOperation === searchInvocationOperation &&
+              "universalSearch" in operation.manifest &&
+              operation.manifest.universalSearch
+                ? searchInvocationOperation
+                : capabilityInvocationOperation(kind, localId, review);
+            return {
+              targetAppId: meta.id,
+              operation: invocationOperation,
+              schemaHash: operation.manifest.schemaHash,
+            };
+          });
+        const capabilityReadScope = auth.requireOAuthScope("read", "admin");
+        const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
+        server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
+          invoke(c, "query"),
+        );
+        server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth("actions"), capabilityWriteScope, (c) =>
+          invoke(c, "action"),
+        );
+        server.post(
+          "/api/_internal/capabilities/v1/actions/:capabilityId/review",
+          capabilityAuth("actions", true),
+          capabilityReadScope,
+          (c) => invoke(c, "review"),
+        );
+      }
 
-    return { hostname: "0.0.0.0", port, development: isDevelopment, fetch: server.fetch };
+      if (startOpts.widgets) {
+        const declaredWidgetIds = new Set(meta.widgets?.map((widget) => widget.id) ?? []);
+        for (const widgetId of Object.keys(startOpts.widgets)) {
+          if (!declaredWidgetIds.has(widgetId)) throw new Error(`Widget handler "${widgetId}" is not declared by app "${meta.id}"`);
+        }
+        server.get(
+          "/api/_internal/widgets/v1/:widgetId",
+          requireInvocation((c) => {
+            const widgetId = c.req.param("widgetId") ?? "";
+            if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
+            return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
+          }),
+          auth.requireOAuthScope("read", "admin"),
+          runtimeMiddleware(),
+          settingsMiddleware(),
+          async (c) => {
+            const handler = startOpts.widgets?.[c.req.param("widgetId") ?? ""];
+            return handler ? handler(c, async () => {}) : c.json({ message: "Widget not found" }, 404);
+          },
+        );
+      }
+
+      // OpenAPI spec mount. Registered on the framework server (before the
+      // user-fetch catch-all below) so it bypasses any auth / rate-limit
+      // middleware on the api router — the spec must stay reachable without
+      // a session for `app-api-docs` to render it.
+      //
+      // The `servers` override is load-bearing: hono-openapi walks the
+      // BARE api router and emits paths relative to its own root (e.g.
+      // `/{id}`, `/{id}/notes`), without the `/api/<id>` prefix it ends
+      // up under in the user's outer router. We derive that prefix from
+      // `opts.openapi` (everything before the trailing `/openapi.json`)
+      // so combined Scalar URLs resolve to the real public paths.
+      if (advertiseOpenapi) {
+        const apiPrefix = opts.openapi!.replace(/\/openapi\.json$/, "") || "/";
+        const spec = await generateSpecs(startOpts.openapi!, {
+          documentation: {
+            info: {
+              title: meta.name,
+              version: "0.0.1",
+              description: meta.description,
+            },
+            servers: [{ url: apiPrefix }],
+          },
+        });
+        server.get(opts.openapi!, (c) => c.json(spec));
+      }
+
+      // User's fetch handles everything else. The framework doesn't inject any
+      // context vars here — the user's router is expected to register the
+      // middlewares it needs (middleware.runtime, middleware.settings, …).
+      //
+      // env is threaded through so Bun-specific helpers inside the user's
+      // router still work — most importantly `upgradeWebSocket` from hono/bun,
+      // which reads the Bun server off `c.env`.
+      server.all("*", (c) => Promise.resolve(startOpts.fetch(c.req.raw, c.env)));
+
+      // Lifecycle
+      const cloudCtx: CloudLifecycleContext = {
+        logger,
+        settings: { get, set },
+        runtime: getCurrentRuntime(),
+        sync: processSync.sync,
+      };
+
+      let stopNotificationRegistration: (() => void) | undefined;
+      cleanup.push(() => stopNotificationRegistration?.());
+      const stopLifecycle = startOpts.lifecycle?.stop;
+      if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
+
+      if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
+        log.info(`Setup: ${meta.id}`);
+        await startOpts.lifecycle.setup(cloudCtx);
+      }
+
+      stopNotificationRegistration = await startNotificationDefinitionRegistration(meta.id, notifications);
+
+      await loadSettingsCache();
+
+      if (startOpts.lifecycle?.start) {
+        log.info(`Start: ${meta.id}`);
+        await startOpts.lifecycle.start(cloudCtx);
+      }
+
+      // Provision resources declared during application setup before exposing readiness.
+      await processSync.sync.ready();
+
+      // Only advertise after setup, workers, and their declared resources are ready.
+      // Publish supporting entries first; the app entry makes them discoverable.
+      await helpHeartbeat?.start();
+      await capabilityHeartbeat?.start();
+      await heartbeat.start();
+      log.info(`Registered "${meta.id}"`, { baseUrl });
+
+      // Graceful shutdown
+      let stopping = false;
+      const shutdown = async () => {
+        if (stopping) return;
+        stopping = true;
+        log.info(`Stopping: ${meta.id}`);
+        await stopStartedResources();
+      };
+
+      process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
+      process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
+
+      return { hostname: "0.0.0.0", port, development: isDevelopment, fetch: server.fetch };
+    } catch (error) {
+      await stopStartedResources();
+      throw error;
+    }
   };
 
   return {

@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { job } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
+import { lazySync } from "../../_internal/process-sync";
 import { markdown } from "../../shared/markdown";
 import { logger, trace } from "../logging";
 import { parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
+import { syncOps } from "../sync-ops";
 import { sendEmail } from "./email";
 
 const log = logger("notifications:batches");
@@ -353,42 +355,51 @@ const processBatchChunk = async (batchId: string): Promise<{ processed: number; 
   return { processed: recipients.length, remaining };
 };
 
-const batchJob = job<{ batchId: string }, { processed: number; remaining: number }>({
-  id: "notifications:batches",
-  defaults: { leaseMs: 180_000 },
-  trace: trace.fromSyncJob<{ batchId: string }, { processed: number; remaining: number }>({
-    name: "Notification batch delivery",
-    source: "notifications:batches",
-    appId: "core",
-    attributes: (event) => ("input" in event && event.input?.batchId ? { "cloud.notification.batch_id": event.input.batchId } : {}),
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return { processed: 0, remaining: 0 };
-    const result = await processBatchChunk(ctx.input.batchId);
-    await ctx.heartbeat();
-    return result;
-  },
-  after: async ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 3) {
-      ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 1000, maxMs: 30_000 }) });
-      return;
-    }
-    if (ctx.error) {
-      const message = ctx.error.message;
-      log.error("Notification batch job failed", { batchId: ctx.input.batchId, failureCount: ctx.failureCount, error: message });
-      await sql`
-        UPDATE notifications.batches
-        SET status = 'failed', completed_at = now(), last_error = ${message}
-        WHERE id = ${ctx.input.batchId}::uuid AND status IN ('ready', 'running')
-      `;
-      return;
-    }
-    if (ctx.data && ctx.data.remaining > 0) {
-      ctx.reschedule({ delayMs: ctx.data.processed > 0 ? 0 : 60_000 });
-    }
-  },
+const batchJob = lazySync((sync) => {
+  const handle = sync.job<{ batchId: string }>({
+    id: "notifications:batches",
+    owner: "core",
+    delivery: { ackWaitMs: 180_000, maxAttempts: 4, backoffMs: [1_000, 2_000, 4_000] },
+  });
+  syncOps.registerDeadLetters({ name: "notifications:batches", kind: "job", store: handle.deadLetters });
+  return handle;
 });
+let batchWorker: Worker | undefined;
+const startBatchWorker = () =>
+  batchJob().process(
+    {
+      onError: async ({ context, error }) => {
+        if (context.attempt < 4) return { action: "retry" };
+        const message = error instanceof Error ? error.message : String(error);
+        log.error("Notification batch job failed", { batchId: context.input.batchId, attempt: context.attempt, error: message });
+        await sql`
+      UPDATE notifications.batches
+      SET status = 'failed', completed_at = now(), last_error = ${message}
+      WHERE id = ${context.input.batchId}::uuid AND status IN ('ready', 'running')
+    `;
+        return { action: "dead_letter", reason: message };
+      },
+    },
+    async (ctx) => {
+      if (ctx.signal.aborted) return;
+      const result = await trace.withSpan(
+        {
+          name: "Notification batch delivery",
+          source: "notifications:batches",
+          appId: "core",
+          category: "job",
+          kind: "consumer",
+          attributes: { "cloud.notification.batch_id": ctx.input.batchId },
+        },
+        () => processBatchChunk(ctx.input.batchId),
+        { summarize: (summary) => summary },
+      );
+      await ctx.heartbeat();
+      if (result.remaining > 0) await ctx.resubmit({ delayMs: result.processed > 0 ? 0 : 60_000 });
+    },
+  );
+const submitBatch = async (batchId: string): Promise<string> =>
+  (await batchJob().submit({ key: batchId, input: { batchId }, coalesce: true })).jobId;
 
 export const createDraft = async (params: {
   subject: string;
@@ -568,7 +579,7 @@ export const finalize = async (params: {
   });
 
   if (!result.ok) return result;
-  const jobId = await batchJob.submit({ key: params.id, input: { batchId: params.id } });
+  const jobId = await submitBatch(params.id);
   return ok({ batch: result.data, jobId });
 };
 
@@ -595,7 +606,7 @@ export const retryFailed = async (params: { id: string }): Promise<Result<{ batc
     WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
   `;
   const refreshed = await refreshBatchCounters(params.id);
-  const jobId = await batchJob.submit({ key: `${params.id}:retry:${Date.now()}`, input: { batchId: params.id } });
+  const jobId = await submitBatch(params.id);
   return ok({ batch: refreshed ?? batch, jobId });
 };
 
@@ -634,7 +645,7 @@ export const retryRecipient = async (params: {
     WHERE id = ${params.id}::uuid AND status IN ('completed_with_errors', 'failed', 'running', 'ready', 'completed')
   `;
   const refreshed = await refreshBatchCounters(params.id);
-  const jobId = await batchJob.submit({ key: `${params.id}:recipient:${params.userId}:${Date.now()}`, input: { batchId: params.id } });
+  const jobId = await submitBatch(params.id);
   return ok({ batch: refreshed ?? batch, jobId });
 };
 
@@ -652,11 +663,35 @@ export const removeDraft = async (params: { id: string }): Promise<Result<{ id: 
 };
 
 export const start = async (): Promise<void> => {
-  // Jobs are submitted manually. This hook keeps service startup symmetrical
-  // with other background services and gives future schedulers a stable home.
+  if (batchWorker) return;
+  batchWorker = await startBatchWorker();
+  try {
+    // Postgres owns the batch state; recover unfinished work across cutover and
+    // restarts with keyset pages rather than an unbounded startup scan.
+    let after: string | null = null;
+    while (true) {
+      const pending: { id: string }[] = await sql`
+        SELECT id FROM notifications.batches
+        WHERE status IN ('ready', 'running') AND (${after}::uuid IS NULL OR id > ${after}::uuid)
+        ORDER BY id LIMIT ${CHUNK_SIZE}
+      `;
+      for (const batch of pending) await submitBatch(batch.id);
+      if (pending.length < CHUNK_SIZE) break;
+      after = pending[pending.length - 1]!.id;
+    }
+  } catch (error) {
+    batchWorker.stop();
+    await batchWorker.drain();
+    batchWorker = undefined;
+    throw error;
+  }
 };
 
-export const stop = async (): Promise<void> => {};
+export const stop = async (): Promise<void> => {
+  batchWorker?.stop();
+  await batchWorker?.drain();
+  batchWorker = undefined;
+};
 
 export const notificationBatches = {
   createDraft,

@@ -11,7 +11,7 @@ export const NOTIFICATION_LIVE_WS_TYPE = {
 
 export const NotificationStreamCursorSchema = z
   .string()
-  .regex(/^\d+-\d+$/)
+  .regex(/^s6t\.[A-Za-z0-9_-]+\.\d+$/)
   .max(80);
 
 const NotificationTargetHrefSchema = z.custom<`/${string}`>(

@@ -3,10 +3,13 @@ import { compareStreamCursor, fromBase64, maxStreamCursor, parseStreamCursor, to
 
 describe("notebook Yjs stream helpers", () => {
   test("parses and orders valid stream cursors", () => {
-    expect(parseStreamCursor("100-2")).toEqual({ ms: 100, seq: 2 });
+    expect(parseStreamCursor("s6t.abc.2")).toEqual({ resource: "abc", seq: 2 });
     expect(parseStreamCursor("invalid")).toBeNull();
-    expect(compareStreamCursor("100-2", "100-3")).toBeLessThan(0);
-    expect(maxStreamCursor("100-2", "101-0")).toBe("101-0");
+    expect(parseStreamCursor("100-2")).toBeNull();
+    expect(() => compareStreamCursor("s6t.abc.2", "s6t.other.3")).toThrow();
+    expect(parseStreamCursor("s6t.abc.9007199254740992")).toBeNull();
+    expect(compareStreamCursor("s6t.abc.2", "s6t.abc.3")).toBeLessThan(0);
+    expect(maxStreamCursor("s6t.abc.2", "s6t.abc.10")).toBe("s6t.abc.10");
   });
 
   test("round-trips base64 and rejects malformed updates", () => {

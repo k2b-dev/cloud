@@ -1,5 +1,6 @@
-import { job } from "@k2b/sync";
-import { logger, trace } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { logger, syncOps, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildGatewayHealth, type GatewayHealth, type GatewayHealthStatus, scopeGatewayHealth } from "./health";
 
@@ -241,31 +242,41 @@ const sendWebhook = async (webhook: HealthWebhook, health: GatewayHealth, mode: 
   }
 };
 
-export const healthWebhookDeliveryJob = job<{ webhookId: string; mode?: "scheduled" | "test" }, void>({
-  id: "gateway:health-webhook-delivery",
-  defaults: { leaseMs: 60_000 },
-  trace: trace.fromSyncJob<{ webhookId: string; mode?: "scheduled" | "test" }, void>({
-    name: "Gateway health webhook delivery",
-    source: "gateway:health-webhook-delivery",
-    appId: "gateway-ops",
-    attributes: (event) =>
-      "input" in event && event.input
-        ? {
-            "cloud.gateway.webhook_id": event.input.webhookId,
-            "cloud.gateway.webhook_mode": event.input.mode ?? "scheduled",
-          }
-        : {},
-  }),
-  process: async ({ ctx }) => {
-    const webhook = await getHealthWebhook(ctx.input.webhookId);
-    if (!webhook) return;
-    const health = await scopedHealth(webhook);
-    await sendWebhook(webhook, health, ctx.input.mode ?? "scheduled");
-  },
-  after: ({ ctx }) => {
-    if (ctx.error && ctx.failureCount < 2) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 1000, maxMs: 60_000 }) });
-  },
+export const healthWebhookDeliveryJob = lazySync((sync) => {
+  const job = sync.job<{ webhookId: string; mode?: "scheduled" | "test" }>({
+    id: "gateway:health-webhook-delivery",
+    delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },
+  });
+  syncOps.registerDeadLetters({ name: "gateway:health-webhook-delivery", kind: "job", store: job.deadLetters });
+  return job;
 });
+
+let deliveryWorker: Worker | undefined;
+export const startHealthWebhookDelivery = async (): Promise<void> => {
+  deliveryWorker ??= await healthWebhookDeliveryJob().process({}, async (context) => {
+    await trace.withSpan(
+      {
+        name: "Gateway health webhook delivery",
+        source: "gateway:health-webhook-delivery",
+        appId: "gateway-ops",
+        category: "job",
+        attributes: {
+          "cloud.gateway.webhook_id": context.input.webhookId,
+          "cloud.gateway.webhook_mode": context.input.mode ?? "scheduled",
+        },
+      },
+      async () => {
+        const webhook = await getHealthWebhook(context.input.webhookId);
+        if (!webhook) return;
+        await sendWebhook(webhook, await scopedHealth(webhook), context.input.mode ?? "scheduled");
+      },
+    );
+  });
+};
+export const stopHealthWebhookDelivery = async (): Promise<void> => {
+  await deliveryWorker?.drain();
+  deliveryWorker = undefined;
+};
 
 export const runHealthWebhookCheck = async (): Promise<{ checked: number; submitted: number }> => {
   const webhooks = await listHealthWebhooks();
@@ -276,7 +287,7 @@ export const runHealthWebhookCheck = async (): Promise<{ checked: number; submit
     const health = await scopedHealth(webhook, baseHealth);
     await sql`UPDATE gateway.health_webhooks SET last_status = ${health.status}, updated_at = now() WHERE id = ${webhook.id}::uuid`;
     if (!shouldSend(webhook, health.status, now)) continue;
-    await healthWebhookDeliveryJob.submit({
+    await healthWebhookDeliveryJob().submit({
       key: `${webhook.id}:${health.status}:${Math.floor(now / 60_000)}`,
       input: { webhookId: webhook.id },
     });
@@ -287,4 +298,4 @@ export const runHealthWebhookCheck = async (): Promise<{ checked: number; submit
 };
 
 export const testHealthWebhook = async (id: string): Promise<string> =>
-  healthWebhookDeliveryJob.submit({ key: `test:${id}:${Date.now()}`, input: { webhookId: id, mode: "test" } });
+  (await healthWebhookDeliveryJob().submit({ key: `test:${id}:${Date.now()}`, input: { webhookId: id, mode: "test" } })).jobId;

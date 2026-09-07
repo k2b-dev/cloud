@@ -1,5 +1,6 @@
+import type { Lock, Mutex } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
 import { createRuntimeLifecycle, logger } from "@valentinkolb/cloud/services";
-import { type Lock, type Mutex, mutex } from "@k2b/sync";
 import { sql } from "bun";
 import { parseConnectorCapabilities } from "../contracts";
 import { sha256Json } from "./canonical";
@@ -78,17 +79,21 @@ type ImapPushRuntimeDependencies = {
   sleep(ms: number, signal: AbortSignal): Promise<void>;
 };
 
-const listenerLeaderMutex = mutex({
-  id: "mail:imap-push-leader",
-  defaultTtl: LEADER_LEASE_MS,
-  retryCount: 0,
-});
+const listenerLeaderMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:imap-push-leader",
+    ttlMs: LEADER_LEASE_MS,
+    retry: { maxAttempts: 1 },
+  }),
+);
 
-const listenerPermitMutex = mutex({
-  id: "mail:imap-push-connection",
-  defaultTtl: CONNECTION_LEASE_MS,
-  retryCount: 0,
-});
+const listenerPermitMutex = lazySync((sync) =>
+  sync.mutex({
+    id: "mail:imap-push-connection",
+    ttlMs: CONNECTION_LEASE_MS,
+    retry: { maxAttempts: 1 },
+  }),
+);
 
 const sleep = async (ms: number, signal: AbortSignal): Promise<void> => {
   if (signal.aborted) throw signal.reason;
@@ -108,7 +113,7 @@ const sleep = async (ms: number, signal: AbortSignal): Promise<void> => {
 
 const acquireSlot = async (transport: Mutex, prefix: string, count: number): Promise<Lock | null> => {
   for (let slot = 0; slot < count; slot += 1) {
-    const lock = await transport.acquire(`${prefix}:${slot}`, CONNECTION_LEASE_MS);
+    const lock = await transport.acquire({ resource: `${prefix}:${slot}`, ttlMs: CONNECTION_LEASE_MS });
     if (lock) return lock;
   }
   return null;
@@ -152,7 +157,9 @@ export class FixedImapConnectionPermitPool implements PermitPool {
   }
 
   async extend(lease: PermitLease): Promise<boolean> {
-    const extended = await Promise.all(lease.locks.map((lock) => this.#transport.extend(lock, CONNECTION_LEASE_MS).catch(() => false)));
+    const extended = await Promise.all(
+      lease.locks.map((lock) => this.#transport.extend(lock, { ttlMs: CONNECTION_LEASE_MS }).catch(() => false)),
+    );
     return extended.every(Boolean);
   }
 
@@ -161,7 +168,7 @@ export class FixedImapConnectionPermitPool implements PermitPool {
   }
 }
 
-const permits = new FixedImapConnectionPermitPool(listenerPermitMutex);
+const permits = lazySync(() => new FixedImapConnectionPermitPool(listenerPermitMutex()));
 
 const parseCapabilities = (value: Record<string, unknown> | string): ImapPushBindingPlan["capabilities"] => {
   const parsed = parseConnectorCapabilities(typeof value === "string" ? JSON.parse(value) : value);
@@ -508,7 +515,7 @@ export const runImapPushBinding = async (
   dependencies: ImapPushRuntimeDependencies,
   signal: AbortSignal,
 ): Promise<void> => {
-  const leader = await dependencies.leaderMutex.acquire(initialPlan.bindingId, LEADER_LEASE_MS);
+  const leader = await dependencies.leaderMutex.acquire({ resource: initialPlan.bindingId, ttlMs: LEADER_LEASE_MS });
   if (!leader) return;
   let activeListener: ConnectorChangeListener | null = null;
   let activeMode: ConnectorChangeListenerMode | "none" = "none";
@@ -563,7 +570,7 @@ export const runImapPushBinding = async (
     await withLeaseHeartbeat({
       intervalMs: HEARTBEAT_INTERVAL_MS,
       heartbeat: async () => {
-        const leaderActive = await dependencies.leaderMutex.extend(leader, LEADER_LEASE_MS);
+        const leaderActive = await dependencies.leaderMutex.extend(leader, { ttlMs: LEADER_LEASE_MS });
         const permitsActive = await extendActivePermit();
         if (!leaderActive || !permitsActive) {
           await closeActiveListener();
@@ -750,8 +757,12 @@ const defaultDependencies: ImapPushRuntimeDependencies = {
   enqueueFolder: enqueueFolderSync,
   enqueueReconciliation: enqueueFolderReconciliation,
   enqueueRediscovery: enqueueBindingRediscovery,
-  leaderMutex: listenerLeaderMutex,
-  permits,
+  get leaderMutex() {
+    return listenerLeaderMutex();
+  },
+  get permits() {
+    return permits();
+  },
   sleep,
 };
 

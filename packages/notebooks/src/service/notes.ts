@@ -20,7 +20,7 @@ import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
-import { compareStreamCursor, createYjsTopic, NODE_ID, parseStreamCursor, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
+import { compareStreamCursor, createYjsTopic, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
 // ==========================
 // Types
@@ -103,7 +103,7 @@ type DbNote = {
   title: string;
   position: number;
   yjs_snapshot: Buffer | null;
-  yjs_stream_ms?: number | null;
+  yjs_stream_cursor?: string | null;
   yjs_stream_seq?: number | null;
   yjs_snapshot_at: Date | null;
   content_md: string | null;
@@ -116,7 +116,7 @@ type DbNote = {
 
 type DbYjsState = {
   yjs_snapshot: Buffer | null;
-  yjs_stream_ms: number | null;
+  yjs_stream_cursor: string | null;
   yjs_stream_seq: number | null;
 };
 
@@ -125,12 +125,14 @@ type DbNoteVersion = {
   note_id: string;
   created_by: string | null;
   created_at: Date;
-  contributors: Array<{
-    kind: "user" | "service_account";
-    id: string;
-    displayName: string;
-    avatarHash: string | null;
-  }> | string;
+  contributors:
+    | Array<{
+        kind: "user" | "service_account";
+        id: string;
+        displayName: string;
+        avatarHash: string | null;
+      }>
+    | string;
 };
 
 type DbNotebookTitleTemplate = {
@@ -292,14 +294,6 @@ const sortTreeNodes = (nodes: NoteTreeNode[]): void => {
 };
 
 const NOTE_TEXT_NAME = "codemirror";
-const NOOP_YJS_UPDATE = (() => {
-  const doc = new Y.Doc();
-  try {
-    return Y.encodeStateAsUpdate(doc);
-  } finally {
-    doc.destroy();
-  }
-})();
 
 const createDocFromState = (state: Uint8Array | null, fallbackContent: string | null | undefined): Y.Doc => {
   const doc = new Y.Doc({ gc: true });
@@ -639,7 +633,7 @@ const getWithContentRow = async (id: string): Promise<DbNote | null> => {
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_stream_ms, n.yjs_stream_seq, n.yjs_snapshot_at,
+      n.yjs_snapshot, n.yjs_stream_cursor, n.yjs_stream_seq, n.yjs_snapshot_at,
       n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
@@ -664,13 +658,10 @@ export const getCurrentWithContent = async (params: { id: string }): Promise<Not
   const row = await getWithContentRow(params.id);
   if (!row) return null;
 
-  const streamCursor =
-    row.yjs_stream_ms !== null && row.yjs_stream_ms !== undefined && row.yjs_stream_seq !== null && row.yjs_stream_seq !== undefined
-      ? `${row.yjs_stream_ms}-${row.yjs_stream_seq}`
-      : "0-0";
+  const streamCursor = row.yjs_stream_cursor ?? null;
   const noteTopic = createYjsTopic(params.id);
   const targetCursor = await noteTopic.latestCursor();
-  if (!targetCursor || compareStreamCursor(targetCursor, streamCursor) <= 0) return mapToNoteWithContent(row);
+  if (!targetCursor || (streamCursor && compareStreamCursor(targetCursor, streamCursor) <= 0)) return mapToNoteWithContent(row);
 
   const doc = createDocFromState(row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null, row.content_md);
   try {
@@ -978,14 +969,14 @@ export const save = async (params: {
   const title = deriveNoteTitle(contentMd);
   const dataProperties = dataPropertiesForContent(contentMd);
 
-  const parsedCursor = parseStreamCursor(streamCursor);
+  const parsedCursor = streamCursor ? { seq: createYjsTopic(noteId).cursorSequence(streamCursor) } : null;
   const requestedAtSeconds = (requestedAt ?? Date.now()) / 1000;
 
   const result = parsedCursor
     ? await sql`
         UPDATE notebooks.notes
         SET yjs_snapshot = ${yjsBuffer},
-            yjs_stream_ms = ${parsedCursor.ms},
+            yjs_stream_cursor = ${streamCursor},
             yjs_stream_seq = ${parsedCursor.seq},
             yjs_snapshot_at = now(),
             content_md = ${contentMd},
@@ -996,9 +987,8 @@ export const save = async (params: {
         WHERE id = ${noteId}::uuid
           AND locked_at IS NULL
           AND (
-            (yjs_stream_ms IS NULL AND updated_at <= to_timestamp(${requestedAtSeconds}))
-            OR yjs_stream_ms < ${parsedCursor.ms}
-            OR (yjs_stream_ms = ${parsedCursor.ms} AND COALESCE(yjs_stream_seq, -1) < ${parsedCursor.seq})
+            (yjs_stream_cursor IS NULL AND COALESCE(yjs_snapshot_at, created_at) <= to_timestamp(${requestedAtSeconds}))
+            OR (yjs_stream_cursor IS NOT NULL AND yjs_stream_seq < ${parsedCursor.seq})
           )
       `
     : await sql`
@@ -1182,28 +1172,22 @@ export const editContent = async (params: {
     };
   }
 
+  const requestedAt = Date.now();
   const initialState = await getYjsStateWithCursor({ noteId: params.noteId });
   if (!initialState) return { ok: false, error: "Note not found", status: 404 };
 
-  const requestedAt = Date.now();
   const noteTopic = createYjsTopic(params.noteId);
-  const marker = await noteTopic.pub({
-    data: {
-      kind: "sync",
-      payload: toBase64(NOOP_YJS_UPDATE),
-      originNodeId: NODE_ID,
-      originPeerId: null,
-    },
-  });
+  const targetCursor = await noteTopic.latestCursor();
 
   const editDoc = createDocFromState(initialState.yjsState, existing.contentMd);
   try {
-    await replayYjsTopicToCursor({
-      noteId: params.noteId,
-      after: initialState.streamCursor ?? "0-0",
-      targetCursor: marker.cursor,
-      doc: editDoc,
-    });
+    if (targetCursor)
+      await replayYjsTopicToCursor({
+        noteId: params.noteId,
+        after: initialState.streamCursor,
+        targetCursor,
+        doc: editDoc,
+      });
   } catch (error) {
     editDoc.destroy();
     return {
@@ -1239,17 +1223,13 @@ export const editContent = async (params: {
     if (editResult.content.length > 0) ytext.insert(0, editResult.content);
   }, "cli-edit");
   const editUpdate = Y.encodeStateAsUpdate(editDoc, beforeEditState);
-  const published = await noteTopic.pub({
+  const published = await noteTopic.publish({
     data: {
       kind: "sync",
       payload: toBase64(editUpdate),
       originNodeId: NODE_ID,
       originPeerId: null,
-      ...(params.actor
-        ? { actor: params.actor }
-        : params.createdBy
-          ? { actor: { kind: "user" as const, id: params.createdBy } }
-          : {}),
+      ...(params.actor ? { actor: params.actor } : params.createdBy ? { actor: { kind: "user" as const, id: params.createdBy } } : {}),
     },
   });
   editDoc.destroy();
@@ -1259,10 +1239,9 @@ export const editContent = async (params: {
   try {
     await replayYjsTopicToCursor({
       noteId: params.noteId,
-      after: initialState.streamCursor ?? "0-0",
+      after: initialState.streamCursor,
       targetCursor: published.cursor,
       doc: persistedDoc,
-      timeoutMs: 10_000,
     });
     persistedContent = persistedDoc.getText(NOTE_TEXT_NAME).toString();
     const saveResult = await save({
@@ -1311,14 +1290,14 @@ export const getYjsStateWithCursor = async (params: {
   noteId: string;
 }): Promise<{ yjsState: Uint8Array | null; streamCursor: string | null } | null> => {
   const [row] = await sql<DbYjsState[]>`
-    SELECT yjs_snapshot, yjs_stream_ms, yjs_stream_seq
+    SELECT yjs_snapshot, yjs_stream_cursor, yjs_stream_seq
     FROM notebooks.notes
     WHERE id = ${params.noteId}::uuid
   `;
   if (!row) return null;
   return {
     yjsState: row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null,
-    streamCursor: row.yjs_stream_ms !== null && row.yjs_stream_seq !== null ? `${row.yjs_stream_ms}-${row.yjs_stream_seq}` : null,
+    streamCursor: row.yjs_stream_cursor,
   };
 };
 
@@ -1445,9 +1424,6 @@ export const restoreFromSnapshot = async (params: {
   } finally {
     restoredDoc.destroy();
   }
-  const restoreStreamMs = Date.now();
-  // Keep restore cursor dominant even on same-ms collisions with stream entries.
-  const restoreStreamSeq = Number.MAX_SAFE_INTEGER;
   const restoredTitle = deriveNoteTitle(restoredContentMd);
   const restoredDataProperties = dataPropertiesForContent(restoredContentMd);
 
@@ -1455,8 +1431,8 @@ export const restoreFromSnapshot = async (params: {
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
-          yjs_stream_ms = ${restoreStreamMs},
-          yjs_stream_seq = ${restoreStreamSeq},
+          yjs_stream_cursor = NULL,
+          yjs_stream_seq = NULL,
           yjs_snapshot_at = now(),
           content_md = ${restoredContentMd},
           data_properties = ${restoredDataProperties}::jsonb,

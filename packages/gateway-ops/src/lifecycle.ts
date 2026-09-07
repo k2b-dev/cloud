@@ -1,8 +1,8 @@
+import type { Worker } from "@k2b/sync";
 import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@valentinkolb/cloud";
 import type { AppLifecycle } from "@valentinkolb/cloud/contracts";
 import { get as getSetting, logger, superviseRuntimeTask, syncOps, trace } from "@valentinkolb/cloud/services";
-import type { Worker } from "@k2b/sync";
-import { runHealthWebhookCheck } from "./health-webhooks";
+import { runHealthWebhookCheck, startHealthWebhookDelivery, stopHealthWebhookDelivery } from "./health-webhooks";
 import { migrate } from "./migrate";
 import { listRegisteredAppStatus, markOfflineLogged, upsertRegisteredApps } from "./registered-apps";
 import { cleanupTelemetry, consumeTelemetry } from "./telemetry";
@@ -156,7 +156,18 @@ const createOfflineAuditSchedule = async (): Promise<void> => {
       source: OFFLINE_AUDIT_ID,
     },
     process: async (context) => {
-      await offlineAuditJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
+      await trace.withSpan(
+        {
+          spanKey: trace.syncSpanKey("scheduler", SCHEDULER_ID, context.runId),
+          name: "Registered app offline audit",
+          source: OFFLINE_AUDIT_ID,
+          appId: "gateway-ops",
+          category: "schedule",
+        },
+        async () => {
+          await offlineAuditJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
+        },
+      );
     },
   });
 };
@@ -176,8 +187,19 @@ const createHealthWebhookSchedule = async (cronOverride?: string): Promise<void>
       label: "Gateway health webhook check",
       source: HEALTH_SCHEDULE_ID,
     },
-    process: async () => {
-      await runHealthWebhookCheck();
+    process: async (context) => {
+      await trace.withSpan(
+        {
+          spanKey: trace.syncSpanKey("scheduler", SCHEDULER_ID, context.runId),
+          name: "Gateway health webhook check",
+          source: HEALTH_SCHEDULE_ID,
+          appId: "gateway-ops",
+          category: "schedule",
+        },
+        async () => {
+          await runHealthWebhookCheck();
+        },
+      );
     },
   });
 };
@@ -194,14 +216,31 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
       label: "Gateway telemetry cleanup",
       source: "gateway:telemetry:cleanup",
     },
-    process: async () => {
-      const [eventsDays, rollupsDays, traceDays] = await Promise.all([
-        getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
-        getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
-        getPositiveIntegerSetting("logs.trace_retention_days", 30),
-      ]);
-      const [telemetry, traces] = await Promise.all([cleanupTelemetry({ eventsDays, rollupsDays }), trace.cleanup({ days: traceDays })]);
-      log.info("Observability retention cleanup completed", { events: telemetry.events, rollups: telemetry.rollups, traces });
+    process: async (context) => {
+      await trace.withSpan(
+        {
+          spanKey: trace.syncSpanKey("scheduler", SCHEDULER_ID, context.runId),
+          name: "Gateway telemetry cleanup",
+          source: "gateway:telemetry:cleanup",
+          appId: "gateway-ops",
+          category: "schedule",
+        },
+        async () => {
+          const [eventsDays, rollupsDays, traceDays] = await Promise.all([
+            getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
+            getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
+            getPositiveIntegerSetting("logs.trace_retention_days", 30),
+          ]);
+          const [telemetry, traces] = await Promise.all([
+            cleanupTelemetry({ eventsDays, rollupsDays }),
+            trace.cleanup({ days: traceDays }),
+          ]);
+          const summary = { events: telemetry.events, rollups: telemetry.rollups, traces };
+          log.info("Observability retention cleanup completed", summary);
+          return summary;
+        },
+        { summarize: (summary) => summary },
+      );
     },
   });
 };
@@ -268,6 +307,7 @@ export const gatewayOpsLifecycle: AppLifecycle = {
     ];
     startRegistryWatcher();
     await startScheduler();
+    await startHealthWebhookDelivery();
     startTelemetryConsumer();
     log.info("Gateway Ops started");
   },
@@ -276,6 +316,7 @@ export const gatewayOpsLifecycle: AppLifecycle = {
     await stopRegistryWatcher();
     await stopTelemetryConsumer();
     await stopScheduler();
+    await stopHealthWebhookDelivery();
     for (const unregister of unregisterSyncOps) unregister();
     unregisterSyncOps = [];
   },

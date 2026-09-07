@@ -1,5 +1,6 @@
-import { logger, trace } from "@valentinkolb/cloud/services";
-import { job } from "@k2b/sync";
+import type { Worker } from "@k2b/sync";
+import { lazySync } from "@valentinkolb/cloud";
+import { logger, syncOps, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEventWithFederatedTargets } from "./record-events";
@@ -197,20 +198,35 @@ const dispatchRecordEventOutboxOnce = async (id: string, publish: (event: GridsR
 
 let activeDeliveries = 0;
 
-const deliveryJob = job<{ outboxId: string }, { outboxId: string; status: string }>({
-  id: "grids:record-event-outbox",
-  defaults: { leaseMs: 30_000, keyTtlMs: 24 * 60 * 60 * 1000 },
-  trace: trace.fromSyncJob<{ outboxId: string }, { outboxId: string; status: string }>({
-    name: "Grid record event outbox",
-    source: "grids:record-event-outbox",
-    appId: "grids",
-    attributes: (event) => ("input" in event && event.input ? { "cloud.grids.record_event_outbox_id": event.input.outboxId } : {}),
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
+const deliveryJob = lazySync((sync) =>
+  sync.job<{ outboxId: string }>({
+    id: "grids:record-event-outbox",
+    delivery: { ackWaitMs: 30_000, maxAttempts: 4, backoffMs: [1_000, 5_000, 30_000] },
   }),
-  process: async ({ ctx }) => {
+);
+let deliveryWorker: Worker | undefined;
+let unregisterDeadLetters: (() => void) | undefined;
+const startDeliveryWorker = async (): Promise<void> => {
+  unregisterDeadLetters ??= syncOps.registerDeadLetters({
+    name: "grids:record-event-outbox",
+    kind: "job",
+    store: deliveryJob().deadLetters,
+  });
+  deliveryWorker ??= await deliveryJob().process({}, async (ctx) => {
     activeDeliveries += 1;
     try {
-      return { outboxId: ctx.input.outboxId, status: await dispatchRecordEventOutbox(ctx.input.outboxId) };
+      await trace.withSpan(
+        {
+          spanKey: trace.syncSpanKey("job", "grids:record-event-outbox", ctx.jobId),
+          name: "Grid record event outbox",
+          source: "grids:record-event-outbox",
+          appId: "grids",
+          category: "job",
+          attributes: { "cloud.grids.record_event_outbox_id": ctx.input.outboxId },
+        },
+        async () => ({ outboxId: ctx.input.outboxId, status: await dispatchRecordEventOutbox(ctx.input.outboxId) }),
+        { summarize: (result) => result },
+      );
     } finally {
       activeDeliveries -= 1;
       if (runtimeStarted) {
@@ -222,13 +238,13 @@ const deliveryJob = job<{ outboxId: string }, { outboxId: string; status: string
         });
       }
     }
-  },
-});
+  });
+};
 
 const submitRecordEventOutbox = async (outboxId: string): Promise<void> => {
   if (!runtimeStarted) return;
   try {
-    await deliveryJob.submit({ key: outboxId, input: { outboxId } });
+    await deliveryJob().submit({ coalesce: true, key: outboxId, input: { outboxId } });
   } catch (error) {
     log.warn("Record event outbox submit failed; reconciler will retry", {
       outboxId,
@@ -421,6 +437,7 @@ const runReconcile = (): Promise<number> => {
 
 export const startRecordEventOutbox = async (): Promise<void> => {
   runtimeStarted = true;
+  await startDeliveryWorker();
   await reconcileRecordEventOutbox();
   if (!reconcileTimer) {
     reconcileTimer = setInterval(() => {
@@ -437,11 +454,10 @@ export const stopRecordEventOutbox = async (): Promise<void> => {
   reconcileTimer = null;
   const deadline = performance.now() + SHUTDOWN_DRAIN_MS;
   const producerDrain = await waitForRecordEventOutboxDrain(() => ({ ...currentDrainState(), activeDeliveries: 0 }), SHUTDOWN_DRAIN_MS);
-  const stragglingProducers = activeReconcile ? [activeReconcile] : [];
-  deliveryJob.stop();
-  if (!producerDrain.drained && stragglingProducers.length > 0) {
-    void Promise.allSettled(stragglingProducers).then(() => deliveryJob.stop());
-  }
+  await deliveryWorker?.drain({ timeoutMs: SHUTDOWN_DRAIN_MS });
+  deliveryWorker = undefined;
+  unregisterDeadLetters?.();
+  unregisterDeadLetters = undefined;
   const drain = await waitForRecordEventOutboxDrain(currentDrainState, Math.max(0, deadline - performance.now()));
   if (!producerDrain.drained || !drain.drained) {
     log.warn("Record event outbox did not drain before shutdown", currentDrainState());

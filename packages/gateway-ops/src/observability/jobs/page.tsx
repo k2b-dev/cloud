@@ -1,4 +1,15 @@
-import { Button, ButtonLink, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatCell, StatGrid, useLocale } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  DataTable,
+  type DataTableColumn,
+  IconButtonLink,
+  Pagination,
+  Placeholder,
+  StatCell,
+  StatGrid,
+  useLocale,
+} from "@k2b/ui";
 import { createPagination } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { type TraceListFilter, type TraceRunStats, type TraceSourceGroup, type TraceSpan, trace } from "@valentinkolb/cloud/services";
@@ -12,6 +23,8 @@ import {
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import ObservabilityChart from "../../frontend/ObservabilityChart.island";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
+import { syncOpsCredentials } from "../sync/service";
 import JobsActionToast from "./_components/JobsActionToast.island";
 import JobsFilterBar from "./_components/JobsFilterBar.island";
 import RunDetailPanel from "./_components/RunDetailPanel";
@@ -30,7 +43,6 @@ import {
   filterBackgroundJobRows,
   jobsObservabilityService,
 } from "./service";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../../messages";
 
 const baseUrl = "/admin/observability/jobs";
 
@@ -55,7 +67,9 @@ const windowLabel = (filter: JobsFilterState, t: GatewayOpsMessages): string => 
 };
 
 const durationLabel = (filter: JobsFilterState, t: GatewayOpsMessages): string =>
-  filter.duration === "all" ? t.allDurations : (jobsDurationOptions.find((option) => option.value === filter.duration)?.label ?? t.allDurations);
+  filter.duration === "all"
+    ? t.allDurations
+    : (jobsDurationOptions.find((option) => option.value === filter.duration)?.label ?? t.allDurations);
 
 const runKey = (span: Pick<TraceSpan, "traceId" | "spanId">): string => `${span.traceId}:${span.spanId}`;
 
@@ -70,7 +84,6 @@ const parseRunKey = (value: string | null): { traceId: string; spanId: string } 
 const traceFilterFromJobs = (filter: JobsFilterState): TraceListFilter => {
   const traceFilter: TraceListFilter = {
     window: filter.window,
-    excludeDefinitions: true,
     search: filter.search || undefined,
     source: filter.source ?? undefined,
     category: filter.type === "all" ? undefined : filter.type,
@@ -95,7 +108,9 @@ const statusBadge = (input: { status: string | null; running?: boolean }) => {
   }
   if (input.status === "error") {
     return (
-      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950/40 dark:text-red-200">{t.failed}</span>
+      <span class="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950/40 dark:text-red-200">
+        {t.failed}
+      </span>
     );
   }
   if (input.status === "ok") {
@@ -166,52 +181,64 @@ const closeRunUrl = (filter: JobsFilterState): string => buildJobsFilterUrl(base
 const statsGrid = (stats: TraceRunStats, filter: JobsFilterState) => {
   const locale = useLocale();
   const { t } = gatewayOpsMessages.resolve([locale()]);
-  return <StatGrid columns={6}>
-    <StatCell label={t.sources} value={formatNumber(stats.sources, { locale: locale() })} sub={filter.source ? t.selectedSource : t.jobFamilies} />
-    <StatCell label={t.runs} value={formatNumber(stats.runs, { locale: locale() })} sub={windowLabel(filter, t)} />
-    <StatCell
-      label={t.failed}
-      value={formatNumber(stats.failed, { locale: locale() })}
-      sub={t.errorRateValue({ value: formatPercent(stats.errorRate, { locale: locale() }) })}
-      valueClass={stats.failed > 0 ? "text-red-500" : "text-primary"}
-      accent={stats.failed > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" }}
-    />
-    <StatCell
-      label={t.running}
-      value={formatNumber(stats.running, { locale: locale() })}
-      sub={t.inFlightNow}
-      accent={stats.running > 0 ? { tone: "blue", icon: "ti ti-loader" } : undefined}
-    />
-    <StatCell
-      label={t.stuck}
-      value={formatNumber(stats.stuck, { locale: locale() })}
-      sub={t.openAbandoned}
-      valueClass={stats.stuck > 0 ? "text-red-500" : "text-primary"}
-      accent={stats.stuck > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : undefined}
-      href={stats.stuck > 0 ? buildJobsFilterUrl(baseUrl, { health: "stuck" }, filter) : undefined}
-    />
-    <StatCell
-      label="P99"
-      value={formatMs(stats.p99DurationMs, { locale: locale() })}
-      sub={
-        stats.anomalous > 0
-          ? t.averageExcluded({ average: formatMs(stats.avgDurationMs, { locale: locale() }), count: formatNumber(stats.anomalous, { locale: locale() }) })
-          : t.average({ value: formatMs(stats.avgDurationMs, { locale: locale() }) })
-      }
-      title={
-        stats.anomalous > 0
-          ? t.anomalousRunsExcluded({ count: formatNumber(stats.anomalous, { locale: locale() }) })
-          : undefined
-      }
-    />
-  </StatGrid>;
+  return (
+    <StatGrid columns={6}>
+      <StatCell
+        label={t.sources}
+        value={formatNumber(stats.sources, { locale: locale() })}
+        sub={filter.source ? t.selectedSource : t.jobFamilies}
+      />
+      <StatCell label={t.runs} value={formatNumber(stats.runs, { locale: locale() })} sub={windowLabel(filter, t)} />
+      <StatCell
+        label={t.failed}
+        value={formatNumber(stats.failed, { locale: locale() })}
+        sub={t.errorRateValue({ value: formatPercent(stats.errorRate, { locale: locale() }) })}
+        valueClass={stats.failed > 0 ? "text-red-500" : "text-primary"}
+        accent={stats.failed > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" }}
+      />
+      <StatCell
+        label={t.running}
+        value={formatNumber(stats.running, { locale: locale() })}
+        sub={t.inFlightNow}
+        accent={stats.running > 0 ? { tone: "blue", icon: "ti ti-loader" } : undefined}
+      />
+      <StatCell
+        label={t.stuck}
+        value={formatNumber(stats.stuck, { locale: locale() })}
+        sub={t.openAbandoned}
+        valueClass={stats.stuck > 0 ? "text-red-500" : "text-primary"}
+        accent={stats.stuck > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : undefined}
+        href={stats.stuck > 0 ? buildJobsFilterUrl(baseUrl, { health: "stuck" }, filter) : undefined}
+      />
+      <StatCell
+        label="P99"
+        value={formatMs(stats.p99DurationMs, { locale: locale() })}
+        sub={
+          stats.anomalous > 0
+            ? t.averageExcluded({
+                average: formatMs(stats.avgDurationMs, { locale: locale() }),
+                count: formatNumber(stats.anomalous, { locale: locale() }),
+              })
+            : t.average({ value: formatMs(stats.avgDurationMs, { locale: locale() }) })
+        }
+        title={stats.anomalous > 0 ? t.anomalousRunsExcluded({ count: formatNumber(stats.anomalous, { locale: locale() }) }) : undefined}
+      />
+    </StatGrid>
+  );
 };
 
 const sourceSubtitle = (group: TraceSourceGroup, t: GatewayOpsMessages, locale: string): string => {
   if (group.categories.length === 1 && group.categories[0] === "backfill") {
     return t.backfillRuns({ count: formatNumber(group.runs, { locale }) });
   }
-  const parts = [t.sourceRunCounts({ jobs: formatNumber(group.jobRuns, { locale }), jobCount: group.jobRuns, schedules: formatNumber(group.scheduleRuns, { locale }), scheduleCount: group.scheduleRuns })];
+  const parts = [
+    t.sourceRunCounts({
+      jobs: formatNumber(group.jobRuns, { locale }),
+      jobCount: group.jobRuns,
+      schedules: formatNumber(group.scheduleRuns, { locale }),
+      scheduleCount: group.scheduleRuns,
+    }),
+  ];
   if (group.aiRuns) parts.push(t.aiRunsShort({ count: formatNumber(group.aiRuns, { locale }) }));
   if (group.customRuns) parts.push(t.customRunsShort({ count: formatNumber(group.customRuns, { locale }) }));
   return parts.join(" · ");
@@ -243,6 +270,7 @@ const RunNowButton = (props: { row: BackgroundJobOverviewRow; filter: JobsFilter
   const disabled = props.row.state !== "available";
   return (
     <form method="post" action="/admin/observability/jobs/run-now" class="inline-flex justify-end">
+      <input type="hidden" name="appId" value={props.row.appId ?? ""} />
       <input type="hidden" name="schedulerId" value={props.row.schedulerId} />
       <input type="hidden" name="scheduleId" value={props.row.scheduleId} />
       <input type="hidden" name="redirectTo" value={buildJobsFilterUrl(baseUrl, { run: null }, props.filter)} />
@@ -280,68 +308,91 @@ const OverviewTable = (props: { rows: BackgroundJobOverviewRow[]; filter: JobsFi
     { id: "control", header: t.control, subtitle: t.handler, value: (row) => row.state },
     { id: "health", header: t.latest, subtitle: t.traceRun, value: (row) => row.trace?.latestStatus ?? "" },
     { id: "runs", header: t.runs, value: (row) => row.trace?.runs ?? 0, headerClass: "text-right", cellClass: "text-right" },
-    { id: "failed", header: t.failed, subtitle: t.errorRate, value: (row) => row.trace?.failed ?? 0, headerClass: "text-right", cellClass: "text-right" },
-    { id: "runtime", header: t.runtime, subtitle: t.averageP99, value: (row) => row.trace?.avgDurationMs ?? 0, headerClass: "text-right", cellClass: "text-right" },
+    {
+      id: "failed",
+      header: t.failed,
+      subtitle: t.errorRate,
+      value: (row) => row.trace?.failed ?? 0,
+      headerClass: "text-right",
+      cellClass: "text-right",
+    },
+    {
+      id: "runtime",
+      header: t.runtime,
+      subtitle: t.averageP99,
+      value: (row) => row.trace?.avgDurationMs ?? 0,
+      headerClass: "text-right",
+      cellClass: "text-right",
+    },
     { id: "next", header: t.next, subtitle: t.scheduled, value: (row) => row.nextRunAt ?? 0, cellClass: "whitespace-nowrap" },
     { id: "action", header: "", value: (row) => row.scheduleId ?? row.source, headerClass: "text-right", cellClass: "text-right" },
   ];
-  return <section class="paper overflow-hidden">
-    <div class="px-3 py-2">
-      <h2 class="text-xs font-semibold text-primary">{t.schedulesAndFamilies}</h2>
-      <p class="text-[10px] text-dimmed">{t.schedulesAndFamiliesDescription}</p>
-    </div>
-    <DataTable
-      rows={props.rows}
-      columns={columns}
-      getRowId={(row) => (row.kind === "schedule" ? `${row.schedulerId}:${row.scheduleId}` : `trace:${row.source}`)}
-      hoverRows
-      highlightColumns={false}
-      density="compact"
-      class="overflow-x-auto"
-      empty={t.noJobSources}
-      renderCell={({ row, col }) => {
-        if (col.id === "source")
-          return (
-            <a href={sourceUrl(props.filter, row.source)} class="block min-w-0 hover:text-blue-600 dark:hover:text-blue-300">
-              <span class="block truncate text-[11px] font-medium text-primary">{row.label}</span>
-              <span class="block truncate text-[10px] text-dimmed">{overviewSubtitle(row, t, locale())}</span>
-            </a>
-          );
-        if (col.id === "control") return stateBadge(row);
-        if (col.id === "health") return rowHealth(row);
-        if (col.id === "runs") return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.trace?.runs ?? 0, { locale: locale() })}</span>;
-        if (col.id === "failed")
-          return (
-            <span class="text-[10px] tabular-nums text-dimmed">
-              {formatNumber(row.trace?.failed ?? 0, { locale: locale() })} · {formatPercent(row.trace?.errorRate ?? 0, { locale: locale() })}
-            </span>
-          );
-        if (col.id === "runtime")
-          return (
-            <span class="text-[10px] tabular-nums text-dimmed">
-              {formatMs(row.trace?.avgDurationMs ?? null, { locale: locale() })} / {formatMs(row.trace?.p99DurationMs ?? null, { locale: locale() })}
-            </span>
-          );
-        if (col.id === "next") {
-          // A schedule whose next run is already in the past is not "due soon",
-          // it has stopped firing — the failure mode a plain timestamp hides.
-          const overdueMs = row.nextRunAt ? Date.now() - row.nextRunAt : 0;
-          return overdueMs > OVERDUE_GRACE_MS ? (
-            <span
-              class="text-[10px] text-red-500"
-              title={t.expectedAt({ time: formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() }) })}
-            >
-              {t.overdue({ duration: formatDuration(overdueMs) })}
-            </span>
-          ) : (
-            <span class="text-[10px] text-dimmed">{formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() })}</span>
-          );
-        }
-        if (col.id === "action") return <ActionCell row={row} filter={props.filter} />;
-        return "";
-      }}
-    />
-  </section>;
+  return (
+    <section class="paper overflow-hidden">
+      <div class="px-3 py-2">
+        <h2 class="text-xs font-semibold text-primary">{t.schedulesAndFamilies}</h2>
+        <p class="text-[10px] text-dimmed">{t.schedulesAndFamiliesDescription}</p>
+      </div>
+      <DataTable
+        rows={props.rows}
+        columns={columns}
+        getRowId={(row) => (row.kind === "schedule" ? `${row.schedulerId}:${row.scheduleId}` : `trace:${row.source}`)}
+        hoverRows
+        highlightColumns={false}
+        density="compact"
+        class="overflow-x-auto"
+        empty={t.noJobSources}
+        renderCell={({ row, col }) => {
+          if (col.id === "source")
+            return (
+              <a href={sourceUrl(props.filter, row.source)} class="block min-w-0 hover:text-blue-600 dark:hover:text-blue-300">
+                <span class="block truncate text-[11px] font-medium text-primary">{row.label}</span>
+                <span class="block truncate text-[10px] text-dimmed">{overviewSubtitle(row, t, locale())}</span>
+              </a>
+            );
+          if (col.id === "control") return stateBadge(row);
+          if (col.id === "health") return rowHealth(row);
+          if (col.id === "runs")
+            return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.trace?.runs ?? 0, { locale: locale() })}</span>;
+          if (col.id === "failed")
+            return (
+              <span class="text-[10px] tabular-nums text-dimmed">
+                {formatNumber(row.trace?.failed ?? 0, { locale: locale() })} ·{" "}
+                {formatPercent(row.trace?.errorRate ?? 0, { locale: locale() })}
+              </span>
+            );
+          if (col.id === "runtime")
+            return (
+              <span class="text-[10px] tabular-nums text-dimmed">
+                {formatMs(row.trace?.avgDurationMs ?? null, { locale: locale() })} /{" "}
+                {formatMs(row.trace?.p99DurationMs ?? null, { locale: locale() })}
+              </span>
+            );
+          if (col.id === "next") {
+            // A schedule whose next run is already in the past is not "due soon",
+            // it has stopped firing — the failure mode a plain timestamp hides.
+            const overdueMs = row.nextRunAt ? Date.now() - row.nextRunAt : 0;
+            return overdueMs > OVERDUE_GRACE_MS ? (
+              <span
+                class="text-[10px] text-red-500"
+                title={t.expectedAt({
+                  time: formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() }),
+                })}
+              >
+                {t.overdue({ duration: formatDuration(overdueMs) })}
+              </span>
+            ) : (
+              <span class="text-[10px] text-dimmed">
+                {formatTimestamp(row.nextRunAt === null ? null : new Date(row.nextRunAt), { locale: locale() })}
+              </span>
+            );
+          }
+          if (col.id === "action") return <ActionCell row={row} filter={props.filter} />;
+          return "";
+        }}
+      />
+    </section>
+  );
 };
 
 const SourceRunsTable = (props: {
@@ -362,42 +413,57 @@ const SourceRunsTable = (props: {
     { id: "events", header: t.events, value: (row) => row.eventCount, headerClass: "text-right", cellClass: "text-right" },
     { id: "summary", header: t.summary, value: (row) => summarize(row.summary) },
   ];
-  return <section class="paper overflow-hidden">
-    <div class="px-3 py-2">
-      <h2 class="text-xs font-semibold text-primary">{t.runs}</h2>
-      <p class="text-[10px] text-dimmed">{t.runsCountAndDuration({ count: formatNumber(props.spans.length, { locale: locale() }), total: formatNumber(props.total, { locale: locale() }), duration: durationLabel(props.filter, t) })}</p>
-    </div>
-    <DataTable
-      rows={props.spans}
-      columns={columns}
-      getRowId={runKey}
-      selectedRowId={props.selectedRunKey}
-      hoverRows
-      highlightColumns={false}
-      density="compact"
-      class="overflow-x-auto"
-      empty={t.noMatchingRuns}
-      renderCell={({ row, col }) => {
-        if (col.id === "started") return <span class="text-[10px] text-dimmed">{formatDate(row.startedAt, { locale: locale() })}</span>;
-        if (col.id === "name")
-          return (
-            <a href={runUrl(props.filter, row)} class="block min-w-0 hover:text-blue-600 dark:hover:text-blue-300">
-              <span class="block truncate text-[11px] font-medium text-primary">{row.name}</span>
-              <span class="block truncate text-[10px] text-dimmed">{row.spanKey ?? row.spanId}</span>
-            </a>
-          );
-        if (col.id === "type") return <span class="text-[10px] text-dimmed">{row.category}</span>;
-        if (col.id === "status") return statusBadge({ status: row.status, running: !row.endedAt });
-        if (col.id === "duration") return <span class="text-[10px] tabular-nums text-dimmed">{formatMs(row.durationMs, { locale: locale() })}</span>;
-        if (col.id === "events") return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.eventCount, { locale: locale() })}</span>;
-        if (col.id === "summary") return <span class="block max-w-[360px] truncate text-[10px] text-dimmed">{summarize(row.summary)}</span>;
-        return "";
-      }}
-    />
-    <div class="px-3 py-2">
-      <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={paginationBaseUrl(props.filter)} />
-    </div>
-  </section>;
+  return (
+    <section class="paper overflow-hidden">
+      <div class="px-3 py-2">
+        <h2 class="text-xs font-semibold text-primary">{t.runs}</h2>
+        <p class="text-[10px] text-dimmed">
+          {t.runsCountAndDuration({
+            count: formatNumber(props.spans.length, { locale: locale() }),
+            total: formatNumber(props.total, { locale: locale() }),
+            duration: durationLabel(props.filter, t),
+          })}
+        </p>
+      </div>
+      <DataTable
+        rows={props.spans}
+        columns={columns}
+        getRowId={runKey}
+        selectedRowId={props.selectedRunKey}
+        hoverRows
+        highlightColumns={false}
+        density="compact"
+        class="overflow-x-auto"
+        empty={t.noMatchingRuns}
+        renderCell={({ row, col }) => {
+          if (col.id === "started") return <span class="text-[10px] text-dimmed">{formatDate(row.startedAt, { locale: locale() })}</span>;
+          if (col.id === "name")
+            return (
+              <a href={runUrl(props.filter, row)} class="block min-w-0 hover:text-blue-600 dark:hover:text-blue-300">
+                <span class="block truncate text-[11px] font-medium text-primary">{row.name}</span>
+                <span class="block truncate text-[10px] text-dimmed">{row.spanKey ?? row.spanId}</span>
+              </a>
+            );
+          if (col.id === "type") return <span class="text-[10px] text-dimmed">{row.category}</span>;
+          if (col.id === "status") return statusBadge({ status: row.status, running: !row.endedAt });
+          if (col.id === "duration")
+            return <span class="text-[10px] tabular-nums text-dimmed">{formatMs(row.durationMs, { locale: locale() })}</span>;
+          if (col.id === "events")
+            return <span class="text-[10px] tabular-nums text-dimmed">{formatNumber(row.eventCount, { locale: locale() })}</span>;
+          if (col.id === "summary")
+            return <span class="block max-w-[360px] truncate text-[10px] text-dimmed">{summarize(row.summary)}</span>;
+          return "";
+        }}
+      />
+      <div class="px-3 py-2">
+        <Pagination
+          currentPage={props.pagination.page}
+          totalPages={props.pagination.total_pages}
+          baseUrl={paginationBaseUrl(props.filter)}
+        />
+      </div>
+    </section>
+  );
 };
 
 type JobsActionFeedback = { tone: "error"; message: string } | null;
@@ -440,8 +506,8 @@ export default ssr<AuthContext>(async (c) => {
   const schedulesPromise = filter.source
     ? Promise.resolve({ schedules: [], error: null as string | null })
     : jobsObservabilityService
-        .listSchedules()
-        .then((schedules) => ({ schedules, error: null as string | null }))
+        .listSchedules(syncOpsCredentials(c.req.raw))
+        .then(({ schedules, warnings }) => ({ schedules, error: warnings.length > 0 ? warnings.join("; ") : null }))
         .catch((error) => ({ schedules: [], error: error instanceof Error ? error.message : String(error) }));
 
   const [stats, groups, listResult, selectedSpan, selectedEvents, scheduleResult, timelineResult] = await Promise.all([
@@ -517,9 +583,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class="min-w-0">
               <h1 class="truncate text-base font-semibold text-primary">{filter.source ?? t.backgroundJobs}</h1>
               <p class="mt-1 text-xs text-dimmed">
-                {filter.source
-                  ? t.sourceRunsDescription({ window: windowLabel(filter, t) })
-                  : t.jobsDescription}
+                {filter.source ? t.sourceRunsDescription({ window: windowLabel(filter, t) }) : t.jobsDescription}
               </p>
             </div>
           </div>
@@ -532,7 +596,10 @@ export default ssr<AuthContext>(async (c) => {
           <p class="text-[10px] text-dimmed">{t.runTimelineDescription}</p>
           {timelineResult.total > timelineResult.spans.length ? (
             <p class="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
-              {t.timelineSample({ count: formatNumber(timelineResult.spans.length, { locale }), total: formatNumber(timelineResult.total, { locale }) })}
+              {t.timelineSample({
+                count: formatNumber(timelineResult.spans.length, { locale }),
+                total: formatNumber(timelineResult.total, { locale }),
+              })}
             </p>
           ) : null}
           {timelineRows.length === 0 ? (

@@ -1,5 +1,5 @@
-import { topic } from "@k2b/sync";
-import { logger } from "@valentinkolb/cloud/services";
+import { lazySync } from "@valentinkolb/cloud";
+import { latestTopicCursor, logger } from "@valentinkolb/cloud/services";
 import type { ContactLiveEvent, ContactServiceEvent, ContactServiceEventData } from "../live-events";
 import { projectContactEventIds } from "./public-resources";
 
@@ -9,12 +9,13 @@ const TOPIC_OPERATION_TIMEOUT_MS = 1_500;
 
 export type ContactEventEnvelope = { internal: ContactServiceEvent; public: ContactLiveEvent };
 
-const contactsTopic = topic<ContactEventEnvelope>({
-  id: "changes",
-  prefix: "cloud:contacts:events",
-  retentionMs: 24 * 60 * 60 * 1_000,
-  limits: { payloadBytes: 8_000 },
-});
+const contactsTopic = lazySync((sync) =>
+  sync.topic<ContactEventEnvelope>({
+    id: "cloud:contacts:events:changes",
+    retention: { maxAgeMs: 24 * 60 * 60 * 1_000, maxBytes: 1024 * 1024 * 1024 },
+    maxPayloadBytes: 8_000,
+  }),
+);
 
 const eventResourceId = (event: ContactServiceEventData): string => {
   if (event.type === "contact.moved") return event.contactId;
@@ -41,7 +42,7 @@ export const publishContactEvent = async (event: ContactServiceEventData, knownP
   const resourceId = eventResourceId(event);
   try {
     await withTopicTimeout(
-      contactsTopic.pub({
+      contactsTopic().publish({
         tenantId: CONTACTS_EVENT_TENANT,
         orderingKey: resourceId,
         data: {
@@ -60,23 +61,26 @@ export const publishContactEvent = async (event: ContactServiceEventData, knownP
 };
 
 export const liveContactEvents = (config: { after?: string | null; signal?: AbortSignal }) =>
-  contactsTopic.live({
-    tenantId: CONTACTS_EVENT_TENANT,
-    after: config.after ?? undefined,
-    signal: config.signal,
-  });
+  contactsTopic()
+    .hub({ tenantId: CONTACTS_EVENT_TENANT })
+    .subscribe({
+      after: config.after ?? undefined,
+      signal: config.signal,
+    });
 
 export const latestContactEventCursor = (): Promise<string | null> =>
-  withTopicTimeout(contactsTopic.latestCursor({ tenantId: CONTACTS_EVENT_TENANT }));
+  withTopicTimeout(
+    latestTopicCursor({ topic: contactsTopic(), resourceId: "cloud:contacts:events:changes", tenantId: CONTACTS_EVENT_TENANT }),
+  );
 
 /** SSR remains available when the best-effort live transport is unavailable. */
 export const captureContactEventCursor = async (): Promise<string> => {
   try {
-    return (await latestContactEventCursor()) ?? "0-0";
+    return (await latestContactEventCursor()) ?? contactsTopic().cursorAt(0);
   } catch (error) {
     log.warn("Failed to capture Contacts event cursor", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return "0-0";
+    return contactsTopic().cursorAt(0);
   }
 };

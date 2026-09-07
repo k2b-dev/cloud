@@ -1,24 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import {
-  type SchedulerControlInfo,
-  SchedulerControlNotFoundError,
-  SchedulerControlTimeoutError,
-  SchedulerControlUnavailableError,
-} from "@k2b/sync";
 import type { TraceSourceGroup } from "@valentinkolb/cloud/services";
-import { buildBackgroundJobRows, filterBackgroundJobRows, normalizeScheduleMetadata, runScheduleNowWithControl } from "./service";
+import type { SyncScheduleRow } from "../sync/service";
+import { buildBackgroundJobRows, filterBackgroundJobRows, normalizeScheduleMetadata } from "./service";
 
-const schedule = (overrides: Partial<SchedulerControlInfo> = {}): SchedulerControlInfo => ({
+const schedule = (overrides: Partial<SyncScheduleRow> = {}): SyncScheduleRow => ({
   schedulerId: "gateway-ops-lifecycle",
-  scheduleId: "gateway:health-webhook-check",
+  id: "gateway:health-webhook-check",
   cron: "*/5 * * * *",
-  tz: "Europe/Berlin",
-  createdAt: 1,
-  updatedAt: 2,
-  nextRunAt: 3,
+  timezone: "Europe/Berlin",
+  createdAt: new Date(1).toISOString(),
+  updatedAt: new Date(2).toISOString(),
+  nextRunAt: new Date(3).toISOString(),
+  appId: "gateway-ops",
+  appName: "Gateway Ops",
+  misfire: "latest",
+  lastError: null,
+  lastRunId: null,
+  lastCompletedAt: null,
   runNumber: 4,
   failureCount: 0,
-  state: "available",
+  handlerAvailable: true,
   meta: {
     appId: "gateway-ops",
     family: "gateway:health",
@@ -74,7 +75,7 @@ describe("jobs observability service", () => {
     });
 
     expect(normalizeScheduleMetadata(schedule({ meta: { detailHref: "https://example.org/out", label: "  " } }))).toEqual({
-      appId: null,
+      appId: "gateway-ops",
       family: "gateway:health-webhook-check",
       label: "gateway:health-webhook-check",
       source: "gateway:health-webhook-check",
@@ -118,7 +119,7 @@ describe("jobs observability service", () => {
       [
         schedule(),
         schedule({
-          scheduleId: "gateway:telemetry:cleanup",
+          id: "gateway:telemetry:cleanup",
           meta: {
             appId: "gateway-ops",
             family: "gateway:telemetry",
@@ -151,49 +152,29 @@ describe("jobs observability service", () => {
         .sort(),
     ).toEqual(["auth:ipa:backfill", "gateway:health-webhook-check", "mail:sender-rule-backfill"]);
   });
+});
 
-  test("runScheduleNowWithControl maps accepted and schedulerControl failures", async () => {
-    const accepted = await runScheduleNowWithControl(
-      {
-        list: async () => [],
-        runNow: async () => {},
-      },
-      { schedulerId: "gateway-ops-lifecycle", scheduleId: "gateway:health-webhook-check" },
-    );
-    expect(accepted).toMatchObject({ ok: true, data: { message: "Schedule run accepted" } });
-
-    const notFound = await runScheduleNowWithControl(
-      {
-        list: async () => [],
-        runNow: async () => {
-          throw new SchedulerControlNotFoundError("missing");
-        },
-      },
-      { schedulerId: "missing", scheduleId: "missing" },
-    );
-    expect(notFound).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
-
-    const unavailable = await runScheduleNowWithControl(
-      {
-        list: async () => [],
-        runNow: async () => {
-          throw new SchedulerControlUnavailableError("offline");
-        },
-      },
-      { schedulerId: "gateway-ops-lifecycle", scheduleId: "gateway:health-webhook-check" },
-    );
-    expect(unavailable).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
-
-    const timeout = await runScheduleNowWithControl(
-      {
-        list: async () => [],
-        runNow: async () => {
-          throw new SchedulerControlTimeoutError("slow");
-        },
-      },
-      { schedulerId: "gateway-ops-lifecycle", scheduleId: "gateway:health-webhook-check" },
-    );
-    expect(timeout).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
-    if (!timeout.ok) expect(timeout.error.message).toStartWith("Timed out while waiting for the schedule handler to accept the run");
+describe("partial scheduler availability", () => {
+  test("keeps healthy schedules and surfaces unavailable app warnings", async () => {
+    const { spyOn } = await import("bun:test");
+    const { syncOpsService } = await import("../sync/runtime");
+    const { jobsObservabilityService } = await import("./service");
+    const overview = spyOn(syncOpsService, "overview").mockResolvedValue({
+      apps: [
+        { appId: "grids", appName: "Grids", appIcon: "", status: "unavailable", error: "Connection refused", health: null },
+        { appId: "gateway-ops", appName: "Gateway Ops", appIcon: "", status: "ok", error: null, health: null },
+      ],
+      schedules: [schedule()],
+      resources: [],
+      deadLetters: [],
+      truncatedStores: [],
+    });
+    try {
+      const result = await jobsObservabilityService.listSchedules({});
+      expect(result.schedules).toEqual([schedule()]);
+      expect(result.warnings).toEqual(["Grids: Connection refused"]);
+    } finally {
+      overview.mockRestore();
+    }
   });
 });

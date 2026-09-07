@@ -13,42 +13,38 @@ import {
 } from "./imap-push-runtime";
 
 class FakeMutex implements Mutex {
-  readonly id = "fake";
   readonly #locks = new Map<string, Lock>();
+  #fence = 0n;
   extendAllowed = true;
 
-  async acquire(resource: string, ttl = 60_000): Promise<Lock | null> {
+  async ready(): Promise<void> {}
+
+  async acquire({ resource, ttlMs = 60_000 }: { resource: string; ttlMs?: number; signal?: AbortSignal }): Promise<Lock | null> {
     if (this.#locks.has(resource)) return null;
-    const lock = { resource, value: crypto.randomUUID(), ttl, expiration: Date.now() + ttl };
+    const lock = { resource, ownerToken: crypto.randomUUID(), fence: ++this.#fence, expiresAt: new Date(Date.now() + ttlMs) };
     this.#locks.set(resource, lock);
     return lock;
   }
 
-  async release(lock: Lock): Promise<void> {
-    if (this.#locks.get(lock.resource)?.value === lock.value) this.#locks.delete(lock.resource);
+  async release(lock: Lock): Promise<boolean> {
+    if (this.#locks.get(lock.resource)?.ownerToken !== lock.ownerToken) return false;
+    return this.#locks.delete(lock.resource);
   }
 
-  async extend(lock: Lock, ttl = lock.ttl): Promise<boolean> {
-    if (!this.extendAllowed || this.#locks.get(lock.resource)?.value !== lock.value) return false;
-    lock.ttl = ttl;
-    lock.expiration = Date.now() + ttl;
+  async extend(lock: Lock, { ttlMs = 60_000 }: { ttlMs?: number } = {}): Promise<boolean> {
+    if (!this.extendAllowed || this.#locks.get(lock.resource)?.ownerToken !== lock.ownerToken) return false;
+    lock.expiresAt = new Date(Date.now() + ttlMs);
     return true;
   }
 
-  async withLock<T>(resource: string, fn: (lock: Lock) => Promise<T> | T, ttl?: number): Promise<T | null> {
-    const lock = await this.acquire(resource, ttl);
+  async withLock<T>(input: { resource: string; ttlMs?: number; signal?: AbortSignal }, fn: (lock: Lock) => Promise<T>): Promise<T | null> {
+    const lock = await this.acquire(input);
     if (!lock) return null;
     try {
       return await fn(lock);
     } finally {
       await this.release(lock);
     }
-  }
-
-  async withLockOrThrow<T>(resource: string, fn: (lock: Lock) => Promise<T> | T, ttl?: number): Promise<T> {
-    const value = await this.withLock(resource, fn, ttl);
-    if (value === null) throw new Error("Lock unavailable");
-    return value;
   }
 }
 

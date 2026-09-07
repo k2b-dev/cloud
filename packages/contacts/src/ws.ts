@@ -1,3 +1,4 @@
+import { CursorMismatchError, RetentionGapError } from "@k2b/sync";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
@@ -18,7 +19,7 @@ import {
   projectContactEvent,
 } from "./live-events";
 import { contactsService } from "./service";
-import { latestContactEventCursor, liveContactEvents } from "./service/events";
+import { captureContactEventCursor, latestContactEventCursor, liveContactEvents } from "./service/events";
 import { type ContactsMessages, contactsMessages } from "./service/messages";
 import { resolvePublicId } from "./service/public-resources";
 
@@ -240,6 +241,10 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
       }
     } catch (error) {
       if (abort.signal.aborted || ctx.phase === "closing") return;
+      if (error instanceof RetentionGapError || error instanceof CursorMismatchError) {
+        closeWithError(ctx, "resync_required", ctx.messages.liveStreamFailed, 1012);
+        return;
+      }
       log.error("Contacts WebSocket event stream failed", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -252,6 +257,10 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
 
 const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fromCursor: string | null) => {
   if (isClosing(ctx)) return;
+  if (fromCursor !== null && !/^s6t\.[A-Za-z0-9_-]+\.\d+$/.test(fromCursor)) {
+    closeWithError(ctx, "resync_required", ctx.messages.liveStreamFailed, 1012);
+    return;
+  }
   if (ctx.phase === "subscribed") {
     closeWithError(ctx, "already_subscribed", ctx.messages.liveSubscriptionActive, 1008);
     return;
@@ -269,7 +278,7 @@ const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fr
     return;
   }
 
-  const cursor = fromCursor ?? (await latestContactEventCursor()) ?? "0-0";
+  const cursor = fromCursor ?? (await latestContactEventCursor()) ?? (await captureContactEventCursor());
   if (ctx.phase === "closing") return;
   stopSubscription(ctx);
   ctx.phase = "subscribed";

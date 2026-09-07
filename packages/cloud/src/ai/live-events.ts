@@ -16,7 +16,7 @@ export const AiInvalidationDomainSchema = z.enum(AI_INVALIDATION_DOMAINS);
 export type AiInvalidationDomain = z.infer<typeof AiInvalidationDomainSchema>;
 
 export const AiResourceIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
-export const AiLiveCursorSchema = z.string().regex(/^\d+-\d+$/);
+export const AiLiveCursorSchema = z.string().regex(/^s6t\.[a-zA-Z0-9_-]+\.\d+$/);
 
 export const AiInvalidationSchema = z
   .object({

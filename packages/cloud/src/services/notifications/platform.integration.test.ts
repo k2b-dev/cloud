@@ -182,7 +182,7 @@ suite("typed notification delivery integration", () => {
       expect(lazyEmail.status).toBe("delivered");
 
       const liveAbort = new AbortController();
-      const cursor = (await notifications.live.latestCursor(userId)) ?? "0-0";
+      const cursor = (await notifications.live.latestCursor(userId)) ?? notifications.live.emptyCursor();
       const liveIterator = notifications.live.events({ userId, after: cursor, signal: liveAbort.signal })[Symbol.asyncIterator]();
       const nextLive = liveIterator.next();
       const foreground = await notifications.send(app.notifications.foreground, {

@@ -73,13 +73,21 @@ export const toPublicSpaceEvent = (
   return { type: event.type, spaceId: ids.spaceId, at: event.at };
 };
 
-const StreamCursorSchema = z.string().regex(/^\d+-\d+$/);
+const StreamCursorSchema = z
+  .string()
+  .max(256)
+  .regex(/^s6t\.[A-Za-z0-9_-]+\.\d+$/);
 
 export const SpaceLiveClientMessageSchema = z.object({
   type: z.literal(SPACE_LIVE_WS_TYPE.subscribe),
   payload: z.object({
     spaceId: ResourceShortIdSchema,
-    fromCursor: StreamCursorSchema.nullable(),
+    // Legacy cursors are accepted only so the server can request a fresh snapshot.
+    fromCursor: z
+      .string()
+      .max(256)
+      .regex(/^(?:s6t\.[A-Za-z0-9_-]+\.\d+|\d+-\d+)$/)
+      .nullable(),
   }),
 });
 

@@ -1,9 +1,9 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { schedulerControl } from "@k2b/sync";
 import { sql } from "bun";
 import { type MailStorageSummary, mailStorageSummarySchema } from "../contracts";
 import { isCurrentPlatformAdmin } from "./access";
 import type { MailRequestContext } from "./auth";
+import { mailScheduler } from "./mail-scheduler";
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 
@@ -198,12 +198,7 @@ export const getMailStorageSummary = async (context: MailRequestContext): Promis
 export const requestMailStorageReconciliation = async (context: MailRequestContext): Promise<Result<{ queued: true }>> => {
   if (!(await isCurrentPlatformAdmin(context))) return fail(err.forbidden("Cloud administration access is required"));
   try {
-    await schedulerControl().runNow({
-      schedulerId: "mail",
-      scheduleId: "mail:storage-usage",
-      requestId: context.requestId ?? undefined,
-      timeoutMs: 5_000,
-    });
+    await mailScheduler().runNow({ id: "mail:storage-usage", requestId: context.requestId ?? crypto.randomUUID() });
     return ok({ queued: true });
   } catch {
     return fail(err.internal("Mail storage reconciliation is temporarily unavailable"));

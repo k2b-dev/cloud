@@ -1,4 +1,4 @@
-export const STREAM_CURSOR_PATTERN = /^\d+-\d+$/;
+export const STREAM_CURSOR_PATTERN = /^s6t\.[A-Za-z0-9_-]+\.\d+$/;
 
 export const NOTEBOOKS_YJS_WS_TYPE = {
   replayRequest: "notes.yjs.replay.request",
@@ -26,6 +26,7 @@ export const NOTEBOOKS_YJS_ERROR_CODE = {
   invalidPayload: "INVALID_PAYLOAD",
   backpressure: "BACKPRESSURE",
   internalError: "INTERNAL_ERROR",
+  resyncRequired: "RESYNC_REQUIRED",
 } as const;
 
 export type NotebooksYjsErrorCode = (typeof NOTEBOOKS_YJS_ERROR_CODE)[keyof typeof NOTEBOOKS_YJS_ERROR_CODE];

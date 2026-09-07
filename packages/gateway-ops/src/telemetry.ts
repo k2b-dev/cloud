@@ -1,11 +1,8 @@
-import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic, logger } from "@valentinkolb/cloud/services";
-import type { TopicDelivery } from "@k2b/sync";
+import type { TopicEvent } from "@k2b/sync";
+import { GATEWAY_TELEMETRY_TENANT, type GatewayTelemetryEvent, gatewayTelemetryTopic } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 
-const log = logger("gateway:telemetry");
-
 const WORKER_GROUP = "postgres-writer";
-const BATCH_SIZE = 100;
 /** Duration at which a request is counted as slow, in ingest and in the UI. */
 export const SLOW_REQUEST_MS = 800;
 
@@ -46,7 +43,7 @@ export type TelemetryEventList = {
 
 const escapeLike = (value: string): string => value.replace(/[\\%_]/g, (match) => `\\${match}`);
 
-const persistDelivery = async (delivery: TopicDelivery<GatewayTelemetryEvent>): Promise<void> => {
+const persistDelivery = async (delivery: TopicEvent<GatewayTelemetryEvent>): Promise<void> => {
   const event = delivery.data;
   const statusClass = Math.floor(event.status / 100) * 100;
   const isError = event.status >= 500 || event.errorKind !== null;
@@ -104,36 +101,26 @@ const persistDelivery = async (delivery: TopicDelivery<GatewayTelemetryEvent>): 
   `;
 };
 
-const persistBatch = async (deliveries: TopicDelivery<GatewayTelemetryEvent>[]): Promise<void> => {
-  for (const delivery of deliveries) {
-    await persistDelivery(delivery);
-  }
-  for (const delivery of deliveries) {
-    await delivery.commit();
-  }
-};
-
 export const consumeTelemetry = async (signal: AbortSignal): Promise<void> => {
-  const reader = gatewayTelemetryTopic.reader(WORKER_GROUP);
-  while (!signal.aborted) {
-    const first = await reader.recv({ tenantId: GATEWAY_TELEMETRY_TENANT, wait: true, timeoutMs: 1000, signal });
-    if (!first) continue;
-
-    const batch = [first];
-    while (batch.length < BATCH_SIZE && !signal.aborted) {
-      const next = await reader.recv({ tenantId: GATEWAY_TELEMETRY_TENANT, wait: false, signal });
-      if (!next) break;
-      batch.push(next);
-    }
-
-    try {
-      await persistBatch(batch);
-    } catch (error) {
-      log.error("Failed to persist gateway telemetry batch", {
-        count: batch.length,
-        error: error instanceof Error ? error.message : String(error),
+  const worker = await gatewayTelemetryTopic().process(
+    {
+      consumer: WORKER_GROUP,
+      tenantId: GATEWAY_TELEMETRY_TENANT,
+      start: "earliest",
+      concurrency: 1,
+      signal,
+      delivery: { maxAttempts: 5, ackWaitMs: 30_000, backoffMs: [1_000, 5_000, 15_000, 30_000] },
+    },
+    persistDelivery,
+  );
+  try {
+    if (!signal.aborted)
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => resolve(), { once: true });
+        if (signal.aborted) resolve();
       });
-    }
+  } finally {
+    await worker.drain();
   }
 };
 

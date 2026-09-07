@@ -1,7 +1,8 @@
-import { topic } from "@k2b/sync";
 import type { sql } from "bun";
+import { lazySync } from "../_internal/process-sync";
 import { createPgOutbox } from "../services/outbox";
 import { toPgTextArray } from "../services/postgres";
+import { latestTopicCursor } from "../services/topic-cursor";
 import type { AiInvalidation, AiInvalidationDomain } from "./live-events";
 
 const RETENTION_MS = 24 * 60 * 60 * 1_000;
@@ -21,12 +22,14 @@ export type AiLiveOutboxRow = {
   created_at: Date | string;
 };
 
-const invalidationTopic = topic<AiInvalidation>({
-  id: "invalidations",
-  prefix: "cloud:ai:events",
-  retentionMs: RETENTION_MS,
-  limits: { payloadBytes: 8_000 },
-});
+const invalidationTopic = lazySync((sync) =>
+  sync.topic<AiInvalidation>({
+    id: "cloud-ai-invalidations",
+    owner: "cloud",
+    retention: { maxAgeMs: RETENTION_MS, maxBytes: 64 * 1024 * 1024 },
+    maxPayloadBytes: 9_024,
+  }),
+);
 
 const tenantId = (userId: string): string => userId;
 
@@ -66,7 +69,7 @@ const publishAiInvalidation = (row: AiLiveOutboxRow): Promise<unknown> => {
     domains: row.domains,
     at: new Date(row.created_at).toISOString(),
   };
-  return invalidationTopic.pub({
+  return invalidationTopic().publish({
     tenantId: tenantId(row.audience_user_id),
     orderingKey: row.conversation_short_id ?? row.project_short_id ?? row.audience_user_id,
     idempotencyKey: row.change_id,
@@ -91,7 +94,9 @@ export const startAiInvalidationRuntime = outbox.start;
 export const stopAiInvalidationRuntime = outbox.stop;
 
 export const liveAiInvalidations = (input: { userId: string; after?: string | null; signal?: AbortSignal }) =>
-  invalidationTopic.live({ tenantId: tenantId(input.userId), after: input.after ?? undefined, signal: input.signal });
+  invalidationTopic()
+    .hub({ tenantId: tenantId(input.userId) })
+    .subscribe({ after: input.after ?? undefined, signal: input.signal });
 
-export const latestAiInvalidationCursor = (userId: string): Promise<string | null> =>
-  invalidationTopic.latestCursor({ tenantId: tenantId(userId) });
+export const latestAiInvalidationCursor = (userId: string): Promise<string> =>
+  latestTopicCursor({ topic: invalidationTopic(), resourceId: "cloud-ai-invalidations", tenantId: tenantId(userId) });

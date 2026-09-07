@@ -1,4 +1,4 @@
-const GRIDS_STREAM_CURSOR_PATTERN = /^\d+-\d+$/;
+const GRIDS_STREAM_CURSOR_PATTERN = /^s6t\.[a-zA-Z0-9_-]+\.\d+$/;
 
 export const isGridsStreamCursor = (value: unknown): value is string =>
   typeof value === "string" && GRIDS_STREAM_CURSOR_PATTERN.test(value);

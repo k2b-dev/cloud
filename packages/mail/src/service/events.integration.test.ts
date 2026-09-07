@@ -36,7 +36,7 @@ suite("Mail live invalidation outbox", () => {
   });
 
   test("coalesces activity writes in one transaction and publishes one invalidation", async () => {
-    const cursor = (await latestMailInvalidationCursor(mailboxId)) ?? "0-0";
+    const cursor = await latestMailInvalidationCursor(mailboxId);
     const aborts = [new AbortController(), new AbortController()];
     const pendingEvents = aborts.map((abort) =>
       liveMailInvalidations({ mailboxId, after: cursor, signal: abort.signal })[Symbol.asyncIterator]().next(),
@@ -81,12 +81,11 @@ suite("Mail live invalidation outbox", () => {
     const changeIds = events.map((event) => event.value?.data.changeId);
     for (const event of events) {
       expect(event.done).toBe(false);
-      expect(event.value?.data).toMatchObject({
-        type: "mail.invalidated",
-        mailboxId: mailboxShortId,
-        conversationId: conversationShortId,
-        changeId: expect.any(String),
-      });
+      expect(event.value?.data.type).toBe("mail.invalidated");
+      expect(event.value?.data.mailboxId).toBe(mailboxShortId);
+      expect(event.value?.data.conversationId).toBe(conversationShortId);
+      expect(event.value?.data.changeId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(Number.isFinite(Date.parse(event.value!.data.at))).toBe(true);
     }
     expect(changeIds[0]).toBe(changeIds[1]);
   });
