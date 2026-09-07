@@ -105,6 +105,14 @@ describe("Book tag page SSR", () => {
     expect(html).toContain("/app/notebooks/book01/notes/note01?mode=book");
     expect(html).not.toMatch(/NotebookSidebar|NoteEditor|NotebookDetailPanel|yjsSnapshot/);
     expect(html).toContain("WorkspaceEventBridge");
+    expect(html).toContain('class="notebook-book-tag-grid"');
+    expect(html).toContain("k2b-paper notebook-book-tag-card");
+    expect(html).toContain('data-interactive="true"');
+    expect(html).toContain("k2b-field flex-1 min-w-0");
+    expect(html).not.toContain('<ul class="flex flex-col gap-1"');
+    expect(html).toContain('data-layout-authenticated="true"');
+    expect(html).toContain("AppWorkspaceController");
+    expect(html).toContain("layout-content-main");
     expect(calls.notes).toHaveBeenCalledWith({
       notebookId: notebook.id,
       tag: "team",

@@ -39,6 +39,8 @@ describe("Book surface", () => {
   test("renders a complete article and reading navigation without the editor or inspector", () => {
     const html = render();
     expect(html).toContain("Our handbook.");
+    expect(html).toContain('class="notebook-book-shell"');
+    expect(html).not.toContain('class="k2b-ui notebook-book-shell"');
     expect(html).toContain('class="notebook-book-content"');
     expect(html).toContain("Getting started");
     expect(html).toContain("/app/notebooks/book01/notes/note02?mode=book");

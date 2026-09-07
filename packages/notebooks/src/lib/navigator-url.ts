@@ -1,4 +1,5 @@
 import { searchParams } from "@k2b/stdlib";
+import { requestedPresentationMode, withPresentationMode } from "./presentation-url";
 
 export type NavigatorQuery =
   | { view?: undefined; folder?: undefined; tag?: undefined }
@@ -7,6 +8,17 @@ export type NavigatorQuery =
   | { view: "tag"; tag: string; folder?: undefined };
 
 const NAVIGATOR_KEYS = new Set(["view", "folder", "tag"]);
+
+/** Auxiliary pages have no note-list pane: return to the notebook before filtering. */
+export const navigatorDestinationHref = (currentHref: string, notebookId: string, query: NavigatorQuery): string => {
+  const current = new URL(currentHref, "https://notebooks.invalid");
+  const base = `/app/notebooks/${notebookId}`;
+  const isWorkspace =
+    current.pathname === base ||
+    (current.pathname.startsWith(`${base}/notes/`) && /^[A-Za-z0-9]{6}$/.test(current.pathname.slice(`${base}/notes/`.length)));
+  const mode = requestedPresentationMode(current.searchParams);
+  return withNavigatorQuery(isWorkspace ? currentHref : mode ? withPresentationMode(base, mode) : base, query);
+};
 
 export const parseNavigatorQuery = (params: URLSearchParams): NavigatorQuery => {
   const view = params.get("view");

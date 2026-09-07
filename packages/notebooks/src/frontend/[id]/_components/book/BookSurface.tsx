@@ -20,7 +20,7 @@ export default function BookSurface(props: BookSurfaceProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
   return (
-    <div class="k2b-ui notebook-book-shell">
+    <div class="notebook-book-shell">
       <AppWorkspace class="notebook-book-workspace">
         <BookNavigator
           notebookId={props.notebookId}

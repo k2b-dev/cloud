@@ -1,4 +1,4 @@
-import { Button, LocaleProvider, Pagination, Placeholder, TextInput } from "@k2b/ui";
+import { Button, LocaleProvider, Pagination, Paper, Placeholder, TextInput } from "@k2b/ui";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -25,11 +25,12 @@ export default function BookTagContent(props: BookTagContentProps) {
   const formatDate = (iso: string) => new Intl.DateTimeFormat(props.locale).format(new Date(iso));
   return (
     <LocaleProvider locale={props.locale}>
-      <section class="flex flex-col gap-4">
+      <section class="notebook-book-tag-page flex flex-col gap-4">
         <h1 class="text-xl font-semibold">#{props.tag}</h1>
-        <form role="search" method="get" action={baseHref} class="flex gap-2">
+        <form role="search" method="get" action={baseHref} class="flex w-full min-w-0 gap-2">
           <input type="hidden" name="mode" value="book" />
           <TextInput
+            class="flex-1 min-w-0"
             name="search"
             type="search"
             value={props.search}
@@ -47,23 +48,25 @@ export default function BookTagContent(props: BookTagContentProps) {
             : t.noteCount({ count: props.totalNotesForTag })}
         </span>
         {props.items.length ? (
-          <ul class="flex flex-col gap-1">
+          <div class="notebook-book-tag-grid">
             {props.items.map((note) => (
-              <li>
-                <a
-                  href={withPresentationMode(buildNoteUrl(props.notebookId, note.shortId), "book")}
-                  class="flex flex-col gap-1 rounded-[var(--ui-radius-control)] px-3 py-2.5 no-underline hover:bg-[var(--ui-hover)]"
-                >
-                  <div class="flex items-center gap-2">
-                    <i class="ti ti-file-text text-sm shrink-0 text-dimmed" />
-                    <span class="flex-1 truncate text-sm text-primary">{note.title}</span>
-                    <span class="shrink-0 text-xs text-dimmed tabular-nums">{formatDate(note.updatedAt)}</span>
-                  </div>
-                  {note.preview && <p class="text-xs text-dimmed line-clamp-2 pl-5">{note.preview}</p>}
-                </a>
-              </li>
+              <Paper
+                as="a"
+                interactive
+                href={withPresentationMode(buildNoteUrl(props.notebookId, note.shortId), "book")}
+                class="notebook-book-tag-card flex min-w-0 flex-col gap-3 p-4"
+              >
+                <div class="flex items-center gap-2">
+                  <i class="ti ti-file-text text-sm shrink-0 text-dimmed" aria-hidden="true" />
+                  <span class="min-w-0 font-medium text-sm text-primary break-words">{note.title}</span>
+                </div>
+                {note.preview && <span class="text-xs text-dimmed line-clamp-2 break-words">{note.preview}</span>}
+                <time datetime={note.updatedAt} class="mt-auto text-xs text-dimmed tabular-nums">
+                  {formatDate(note.updatedAt)}
+                </time>
+              </Paper>
             ))}
-          </ul>
+          </div>
         ) : (
           <Placeholder
             surface="paper"

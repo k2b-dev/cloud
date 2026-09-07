@@ -1,7 +1,7 @@
 import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { getLocale } from "@valentinkolb/cloud/server";
-import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { notebooksPageMessages } from "../messages";
 import BookSurface from "./_components/book/BookSurface";
@@ -32,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
     const bookTree = (nodes: typeof data.tree): import("./_components/book/BookNavigator.island").BookTreeNode[] =>
       nodes.map((node) => ({ id: node.id, title: node.title, children: bookTree(node.children) }));
     return () => (
-      <MinimalLayout c={c} preferences={false}>
+      <Layout c={c} fullPage fullWidth title={data.notebook.name}>
         <BookSurface
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
         />
-      </MinimalLayout>
+      </Layout>
     );
   }
 

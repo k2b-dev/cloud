@@ -185,6 +185,8 @@ export const renderNotebookBook = (
     if (wasInsideLink) return body;
     const url = resolveUrl(href);
     if (!url) return body;
+    if (/^note:\/\/[A-Za-z0-9]{6}$/.test(href))
+      return `<a class="notebook-book-note-link" href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}><i class="ti ti-connection" aria-hidden="true"></i>${body}</a>`;
     return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
   };
   renderer.image = function ({ href, title, tokens }) {

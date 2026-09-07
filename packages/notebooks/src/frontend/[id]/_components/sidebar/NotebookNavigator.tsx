@@ -1,7 +1,7 @@
 import { type DateContext, dates, searchParams } from "@k2b/stdlib";
 import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
+import { navigatorDestinationHref, type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
@@ -227,7 +227,15 @@ export default function NotebookNavigator(props: Props) {
 
   const select = (next: Selection, history: "push" | "replace" = "push") => {
     setSelection(next);
-    const href = withNavigatorQuery(window.location.pathname + window.location.search, queryFromSelection(next, props.tree));
+    const href = navigatorDestinationHref(
+      window.location.pathname + window.location.search,
+      props.notebook.id,
+      queryFromSelection(next, props.tree),
+    );
+    if (href.split("?", 1)[0] !== window.location.pathname) {
+      void navigateToNotebookNote(href);
+      return;
+    }
     if (href === window.location.pathname + window.location.search) return;
     window.history[history === "push" ? "pushState" : "replaceState"]({}, "", href);
     window.dispatchEvent(new PopStateEvent("popstate"));

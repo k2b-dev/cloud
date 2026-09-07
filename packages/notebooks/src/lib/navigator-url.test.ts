@@ -1,7 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { hasOnlyNavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "./navigator-url";
+import { hasOnlyNavigatorQuery, navigatorDestinationHref, parseNavigatorQuery, withNavigatorQuery } from "./navigator-url";
 
 describe("notebook navigator URLs", () => {
+  test("leaves attachments and tag pages before selecting a note list", () => {
+    for (const path of ["attachments", "tags/daily"]) {
+      const current = `/app/notebooks/JJVtWA/${path}?search=coffee&page=2&mode=readonly`;
+      expect(navigatorDestinationHref(current, "JJVtWA", { view: "folder", folder: "hetqzZ" })).toBe(
+        "/app/notebooks/JJVtWA?mode=readonly&view=folder&folder=hetqzZ",
+      );
+      expect(navigatorDestinationHref(current, "JJVtWA", {})).toBe("/app/notebooks/JJVtWA?mode=readonly");
+      expect(navigatorDestinationHref(current, "JJVtWA", { view: "favorites" })).toBe("/app/notebooks/JJVtWA?mode=readonly&view=favorites");
+    }
+  });
+
+  test("keeps the active note when filtering inside the workspace", () => {
+    expect(navigatorDestinationHref("/app/notebooks/JJVtWA/notes/abc123?mode=write", "JJVtWA", { view: "recents" })).toBe(
+      "/app/notebooks/JJVtWA/notes/abc123?mode=write&view=recents",
+    );
+  });
   test("parses supported views and normalizes tags", () => {
     expect(parseNavigatorQuery(new URLSearchParams("view=favorites"))).toEqual({ view: "favorites" });
     expect(parseNavigatorQuery(new URLSearchParams("view=folder&folder=abc123"))).toEqual({ view: "folder", folder: "abc123" });

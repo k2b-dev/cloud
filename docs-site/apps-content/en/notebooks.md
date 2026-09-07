@@ -15,6 +15,10 @@ permission-scoped workspace. Notes use Markdown and can link to other notes,
 tags, and uploaded files. Editors work together in real time; readers see a
 dedicated Book view.
 
+Book keeps the normal Cloud navigation around its page tree and reading area,
+including on tag pages. It still requires sign-in and notebook access; choosing
+Book does not publish a notebook anonymously.
+
 The Notebooks start page keeps accessible notebooks at the top, shows recently
 edited notes across those notebooks, and provides one permission-aware activity
 stream. Pin notebooks to keep them first, or use the shared search prompt to

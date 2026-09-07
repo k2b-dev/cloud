@@ -11,7 +11,7 @@ import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { get } from "@valentinkolb/cloud/services";
-import { Layout, MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
@@ -130,7 +130,7 @@ export default ssr<AuthContext>(async (c) => {
       />
     ));
     return () => (
-      <MinimalLayout c={c} preferences={false}>
+      <Layout c={c} fullPage fullWidth title={notebook.name}>
         <BookSurface
           notebookId={notebook.shortId}
           notebookName={notebook.name}
@@ -146,7 +146,7 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={appUrl}
           cursor={workspaceCursor}
         />
-      </MinimalLayout>
+      </Layout>
     );
   }
 

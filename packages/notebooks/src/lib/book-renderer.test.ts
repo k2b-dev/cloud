@@ -242,6 +242,15 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain("/tags/team%2Fnews?mode=book");
     expect(html).not.toContain("/tags/code");
     expect(html).not.toContain("/tags/label");
+    expect(html).toContain('class="notebook-book-tag"');
+  });
+
+  test("note badges preserve inline labels and titles without styling external links as notes", () => {
+    const { html } = render('[**Guide**](note://DEF456 "Open guide") [Website](https://example.test)');
+    expect(html).toContain('class="notebook-book-note-link"');
+    expect(html).toContain('title="Open guide"');
+    expect(html).toContain('<i class="ti ti-connection" aria-hidden="true"></i><strong>Guide</strong>');
+    expect(html).toContain('<a rel="noopener noreferrer" href="https://example.test">Website</a>');
   });
 
   test("inline decorations and all existing math forms render without a DOM", () => {

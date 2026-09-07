@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import type { PermissionLevel, User } from "@valentinkolb/cloud/contracts";
+import type { CloudRuntime, PermissionLevel, User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import * as cloudServices from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
@@ -120,6 +120,29 @@ async function load(mode?: string, path?: string) {
 }
 
 describe("notebook page presentation authorization", () => {
+  test("Book notes render inside the normal Cloud workspace shell", async () => {
+    fixtures("read");
+    await import("./_components/detail/ssr-test-plugin");
+    const { default: handler } = await import("./page");
+    const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+    app.use("*", async (c, next) => {
+      c.set("actor", { kind: "user", user });
+      c.set("user", user);
+      c.set("runtime", { apps: [] });
+      await next();
+    });
+    app.get("/app/notebooks/:id/notes/:noteId", ...handler);
+    const response = await app.request("https://cloud.example.test/app/notebooks/book01/notes/note01?mode=book");
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('data-layout-authenticated="true"');
+    expect(html).toContain("AppWorkspaceController");
+    expect(html).toContain("layout-content-main");
+    expect(html).toContain("notebook-book-workspace");
+    expect(html).toContain("<strong>handbook</strong>");
+    expect(html).not.toMatch(/NoteEditor|NotebookDetailPanel|collaboration-state-not-for-book/);
+  });
+
   test("global administrators can render Book without a separate notebook grant", async () => {
     fixtures("none");
     const data = await requestPageData("book", undefined, { ...user, roles: ["admin"] });
