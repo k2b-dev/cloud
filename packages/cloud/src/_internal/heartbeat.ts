@@ -1,35 +1,37 @@
 /** Keep an app discoverable even when the ephemeral registry is recreated. */
 
-import { APP_REGISTRY_TTL_MS, appRegistry } from "./registry";
+import { APP_REGISTRY_TTL_MS } from "./registry";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
 const HEARTBEAT_WRITE_TIMEOUT_MS = 10_000;
 const HEARTBEAT_RETRY_MS = 5_000;
 const HEARTBEAT_STALE_MARGIN_MS = 15_000;
 
+/** The subset of a @k2b/sync `Ephemeral<T>` the heartbeat needs. */
 type HeartbeatRegistry<T> = {
-  remove: (input: { key: string }) => Promise<unknown>;
   upsert: (input: { key: string; value: T }) => Promise<unknown>;
-  touch?: (input: { key: string }) => Promise<{ ok: boolean }>;
+  /** Renews the lease; false when the key is absent. */
+  touch: (input: { key: string }) => Promise<boolean>;
+  delete: (input: { key: string }) => Promise<unknown>;
 };
 
 type HeartbeatOptions<T> = {
+  registry: HeartbeatRegistry<T>;
   key?: string;
   intervalMs?: number;
   retryMs?: number;
   staleAfterMs?: number;
   writeTimeoutMs?: number;
-  registry?: HeartbeatRegistry<T>;
   onError?: (error: unknown) => void;
   onStale?: (error: unknown) => void;
 };
 
-export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOptions<T> = {}) => {
+export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOptions<T>) => {
   const intervalMs = options.intervalMs ?? HEARTBEAT_INTERVAL_MS;
   const retryMs = options.retryMs ?? Math.min(HEARTBEAT_RETRY_MS, intervalMs);
   const staleAfterMs = options.staleAfterMs ?? APP_REGISTRY_TTL_MS - HEARTBEAT_STALE_MARGIN_MS;
   const writeTimeoutMs = options.writeTimeoutMs ?? HEARTBEAT_WRITE_TIMEOUT_MS;
-  const registry = options.registry ?? (appRegistry as unknown as HeartbeatRegistry<T>);
+  const registry = options.registry;
   const onError = options.onError ?? ((error: unknown) => console.error(`[app:${appId}] Registry heartbeat failed`, error));
   const onStale = options.onStale;
 
@@ -59,8 +61,8 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     // Normal heartbeats renew only the lease, so bounded capability manifests
     // are not serialized and written every minute. A missing entry is repaired
     // immediately, preserving restart-free registry recovery.
-    const touched = registry.touch ? await registry.touch({ key }) : { ok: false };
-    if (!touched.ok) await registry.upsert({ key, value: entry });
+    const touched = await registry.touch({ key });
+    if (!touched) await registry.upsert({ key, value: entry });
     noteSuccess();
   };
 
@@ -70,7 +72,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
     void write
       .then(async () => {
         // A write that completed after its timeout must not resurrect a stopped app.
-        if (timedOut && !running) await registry.remove({ key }).catch(() => false);
+        if (timedOut && !running) await registry.delete({ key }).catch(() => false);
       })
       .catch(() => undefined);
     try {
@@ -159,7 +161,7 @@ export const createHeartbeat = <T>(appId: string, entry: T, options: HeartbeatOp
         // still required so a stopped app cannot remain discoverable.
       }
       inFlight = null;
-      await registry.remove({ key });
+      await registry.delete({ key });
     },
   };
 };

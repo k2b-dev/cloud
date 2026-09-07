@@ -1,4 +1,4 @@
-import { appRegistry, buildRuntimeFromRegistry, listApps } from "@valentinkolb/cloud";
+import { buildRuntimeFromRegistry, listApps, type ProcessSync, startProcessSync, watchAppRegistry } from "@valentinkolb/cloud";
 import {
   buildGatewayRouteSnapshot,
   logger,
@@ -19,7 +19,7 @@ let lastWarningsHash = "";
 let lastRouteWarnings: AppRouteWarning[] = [];
 let watcherAbort: AbortController | null = null;
 let watcherTask: Promise<void> | null = null;
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let processSync: ProcessSync | null = null;
 const startedAt = Date.now();
 
 export const getCurrentRuntime = () => currentRuntime;
@@ -76,11 +76,7 @@ const startRegistryWatcher = (): void => {
   watcherTask = superviseRuntimeTask({
     name: "Gateway registry watcher",
     signal,
-    run: async () => {
-      const snap = await appRegistry.snapshot({ prefix: "apps/" });
-      await refreshRoutes();
-      for await (const _ev of appRegistry.reader({ prefix: "apps/", after: snap.cursor }).stream({ signal })) await refreshRoutes();
-    },
+    run: (signal) => watchAppRegistry({ signal, onChange: refreshRoutes }),
     onError: ({ error, failureCount, retryInMs }) =>
       log.error("Registry watcher failed; restarting", {
         error: error instanceof Error ? error.message : String(error),
@@ -92,21 +88,22 @@ const startRegistryWatcher = (): void => {
 
 export const gatewayRuntime = {
   setup: async (): Promise<void> => {
+    // The router is not a defineApp() app, so it owns its process Sync instance itself.
+    processSync = await startProcessSync({ application: "gateway" });
     await refreshRoutes();
   },
 
   start: async (): Promise<void> => {
-    refreshTimer = setInterval(refreshRoutes, 5_000);
     startRegistryWatcher();
   },
 
   stop: async (): Promise<void> => {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = null;
     watcherAbort?.abort();
     await watcherTask;
     watcherAbort = null;
     watcherTask = null;
     await removeGatewayRouteSnapshot(gatewayRouter.id);
+    await processSync?.stop();
+    processSync = null;
   },
 };

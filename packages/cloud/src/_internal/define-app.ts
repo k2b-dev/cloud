@@ -8,6 +8,7 @@
 import type { SsrConfig } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
+import type { Sync } from "@k2b/sync";
 import { type Context, type Handler, Hono } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { env } from "../config/env";
@@ -17,7 +18,7 @@ import type {
   AppLifecycle,
   AppMeta,
   AppPresentationCatalog,
-  CloudContext,
+  CloudLifecycleContext,
   WidgetEndpoint,
 } from "../contracts/app";
 import { CAPABILITY_FRAMEWORK_ERROR_CODES, CAPABILITY_MAX_REQUEST_BYTES, type CapabilityDefinitions } from "../contracts/capabilities";
@@ -42,6 +43,7 @@ import { startNotificationDefinitionRegistration } from "../services/notificatio
 import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
+import { createSyncOpsRoutes } from "../services/sync-ops";
 import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { themeBootstrapScript } from "../shared/theme";
@@ -53,8 +55,9 @@ import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
 import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
+import { getProcessSync, startProcessSync } from "./process-sync";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
-import { type CapabilityRegistryRecord, capabilityRegistry, helpRegistry } from "./registry";
+import { appRegistry, type CapabilityRegistryRecord, capabilityRegistry, helpRegistry } from "./registry";
 import { ensureRuntimeWatcher, getCurrentRuntime, stopRuntimeWatcher } from "./runtime-watcher";
 import { servePublicAsset } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -241,6 +244,13 @@ export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationD
   baseUrl: string;
   start: (opts: StartOptions) => Promise<StartResult>;
   /**
+   * The process-wide @k2b/sync instance, connected and ready once `start()`
+   * resolved. Reading it earlier throws: declare primitives lazily with
+   * `lazySync((sync) => sync.job(...))` and use them from `lifecycle.start`
+   * or request handlers.
+   */
+  readonly sync: Sync;
+  /**
    * Phantom field — type-only carrier for the per-app settings shape. Always
    * `undefined` at runtime; do not read or assign. Used by `AppContext<App>`
    * to extract the inferred settings map via `App["_settings"]`.
@@ -370,6 +380,11 @@ export const defineApp = <
       );
     }
 
+    // One NATS connection and one Sync instance per process. Ready before
+    // anything registers, so a discoverable app can always serve sync work.
+    const processSync = await startProcessSync({ application: meta.id });
+    const startedAt = Date.now();
+
     // OpenAPI advertised in the registry only when there's a router to
     // derive the spec from. The mount block lower down uses the same
     // flag so the registry never points at a URL that 404s.
@@ -395,6 +410,7 @@ export const defineApp = <
       appearance: meta.appearance,
       baseUrl,
       runtime: appRuntimeMetadata,
+      startedAt,
       routes: [...meta.routes],
       nav:
         meta.nav || meta.adminHref
@@ -427,6 +443,7 @@ export const defineApp = <
 
     // Heartbeat
     const heartbeat = createHeartbeat(meta.id, entry, {
+      registry: appRegistry(),
       onError: (error) =>
         log.error("Registry heartbeat failed", {
           appId: meta.id,
@@ -450,7 +467,7 @@ export const defineApp = <
     const capabilityHeartbeat = capabilityEntry
       ? createHeartbeat(meta.id, capabilityEntry, {
           key: `capabilities/${meta.id}`,
-          registry: capabilityRegistry,
+          registry: capabilityRegistry(),
           onError: (error) =>
             log.error("Capability registry heartbeat failed", {
               appId: meta.id,
@@ -468,7 +485,7 @@ export const defineApp = <
     const helpHeartbeat = compiledHelp
       ? createHeartbeat(meta.id, compiledHelp.registryEntry, {
           key: `help/${meta.id}`,
-          registry: helpRegistry,
+          registry: helpRegistry(),
           onError: (error) =>
             log.error("Help registry heartbeat failed", {
               appId: meta.id,
@@ -507,6 +524,7 @@ export const defineApp = <
     //   /public/*               serveStatic + terminal 404
     //   /api/_internal/capabilities/v1/* when capabilities are declared
     //   /api/_internal/widgets/v1/*     when widget handlers are bound
+    //   /_internal/sync/*       process-local sync operations (admin only)
     //   <opts.openapi>          OpenAPI JSON spec, when both opts.openapi
     //                            and startOpts.openapi are set
     const ssrMountPath = config.basePath ? `${config.basePath}/_ssr` : "/_ssr";
@@ -519,7 +537,9 @@ export const defineApp = <
       .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
       .route(ssrMountPath, routes(config))
       .all(`${ssrMountPath}/*`, (c) => c.notFound())
-      .all("/public/*", servePublicAsset(isDevelopment));
+      .all("/public/*", servePublicAsset(isDevelopment))
+      .use("/_internal/sync/*", auth.requireRole("admin"))
+      .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
 
     if (compiledHelp) {
       const pageBase = compiledHelp.summary.pageBase;
@@ -683,10 +703,11 @@ export const defineApp = <
     server.all("*", (c) => Promise.resolve(startOpts.fetch(c.req.raw, c.env)));
 
     // Lifecycle
-    const cloudCtx: CloudContext = {
+    const cloudCtx: CloudLifecycleContext = {
       logger,
       settings: { get, set },
       runtime: getCurrentRuntime(),
+      sync: processSync.sync,
     };
 
     if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {
@@ -717,6 +738,12 @@ export const defineApp = <
       await capabilityHeartbeat?.stop();
       await heartbeat.stop();
       await helpHeartbeat?.stop();
+      // Sync work drains before the NATS connection; the registry writes above needed both.
+      try {
+        await processSync.stop();
+      } catch (error) {
+        log.error("Sync shutdown failed", { appId: meta.id, error: error instanceof Error ? error.message : String(error) });
+      }
     };
 
     process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
@@ -732,6 +759,9 @@ export const defineApp = <
     meta,
     baseUrl: opts.baseUrl,
     start,
+    get sync() {
+      return getProcessSync();
+    },
     // Phantom — see AppDefinition._settings doc. Do not read at runtime.
     _settings: undefined as unknown as S,
     settings: createSettingsAPI<S>(),

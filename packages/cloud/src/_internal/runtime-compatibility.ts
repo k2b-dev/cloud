@@ -15,8 +15,8 @@ const parseVersion = (value: string): ParsedVersion | null => {
   return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
 };
 
-const isBefore59 = (version: ParsedVersion): boolean => version.major < 5 || (version.major === 5 && version.minor < 9);
-const isAtLeast59 = (version: ParsedVersion): boolean => version.major > 5 || (version.major === 5 && version.minor >= 9);
+/** @k2b/sync 6 moved from Redis to NATS; a 5.x process cannot see 6.x registrations or durable work. */
+const isLegacyGeneration = (version: ParsedVersion): boolean => version.major < 6;
 
 export const assessRuntimeCompatibility = (apps: readonly AppRegistryEntry[]): RuntimeCompatibilityIssue[] => {
   const issues: RuntimeCompatibilityIssue[] = [];
@@ -38,13 +38,13 @@ export const assessRuntimeCompatibility = (apps: readonly AppRegistryEntry[]): R
     known.push({ id: app.id, version, parsed });
   }
 
-  const legacy = known.filter(({ parsed }) => isBefore59(parsed));
-  const current = known.filter(({ parsed }) => isAtLeast59(parsed));
+  const legacy = known.filter(({ parsed }) => isLegacyGeneration(parsed));
+  const current = known.filter(({ parsed }) => !isLegacyGeneration(parsed));
   if (legacy.length > 0 && current.length > 0) {
     issues.push({
       code: "mixed-sync-generation",
       severity: "error",
-      message: "Mixed @k2b/sync <=5.8 and >=5.9 runtimes use incompatible durable namespaces.",
+      message: "Mixed @k2b/sync 5.x (Redis) and 6.x (NATS) runtimes cannot see each other's registrations or durable work.",
       appIds: [...legacy, ...current].map(({ id }) => id),
     });
     return issues;

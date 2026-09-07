@@ -14,6 +14,8 @@ x-env: &env
   NODE_ENV: development
   DATABASE_URL: postgresql://ipa:ipa@ipa_postgres:5432/ipa
   REDIS_URL: redis://ipa_valkey:6379
+  NATS_SERVERS: nats://ipa_nats_1:4222,nats://ipa_nats_2:4222,nats://ipa_nats_3:4222
+  SYNC_NAMESPACE: dev
   APP_SECRET: dev-secret-change-me-in-production
   CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
   CLOUD_OAUTH_JWKS_ORIGIN: http://app-oauth:3000

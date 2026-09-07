@@ -23,6 +23,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   if (!isStringArray(value.routes) || value.routes.some((route) => !route.startsWith("/"))) {
     return invalid("routes", "an array of absolute paths");
   }
+  if (value.startedAt !== undefined && !(typeof value.startedAt === "number" && Number.isFinite(value.startedAt))) {
+    return invalid("startedAt", "a finite number");
+  }
   if (value.runtime !== undefined) {
     if (!isRecord(value.runtime)) return invalid("runtime", "an object");
     if (!isString(value.runtime.release) || value.runtime.release.length === 0) return invalid("runtime.release", "a non-empty string");

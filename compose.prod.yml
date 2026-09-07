@@ -1,8 +1,10 @@
 # Production deployment template — single host, behind an existing Traefik.
 #
-# This file does NOT define `postgres`, `valkey`, or `filegate`. Add them
-# yourself (the apps reference `postgres:5432` and `valkey:6379` and depend
-# on a `postgres` service with a healthcheck). See README for an example.
+# This file does NOT define `postgres`, `valkey`, `nats-1..3`, or `filegate`.
+# Add them yourself (the apps reference `postgres:5432`, `valkey:6379`, and a
+# three-node NATS JetStream cluster at `nats-1..3:4222` with max_payload >= 16MB,
+# and depend on a `postgres` service with a healthcheck). See README and
+# compose.yml for an example.
 #
 # Configure via .env (see .env.prod.example).
 
@@ -10,6 +12,13 @@ x-shared-env: &shared-env
   NODE_ENV: production
   DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
   REDIS_URL: redis://valkey:6379
+  NATS_SERVERS: nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222
+  SYNC_NAMESPACE: ${SYNC_NAMESPACE:-prod}
+  # Optional NATS auth/TLS: paths inside the app containers. Mount the files
+  # into every app service (e.g. via a shared `volumes:` entry on
+  # x-app-defaults) and set the paths in .env.
+  NATS_CREDS_FILE: ${NATS_CREDS_FILE:-}
+  NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
   APP_SECRET: ${APP_SECRET}
   APP_URL: https://${CLOUD_HOST}
   CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000

@@ -1,7 +1,7 @@
-import { appRegistry, listApps, listAppsDetailed } from "@valentinkolb/cloud";
+import { lazySync, listApps, listAppsDetailed, watchAppRegistry } from "@valentinkolb/cloud";
 import type { AppLifecycle } from "@valentinkolb/cloud/contracts";
-import { get as getSetting, logger, trace } from "@valentinkolb/cloud/services";
-import { job, scheduler } from "@k2b/sync";
+import { get as getSetting, logger, superviseRuntimeTask, syncOps, trace } from "@valentinkolb/cloud/services";
+import type { Worker } from "@k2b/sync";
 import { runHealthWebhookCheck } from "./health-webhooks";
 import { migrate } from "./migrate";
 import { listRegisteredAppStatus, markOfflineLogged, upsertRegisteredApps } from "./registered-apps";
@@ -16,15 +16,21 @@ const DEFAULT_CLEANUP_CRON = "0 4 * * *";
 const DEFAULT_HEALTH_CRON = "*/5 * * * *";
 const TELEMETRY_CLEANUP_CRON = "17 3 * * *";
 const HEALTH_SCHEDULE_ID = "gateway:health-webhook-check";
+const OFFLINE_AUDIT_ID = "gateway:registered-apps:offline-audit";
+const SCHEDULER_ID = "gateway-ops-lifecycle";
 
-const gatewayOpsScheduler = scheduler({ id: "gateway-ops-lifecycle" });
+const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID }));
+const offlineAuditJob = lazySync((sync) =>
+  sync.job<void>({ id: OFFLINE_AUDIT_ID, delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1_000, 2_000] } }),
+);
 
 let registryWatcherAbort: AbortController | null = null;
-let registryRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let registryWatcherTask: Promise<void> | null = null;
 let telemetryAbort: AbortController | null = null;
 let telemetryTask: Promise<void> | null = null;
-let schedulerStarted = false;
-let offlineScheduleRegistered = false;
+let schedulerWorker: Worker | null = null;
+let offlineAuditWorker: Worker | null = null;
+let unregisterSyncOps: Array<() => void> = [];
 let registryRefreshInFlight = false;
 
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
@@ -73,68 +79,28 @@ const getPositiveIntegerSetting = async (key: string, fallback: number): Promise
   return Number.isFinite(value) && value >= 1 ? Math.trunc(value) : fallback;
 };
 
-const retryOnError =
-  (cfg: { maxAttempts: number; baseMs: number; maxMs?: number }) =>
-  ({
-    ctx,
-  }: {
-    ctx: {
-      error?: Error;
-      failureCount: number;
-      reschedule: (cfg: { delayMs: number }) => void;
-      expBackoff: (cfg: { baseMs: number; maxMs?: number }) => number;
-    };
-  }) => {
-    if (!ctx.error) return;
-    if (ctx.failureCount >= cfg.maxAttempts - 1) return;
-    ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: cfg.baseMs, maxMs: cfg.maxMs }) });
-  };
+const runOfflineAudit = async (signal: AbortSignal): Promise<void> => {
+  if (signal.aborted) return;
+  const liveApps = await listAppsDetailed();
+  const rows = await listRegisteredAppStatus(liveApps);
+  const now = Date.now();
 
-type OfflineAuditSummary = {
-  scanned: number;
-  offline: number;
-  logged: number;
+  for (const appStatus of rows) {
+    if (appStatus.isOnline || appStatus.offlineForMs < OFFLINE_AFTER_MS) continue;
+    if (appStatus.lastOfflineLoggedAt && now - appStatus.lastOfflineLoggedAt < OFFLINE_LOG_INTERVAL_MS) continue;
+    const offlineFor = fmtDuration(appStatus.offlineForMs);
+    offlineLog.error(`Registered app "${appStatus.id}" has been offline for ${offlineFor}`, {
+      appId: appStatus.id,
+      appName: appStatus.name,
+      lastSeenAt: new Date(appStatus.lastSeenAt).toISOString(),
+      offlineForMs: appStatus.offlineForMs,
+      offlineFor,
+      baseUrl: appStatus.baseUrl,
+      routes: appStatus.routes,
+    });
+    await markOfflineLogged(appStatus.id);
+  }
 };
-
-const offlineAuditJob = job<void, OfflineAuditSummary>({
-  id: "gateway:registered-apps:offline-audit",
-  defaults: { leaseMs: 120_000 },
-  trace: trace.fromSyncJob<void, OfflineAuditSummary>({
-    name: "Registered app offline audit",
-    source: "gateway:registered-apps:offline-audit",
-    appId: "gateway-ops",
-    summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-  }),
-  process: async ({ ctx }) => {
-    if (ctx.signal.aborted) return { scanned: 0, offline: 0, logged: 0 };
-    const liveApps = await listAppsDetailed();
-    const rows = await listRegisteredAppStatus(liveApps);
-    const now = Date.now();
-    let offline = 0;
-    let logged = 0;
-
-    for (const appStatus of rows) {
-      if (appStatus.isOnline || appStatus.offlineForMs < OFFLINE_AFTER_MS) continue;
-      offline += 1;
-      if (appStatus.lastOfflineLoggedAt && now - appStatus.lastOfflineLoggedAt < OFFLINE_LOG_INTERVAL_MS) continue;
-      const offlineFor = fmtDuration(appStatus.offlineForMs);
-      offlineLog.error(`Registered app "${appStatus.id}" has been offline for ${offlineFor}`, {
-        appId: appStatus.id,
-        appName: appStatus.name,
-        lastSeenAt: new Date(appStatus.lastSeenAt).toISOString(),
-        offlineForMs: appStatus.offlineForMs,
-        offlineFor,
-        baseUrl: appStatus.baseUrl,
-        routes: appStatus.routes,
-      });
-      await markOfflineLogged(appStatus.id);
-      logged += 1;
-    }
-
-    return { scanned: rows.length, offline, logged };
-  },
-  after: retryOnError({ maxAttempts: 3, baseMs: 1000 }),
-});
 
 export const refreshRegisteredApps = async (): Promise<void> => {
   await upsertRegisteredApps(await listApps());
@@ -154,94 +120,80 @@ const refreshRegisteredAppsOnce = async (): Promise<void> => {
   }
 };
 
-const startRegistryWatcher = async (): Promise<void> => {
-  registryWatcherAbort?.abort();
+const startRegistryWatcher = (): void => {
+  if (registryWatcherTask) return;
   registryWatcherAbort = new AbortController();
-  const signal = registryWatcherAbort.signal;
-  while (!signal.aborted) {
-    try {
-      const snap = await appRegistry.snapshot({ prefix: "apps/" });
-      for await (const _ev of appRegistry.reader({ prefix: "apps/", after: snap.cursor }).stream({ signal })) {
-        await refreshRegisteredAppsOnce();
-      }
-    } catch (error) {
-      if (isAbortError(error) || signal.aborted) return;
-      log.error("Registry watcher failed", {
+  registryWatcherTask = superviseRuntimeTask({
+    name: "Registered apps watcher",
+    signal: registryWatcherAbort.signal,
+    run: (signal) => watchAppRegistry({ signal, onChange: refreshRegisteredAppsOnce }),
+    onError: ({ error, failureCount, retryInMs }) =>
+      log.error("Registry watcher failed; restarting", {
         error: error instanceof Error ? error.message : String(error),
-      });
-      await delay(5_000, signal);
-    }
-  }
+        failureCount,
+        retryInMs,
+      }),
+  });
+};
+
+const stopRegistryWatcher = async (): Promise<void> => {
+  registryWatcherAbort?.abort();
+  await registryWatcherTask?.catch(() => undefined);
+  registryWatcherAbort = null;
+  registryWatcherTask = null;
 };
 
 const createOfflineAuditSchedule = async (): Promise<void> => {
-  if (offlineScheduleRegistered) return;
-  const [cron, tz] = await Promise.all([getCronSetting("app.cleanup_schedule", DEFAULT_CLEANUP_CRON), getTimezoneSetting()]);
-  await gatewayOpsScheduler.create({
-    id: "gateway:registered-apps:offline-audit",
+  const [cron, timezone] = await Promise.all([getCronSetting("app.cleanup_schedule", DEFAULT_CLEANUP_CRON), getTimezoneSetting()]);
+  await gatewayOpsScheduler().create({
+    id: OFFLINE_AUDIT_ID,
     cron,
-    tz,
+    timezone,
     meta: {
       appId: "gateway-ops",
       family: "gateway:registered-apps",
       label: "Registered app offline audit",
-      source: "gateway:registered-apps:offline-audit",
+      source: OFFLINE_AUDIT_ID,
     },
-    trace: trace.fromSyncSchedule<void>({
-      name: "Registered app offline audit schedule",
-      source: "gateway:registered-apps:offline-audit",
-      appId: "gateway-ops",
-    }),
-    process: async ({ ctx }) => {
-      await offlineAuditJob.submit({ key: `slot:${ctx.slotTs}` });
+    process: async (context) => {
+      await offlineAuditJob().submit({ key: `slot:${context.slot.getTime()}`, input: undefined });
     },
   });
-  offlineScheduleRegistered = true;
 };
 
 const createHealthWebhookSchedule = async (cronOverride?: string): Promise<void> => {
-  const [cron, tz] = await Promise.all([
+  const [cron, timezone] = await Promise.all([
     cronOverride ? Promise.resolve(cronOverride) : getCronSetting("gateway.health_check_schedule", DEFAULT_HEALTH_CRON),
     getTimezoneSetting(),
   ]);
-  await gatewayOpsScheduler.create({
+  await gatewayOpsScheduler().create({
     id: HEALTH_SCHEDULE_ID,
     cron,
-    tz,
+    timezone,
     meta: {
       appId: "gateway-ops",
       family: "gateway:health",
       label: "Gateway health webhook check",
       source: HEALTH_SCHEDULE_ID,
     },
-    trace: trace.fromSyncSchedule<{ checked: number; submitted: number }>({
-      name: "Gateway health webhook check",
-      source: HEALTH_SCHEDULE_ID,
-      appId: "gateway-ops",
-      summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-    }),
-    process: async () => runHealthWebhookCheck(),
+    process: async () => {
+      await runHealthWebhookCheck();
+    },
   });
 };
 
 const createTelemetryCleanupSchedule = async (): Promise<void> => {
-  const tz = await getTimezoneSetting();
-  await gatewayOpsScheduler.create({
+  const timezone = await getTimezoneSetting();
+  await gatewayOpsScheduler().create({
     id: "gateway:telemetry:cleanup",
     cron: TELEMETRY_CLEANUP_CRON,
-    tz,
+    timezone,
     meta: {
       appId: "gateway-ops",
       family: "gateway:telemetry",
       label: "Gateway telemetry cleanup",
       source: "gateway:telemetry:cleanup",
     },
-    trace: trace.fromSyncSchedule<{ events: number; rollups: number; traces: number }>({
-      name: "Gateway telemetry cleanup",
-      source: "gateway:telemetry:cleanup",
-      appId: "gateway-ops",
-      summarize: (event) => (event.type === "succeeded" ? event.data : undefined),
-    }),
     process: async () => {
       const [eventsDays, rollupsDays, traceDays] = await Promise.all([
         getPositiveIntegerSetting("gateway.telemetry_event_retention_days", 14),
@@ -249,9 +201,7 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
         getPositiveIntegerSetting("logs.trace_retention_days", 30),
       ]);
       const [telemetry, traces] = await Promise.all([cleanupTelemetry({ eventsDays, rollupsDays }), trace.cleanup({ days: traceDays })]);
-      const result = { events: telemetry.events, rollups: telemetry.rollups, traces };
-      log.info("Observability retention cleanup completed", result);
-      return result;
+      log.info("Observability retention cleanup completed", { events: telemetry.events, rollups: telemetry.rollups, traces });
     },
   });
 };
@@ -261,13 +211,18 @@ export const updateHealthSchedule = async (cron: string): Promise<void> => {
 };
 
 const startScheduler = async (): Promise<void> => {
-  if (!schedulerStarted) {
-    gatewayOpsScheduler.start();
-    schedulerStarted = true;
-  }
   await createOfflineAuditSchedule();
   await createHealthWebhookSchedule();
   await createTelemetryCleanupSchedule();
+  schedulerWorker ??= await gatewayOpsScheduler().process();
+  offlineAuditWorker ??= await offlineAuditJob().process({}, (context) => runOfflineAudit(context.signal));
+};
+
+const stopScheduler = async (): Promise<void> => {
+  const workers = [schedulerWorker, offlineAuditWorker];
+  schedulerWorker = null;
+  offlineAuditWorker = null;
+  await Promise.all(workers.map((worker) => worker?.drain()));
 };
 
 const startTelemetryConsumer = (): void => {
@@ -307,21 +262,21 @@ export const gatewayOpsLifecycle: AppLifecycle = {
   },
 
   start: async () => {
-    registryRefreshTimer = setInterval(() => void refreshRegisteredAppsOnce(), 5_000);
-    void startRegistryWatcher();
+    unregisterSyncOps = [
+      syncOps.registerDeadLetters({ name: OFFLINE_AUDIT_ID, kind: "job", store: offlineAuditJob().deadLetters }),
+      syncOps.registerScheduler({ name: SCHEDULER_ID, scheduler: gatewayOpsScheduler() }),
+    ];
+    startRegistryWatcher();
     await startScheduler();
     startTelemetryConsumer();
     log.info("Gateway Ops started");
   },
 
   stop: async () => {
-    if (registryRefreshTimer) clearInterval(registryRefreshTimer);
-    registryRefreshTimer = null;
-    registryWatcherAbort?.abort();
-    registryWatcherAbort = null;
+    await stopRegistryWatcher();
     await stopTelemetryConsumer();
-    await gatewayOpsScheduler.stop();
-    schedulerStarted = false;
-    offlineScheduleRegistered = false;
+    await stopScheduler();
+    for (const unregister of unregisterSyncOps) unregister();
+    unregisterSyncOps = [];
   },
 };

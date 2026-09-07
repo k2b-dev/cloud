@@ -1,4 +1,20 @@
 # Infrastructure services – run with: bun run dev:infra
+
+# Three-node NATS JetStream cluster (@k2b/sync v6). Every node shares the same
+# config below; only `--name` differs. Apps inside the compose network dial all
+# three nodes; the host reaches node 1 on :4222 (clients) and :8222 (monitoring).
+x-nats: &nats
+  image: nats:2.14.3-alpine
+  restart: unless-stopped
+  configs:
+    - source: nats_config
+      target: /etc/nats/nats.conf
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -34,6 +50,30 @@ services:
       timeout: 2s
       retries: 30
 
+  nats-1:
+    <<: *nats
+    container_name: ipa_nats_1
+    command: --config /etc/nats/nats.conf --name ipa_nats_1
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - ipa_nats_1_data:/data
+
+  nats-2:
+    <<: *nats
+    container_name: ipa_nats_2
+    command: --config /etc/nats/nats.conf --name ipa_nats_2
+    volumes:
+      - ipa_nats_2_data:/data
+
+  nats-3:
+    <<: *nats
+    container_name: ipa_nats_3
+    command: --config /etc/nats/nats.conf --name ipa_nats_3
+    volumes:
+      - ipa_nats_3_data:/data
+
   geo:
     image: ghcr.io/valentinkolb/geo:latest
     container_name: geo
@@ -65,8 +105,31 @@ services:
     ports:
       - "3001:3000"
 
+configs:
+  nats_config:
+    content: |
+      # max_payload must cover the largest @k2b/sync publish (notebooks Yjs
+      # full-state resync is ~8 MB); sync's ready() refuses smaller servers.
+      max_payload: 16MB
+      http: 0.0.0.0:8222
+      jetstream {
+        store_dir: /data
+      }
+      cluster {
+        name: ipa
+        listen: 0.0.0.0:6222
+        routes: [
+          nats-route://ipa_nats_1:6222
+          nats-route://ipa_nats_2:6222
+          nats-route://ipa_nats_3:6222
+        ]
+      }
+
 volumes:
   ipa_postgres_data:
   ipa_valkey_data:
+  ipa_nats_1_data:
+  ipa_nats_2_data:
+  ipa_nats_3_data:
   filegate_homes:
   filegate_groups:

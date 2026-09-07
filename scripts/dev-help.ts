@@ -30,7 +30,7 @@ p(`  ${color.cyan}bun run dev:down${color.reset}             stop app stack; kee
 p(`  ${color.cyan}bun run dev:rebuild:all${color.reset}      rebuild all app services`);
 p("");
 p(`${color.bold}Infrastructure${color.reset}`);
-p(`  ${color.cyan}bun run dev:infra${color.reset}            start Postgres, Valkey, Geo, Filegate, Gotenberg`);
+p(`  ${color.cyan}bun run dev:infra${color.reset}            start Postgres, Valkey, NATS, Geo, Filegate, Gotenberg`);
 p(`  ${color.cyan}bun run dev:infra:down${color.reset}       stop development infrastructure`);
 p("");
 p(`${color.bold}Per-app${color.reset} (one or more apps, space-separated)`);

@@ -1,10 +1,15 @@
-import { ephemeral, topic } from "@k2b/sync";
+import { lazySync } from "../_internal/process-sync";
 import { logger } from "./logging";
 
+/** Written by the gateway router, read by gateway-ops: one owner, one declaration. */
+const GATEWAY_RESOURCE_OWNER = "cloud";
 const SNAPSHOT_TTL_MS = 30_000;
-const TOPIC_PREFIX = "cloud:gateway:telemetry";
-const TOPIC_ID = "events";
+const TOPIC_ID = "cloud-gateway-telemetry";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
+/** Hard loss boundary for the 24h request-telemetry buffer (discard-old). */
+const TOPIC_RETENTION_BYTES = 1024 * 1024 * 1024;
+/** Whole envelope; events are a few hundred bytes with 200-char text bounds. */
+const TOPIC_PAYLOAD_BYTES = 16 * 1024;
 const TOPIC_TENANT = "default";
 const DROP_LOG_INTERVAL_MS = 30_000;
 
@@ -81,11 +86,14 @@ export type GatewayTelemetryEvent = {
   occurredAt: string;
 };
 
-const snapshots = ephemeral<GatewayRouteSnapshot>({
-  id: "gateway-route-snapshots",
-  ttlMs: SNAPSHOT_TTL_MS,
-  limits: { maxPayloadBytes: 128_000 },
-});
+const snapshots = lazySync((sync) =>
+  sync.ephemeral<GatewayRouteSnapshot>({
+    id: "gateway-route-snapshots",
+    owner: GATEWAY_RESOURCE_OWNER,
+    ttlMs: SNAPSHOT_TTL_MS,
+    maxValueBytes: 128_000,
+  }),
+);
 
 export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): GatewayRouteSnapshot => ({
   instanceId: input.instanceId,
@@ -107,15 +115,15 @@ export const buildGatewayRouteSnapshot = (input: GatewayRouteSnapshotInput): Gat
 });
 
 export const publishGatewayRouteSnapshot = async (snapshot: GatewayRouteSnapshot): Promise<void> => {
-  await snapshots.upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot });
+  await snapshots().upsert({ key: `instances/${snapshot.instanceId}`, value: snapshot });
 };
 
 export const removeGatewayRouteSnapshot = async (instanceId: string): Promise<void> => {
-  await snapshots.remove({ key: `instances/${instanceId}` });
+  await snapshots().delete({ key: `instances/${instanceId}` });
 };
 
 export const listGatewayRouteSnapshots = async (): Promise<GatewayRouteSnapshot[]> => {
-  const snap = await snapshots.snapshot({ prefix: "instances/" });
+  const snap = await snapshots().snapshot({ prefix: "instances/" });
   return snap.entries.map((entry) => entry.value).sort((a, b) => a.instanceId.localeCompare(b.instanceId));
 };
 
@@ -124,12 +132,14 @@ export const latestGatewayRouteSnapshot = async (): Promise<GatewayRouteSnapshot
   return all.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 };
 
-export const gatewayTelemetryTopic = topic<GatewayTelemetryEvent>({
-  id: TOPIC_ID,
-  prefix: TOPIC_PREFIX,
-  retentionMs: TOPIC_RETENTION_MS,
-  limits: { payloadBytes: 8_000 },
-});
+export const gatewayTelemetryTopic = lazySync((sync) =>
+  sync.topic<GatewayTelemetryEvent>({
+    id: TOPIC_ID,
+    owner: GATEWAY_RESOURCE_OWNER,
+    retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: TOPIC_RETENTION_BYTES },
+    maxPayloadBytes: TOPIC_PAYLOAD_BYTES,
+  }),
+);
 
 export const GATEWAY_TELEMETRY_TENANT = TOPIC_TENANT;
 
@@ -155,8 +165,8 @@ export const publishRequestTelemetry = (event: Omit<GatewayTelemetryEvent, "v" |
     occurredAt: new Date().toISOString(),
   };
 
-  void gatewayTelemetryTopic
-    .pub({
+  void gatewayTelemetryTopic()
+    .publish({
       tenantId: GATEWAY_TELEMETRY_TENANT,
       orderingKey: payload.appId,
       data: payload,

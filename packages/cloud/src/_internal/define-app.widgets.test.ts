@@ -1,4 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
+import type { Sync } from "@k2b/sync";
 import { type Handler, Hono } from "hono";
 import { env } from "../config/env";
 import type { User } from "../contracts/shared";
@@ -14,6 +15,7 @@ import * as settingsSnapshot from "../services/settings/snapshot";
 import { getRuntimeContext } from "../ssr/runtime";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
+import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 const user: User = {
@@ -69,7 +71,13 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
   Object.defineProperty(env, "APP_SECRET", { value: "widget-context-test-only", configurable: true });
   const signals = ["SIGTERM", "SIGINT"] as const;
   const previousListeners = signals.map((signal) => new Set(process.listeners(signal)));
+  // The heartbeats are stubbed, so the registry handles declared on this fake are never used.
+  const fakeSync = { ephemeral: () => ({}) } as unknown as Sync;
   const spies = [
+    spyOn(processSync, "startProcessSync").mockImplementation(async () => {
+      processSync.bindProcessSync(fakeSync);
+      return { sync: fakeSync, stop: async () => processSync.unbindProcessSync() };
+    }),
     spyOn(heartbeat, "createHeartbeat").mockReturnValue({ start: async () => {}, stop: async () => {} }),
     spyOn(watcher, "ensureRuntimeWatcher").mockResolvedValue(),
     spyOn(watcher, "getCurrentRuntime").mockReturnValue({ apps: [] }),
@@ -137,6 +145,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     }
   } finally {
     for (const spy of spies) spy.mockRestore();
+    processSync.unbindProcessSync();
     Object.defineProperty(env, "APP_SECRET", originalSecret);
     for (const [index, signal] of signals.entries()) {
       for (const listener of process.listeners(signal)) {

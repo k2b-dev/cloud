@@ -142,7 +142,7 @@ describe("runtime lifecycle", () => {
     expect(completed).toEqual(["outer", "inner"]);
   });
 
-  test("stops workers before and after draining accepted work", async () => {
+  test("stops workers before draining accepted work and drains workers afterwards", async () => {
     const tracker = createRuntimeTaskTracker();
     const events: string[] = [];
     let finish!: () => void;
@@ -151,37 +151,49 @@ describe("runtime lifecycle", () => {
       await new Promise<void>((resolve) => {
         finish = resolve;
       });
-      events.push("drained");
+      events.push("tasks drained");
     });
 
-    const stopping = stopRuntimeJobs(tracker, [{ stop: () => events.push("stopped") }]);
+    const stopping = stopRuntimeJobs(tracker, [
+      {
+        stop: () => void events.push("stopped"),
+        drain: async () => void events.push("worker drained"),
+      },
+    ]);
     await Promise.resolve();
     expect(events).toEqual(["stopped"]);
     finish();
     await stopping;
 
-    expect(events).toEqual(["stopped", "drained", "stopped"]);
+    expect(events).toEqual(["stopped", "tasks drained", "worker drained"]);
   });
 
-  test("stops every worker and drains tasks when worker shutdown fails", async () => {
+  test("drains every worker and reports all failures", async () => {
     const tracker = createRuntimeTaskTracker();
     const events: string[] = [];
     tracker.open();
-    tracker.run(async () => events.push("drained"));
+    tracker.run(async () => events.push("tasks drained"));
 
     await expect(
       stopRuntimeJobs(tracker, [
         {
-          stop: () => {
+          stop: () => void events.push("first stopped"),
+          drain: async () => {
             events.push("first");
-            throw new Error("first stop failed");
+            throw new Error("first drain failed");
           },
         },
-        { stop: () => events.push("second") },
+        { stop: () => void events.push("second stopped"), drain: async () => void events.push("second") },
+        {
+          stop: () => void events.push("third stopped"),
+          drain: async () => {
+            throw new Error("third drain failed");
+          },
+        },
       ]),
     ).rejects.toBeInstanceOf(AggregateError);
 
-    expect(events).toEqual(["first", "second", "drained", "first", "second"]);
+    expect(events).toEqual(["first stopped", "second stopped", "third stopped", "tasks drained", "first", "second"]);
   });
 
   test("serializes duplicate starts and stops", async () => {

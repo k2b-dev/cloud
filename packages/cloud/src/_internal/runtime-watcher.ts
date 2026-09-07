@@ -2,9 +2,9 @@
  * Module-level singleton for the live cluster registry snapshot.
  *
  * `defineApp().start()` and the `middleware.runtime()` factory both call
- * `ensureRuntimeWatcher()` — the first call subscribes to the Redis
- * registry and starts refreshing on every event; subsequent calls
- * await the same in-flight init promise. Reads happen via `getCurrentRuntime()`.
+ * `ensureRuntimeWatcher()` — the first call watches the app registry and
+ * rebuilds the snapshot on every change; subsequent calls await the same
+ * in-flight init promise. Reads happen via `getCurrentRuntime()`.
  *
  * One process = one app = one watcher; lives until `stopRuntimeWatcher()`
  * (called from defineApp's shutdown handler) or process exit.
@@ -13,7 +13,7 @@
 import type { CloudRuntime } from "../contracts/app";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
-import { appRegistry, listApps, listCapabilities } from "./registry";
+import { listApps, listCapabilities, watchAppRegistry } from "./registry";
 import { buildRuntimeFromRegistry } from "./runtime-context";
 
 const log = logger("runtime-watcher");
@@ -39,13 +39,7 @@ export const ensureRuntimeWatcher = (): Promise<void> => {
     watcherTask = superviseRuntimeTask({
       name: "Runtime registry watcher",
       signal: controller.signal,
-      run: async (signal) => {
-        const appSnap = await appRegistry.snapshot({ prefix: "apps/" });
-        await refresh();
-        for await (const _ev of appRegistry.reader({ prefix: "apps/", after: appSnap.cursor }).stream({ signal })) {
-          await refresh();
-        }
-      },
+      run: (signal) => watchAppRegistry({ signal, onChange: refresh }),
       onError: ({ error, failureCount, retryInMs }) =>
         log.error("Registry watcher failed; restarting", {
           error: error instanceof Error ? error.message : String(error),
@@ -60,7 +54,7 @@ export const ensureRuntimeWatcher = (): Promise<void> => {
 export const stopRuntimeWatcher = async (): Promise<void> => {
   // Await the watcher loop's exit before clearing state — otherwise an
   // in-flight refresh() can write `current` after we cleared it, or a
-  // restart can overlap two readers.
+  // restart can overlap two watches.
   abort?.abort();
   if (watcherTask) {
     try {

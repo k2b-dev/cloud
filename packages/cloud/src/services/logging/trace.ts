@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { JobTraceEvent, PumpTraceEvent, SchedulerTraceEvent, TraceHandler } from "@k2b/sync";
+import type { SyncEvent } from "@k2b/sync";
 import { sql } from "bun";
 import type { PaginationParams } from "../../contracts/shared";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
@@ -131,7 +131,6 @@ export type TraceListFilter = {
   sinceSeconds?: number;
   window?: TraceWindow;
   minDurationMs?: number;
-  excludeDefinitions?: boolean;
 };
 
 export type TraceStartParams = {
@@ -717,9 +716,6 @@ const traceConditions = (filter: TraceListFilter | undefined): any[] => {
   }
   if (sinceSeconds) conditions.push(sql`s.started_at >= now() - (${sinceSeconds}::int * INTERVAL '1 second')`);
   if (minDurationMs) conditions.push(sql`s.duration_ms IS NOT NULL AND s.duration_ms > ${minDurationMs}`);
-  if (filter?.excludeDefinitions) {
-    conditions.push(sql`NOT (COALESCE(s.span_key, '') LIKE 'sync:schedule-definition:%' OR s.name LIKE '%.scheduled')`);
-  }
   if (searchPattern) {
     conditions.push(sql`(
       s.name ILIKE ${searchPattern} ESCAPE '\'
@@ -951,300 +947,179 @@ const cleanup = async (options: { days: number; source?: string }): Promise<numb
   return result.count;
 };
 
-const getAttributes = <Event>(config: {
-  attributes?: TraceAttributes | ((event: Event) => TraceAttributes | undefined);
-  event: Event;
-}): TraceAttributes => {
-  if (!config.attributes) return {};
-  if (typeof config.attributes === "function") return config.attributes(config.event) ?? {};
-  return config.attributes;
+// ==========================
+// Sync observe adapter
+// ==========================
+
+/**
+ * Sync v6 emits ids, keys and statuses only — never handler results — so a
+ * run span carries the run identity and outcome. A handler that wants a
+ * summary attaches it itself with `trace.end({ spanKey, summary })`, using
+ * `trace.syncSpanKey(kind, resource, runId)` for the same span.
+ */
+
+type SyncRunKind = "queue" | "job" | "topic" | "scheduler" | "pump";
+
+const SYNC_CATEGORY: Record<SyncRunKind, TraceCategory> = {
+  queue: "job",
+  job: "job",
+  topic: "sync",
+  scheduler: "schedule",
+  pump: "backfill",
 };
 
-type SyncJobTraceConfig<Input = void, Result = unknown> = {
-  name: string;
-  source: string;
-  appId?: string;
-  attributes?: TraceAttributes | ((event: JobTraceEvent<Input, Result>) => TraceAttributes | undefined);
-  summarize?: (event: JobTraceEvent<Input, Result>) => Record<string, unknown> | undefined;
+/** Span key of one Sync run: `runId` is the job/message id, topic event id, schedule run id or pump key. */
+const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string): string => `sync:${kind}:${resource}:${runId}`;
+
+const isSyncRunKind = (kind: string): kind is SyncRunKind => kind in SYNC_CATEGORY;
+
+const detailString = (detail: Record<string, unknown>, key: string): string | undefined => {
+  const value = detail[key];
+  return typeof value === "string" ? value : undefined;
 };
 
-type SyncScheduleTraceConfig<Result = unknown> = {
-  name: string;
-  source: string;
-  appId?: string;
-  attributes?: TraceAttributes | ((event: SchedulerTraceEvent<Result>) => TraceAttributes | undefined);
-  summarize?: (event: SchedulerTraceEvent<Result>) => Record<string, unknown> | undefined;
+const detailNumber = (detail: Record<string, unknown>, key: string): number | undefined => {
+  const value = detail[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 };
 
-type SyncPumpTraceConfig<Input = void, Cursor = unknown> = {
-  name: string;
-  source: string;
-  appId?: string;
-  attributes?: TraceAttributes | ((event: PumpTraceEvent<Input, Cursor>) => TraceAttributes | undefined);
-  summarize?: (event: PumpTraceEvent<Input, Cursor>) => Record<string, unknown> | undefined;
+const detailAttributes = (detail: Record<string, unknown>): TraceAttributes => {
+  const out: TraceAttributes = {};
+  for (const [key, value] of Object.entries(detail)) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      out[`sync.${key}`] = value;
+    }
+  }
+  return out;
 };
 
-const fromSyncJob = <Input = void, Result = unknown>(
-  config: SyncJobTraceConfig<Input, Result>,
-): TraceHandler<JobTraceEvent<Input, Result>> => {
-  return async (event) => {
-    const spanKey = `sync:job:${config.source}:${event.jobId}`;
-    const common: TraceAttributes = {
-      "sync.system": "job",
-      "sync.event": event.type,
-      "sync.job.id": event.jobId,
-      "sync.job.key": event.key,
-      ...getAttributes({ attributes: config.attributes, event }),
-    };
-    const span = await start({
-      spanKey,
-      name: config.name,
-      source: config.source,
-      appId: config.appId,
-      category: "job",
-      kind: "consumer",
-      attributes: common,
-    });
+/** The app hosting this process; Sync events carry no app name. */
+const processAppId = (): string | undefined => process.env.APP_ID?.trim() || undefined;
 
-    if (event.type === "submitted") {
-      await record({ context: span, event: "job.submitted", attributes: common });
-      return;
-    }
-    if (event.type === "started") {
-      await record({ context: span, event: "job.started", attributes: { ...common, "sync.job.attempt": event.attempt } });
-      return;
-    }
-    if (event.type === "succeeded") {
-      await record({
-        context: span,
-        event: "job.succeeded",
-        attributes: { ...common, "sync.duration_ms": event.durationMs },
-        summary: config.summarize?.(event),
-      });
-      return;
-    }
-    if (event.type === "failed") {
-      await record({
-        context: span,
-        event: "job.failed",
-        severity: "error",
-        attributes: { ...common, "sync.duration_ms": event.durationMs, ...errorAttributes(event.error) },
-      });
-      return;
-    }
-    if (event.type === "rescheduled") {
-      await record({
-        context: span,
-        event: "job.rescheduled",
-        severity: "warn",
-        attributes: { ...common, "sync.job.attempt": event.attempt, "sync.reschedule.delay_ms": event.delayMs },
-      });
-      return;
-    }
-    if (event.type === "finished") {
-      await record({
-        context: span,
-        event: "job.finished",
-        attributes: { ...common, "sync.duration_ms": event.durationMs, "sync.job.status": event.status },
-      });
-      await end({
-        context: span,
-        status: event.status === "succeeded" ? "ok" : "error",
-        endedAt: new Date(),
-        summary: config.summarize?.(event),
-      });
-    }
+const traceSyncEvent = async (event: SyncEvent): Promise<void> => {
+  const resource = event.resource;
+  const kind = event.kind;
+  if (!resource || !kind || !isSyncRunKind(kind)) return;
+  const detail: Record<string, unknown> = event.detail ?? {};
+  const appId = processAppId();
+  const category = SYNC_CATEGORY[kind];
+  const attributes: TraceAttributes = {
+    "sync.kind": kind,
+    "sync.resource": resource,
+    ...detailAttributes(detail),
+    ...(event.error ? { "sync.error": event.error } : {}),
   };
-};
+  // Topic dead letters carry the consumer instead of the run key.
+  const key = detailString(detail, "key") ?? (kind === "topic" ? detailString(detail, "consumer") : undefined);
+  // Per-schedule and per-consumer names stay readable; job keys are unbounded.
+  const name = (kind === "scheduler" || kind === "topic") && key ? key : resource;
+  const base = { name, source: resource, appId, category, kind: "consumer" as const };
 
-const fromSyncSchedule = <Result = unknown>(config: SyncScheduleTraceConfig<Result>): TraceHandler<SchedulerTraceEvent<Result>> => {
-  return async (event) => {
-    const common: TraceAttributes = {
-      "sync.system": "scheduler",
-      "sync.event": event.type,
-      "sync.schedule.id": event.scheduleId,
-      ...getAttributes({ attributes: config.attributes, event }),
-    };
-
-    if (event.type === "scheduled") {
-      await record({
-        spanKey: `sync:schedule-definition:${config.source}:${event.scheduleId}`,
-        name: `${config.name}.scheduled`,
-        source: config.source,
-        appId: config.appId,
-        category: "schedule",
-        event: "schedule.scheduled",
-        status: "ok",
-        attributes: {
-          ...common,
-          "sync.schedule.cron": event.cron,
-          "sync.schedule.tz": event.tz,
-          "sync.schedule.next_run_at": event.nextRunAt,
-        },
-        summary: { cron: event.cron, tz: event.tz, nextRunAt: event.nextRunAt },
-      });
-      await end({ spanKey: `sync:schedule-definition:${config.source}:${event.scheduleId}`, status: "ok" });
+  switch (event.type) {
+    case "handler_started": {
+      const id = detailString(detail, "id");
+      if (!id) return;
+      await start({ ...base, spanKey: syncSpanKey(kind, resource, id), attributes, startedAt: event.at });
       return;
     }
-
-    const runNumber = "runNumber" in event ? event.runNumber : 0;
-    const spanKey = `sync:schedule:${config.source}:${event.scheduleId}:${runNumber}`;
-    const span = await start({
-      spanKey,
-      name: config.name,
-      source: config.source,
-      appId: config.appId,
-      category: "schedule",
-      kind: "consumer",
-      attributes: { ...common, "sync.schedule.run_number": runNumber },
-    });
-
-    if (event.type === "started") {
-      await record({
-        context: span,
-        event: "schedule.started",
-        attributes: {
-          ...common,
-          "sync.schedule.run_number": event.runNumber,
-          "sync.schedule.trigger": event.trigger,
-          "sync.schedule.slot_ts": event.slotTs,
-        },
+    case "handler_settled": {
+      const id = detailString(detail, "id");
+      if (!id) return;
+      const spanKey = syncSpanKey(kind, resource, id);
+      const status = detailString(detail, "status");
+      const attempt = detailNumber(detail, "attempt");
+      const durationMs = detailNumber(detail, "durationMs") ?? 0;
+      if (status === "retry") {
+        await record({
+          ...base,
+          spanKey,
+          event: "sync.retry",
+          severity: "warn",
+          status: "error",
+          attributes,
+          occurredAt: event.at,
+        });
+        return;
+      }
+      await complete({
+        ...base,
+        spanKey,
+        status: status === "success" ? "ok" : "error",
+        statusMessage: status === "success" ? undefined : `Dead-lettered after ${attempt ?? "?"} attempt(s)`,
+        attributes,
+        startedAt: event.at.getTime() - durationMs,
+        endedAt: event.at,
       });
       return;
     }
-    if (event.type === "succeeded") {
-      await record({
-        context: span,
-        event: "schedule.succeeded",
-        attributes: { ...common, "sync.schedule.run_number": event.runNumber, "sync.duration_ms": event.durationMs },
-        summary: config.summarize?.(event),
-      });
-      await end({ context: span, status: "ok", endedAt: new Date(), summary: config.summarize?.(event) });
-      return;
-    }
-    if (event.type === "failed") {
-      await record({
-        context: span,
-        event: "schedule.failed",
-        severity: "error",
-        attributes: {
-          ...common,
-          "sync.schedule.run_number": event.runNumber,
-          "sync.duration_ms": event.durationMs,
-          ...errorAttributes(event.error),
-        },
-      });
-      await end({
-        context: span,
+    case "dead_letter": {
+      const id = detailString(detail, "messageId") ?? detailString(detail, "eventId");
+      if (!id) return;
+      const spanKey = syncSpanKey(kind, resource, id);
+      const reason = detailString(detail, "reason") ?? "dead letter";
+      // A message can be dead-lettered without a handler run (attempts
+      // exhausted on delivery, undecodable payload): the upsert closes the
+      // span either way, and the event records the reason.
+      await complete({
+        ...base,
+        spanKey,
         status: "error",
-        statusMessage: event.error.message,
-        endedAt: new Date(),
-        summary: config.summarize?.(event),
+        statusMessage: reason,
+        attributes,
+        startedAt: event.at,
+        endedAt: event.at,
+      });
+      await record({ context: newContext(spanKey), event: "sync.dead_letter", severity: "error", attributes, occurredAt: event.at });
+      return;
+    }
+    case "redelivery": {
+      // Carries no run id: recorded as its own zero-length span next to the runs.
+      await record({ ...base, category: "sync", event: "sync.redelivery", severity: "warn", attributes, occurredAt: event.at });
+      return;
+    }
+    case "pump_run_started": {
+      if (!key) return;
+      await start({ ...base, spanKey: syncSpanKey("pump", resource, key), attributes, startedAt: event.at });
+      return;
+    }
+    case "pump_run_settled": {
+      if (!key) return;
+      const status = detailString(detail, "status");
+      const durationMs = detailNumber(detail, "durationMs") ?? 0;
+      await complete({
+        ...base,
+        spanKey: syncSpanKey("pump", resource, key),
+        status: status === "failed" ? "error" : "ok",
+        statusMessage: detailString(detail, "error"),
+        attributes,
+        summary: { status, dispatched: detailNumber(detail, "dispatched"), failureCount: detailNumber(detail, "failureCount") },
+        startedAt: event.at.getTime() - durationMs,
+        endedAt: event.at,
       });
       return;
     }
-    if (event.type === "rescheduled") {
-      await record({
-        context: span,
-        event: "schedule.rescheduled",
-        severity: "warn",
-        attributes: { ...common, "sync.schedule.run_number": event.runNumber, "sync.reschedule.delay_ms": event.delayMs },
-      });
-    }
-  };
+    default:
+      return;
+  }
 };
 
-const fromSyncPump = <Input = void, Cursor = unknown>(
-  config: SyncPumpTraceConfig<Input, Cursor>,
-): TraceHandler<PumpTraceEvent<Input, Cursor>> => {
-  return async (event) => {
-    // Item-level dispatch events can be extremely frequent during a large
-    // backfill. Pump state owns exact progress; traces retain lifecycle and
-    // page-level diagnostics without multiplying one database row per item.
-    if (event.type === "dispatched") return;
-
-    const spanKey = `sync:pump:${config.source}:${event.key}`;
-    const common: TraceAttributes = {
-      "sync.system": "pump",
-      "sync.event": event.type,
-      "sync.pump.key": event.key,
-      ...getAttributes({ attributes: config.attributes, event }),
-    };
-    const span = await start({
-      spanKey,
-      name: config.name,
-      source: config.source,
-      appId: config.appId,
-      category: "backfill",
-      kind: "consumer",
-      attributes: common,
+/**
+ * `createSync({ observe })` adapter: mirrors Sync run lifecycles into trace
+ * spans. Synchronous, fire-and-forget and never throws — an observer must not
+ * affect transport work.
+ */
+export const observeSyncEvent = (event: SyncEvent): void => {
+  try {
+    traceSyncEvent(event).catch((error: unknown) => {
+      console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
     });
-
-    if (event.type === "submitted") {
-      await record({ context: span, event: "pump.submitted", attributes: common });
-      return;
-    }
-    if (event.type === "started") {
-      await record({
-        context: span,
-        event: "pump.started",
-        attributes: { ...common, "sync.pump.failure_count": event.failureCount },
-      });
-      return;
-    }
-    if (event.type === "pulled") {
-      await record({
-        context: span,
-        event: "pump.pulled",
-        attributes: {
-          ...common,
-          "sync.pump.item_count": event.itemCount,
-          "sync.duration_ms": event.durationMs,
-        },
-      });
-      return;
-    }
-    if (event.type === "rescheduled") {
-      await record({
-        context: span,
-        event: "pump.rescheduled",
-        severity: "warn",
-        attributes: {
-          ...common,
-          "sync.pump.failure_count": event.failureCount,
-          "sync.reschedule.delay_ms": event.delayMs,
-          ...errorAttributes(event.error),
-        },
-      });
-      return;
-    }
-
-    const summary = {
-      ...config.summarize?.(event),
-      status: event.status,
-      dispatched: event.dispatched,
-    };
-    await record({
-      context: span,
-      event: "pump.finished",
-      severity: event.status === "failed" ? "error" : "info",
-      attributes: {
-        ...common,
-        "sync.duration_ms": event.durationMs,
-        "sync.pump.dispatched": event.dispatched,
-        ...(event.error ? errorAttributes(event.error) : {}),
-      },
-      summary,
-    });
-    await end({
-      context: span,
-      status: event.status === "failed" ? "error" : "ok",
-      statusMessage: event.error?.message,
-      endedAt: new Date(),
-      summary,
-    });
-  };
+  } catch (error) {
+    console.error("[logging:trace] sync event failed:", error instanceof Error ? error.message : String(error));
+  }
 };
+
+/** Awaitable form of {@link observeSyncEvent} for tests. */
+export { traceSyncEvent };
 
 export const trace = {
   start,
@@ -1260,7 +1135,5 @@ export const trace = {
   sources,
   summary,
   cleanup,
-  fromSyncJob,
-  fromSyncPump,
-  fromSyncSchedule,
+  syncSpanKey,
 };

@@ -17,11 +17,12 @@ const entry = {
 const upsertResult = () => ({
   key: `apps/${entry.id}`,
   value: entry,
-  version: "1",
-  createdAt: 0,
-  updatedAt: 0,
-  expiresAt: 0,
+  revision: "1",
+  updatedAt: new Date(0),
 });
+
+/** A registry without a stored lease: every refresh falls back to `upsert`. */
+const withoutTouch = <T extends object>(registry: T) => ({ touch: async () => false, ...registry });
 
 const waitUntil = async (predicate: () => boolean, timeoutMs = 250): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
@@ -42,9 +43,9 @@ describe("createHeartbeat", () => {
       },
       touch: async () => {
         touches += 1;
-        return { ok: touches > 1 };
+        return touches > 1;
       },
-      remove: async () => true,
+      delete: async () => true,
     };
 
     const heartbeat = createHeartbeat("test", entry, {
@@ -66,13 +67,13 @@ describe("createHeartbeat", () => {
       {
         key: "capabilities/test",
         intervalMs: 100,
-        registry: {
-          upsert: async ({ key }) => void keys.push(key),
-          remove: async ({ key }) => {
+        registry: withoutTouch({
+          upsert: async ({ key }: { key: string }) => void keys.push(key),
+          delete: async ({ key }: { key: string }) => {
             keys.push(key);
             return true;
           },
-        },
+        }),
       },
     );
     await heartbeat.start();
@@ -85,7 +86,7 @@ describe("createHeartbeat", () => {
     let concurrent = 0;
     let maxConcurrent = 0;
     let removals = 0;
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         writes += 1;
         concurrent += 1;
@@ -94,11 +95,11 @@ describe("createHeartbeat", () => {
         concurrent -= 1;
         return upsertResult();
       },
-      remove: async () => {
+      delete: async () => {
         removals += 1;
         return true;
       },
-    };
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -118,14 +119,14 @@ describe("createHeartbeat", () => {
   test("keeps retrying after a transient registry failure", async () => {
     let attempts = 0;
     const errors: unknown[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         attempts += 1;
         if (attempts === 2) throw new Error("registry unavailable");
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -144,14 +145,14 @@ describe("createHeartbeat", () => {
     let attempts = 0;
     const errors: unknown[] = [];
     const stuck = Promise.withResolvers<ReturnType<typeof upsertResult>>();
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         attempts += 1;
         if (attempts === 2) return stuck.promise;
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -173,13 +174,13 @@ describe("createHeartbeat", () => {
     let removals = 0;
     const heartbeat = createHeartbeat("test", entry, {
       writeTimeoutMs: 5,
-      registry: {
+      registry: withoutTouch({
         upsert: async () => stuck.promise,
-        remove: async () => {
+        delete: async () => {
           removals += 1;
           return true;
         },
-      },
+      }),
     });
 
     await expect(heartbeat.start()).rejects.toThrow("timed out");
@@ -191,14 +192,14 @@ describe("createHeartbeat", () => {
     let attempts = 0;
     let unavailable = true;
     const stale: unknown[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         attempts += 1;
         if (attempts > 1 && unavailable) throw new Error("registry unavailable");
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -222,14 +223,14 @@ describe("createHeartbeat", () => {
   test("does not report stale when writes recover before the deadline", async () => {
     let attempts = 0;
     const stale: unknown[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         attempts += 1;
         if (attempts === 2 || attempts === 3) throw new Error("registry unavailable");
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -250,14 +251,14 @@ describe("createHeartbeat", () => {
   test("does not report stale after shutdown", async () => {
     let attempts = 0;
     const stale: unknown[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         attempts += 1;
         if (attempts > 1) throw new Error("registry unavailable");
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
@@ -280,13 +281,13 @@ describe("createHeartbeat", () => {
     let writes = 0;
     let workerFailures = 0;
     const stale: unknown[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         writes += 1;
         return upsertResult();
       },
-      remove: async () => true,
-    };
+      delete: async () => true,
+    });
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 1,
       retryMs: 1,
@@ -323,18 +324,18 @@ describe("createHeartbeat", () => {
   test("waits for initial registration before removing a stopped app", async () => {
     const registration = Promise.withResolvers<void>();
     const operations: string[] = [];
-    const registry = {
+    const registry = withoutTouch({
       upsert: async () => {
         operations.push("upsert:start");
         await registration.promise;
         operations.push("upsert:end");
         return upsertResult();
       },
-      remove: async () => {
-        operations.push("remove");
+      delete: async () => {
+        operations.push("delete");
         return true;
       },
-    };
+    });
 
     const heartbeat = createHeartbeat("test", entry, {
       intervalMs: 10,
@@ -346,13 +347,14 @@ describe("createHeartbeat", () => {
     registration.resolve();
     await Promise.all([starting, stopping]);
 
-    expect(operations).toEqual(["upsert:start", "upsert:end", "remove"]);
+    expect(operations).toEqual(["upsert:start", "upsert:end", "delete"]);
   });
 
   test("rejects invalid intervals", () => {
-    expect(() => createHeartbeat("test", entry, { intervalMs: 0 })).toThrow(RangeError);
-    expect(() => createHeartbeat("test", entry, { retryMs: 0 })).toThrow(RangeError);
-    expect(() => createHeartbeat("test", entry, { staleAfterMs: 0 })).toThrow(RangeError);
-    expect(() => createHeartbeat("test", entry, { writeTimeoutMs: 0 })).toThrow(RangeError);
+    const registry = withoutTouch({ upsert: async () => upsertResult(), delete: async () => true });
+    expect(() => createHeartbeat("test", entry, { registry, intervalMs: 0 })).toThrow(RangeError);
+    expect(() => createHeartbeat("test", entry, { registry, retryMs: 0 })).toThrow(RangeError);
+    expect(() => createHeartbeat("test", entry, { registry, staleAfterMs: 0 })).toThrow(RangeError);
+    expect(() => createHeartbeat("test", entry, { registry, writeTimeoutMs: 0 })).toThrow(RangeError);
   });
 });

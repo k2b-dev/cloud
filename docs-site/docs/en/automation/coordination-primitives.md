@@ -44,7 +44,7 @@ a database transaction or a workflow effect class for that.
 ## Apply a sliding rate limit
 
 ```ts
-import { ratelimit } from "@k2b/sync";
+import { ratelimit } from "@valentinkolb/cloud/server";
 
 const exports = ratelimit({
   id: "inventory.exports",

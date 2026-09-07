@@ -3,7 +3,7 @@ import type { PaginationParams } from "../../contracts/shared";
 import { escapeLikePattern, parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { registerSettings } from "../settings/defaults";
 import { redactMetadata } from "./redaction";
-import { TRACE_STUCK_AFTER_MS, trace } from "./trace";
+import { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace } from "./trace";
 
 export type {
   TraceAttributes,
@@ -21,7 +21,7 @@ export type {
   TraceSummary,
   TraceWindow,
 } from "./trace";
-export { TRACE_STUCK_AFTER_MS, trace };
+export { observeSyncEvent, TRACE_STUCK_AFTER_MS, trace };
 
 // ── Settings Registration ──────────────────────────────────────────────
 

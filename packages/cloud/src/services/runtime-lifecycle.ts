@@ -1,3 +1,5 @@
+import type { Worker } from "@k2b/sync";
+
 export type RuntimeTaskTracker = ReturnType<typeof createRuntimeTaskTracker>;
 
 export type RuntimeTaskFailure = {
@@ -92,29 +94,25 @@ export const createRuntimeTaskTracker = () => {
   };
 };
 
+/**
+ * Stop accepting runtime tasks, stop the @k2b/sync workers from pulling new
+ * work, let accepted tasks finish, then drain the workers' in-flight handlers.
+ */
 export const stopRuntimeJobs = async (
   tracker: Pick<RuntimeTaskTracker, "close" | "drain">,
-  jobs: ReadonlyArray<{ stop(): void }>,
+  workers: ReadonlyArray<Pick<Worker, "stop" | "drain">>,
 ): Promise<void> => {
   tracker.close();
   const errors: unknown[] = [];
-  const stopAll = () => {
-    for (const job of jobs) {
-      try {
-        job.stop();
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-  };
-  stopAll();
+  for (const worker of workers) worker.stop();
   try {
     await tracker.drain();
   } catch (error) {
     errors.push(error);
   }
-  // An accepted task may restart its worker before the drain completes.
-  stopAll();
+  for (const result of await Promise.allSettled(workers.map((worker) => worker.drain()))) {
+    if (result.status === "rejected") errors.push(result.reason);
+  }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) throw new AggregateError(errors, "Multiple runtime jobs failed to stop");
 };

@@ -1,3 +1,4 @@
+import type { Sync } from "@k2b/sync";
 import type { HelpManifest } from "../shared/help";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
@@ -136,12 +137,13 @@ export type CloudContext = {
   runtime: CloudRuntime;
 };
 
-export type CloudLifecycleContext = CloudContext;
+/** Lifecycle hooks additionally receive the ready process-wide @k2b/sync instance. */
+export type CloudLifecycleContext = CloudContext & { sync: Sync };
 
 export type AppLifecycle = {
-  setup?: (ctx: CloudContext) => Promise<void>;
-  start?: (ctx: CloudContext) => Promise<void>;
-  stop?: (ctx: CloudContext) => Promise<void>;
+  setup?: (ctx: CloudLifecycleContext) => Promise<void>;
+  start?: (ctx: CloudLifecycleContext) => Promise<void>;
+  stop?: (ctx: CloudLifecycleContext) => Promise<void>;
 };
 
 export type AppSearchTagHelpEntry = {

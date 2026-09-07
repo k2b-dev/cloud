@@ -1,0 +1,320 @@
+import { describe, expect, test } from "bun:test";
+import { type DeadLetter, type DeadLetterStore, NotFoundError, type ScheduleInfo, type Sync } from "@k2b/sync";
+import { Hono } from "hono";
+import type { AuthContext } from "../server/middleware/auth";
+import { createSyncOpsRegistry, createSyncOpsRoutes, type SyncOpsRoutesDependencies } from "./sync-ops";
+
+const ADMIN_ID = "11111111-1111-4111-8111-111111111111";
+const admin = { id: ADMIN_ID, uid: "admin", provider: "local", roles: ["admin"] } as AuthContext["Variables"]["user"];
+
+type AuditCall = Parameters<NonNullable<SyncOpsRoutesDependencies["audit"]>["recordResultAfterSideEffect"]>[0];
+
+const fakeStore = (entries: DeadLetter<unknown>[]) => {
+  const items = [...entries];
+  const calls: Array<{ op: "requeue" | "delete"; messageId: string; idempotencyKey?: string }> = [];
+  const store: DeadLetterStore<unknown> = {
+    list: async ({ limit } = {}) => items.slice(0, limit ?? items.length),
+    requeue: async ({ messageId, idempotencyKey }) => {
+      calls.push({ op: "requeue", messageId, idempotencyKey });
+      const index = items.findIndex((item) => item.messageId === messageId);
+      if (index < 0) throw new NotFoundError(`dead letter ${messageId}`);
+      items.splice(index, 1);
+      return { messageId: `re-${messageId}`, streamSequence: 42, duplicate: false };
+    },
+    delete: async ({ messageId }) => {
+      calls.push({ op: "delete", messageId });
+      const index = items.findIndex((item) => item.messageId === messageId);
+      if (index < 0) return false;
+      items.splice(index, 1);
+      return true;
+    },
+  };
+  return { store, calls, items };
+};
+
+const deadLetter = (messageId: string, data: unknown = { key: messageId }): DeadLetter<unknown> => ({
+  messageId,
+  data,
+  tenantId: "default",
+  attempts: 5,
+  failedAt: new Date("2026-09-07T10:00:00.000Z"),
+  reason: "max attempts exhausted",
+  error: "boom",
+});
+
+const scheduleInfo = (id: string): ScheduleInfo => ({
+  id,
+  cron: "*/5 * * * *",
+  timezone: "UTC",
+  misfire: "latest",
+  nextRunAt: new Date("2026-09-07T10:05:00.000Z"),
+  runNumber: 3,
+  failureCount: 0,
+  handlerAvailable: true,
+  createdAt: new Date("2026-09-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-09-07T09:00:00.000Z"),
+  meta: { source: "test" },
+});
+
+const fakeSync = () =>
+  ({
+    health: () => ({
+      state: "ready",
+      connection: "connected",
+      pendingResources: 0,
+      driftedResources: 0,
+      activeWorkers: 1,
+      activeHandlers: 0,
+      droppedEvents: 0,
+    }),
+    resources: async () => [
+      { namespace: "test", kind: "queue", id: "mail", owner: "mail", state: "ready", natsNames: ["x"], detail: { deadLetters: 2 } },
+    ],
+  }) as unknown as Sync;
+
+const harness = () => {
+  const registry = createSyncOpsRegistry();
+  const audits: AuditCall[] = [];
+  const routes = createSyncOpsRoutes(fakeSync, {
+    registry,
+    audit: {
+      recordResultAfterSideEffect: async (params) => {
+        audits.push(params as AuditCall);
+        return params.result;
+      },
+    },
+  });
+  const app = new Hono<AuthContext>()
+    .use("*", async (c, next) => {
+      c.set("user", admin);
+      c.set("actor", { kind: "user", user: admin });
+      await next();
+    })
+    .route("/", routes);
+  const json = async (path: string, init?: RequestInit) => {
+    const response = await app.request(path, init);
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+  return { registry, audits, json };
+};
+
+describe("sync ops routes", () => {
+  test("reports declared resources with local health", async () => {
+    const { json } = harness();
+    const { status, body } = await json("/resources");
+    expect(status).toBe(200);
+    expect(body.health).toMatchObject({ state: "ready" });
+    expect(body.resources).toEqual([expect.objectContaining({ kind: "queue", id: "mail", detail: { deadLetters: 2 } })]);
+  });
+
+  test("lists every registered store with a bounded page and truncation flag", async () => {
+    const { registry, json } = harness();
+    const mail = fakeStore([deadLetter("a"), deadLetter("b"), deadLetter("c")]);
+    const jobs = fakeStore([]);
+    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store, description: "Mail deliveries" });
+    registry.registerDeadLetters({ name: "reindex", kind: "job", store: jobs.store });
+
+    const { status, body } = await json("/dead-letters?limit=2");
+    expect(status).toBe(200);
+    expect(body.stores).toEqual([
+      {
+        name: "mail",
+        kind: "queue",
+        description: "Mail deliveries",
+        truncated: true,
+        entries: [
+          {
+            messageId: "a",
+            tenantId: "default",
+            attempts: 5,
+            failedAt: "2026-09-07T10:00:00.000Z",
+            reason: "max attempts exhausted",
+            error: "boom",
+            dataPreview: '{"key":"a"}',
+          },
+          expect.objectContaining({ messageId: "b" }),
+        ],
+      },
+      { name: "reindex", kind: "job", description: null, truncated: false, entries: [] },
+    ]);
+    expect((await json("/dead-letters?limit=500")).status).toBe(400);
+  });
+
+  test("bounds the payload preview", async () => {
+    const { registry, json } = harness();
+    registry.registerDeadLetters({ name: "big", kind: "queue", store: fakeStore([deadLetter("x", "y".repeat(5_000))]).store });
+    const { body } = await json("/dead-letters");
+    const stores = body.stores as Array<{ entries: Array<{ dataPreview: string }> }>;
+    expect(stores[0]?.entries[0]?.dataPreview.length).toBeLessThanOrEqual(1_025);
+  });
+
+  test("requeues with a generated idempotency key and audits the actor", async () => {
+    const { registry, audits, json } = harness();
+    const mail = fakeStore([deadLetter("a")]);
+    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store });
+
+    const { status, body } = await json("/dead-letters/mail/requeue", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-request-id": "req-1" },
+      body: JSON.stringify({ messageId: "a" }),
+    });
+    expect(status).toBe(200);
+    expect(body.receipt).toEqual({ messageId: "re-a", streamSequence: 42, duplicate: false });
+    expect(body.idempotencyKey).toMatch(/^sync-ops:requeue:/);
+    expect(mail.calls).toEqual([{ op: "requeue", messageId: "a", idempotencyKey: String(body.idempotencyKey) }]);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: "sync.dead_letter.requeue",
+      actor: { userId: ADMIN_ID, uid: "admin", roles: ["admin"] },
+      target: { type: "sync_dead_letter", id: "a", label: "mail" },
+      metadata: { kind: "queue", idempotencyKey: body.idempotencyKey },
+      requestId: "req-1",
+      result: { ok: true },
+    });
+  });
+
+  test("maps missing stores and entries to 404 and still audits failed mutations", async () => {
+    const { registry, audits, json } = harness();
+    registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store });
+
+    expect(
+      (
+        await json("/dead-letters/nope/requeue", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: '{"messageId":"a"}',
+        })
+      ).status,
+    ).toBe(404);
+    const missing = await json("/dead-letters/mail/requeue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId: "ghost" }),
+    });
+    expect(missing.status).toBe(404);
+    expect((await json("/dead-letters/mail/ghost", { method: "DELETE" })).status).toBe(404);
+    expect(audits.map((entry) => [entry.action, entry.result.ok])).toEqual([
+      ["sync.dead_letter.requeue", false],
+      ["sync.dead_letter.delete", false],
+    ]);
+  });
+
+  test("deletes a dead letter and audits it", async () => {
+    const { registry, audits, json } = harness();
+    const mail = fakeStore([deadLetter("a")]);
+    registry.registerDeadLetters({ name: "mail", kind: "queue", store: mail.store });
+
+    const { status, body } = await json("/dead-letters/mail/a", { method: "DELETE" });
+    expect(status).toBe(200);
+    expect(body).toEqual({ deleted: true });
+    expect(mail.items).toEqual([]);
+    expect(audits[0]).toMatchObject({ action: "sync.dead_letter.delete", target: { id: "a", label: "mail" } });
+  });
+
+  test("lists schedules tagged with their scheduler id", async () => {
+    const { registry, json } = harness();
+    registry.registerScheduler({
+      name: "mail",
+      scheduler: {
+        list: async () => [scheduleInfo("mail:sync-due")],
+        runNow: async () => ({ runId: "r" }),
+        awaitRun: async () => ({ completed: true }),
+      },
+    });
+    registry.registerScheduler({
+      name: "core",
+      scheduler: {
+        list: async () => [scheduleInfo("core:cleanup")],
+        runNow: async () => ({ runId: "r" }),
+        awaitRun: async () => ({ completed: true }),
+      },
+    });
+
+    const { status, body } = await json("/schedules");
+    expect(status).toBe(200);
+    expect(body.schedules).toEqual([
+      {
+        schedulerId: "mail",
+        id: "mail:sync-due",
+        cron: "*/5 * * * *",
+        timezone: "UTC",
+        misfire: "latest",
+        nextRunAt: "2026-09-07T10:05:00.000Z",
+        runNumber: 3,
+        failureCount: 0,
+        lastError: null,
+        lastRunId: null,
+        lastCompletedAt: null,
+        handlerAvailable: true,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        updatedAt: "2026-09-07T09:00:00.000Z",
+        meta: { source: "test" },
+      },
+      expect.objectContaining({ schedulerId: "core", id: "core:cleanup" }),
+    ]);
+  });
+
+  test("runs a schedule now with a generated request id, then awaits the run", async () => {
+    const { registry, audits, json } = harness();
+    const runNowCalls: Array<{ id: string; requestId: string }> = [];
+    const awaitCalls: Array<{ id: string; runId: string; timeoutMs?: number }> = [];
+    registry.registerScheduler({
+      name: "mail",
+      scheduler: {
+        list: async () => [],
+        runNow: async (input) => {
+          runNowCalls.push(input);
+          if (input.id === "missing") throw new NotFoundError("schedule");
+          return { runId: "run-1" };
+        },
+        awaitRun: async (input) => {
+          awaitCalls.push(input);
+          return { completed: true, error: "handler failed" };
+        },
+      },
+    });
+
+    const accepted = await json("/schedules/mail/mail:sync-due/run-now", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.runId).toBe("run-1");
+    expect(accepted.body.requestId).toMatch(/^sync-ops:run-now:/);
+    expect(runNowCalls).toEqual([{ id: "mail:sync-due", requestId: String(accepted.body.requestId) }]);
+    expect(audits[0]).toMatchObject({
+      action: "sync.schedule.run_now",
+      target: { type: "sync_schedule", id: "mail:sync-due", label: "mail" },
+      metadata: { requestId: accepted.body.requestId, runId: "run-1" },
+    });
+
+    const explicit = await json("/schedules/mail/mail:sync-due/run-now", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ requestId: "my-request" }),
+    });
+    expect(explicit.body.requestId).toBe("my-request");
+
+    expect(
+      (await json("/schedules/mail/missing/run-now", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }))
+        .status,
+    ).toBe(404);
+    expect(
+      (await json("/schedules/other/x/run-now", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status,
+    ).toBe(404);
+
+    const run = await json("/schedules/mail/mail:sync-due/runs/run-1?timeoutMs=100");
+    expect(run.status).toBe(200);
+    expect(run.body).toEqual({ completed: true, error: "handler failed" });
+    expect(awaitCalls).toEqual([{ id: "mail:sync-due", runId: "run-1", timeoutMs: 100 }]);
+  });
+
+  test("rejects duplicate registrations and supports unregistering", () => {
+    const registry = createSyncOpsRegistry();
+    const unregister = registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store });
+    expect(() => registry.registerDeadLetters({ name: "mail", kind: "queue", store: fakeStore([]).store })).toThrow(/already registered/);
+    unregister();
+    expect(registry.deadLetterStores()).toEqual([]);
+  });
+});

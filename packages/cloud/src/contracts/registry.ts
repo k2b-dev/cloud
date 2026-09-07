@@ -90,6 +90,8 @@ export type AppRegistryEntry = {
   baseUrl: string;
   /** Build metadata reported by the running app. Missing on older app releases. */
   runtime?: AppRuntimeMetadata;
+  /** Process start time (epoch ms) reported by the running app; the registry cannot know it. */
+  startedAt?: number;
   /**
    * Top-level URL prefixes the gateway routes to this app. The gateway
    * builds a prefix-trie from these strings, no derivation or heuristics.

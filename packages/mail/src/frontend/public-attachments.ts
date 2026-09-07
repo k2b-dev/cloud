@@ -1,6 +1,5 @@
-import { ratelimit } from "@k2b/sync";
 import { env } from "@valentinkolb/cloud/config";
-import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, rateLimit, ratelimit } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { createComponent } from "solid-js";

@@ -34,6 +34,7 @@ export {
   v,
   validator,
 } from "./middleware";
+export { RateLimitError, type RateLimiter, type RateLimiterConfig, type RateLimitResult, ratelimit } from "./ratelimit";
 export type {
   AccessEntry,
   AccessPrincipalColumns,
