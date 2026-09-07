@@ -19,7 +19,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {
   SpaceColumn,
@@ -38,7 +38,12 @@ import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
-import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import {
+  invalidateSpacesData,
+  requestSpacesRouteNavigation,
+  shouldInvalidateSpacesDetail,
+  subscribeToSpacesDataInvalidation,
+} from "../workspace/workspace-events";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import CommentsSection from "./CommentsSection";
@@ -281,10 +286,14 @@ export default function ItemDetailPanel(props: Props) {
     return res.json();
   };
 
-  const commentsSource = `${props.commentTarget.itemId}:${props.commentTarget.recurrenceId ?? "series"}`;
+  const commentsSource = () => `${props.commentTarget.itemId}:${props.commentTarget.recurrenceId ?? "series"}`;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   const commentsQuery = query.createInfinite<string, SpaceItemDetail["comments"], number>({
-    source: () => commentsSource,
-    initial: { source: commentsSource, pages: [props.initialCommentsPage] },
+    source: commentsSource,
+    initial: { source: commentsSource(), pages: [props.initialCommentsPage] },
     loadPage: async (_source, { cursor, abortSignal }) => {
       const page = cursor ?? 1;
       const result = await loadCommentsPage(page, abortSignal);
@@ -292,6 +301,22 @@ export default function ItemDetailPanel(props: Props) {
       return result;
     },
     getNextCursor: (page) => (page.hasNext ? page.page + 1 : null),
+    subscribe: ({ invalidate }) =>
+      subscribeToSpacesDataInvalidation(["detail"], async ({ itemId }) => {
+        while (!disposed) {
+          if (!shouldInvalidateSpacesDetail(props.item.id, itemId) && !shouldInvalidateSpacesDetail(props.commentTarget.itemId, itemId))
+            return;
+          const requestedSource = commentsSource();
+          try {
+            await invalidate();
+            return;
+          } catch (error) {
+            // Closing or replacing this editor removes its coverage obligation.
+            if (disposed) return;
+            if (requestedSource === commentsSource()) throw error;
+          }
+        }
+      }),
   });
   const commentsPage = () => {
     const pages = commentsQuery.pages();
@@ -717,11 +742,7 @@ export default function ItemDetailPanel(props: Props) {
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
                     variant="secondary"
                     size="sm"
-                    style={
-                      completionBlocked()
-                        ? { color: "var(--k2b-warning-text)", background: "var(--k2b-warning-surface)" }
-                        : undefined
-                    }
+                    style={completionBlocked() ? { color: "var(--k2b-warning-text)", background: "var(--k2b-warning-surface)" } : undefined}
                   >
                     <Show when={isCompleted() || completeMutation.loading()}>
                       <i class={`ti ${completeMutation.loading() ? "ti-loader-2 animate-spin" : "ti-check"}`} aria-hidden="true" />

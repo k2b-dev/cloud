@@ -15,6 +15,7 @@ type Props = {
 
 export default function SpaceLiveEvents(props: Props) {
   onMount(() => {
+    let disposed = false;
     const connection = createLiveWebSocket<SpaceLiveServerMessage>({
       url: "/api/spaces/ws",
       initialCursor: props.initialCursor,
@@ -26,6 +27,7 @@ export default function SpaceLiveEvents(props: Props) {
         }) satisfies SpaceLiveClientMessage,
       parse: parseSpaceLiveServerMessage,
       onMessage: (message, controls) => {
+        if (disposed) return;
         if (message.payload.spaceId && message.payload.spaceId !== props.spaceId) return;
         if (message.type === SPACE_LIVE_WS_TYPE.ready) {
           void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
@@ -38,27 +40,32 @@ export default function SpaceLiveEvents(props: Props) {
             return;
           }
           const domains = eventType.startsWith("item.") ? (["view", "detail"] as const) : (["view", "wormholes"] as const);
-          void applyCursor(
-            [...domains],
-            message.payload.cursor,
-            "itemId" in message.payload.event ? message.payload.event.itemId : null,
-          );
+          void applyCursor([...domains], message.payload.cursor, "itemId" in message.payload.event ? message.payload.event.itemId : null);
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.revoked) {
           controls.terminate({ code: message.payload.code, message: message.payload.message });
         }
       },
-      onFatal: () => window.location.reload(),
+      onFatal: () => {
+        if (!disposed) window.location.reload();
+      },
     });
     const applyCursor = createSpacesLiveCursorQueue({
-      invalidate: invalidateSpacesData,
-      markApplied: connection.markApplied,
-      onFailure: () => window.location.reload(),
+      invalidate: (domains, cursor, itemId) => (disposed ? Promise.resolve() : invalidateSpacesData(domains, cursor, itemId)),
+      markApplied: (cursor) => {
+        if (!disposed) connection.markApplied(cursor);
+      },
+      onFailure: () => {
+        if (!disposed) window.location.reload();
+      },
     });
 
     connection.connect();
-    onCleanup(connection.dispose);
+    onCleanup(() => {
+      disposed = true;
+      connection.dispose();
+    });
   });
 
   return null;

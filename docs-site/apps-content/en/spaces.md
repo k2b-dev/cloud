@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-09-05
+updated: 2026-09-07
 ---
 
 # Spaces
@@ -56,6 +56,15 @@ moving focus out of the search field. The URL follows the displayed results,
 so you can share or reload the filtered view. While a search loads, the previous
 results stay visible. If it fails, your search text remains available and you
 can retry.
+
+Press **Enter** to search immediately. Without JavaScript, submitting the
+search loads the filtered page and keeps your other filters. The start page's
+**For me**, **Today**, and **Upcoming** links also work without JavaScript.
+
+In list and table views, changing search or filters keeps the open item's
+editor and unfinished comment in place. If you select another item while a
+calendar date change is loading, the completed date change keeps your newer
+selection.
 
 Task checklist entries are deliberately small: one completion state and one
 label, without separate assignees, dates, or detail pages. Checklist changes

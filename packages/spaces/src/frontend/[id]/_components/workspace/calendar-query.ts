@@ -5,7 +5,12 @@ import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import { parseCalendarRoute } from "../calendar/filter";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
-import { reconcileSpacesDetailRoute, resolveCalendarNavigationHref, subscribeToSpacesDataInvalidation } from "./workspace-events";
+import {
+  reconcileSpacesDetailRoute,
+  resolveCalendarNavigationHref,
+  SPACES_DETAIL_STATE_EVENT,
+  subscribeToSpacesDataInvalidation,
+} from "./workspace-events";
 import type { SpacesViewSnapshot } from "./workspace-types";
 
 type CalendarSnapshot = Extract<SpacesViewSnapshot, { kind: "calendar" }>;
@@ -15,9 +20,11 @@ type PendingNavigation = {
   source: string;
   history: "push" | "replace" | "popstate";
   started: boolean;
+  selection: string;
 };
 
 const pathWithQuery = (url: URL) => `${url.pathname}${url.search}`;
+const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence")]);
 const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
@@ -35,22 +42,40 @@ export const useSpacesCalendarQuery = (params: {
   const t = useSpaceMessages();
   const expectedPath = `/app/spaces/${params.spaceId}`;
   const normalize = (href: string) => resolveCalendarNavigationHref(href, window.location.origin, expectedPath);
-  const [source, setSource] = createSignal(params.initialSource);
+  const initialSource = calendarViewSource(params.initialSource);
+  const [source, setSource] = createSignal(initialSource);
   const [preview, setPreview] = createSignal<CalendarSnapshot>(params.initialSnapshot);
   const [pending, setPending] = createSignal<PendingNavigation | null>(null);
-  let committedSource = params.initialSource;
+  let committedSource = initialSource;
   let committedHref = params.initialSource;
   let nextNavigationId = 0;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
 
   const view = query.create<string, { source: string; snapshot: CalendarSnapshot }, { cursor: string | null }>({
     source,
-    initial: { source: params.initialSource, data: { source: params.initialSource, snapshot: params.initialSnapshot } },
+    initial: { source: initialSource, data: { source: initialSource, snapshot: params.initialSnapshot } },
     load: async (href, { abortSignal }) => {
       const snapshot = await loadSpacesViewSnapshot(href, abortSignal, locale());
       if (snapshot.kind !== "calendar") throw new SpacesViewUnavailableError(t.workspaceViewChanged);
       return { source: href, snapshot };
     },
-    subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["view"], invalidate),
+    subscribe: ({ invalidate }) =>
+      subscribeToSpacesDataInvalidation(["view"], async (event) => {
+        // Navigation supersedes old-source coverage, but the live cursor still
+        // requires a fresh snapshot of the newly active calendar.
+        while (!disposed) {
+          const requestedSource = source();
+          try {
+            await invalidate(event);
+            return;
+          } catch (error) {
+            if (disposed || requestedSource === source()) throw error;
+          }
+        }
+      }),
   });
 
   const current = () => {
@@ -63,6 +88,16 @@ export const useSpacesCalendarQuery = (params: {
     setPending(null);
     setSource(committedSource);
     if (request.history === "popstate") {
+      const selection = new URL(window.location.href);
+      if (selectionKey(selection) !== request.selection) {
+        const target = new URL(committedHref, window.location.origin);
+        for (const key of ["item", "occurrence"]) {
+          const value = selection.searchParams.get(key);
+          if (value === null) target.searchParams.delete(key);
+          else target.searchParams.set(key, value);
+        }
+        committedHref = pathWithQuery(target);
+      }
       navigate(committedHref, { replace: true, scroll: "preserve", viewTransition: false });
       reconcileSpacesDetailRoute(committedHref);
     }
@@ -77,14 +112,23 @@ export const useSpacesCalendarQuery = (params: {
 
     const loaded = view.data();
     if (loaded?.source === request.source && !view.stale()) {
+      const target = new URL(request.href, window.location.origin);
+      const selection = new URL(window.location.href);
+      if (selectionKey(selection) !== request.selection) {
+        for (const key of ["item", "occurrence"]) {
+          const value = selection.searchParams.get(key);
+          if (value === null) target.searchParams.delete(key);
+          else target.searchParams.set(key, value);
+        }
+      }
       committedSource = request.source;
-      committedHref = request.href;
+      committedHref = pathWithQuery(target);
       setPreview(loaded.snapshot);
       setPending(null);
       if (request.history !== "popstate") {
-        navigate(request.href, { replace: request.history === "replace", scroll: "preserve", viewTransition: false });
+        navigate(committedHref, { replace: request.history === "replace", scroll: "preserve", viewTransition: false });
       }
-      reconcileSpacesDetailRoute(request.href);
+      reconcileSpacesDetailRoute(committedHref);
       return;
     }
 
@@ -115,11 +159,25 @@ export const useSpacesCalendarQuery = (params: {
     }
     const route = parseCalendarRoute(new URL(nextSource, window.location.origin), params.dateConfig);
     setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {} }));
-    setPending({ id: ++nextNavigationId, href, source: nextSource, history, started: false });
+    setPending({
+      id: ++nextNavigationId,
+      href,
+      source: nextSource,
+      history,
+      started: false,
+      selection: selectionKey(new URL(window.location.href)),
+    });
     setSource(nextSource);
   };
 
   onMount(() => {
+    committedHref = pathWithQuery(new URL(window.location.href));
+    const rememberDetailSelection = () => {
+      const href = pathWithQuery(new URL(window.location.href));
+      if (calendarViewSource(href) === committedSource) committedHref = href;
+    };
+    window.addEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection);
+    onCleanup(() => window.removeEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection));
     const stopPopState = listenPopState(({ url }) => start(pathWithQuery(url), "popstate"));
     onCleanup(stopPopState);
   });

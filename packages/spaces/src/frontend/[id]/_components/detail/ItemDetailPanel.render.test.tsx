@@ -148,8 +148,8 @@ describe("Spaces item detail panel", () => {
     });
 
     expect(html).toContain("Read only");
-    expect(html).toContain("text-[0.6875rem] font-medium leading-4 text-[var(--k2b-success-text)]");
-    expect(html).toContain("bg-[var(--k2b-success-500)]");
+    expect(html).toContain('style="color:var(--k2b-text-muted)"><i class="ti ti-circle" aria-hidden="true"></i>Active');
+    expect(html).not.toContain("bg-[var(--k2b-success-500)]");
     expect(html).toContain('aria-label="Close item details"');
     expect(html).not.toContain('aria-label="More item actions"');
     expect(html).not.toContain("Mark complete");
@@ -200,7 +200,8 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain("Publish release");
     expect(html).toContain("Complete all blocking tasks first");
     expect(html).toContain('data-variant="secondary" disabled');
-    expect(html).toContain("!bg-[var(--k2b-warning-500)]");
+    expect(html).toContain("background:var(--k2b-warning-surface)");
+    expect(html).toContain("color:var(--k2b-warning-text)");
     expect(html).toContain('<i class="ti ti-lock" aria-hidden="true"></i>Blocked by 1');
     expect(html).not.toContain("text-[0.6875rem] font-medium leading-4 text-amber-700");
     expect(html).toMatch(/aria-label="Task context"[\s\S]*>Blocked by<\/[h]3>[\s\S]*>Blocks<\/[h]3>[\s\S]*>Linked resources<\/[h]3>/);

@@ -80,12 +80,14 @@ describe("Spaces overview", () => {
     expect(html).not.toContain("Completed “Ship overview”");
   });
 
-  test("renders pinned launchers, real tabs, work rows, and stable activity without a stat grid", () => {
+  test("renders pinned launchers, navigable work views, work rows, and stable activity without a stat grid", () => {
     const html = render();
     expect(html).toContain("spaces-overview-workspace");
     expect(html).toContain("Unpin Launch");
     expect(html).toContain("New space");
-    expect(html).toContain('role="tablist"');
+    expect(html).toContain('href="/app/spaces?view=today"');
+    expect(html).toContain('href="/app/spaces?view=upcoming"');
+    expect(html).toContain('aria-current="page"');
     expect(html).toContain("For me");
     expect(html).toContain("Ship overview");
     expect(html).not.toContain("k2b-stat-grid");

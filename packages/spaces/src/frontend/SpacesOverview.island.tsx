@@ -1,4 +1,4 @@
-import { navigateTo } from "@k2b/ssr/nav";
+import { listenPopState, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import {
@@ -18,7 +18,6 @@ import {
   Placeholder,
   panelDialogOptions,
   prompts,
-  Tabs,
   TextInput,
   toast,
   useLocale,
@@ -487,20 +486,15 @@ export default function SpacesOverview(props: Props) {
     },
   ];
 
-  const selectView = (next: OverviewView) => {
-    setView(next);
-    const url = new URL(window.location.href);
-    if (next === "mine") url.searchParams.delete("view");
-    else url.searchParams.set("view", next);
-    window.history.pushState({}, "", url);
-  };
+  const workViews = ["mine", "today", "upcoming"] as const;
+  const viewHref = (next: OverviewView) => (next === "mine" ? "/app/spaces" : `/app/spaces?view=${next}`);
   onMount(() => {
-    const restore = () => {
-      const value = new URL(window.location.href).searchParams.get("view");
-      setView(value === "today" || value === "upcoming" ? value : "mine");
-    };
-    window.addEventListener("popstate", restore);
-    onCleanup(() => window.removeEventListener("popstate", restore));
+    onCleanup(
+      listenPopState(({ url }) => {
+        const value = url.searchParams.get("view");
+        setView(value === "today" || value === "upcoming" ? value : "mine");
+      }),
+    );
   });
   const togglePin = (space: Space) =>
     setPinned((current) => {
@@ -760,38 +754,28 @@ export default function SpacesOverview(props: Props) {
                 <p>{t.myWorkDescription}</p>
               </div>
             </div>
-            <Tabs<OverviewView> ariaLabel={t.workView} value={view} onValueChange={selectView}>
-              <Tabs.Item
-                value="mine"
-                label={
-                  <>
-                    {t.forMe} <span class="spaces-overview-tab-count">{props.counts.mine}</span>
-                  </>
-                }
-              >
-                {workList()}
-              </Tabs.Item>
-              <Tabs.Item
-                value="today"
-                label={
-                  <>
-                    {t.today} <span class="spaces-overview-tab-count">{props.counts.today}</span>
-                  </>
-                }
-              >
-                {workList()}
-              </Tabs.Item>
-              <Tabs.Item
-                value="upcoming"
-                label={
-                  <>
-                    {t.upcoming} <span class="spaces-overview-tab-count">{props.counts.upcoming}</span>
-                  </>
-                }
-              >
-                {workList()}
-              </Tabs.Item>
-            </Tabs>
+            <nav aria-label={t.workView} class="flex gap-2 overflow-x-auto">
+              <For each={workViews}>
+                {(next) => (
+                  <ButtonLink
+                    href={viewHref(next)}
+                    navigation="enhanced"
+                    variant={view() === next ? "subtle" : "text"}
+                    size="sm"
+                    aria-current={view() === next ? "page" : undefined}
+                    onNavigate={(event) => {
+                      if (view() === next) return;
+                      setView(next);
+                      event.push(viewHref(next), { scroll: "preserve" });
+                    }}
+                  >
+                    {next === "mine" ? t.forMe : next === "today" ? t.today : t.upcoming}
+                    <span class="spaces-overview-tab-count">{props.counts[next]}</span>
+                  </ButtonLink>
+                )}
+              </For>
+            </nav>
+            {workList()}
           </section>
         </AppWorkspace.Main>
         <AppWorkspace.Detail id="spaces-overview-activity" open width="lg" resizable={false} class="spaces-overview-activity">

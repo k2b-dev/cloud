@@ -1,6 +1,6 @@
 import { timed as timing } from "@k2b/stdlib/solid";
 import { TextInput } from "@k2b/ui";
-import { createEffect, createSignal, on } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { buildSearchUrl } from "./types";
@@ -23,6 +23,8 @@ export default function SearchInput(props: SearchInputProps) {
   const [value, setValue] = createSignal(props.value);
   const [focused, setFocused] = createSignal(false);
   const [pending, setPending] = createSignal(false);
+  const formUrl = createMemo(() => new URL(props.baseUrl ?? "", "http://spaces.local"));
+  const preservedParams = createMemo(() => [...formUrl().searchParams].filter(([key]) => key !== "q" && key !== "page"));
   const debounce = timing.debounce((nextValue: string) => {
     if (props.onSearch) {
       void Promise.resolve(props.onSearch(nextValue))
@@ -56,8 +58,22 @@ export default function SearchInput(props: SearchInputProps) {
   };
 
   return (
-    <div onFocusIn={() => setFocused(true)} onFocusOut={() => setFocused(false)}>
+    <form
+      role="search"
+      action={props.baseUrl ? formUrl().pathname : undefined}
+      method="get"
+      onFocusIn={() => setFocused(true)}
+      onFocusOut={() => setFocused(false)}
+      onSubmit={(event) => {
+        if (!props.onSearch && !props.baseUrl) return;
+        event.preventDefault();
+        setPending(true);
+        debounce.trigger(value());
+      }}
+    >
       <TextInput
+        name="q"
+        type="search"
         icon="ti ti-search"
         aria-label={t.searchItems}
         placeholder={t.searchPlaceholder}
@@ -67,6 +83,7 @@ export default function SearchInput(props: SearchInputProps) {
         onClear={() => handleInput("")}
         suffix={pending() || props.busy ? <i class="ti ti-loader-2 animate-spin text-zinc-400" /> : undefined}
       />
-    </div>
+      <For each={preservedParams()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
+    </form>
   );
 }

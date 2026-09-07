@@ -8,6 +8,17 @@ import { parseFilterFromUrl } from "../filter/types";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
 import { reconcileSpacesDetailRoute, SPACES_DETAIL_STATE_EVENT, subscribeToSpacesDataInvalidation } from "./workspace-events";
 
+const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence")]);
+const withSelection = (href: string, selection: URL) => {
+  const target = new URL(href, selection.origin);
+  for (const key of ["item", "occurrence"]) {
+    const value = selection.searchParams.get(key);
+    if (value === null) target.searchParams.delete(key);
+    else target.searchParams.set(key, value);
+  }
+  return `${target.pathname}${target.search}`;
+};
+
 export const listViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
@@ -21,7 +32,7 @@ export const useSpacesListQuery = (props: { initialSource: string; initialItemsR
   const t = useSpaceMessages();
   const initialSource = listViewSource(props.initialSource);
   const [source, setSource] = createSignal(initialSource);
-  const [pending, setPending] = createSignal<{ href: string; history: "replace" | "popstate" } | null>(null);
+  const [pending, setPending] = createSignal<{ href: string; history: "replace" | "popstate"; selection: string } | null>(null);
   const [searchReset, setSearchReset] = createSignal(0);
   let committedHref = props.initialSource;
   let disposed = false;
@@ -59,22 +70,24 @@ export const useSpacesListQuery = (props: { initialSource: string; initialItemsR
     const request = pending();
     if (!request) return;
     if (current().source === source() && !view.stale()) {
-      const target = new URL(request.href, window.location.origin);
       // Item selection can change independently while the list request is in flight.
       // A failed popstate restores another source; retry must retain its target selection.
       const selection = new URL(window.location.href);
-      if (request.history === "replace" || listViewSource(selection.href) === source()) {
-        for (const key of ["item", "occurrence"]) {
-          const value = selection.searchParams.get(key);
-          if (value === null) target.searchParams.delete(key);
-          else target.searchParams.set(key, value);
-        }
-      }
-      committedHref = `${target.pathname}${target.search}`;
+      committedHref =
+        request.history === "replace" || listViewSource(selection.href) === source() || selectionKey(selection) !== request.selection
+          ? withSelection(request.href, selection)
+          : request.href;
       setPending(null);
       navigate(committedHref, { replace: true, scroll: "preserve", viewTransition: false });
       reconcileSpacesDetailRoute(committedHref);
     } else if (view.error() && request.history === "popstate") {
+      const selection = new URL(window.location.href);
+      if (selectionKey(selection) !== request.selection) {
+        committedHref = withSelection(committedHref, selection);
+        request.href = withSelection(request.href, selection);
+      }
+      // The rollback is not a user selection; do not adopt it on another retry.
+      request.selection = selectionKey(new URL(committedHref, window.location.origin));
       navigate(committedHref, { replace: true, scroll: "preserve", viewTransition: false });
       reconcileSpacesDetailRoute(committedHref);
     }
@@ -99,14 +112,14 @@ export const useSpacesListQuery = (props: { initialSource: string; initialItemsR
       if (history === "popstate") {
         if (!pending()) committedHref = href;
         setSearchReset((value) => value + 1);
-        if (pending()) setPending({ href, history });
+        if (pending()) setPending({ href, history, selection: selectionKey(new URL(window.location.href)) });
       }
       if (view.error()) void view.refresh();
       return;
     }
     batch(() => {
       setSource(next);
-      setPending({ href, history });
+      setPending({ href, history, selection: selectionKey(new URL(window.location.href)) });
       if (history === "popstate") setSearchReset((value) => value + 1);
     });
   };

@@ -10,8 +10,8 @@ import {
   publishSpacesDetailState,
   SPACES_DETAIL_NAVIGATION_EVENT,
   type SpacesDetailNavigation,
-  subscribeToSpacesDataInvalidation,
   shouldInvalidateSpacesDetail,
+  subscribeToSpacesDataInvalidation,
 } from "../workspace/workspace-events";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 import ItemDetailPanel from "./ItemDetailPanel";
@@ -41,6 +41,18 @@ const detailRequest = (href: string) => {
     itemId: url.searchParams.get("item"),
     occurrenceId: url.searchParams.get("occurrence"),
   };
+};
+
+// List filters and calendar position are navigation state, not editor identity.
+const detailSource = (href: string) => {
+  const url = new URL(href, "http://spaces.local");
+  const request = detailRequest(href);
+  url.search = "";
+  if (request.itemId) {
+    url.searchParams.set("item", request.itemId);
+    if (request.occurrenceId) url.searchParams.set("occurrence", request.occurrenceId);
+  }
+  return `${url.pathname}${url.search}`;
 };
 
 const canonicalDetailHref = (source: string, detail: SpaceItemDetail) => {
@@ -86,6 +98,10 @@ export default function ItemDetailRoute(props: Props) {
   const [pending, setPending] = createSignal<PendingNavigation | null>(null);
   let nextNavigationId = 0;
   let committedSource = initialSource;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
 
   const wormholesQuery = query.create<string, SpaceWormhole[], { cursor: string | null }>({
     source: () => props.spaceId,
@@ -101,10 +117,13 @@ export default function ItemDetailRoute(props: Props) {
   });
 
   const detailQuery = query.create<string, DetailSnapshot, { cursor: string | null }>({
-    source,
+    source: () => detailSource(source()),
     initial:
       props.initialDetail || !initialRequest.itemId
-        ? { source: initialSource, data: { source: initialSource, detail: props.initialDetail, notFound: false } }
+        ? {
+            source: detailSource(initialSource),
+            data: { source: detailSource(initialSource), detail: props.initialDetail, notFound: false },
+          }
         : undefined,
     enabled: () => detailRequest(source()).itemId !== null,
     load: async (href, { abortSignal }) => {
@@ -123,17 +142,27 @@ export default function ItemDetailRoute(props: Props) {
       return { source: href, detail: await response.json(), notFound: false };
     },
     subscribe: ({ invalidate }) =>
-      subscribeToSpacesDataInvalidation(["detail"], (invalidation) =>
-        shouldInvalidateSpacesDetail(detailRequest(source()).itemId, invalidation.itemId)
-          ? invalidate(invalidation)
-          : Promise.resolve(),
-      ),
+      subscribeToSpacesDataInvalidation(["detail"], async (invalidation) => {
+        while (!disposed) {
+          const requestedSource = detailSource(source());
+          const itemId = detailRequest(requestedSource).itemId;
+          // A closed panel has no snapshot to refresh. Never wait on its disabled query.
+          if (!itemId || !shouldInvalidateSpacesDetail(itemId, invalidation.itemId)) return;
+          try {
+            await invalidate(invalidation);
+            return;
+          } catch (error) {
+            // Selection changes supersede coverage; cover the new selection or close.
+            if (disposed || requestedSource === detailSource(source())) throw error;
+          }
+        }
+      }),
   });
 
   const hasDetailSelection = () => detailRequest(source()).itemId !== null;
   const currentDetail = () => {
     const snapshot = detailQuery.data();
-    return snapshot?.source === source() && !snapshot.notFound ? snapshot.detail : null;
+    return hasDetailSelection() && snapshot?.source === detailSource(source()) && !snapshot.notFound ? snapshot.detail : null;
   };
 
   const restoreCommitted = (request: PendingNavigation, error: Error) => {
@@ -150,7 +179,7 @@ export default function ItemDetailRoute(props: Props) {
     if (request && (detailQuery.loading() || detailQuery.refreshing())) request.started = true;
     const snapshot = detailQuery.data();
 
-    if (request && snapshot?.source === request.source && !detailQuery.stale()) {
+    if (request && snapshot?.source === detailSource(request.source) && !detailQuery.stale()) {
       if (snapshot.notFound) {
         restoreCommitted(request, new Error(t.itemNotFound));
         return;
@@ -174,7 +203,7 @@ export default function ItemDetailRoute(props: Props) {
       return;
     }
 
-    if (!request && snapshot?.source === source()) {
+    if (!request && snapshot?.source === detailSource(source())) {
       if (snapshot.notFound) {
         const baseHref = detailBaseHref(source());
         committedSource = baseHref;
@@ -189,12 +218,13 @@ export default function ItemDetailRoute(props: Props) {
 
   const navigateDetail = (href: string, history: DetailHistory) => {
     const request = detailRequest(href);
-    if (!request.itemId) {
+    const current = currentDetail();
+    if (!request.itemId || (current && detailSource(href) === detailSource(source()))) {
       setPending(null);
       setSource(href);
       committedSource = href;
       writeHistory(href, history);
-      publishSpacesDetailState(detailState(null));
+      publishSpacesDetailState(detailState(request.itemId ? current : null));
       return;
     }
     setPending({ id: ++nextNavigationId, source: href, history, started: false });
@@ -213,6 +243,22 @@ export default function ItemDetailRoute(props: Props) {
     const onNavigate = (event: Event) => {
       const request = (event as CustomEvent<SpacesDetailNavigation>).detail;
       if (!request) return;
+      const selection = pending();
+      if (request.reconcile && selection && selection.history !== "none") {
+        // A view response can retain or clear its old selection. Rebase, rather
+        // than cancel, a newer item click whose detail read has not completed yet.
+        // History restoration itself remains authoritative.
+        const target = new URL(request.href, window.location.origin);
+        const selected = detailRequest(selection.source);
+        target.searchParams.set("item", selected.itemId!);
+        if (selected.occurrenceId) target.searchParams.set("occurrence", selected.occurrenceId);
+        else target.searchParams.delete("occurrence");
+        const href = `${target.pathname}${target.search}`;
+        committedSource = request.href;
+        setPending({ ...selection, source: href });
+        setSource(href);
+        return;
+      }
       navigateDetail(request.href, request.history ?? "push");
     };
     const onPopState = () => navigateDetail(`${window.location.pathname}${window.location.search}`, "none");

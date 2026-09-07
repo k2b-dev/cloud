@@ -7,6 +7,7 @@ export type SpacesDetailNavigation = {
   itemId: string | null;
   occurrenceId: string | null;
   history?: "push" | "replace" | "none";
+  reconcile?: true;
 };
 
 export type SpacesDetailState = {
@@ -107,7 +108,7 @@ export const subscribeToSpacesDataInvalidation = (
   return () => window.removeEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);
 };
 
-const publishDetailNavigation = (target: URL, history: "push" | "replace" | "none") => {
+const publishDetailNavigation = (target: URL, history: "push" | "replace" | "none", reconcile?: true) => {
   window.dispatchEvent(
     new CustomEvent<SpacesDetailNavigation>(SPACES_DETAIL_NAVIGATION_EVENT, {
       detail: {
@@ -115,6 +116,7 @@ const publishDetailNavigation = (target: URL, history: "push" | "replace" | "non
         itemId: target.searchParams.get("item"),
         occurrenceId: target.searchParams.get("occurrence"),
         history,
+        reconcile,
       },
     }),
   );
@@ -122,7 +124,7 @@ const publishDetailNavigation = (target: URL, history: "push" | "replace" | "non
 
 /** Reconciles the detail island after another controller has already committed browser history. */
 export const reconcileSpacesDetailRoute = (href: string) => {
-  publishDetailNavigation(new URL(href, window.location.origin), "none");
+  publishDetailNavigation(new URL(href, window.location.origin), "none", true);
 };
 
 /**

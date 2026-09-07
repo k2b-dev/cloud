@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import { invalidateSpacesData } from "../src/frontend/[id]/_components/workspace/workspace-events";
+import { invalidateSpacesData, SPACES_DETAIL_STATE_EVENT } from "../src/frontend/[id]/_components/workspace/workspace-events";
 import type { SpacesViewSnapshot } from "../src/frontend/[id]/_components/workspace/workspace-types";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
@@ -142,6 +142,72 @@ describe("Spaces enhanced calendar navigation", () => {
     expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(november);
     expect(rollbackDetailEvents.at(-1)).toBe(november);
     dom.window.removeEventListener("spaces-detail-navigation", onRollbackDetail);
+
+    // Source changes during live refresh must cover the new source, not reject
+    // the queue's acknowledgement and force a document reload.
+    requests.at(-1)!.result.resolve(snapshot("2026-11-01"));
+    await flush();
+    let coverageError: unknown;
+    let covered = false;
+    const movingCoverage = invalidateSpacesData(["view"], "5-0").then(
+      () => {
+        covered = true;
+      },
+      (error) => {
+        coverageError = error;
+      },
+    );
+    await flush();
+    const oldRefresh = requests.at(-1)!;
+    navigation.navigateHref(december);
+    await flush();
+    expect(oldRefresh.signal.aborted).toBe(true);
+    expect(covered).toBe(false);
+    expect(coverageError).toBeUndefined();
+    const decemberLoad = requests.at(-1)!;
+    decemberLoad.result.resolve(snapshot("2026-12-01"));
+    await flush();
+    // An invalidation arriving during the source read needs its own covering read.
+    requests.at(-1)!.result.resolve(snapshot("2026-12-01"));
+    await movingCoverage;
+    await flush();
+    expect(covered).toBe(true);
+    expect(coverageError).toBeUndefined();
+    expect(dom.window.location.search).toContain("cd=2026-12-01");
+
+    // Details have an independent owner. A newer selection must survive the
+    // completion of an older calendar request, including its occurrence.
+    navigation.navigateHref(january);
+    await flush();
+    const januaryLoad = requests.at(-1)!;
+    const selectedDecember = `${december}&item=NewSelection&occurrence=NewOccurrence`;
+    dom.window.history.pushState(null, "", selectedDecember);
+    dom.window.dispatchEvent(new dom.window.CustomEvent(SPACES_DETAIL_STATE_EVENT));
+    januaryLoad.result.resolve(snapshot("2027-01-01"));
+    await flush();
+    expect(dom.window.location.search).toContain("cd=2027-01-01");
+    expect(dom.window.location.search).toContain("item=NewSelection");
+    expect(dom.window.location.search).toContain("occurrence=NewOccurrence");
+
+    // Closing a detail after a commit must also be reflected in failed history rollback.
+    dom.window.history.pushState(null, "", january);
+    dom.window.dispatchEvent(new dom.window.CustomEvent(SPACES_DETAIL_STATE_EVENT));
+    dom.window.history.pushState(null, "", december);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    requests.at(-1)!.result.reject(new Error("History unavailable"));
+    await flush();
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(january);
+
+    // Failed Back navigation restores the view, not a newer explicit selection.
+    dom.window.history.pushState(null, "", december);
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    dom.window.history.replaceState(null, "", `${december}&item=AfterBack&occurrence=Occurrence`);
+    dom.window.dispatchEvent(new dom.window.CustomEvent(SPACES_DETAIL_STATE_EVENT));
+    requests.at(-1)!.result.reject(new Error("History failed after selection"));
+    await flush();
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(`${january}&item=AfterBack&occurrence=Occurrence`);
 
     dispose();
     dom.cleanup();
