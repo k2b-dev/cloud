@@ -13,6 +13,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ItemDetailPanel } = await import("./ItemDetailPanel");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const spaceId = "Space1";
 const itemId = "Item01";
@@ -72,24 +73,29 @@ const comment: SpaceComment = {
   canDelete: true,
 };
 
-const renderPanel = (overrides: Partial<Parameters<typeof ItemDetailPanel>[0]> = {}) =>
+const renderPanel = (overrides: Partial<Parameters<typeof ItemDetailPanel>[0]> = {}, locale = "en") =>
   renderToString(() =>
-    createComponent(ItemDetailPanel, {
-      item: event,
-      columns: [],
-      tags: event.tags ?? [],
-      wormholes: [],
-      spaceId,
-      baseUrl: `/app/spaces/${spaceId}?view=calendar`,
-      currentUserId: userId,
-      initialCommentsPage: { items: [comment], page: 1, perPage: 50, total: 1, hasNext: true },
-      commentTarget: { itemId, recurrenceId: null },
-      recurringContext: null,
-      dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
-      canWrite: true,
-      mailIntegrationAvailable: true,
-      scrollPreserveKey: `spaces-detail-${spaceId}-${itemId}-series`,
-      ...overrides,
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(ItemDetailPanel, {
+          item: event,
+          columns: [],
+          tags: event.tags ?? [],
+          wormholes: [],
+          spaceId,
+          baseUrl: `/app/spaces/${spaceId}?view=calendar`,
+          currentUserId: userId,
+          initialCommentsPage: { items: [comment], page: 1, perPage: 50, total: 1, hasNext: true },
+          commentTarget: { itemId, recurrenceId: null },
+          recurringContext: null,
+          dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
+          canWrite: true,
+          mailIntegrationAvailable: true,
+          scrollPreserveKey: `spaces-detail-${spaceId}-${itemId}-series`,
+          ...overrides,
+        });
+      },
     }),
   );
 
@@ -321,6 +327,29 @@ describe("Spaces item detail panel", () => {
     expect(html).not.toContain("Mark complete");
     expect(html).not.toContain("Prepare invitation");
     expect(html).not.toContain("Link Cloud resource");
+  });
+
+  test("localizes occurrence navigation and matches status typography", () => {
+    const html = renderPanel(
+      {
+        recurringContext: {
+          seriesItemId: itemId,
+          recurrenceId: event.startsAt!,
+          startsAt: event.startsAt!,
+          endsAt: event.endsAt!,
+          allDay: false,
+          isOverride: false,
+        },
+      },
+      "de-DE",
+    );
+    expect(html).toContain("Nur dieser Termin");
+    expect(html).toContain("Serie anzeigen");
+    expect(html).not.toContain("This occurrence");
+    expect(html).not.toContain("View series");
+    expect(html).toContain(
+      'class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4" style="color:var(--k2b-text-muted)"><i class="ti ti-repeat"',
+    );
   });
 
   test("offers the shared Cloud resource picker action before the first link", () => {

@@ -25,12 +25,14 @@ type IntegrationResult<T> = { ok: true; data: T } | IntegrationFailure;
 type CapabilityFailure = { code: string; message: string; status: number };
 
 const mailResourceIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
-const mailboxListSchema = z.array(z.object({ id: mailResourceIdSchema, name: z.string().min(1) }).passthrough()).max(100);
+const mailboxListSchema = z
+  .array(z.object({ ref: z.object({ type: z.literal("mail.mailbox"), id: mailResourceIdSchema }), title: z.string().min(1) }).passthrough())
+  .max(100);
 const senderIdentityListSchema = z
   .array(
     z
       .object({
-        id: mailResourceIdSchema,
+        ref: z.object({ type: z.literal("mail.sender-identity"), id: mailResourceIdSchema }),
         label: z.string().min(1),
         displayName: z.string(),
         fromAddress: z.email(),
@@ -121,7 +123,7 @@ export const listInvitationMailboxes = async (request: MailIntegrationRequest): 
   for (let offset = 0; offset < mailboxes.data.data.length; offset += identityLookupConcurrency) {
     const group = await Promise.all(
       mailboxes.data.data.slice(offset, offset + identityLookupConcurrency).map(async (mailbox) => {
-        const identities = await listIdentities(mailbox.id, request);
+        const identities = await listIdentities(mailbox.ref.id, request);
         if (!identities.ok) {
           firstIdentityFailure ??= identities;
           return null;
@@ -129,10 +131,10 @@ export const listInvitationMailboxes = async (request: MailIntegrationRequest): 
         const verified = identities.data.data.filter((candidate) => candidate.status === "verified");
         return verified.length > 0
           ? {
-              id: mailbox.id,
-              name: mailbox.name,
+              id: mailbox.ref.id,
+              name: mailbox.title,
               identities: verified.map((identity) => ({
-                id: identity.id,
+                id: identity.ref.id,
                 label: identity.label,
                 from: { name: identity.displayName || null, address: identity.fromAddress },
                 isDefault: identity.isDefault,
@@ -154,7 +156,7 @@ export const createInvitationDraft = async (
   const input = MailEventInvitationDraftInputSchema.parse(rawInput);
   const identities = await listIdentities(input.mailboxId, request);
   if (!identities.ok) return identities;
-  const identity = identities.data.data.find((candidate) => candidate.id === input.senderIdentityId && candidate.status === "verified");
+  const identity = identities.data.data.find((candidate) => candidate.ref.id === input.senderIdentityId && candidate.status === "verified");
   if (!identity) return { ok: false, code: "FORBIDDEN", message: "The selected verified sender identity is unavailable", status: 403 };
   const created = await callMailCapability({
     kind: "action",

@@ -698,8 +698,11 @@ export default function ItemDetailPanel(props: Props) {
                 </span>
               </Show>
               <Show when={props.recurringContext}>
-                <span class="inline-flex items-center gap-1 text-secondary">
-                  <i class="ti ti-repeat" aria-hidden="true" /> This occurrence
+                <span
+                  class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4"
+                  style={{ color: "var(--k2b-text-muted)" }}
+                >
+                  <i class="ti ti-repeat" aria-hidden="true" /> {t.thisOccurrence}
                 </span>
               </Show>
             </>
@@ -771,7 +774,7 @@ export default function ItemDetailPanel(props: Props) {
                       requestSpacesRouteNavigation(seriesHref(), { scroll: "preserve" });
                     }}
                   >
-                    <i class="ti ti-repeat" aria-hidden="true" /> View series
+                    <i class="ti ti-repeat" aria-hidden="true" /> {t.viewSeries}
                   </ButtonLink>
                 </Show>
               </>
