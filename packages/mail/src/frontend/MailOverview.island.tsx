@@ -59,12 +59,6 @@ export default function MailOverview(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
-  const viewEyebrows = createMemo<Record<MailFocusView, string>>(() => ({
-    mine: messages().assignedToYou,
-    unassigned: messages().unassigned,
-    waiting: messages().waitingForReply,
-    all: messages().allActive,
-  }));
   const [view, setView] = createSignal<MailFocusView>(props.initialView);
   const [pinnedMailboxIds, setPinnedMailboxIds] = createSignal(props.initialPinnedMailboxIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
@@ -297,10 +291,6 @@ export default function MailOverview(props: {
 
   const focusPanel = () => (
     <>
-      <div class="mail-focus-list-heading">
-        <span>{viewEyebrows()[view()]}</span>
-        <span>{messages().newestFirst}</span>
-      </div>
       <Show when={focusError()}>
         {(error) => (
           <Placeholder

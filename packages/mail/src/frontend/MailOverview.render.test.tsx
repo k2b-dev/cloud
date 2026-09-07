@@ -88,7 +88,8 @@ describe("Mail overview", () => {
     expect(html).toContain("Unassigned");
     expect(html).toContain('<span class="mail-focus-tab-count">2</span>');
     expect(html).toContain("1 conversation assigned to you");
-    expect(html).toContain("Assigned to you");
+    expect(html).not.toContain('class="mail-focus-list-heading"');
+    expect(html).not.toContain("Newest first");
     expect(html).toContain("Release update");
     expect(html).toContain('class="mail-focus-avatar"');
     expect(html).toContain("Ada");

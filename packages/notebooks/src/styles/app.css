@@ -307,7 +307,6 @@
 .k2b-ui .notebooks-overview-notebook-button {
   width: 100%;
   max-width: 100%;
-  padding-right: 2.125rem;
   overflow: hidden;
 }
 
@@ -329,11 +328,14 @@
   pointer-events: none;
 }
 
-.notebooks-overview-notebook-item:hover .notebooks-overview-notebook-pin,
-.notebooks-overview-notebook-item:focus-within .notebooks-overview-notebook-pin {
+.notebooks-overview-notebook-item:is(:hover, :has(:focus-visible)) .notebooks-overview-notebook-pin {
   opacity: 1;
   pointer-events: auto;
 }
+
+.notebooks-overview-notebook-item:is(:hover, :has(:focus-visible)) .notebooks-overview-notebook-name { max-width: calc(100% - 2.5rem); }
+.notebooks-overview-notebook-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
+.dark .notebooks-overview-notebook-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 
 .notebooks-overview-notebook-name {
   min-width: 0;
@@ -427,6 +429,7 @@
 }
 
 @media (hover: none) {
+  .notebooks-overview-notebook-name { max-width: calc(100% - 2.5rem); }
   .k2b-ui .notebooks-overview-notebook-pin {
     opacity: 1;
     pointer-events: auto;

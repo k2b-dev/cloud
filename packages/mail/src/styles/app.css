@@ -223,21 +223,6 @@
     max-width: min(100%, 24rem);
   }
 
-  .k2b-ui .mail-focus-mailbox-button {
-    width: 100%;
-    max-width: 100%;
-    padding-right: 2.125rem;
-    overflow: hidden;
-  }
-
-  .k2b-ui .mail-focus-mailbox-button > .k2b-button__label {
-    width: 100%;
-    min-width: 0;
-    flex: 1 1 auto;
-    justify-content: flex-start;
-    overflow: hidden;
-  }
-
   .k2b-ui .mail-focus-mailbox-pin {
     position: absolute;
     z-index: 1;
@@ -248,11 +233,14 @@
     pointer-events: none;
   }
 
-  .mail-focus-mailbox-item:hover .mail-focus-mailbox-pin,
-  .mail-focus-mailbox-item:focus-within .mail-focus-mailbox-pin {
+  .mail-focus-mailbox-item:is(:hover, :has(:focus-visible)) .mail-focus-mailbox-pin {
     opacity: 1;
     pointer-events: auto;
   }
+
+  .mail-focus-mailbox-item:is(:hover, :has(:focus-visible)) .mail-focus-mailbox-copy { max-width: calc(100% - 2.5rem); }
+  .mail-focus-mailbox-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
+  .dark .mail-focus-mailbox-item[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 
   .mail-focus-mailbox-copy {
     display: flex;
@@ -290,6 +278,7 @@
   }
 
   @media (hover: none) {
+    .mail-focus-mailbox-copy { max-width: calc(100% - 2.5rem); }
     .k2b-ui .mail-focus-mailbox-pin {
       opacity: 1;
       pointer-events: auto;
@@ -313,25 +302,6 @@
   .mail-focus-tab-count {
     color: var(--color-zinc-500);
     font-variant-numeric: tabular-nums;
-  }
-
-  .mail-focus-list-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0 0.5rem;
-    color: var(--color-zinc-500);
-    font-size: 0.6875rem;
-    font-weight: 650;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .mail-focus-list-heading > :last-child {
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
   }
 
   .mail-focus-list {
@@ -674,6 +644,21 @@
     --k2b-action-solid: color-mix(in srgb, var(--app-accent) 80%, black);
     --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent) 88%, black);
   }
+}
+
+/* Match the unlayered shared button styles so mailbox content stays left-aligned. */
+.k2b-ui .mail-focus-mailbox-button {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.k2b-ui .mail-focus-mailbox-button > .k2b-button__label {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  overflow: hidden;
 }
 
 @media print {
