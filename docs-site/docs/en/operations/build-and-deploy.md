@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-08-12
+updated: 2026-09-07
 ---
 
 # Build and deploy
@@ -125,6 +125,17 @@ Core additionally requires the Core-only
 `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY`. Do not add that variable to the shared
 application environment. All other applications obtain public verification
 keys from Core and keep no shared signing secret.
+
+Apps calling Core's workload or mandate broker also need
+`CLOUD_CORE_INTERNAL_ORIGIN` and their own `CLOUD_APP_CREDENTIAL` with scope
+`identity:invoke`, including Mail incoming automations. OAuth instead needs
+`CLOUD_CORE_INTERNAL_ORIGIN` and `CLOUD_OAUTH_BROKER_SECRET`; inject that same
+broker secret only into Core and OAuth. It requires no admin provisioning. See
+[Runtime configuration](/en/docs/operations/runtime-configuration) for
+provisioning requirements, Compose input names, and optional private JWKS origins.
+
+Inject secrets into the appropriate container at runtime. Do not bake them into
+Dockerfile `ENV` instructions or pass them as build arguments.
 
 Do not expose the application directly. The gateway discovers its registered
 prefixes and proxies public traffic.

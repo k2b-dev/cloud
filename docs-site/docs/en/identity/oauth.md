@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-03
+updated: 2026-09-07
 ---
 
 # OAuth clients and flows
@@ -241,17 +241,13 @@ authorization codes, refresh families, discovery, and token response. It does
 not hold a platform signing private key. After it validates the grant, it asks
 Core's closed OAuth authority to construct and sign the permitted access and ID
 token shapes. Core reloads the current client and principal before signing.
-The OAuth workload credential is bound to the `oauth` application and the
-`identity:oauth-issue` scope; it is not user authority and cannot submit an
-arbitrary JWT claim set.
+Core and OAuth share `CLOUD_OAUTH_BROKER_SECRET`, a deployment secret used only
+for the closed OAuth broker. It is not user authority and cannot submit an
+arbitrary JWT claim set. No workload credential provisioning is needed. See
+[Runtime configuration](/en/docs/operations/runtime-configuration) for generation,
+secret ownership, development defaults, and rotation.
 
-Create that credential once through
-`POST /api/admin/identity/workloads/oauth/credentials` with
-`{"name":"OAuth Core issuance","scopes":["identity:oauth-issue"]}`. Put the
-one-time returned token in the OAuth app's `CLOUD_APP_CREDENTIAL`; do not give
-it to Core, another app, or a browser.
-
-Core is the only issuer. OAuth setup checks its app-bound workload credential
+Core is the only issuer. OAuth setup checks its broker secret
 and Core's OAuth signer through the closed readiness endpoint. A failed check
 prevents startup; failed issuance never falls back to a local signer. No
 issuance-mode setting remains. Before upgrading, stop all old OAuth replicas:

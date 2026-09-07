@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { sql } from "bun";
 import { decodeJwt, decodeProtectedHeader, type JWTPayload } from "jose";
-import { z } from "zod";
 import * as client from "./reference-client";
 
 assert.match(new URL(process.env.DATABASE_URL!).pathname, /^\/cloud_oauth_verify_[a-z0-9_]+$/);
@@ -11,7 +10,7 @@ const check = (name: string) => {
   checks.push(name);
   console.log(`PASS ${name}`);
 };
-const start = async (role: "core" | "oauth", version: "baseline" | "current", workload?: string) => {
+const start = async (role: "core" | "oauth", version: "baseline" | "current") => {
   const directory = version === "baseline" ? "/baseline/packages/oauth" : "/workspace/packages/oauth";
   const ready = Promise.withResolvers<void>();
   const revoked = Promise.withResolvers<void>();
@@ -27,7 +26,7 @@ const start = async (role: "core" | "oauth", version: "baseline" | "current", wo
       CLOUD_CORE_INTERNAL_ORIGIN: "http://127.0.0.1:4301",
       CLOUD_IDENTITY_JWKS_ORIGIN: "http://127.0.0.1:4301",
       CLOUD_OAUTH_JWKS_ORIGIN: client.issuer,
-      CLOUD_APP_CREDENTIAL: workload ?? "",
+      CLOUD_OAUTH_BROKER_SECRET: "ab".repeat(32),
     },
     ipc(message) {
       if (message === "ready") ready.resolve();
@@ -93,14 +92,6 @@ const discovery = async () => {
   const configuration = await client.json(await client.request("/.well-known/openid-configuration"));
   assert.deepEqual(await client.json(await client.request("/.well-known/oauth-authorization-server")), configuration);
   return configuration;
-};
-const workloadCredential = async (cookie: string) => {
-  const response = await client.request("/api/admin/identity/workloads/oauth/credentials", {
-    method: "POST",
-    headers: { cookie, "content-type": "application/json" },
-    body: JSON.stringify({ name: "Reference OAuth authority", scopes: ["identity:oauth-issue"] }),
-  });
-  return z.object({ token: z.string() }).parse(await client.json(response, 201)).token;
 };
 const actor = async (token: string, status = 200) =>
   client.json(
@@ -220,7 +211,7 @@ try {
   const fresh = process.env.OAUTH_VERIFY_FRESH === "1";
   let core = await start("core", fresh ? "current" : "baseline");
   let login = await client.login();
-  let oauth = await start("oauth", fresh ? "current" : "baseline", fresh ? await workloadCredential(login.cookie) : undefined);
+  let oauth = await start("oauth", fresh ? "current" : "baseline");
   const [account] = await sql<
     { id: string }[]
   >`SELECT id FROM auth.service_accounts WHERE app_id = 'oauth-test' AND resource_id = 'reference'`;
@@ -247,7 +238,7 @@ try {
     await stop(core.child);
     core = await start("core", "current");
     login = await client.login();
-    oauth = await start("oauth", "current", await workloadCredential(login.cookie));
+    oauth = await start("oauth", "current");
     assert.equal(decodeProtectedHeader(login.token).typ, "cloud-session+jwt");
     const [removed] = await sql<{ keys: string | null; state: string | null }[]>`
       SELECT to_regclass('oauth.keys')::text AS keys, to_regclass('oauth.issuance_state')::text AS state

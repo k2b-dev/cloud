@@ -52,6 +52,7 @@ services:
     environment:
       <<: *shared-env
       APP_ID: core
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: ${CLOUD_IDENTITY_KEY_ENCRYPTION_KEY:?CLOUD_IDENTITY_KEY_ENCRYPTION_KEY is required}
       CLOUD_IDENTITY_NEXT_KEY: ${CLOUD_IDENTITY_NEXT_KEY:-}
       CLOUD_IDENTITY_PREVIOUS_KEY: ${CLOUD_IDENTITY_PREVIOUS_KEY:-}
@@ -112,7 +113,7 @@ services:
     image: ghcr.io/valentinkolb/cloud-app-oauth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
-      CLOUD_APP_CREDENTIAL: ${CLOUD_OAUTH_APP_CREDENTIAL:-}
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}
 
   app-proxy-auth:
     <<: *app-defaults

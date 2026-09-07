@@ -196,7 +196,7 @@ describe("identity key administration", () => {
       }),
     );
 
-    for (const scopes of [["mail:send"], ["identity:invoke", "identity:invoke"]]) {
+    for (const scopes of [["mail:send"], ["identity:oauth-issue"], ["identity:invoke", "identity:invoke"]]) {
       const response = await routes.request("/workloads/mail/credentials", {
         method: "POST",
         headers: { "content-type": "application/json" },

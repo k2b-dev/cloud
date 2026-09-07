@@ -1,9 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
-import { WORKLOAD_SCOPES } from "../../services/identity/workload-auth";
+import { hasReservedWorkloadScope } from "../../services/identity/workload-auth";
 import type { AuthContext } from "./auth";
-
-const reservedWorkloadScopes = new Set<string>(WORKLOAD_SCOPES);
 
 /** Reserved app workload keys are valid only at their dedicated Core authority routes. */
 export const isReservedWorkloadCredential = (c: Context<AuthContext>): boolean => {
@@ -12,7 +10,7 @@ export const isReservedWorkloadCredential = (c: Context<AuthContext>): boolean =
     c.get("credentialKind") === "api_key" &&
     actor?.kind === "service_account" &&
     actor.serviceAccount.kind === "resource_bound" &&
-    (c.get("credentialScopes") ?? []).some((scope) => reservedWorkloadScopes.has(scope))
+    hasReservedWorkloadScope(c.get("credentialScopes") ?? [])
   );
 };
 

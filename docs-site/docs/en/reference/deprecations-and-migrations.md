@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # Deprecations and migrations
@@ -112,9 +112,17 @@ issues target- and operation-bound invocation JWTs for them.
 
 ### OAuth signing hard cut
 
-Include every OAuth replica in the maintenance window. Start updated Core,
-provision OAuth's `identity:oauth-issue` workload credential, then start updated
-OAuth. Its migration drops only the obsolete `oauth.keys` and
+OAuth no longer accepts `CLOUD_APP_CREDENTIAL` or the Compose input
+`CLOUD_OAUTH_APP_CREDENTIAL`. Replace them with `CLOUD_OAUTH_BROKER_SECRET` on
+Core and OAuth; see [Runtime configuration](/en/docs/operations/runtime-configuration).
+Revoke any previously provisioned OAuth workload credential through the admin
+identity API. The retired `identity:oauth-issue` scope is no longer provisionable
+and remains blocked at ordinary API entry points. Client secrets are unrelated
+and do not need replacement.
+
+Include every OAuth replica in the maintenance window. Configure the same
+`CLOUD_OAUTH_BROKER_SECRET` exclusively on Core and OAuth, start updated Core,
+then start updated OAuth. Its migration drops only the obsolete `oauth.keys` and
 `oauth.issuance_state` tables and the old code-audience compatibility trigger.
 Client registrations, client secrets, authorization codes and refresh families
 are retained. Existing code snapshots are backfilled where needed.

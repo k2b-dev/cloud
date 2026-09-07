@@ -1,6 +1,6 @@
 import { type AuthenticatedServiceAccountCredential, serviceAccountCredentials } from "../service-account-credentials";
 
-export const WORKLOAD_SCOPES = ["identity:invoke", "identity:oauth-issue"] as const;
+export const WORKLOAD_SCOPES = ["identity:invoke"] as const;
 
 export type WorkloadScope = (typeof WORKLOAD_SCOPES)[number];
 
@@ -15,7 +15,9 @@ type WorkloadCredentialAuthenticator = Pick<typeof serviceAccountCredentials, "i
 
 const workloadScopes = new Set<string>(WORKLOAD_SCOPES);
 
-export const hasReservedWorkloadScope = (scopes: readonly string[]): boolean => scopes.some((scope) => workloadScopes.has(scope));
+// Retired OAuth credentials must not become ordinary API keys after the hard cut.
+export const hasReservedWorkloadScope = (scopes: readonly string[]): boolean =>
+  scopes.some((scope) => workloadScopes.has(scope) || scope === "identity:oauth-issue");
 
 export const isReservedWorkloadApiCredential = (authenticated: AuthenticatedServiceAccountCredential): boolean =>
   authenticated.serviceAccount.kind === "resource_bound" && hasReservedWorkloadScope(authenticated.credential.scopes);

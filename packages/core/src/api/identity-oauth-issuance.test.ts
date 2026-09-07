@@ -42,12 +42,10 @@ const setup = async (authenticated = true, state = authorityState()) => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   let authCalls = 0;
   const routes = createIdentityOAuthIssuanceRoutes({
-    authenticate: async (params) => {
+    authenticate: (token) => {
       authCalls += 1;
-      expect(params).toMatchObject({ token: "workload", appId: "oauth", scope: "identity:oauth-issue" });
-      return authenticated
-        ? { appId: "oauth", serviceAccountId: crypto.randomUUID(), credentialId: crypto.randomUUID(), scope: "identity:oauth-issue" }
-        : null;
+      expect(token).toBe("broker");
+      return authenticated;
     },
     withActiveSigner: async (_purpose, callback) =>
       callback(
@@ -67,11 +65,63 @@ const setup = async (authenticated = true, state = authorityState()) => {
 };
 
 describe("Core OAuth issuance authority", () => {
+  test("authenticates the configured broker secret before any signer or grant access", async () => {
+    const previous = process.env.CLOUD_OAUTH_BROKER_SECRET;
+    const { privateKey } = await generateKeyPair("RS256");
+    let signerCalls = 0;
+    const routes = createIdentityOAuthIssuanceRoutes({
+      withActiveSigner: async (_purpose, callback) => {
+        signerCalls += 1;
+        return callback({ kid: "test", key: privateKey, signUntil: new Date(Date.now() + 60_000), issuer: "https://cloud.test" }, sql);
+      },
+      resolve: async () => {
+        throw new Error("Unauthorized request reached grant resolution");
+      },
+    });
+    const secret = "ab".repeat(32);
+    try {
+      for (const configured of [undefined, "", "invalid", secret]) {
+        if (configured === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
+        else process.env.CLOUD_OAUTH_BROKER_SECRET = configured;
+        for (const authorization of [
+          undefined,
+          "Bearer ",
+          "Bearer invalid",
+          `Bearer ${"cd".repeat(32)}`,
+          `Basic ${secret}`,
+          ...(configured === secret ? [] : [`Bearer ${secret}`]),
+        ]) {
+          for (const path of ["/oauth/ready", "/oauth/token"]) {
+            const response = await routes.request(path, {
+              method: "POST",
+              headers: authorization ? { authorization } : {},
+              body: "not JSON",
+            });
+            expect(response.status).toBe(401);
+          }
+        }
+      }
+      expect(signerCalls).toBe(0);
+      process.env.CLOUD_OAUTH_BROKER_SECRET = secret;
+      const ready = await routes.request("/oauth/ready", { method: "POST", headers: { authorization: `Bearer ${secret}` } });
+      expect(ready.status).toBe(204);
+      expect(signerCalls).toBe(1);
+      const malformed = await routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: `Bearer ${secret}` },
+        body: "not JSON",
+      });
+      expect(malformed.status).toBe(400);
+    } finally {
+      if (previous === undefined) delete process.env.CLOUD_OAUTH_BROKER_SECRET;
+      else process.env.CLOUD_OAUTH_BROKER_SECRET = previous;
+    }
+  });
   test("derives the user access-token authority from current state", async () => {
     const { routes, publicKey } = await setup();
     const response = await routes.request("/oauth/token", {
       method: "POST",
-      headers: { authorization: "Bearer workload", "content-type": "application/json" },
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
       body: JSON.stringify({ tokens: [userAccess] }),
     });
     expect(response.status).toBe(200);
@@ -94,11 +144,11 @@ describe("Core OAuth issuance authority", () => {
     });
   });
 
-  test("requires the exact OAuth workload before parsing the body", async () => {
+  test("requires the exact OAuth broker before parsing the body", async () => {
     const { routes, authCalls } = await setup(false);
     const response = await routes.request("/oauth/token", {
       method: "POST",
-      headers: { authorization: "Bearer workload", "content-type": "application/json" },
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
       body: "not-json",
     });
     expect(response.status).toBe(401);
@@ -107,17 +157,17 @@ describe("Core OAuth issuance authority", () => {
       (
         await routes.request("/oauth/ready", {
           method: "POST",
-          headers: { authorization: "Bearer workload" },
+          headers: { authorization: "Bearer broker" },
         })
       ).status,
     ).toBe(401);
   });
 
-  test("probes workload and active OAuth signer readiness without consuming a grant", async () => {
+  test("probes broker and active OAuth signer readiness without consuming a grant", async () => {
     const { routes } = await setup();
     const response = await routes.request("/oauth/ready", {
       method: "POST",
-      headers: { authorization: "Bearer workload" },
+      headers: { authorization: "Bearer broker" },
     });
     expect(response.status).toBe(204);
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -143,7 +193,7 @@ describe("Core OAuth issuance authority", () => {
     const { routes, publicKey } = await setup(true, state);
     const response = await routes.request("/oauth/token", {
       method: "POST",
-      headers: { authorization: "Bearer workload", "content-type": "application/json" },
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
       body: JSON.stringify({
         tokens: [
           {
@@ -195,7 +245,7 @@ describe("Core OAuth issuance authority", () => {
     ]) {
       const response = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({ tokens: [token] }),
       });
       expect(response.status).toBe(400);
@@ -213,7 +263,7 @@ describe("Core OAuth issuance authority", () => {
       const { routes } = await setup(true, state);
       const response = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({ tokens: [token] }),
       });
       expect(response.status).toBe(403);
@@ -224,12 +274,7 @@ describe("Core OAuth issuance authority", () => {
     const { privateKey } = await generateKeyPair("RS256");
     let now = 1_788_220_800;
     const routes = createIdentityOAuthIssuanceRoutes({
-      authenticate: async () => ({
-        appId: "oauth",
-        serviceAccountId: crypto.randomUUID(),
-        credentialId: crypto.randomUUID(),
-        scope: "identity:oauth-issue",
-      }),
+      authenticate: () => true,
       issuer: async () => "https://cloud.example.test",
       now: () => now,
       withActiveSigner: async (_purpose, callback) => {
@@ -243,7 +288,7 @@ describe("Core OAuth issuance authority", () => {
     });
     const response = await routes.request("/oauth/token", {
       method: "POST",
-      headers: { authorization: "Bearer workload", "content-type": "application/json" },
+      headers: { authorization: "Bearer broker", "content-type": "application/json" },
       body: JSON.stringify({ tokens: [userAccess] }),
     });
     expect(response.status).toBe(403);
@@ -288,12 +333,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
           ARRAY['cloud', ${clientId}], true, ${authorityNonce}::uuid)
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        authenticate: async () => ({
-          appId: "oauth",
-          serviceAccountId: crypto.randomUUID(),
-          credentialId: crypto.randomUUID(),
-          scope: "identity:oauth-issue",
-        }),
+        authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -305,7 +345,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       });
       const response = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [
             {
@@ -326,7 +366,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       });
       const replay = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [{ kind: "user_access", grant: { kind: "authorization_code", code, nonce: authorityNonce }, expiresIn: 3_600 }],
         }),
@@ -344,7 +384,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       `;
       const legacyReplay = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [
             {
@@ -384,12 +424,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
         VALUES (${grantId}::uuid, ${grantNonce}::uuid, ${clientId}, ARRAY['read'], ARRAY['cloud', ${clientId}])
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        authenticate: async () => ({
-          appId: "oauth",
-          serviceAccountId: crypto.randomUUID(),
-          credentialId: crypto.randomUUID(),
-          scope: "identity:oauth-issue",
-        }),
+        authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -401,7 +436,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       });
       const response = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [{ kind: "service_access", grant: { kind: "client_credentials", grantId, nonce: grantNonce }, expiresIn: 3_600 }],
         }),
@@ -420,7 +455,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       });
       const replay = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [{ kind: "service_access", grant: { kind: "client_credentials", grantId, nonce: grantNonce }, expiresIn: 3_600 }],
         }),
@@ -435,7 +470,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       await sql`UPDATE oauth.clients SET scopes = ARRAY[]::text[] WHERE client_id = ${clientId}`;
       const stale = await routes.request("/oauth/token", {
         method: "POST",
-        headers: { authorization: "Bearer workload", "content-type": "application/json" },
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
         body: JSON.stringify({
           tokens: [
             {
@@ -488,12 +523,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
         )
       `;
       const routes = createIdentityOAuthIssuanceRoutes({
-        authenticate: async () => ({
-          appId: "oauth",
-          serviceAccountId: crypto.randomUUID(),
-          credentialId: crypto.randomUUID(),
-          scope: "identity:oauth-issue",
-        }),
+        authenticate: () => true,
         withActiveSigner: async (_purpose, callback) =>
           sql.begin((db) =>
             callback(
@@ -507,7 +537,7 @@ databaseSuite("Core OAuth issuance authority database resolution", () => {
       const request = () =>
         routes.request("/oauth/token", {
           method: "POST",
-          headers: { authorization: "Bearer workload", "content-type": "application/json" },
+          headers: { authorization: "Bearer broker", "content-type": "application/json" },
           body: JSON.stringify({
             tokens: [{ kind: "user_access", grant: { kind: "refresh_token", tokenId, nonce: authorityNonce }, expiresIn: 3_600 }],
           }),

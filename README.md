@@ -103,7 +103,9 @@ bun run dev        # infrastructure + core 6-container set
 open http://localhost:3000
 ```
 
-Development requires Bun 1.x, Docker, and Docker Compose v2. The Docker development stack gets its local database, Redis, app-secret, and admin-token values from `compose.dev.yml`; no `.env` file is required. `.env.example` is only a reference for running processes directly on the host or building a custom local setup. Production uses `.env.prod.example` as its companion template.
+Development requires Bun 1.x, Docker, and Docker Compose v2. The base Docker development stack gets its local database, Redis, app-secret, and admin-token values from `compose.dev.yml`; no `.env` file is required for that base stack. `.env.example` is a per-process reference for running directly on the host or building a custom local setup. Production uses `.env.prod.example` as its companion template.
+
+Development Compose supplies a local-only `CLOUD_OAUTH_BROKER_SECRET` exclusively to Core and OAuth; no OAuth credential provisioning is needed. Production requires your own independently generated broker secret. Mail incoming automations still need a provisioned `CLOUD_MAIL_APP_CREDENTIAL`, passed only to Mail. See [Runtime configuration](docs-site/docs/en/operations/runtime-configuration.md) for secret ownership and private service origins.
 
 Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the token field (the `ADMIN_LOGIN_TOKEN` baked into `app-core`).
 

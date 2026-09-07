@@ -47,15 +47,18 @@ const coreOrigin = (): string => {
 };
 
 export const probeOAuthTokenAuthority = async (
-  options: { fetch?: AuthorityFetch; credential?: string; origin?: string } = {},
+  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<void> => {
-  const credential = options.credential ?? process.env.CLOUD_APP_CREDENTIAL?.trim();
-  if (!credential) throw new Error("CLOUD_APP_CREDENTIAL is required for Core OAuth issuance");
+  const brokerSecret = options.brokerSecret ?? process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
+    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
+  }
   const response = await (options.fetch ?? globalThis.fetch)(
     new URL("/api/_internal/identity/v1/oauth/ready", options.origin ?? coreOrigin()),
     {
       method: "POST",
-      headers: { authorization: `Bearer ${credential}` },
+      redirect: "error",
+      headers: { authorization: `Bearer ${brokerSecret}` },
       signal: AbortSignal.timeout(5_000),
     },
   );
@@ -65,18 +68,21 @@ export const probeOAuthTokenAuthority = async (
 /** Ask Core to sign one validated, closed OAuth token batch. Deliberately never retries an uncertain request. */
 export const issueOAuthTokenBatch = async (
   requests: OAuthTokenRequest[],
-  options: { fetch?: AuthorityFetch; credential?: string; origin?: string } = {},
+  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
 ): Promise<string[]> => {
   if (requests.length < 1 || requests.length > 2) throw new Error("OAuth authority accepts one or two tokens per batch");
-  const credential = options.credential ?? process.env.CLOUD_APP_CREDENTIAL?.trim();
-  if (!credential) throw new Error("CLOUD_APP_CREDENTIAL is required for Core OAuth issuance");
+  const brokerSecret = options.brokerSecret ?? process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
+    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
+  }
 
   const response = await (options.fetch ?? globalThis.fetch)(
     new URL("/api/_internal/identity/v1/oauth/token", options.origin ?? coreOrigin()),
     {
       method: "POST",
+      redirect: "error",
       headers: {
-        authorization: `Bearer ${credential}`,
+        authorization: `Bearer ${brokerSecret}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({ tokens: requests }),

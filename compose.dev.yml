@@ -73,6 +73,7 @@ services:
       <<: *env
       APP_ID: core
       ADMIN_LOGIN_TOKEN: dev-admin
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:-abababababababababababababababababababababababababababababababab}
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
@@ -225,7 +226,7 @@ services:
     environment:
       <<: *env
       APP_ID: oauth
-      CLOUD_APP_CREDENTIAL: ${CLOUD_OAUTH_APP_CREDENTIAL:-}
+      CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:-abababababababababababababababababababababababababababababababab}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

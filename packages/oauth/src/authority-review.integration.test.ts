@@ -45,12 +45,7 @@ const waitForBlockedBy = async (pid: number) => {
 const coreRoutes = async (options: { beforeSign?: () => Promise<void>; onTransaction?: (pid: number) => void } = {}) => {
   const { privateKey } = await generateKeyPair("RS256");
   return createIdentityOAuthIssuanceRoutes({
-    authenticate: async () => ({
-      appId: "oauth",
-      serviceAccountId: crypto.randomUUID(),
-      credentialId: crypto.randomUUID(),
-      scope: "identity:oauth-issue",
-    }),
+    authenticate: () => true,
     issuer: async () => "https://cloud.test",
     withActiveSigner: (_purpose, callback) =>
       sql.begin(async (db) => {

@@ -223,6 +223,7 @@
         "@simplewebauthn/browser": "13.3.0",
         "@valentinkolb/cloud": "workspace:*",
         "hono": "catalog:",
+        "jose": "catalog:",
         "solid-js": "catalog:",
         "zod": "catalog:",
       },

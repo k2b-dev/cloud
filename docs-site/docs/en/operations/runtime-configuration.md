@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-04
+updated: 2026-09-07
 ---
 
 # Runtime configuration
@@ -29,10 +29,11 @@ encrypted with `APP_SECRET`.
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | Core-only KEK for private platform signing keys; exactly 64 hexadecimal characters |
 | `CLOUD_IDENTITY_NEXT_KEY` | Temporary next Core KEK, distributed before promotion |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | Temporary previous Core KEK during a rolling rewrap |
+| `CLOUD_OAUTH_BROKER_SECRET` | Shared only by Core and OAuth to authenticate OAuth issuance; exactly 64 hexadecimal characters; required when running OAuth |
 | `CLOUD_IDENTITY_JWKS_ORIGIN` | Optional private transport origin for loading Core's public identity JWKS; does not change the public issuer |
-| `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's compatible JWKS; does not change the public issuer |
-| `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
-| `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential; only apps that call a Core identity broker receive one |
+| `CLOUD_OAUTH_JWKS_ORIGIN` | Optional private transport origin for loading OAuth's public JWKS; does not change the public issuer |
+| `CLOUD_CORE_INTERNAL_ORIGIN` | Private Core origin required for OAuth issuance and workload/mandate broker calls; interactive capability calls can default to the public Cloud origin |
+| `CLOUD_APP_CREDENTIAL` | Per-application resource-bound workload credential for background broker callers; not used by OAuth |
 | `PORT` | Service port; defaults to `3000` |
 | `NODE_ENV` | Enables production or development behavior |
 | `ADMIN_LOGIN_TOKEN` | Local emergency administrator login |
@@ -59,8 +60,8 @@ origin.
 Set `CLOUD_OAUTH_JWKS_ORIGIN` to the OAuth application's private service
 origin, for example `http://app-oauth:3000`. Access-token verification then
 loads `/.well-known/jwks.json` without public ingress while still requiring the
-public `app.url` issuer. The endpoint contains both current Core authority keys
-and compatible legacy OAuth keys during migration. Applications cache that
+public `app.url` issuer. The endpoint publishes only Core's OAuth-purpose public
+keys; legacy OAuth signing keys are no longer served. Applications cache that
 public set locally for at most five minutes; the warm verification path uses no
 signing-key database query.
 
@@ -84,12 +85,22 @@ target-bound invocation. The target application never receives the source
 cookie, OAuth token, or API key.
 
 `CLOUD_APP_CREDENTIAL` is not shared. Provision a separate resource-bound
-service-account credential for each calling app with resource type `cloud.app`,
-resource ID equal to the app ID, and only its required identity scope. OAuth
-uses `identity:oauth-issue`; a background capability caller uses
-`identity:invoke`. Revoking one credential stops only that app's new broker
+service-account credential for each background calling app with resource type
+`cloud.app`, resource ID equal to the app ID, and scope `identity:invoke`.
+OAuth uses its separate deployment broker secret, not a workload credential.
+Revoking one workload credential stops only that app's new broker
 requests. Never put a workload credential in a browser bundle or target-app
 request.
+
+For background callers running directly on the host, set `CLOUD_APP_CREDENTIAL` and
+`CLOUD_CORE_INTERNAL_ORIGIN` in each calling app's environment. Point the origin
+at Core's direct listener, not the gateway. Do not load a shared environment
+file containing Core's KEKs into every application.
+
+The repository's development and production Compose files accept
+`CLOUD_MAIL_APP_CREDENTIAL` as an input. They pass it only to Mail as
+`CLOUD_APP_CREDENTIAL` and supply the private service origins. The input name
+is not a runtime variable read by Mail.
 
 > Losing or changing `APP_SECRET` makes existing encrypted settings and
 > credentials unreadable. Store and rotate it as a deployment secret.
@@ -120,12 +131,23 @@ Scheduled work uses mandates, never a stored browser session.
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.
 
-OAuth always uses Core issuance. Start Core and provision OAuth's app-bound
-`identity:oauth-issue` credential before starting OAuth. OAuth checks the
-credential and Core signer at startup and fails closed if either is unavailable.
-That readiness check runs before OAuth's migrations. In the local Docker stack,
-put the provisioned OAuth credential in `CLOUD_OAUTH_APP_CREDENTIAL`; Compose
-passes it only to the OAuth container as `CLOUD_APP_CREDENTIAL`.
+OAuth always uses Core issuance. Generate `CLOUD_OAUTH_BROKER_SECRET` once with
+`openssl rand -hex 32` and inject the same value exclusively into Core and OAuth.
+Do not reuse `APP_SECRET` or Core's KEK. This secret authenticates only OAuth's
+closed broker endpoints; Core still checks the current grant, client and
+principal before signing. No admin login or credential provisioning is needed.
+
+Development Compose supplies a public, development-only default. Production
+Compose requires an explicit value. Start Core before OAuth. OAuth checks the
+secret and Core signer at startup, before migrations, and fails closed if either
+is unavailable. Missing or malformed Core configuration disables the OAuth
+broker but does not prevent running Core without OAuth.
+
+To rotate the broker secret, pause OAuth traffic, replace the value on all Core
+and OAuth replicas, recreate those containers, and verify OAuth readiness before
+resuming traffic. There is no previous-secret overlap; mismatched replicas reject
+issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
+
 There is no mode switch or local signing fallback. Drain all old OAuth replicas
 before migration: it drops their signing keys and issuance-state table. Client
 IDs, secrets and refresh grants are retained. Old OAuth JWTs are rejected by
@@ -186,7 +208,8 @@ Check configuration in this order:
 2. Postgres and Valkey names resolve on the private network;
 3. every container shares `APP_SECRET`;
 4. only Core has the current identity KEK;
-5. each broker-calling app has only its own scoped workload credential;
+5. only Core and OAuth share the OAuth broker secret, and background callers
+   have only their own scoped workload credentials;
 6. `app.url` matches the public origin;
 7. required settings validate in the administration UI;
 8. the application starts without fallback warnings.

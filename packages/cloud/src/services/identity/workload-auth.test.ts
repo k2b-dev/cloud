@@ -7,13 +7,13 @@ const token = "cld_0123456789abcdef01234567_0123456789abcdef0123456789abcdef0123
 
 const serviceAccount = (overrides: Partial<ServiceAccount> = {}): ServiceAccount => ({
   id: "9fe97b00-1578-42e8-9204-3da0928825f2",
-  name: "OAuth workload",
+  name: "Reports workload",
   kind: "resource_bound",
   status: "active",
   delegatedUserId: null,
-  appId: "oauth",
+  appId: "reports",
   resourceType: "cloud.app",
-  resourceId: "oauth",
+  resourceId: "reports",
   createdBy: null,
   createdAt: "2026-09-02T00:00:00.000Z",
   ...overrides,
@@ -22,11 +22,11 @@ const serviceAccount = (overrides: Partial<ServiceAccount> = {}): ServiceAccount
 const credential = (overrides: Partial<ServiceAccountCredential> = {}): ServiceAccountCredential => ({
   id: "353d9716-0f6a-4ca2-8ba9-ff9ad6d128b0",
   serviceAccountId: "9fe97b00-1578-42e8-9204-3da0928825f2",
-  name: "OAuth workload",
+  name: "Reports workload",
   kind: "api_token",
   status: "active",
   tokenPrefix: "0123456789abcdef01234567",
-  scopes: ["identity:oauth-issue"],
+  scopes: ["identity:invoke"],
   expiresAt: null,
   lastUsedAt: null,
   createdBy: null,
@@ -57,8 +57,8 @@ const authenticate = (
   const fake = authenticator(result);
   return authenticateWorkloadCredential({
     token: overrides.token === undefined ? token : overrides.token,
-    appId: overrides.appId ?? "oauth",
-    scope: overrides.scope ?? "identity:oauth-issue",
+    appId: overrides.appId ?? "reports",
+    scope: overrides.scope ?? "identity:invoke",
     credentials: fake.credentials,
   });
 };
@@ -94,10 +94,10 @@ describe("Cloud app workload authentication", () => {
     const authenticated = { credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null };
 
     expect(await authenticate(authenticated)).toEqual({
-      appId: "oauth",
+      appId: "reports",
       serviceAccountId: authenticated.serviceAccount.id,
       credentialId: authenticated.credential.id,
-      scope: "identity:oauth-issue",
+      scope: "identity:invoke",
     });
 
     const invocation = {
@@ -117,16 +117,16 @@ describe("Cloud app workload authentication", () => {
     expect(
       await authenticateWorkloadCredential({
         token: "ey.invalid.jwt",
-        appId: "oauth",
-        scope: "identity:oauth-issue",
+        appId: "reports",
+        scope: "identity:invoke",
         credentials: fake.credentials,
       }),
     ).toBeNull();
     expect(
       await authenticateWorkloadCredential({
         token: null,
-        appId: "oauth",
-        scope: "identity:oauth-issue",
+        appId: "reports",
+        scope: "identity:invoke",
         credentials: fake.credentials,
       }),
     ).toBeNull();
@@ -155,13 +155,13 @@ describe("Cloud app workload authentication", () => {
   test("requires the exact dedicated scope and a non-empty expected app", async () => {
     const base = { credential: credential(), serviceAccount: serviceAccount(), delegatedUser: null };
     expect(await authenticate({ ...base, credential: credential({ scopes: [] }) })).toBeNull();
-    expect(await authenticate({ ...base, credential: credential({ scopes: ["identity:oauth-issue:extra"] }) })).toBeNull();
+    expect(await authenticate({ ...base, credential: credential({ scopes: ["identity:invoke:extra"] }) })).toBeNull();
     expect(await authenticate(base, { appId: " " })).toBeNull();
-    expect(await authenticate(base, { appId: " oauth " })).toBeNull();
+    expect(await authenticate(base, { appId: " reports " })).toBeNull();
     expect(
       await authenticateWorkloadCredential({
         token,
-        appId: "oauth",
+        appId: "reports",
         scope: "identity:other" as WorkloadScope,
         credentials: authenticator(base).credentials,
       }),

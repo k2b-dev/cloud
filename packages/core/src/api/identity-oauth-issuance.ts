@@ -1,4 +1,5 @@
-import { authenticateWorkloadCredential, withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
+import { timingSafeEqual } from "node:crypto";
+import { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
 import * as settings from "@valentinkolb/cloud/services/settings";
 import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
 import { sql } from "bun";
@@ -230,7 +231,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
 };
 
 type Dependencies = {
-  authenticate: typeof authenticateWorkloadCredential;
+  authenticate: (token: string | null) => boolean;
   withActiveSigner: typeof withActiveIdentitySigner;
   issuer: () => Promise<string>;
   resolve: typeof resolveAuthorityState;
@@ -238,7 +239,12 @@ type Dependencies = {
 };
 
 const defaultDependencies: Dependencies = {
-  authenticate: authenticateWorkloadCredential,
+  authenticate: (token) => {
+    const secret = process.env.CLOUD_OAUTH_BROKER_SECRET?.trim();
+    // OAuth is optional. Missing or malformed configuration disables its broker.
+    if (!secret || !/^[a-fA-F0-9]{64}$/.test(secret) || !token || !/^[a-fA-F0-9]{64}$/.test(token)) return false;
+    return timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(secret, "hex"));
+  },
   withActiveSigner: withActiveIdentitySigner,
   issuer: async () => publicCloudOrigin(await settings.get<string>("app.url")),
   resolve: resolveAuthorityState,
@@ -395,24 +401,14 @@ export const createIdentityOAuthIssuanceRoutes = (overrides: Partial<Dependencie
   const routes = new Hono();
   routes.post("/oauth/ready", async (c) => {
     c.header("Cache-Control", "no-store");
-    const workload = await dependencies.authenticate({
-      token: bearer(c.req.header("authorization")),
-      appId: "oauth",
-      scope: "identity:oauth-issue",
-    });
-    if (!workload) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
     await dependencies.withActiveSigner("oauth", async () => undefined, { timeoutMs: 5_000 });
     return c.body(null, 204);
   });
   routes.post("/oauth/token", async (c) => {
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");
-    const workload = await dependencies.authenticate({
-      token: bearer(c.req.header("authorization")),
-      appId: "oauth",
-      scope: "identity:oauth-issue",
-    });
-    if (!workload) return c.json({ message: "Unauthorized" }, 401);
+    if (!dependencies.authenticate(bearer(c.req.header("authorization")))) return c.json({ message: "Unauthorized" }, 401);
 
     const contentLength = Number(c.req.header("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 262_144) return c.json({ message: "Request too large" }, 413);
