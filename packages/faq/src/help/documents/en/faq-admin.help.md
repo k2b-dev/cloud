@@ -26,8 +26,8 @@ position apply to the complete entry, not to one translation.
 ## Choose an audience {icon="shield-lock"}
 
 - **Anonymous** is for people who are not signed in.
-- **Guest** is for guest-profile accounts.
-- **User** is for full user accounts.
+- **Guest profile** applies to local and IPA accounts with a guest profile.
+- **Full profile** applies to local and IPA accounts with a full profile.
 - Select multiple audiences when the answer is valid for more than one group.
 
 :::warning Audience is visibility, not redaction

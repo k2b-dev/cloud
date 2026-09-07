@@ -26,8 +26,8 @@ Englisch. Zielgruppe und Listenposition gelten für den gesamten Eintrag.
 ## Eine Zielgruppe wählen {icon="shield-lock"}
 
 - **Anonym** gilt für nicht angemeldete Personen.
-- **Gast** gilt für Konten mit Gastprofil.
-- **Benutzer** gilt für vollständige Benutzerkonten.
+- **Gastprofil** gilt für lokale und IPA-Konten mit Gastprofil.
+- **Vollprofil** gilt für lokale und IPA-Konten mit Vollprofil.
 - Wähle mehrere Zielgruppen, wenn die Antwort für mehr als eine Gruppe gilt.
 
 :::warning Zielgruppe steuert Sichtbarkeit, nicht Schwärzung
