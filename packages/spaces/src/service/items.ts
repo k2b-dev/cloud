@@ -30,8 +30,10 @@ import { publishSpaceEvent } from "./events";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { rank } from "./rank";
 import {
+  CalendarReadLimitError,
   type ExpandedRecurringEvent,
   expandRecurringEvents,
+  MAX_OCCURRENCE_LOOKUP_STEPS,
   parseRecurrenceRule,
   type RecurringEvent,
   type RecurringOverride,
@@ -377,15 +379,18 @@ const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: string[]
   return { ok: true, data: undefined };
 };
 
-const validateRecurrenceInput = async (params: {
-  spaceId: string;
-  startsAt: string | null | undefined;
-  endsAt: string | null | undefined;
-  recurrence: Recurrence | null | undefined;
-  recurringEventId: string | null | undefined;
-  recurrenceId: string | null | undefined;
-  dateConfig?: DateContext;
-}, db: SqlExecutor = sql): Promise<MutationResult<void>> => {
+const validateRecurrenceInput = async (
+  params: {
+    spaceId: string;
+    startsAt: string | null | undefined;
+    endsAt: string | null | undefined;
+    recurrence: Recurrence | null | undefined;
+    recurringEventId: string | null | undefined;
+    recurrenceId: string | null | undefined;
+    dateConfig?: DateContext;
+  },
+  db: SqlExecutor = sql,
+): Promise<MutationResult<void>> => {
   const isSeries = !!params.recurrence?.rrule;
   const isOverride = !!params.recurringEventId || !!params.recurrenceId;
 
@@ -1031,10 +1036,12 @@ export type ItemAcrossKind = "task" | "event" | "all";
 export type ItemAcrossResult = {
   item: SpaceItem;
   space: { id: string; name: string };
+  columnName?: string;
 };
 
 type DbItemAcross = DbItem & {
   space_name: string;
+  column_name: string;
 };
 
 const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[] = []): CalendarItem => ({
@@ -1134,6 +1141,13 @@ export const searchAcross = async (params: {
   priority?: Priority[];
   requiredLevel?: "read" | "write";
   limit: number;
+  offset?: number;
+  spaceId?: string;
+  assignedTo?: AssignedToFilter;
+  activity?: "all" | "inactive";
+  deadlineFilter?: ItemFilter["deadlineFilter"];
+  dateConfig?: DateContext;
+  blocked?: boolean;
 }): Promise<ItemAcrossResult[]> => {
   const { query, kinds, limit } = params;
   if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return [];
@@ -1156,6 +1170,32 @@ export const searchAcross = async (params: {
   const priorityCondition =
     params.priority && params.priority.length > 0 ? sql`i.priority = ANY(${toPgTextArray(params.priority)}::text[])` : sql`TRUE`;
   const permissionCondition = params.requiredLevel === "write" ? sql`a.permission IN ('write', 'admin')` : sql`a.permission <> 'none'`;
+  const requestedSpaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
+  const assignmentMatch = calendarAssignmentMatch(params.assignedTo, params.subject);
+  const activityMatch =
+    params.activity === "inactive"
+      ? sql`i.completed_at IS NULL AND i.starts_at IS NULL AND i.ends_at IS NULL AND COALESCE(
+        (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id),
+        i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
+      : sql`true`;
+  const window = deadlineWindow(params.dateConfig);
+  const deadlineMatch =
+    params.deadlineFilter === "overdue"
+      ? sql`i.deadline < ${window.todayStart}::timestamptz`
+      : params.deadlineFilter === "today"
+        ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.tomorrowStart}::timestamptz`
+        : params.deadlineFilter === "week"
+          ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.weekEnd}::timestamptz`
+          : params.deadlineFilter === "none"
+            ? sql`i.deadline IS NULL`
+            : sql`true`;
+  const blockedMatch =
+    params.blocked === undefined
+      ? sql`true`
+      : sql`EXISTS (
+    SELECT 1 FROM spaces.item_dependencies dependency JOIN spaces.items blocker ON blocker.id = dependency.blocker_item_id
+    WHERE dependency.item_id = i.id AND blocker.completed_at IS NULL
+  ) = ${params.blocked}`;
 
   // Permission check via EXISTS subquery rather than LEFT JOIN. The previous
   // join approach needed `SELECT DISTINCT` to dedupe items joined to multiple
@@ -1170,7 +1210,8 @@ export const searchAcross = async (params: {
       i.rank::text AS rank,
       i.completed_at,
       i.created_by, i.created_at, i.updated_at,
-      s.name AS space_name
+      s.name AS space_name,
+      (SELECT column_entry.name FROM spaces.columns column_entry WHERE column_entry.id = i.column_id) AS column_name
     FROM spaces.items i
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE EXISTS (
@@ -1185,11 +1226,17 @@ export const searchAcross = async (params: {
       AND ${kindCondition}
       AND ${statusCondition}
       AND ${priorityCondition}
+      AND ${requestedSpaceMatch}
+      AND ${assignmentMatch}
+      AND ${activityMatch}
+      AND ${deadlineMatch}
+      AND ${blockedMatch}
       AND (i.title ILIKE ${pattern} OR i.description ILIKE ${pattern} OR i.location ILIKE ${pattern} OR i.url ILIKE ${pattern})
     ORDER BY
       CASE WHEN i.title ILIKE ${pattern} THEN 0 ELSE 1 END,
-      i.updated_at DESC
+      i.updated_at DESC, i.id
     LIMIT ${limit}
+    OFFSET ${params.offset ?? 0}
   `;
 
   const items = rows.map(mapToItem);
@@ -1197,6 +1244,7 @@ export const searchAcross = async (params: {
   return rows.map((row, index) => ({
     item: { ...items[index]!, activeBlockerCount: blockerCountsByItemId.get(row.id) ?? 0 },
     space: { id: row.space_id, name: row.space_name },
+    columnName: row.column_name,
   }));
 };
 
@@ -1822,10 +1870,7 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
     return { ok: true, data: { shortId: existing.short_id, spaceId: existing.space_id } };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent(
-    { type: "item.deleted", spaceId: result.data.spaceId, itemId: params.id },
-    { itemId: result.data.shortId },
-  );
+  await publishSpaceEvent({ type: "item.deleted", spaceId: result.data.spaceId, itemId: params.id }, { itemId: result.data.shortId });
   return { ok: true, data: undefined };
 };
 
@@ -1857,8 +1902,9 @@ export const move = async (params: {
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
     }
-    const [row] = completedAt === undefined
-      ? await tx<{ id: string }[]>`
+    const [row] =
+      completedAt === undefined
+        ? await tx<{ id: string }[]>`
           UPDATE spaces.items
           SET column_id = ${columnId},
               rank = ${rank.toDb(targetRank)}::bigint,
@@ -1866,7 +1912,7 @@ export const move = async (params: {
           WHERE id = ${id}
           RETURNING id
         `
-      : await tx<{ id: string }[]>`
+        : await tx<{ id: string }[]>`
           UPDATE spaces.items
           SET column_id = ${columnId},
               rank = ${rank.toDb(targetRank)}::bigint,
@@ -2134,6 +2180,9 @@ export const listCalendar = async (
     from: string;
     to: string;
     dateConfig?: DateContext;
+    /** Capability callers fail explicitly instead of returning an incomplete calendar. */
+    sourceLimit?: number;
+    sourceRootIds?: string[];
   },
 ): Promise<CalendarItem[]> => {
   const { from, to } = params;
@@ -2146,6 +2195,9 @@ export const listCalendar = async (
   const columnMatch = calendarColumnMatch(params.columnIds);
   const tagMatch = calendarTagMatch(params.tagIds);
   const assignmentMatch = calendarAssignmentMatch(params.assignedTo, params.subject);
+  const sourceMatch = params.sourceRootIds
+    ? sql`COALESCE(i.recurring_event_id, i.id) = ANY(${toPgUuidArray(params.sourceRootIds)}::uuid[])`
+    : sql`true`;
 
   // Use subquery to get accessible space IDs first, then query items
   const rows = await sql<DbCalendarItem[]>`
@@ -2171,6 +2223,7 @@ export const listCalendar = async (
       AND ${columnMatch}
       AND ${tagMatch}
       AND ${assignmentMatch}
+      AND ${sourceMatch}
       AND (
         (
           i.recurrence_rrule IS NULL
@@ -2190,19 +2243,54 @@ export const listCalendar = async (
           AND i.recurrence_id IS NOT NULL
           AND i.starts_at IS NOT NULL
           AND i.ends_at IS NOT NULL
-          AND i.starts_at < ${to}::timestamptz
-          AND i.ends_at > ${from}::timestamptz
+          AND (
+            (i.starts_at < ${to}::timestamptz AND i.ends_at > ${from}::timestamptz)
+            OR (i.recurrence_id < ${to}::timestamptz AND i.recurrence_id + COALESCE(
+              (SELECT source.ends_at - source.starts_at FROM spaces.items source WHERE source.id = i.recurring_event_id),
+              i.ends_at - i.starts_at
+            ) > ${from}::timestamptz)
+          )
         )
         OR (i.deadline IS NOT NULL AND i.deadline >= ${from}::timestamptz AND i.deadline < ${to}::timestamptz)
       )
-    ORDER BY COALESCE(i.starts_at, i.deadline)
+    ORDER BY COALESCE(i.starts_at, i.deadline), i.id
+    LIMIT ${params.sourceLimit === undefined ? null : params.sourceLimit + 1}
   `;
+
+  if (params.sourceLimit !== undefined && rows.length > params.sourceLimit) {
+    throw new CalendarReadLimitError("Calendar source limit exceeded; narrow the date range or select one Space.");
+  }
 
   const tagsByItemId = await getTagsByItemIds(rows.map((row) => row.id));
   const items = rows.map((row) => mapCalendarRow(row, tagsByItemId.get(row.id) ?? []));
   const recurringEvents = items
     .map(calendarRowToRecurringEvent)
     .filter((event): event is RecurringEvent & { calendarItem: CalendarItem } => !!event);
+  if (recurringEvents.length > 0) {
+    // Completed replacements are absent from the open calendar rows but must still suppress their original slot.
+    const completed = await sql<{ recurring_event_id: string; recurrence_id: Date }[]>`
+      SELECT child.recurring_event_id, child.recurrence_id
+      FROM spaces.items child JOIN spaces.items parent ON parent.id = child.recurring_event_id
+      WHERE child.recurring_event_id = ANY(${toPgUuidArray(recurringEvents.map((event) => event.id))}::uuid[])
+        AND child.completed_at IS NOT NULL AND child.recurrence_id IS NOT NULL
+        AND child.recurrence_id < ${to}::timestamptz
+        AND child.recurrence_id + (parent.ends_at - parent.starts_at) > ${from}::timestamptz
+      LIMIT ${params.sourceLimit === undefined ? null : params.sourceLimit + 1}
+    `;
+    if (params.sourceLimit !== undefined && completed.length > params.sourceLimit) {
+      throw new CalendarReadLimitError("Calendar source limit exceeded; narrow the date range or select one Space.");
+    }
+    for (const event of recurringEvents) {
+      if (!event.recurrence) continue;
+      event.recurrence = {
+        ...event.recurrence,
+        exdate: [
+          ...(event.recurrence.exdate ?? []),
+          ...completed.filter((child) => child.recurring_event_id === event.id).map((child) => child.recurrence_id.toISOString()),
+        ],
+      };
+    }
+  }
   const overrides = items
     .map(calendarRowToRecurringOverride)
     .filter((event): event is RecurringOverride & { calendarItem: CalendarItem } => !!event);
@@ -2223,8 +2311,10 @@ export const listCalendar = async (
         rangeStart: from,
         rangeEnd: to,
         dateConfig: params.dateConfig,
+        ...(params.sourceLimit === undefined ? {} : { generationLimit: MAX_OCCURRENCE_LOOKUP_STEPS, requireComplete: true }),
       }).map((occurrence) => expandedToCalendarItem(occurrence as ExpandedRecurringEvent & { calendarItem?: CalendarItem }));
     } catch (error) {
+      if (params.sourceLimit !== undefined) throw error;
       log.warn("Skipping invalid recurring calendar series", {
         itemId: event.id,
         error: error instanceof Error ? error.message : String(error),
@@ -2238,6 +2328,44 @@ export const listCalendar = async (
     const bTime = new Date(b.startsAt ?? b.deadline ?? 0).getTime();
     return aTime - bTime;
   });
+};
+
+/** Agenda source pages keep a series and its overrides together; exhausted old series yield an empty continuable page. */
+export const listCalendarSourcePage = async (
+  params: CalendarAccessParams & {
+    from: string;
+    to: string;
+    dateConfig?: DateContext;
+    afterRootId?: string;
+  },
+): Promise<{ items: CalendarItem[]; nextRootId?: string }> => {
+  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return { items: [] };
+  const principalMatch = buildSpacePrincipalCondition(params.subject);
+  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const spaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
+  const afterMatch = params.afterRootId ? sql`COALESCE(i.recurring_event_id, i.id) > ${params.afterRootId}::uuid` : sql`true`;
+  const assignmentMatch = calendarAssignmentMatch(params.assignedTo, params.subject);
+  const roots = await sql<{ root_id: string }[]>`
+    SELECT DISTINCT COALESCE(i.recurring_event_id, i.id) AS root_id
+    FROM spaces.items i JOIN spaces.spaces s ON s.id = i.space_id
+    WHERE EXISTS (
+      SELECT 1 FROM spaces.space_access sa JOIN auth.access a ON a.id = sa.access_id
+      WHERE sa.space_id = s.id AND a.permission <> 'none' AND ${principalMatch} AND ${bindingMatch}
+    ) AND ${spaceMatch} AND ${afterMatch} AND ${assignmentMatch}
+      AND i.completed_at IS NULL AND i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL
+      AND ((i.recurrence_rrule IS NOT NULL AND i.recurring_event_id IS NULL)
+        OR (i.starts_at < ${params.to}::timestamptz AND i.ends_at > ${params.from}::timestamptz))
+    ORDER BY root_id LIMIT 101
+  `;
+  const selected = roots.slice(0, 100);
+  if (selected.length === 0) return { items: [] };
+  const items = await listCalendar({
+    ...params,
+    type: "event",
+    sourceRootIds: selected.map((row) => row.root_id),
+    sourceLimit: MAX_OCCURRENCE_LOOKUP_STEPS,
+  });
+  return { items, ...(roots.length > 100 ? { nextRootId: selected[selected.length - 1]!.root_id } : {}) };
 };
 
 /** Task item for widget display */

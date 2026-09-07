@@ -92,6 +92,7 @@ const callMailCapability = async <T>(params: {
 const listIdentities = async (mailboxId: string, request: MailIntegrationRequest) => {
   const identities: z.infer<typeof senderIdentityListSchema> = [];
   let cursor: string | undefined;
+  const seenCursors = new Set<string>();
   while (identities.length < 100) {
     const page = await callMailCapability({
       kind: "query",
@@ -102,27 +103,53 @@ const listIdentities = async (mailboxId: string, request: MailIntegrationRequest
     });
     if (!page.ok) return page;
     identities.push(...page.data.data);
+    if (identities.length > 100) break;
     if (!page.data.page?.hasMore) return { ok: true as const, data: { data: identities } };
-    cursor = page.data.page.nextCursor;
+    const nextCursor = page.data.page.nextCursor;
+    if (page.data.data.length === 0 || !nextCursor || seenCursors.has(nextCursor)) {
+      return { ok: false as const, code: "INVALID_APP_RESPONSE", message: "Invalid sender identity continuation", status: 502 };
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
   }
-  return { ok: true as const, data: { data: identities, page: { hasMore: true as const, nextCursor: cursor! } } };
+  return { ok: false as const, code: "RESULT_TOO_LARGE", message: "Too many sender identities for the invitation picker", status: 422 };
 };
 
 export const listInvitationMailboxes = async (request: MailIntegrationRequest): Promise<IntegrationResult<MailInvitationMailbox[]>> => {
-  const mailboxes = await callMailCapability({
-    kind: "query",
-    capabilityId: "mailbox.list",
-    request,
-    dataSchema: mailboxListSchema,
-    input: { minimumPermission: "write", limit: 100 },
-  });
-  if (!mailboxes.ok) return mailboxes;
+  const mailboxes: z.infer<typeof mailboxListSchema> = [];
+  let cursor: string | undefined;
+  // The existing invitation picker accepts at most 200 mailboxes.
+  const seenCursors = new Set<string>();
+  while (mailboxes.length < 200) {
+    const page = await callMailCapability({
+      kind: "query",
+      capabilityId: "mailbox.list",
+      request,
+      dataSchema: mailboxListSchema,
+      input: { minimumPermission: "write", limit: 100, ...(cursor ? { cursor } : {}) },
+    });
+    if (!page.ok) return page;
+    mailboxes.push(...page.data.data);
+    if (mailboxes.length > 200)
+      return { ok: false, code: "RESULT_TOO_LARGE", message: "Too many mailboxes for the invitation picker", status: 422 };
+    if (!page.data.page?.hasMore) {
+      cursor = undefined;
+      break;
+    }
+    const nextCursor = page.data.page.nextCursor;
+    if (page.data.data.length === 0 || !nextCursor || seenCursors.has(nextCursor)) {
+      return { ok: false, code: "INVALID_APP_RESPONSE", message: "Invalid mailbox continuation", status: 502 };
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  if (cursor) return { ok: false, code: "RESULT_TOO_LARGE", message: "Too many mailboxes for the invitation picker", status: 422 };
   const resolved: MailInvitationMailbox[] = [];
   let firstIdentityFailure: IntegrationResult<never> | null = null;
   const identityLookupConcurrency = 8;
-  for (let offset = 0; offset < mailboxes.data.data.length; offset += identityLookupConcurrency) {
+  for (let offset = 0; offset < mailboxes.length; offset += identityLookupConcurrency) {
     const group = await Promise.all(
-      mailboxes.data.data.slice(offset, offset + identityLookupConcurrency).map(async (mailbox) => {
+      mailboxes.slice(offset, offset + identityLookupConcurrency).map(async (mailbox) => {
         const identities = await listIdentities(mailbox.ref.id, request);
         if (!identities.ok) {
           firstIdentityFailure ??= identities;
@@ -145,7 +172,7 @@ export const listInvitationMailboxes = async (request: MailIntegrationRequest): 
     );
     resolved.push(...group.filter((item): item is MailInvitationMailbox => item !== null));
   }
-  if (resolved.length === 0 && firstIdentityFailure) return firstIdentityFailure;
+  if (firstIdentityFailure) return firstIdentityFailure;
   return { ok: true, data: resolved };
 };
 

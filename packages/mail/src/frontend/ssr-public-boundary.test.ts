@@ -67,6 +67,8 @@ describe("Mail SSR public boundary", () => {
             latestMessageAt: "2026-08-19T10:00:00.000Z",
             workStatus: "needs_action" as const,
             assigneeUserId: null,
+            revision: 1,
+            sourceFolderId: ids.folder,
             unread: true,
             flagged: false,
             hasAttachments: false,
@@ -83,6 +85,7 @@ describe("Mail SSR public boundary", () => {
     expect(page.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
     expect(page.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
     expect(JSON.stringify(page)).not.toContain(ids.mailbox);
+    expect(JSON.stringify(page)).not.toContain(ids.folder);
   });
 
   test("loads distinct public-ID tables concurrently", async () => {

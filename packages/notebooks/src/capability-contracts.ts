@@ -30,6 +30,20 @@ const NotebookDataShape = {
 export const NotebookDataSchema = z.object(NotebookDataShape).strict();
 const NotebookListItemDataSchema = NotebookDataSchema.extend({ ref: resourceRef("notebooks.notebook") }).strict();
 export const NotebookListDataSchema = z.array(NotebookListItemDataSchema).max(100);
+export const NotebookBrowseDataSchema = z
+  .array(
+    z
+      .object({
+        ref: resourceRef("notebooks.notebook"),
+        title: z.string(),
+        preview: z.string().nullable(),
+        permission: PermissionSchema,
+        homepageNoteId: ResourceShortIdSchema.nullable(),
+        links: ResourceLinksSchema,
+      })
+      .strict(),
+  )
+  .max(100);
 export const NotebookListInputSchema = z
   .object({
     query: QuerySchema,
@@ -79,6 +93,11 @@ export const NoteTreeDataSchema = z
   )
   .max(2000);
 
+export const NoteChildrenInputSchema = NoteTreeInputSchema.extend({
+  parentId: ResourceShortIdSchema.optional().describe("Parent note in this notebook; omit for root notes."),
+  limit: LimitSchema,
+}).strict();
+
 export const NoteReadInputSchema = z
   .object({
     id: ResourceShortIdSchema.describe("Note ID returned by note search/tree/link/tag results or a notebooks.note ref."),
@@ -103,7 +122,11 @@ export const NoteDetailDataSchema = NoteSummaryDataSchema.extend({
   contentOffset: z.number().int().nonnegative(),
   contentLength: z.number().int().nonnegative(),
   contentHash: ContentHashSchema,
-  contentComplete: z.boolean(),
+  contentComplete: z
+    .boolean()
+    .describe(
+      "True only when this response contains the entire source, starting at offset zero. Never use a partial window as set-content.",
+    ),
   nextContentOffset: z.number().int().positive().nullable(),
   lineCount: z.number().int().positive(),
   tags: z.array(z.string().min(1)).max(500),
@@ -143,6 +166,8 @@ const CommentDataShape = {
   noteId: ResourceShortIdSchema,
   authorUserId: z.uuid().nullable(),
   authorDisplayName: z.string().min(1),
+  canEdit: z.boolean().optional(),
+  canDelete: z.boolean().optional(),
   content: z.string().max(5_000),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
@@ -157,6 +182,21 @@ export const CommentListInputSchema = z
   })
   .strict();
 export const CommentListDataSchema = z.array(z.object({ ...CommentDataShape, ref: resourceRef("notebooks.comment") }).strict()).max(100);
+export const CommentBrowseDataSchema = z
+  .array(
+    z
+      .object({
+        ref: resourceRef("notebooks.comment"),
+        authorDisplayName: z.string(),
+        createdAt: TimestampSchema,
+        preview: z.string().max(300),
+        previewTruncated: z.boolean(),
+        canEdit: z.boolean(),
+        canDelete: z.boolean(),
+      })
+      .strict(),
+  )
+  .max(100);
 export const CommentReadInputSchema = z
   .object({ id: ResourceShortIdSchema.describe("Comment ID returned by comment.list or a notebooks.comment ref.") })
   .strict();
@@ -313,6 +353,13 @@ export const NoteEditInputSchema = z
     ifUpdatedAt: TimestampSchema.optional().describe("Reject when the note timestamp changed."),
     ifContentHash: ContentHashSchema.optional().describe("Reject when the complete Markdown hash changed."),
     ifBlockHash: ContentHashSchema.optional().describe("Reject when the selected named block changed."),
+    blockLimit: z
+      .number()
+      .int()
+      .min(0)
+      .max(500)
+      .optional()
+      .describe("Maximum returned block summaries (default 500). Use zero for a compact mutation receipt; hashes are always returned."),
   })
   .strict();
 

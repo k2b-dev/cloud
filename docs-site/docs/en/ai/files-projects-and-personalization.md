@@ -181,15 +181,31 @@ access, and Skill administrators can edit, share, or delete them. A deleted
 seed is not recreated during later starts. Like every readable Skill, each
 starts enabled and can be disabled personally.
 
-New installations receive the current seed instructions. Upgrading Cloud does
-not replace an existing Skill's instructions. To update an existing
-`cloud-notebooks` Skill, first read and export it, compare it with the current
-seed in `packages/cloud/src/ai/skill-seeds.ts`, and apply the intended changes
-through the Skill editor or the revision-checked Skill update API. Preserve
-custom instructions, references, and extra frontmatter. Do not delete and
-recreate the Skill to refresh it: keep its identity, access grants, and personal
-enabled state. API updates must include retained references and frontmatter as
-well as the exact current revision.
+### Update an installed built-in Skill
+
+Upgrading Cloud does not replace installed Skills. New installations receive
+the current templates; existing installations choose which changes to adopt.
+To update one Skill, use an account with `write` permission for that Skill:
+
+1. Read `GET /api/ai/skills` and select the exact Skill ID. Read and export its
+   complete current fields with `GET /api/ai/skills/:skillId`, including its
+   `revision`, references, and extra frontmatter.
+2. Read the current template with
+   `GET /api/ai/skills/templates/cloud-mail` (or `cloud-spaces`,
+   `cloud-notebooks`, or another built-in name). This authenticated read returns
+   a `template` object and changes nothing. Unknown names return 404.
+3. Compare the template with the exported Skill. Keep custom instructions,
+   references, and extra frontmatter unless their replacement was explicitly
+   approved. References with the same path must be merged deliberately.
+4. After reviewing the complete proposed content, send
+   `PUT /api/ai/skills/:skillId` with `name`, `description`, `instructions`,
+   `extraFrontmatter`, all retained `references`, and `expectedRevision` from
+   step 1. This is a full content replacement, not a patch. A stale revision
+   returns 409; read again and review the intervening changes before retrying.
+5. Read the same Skill again to verify its content and new revision.
+
+The update preserves the Skill's identity, access grants, and personal enabled
+state. Do not delete and recreate it or run a blanket template overwrite.
 
 The Skill management Actions are reviewed and recheck the current actor's
 Cloud permission. Updates and reference changes require the exact revision

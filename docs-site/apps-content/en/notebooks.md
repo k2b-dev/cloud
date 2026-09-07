@@ -193,6 +193,23 @@ actions, and hidden runtime state have no replacement.
 
 ## How Notebooks fits Cloud
 
+Assistants can choose a writable notebook with `notebook.browse`, then browse
+its roots or a selected page's children with `note.children`. Use `note.search`
+to find a known page directly. Neither path needs the whole notebook tree.
+`comment.browse` selects discussion previews; `comment.read` supplies full text.
+The detailed lists and readers remain available.
+
+Capability pages may be shorter than requested to fit the transport budget.
+Follow `page.nextCursor`; a short page is not necessarily the last page.
+`note.tree` returns at most 100 entries per response, even for larger requests.
+
+`note.read` returns source windows and a hash for the complete document.
+`contentComplete` is true only for the entire source starting at offset zero.
+Follow `nextContentOffset` and check that `contentHash` stays unchanged before
+joining windows. Never use a partial window as a whole-note replacement;
+prefer structural edits with `ifContentHash`. `note.edit` accepts
+`blockLimit: 0` for a compact receipt that still includes before/after hashes.
+
 Assistant can check query and TOC drafts with `notebooks.note.preview` before
 saving them. This returns compact diagnostics through the same server preview
 as the editor, without saving a draft or returning HTML. Saved previews need

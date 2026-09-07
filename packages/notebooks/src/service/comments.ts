@@ -39,9 +39,7 @@ export const canMutateComment = (
   now = Date.now(),
 ): boolean =>
   Boolean(
-    viewerUserId &&
-      comment.authorUserId === viewerUserId &&
-      now - new Date(comment.createdAt).getTime() <= COMMENT_MUTATION_WINDOW_MS,
+    viewerUserId && comment.authorUserId === viewerUserId && now - new Date(comment.createdAt).getTime() <= COMMENT_MUTATION_WINDOW_MS,
   );
 
 const mapComment = (row: DbNoteComment, viewerUserId?: string | null): NoteComment => {
@@ -96,8 +94,10 @@ export const listPage = async (config: {
   noteId: string;
   viewerUserId?: string | null;
   pagination?: PageParams;
+  offset?: number;
 }): Promise<Paginated<NoteComment>> => {
-  const { page, perPage, offset } = paginate(config.pagination ?? { page: 1, perPage: 30 });
+  const { page, perPage, offset: pageOffset } = paginate(config.pagination ?? { page: 1, perPage: 30 });
+  const offset = config.offset ?? pageOffset;
   if (!(await verifyNoteInNotebook(config))) return { items: [], page, perPage, total: 0, hasNext: false };
 
   const [[countRow], rows] = await Promise.all([
@@ -131,7 +131,7 @@ export const listPage = async (config: {
     page,
     perPage,
     total,
-    hasNext: page * perPage < total,
+    hasNext: offset + rows.length < total,
   };
 };
 

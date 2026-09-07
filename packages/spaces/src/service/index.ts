@@ -172,6 +172,7 @@ export const spacesService = {
     setTags: items.setTags,
     calendar: {
       list: items.listCalendar,
+      listSourcePage: items.listCalendarSourcePage,
       checkOverlap: items.checkOverlap,
     },
     tasks: {

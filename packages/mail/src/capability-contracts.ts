@@ -125,6 +125,18 @@ export const MailboxListDataSchema = z
       health: MailboxDataSchema.shape.health,
       healthReason: z.string().max(240).optional(),
       syncEnabled: z.boolean(),
+      unreadCount: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Unread conversations, not individual messages; same count as the Mail overview."),
+      needsActionCount: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Visible conversations needing action; excludes snoozed conversations, as in the Mail overview."),
     }),
   )
   .max(100);
@@ -136,11 +148,54 @@ export const MailboxListInputSchema = z
     limit: LimitSchema,
   })
   .strict();
+export const MailboxBrowseDataSchema = z
+  .array(
+    compactResourceViewSchema("mail.mailbox")
+      .extend({
+        permission: z.enum(["read", "write", "admin"]),
+        unreadCount: z.number().int().nonnegative(),
+        needsActionCount: z.number().int().nonnegative(),
+        problem: z
+          .string()
+          .max(240)
+          .optional()
+          .describe("Sync problem: counts may be stale. Absent does not guarantee provider freshness."),
+      })
+      .strict(),
+  )
+  .max(100);
 const resourceReadInputSchema = (type: string, source: string) =>
   z.object({ id: ResourceShortIdSchema.describe(`Exact ${type} ID returned by ${source} or a typed resource ref.`) }).strict();
 export const MailboxReadInputSchema = resourceReadInputSchema("mail.mailbox", "List mailboxes");
 export const ConversationReadInputSchema = resourceReadInputSchema("mail.conversation", "a conversation list, search, or focus result");
 export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail");
+export const MessageContentReadInputSchema = MessageReadInputSchema.extend({
+  offset: z.number().int().nonnegative().default(0).describe("UTF-8 byte offset; continue with nextOffset."),
+  length: z
+    .number()
+    .int()
+    .min(256)
+    .max(64 * 1024)
+    .default(16 * 1024)
+    .describe("Maximum UTF-8 bytes of plain text."),
+}).strict();
+export const MessageContentReadDataSchema = z
+  .object({
+    id: ResourceShortIdSchema,
+    mailboxId: ResourceShortIdSchema,
+    conversationId: ResourceShortIdSchema.nullable(),
+    subject: z.string().max(998),
+    text: z
+      .string()
+      .max(64 * 1024)
+      .nullable(),
+    offset: z.number().int().nonnegative(),
+    length: z.number().int().nonnegative(),
+    totalBytes: z.number().int().nonnegative(),
+    nextOffset: z.number().int().positive().nullable(),
+    trust: z.literal("untrusted"),
+  })
+  .strict();
 export const AttachmentReadInputSchema = resourceReadInputSchema("mail.attachment", "message attachment metadata");
 export const DraftReadInputSchema = resourceReadInputSchema("mail.draft", "List drafts");
 export const CommentReadInputSchema = resourceReadInputSchema("mail.comment", "List conversation comments");
@@ -227,6 +282,7 @@ export const FolderListInputSchema = z.object({ mailboxId: MailboxIdInputSchema,
 
 export const ConversationDataSchema = compactResourceViewSchema("mail.conversation")
   .extend({
+    revision: z.number().int().positive().optional().describe("Current collaboration revision for state changes."),
     reference: z.string().max(160).optional(),
     participants: z.string().max(240),
     latestMessageAt: TimestampSchema,
@@ -259,6 +315,10 @@ export const ConversationListInputSchema = z
 
 export const ConversationFocusDataSchema = compactResourceViewSchema("mail.conversation")
   .extend({
+    sourceFolderId: ResourceShortIdSchema.nullable()
+      .optional()
+      .describe("Only set when all active placements share one folder; otherwise choose a source with conversation.list."),
+    revision: z.number().int().positive().optional().describe("Current collaboration revision for state changes."),
     mailboxId: ResourceShortIdSchema,
     mailboxName: z.string().min(1).max(160),
     participants: z.string().max(240),
@@ -528,6 +588,12 @@ export const DraftDataSchema = z
     subject: z.string().max(998),
     body: z.string().max(64 * 1024),
     bodyTruncated: z.boolean(),
+    editableSnapshotComplete: z
+      .boolean()
+      .optional()
+      .describe(
+        "False means this bounded response must not be used as a complete draft.update replacement. Use draft.patch to preserve omitted content.",
+      ),
     format: mailComposeFormatSchema,
     priority: mailPrioritySchema,
     requestDeliveryReceipt: z.boolean(),
@@ -625,6 +691,33 @@ export const DraftUpdateInputSchema = z
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
     draft: draftEditableContentInputSchema.describe("Complete editable draft content replacing the current content."),
+  })
+  .strict();
+export const DraftPatchInputSchema = z
+  .object({
+    mailboxId: MailboxIdInputSchema,
+    draftId: DraftIdInputSchema,
+    expectedRevision: ExpectedRevisionInputSchema,
+    patch: z
+      .object({
+        senderIdentityId: ResourceShortIdSchema.optional().describe("Replacement verified sender identity."),
+        to: z.array(mailAddressSchema).max(200).optional().describe("Replace all primary recipients; [] clears them."),
+        cc: z.array(mailAddressSchema).max(200).optional().describe("Replace all carbon-copy recipients."),
+        bcc: z.array(mailAddressSchema).max(200).optional().describe("Replace all blind-copy recipients."),
+        subject: z.string().max(998).optional().describe("Replacement subject."),
+        body: z
+          .string()
+          .max(64 * 1024)
+          .optional()
+          .describe("Replacement body in the selected format."),
+        format: mailComposeFormatSchema.optional().describe("Body format."),
+        priority: mailPrioritySchema.optional().describe("Message priority."),
+        requestDeliveryReceipt: z.boolean().optional().describe("Request a delivery receipt."),
+        requestReadReceipt: z.boolean().optional().describe("Request a read receipt."),
+      })
+      .strict()
+      .refine((value) => Object.values(value).some((field) => field !== undefined), "Provide at least one field to change.")
+      .describe("Fields to replace; omitted fields remain unchanged. Recipient arrays replace the entire list."),
   })
   .strict();
 export const DraftDiscardInputSchema = z

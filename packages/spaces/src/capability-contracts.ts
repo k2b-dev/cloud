@@ -1,15 +1,21 @@
 import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
 import { z } from "zod";
 import {
+  CreateTaskChecklistEntrySchema,
+  DeadlineFilterSchema,
   EstimatedDurationMinutesSchema,
+  ItemActivityFilterSchema,
   MAX_TASK_ATTACHMENTS,
+  MAX_TASK_CHECKLIST_ENTRIES,
   PrioritySchema,
   ResourceShortIdSchema,
   SpaceItemAttachmentSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
+  SpaceTaskChecklistEntrySchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
+  UpdateTaskChecklistEntrySchema,
 } from "./contracts";
 import {
   CalendarAddressSchema,
@@ -31,16 +37,13 @@ const ResourceIdListSchema = z.array(ResourceShortIdSchema).max(100);
 const UserIdListSchema = z.array(UuidSchema).max(100);
 const PageInputShape = { cursor: CursorSchema, limit: LimitSchema };
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
-const resourceRef = <Type extends string>(type: Type) =>
-  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
+const resourceRef = <Type extends string>(type: Type) => z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 const SpaceIdSchema = ResourceShortIdSchema.describe("Space ID returned by Space search/list/read or a spaces.space ref.");
 const ItemIdSchema = ResourceShortIdSchema.describe("Task or event ID returned by item search/list/read or a spaces.item ref.");
 
 export const ItemResourceReferenceInputSchema = SpaceItemResourceReferenceInputSchema;
 export const ItemResourceReferenceDataSchema = SpaceItemResourceReferenceSchema;
-export const ItemResourceReferenceListInputSchema = z
-  .object({ itemId: ItemIdSchema })
-  .strict();
+export const ItemResourceReferenceListInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const ItemResourceReferenceListDataSchema = z.array(ItemResourceReferenceDataSchema).max(100);
 export const ItemResourceReferenceFindInputSchema = z
   .object({
@@ -86,6 +89,26 @@ export const TaskDependencyRemoveDataSchema = z
   .object({ itemId: ResourceShortIdSchema, blockerItemId: ResourceShortIdSchema, removed: z.literal(true) })
   .strict();
 
+export const TaskChecklistListInputSchema = z.object({ itemId: ItemIdSchema, ...PageInputShape }).strict();
+export const TaskChecklistDataSchema = SpaceTaskChecklistEntrySchema.pick({ id: true, label: true, completed: true });
+export const TaskChecklistListDataSchema = z.array(TaskChecklistDataSchema).max(MAX_TASK_CHECKLIST_ENTRIES);
+export const TaskChecklistCreateInputSchema = CreateTaskChecklistEntrySchema.extend({
+  itemId: ItemIdSchema,
+  label: CreateTaskChecklistEntrySchema.shape.label.describe("Text of the new checkmark entry."),
+});
+export const TaskChecklistUpdateInputSchema = UpdateTaskChecklistEntrySchema.safeExtend({
+  itemId: ItemIdSchema,
+  entryId: ResourceShortIdSchema.describe("Entry ID returned by task.checklist.list."),
+  label: UpdateTaskChecklistEntrySchema.shape.label.describe("Replacement label; omitted preserves the existing text."),
+  completed: UpdateTaskChecklistEntrySchema.shape.completed.describe(
+    "Whether the checkmark is complete; omitted preserves the current state.",
+  ),
+});
+export const TaskChecklistDeleteInputSchema = z
+  .object({ itemId: ItemIdSchema, entryId: ResourceShortIdSchema.describe("Entry ID returned by task.checklist.list.") })
+  .strict();
+export const TaskChecklistDeleteDataSchema = z.object({ id: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
+
 export const ItemTagsSetInputSchema = z
   .object({
     itemId: ItemIdSchema,
@@ -115,6 +138,10 @@ export const SpaceSummaryDataSchema = z
     id: ResourceShortIdSchema,
     name: z.string().min(1).max(100),
     description: z.string().max(500).nullable(),
+    descriptionTruncated: z
+      .boolean()
+      .optional()
+      .describe("True when the list description was shortened to fit the response budget; space.read returns the full description."),
     color: z.string().min(1).max(100),
     permission: z.enum(["read", "write", "admin"]),
     links: ResourceLinksSchema,
@@ -143,6 +170,19 @@ export const SpaceListInputSchema = z
 
 const SpaceListItemDataSchema = SpaceSummaryDataSchema.extend({ ref: resourceRef("spaces.space") }).strict();
 export const SpaceListDataSchema = z.array(SpaceListItemDataSchema).max(100);
+export const SpaceBrowseDataSchema = z
+  .array(
+    SpaceListItemDataSchema.pick({
+      id: true,
+      ref: true,
+      name: true,
+      description: true,
+      descriptionTruncated: true,
+      permission: true,
+      links: true,
+    }),
+  )
+  .max(100);
 export const SpaceReadInputSchema = z.object({ id: SpaceIdSchema }).strict();
 
 const ItemAssigneeDataSchema = z.object({ id: UuidSchema, displayName: z.string().min(1).max(200) }).strict();
@@ -214,6 +254,12 @@ export const ItemDataSchema = z.discriminatedUnion("kind", [TaskDataSchema, Even
 const ItemListBaseDataShape = {
   id: ResourceShortIdSchema,
   ref: resourceRef("spaces.item"),
+  columnName: z
+    .string()
+    .max(50)
+    .nullable()
+    .optional()
+    .describe("Human-readable workflow column; columnId remains the stable action target."),
   spaceId: ResourceShortIdSchema,
   columnId: ResourceShortIdSchema,
   title: z.string().min(1).max(200),
@@ -257,6 +303,8 @@ export const EventListDataSchema = z.array(EventListItemDataSchema).max(100);
 const ItemListBaseShape = {
   spaceId: SpaceIdSchema,
   query: QuerySchema,
+  activity: ItemActivityFilterSchema.default("all").describe("Inactive means open tasks without activity for 30 days."),
+  deadlineFilter: DeadlineFilterSchema.default("all").describe("Deadline window in the configured application timezone."),
   status: z.enum(["active", "completed", "all"]).default("active").describe("Completion-state filter."),
   priority: z.array(PrioritySchema).max(4).optional().describe("Optional priority filter."),
   columnIds: ResourceIdListSchema.optional().describe("Optional column IDs returned by Read space."),
@@ -463,7 +511,7 @@ export const CalendarInvitationResponseCommitCapabilityInputSchema = z
   })
   .strict();
 export const CalendarInvitationResponseCommitCapabilityDataSchema = CalendarInvitationResponseStateSchema;
-export const CalendarDestinationListInputSchema = z.object({}).strict();
+export const CalendarDestinationListInputSchema = z.object({ cursor: CursorSchema, limit: LimitSchema.default(100) }).strict();
 export const CalendarDestinationListDataSchema = z
   .array(SpacesMailDestinationSchema.extend({ ref: resourceRef("spaces.space"), links: ResourceLinksSchema }).strict())
   .max(500);

@@ -14,6 +14,15 @@ const mailboxId = async (table: "conversations" | "message_contents" | "drafts" 
 
 export const conversation = (id: string) => mailboxId("conversations", id);
 export const message = (id: string) => mailboxId("message_contents", id);
+export const messageConversation = async (id: string, mailboxId: string): Promise<string | null> => {
+  const [row] = await sql<Array<{ id: string }>>`
+    SELECT c.id::text FROM mail.conversation_messages cm
+    JOIN mail.conversations c ON c.id = cm.conversation_id
+    WHERE cm.message_id = ${id}::uuid AND c.mailbox_id = ${mailboxId}::uuid
+    ORDER BY c.id LIMIT 1
+  `;
+  return row?.id ?? null;
+};
 export const draft = (id: string) => mailboxId("drafts", id);
 export const delivery = (id: string) => mailboxId("outbox_submissions", id);
 

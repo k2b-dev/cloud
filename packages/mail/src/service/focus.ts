@@ -17,6 +17,8 @@ export type MailFocusItem = {
   latestMessageAt: string;
   workStatus: "needs_action" | "waiting" | "done";
   assigneeUserId: string | null;
+  revision: number;
+  sourceFolderId: string | null;
   unread: boolean;
   flagged: boolean;
   hasAttachments: boolean;
@@ -40,6 +42,8 @@ type DbFocusItem = {
   latest_message_at: Date | string;
   work_status: MailFocusItem["workStatus"];
   assignee_user_id: string | null;
+  revision: number;
+  source_folder_id: string | null;
   unread: boolean;
   flagged: boolean;
   has_attachments: boolean;
@@ -111,6 +115,27 @@ const readableConversations = (context: MailRequestContext) => sql`
 
 const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
+const mailboxCountQuery = (context: MailRequestContext) => sql<DbMailboxCounts[]>`
+  WITH readable_conversations AS (${readableConversations(context)})
+  SELECT c.mailbox_id,
+    COUNT(*) FILTER (WHERE EXISTS (
+      SELECT 1 FROM mail.conversation_messages cm
+      JOIN mail.message_placements mp ON mp.message_id = cm.message_id
+      WHERE cm.conversation_id = c.id AND mp.deleted_at IS NULL
+        AND NOT ('\\Seen' = ANY(mp.flags))
+    ))::int AS unread,
+    COUNT(*) FILTER (WHERE c.work_status = 'needs_action' AND ${visibleNow})::int AS needs_action
+  FROM readable_conversations c GROUP BY c.mailbox_id
+`;
+
+export const listMailboxCounts = async (context: MailRequestContext): Promise<Result<MailFocusMailboxCounts[]>> => {
+  if (!(await isCurrentActorActive(context)) || capByCredentialScopes(context, "read") === "none") {
+    return fail(err.forbidden("Access denied"));
+  }
+  const rows = await mailboxCountQuery(context);
+  return ok(rows.map((row) => ({ mailboxId: row.mailbox_id, unread: row.unread, needsAction: row.needs_action })));
+};
+
 export const listFocusConversations = async (params: {
   context: MailRequestContext;
   view?: MailFocusView;
@@ -143,6 +168,11 @@ export const listFocusConversations = async (params: {
         c.latest_message_at,
         c.work_status,
         c.assignee_user_id,
+        c.revision,
+        (SELECT CASE WHEN count(DISTINCT mp.folder_id) = 1 THEN min(mp.folder_id::text) ELSE NULL END
+          FROM mail.conversation_messages cm
+          JOIN mail.message_placements mp ON mp.message_id = cm.message_id AND mp.deleted_at IS NULL
+          WHERE cm.conversation_id = c.id) AS source_folder_id,
         EXISTS (
           SELECT 1
           FROM mail.conversation_messages unread_cm
@@ -197,26 +227,7 @@ export const listFocusConversations = async (params: {
         COUNT(*) FILTER (WHERE c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
     `,
-    sql<DbMailboxCounts[]>`
-      WITH readable_conversations AS (${readableConversations(params.context)})
-      SELECT
-        c.mailbox_id,
-        COUNT(*) FILTER (
-          WHERE EXISTS (
-            SELECT 1
-            FROM mail.conversation_messages unread_cm
-            JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
-            WHERE unread_cm.conversation_id = c.id
-              AND unread_mp.deleted_at IS NULL
-              AND NOT ('\\Seen' = ANY(unread_mp.flags))
-          )
-        )::int AS unread,
-        COUNT(*) FILTER (
-          WHERE c.work_status = 'needs_action' AND ${visibleNow}
-        )::int AS needs_action
-      FROM readable_conversations c
-      GROUP BY c.mailbox_id
-    `,
+    mailboxCountQuery(params.context),
   ]);
 
   const hasMore = rows.length > limit;
@@ -230,6 +241,8 @@ export const listFocusConversations = async (params: {
     latestMessageAt: toIso(row.latest_message_at),
     workStatus: row.work_status,
     assigneeUserId: row.assignee_user_id,
+    revision: Number(row.revision),
+    sourceFolderId: row.source_folder_id,
     unread: row.unread,
     flagged: row.flagged,
     hasAttachments: row.has_attachments,

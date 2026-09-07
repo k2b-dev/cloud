@@ -326,13 +326,16 @@ export const listMailboxes = async (
   exactName?: string,
   search?: string,
   minimumPermission: Exclude<PermissionLevel, "none"> = "read",
+  page?: { afterId?: string },
 ): Promise<Result<MailboxListItem[]>> => {
   const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
+  if (page?.afterId && !z.uuid().safeParse(page.afterId).success) return fail(err.badInput("Invalid cursor"));
   const normalizedExactName = exactName?.trim() || null;
   const normalizedSearch = search?.trim() || null;
   if (context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound") {
     const mailboxId = context.actor.serviceAccount.resourceId;
     if (!mailboxId || !isResourceBoundToMailbox(context, mailboxId)) return ok([]);
+    if (page?.afterId && mailboxId <= page.afterId) return ok([]);
     const mailbox = await getMailbox(context, mailboxId);
     if (!mailbox.ok) return mailbox.error.code === "FORBIDDEN" || mailbox.error.code === "NOT_FOUND" ? ok([]) : mailbox;
     const receivingAddress = await getMailboxReceivingAddress(mailboxId);
@@ -353,6 +356,7 @@ export const listMailboxes = async (
   }
 
   const minimumPermissionRank = { read: 1, write: 2, admin: 3 }[minimumPermission];
+  if (capByCredentialScopes(context, minimumPermission) !== minimumPermission) return ok([]);
 
   const rows = await sql<DbMailboxListItem[]>`
     WITH ranked AS (
@@ -372,6 +376,7 @@ export const listMailboxes = async (
     JOIN ranked ON ranked.mailbox_id = m.id AND ranked.permission_rank >= ${minimumPermissionRank}
     LEFT JOIN mail.provider_connections pc ON pc.owner_mailbox_id = m.id AND pc.status <> 'revoked'
     WHERE m.deleted_at IS NULL
+      AND (${page?.afterId ?? null}::uuid IS NULL OR m.id > ${page?.afterId ?? null}::uuid)
       AND (${normalizedExactName}::text IS NULL OR m.name = ${normalizedExactName})
       AND (
         ${normalizedSearch}::text IS NULL
@@ -379,7 +384,7 @@ export const listMailboxes = async (
         OR strpos(lower(coalesce(m.description, '')), lower(${normalizedSearch})) > 0
         OR strpos(lower(coalesce(pc.email, '')), lower(${normalizedSearch})) > 0
       )
-    ORDER BY m.updated_at DESC, m.id DESC
+    ORDER BY ${page ? sql`m.id ASC` : sql`m.updated_at DESC, m.id DESC`}
     LIMIT ${boundedLimit}
   `;
 

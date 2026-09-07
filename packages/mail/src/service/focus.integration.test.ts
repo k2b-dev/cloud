@@ -3,7 +3,7 @@ import { sql } from "bun";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
-import { listFocusConversations } from "./focus";
+import { listFocusConversations, listMailboxCounts } from "./focus";
 import { createMailbox } from "./mailboxes";
 
 const suite = process.env.MAIL_INTEGRATION_TESTS === "1" ? describe : describe.skip;
@@ -184,6 +184,9 @@ suite("cross-mailbox focus", () => {
       ]),
     );
     expect(mine.data.items[0]?.mailboxName).toBe(`Support ${suffix}`);
+    expect(mine.data.items[0]?.revision).toBeGreaterThan(0);
+    const mailboxCounts = await listMailboxCounts(ownerContext);
+    expect(mailboxCounts).toEqual({ ok: true, data: mine.data.mailboxCounts });
     expect(JSON.stringify(mine.data)).not.toContain("Hidden mail");
 
     const all = await listFocusConversations({ context: ownerContext, view: "all", limit: 2 });

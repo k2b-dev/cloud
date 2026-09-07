@@ -550,7 +550,12 @@ export const getTree = async (params: { notebookId: string }): Promise<NoteTreeN
  * Read a stable, lightweight page of the note adjacency index. Unlike
  * `getTree`, this never loads Markdown or constructs recursive objects.
  */
-export const listTreePage = async (params: { notebookId: string; afterId?: string; limit: number }): Promise<NoteTreeEntry[]> => {
+export const listTreePage = async (params: {
+  notebookId: string;
+  afterId?: string;
+  limit: number;
+  parentId?: string | null;
+}): Promise<NoteTreeEntry[]> => {
   const afterId = params.afterId ?? null;
   const rows = await sql<
     {
@@ -571,6 +576,7 @@ export const listTreePage = async (params: { notebookId: string; afterId?: strin
       EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children
     FROM notebooks.notes n
     WHERE n.notebook_id = ${params.notebookId}::uuid
+      AND (${params.parentId === undefined} OR n.parent_id IS NOT DISTINCT FROM ${params.parentId ?? null}::uuid)
       AND (${afterId}::uuid IS NULL OR n.id > ${afterId}::uuid)
     ORDER BY n.id ASC
     LIMIT ${params.limit}

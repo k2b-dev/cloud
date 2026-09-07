@@ -9,7 +9,13 @@ import {
   type User,
 } from "@valentinkolb/cloud/contracts";
 import { audit } from "@valentinkolb/cloud/services";
-import { decodeNotebookCapabilityCursor, decodeNotebookTreeCursor, notebooksCapabilities, noteEditCapabilitySummary } from "./capabilities";
+import {
+  decodeNotebookCapabilityCursor,
+  decodeNotebookTreeCursor,
+  notebookEnvelopeBytes,
+  notebooksCapabilities,
+  noteEditCapabilitySummary,
+} from "./capabilities";
 import {
   CommentCreateInputSchema,
   CommentListInputSchema,
@@ -147,6 +153,218 @@ afterEach(() => {
 });
 
 describe("notebooks capabilities", () => {
+  test("notebook list byte-limited pages resume at the consumed offset", async () => {
+    const rows = Array.from({ length: 100 }, (_, index) => ({
+      ...notebook,
+      shortId: String(index).padStart(6, "0"),
+      description: "a" + "\u0001".repeat(499),
+      permission: "read" as const,
+    }));
+    const list = trackedSpy(spyOn(notebookStore, "listWithPermission")).mockImplementation(async (input) => ({
+      items: rows.slice(input.pagination?.offset ?? 0, (input.pagination?.offset ?? 0) + (input.pagination?.limit ?? 25)),
+      total: rows.length,
+    }));
+    const operation = notebooksCapabilities.queries["notebook.list"];
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await operation.run(operation.input.parse({ limit: 100, cursor }), userContext);
+      expect(result.ok).toBeTrue();
+      if (!result.ok) return;
+      expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+      expect(notebookEnvelopeBytes(result)).toBeLessThan(256 * 1024);
+      expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ pagination: { limit: 100, offset: seen.length } }));
+      seen.push(...result.data.data.map((item) => item.id));
+      cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
+    } while (cursor);
+    expect(seen).toEqual(rows.map((item) => item.shortId));
+    expect(list.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  test("zero-block edit receipts preserve hashes, result and truncation truth", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+    const beforeHash = noteContentHash(note.contentMd);
+    const afterHash = noteContentHash(`${note.contentMd}\nUpdate`);
+    const edit = trackedSpy(spyOn(noteStore, "editContent")).mockResolvedValue({
+      ok: true,
+      data: {
+        note,
+        content: `${note.contentMd}\nUpdate`,
+        changed: true,
+        beforeHash,
+        afterHash,
+        blocks: [{ name: "facts", type: "data", line: 5, startLine: 5, endLine: 8, hash: beforeHash }],
+      },
+    });
+    trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+    const operation = notebooksCapabilities.actions["note.edit"];
+    const result = await operation.run(
+      operation.input.parse({
+        noteId: note.shortId,
+        blockLimit: 0,
+        operations: [{ kind: "append", content: "Update" }],
+        ifContentHash: beforeHash,
+      }),
+      userContext,
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) return;
+    expect(result.data.data).toMatchObject({
+      changed: true,
+      beforeHash,
+      afterHash,
+      blocks: [],
+      blocksTruncated: true,
+      note: { id: note.shortId },
+    });
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    expect(edit.mock.calls[0]![0].data).not.toHaveProperty("blockLimit");
+    expect(result.data.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }]);
+  });
+
+  test("compact notebook selection can go directly to local navigation", async () => {
+    const list = trackedSpy(spyOn(notebookStore, "listWithPermission")).mockResolvedValue({
+      items: [{ ...notebook, permission: "write" }],
+      total: 1,
+    });
+    const operation = notebooksCapabilities.queries["notebook.browse"];
+    const result = await operation.run(operation.input.parse({ minimumPermission: "write" }), userContext);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) return;
+    expect(result.data.data[0]).toEqual({
+      ref: { type: "notebooks.notebook", id: notebook.shortId },
+      title: notebook.name,
+      preview: notebook.description,
+      permission: "write",
+      homepageNoteId: note.shortId,
+      links: [{ rel: "open", href: `/app/notebooks/${notebook.shortId}` }],
+    });
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ requiredLevel: "write", pagination: { limit: 25, offset: 0 } }));
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+  });
+
+  test("tree pages respect the full envelope ref limit and resume after the last returned row", async () => {
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const rows = Array.from({ length: 101 }, (_, index) => ({
+      ...note,
+      id: `55555555-5555-4555-8555-${String(index).padStart(12, "0")}`,
+      shortId: String(index).padStart(6, "0"),
+    }));
+    const list = trackedSpy(spyOn(noteStore, "listTreePage")).mockResolvedValue(rows);
+    trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map());
+    const operation = notebooksCapabilities.queries["note.tree"];
+    const result = await operation.run(operation.input.parse({ notebookId: notebook.shortId, limit: 2000 }), userContext);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) return;
+    expect(result.data.data).toHaveLength(100);
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    expect(notebookEnvelopeBytes(result)).toBeLessThan(256 * 1024);
+    if (!result.data.page.hasMore) throw new Error("Expected next tree page");
+    expect(decodeNotebookTreeCursor(result.data.page.nextCursor)).toEqual({ ok: true, data: rows[99]!.id });
+    list.mockResolvedValue([rows[100]!]);
+    const next = await operation.run(
+      operation.input.parse({ notebookId: notebook.shortId, cursor: result.data.page.nextCursor }),
+      userContext,
+    );
+    expect(next.ok && next.data.data.map((entry) => entry.id)).toEqual([rows[100]!.shortId]);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ afterId: rows[99]!.id, limit: 101 }));
+  });
+
+  test("children browse roots without fetching the whole hierarchy and rejects a foreign parent", async () => {
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const list = trackedSpy(spyOn(noteStore, "listTreePage")).mockResolvedValue([]);
+    trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map());
+    const operation = notebooksCapabilities.queries["note.children"];
+    expect((await operation.run(operation.input.parse({ notebookId: notebook.shortId }), userContext)).ok).toBeTrue();
+    expect(list).toHaveBeenCalledWith({ notebookId, parentId: null, afterId: undefined, limit: 26 });
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue({ ...note, notebookId: otherNotebookId });
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue({ ...notebook, id: otherNotebookId });
+    expect(
+      (await operation.run(operation.input.parse({ notebookId: notebook.shortId, parentId: note.shortId }), userContext)).ok,
+    ).toBeFalse();
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  test("comment pages fit escaped UTF-8 bodies and continue without dropping rows", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const rows = Array.from({ length: 100 }, (_, index) => ({
+      ...commentFixture(),
+      shortId: String(index).padStart(6, "0"),
+      content: "\u0001".repeat(5000),
+    }));
+    const list = trackedSpy(spyOn(commentStore, "listPage")).mockImplementation(async (input) => {
+      const offset = input.offset ?? 0;
+      const items = rows.slice(offset, offset + 100);
+      return { items, page: 1, perPage: 100, total: 100, hasNext: false };
+    });
+    const operation = notebooksCapabilities.queries["comment.list"];
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await operation.run(operation.input.parse({ noteId: note.shortId, limit: 100, cursor }), userContext);
+      expect(result.ok).toBeTrue();
+      if (!result.ok) return;
+      expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+      expect(notebookEnvelopeBytes(result)).toBeLessThan(256 * 1024);
+      seen.push(...result.data.data.map((item) => item.id));
+      cursor = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
+    } while (cursor);
+    expect(seen).toEqual(rows.map((item) => item.shortId));
+    expect(list.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  test("comment browsing keeps previews compact and does not advertise writes with read-only access", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    trackedSpy(spyOn(commentStore, "listPage")).mockResolvedValue({
+      items: [{ ...commentFixture(), content: "x".repeat(5000) }],
+      page: 1,
+      perPage: 25,
+      total: 1,
+      hasNext: false,
+    });
+    const operation = notebooksCapabilities.queries["comment.browse"];
+    const result = await operation.run(operation.input.parse({ noteId: note.shortId }), userContext);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) return;
+    expect(result.data.data[0]).toMatchObject({ previewTruncated: true, canEdit: false, canDelete: false });
+    expect(result.data.data[0]!.preview).toHaveLength(300);
+    permission.mockResolvedValue("write");
+    const writable = await operation.run(operation.input.parse({ noteId: note.shortId }), userContext);
+    expect(writable.ok && writable.data.data[0]!.canEdit).toBeTrue();
+  });
+
+  test("read windows stay byte bounded and the last partial window is not a complete document", async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const content = "\u0001".repeat(50_000);
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, contentMd: content, yjsSnapshot: null });
+    const operation = notebooksCapabilities.queries["note.read"];
+    const first = await operation.run({ id: note.shortId, contentOffset: 0, contentLimit: 50_000 }, userContext);
+    expect(first.ok).toBeTrue();
+    if (!first.ok) return;
+    expect(notebookEnvelopeBytes(first)).toBeLessThan(256 * 1024);
+    expect(first.data.data.contentComplete).toBeFalse();
+    const last = await operation.run(
+      { id: note.shortId, contentOffset: first.data.data.nextContentOffset!, contentLimit: 50_000 },
+      userContext,
+    );
+    expect(last.ok).toBeTrue();
+    if (!last.ok) return;
+    expect(last.data.data.contentComplete).toBeFalse();
+    expect(last.data.data.nextContentOffset).toBeNull();
+    expect(first.data.data.content + last.data.data.content).toBe(content);
+    expect(first.data.data.contentHash).toBe(last.data.data.contentHash);
+  });
+
   test("compiles the expanded public manifest", () => {
     expect(() => compileCapabilityManifest("notebooks", notebooksCapabilities)).not.toThrow();
   });
@@ -318,13 +536,16 @@ describe("notebooks capabilities", () => {
   test("declares the complete bounded wiki surface", () => {
     expect(Object.keys(notebooksCapabilities.types).sort()).toEqual(["comment", "note", "notebook"]);
     expect(Object.keys(notebooksCapabilities.queries).sort()).toEqual([
+      "comment.browse",
       "comment.list",
       "comment.read",
+      "note.children",
       "note.links",
       "note.preview",
       "note.read",
       "note.search",
       "note.tree",
+      "notebook.browse",
       "notebook.list",
       "notebook.read",
       "notebook.search",

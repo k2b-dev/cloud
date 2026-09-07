@@ -19,11 +19,31 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "task.focus": {
+          title: "Offene Aufgaben finden",
+          description:
+            "Kompakte, seitenweise Aufgabenübersicht über zugängliche Spaces. Nach Zuständigkeit, Frist, Priorität, Blockern oder 30 Tagen Inaktivität filtern.",
+        },
+        "event.agenda": {
+          title: "Kalendervorkommen lesen",
+          description:
+            "Offene Termine in höchstens 31 Tagen lesen; Wiederholungen werden serverseitig aufgelöst. Auch nach leeren Seiten weiterblättern. Für eine vollständige chronologische Agenda alle Seiten sammeln und nach startsAt sortieren. Cursor nur mit unveränderten Filtern verwenden.",
+        },
+        "space.browse": {
+          title: "Spaces auswählen",
+          description:
+            "Kompakte, seitenweise Auswahl zugänglicher Spaces mit Berechtigung. Für neue Inhalte minimumPermission write verwenden; space.read nur für Spalten- oder Tag-IDs aufrufen.",
+        },
+        "task.checklist.list": {
+          title: "Aufgabencheckliste lesen",
+          description:
+            "Checklistenpunkte einer Aufgabe seitenweise mit ID, Text und Erledigt-Status lesen. Weitere Seiten über page.nextCursor abrufen.",
+        },
         "calendar-destination.list": {
           title: "Kalenderziele auflisten",
           description:
             "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene spaceId an calendar-invitation.import.",
-          input: {},
+          input: { cursor: "Fortsetzung der vorherigen Seite.", limit: "Maximal 100 Ziele pro Seite; page.hasMore beachten." },
         },
         "calendar-invitation.preview": {
           title: "Vorschau der Kalendereinladung",
@@ -234,6 +254,18 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "task.checklist.create": {
+          title: "Checklistenpunkt hinzufügen",
+          description: "Einen einfachen Checklistenpunkt an eine beschreibbare Aufgabe anhängen.",
+        },
+        "task.checklist.update": {
+          title: "Checklistenpunkt ändern",
+          description: "Nur den übergebenen Text oder Erledigt-Status eines Checklistenpunkts ändern.",
+        },
+        "task.checklist.delete": {
+          title: "Checklistenpunkt löschen",
+          description: "Einen einzelnen Checklistenpunkt entfernen; die Aufgabe bleibt erhalten.",
+        },
         "calendar-invitation.import": {
           title: "Kalendereinladung importieren",
           description:

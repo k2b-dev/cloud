@@ -8,7 +8,6 @@ import {
   capabilityResultSchema,
 } from "@valentinkolb/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
-import { checkMailCapabilityMessages } from "./capability-messages";
 import {
   ActivityListDataSchema,
   AttachmentContentReadDataSchema,
@@ -31,6 +30,7 @@ import {
   SubscriptionListDataSchema,
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
+import { checkMailCapabilityMessages } from "./capability-messages";
 import {
   attachmentExtraction,
   collaboration,
@@ -119,6 +119,7 @@ const internalIdsByTable = {
   mailboxes: new Map([[mailboxId, internalMailboxId]]),
   folders: new Map([[folderId, internalFolderId]]),
   conversations: new Map([[conversationId, internalConversationId]]),
+  messages: new Map([[messageId, internalMessageId]]),
   drafts: new Map([[draftId, internalDraftId]]),
   senderIdentities: new Map([[senderIdentityId, internalConversationId]]),
   deliveries: new Map([[deliveryId, internalConversationId]]),
@@ -216,6 +217,8 @@ const tagFixture = {
 } as const;
 
 beforeEach(() => {
+  spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
+  spyOn(resourceParents, "messageConversation").mockResolvedValue(internalConversationId);
   spyOn(publicResources, "resolvePublicId").mockImplementation(
     async (table, id) => (internalIdsByTable as Record<string, Map<string, string>>)[table]?.get(id) ?? null,
   );
@@ -234,6 +237,170 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("mail capabilities", () => {
+  test("mailbox browsing pages beyond the former 200-mailbox ceiling", async () => {
+    const rows = Array.from({ length: 205 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      name: `Mailbox ${index}`,
+      description: null,
+      permission: "read",
+      health: "degraded",
+      healthReason: "\u0001".repeat(240),
+      syncEnabled: true,
+    }));
+    const list = spyOn(mailboxes, "listMailboxes").mockImplementation(
+      async (_ctx, limit, _exact, _query, _permission, page) =>
+        ({
+          ok: true,
+          data: rows
+            .filter((row) => !page?.afterId || row.id > page.afterId)
+            .slice(0, limit)
+            .map((row) => ({ ...row, name: "\u0001".repeat(160), description: "\u0001".repeat(240) })),
+        }) as never,
+    );
+    spyOn(publicResources, "publicIds").mockResolvedValue(new Map(rows.map((row, index) => [row.id, String(index).padStart(6, "0")])));
+    for (const id of ["mailbox.browse", "mailbox.list"] as const) {
+      const query = mailCapabilities.queries[id];
+      const seen: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const result = await query.run(query.input.parse({ limit: 100, cursor }), context);
+        if (!result.ok) throw new Error("Expected page");
+        expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+        seen.push(...result.data.data.map((item) => item.ref.id));
+        cursor = result.data.page?.hasMore ? result.data.page.nextCursor : undefined;
+      } while (cursor);
+      expect(seen).toEqual(rows.map((_, index) => String(index).padStart(6, "0")));
+    }
+    expect(list.mock.calls.length).toBeGreaterThan(6);
+  });
+
+  test("escaped draft snapshots remain transportable and explicitly incomplete", async () => {
+    spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+    spyOn(drafts, "getDraft").mockResolvedValue({
+      ok: true,
+      data: { ...draftFixture, subject: "s".repeat(998), body: "\u0001".repeat(65_000) },
+    } as never);
+    const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+    if (!result.ok) throw new Error("Expected draft");
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(result.data.data).toMatchObject({ bodyTruncated: true, editableSnapshotComplete: false });
+    expect(capabilityResultSchema(mailCapabilities.queries["draft.read"].data).safeParse(result.data).success).toBeTrue();
+  });
+
+  test("message reader retains navigation when JSON escaping requires a smaller body", async () => {
+    spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+    spyOn(messages, "getMessage").mockResolvedValue({
+      ok: true,
+      data: {
+        id: internalMessageId,
+        subject: "Follow up",
+        messageId: null,
+        internalDate: timestamp,
+        sentAt: null,
+        from: [],
+        to: [],
+        replyTo: [],
+        cc: [],
+        flags: [],
+        keywords: [],
+        hydrationStatus: "hydrated",
+        remoteAvailable: true,
+        plainText: "\u0001".repeat(96 * 1024),
+        forwardText: null,
+        contentType: "text/plain",
+        sizeBytes: 96 * 1024,
+        selectedHeaders: {},
+        attachments: [],
+        delivery: null,
+      },
+    } as never);
+    const result = await mailCapabilities.queries["message.read"].run({ id: messageId }, context);
+    if (!result.ok) throw new Error("Expected message");
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(result.data.data).toMatchObject({ bodyTruncated: true, conversationId });
+    expect(capabilityResultSchema(MessageDataSchema).safeParse(result.data).success).toBeTrue();
+  });
+
+  test("mailbox selection shares overview counters and hides configuration", async () => {
+    spyOn(mailboxes, "listMailboxes").mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: internalMailboxId,
+          name: "Support",
+          description: null,
+          permission: "write",
+          health: "active",
+          healthReason: null,
+          syncEnabled: true,
+        },
+      ],
+    } as never);
+    const query = mailCapabilities.queries["mailbox.browse"];
+    const result = await query.run(query.input.parse({}), context);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: [{ ref: { type: "mail.mailbox", id: mailboxId }, title: "Support", unreadCount: 7, needsActionCount: 3 }] },
+    });
+    if (!result.ok) throw new Error("Expected mailbox selection");
+    expect(result.data.data[0]).not.toHaveProperty("health");
+    expect(result.data.data[0]).not.toHaveProperty("syncEnabled");
+    expect(result.data.data[0]).not.toHaveProperty("createdAt");
+  });
+
+  test("text pages preserve conversation context and JSON transport bounds", async () => {
+    spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+    const text = "\u0001".repeat(70_000) + "Grüße 👋";
+    spyOn(messages, "getMessage").mockResolvedValue({
+      ok: true,
+      data: { plainText: text, forwardText: null, subject: "Reply here" },
+    } as never);
+    const query = mailCapabilities.queries["message.read-content"];
+    let offset = 0;
+    let collected = "";
+    do {
+      const result = await query.run({ id: messageId, offset, length: 65536 }, context);
+      expect(result.ok).toBeTrue();
+      if (!result.ok) throw new Error("Expected text page");
+      expect(result.data.data.conversationId).toBe(conversationId);
+      expect(result.data.data.trust).toBe("untrusted");
+      expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+      collected += result.data.data.text;
+      if (result.data.data.nextOffset === null) break;
+      expect(result.data.data.nextOffset).toBeGreaterThan(offset);
+      offset = result.data.data.nextOffset;
+    } while (true);
+    expect(collected).toBe(text);
+  });
+
+  test("patch preserves omitted draft content and rejects stale revisions", async () => {
+    const current = {
+      ...draftFixture,
+      body: "long".repeat(25_000),
+      to: Array.from({ length: 75 }, (_, i) => ({ name: null, address: `a${i}@example.test` })),
+    };
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: current } as never);
+    const update = spyOn(drafts, "updateDraft").mockResolvedValue({
+      ok: true,
+      data: { ...current, revision: current.revision + 1 },
+    } as never);
+    const action = mailCapabilities.actions["draft.patch"];
+    const input = action.input.parse({ mailboxId, draftId, expectedRevision: current.revision, patch: { subject: "Changed" } });
+    expect(input.patch).toEqual({ subject: "Changed" });
+    const result = await action.run(input, context);
+    expect(result.ok).toBeTrue();
+    expect(update.mock.calls[0]?.[0].input).toMatchObject({
+      body: current.body,
+      to: current.to,
+      subject: "Changed",
+      senderIdentityId: current.senderIdentityId,
+    });
+    const stale = await action.run({ ...input, expectedRevision: current.revision + 1 }, context);
+    expect(stale).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(action.input.safeParse({ ...input, patch: {} }).success).toBeFalse();
+  });
+
   test("keeps capability messages complete", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
@@ -271,6 +438,7 @@ describe("mail capabilities", () => {
       "conversation.tag.update",
       "draft.attachment.add",
       "draft.create",
+      "draft.patch",
       "draft.update",
       "mailbox.tag.create",
     ]);
@@ -309,6 +477,7 @@ describe("mail capabilities", () => {
       "draft.read",
       "draft.send.review",
       "folder.list",
+      "mailbox.browse",
       "mailbox.identity.list",
       "mailbox.list",
       "mailbox.member.list",
@@ -318,6 +487,7 @@ describe("mail capabilities", () => {
       "mailing-list.subscription.list",
       "message.list",
       "message.read",
+      "message.read-content",
       "reminder.read",
       "search",
     ]);
@@ -338,6 +508,7 @@ describe("mail capabilities", () => {
       "draft.attachment.remove",
       "draft.create",
       "draft.discard",
+      "draft.patch",
       "draft.send",
       "draft.update",
       "mailbox.tag.create",
@@ -367,6 +538,7 @@ describe("mail capabilities", () => {
       "draft.attachment.remove",
       "draft.create",
       "draft.discard",
+      "draft.patch",
       "draft.send",
       "draft.update",
       "mailbox.tag.create",
@@ -708,6 +880,10 @@ describe("mail capabilities", () => {
     spyOn(reminders, "getConversationReminder").mockResolvedValue({ ok: true, data: reminderFixture } as never);
 
     const results = [
+      await mailCapabilities.actions["draft.patch"].review(
+        { mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed" } },
+        context,
+      ),
       await mailCapabilities.actions["draft.create"].review(
         DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
         context,
@@ -879,6 +1055,12 @@ describe("mail capabilities", () => {
             }),
             context,
           ),
+      },
+      {
+        localId: "draft.patch",
+        action: mailCapabilities.actions["draft.patch"],
+        run: () =>
+          mailCapabilities.actions["draft.patch"].run({ mailboxId, draftId, expectedRevision: 2, patch: { subject: "Changed" } }, context),
       },
       {
         localId: "draft.discard",
@@ -1192,6 +1374,8 @@ describe("mail capabilities", () => {
             latestMessageAt: "2026-08-04T10:00:00.000Z",
             workStatus: "needs_action",
             assigneeUserId: userId,
+            revision: 4,
+            sourceFolderId: internalFolderId,
             unread: true,
             flagged: false,
             hasAttachments: false,

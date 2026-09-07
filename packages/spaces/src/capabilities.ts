@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import {
+  CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -61,10 +62,18 @@ import {
   ItemTagsSetInputSchema,
   SpaceAssigneeListDataSchema,
   SpaceAssigneeListInputSchema,
+  SpaceBrowseDataSchema,
   SpaceDetailDataSchema,
   SpaceListDataSchema,
   SpaceListInputSchema,
   SpaceReadInputSchema,
+  TaskChecklistCreateInputSchema,
+  TaskChecklistDataSchema,
+  TaskChecklistDeleteDataSchema,
+  TaskChecklistDeleteInputSchema,
+  TaskChecklistListDataSchema,
+  TaskChecklistListInputSchema,
+  TaskChecklistUpdateInputSchema,
   TaskCreateInputSchema,
   TaskDataSchema,
   TaskDependencyDataSchema,
@@ -79,6 +88,15 @@ import {
   TaskUpdateInputSchema,
 } from "./capability-contracts";
 import { spacesCapabilityPresentation } from "./capability-presentation";
+import {
+  AgendaCursorError,
+  decodeWorkCursor,
+  EventAgendaDataSchema,
+  EventAgendaInputSchema,
+  TaskFocusDataSchema,
+  TaskFocusInputSchema,
+} from "./capability-work-contracts";
+import { boundedWorkPage, runEventAgenda, runTaskFocus } from "./capability-work-queries";
 import type { MutationResult, SpaceComment, SpaceItem, SpaceItemAttachment } from "./contracts";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
@@ -87,6 +105,7 @@ import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
+import { CalendarReadLimitError } from "./service/recurrence";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
@@ -601,10 +620,25 @@ const runSpaceList = async (input: z.infer<typeof SpaceListInputSchema>, context
   const publicSpaces = await spacesPublicResources.projectSpaces(page.items);
   const data = publicSpaces.map((space) => ({
     ...mapSpace(space, context),
+    descriptionTruncated: false,
     ref: { type: "spaces.space" as const, id: space.id },
     links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
   }));
-  return pageResult(page, data, publicSpaces.map(spaceRef));
+  const result = pageResult(page, data, publicSpaces.map(spaceRef));
+  if (result.ok && Buffer.byteLength(JSON.stringify(result.data), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
+    result.data.refs = publicSpaces.map((space) => ({ type: "spaces.space", id: space.id }));
+    while (Buffer.byteLength(JSON.stringify(result.data), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
+      let shortened = false;
+      for (const space of data) {
+        if (!space.description) continue;
+        space.description = truncateText(space.description, Math.floor(Buffer.byteLength(space.description) / 2)).text;
+        space.descriptionTruncated = true;
+        shortened = true;
+      }
+      if (!shortened) return fail(err.badInput(spacesMessages(context.locale).smallerPageRequired));
+    }
+  }
+  return result;
 };
 
 const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -640,6 +674,50 @@ const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context
     summary: boundedCapabilitySummary(spacesMessages(context.locale).readSpace({ name: publicDetail.name })),
     refs: [spaceRef(publicDetail)],
     links: [{ rel: "open" as const, href: `/app/spaces/${publicDetail.id}` }],
+  });
+};
+
+const runSpaceBrowse = async (input: z.infer<typeof SpaceListInputSchema>, context: CapabilityExecutionContext) => {
+  const result = await runSpaceList(input, context);
+  return result.ok
+    ? ok({
+        ...result.data,
+        data: result.data.data.map(({ id, ref, name, description, descriptionTruncated, permission, links }) => ({
+          id,
+          ref,
+          name,
+          description,
+          descriptionTruncated,
+          permission,
+          links,
+        })),
+      })
+    : result;
+};
+
+const workQueryContext = async (
+  input: { spaceId?: string; cursor?: string; assignedTo: string },
+  context: CapabilityExecutionContext,
+  agenda = false,
+) => {
+  if (!agenda) {
+    try {
+      decodeWorkCursor(input.cursor);
+    } catch {
+      return fail(localizeSpacesError(err.badInput("Invalid cursor"), context.locale));
+    }
+  }
+  if (input.assignedTo === "me" && !context.user)
+    return capabilityFail(context, err.forbidden("The me filter requires a user-backed actor"), "meFilterNeedsUser");
+  const scope = scopedSpaceId(context, "read");
+  if (!scope.ok) return scope;
+  const space = input.spaceId ? await requireSpace(input.spaceId, context) : null;
+  if (space && !space.ok) return space;
+  return ok({
+    subject: context.accessSubject,
+    boundSpaceId: scope.data,
+    ...(space?.ok ? { spaceId: space.data.internalId } : {}),
+    dateConfig: await capabilityDateConfig(context),
   });
 };
 
@@ -679,16 +757,17 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
+    ...(input.deadlineFilter !== "all" ? { dateConfig: await capabilityDateConfig(context) } : {}),
     filter: {
       type: kind,
       status: input.status,
-      activity: "all",
+      activity: input.activity,
       priority: input.priority,
       columnIds,
       tagIds,
       assigneeIds: input.assigneeIds,
       assignedTo: input.assignedTo,
-      deadlineFilter: "all",
+      deadlineFilter: input.deadlineFilter,
       search: input.query,
       sort: input.sort,
       sortDesc: input.sortDesc,
@@ -697,19 +776,59 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
       pageSize: input.limit,
     },
   });
-  const publicItems = await spacesPublicResources.projectItems(page.items);
+  const [publicItems, columns] = await Promise.all([
+    spacesPublicResources.projectItems(page.items),
+    spacesService.column.list({ spaceId: access.data.internalId, pagination: { page: 1, perPage: 100 } }),
+  ]);
+  const columnNames = new Map(columns.items.map((column) => [column.id, column.name]));
+  const itemColumnNames = new Map(publicItems.map((item, index) => [item.id, columnNames.get(page.items[index]!.columnId) ?? null]));
   const items = (
     kind === "event" ? publicItems.filter(isEvent).map(mapEventSummary) : publicItems.filter((item) => !isEvent(item)).map(mapTaskSummary)
   ).map((item) => ({
     ...item,
+    columnName: itemColumnNames.get(item.id) ?? null,
     ref: { type: "spaces.item" as const, id: item.id },
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   }));
-  return pageResult(
+  const result = pageResult(
     { items: page.items, page: page.page, perPage: page.pageSize, total: page.total, hasNext: page.page < page.totalPages },
     items,
-    [{ type: "spaces.space" as const, id: input.spaceId }, ...items.map((item) => itemRef(item, item.kind))],
+    items.map((item) => ({ type: "spaces.item" as const, id: item.id })),
   );
+  // Keep the existing page cursor and every row. Optional previews and relation
+  // snapshots may shrink further under JSON escaping; item.read remains canonical.
+  if (result.ok) {
+    while (Buffer.byteLength(JSON.stringify(result.data), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
+      let shortened = false;
+      for (const item of items) {
+        if (item.descriptionPreview) {
+          item.descriptionPreview = truncateText(item.descriptionPreview, Math.floor(Buffer.byteLength(item.descriptionPreview) / 2)).text;
+          item.descriptionTruncated = true;
+          shortened = true;
+        }
+        if (item.assignees.length || item.tags.length) {
+          item.assignees = item.assignees.slice(0, -1);
+          item.tags = item.tags.slice(0, -1);
+          item.relationsTruncated = true;
+          shortened = true;
+        }
+        if (item.kind === "event") {
+          if (item.location) {
+            item.location = truncateText(item.location, Math.floor(Buffer.byteLength(item.location) / 2)).text;
+            item.locationTruncated = true;
+            shortened = true;
+          }
+          if (item.url) {
+            item.url = truncateText(item.url, Math.floor(Buffer.byteLength(item.url) / 2)).text;
+            item.urlTruncated = true;
+            shortened = true;
+          }
+        }
+      }
+      if (!shortened) return fail(err.badInput(spacesMessages(context.locale).smallerPageRequired));
+    }
+  }
+  return result;
 };
 
 const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -1011,6 +1130,109 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
       (item) => tagSetSummary(resolved.data.item, item, context),
       context,
     );
+  });
+
+const requireChecklistTask = async (itemId: string, context: CapabilityExecutionContext, permission: "read" | "write") => {
+  const result = await requireItem(itemId, context, permission);
+  if (!result.ok) return result;
+  return isEvent(result.data.item) ? capabilityFail(context, err.badInput("Item is not a task"), "itemNotTask") : result;
+};
+
+const reviewChecklist = async (
+  input: { itemId: string; entryId?: string; label?: string; completed?: boolean },
+  context: CapabilityExecutionContext,
+) => {
+  const task = await requireChecklistTask(input.itemId, context, "write");
+  if (!task.ok) return task;
+  const t = spacesMessages(context.locale);
+  const entry = input.entryId
+    ? (await spacesService.item.checklist.list({ itemId: task.data.internalId })).find((entry) => entry.id === input.entryId)
+    : null;
+  if (input.entryId && !entry) return fail(localizeSpacesError(err.notFound("Checklist entry"), context.locale));
+  return ok({
+    message: t.reviewChecklistChange({ title: task.data.item.title }),
+    details: [
+      ...(input.entryId ? [{ label: t.reference, value: input.entryId }] : []),
+      ...(entry
+        ? [
+            { label: t.checklistEntry, value: entry.label },
+            { label: t.checklistCompleted, value: entry.completed ? t.yes : t.no },
+          ]
+        : []),
+      ...(input.label ? [{ label: t.checklistEntry, value: input.label }] : []),
+      ...(input.completed !== undefined ? [{ label: t.checklistCompleted, value: input.completed ? t.yes : t.no }] : []),
+    ],
+    approvalScope: spaceApprovalScope(task.data.item.spaceId),
+    links: [{ rel: "open" as const, href: buildSpaceItemHref(task.data.item.spaceId, input.itemId) }],
+  });
+};
+
+const runChecklistList = async (input: z.infer<typeof TaskChecklistListInputSchema>, context: CapabilityExecutionContext) => {
+  let offset: number;
+  try {
+    offset = decodeWorkCursor(input.cursor);
+  } catch {
+    return fail(localizeSpacesError(err.badInput("Invalid cursor"), context.locale));
+  }
+  const task = await requireChecklistTask(input.itemId, context, "read");
+  if (!task.ok) return task;
+  const entries = await spacesService.item.checklist.list({ itemId: task.data.internalId });
+  return ok(
+    boundedWorkPage(
+      entries.slice(offset, offset + input.limit).map(({ id, label, completed }) => ({ id, label, completed })),
+      offset,
+      entries.length - offset,
+    ),
+  );
+};
+
+const runChecklistCreate = async (input: z.infer<typeof TaskChecklistCreateInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "task.checklist.create", "space_item", input.itemId), async () => {
+    const task = await requireChecklistTask(input.itemId, context, "write");
+    if (!task.ok) return task;
+    const result = await spacesService.item.checklist.create({
+      itemId: task.data.internalId,
+      data: { label: input.label },
+      actor: spaceActivityActor(context),
+    });
+    return result.ok
+      ? ok({
+          data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
+          refs: [itemRef(task.data.item, "task")],
+        })
+      : mutationError(result, context);
+  });
+
+const runChecklistUpdate = async (input: z.infer<typeof TaskChecklistUpdateInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "task.checklist.update", "space_item", input.itemId), async () => {
+    const task = await requireChecklistTask(input.itemId, context, "write");
+    if (!task.ok) return task;
+    const id = await spacesPublicResources.resolvePublicId("checklist", input.entryId);
+    if (!id) return fail(localizeSpacesError(err.notFound("Checklist entry"), context.locale));
+    const result = await spacesService.item.checklist.update({
+      itemId: task.data.internalId,
+      id,
+      data: { label: input.label, completed: input.completed },
+      actor: spaceActivityActor(context),
+    });
+    return result.ok
+      ? ok({
+          data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
+          refs: [itemRef(task.data.item, "task")],
+        })
+      : mutationError(result, context);
+  });
+
+const runChecklistDelete = async (input: z.infer<typeof TaskChecklistDeleteInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "task.checklist.delete", "space_item", input.itemId), async () => {
+    const task = await requireChecklistTask(input.itemId, context, "write");
+    if (!task.ok) return task;
+    const id = await spacesPublicResources.resolvePublicId("checklist", input.entryId);
+    if (!id) return fail(localizeSpacesError(err.notFound("Checklist entry"), context.locale));
+    const result = await spacesService.item.checklist.remove({ itemId: task.data.internalId, id, actor: spaceActivityActor(context) });
+    return result.ok
+      ? ok({ data: { id: input.entryId, deleted: true as const }, refs: [itemRef(task.data.item, "task")] })
+      : mutationError(result, context);
   });
 
 const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
@@ -1379,14 +1601,19 @@ const runCalendarInvitationResponsePrepare = async (
     : fail(localizeSpacesError(result.error, context.locale));
 };
 
-const calendarDestinationContext = async (context: CapabilityExecutionContext) => {
+const calendarDestinationContext = async (
+  input: z.infer<typeof CalendarDestinationListInputSchema>,
+  context: CapabilityExecutionContext,
+) => {
+  const cursor = decodeSpacesCapabilityCursor(input.cursor, context.locale);
+  if (!cursor.ok) return cursor;
   const scope = scopedSpaceId(context, "write");
   if (!scope.ok) return scope;
   const page = await spacesService.space.list({
     subject: context.accessSubject,
     boundSpaceId: scope.data,
     requiredLevel: "write",
-    pagination: { page: 1, perPage: 100 },
+    pagination: { page: cursor.data, perPage: input.limit },
   });
   const spaces = await spacesPublicResources.projectSpaces(page.items);
   return ok({
@@ -1398,6 +1625,7 @@ const calendarDestinationContext = async (context: CapabilityExecutionContext) =
       links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
     })),
     refs: spaces.map(spaceRef),
+    page: capabilityPage(page.hasNext ? encodeCursor(page.page + 1) : undefined),
   });
 };
 
@@ -1558,6 +1786,55 @@ export const spacesCapabilities = defineCapabilities({
       openWorld: false,
       run: (input, context) => runItemSearch({ ...input, tags: [] }, context, "write"),
     },
+    "task.focus": {
+      title: "Find actionable tasks",
+      description:
+        "Compact paginated open-task work queue across readable Spaces. Filter assignment, deadline, priority, blockers or 30-day inactivity. Use item.read only for full content and task.checklist.list for checklist entries.",
+      input: TaskFocusInputSchema,
+      data: TaskFocusDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext(input, context);
+        return access.ok ? ok(await runTaskFocus(input, access.data)) : access;
+      },
+    },
+    "event.agenda": {
+      title: "Read calendar occurrences",
+      description:
+        "Read open event occurrences in an inclusive-from, exclusive-to interval of at most 31 days, expanded server-side in the application timezone. Follow page.nextCursor even on empty pages. Each page is chronological; collect all pages and sort startsAt for a complete agenda. Cursors require unchanged interval, Space and assignment filters. Task deadlines are not included.",
+      input: EventAgendaInputSchema,
+      data: EventAgendaDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext(input, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok(await runEventAgenda(input, access.data));
+        } catch (error) {
+          if (error instanceof AgendaCursorError) return fail(err.badInput(spacesMessages(context.locale).invalidCursor));
+          if (error instanceof CalendarReadLimitError) return fail(err.badInput(spacesMessages(context.locale).calendarReadLimit));
+          throw error;
+        }
+      },
+    },
+    "space.browse": {
+      title: "Browse Spaces",
+      description:
+        "Compact paginated Space selection with effective permissions. Use minimumPermission write before creating items; read a Space only when column or tag IDs are needed.",
+      input: SpaceListInputSchema,
+      data: SpaceBrowseDataSchema,
+      openWorld: false,
+      run: runSpaceBrowse,
+    },
+    "task.checklist.list": {
+      title: "List task checklist",
+      description:
+        "Read paginated checklist entries of one task: entry ID, label, and completed state. Follow page.nextCursor until complete. Entries are simple checkmarks, not independent tasks.",
+      input: TaskChecklistListInputSchema,
+      data: TaskChecklistListDataSchema,
+      openWorld: false,
+      run: runChecklistList,
+    },
     "space.list": {
       title: "List spaces",
       description:
@@ -1681,7 +1958,7 @@ export const spacesCapabilities = defineCapabilities({
       input: CalendarDestinationListInputSchema,
       data: CalendarDestinationListDataSchema,
       openWorld: false,
-      run: (_input, context) => calendarDestinationContext(context),
+      run: calendarDestinationContext,
     },
     "calendar-invitation.response.prepare": {
       title: "Prepare calendar response",
@@ -1694,6 +1971,42 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "task.checklist.create": {
+      title: "Add task checklist entry",
+      description: "Append one simple checklist label to a writable task.",
+      input: TaskChecklistCreateInputSchema,
+      data: TaskChecklistDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: reviewChecklist,
+      run: runChecklistCreate,
+    },
+    "task.checklist.update": {
+      title: "Update task checklist entry",
+      description: "Change only the supplied label or completed state of an entry returned by task.checklist.list.",
+      input: TaskChecklistUpdateInputSchema,
+      data: TaskChecklistDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: reviewChecklist,
+      run: runChecklistUpdate,
+    },
+    "task.checklist.delete": {
+      title: "Delete task checklist entry",
+      description: "Remove one checklist entry from a writable task; the task itself is preserved.",
+      input: TaskChecklistDeleteInputSchema,
+      data: TaskChecklistDeleteDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: reviewChecklist,
+      run: runChecklistDelete,
+    },
     "item.reference.add": {
       title: "Link a Cloud resource",
       description: "Link one stable Cloud resource reference to a writable Space item.",

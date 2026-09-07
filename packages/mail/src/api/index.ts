@@ -393,6 +393,7 @@ const respondFocus = async <T extends { items: Array<{ id: string; mailboxId: st
   const paths = resolved.data.items.flatMap((_item, index) => [
     { path: ["items", String(index), "id"], table: "conversations" as const },
     { path: ["items", String(index), "mailboxId"], table: "mailboxes" as const },
+    { path: ["items", String(index), "sourceFolderId"], table: "folders" as const },
   ]);
   resolved.data.mailboxCounts.forEach((_counts, index) => {
     paths.push({ path: ["mailboxCounts", String(index), "mailboxId"], table: "mailboxes" as const });

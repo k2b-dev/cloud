@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { validateAiSkillDescription, validateAiSkillInstructions } from "./skill-format";
-import { seedCloudAiSkills } from "./skill-seeds";
+import { validateAiSkillDescription, validateAiSkillInstructions, validateAiSkillReferences } from "./skill-format";
+import { getBuiltinAiSkillTemplate, seedCloudAiSkills } from "./skill-seeds";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
 
 describe("Cloud AI Skill seeds", () => {
-  test("publishes ordinary single-file Skills once", async () => {
+  test("seeds task-oriented Skills with on-demand references once", async () => {
     const seedOnce = spyOn(aiSkills, "seedOnce").mockResolvedValue();
 
     await seedCloudAiSkills();
@@ -60,7 +60,10 @@ describe("Cloud AI Skill seeds", () => {
     const declaredCapabilities = [...capabilitySource.matchAll(/^  (?:(?:"([a-z0-9.-]+)")|(search)): \{/gm)].map(
       (match) => `mail.${match[1] ?? match[2]}`,
     );
-    expect([...new Set(mentionedCapabilities)].sort()).toEqual(declaredCapabilities.sort());
+    for (const capability of mentionedCapabilities) expect(declaredCapabilities).toContain(capability);
+    for (const capability of ["mail.mailbox.browse", "mail.message.read-content", "mail.draft.patch"]) {
+      expect(mentionedCapabilities).toContain(capability);
+    }
 
     const appSkills = [
       {
@@ -108,22 +111,63 @@ describe("Cloud AI Skill seeds", () => {
     for (const expected of appSkills) {
       const skill = inputs.find((candidate) => candidate.name === expected.name);
       expect(skill).toMatchObject({ key: expected.key, name: expected.name });
-      expect(skill?.references).toBeUndefined();
-      for (const text of expected.required) expect(skill?.instructions).toContain(text);
+      const instructions = [skill?.instructions, ...(skill?.references ?? []).map((reference) => reference.content)].join("\n");
+      for (const text of expected.required) expect(instructions).toContain(text);
 
-      const namedCapabilities = [...(skill?.instructions.matchAll(new RegExp("`(" + expected.appId + "\\.[a-z0-9.-]+)`", "g")) ?? [])].map(
+      const namedCapabilities = [...instructions.matchAll(new RegExp("`(" + expected.appId + "\\.[a-z0-9.-]+)`", "g"))].map(
         (match) => match[1]!,
       );
       const source = await Bun.file(new URL(expected.source, import.meta.url)).text();
       const declared = [...source.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `${expected.appId}.${match[1]!}`);
-      expect([...new Set(namedCapabilities)].sort()).toEqual(declared.sort());
+      for (const capability of namedCapabilities) expect(declared).toContain(capability);
     }
 
     for (const skill of inputs) {
       expect(validateAiSkillDescription(skill.description)).toBe(skill.description);
       expect(validateAiSkillInstructions(skill.instructions)).toBe(skill.instructions);
+      expect(validateAiSkillReferences(skill.references ?? [])).toEqual([...(skill.references ?? [])]);
+      for (const reference of skill.references ?? []) {
+        expect(skill.instructions).toContain(`/skills/${skill.name}/${reference.path}`);
+      }
+      if (["cloud-mail", "cloud-spaces", "cloud-notebooks"].includes(skill.name)) {
+        expect(skill.instructions.length).toBeLessThan(5_000);
+      }
     }
 
+    const declaredAcrossApps = new Set(declaredCapabilities);
+    for (const app of appSkills) {
+      const source = await Bun.file(new URL(app.source, import.meta.url)).text();
+      for (const match of source.matchAll(/^    "([a-z0-9.-]+)": \{/gm)) declaredAcrossApps.add(`${app.appId}.${match[1]}`);
+    }
+    for (const skill of inputs) {
+      const content = [skill.instructions, ...(skill.references ?? []).map((reference) => reference.content)].join("\n");
+      for (const match of content.matchAll(/`((?:mail|spaces|notebooks|contacts)\.[a-z0-9.-]+)`/g)) {
+        expect(declaredAcrossApps.has(match[1]!)).toBeTrue();
+      }
+    }
+
+    const spaces = inputs.find((skill) => skill.name === "cloud-spaces")!;
+    for (const id of ["spaces.task.update", "spaces.event.update", "spaces.task.set-completed"]) {
+      expect(spaces.instructions).toContain(id);
+    }
+    const calendar = spaces.references!.find((reference) => reference.path === "references/calendar-mail.md")!.content;
+    expect(calendar).toContain("If the source is unavailable, stop");
+    expect(calendar).toContain("UTF-8 bytes and then Base64");
+    expect(calendar).toContain("mail.draft.create");
+
     expect(inputs.some((candidate) => candidate.name === "cloud-tools")).toBeFalse();
+  });
+
+  test("returns current templates without internal seed keys or reseeding", () => {
+    const seed = spyOn(aiSkills, "seedOnce").mockResolvedValue();
+    expect(getBuiltinAiSkillTemplate("unknown-skill")).toBeUndefined();
+    const notebook = getBuiltinAiSkillTemplate("cloud-notebooks");
+    expect(notebook).not.toHaveProperty("key");
+    expect(notebook?.references?.map((reference) => reference.path)).toEqual(["references/structured-pages.md"]);
+    expect(notebook?.instructions).toContain("notebooks.note.children");
+    expect(notebook?.instructions).toContain("Never replace a complete note with a partial window");
+    expect(getBuiltinAiSkillTemplate("cloud-spaces")?.instructions).toContain("spaces.event.agenda");
+    expect(getBuiltinAiSkillTemplate("cloud-spaces")?.instructions).toContain("spaces.task.focus");
+    expect(seed).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AuthContext } from "../server";
 import type { AiSkill } from "./skills";
-import { aiSkills } from "./skills";
+import { AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { __buildAiSkillsRoutesForTest } from "./skills-routes";
 
 const userId = "11111111-1111-4111-8111-111111111111";
@@ -38,6 +38,57 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
 afterEach(() => mock.restore());
 
 describe("AI Skill routes", () => {
+  test("previews a built-in template without reading or overwriting an installed Skill", async () => {
+    const read = spyOn(aiSkills, "getByShortId");
+    const update = spyOn(aiSkills, "update");
+    const seed = spyOn(aiSkills, "seedOnce");
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const response = await routes.request("/templates/cloud-mail");
+    expect(response.status).toBe(200);
+    const { template } = await response.json();
+    expect(template.name).toBe("cloud-mail");
+    expect(template.instructions).toContain("Cloud Mail");
+    expect(template).not.toHaveProperty("key");
+    expect(read).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(seed).not.toHaveBeenCalled();
+    expect((await routes.request("/templates/not-a-builtin")).status).toBe(404);
+    const anonymous = __buildAiSkillsRoutesForTest({ limit: pass, authenticate: pass });
+    expect((await anonymous.request("/templates/cloud-mail")).status).toBe(403);
+  });
+
+  test("applies a consciously merged template only to the selected Skill at its reviewed revision", async () => {
+    const installed = { ...skill("write"), name: "cloud-mail" };
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(installed);
+    const update = spyOn(aiSkills, "update").mockResolvedValue({ ...installed, revision: 4 });
+    const access = spyOn(aiSkills, "grantAccess");
+    const remove = spyOn(aiSkills, "delete");
+    const enabled = spyOn(aiSkills, "setEnabled");
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const { template } = await (await routes.request("/templates/cloud-mail")).json();
+    const { skill: current } = await (await routes.request(`/${skillShortId}`)).json();
+    const proposal = {
+      ...template,
+      expectedRevision: current.revision,
+      instructions: `${template.instructions}\n\nPreserve our custom policy.`,
+      extraFrontmatter: { metadata: { owner: "mail-team" } },
+      references: [...(template.references ?? []), ...current.references],
+    };
+    const request = () =>
+      routes.request(`/${skillShortId}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(proposal),
+      });
+    expect((await request()).status).toBe(200);
+    expect(update).toHaveBeenCalledWith(skillId, subject, proposal);
+    expect(access).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(enabled).not.toHaveBeenCalled();
+    update.mockRejectedValue(new AiSkillRevisionConflictError());
+    expect((await request()).status).toBe(409);
+  });
+
   test("creates a permission-owned skill and projects only the public id", async () => {
     spyOn(aiSkills, "create").mockResolvedValue(skill());
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });

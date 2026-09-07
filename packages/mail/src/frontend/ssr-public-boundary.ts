@@ -76,6 +76,7 @@ export const projectSsrFocusPage = async <T extends { items: InternalMailFocusIt
   page.items.forEach((item, index) => {
     add(paths, "conversations", ["items", index, "id"], item.id);
     add(paths, "mailboxes", ["items", index, "mailboxId"], item.mailboxId);
+    add(paths, "folders", ["items", index, "sourceFolderId"], item.sourceFolderId);
   });
   page.mailboxCounts.forEach((counts, index) => add(paths, "mailboxes", ["mailboxCounts", index, "mailboxId"], counts.mailboxId));
   return projectSsrPaths(page, paths, loadPublicIds);

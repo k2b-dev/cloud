@@ -12,14 +12,19 @@ import {
 import { audit } from "@valentinkolb/cloud/services";
 import { decodeSpacesCapabilityCursor, spacesCapabilities } from "./capabilities";
 import {
+  CalendarDestinationListInputSchema,
   CommentCreateInputSchema,
   CommentListDataSchema,
   EventCreateInputSchema,
   EventListDataSchema,
   EventUpdateInputSchema,
   ItemDataSchema,
+  SpaceBrowseDataSchema,
   SpaceDetailDataSchema,
   SpaceListInputSchema,
+  TaskChecklistCreateInputSchema,
+  TaskChecklistListDataSchema,
+  TaskChecklistUpdateInputSchema,
   TaskCreateInputSchema,
   TaskListDataSchema,
   TaskListInputSchema,
@@ -62,6 +67,9 @@ test("declares remembered approval for bounded Space changes", () => {
     "item.tags.set",
     "task.blocker.add",
     "task.blocker.remove",
+    "task.checklist.create",
+    "task.checklist.delete",
+    "task.checklist.update",
     "task.set-completed",
     "task.update",
   ]);
@@ -182,6 +190,162 @@ const tag: SpaceTag = { id: tagUuid, spaceId: spaceUuid, name: "Launch", color: 
 
 afterEach(() => mock.restore());
 
+test("checklist updates require a change and preserve explicit false", () => {
+  expect(TaskChecklistUpdateInputSchema.safeParse({ itemId, entryId: "Chk001" }).success).toBeFalse();
+  expect(TaskChecklistUpdateInputSchema.parse({ itemId, entryId: "Chk001", completed: false }).completed).toBeFalse();
+  expect(TaskChecklistCreateInputSchema.safeParse({ itemId, label: "  " }).success).toBeFalse();
+});
+
+test("calendar destination pagination keeps the legacy default and bounds pages", () => {
+  expect(CalendarDestinationListInputSchema.parse({})).toEqual({ limit: 100 });
+  expect(CalendarDestinationListInputSchema.safeParse({ limit: 101 }).success).toBeFalse();
+});
+
+test("compact Space browsing preserves effective permission without administrative metadata", async () => {
+  spyOn(spacesService.space, "listWithPermission").mockResolvedValue({
+    items: [{ ...space, permission: "write" }],
+    page: 1,
+    perPage: 25,
+    total: 1,
+    hasNext: false,
+  });
+  const result = await spacesCapabilities.queries["space.browse"].run(
+    SpaceListInputSchema.parse({ minimumPermission: "write" }),
+    userContext,
+  );
+  expect(result.ok).toBeTrue();
+  if (!result.ok) return;
+  expect(capabilityResultSchema(SpaceBrowseDataSchema).safeParse(result.data).success).toBeTrue();
+  expect(result.data.data[0]).toMatchObject({ id: spaceId, name: space.name, permission: "write" });
+  expect(result.data.data[0]).not.toHaveProperty("createdAt");
+  expect(result.data.data[0]).not.toHaveProperty("color");
+});
+
+test("checklist list projects only label and checkmark and rejects events", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const get = spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const list = spyOn(spacesService.item.checklist, "list").mockResolvedValue([
+    { id: "Chk001", label: "Review", completed: false, createdAt, updatedAt: createdAt },
+  ]);
+  const result = await spacesCapabilities.queries["task.checklist.list"].run({ itemId, limit: 25 }, userContext);
+  expect(result.ok).toBeTrue();
+  if (!result.ok) return;
+  expect(capabilityResultSchema(TaskChecklistListDataSchema).safeParse(result.data).success).toBeTrue();
+  expect(result.data.data).toEqual([{ id: "Chk001", label: "Review", completed: false }]);
+  get.mockResolvedValue(event);
+  expect((await spacesCapabilities.queries["task.checklist.list"].run({ itemId, limit: 25 }, userContext)).ok).toBeFalse();
+  expect(list).toHaveBeenCalledTimes(1);
+});
+
+test("full item pages fit the envelope and expose inactivity plus readable columns", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.column, "list").mockResolvedValue({
+    items: [{ id: columnUuid, spaceId: spaceUuid, name: "In progress", color: null, isDone: false, rank: "1" }],
+    page: 1,
+    perPage: 100,
+    total: 1,
+    hasNext: false,
+  });
+  const list = spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+    items: Array.from({ length: 100 }, () => task),
+    page: 1,
+    pageSize: 100,
+    total: 101,
+    totalPages: 2,
+  });
+  const result = await spacesCapabilities.queries["task.list"].run(
+    TaskListInputSchema.parse({ spaceId, limit: 100, activity: "inactive" }),
+    userContext,
+  );
+  expect(result.ok).toBeTrue();
+  if (!result.ok) return;
+  expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
+  expect(result.data.refs).toHaveLength(100);
+  expect(result.data.data[0]?.columnName).toBe("In progress");
+  expect(result.data.page?.hasMore).toBeTrue();
+  expect(list.mock.calls[0]?.[0].filter.activity).toBe("inactive");
+});
+
+test("checklist changes keep task ownership and reject read-only actors before writing", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const create = spyOn(spacesService.item.checklist, "create").mockResolvedValue({
+    ok: true,
+    data: { id: "Chk001", label: "Review", completed: false, createdAt, updatedAt: createdAt },
+  });
+  const action = spacesCapabilities.actions["task.checklist.create"];
+  const input = TaskChecklistCreateInputSchema.parse({ itemId, label: "Review" });
+  expect((await action.run(input, userContext)).ok).toBeFalse();
+  expect(create).not.toHaveBeenCalled();
+  permission.mockResolvedValue("write");
+  const result = await action.run(input, userContext);
+  expect(result.ok).toBeTrue();
+  if (!result.ok) return;
+  expect(result.data.data).toEqual({ id: "Chk001", label: "Review", completed: false });
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ itemId: itemUuid, data: { label: "Review" } });
+});
+
+test("task list fits escaped maximum previews without skipping rows", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.column, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false });
+  spyOn(spacesService.item, "listFiltered").mockResolvedValue({
+    items: Array.from({ length: 100 }, () => ({ ...task, title: "\u0001".repeat(200), description: "\u0001".repeat(1000) })),
+    page: 1,
+    pageSize: 100,
+    total: 100,
+    totalPages: 1,
+  });
+  const result = await spacesCapabilities.queries["task.list"].run(TaskListInputSchema.parse({ spaceId, limit: 100 }), userContext);
+  if (!result.ok) throw new Error("Expected bounded task page");
+  expect(result.data.data).toHaveLength(100);
+  expect(result.data.data[0]?.descriptionTruncated).toBeTrue();
+  expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  expect(capabilityResultSchema(TaskListDataSchema).safeParse(result.data).success).toBeTrue();
+});
+
+test("checklist delete review resolves the label within the current task", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  spyOn(spacesService.item.checklist, "list").mockResolvedValue([
+    { id: "Chk001", label: "Current label", completed: false, createdAt, updatedAt: createdAt },
+  ]);
+  const action = spacesCapabilities.actions["task.checklist.delete"];
+  const review = await action.review({ itemId, entryId: "Chk001" }, userContext);
+  expect(review.ok).toBeTrue();
+  if (review.ok) expect(review.data.details).toContainEqual({ label: "Checklist entry", value: "Current label" });
+  expect((await action.review({ itemId, entryId: "Chk002" }, userContext)).ok).toBeFalse();
+});
+
+test("Space list and browse retain every row under escaped description budgets", async () => {
+  spyOn(spacesService.space, "listWithPermission").mockResolvedValue({
+    items: Array.from({ length: 100 }, () => ({
+      ...space,
+      name: "\u0001".repeat(100),
+      description: "\u0001".repeat(500),
+      permission: "read" as const,
+    })),
+    page: 1,
+    perPage: 100,
+    total: 101,
+    hasNext: true,
+  });
+  for (const id of ["space.list", "space.browse"] as const) {
+    const result = await spacesCapabilities.queries[id].run(SpaceListInputSchema.parse({ limit: 100 }), userContext);
+    if (!result.ok) throw new Error("Expected Space page");
+    expect(result.data.data).toHaveLength(100);
+    expect(result.data.data[0]?.descriptionTruncated).toBeTrue();
+    expect(result.data.page?.hasMore).toBeTrue();
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+  }
+});
+
 const publicIds: Record<ResourceTable, Map<string, string>> = {
   spaces: new Map([
     [spaceUuid, spaceId],
@@ -282,7 +446,7 @@ describe("spaces capabilities", () => {
       hasNext: false,
     });
 
-    const result = await spacesCapabilities.queries["calendar-destination.list"].run({}, userContext);
+    const result = await spacesCapabilities.queries["calendar-destination.list"].run({ limit: 100 }, userContext);
 
     expect(list).toHaveBeenCalledWith({
       subject: userContext.accessSubject,
@@ -293,6 +457,7 @@ describe("spaces capabilities", () => {
     expect(result).toEqual({
       ok: true,
       data: {
+        page: { hasMore: false },
         data: [
           {
             id: spaceId,
@@ -323,6 +488,7 @@ describe("spaces capabilities", () => {
       "calendar-invitation.response.prepare",
       "comment.list",
       "comment.read",
+      "event.agenda",
       "event.list",
       "item.link-candidate.search",
       "item.read",
@@ -330,11 +496,14 @@ describe("spaces capabilities", () => {
       "item.reference.list",
       "item.search",
       "space.assignee.list",
+      "space.browse",
       "space.list",
       "space.read",
       "space.search",
       "task.blocker.list",
       "task.blocks.list",
+      "task.checklist.list",
+      "task.focus",
       "task.list",
     ]);
     expect(Object.keys(spacesCapabilities.actions).sort()).toEqual([
@@ -354,6 +523,9 @@ describe("spaces capabilities", () => {
       "item.tags.set",
       "task.blocker.add",
       "task.blocker.remove",
+      "task.checklist.create",
+      "task.checklist.delete",
+      "task.checklist.update",
       "task.create",
       "task.set-completed",
       "task.update",
@@ -381,6 +553,9 @@ describe("spaces capabilities", () => {
       "item.tags.set",
       "task.blocker.add",
       "task.blocker.remove",
+      "task.checklist.create",
+      "task.checklist.delete",
+      "task.checklist.update",
       "task.set-completed",
       "task.update",
     ]);
@@ -771,6 +946,9 @@ describe("spaces capabilities", () => {
   });
 
   test("returns a scope from every rememberable action review", async () => {
+    spyOn(spacesService.item.checklist, "list").mockResolvedValue([
+      { id: "Chk001", label: "Review", completed: false, createdAt, updatedAt: createdAt },
+    ]);
     const getItem = spyOn(spacesService.item, "get").mockResolvedValue(task);
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
@@ -792,6 +970,9 @@ describe("spaces capabilities", () => {
     });
 
     const results: CapabilityActionReviewResult[] = [
+      await spacesCapabilities.actions["task.checklist.create"].review({ itemId, label: "New" }, userContext),
+      await spacesCapabilities.actions["task.checklist.update"].review({ itemId, entryId: "Chk001", completed: true }, userContext),
+      await spacesCapabilities.actions["task.checklist.delete"].review({ itemId, entryId: "Chk001" }, userContext),
       await spacesCapabilities.actions["item.reference.add"].review!(
         { itemId, reference: { ref: { type: "notebooks.note", id: "Note01" }, label: "Release notes" } },
         userContext,

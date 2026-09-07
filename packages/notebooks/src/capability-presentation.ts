@@ -19,6 +19,34 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "notebook.browse": {
+          title: "Notizbuch auswählen",
+          description:
+            "Notizbücher kompakt mit Berechtigung und Startseite auswählen. Vor dem Anlegen einer Notiz minimumPermission write verwenden. ref.id direkt mit note.children oder note.create nutzen; notebook.read ist nur für weitere Verwaltungsdaten nötig.",
+          input: {
+            query: "Optionaler Suchtext.",
+            minimumPermission: "Erforderliche Mindestberechtigung.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse.",
+          },
+        },
+        "note.children": {
+          title: "Unterseiten durchsuchen",
+          description:
+            "Direkte Unterseiten eines Notizbuchs lesen, ohne den gesamten Baum zu laden. Ohne parentId werden die obersten Seiten angezeigt. Dem Cursor folgen; ref.id mit note.read oder als Elternseite für note.create nutzen.",
+          input: {
+            notebookId: "Notizbuch-ID.",
+            parentId: "Optionale Elternseite im selben Notizbuch.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse.",
+          },
+        },
+        "comment.browse": {
+          title: "Kommentarvorschauen lesen",
+          description:
+            "Kommentare anhand kurzer Vorschauen auswählen, neueste zuerst. Dem Cursor folgen. Bei previewTruncated den vollständigen Kommentar mit comment.read und ref.id lesen. canEdit und canDelete zeigen die aktuellen Bearbeitungsrechte.",
+          input: { noteId: "Notiz-ID.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Kommentare." },
+        },
         "note.preview": {
           title: "Notizblöcke prüfen",
           description:
@@ -31,7 +59,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.list": {
           title: "Notizkommentare auflisten",
-          description: "Dauerhafte Markdown-Kommentare zu einer bekannten Notiz auflisten, neueste zuerst.",
+          description:
+            "Vollständige Markdown-Kommentare zu einer Notiz lesen, neueste zuerst. Seiten können wegen der Antwortgröße kürzer ausfallen; immer page.nextCursor folgen. Für die Auswahl zunächst comment.browse verwenden.",
           input: {
             noteId: "Notiz-ID aus Notizsuche, Notizbaum, Lesevorgang oder einem notebooks.note-Verweis.",
             cursor: "Undurchsichtiger Cursor der vorherigen Seite.",
@@ -60,7 +89,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "note.read": {
           title: "Notiz lesen",
           description:
-            "Lesen Sie einen von note.search, note.tree, note.links oder tag.notes zurückgegebenen notebooks.note ref als begrenztes Markdown-Fenster mit Hashes, Tags und Zusammenfassungen benannter Blöcke.",
+            "Eine Notiz als Markdown-Fenster mit Hashes, Tags und Blockübersicht lesen. contentComplete ist nur wahr, wenn die gesamte Quelle enthalten ist. nextContentOffset folgen und unveränderten contentHash prüfen. Niemals eine vollständige Notiz durch ein Teilfenster ersetzen; gezielte Änderungen mit ifContentHash bevorzugen.",
           input: {
             id: "Hinweis ID, zurückgegeben durch Notizensuch-/Baum-/Link-/Tag-Ergebnisse oder ein notebooks.note ref.",
             contentOffset: "Nullbasierter Zeichenoffset in die Markdown-Quelle.",
@@ -84,9 +113,9 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "note.tree": {
-          title: "Listennotizenbaum",
+          title: "Notizbaum auflisten",
           description:
-            "Durchsuchen Sie die Hierarchie eines bekannten Notebooks, ohne Markdown zu laden. Holen Sie sich die Notebook-ID von notebook.list oder notebook.search. Verwenden Sie das zurückgegebene notebooks.note refs mit note.read.",
+            "Die Hierarchie eines Notizbuchs ohne Markdown lesen. Pro Antwort werden höchstens 100 Einträge geliefert, auch bei höherem limit. page.nextCursor für weitere Einträge folgen. Zum Auswählen einer Elternseite note.children bevorzugen; Notizen mit note.read öffnen.",
           input: {
             notebookId: "Notebook ID zurückgegeben durch Notebook-Suche/-Liste/-Lesen oder ein notebooks.notebook ref.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -194,6 +223,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             ifUpdatedAt: "Ablehnen, wenn sich der Zeitstempel der Notiz geändert hat.",
             ifContentHash: "Ablehnen, wenn sich der komplette Markdown-Hash geändert hat.",
             ifBlockHash: "Ablehnen, wenn sich der ausgewählte benannte Block geändert hat.",
+            blockLimit:
+              "Höchstzahl zurückgegebener Blockbeschreibungen (Standard 500). Null liefert eine kompakte Bestätigung; Hashes bleiben enthalten.",
           },
         },
         "note.move": {

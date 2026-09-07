@@ -111,6 +111,50 @@ The `spaces.item.read` capability includes bounded task attachment metadata
 with authenticated preview and download links. Attachment content remains in
 Spaces rather than being embedded in capability results.
 
+## Assistant workflows
+
+Use `space.browse` for a compact, paginated choice of Spaces. Set
+`minimumPermission: "write"` before creating content. `space.read` adds column
+and tag IDs when an action needs them; a second read is not required simply
+to confirm a Space already selected from an authorized list.
+Space lists may shorten descriptions to fit a full page; when
+`descriptionTruncated` is true, `space.read` returns the full description.
+
+`task.focus` finds open tasks across accessible Spaces without looping over
+each Space. It supports assignment, deadline, priority, blocker, and inactivity
+filters. Inactive means no task activity for 30 days. Deadline windows use the
+configured application timezone, matching the overview. `task.list` and
+`event.list` retain their existing fields and accept `activity` and
+`deadlineFilter`; lists include readable column names when available.
+
+For actual calendar occurrences, use `event.agenda` with offset-aware `from`
+and `to` timestamps. The interval includes its start and excludes its end,
+covers at most 31 days, and includes open events rather than task deadlines.
+Spaces expands recurrence in the application timezone. Follow `page.nextCursor`
+while `page.hasMore` is true, even when a page contains no occurrences: an old
+series may have no dates in the interval. Pages keep series and their overrides
+together and are individually chronological. Collect every page and sort by
+`startsAt` for a complete chronological agenda. Cursors belong to the original
+interval, Space, and assignment filter; restart without a cursor after changing
+these. A recurrence-budget error is not an empty agenda; inspect the affected
+series through `event.list` and `item.read`.
+
+Simple checklists use `task.checklist.list`, `task.checklist.create`,
+`task.checklist.update`, and `task.checklist.delete`. Each entry has only an ID,
+label, and completed state. Updates change only supplied fields, and deleting
+an entry never deletes its task. The same permissions, activity history, and
+100-entry task limit apply as in the interface. Follow checklist list cursors
+until complete. Work and checklist pages may contain fewer than the requested
+limit to stay within the response byte budget; continuation preserves every
+entry. Existing task and event lists instead shorten optional previews and
+relation snapshots with explicit truncation flags, preserving their page model.
+
+`calendar-destination.list` remains the writable destination selector for Mail
+invitations. It now exposes pagination (up to 100 destinations per page), so
+consumers must follow the returned cursor rather than assume the first page
+contains every Space. Existing creation and calendar integration result
+contracts are preserved.
+
 ## Deployment requirements
 
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for

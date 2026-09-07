@@ -14,5 +14,7 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
   const normalizedLocale = locale?.toLowerCase();
   if (normalizedLocale !== "de" && !normalizedLocale?.startsWith("de-")) return error;
+  if (error.code === "NOT_FOUND" && error.message === "Mailbox not found")
+    return { ...error, message: "Das Postfach wurde nicht gefunden" };
   return { ...error, message: genericGermanMessage(error) };
 };

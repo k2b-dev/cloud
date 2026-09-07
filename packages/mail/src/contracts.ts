@@ -1539,6 +1539,8 @@ export type MailFocusView = z.infer<typeof mailFocusViewSchema>;
 
 export const mailFocusItemSchema = z
   .object({
+    revision: z.number().int().positive().optional(),
+    sourceFolderId: ResourceShortIdSchema.nullable().optional(),
     id: ResourceShortIdSchema,
     mailboxId: ResourceShortIdSchema,
     mailboxName: z.string().min(1).max(160),

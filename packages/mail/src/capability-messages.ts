@@ -4,6 +4,7 @@ const catalog = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      mailboxSyncProblem: "Mailbox sync is unavailable; counts may be out of date.",
       noSubject: "(no subject)",
       none: "None",
       unknown: "Unknown",
@@ -56,7 +57,8 @@ const catalog = i18n.define({
       replaceDraftReview: ({ subject }: { subject: string }) => `Replace the editable content of draft ${subject}.`,
       discardDraftReview: ({ subject }: { subject: string }) => `Discard draft ${subject}.`,
       addAttachmentReview: ({ filename, subject }: { filename: string; subject: string }) => `Add ${filename} to draft ${subject}.`,
-      removeAttachmentReview: ({ filename, subject }: { filename: string; subject: string }) => `Remove attachment ${filename} from draft ${subject}.`,
+      removeAttachmentReview: ({ filename, subject }: { filename: string; subject: string }) =>
+        `Remove attachment ${filename} from draft ${subject}.`,
       sendDraftReview: ({ subject, scheduled }: { subject: string; scheduled: boolean }) =>
         `${scheduled ? "Schedule" : "Send"} draft ${subject} to external recipients.`,
       cancelDeliveryReview: ({ subject }: { subject: string }) => `Cancel delivery of ${subject}.`,
@@ -65,7 +67,8 @@ const catalog = i18n.define({
       changeTagsReview: ({ subject }: { subject: string }) => `Change tags on ${subject}.`,
       assignReview: ({ subject, assignee }: { subject: string; assignee: string }) => `Assign ${subject} to ${assignee}.`,
       unassignReview: ({ subject }: { subject: string }) => `Remove the assignee from ${subject}.`,
-      statusReview: ({ subject, done }: { subject: string; done: boolean }) => `${done ? "Mark" : "Reopen"} ${subject}${done ? " done" : ""}.`,
+      statusReview: ({ subject, done }: { subject: string; done: boolean }) =>
+        `${done ? "Mark" : "Reopen"} ${subject}${done ? " done" : ""}.`,
       snoozeReview: ({ subject }: { subject: string }) => `Snooze ${subject}.`,
       clearSnoozeReview: ({ subject }: { subject: string }) => `Clear the snooze deadline of ${subject}.`,
       setReminderReview: ({ subject }: { subject: string }) => `Set your reminder for ${subject}.`,
@@ -165,6 +168,7 @@ const catalog = i18n.define({
         `Cancelled delivery of ${subject} and ${restored ? "restored it as a draft" : "discarded its draft"}.`,
     },
     de: {
+      mailboxSyncProblem: "Die Postfach-Synchronisierung ist nicht verfügbar; die Zähler können veraltet sein.",
       noSubject: "(kein Betreff)",
       none: "Keine",
       unknown: "Unbekannt",
@@ -267,10 +271,13 @@ const catalog = i18n.define({
       reopenedConversation: ({ subject }) => `„${subject}“ wieder geöffnet.`,
       snoozedConversation: ({ subject }) => `„${subject}“ zurückgestellt.`,
       clearedSnooze: ({ subject }) => `Zurückstellung von „${subject}“ aufgehoben.`,
-      truncatedCommentApprove: "Die Kommentarvorschau ist auf 10 KB begrenzt. Prüfe den vollständigen Kommentar unter Details, bevor du zustimmst.",
+      truncatedCommentApprove:
+        "Die Kommentarvorschau ist auf 10 KB begrenzt. Prüfe den vollständigen Kommentar unter Details, bevor du zustimmst.",
       truncatedCurrentComment: "Die Vorschau des bisherigen Kommentars ist auf 10 KB begrenzt.",
-      truncatedReplacement: "Die Vorschau des neuen Kommentars ist auf 10 KB begrenzt. Prüfe den vollständigen Kommentar unter Details, bevor du zustimmst.",
-      truncatedCommentOpen: "Die Kommentarvorschau ist auf 10 KB begrenzt. Öffne die Unterhaltung, um den vollständigen Kommentar zu prüfen.",
+      truncatedReplacement:
+        "Die Vorschau des neuen Kommentars ist auf 10 KB begrenzt. Prüfe den vollständigen Kommentar unter Details, bevor du zustimmst.",
+      truncatedCommentOpen:
+        "Die Kommentarvorschau ist auf 10 KB begrenzt. Öffne die Unterhaltung, um den vollständigen Kommentar zu prüfen.",
       tagUpdated: ({ tag }) => `Postfach-Tag ${tag} aktualisiert.`,
       tagRenamed: ({ tag }) => `Postfach-Tag in ${tag} umbenannt.`,
       tagColorChanged: ({ tag }) => `Farbe des Postfach-Tags ${tag} geändert.`,

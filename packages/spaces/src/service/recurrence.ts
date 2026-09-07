@@ -39,6 +39,7 @@ export type ExpandedRecurringEvent = RecurringEvent & {
 };
 
 type ExpandRecurringEventsParams = {
+  requireComplete?: boolean;
   events: RecurringEvent[];
   overrides?: RecurringOverride[];
   rangeStart: string | Date;
@@ -63,8 +64,9 @@ export type SplitRecurringEvent = {
   nextExdate: string[];
 };
 
+export class CalendarReadLimitError extends Error {}
 const DEFAULT_EXPANSION_LIMIT = 2000;
-const MAX_OCCURRENCE_LOOKUP_STEPS = 10_000;
+export const MAX_OCCURRENCE_LOOKUP_STEPS = 10_000;
 const SUPPORTED_RRULE_PARTS = new Set(["FREQ", "INTERVAL", "COUNT", "UNTIL", "BYDAY"]);
 const WEEKDAY_INDEX: Record<string, number> = {
   SU: 0,
@@ -230,6 +232,15 @@ export const expandRecurringEvents = (params: ExpandRecurringEventsParams): Expa
     const seriesStart = event.recurrence.dtstart ? toDate(event.recurrence.dtstart) : start;
     const exdates = new Set((event.recurrence.exdate ?? []).map(sameInstantKey));
     let emitted = 0;
+    // Replacement times may move into or out of this range independently of their original instant.
+    for (const override of overrides.values()) {
+      if (override.recurringEventId !== event.id || exdates.has(sameInstantKey(override.recurrenceId))) continue;
+      if (overlapsRange(toDate(override.start), toDate(override.end), rangeStart, rangeEnd)) {
+        output.push({ ...override, recurringInstance: undefined });
+        emitted += 1;
+        if (emitted >= expansionLimit) break;
+      }
+    }
     let generated = 0;
     let cursor = seriesStart;
     let done = false;
@@ -265,9 +276,7 @@ export const expandRecurringEvents = (params: ExpandRecurringEventsParams): Expa
         if (exdates.has(recurrenceId)) continue;
 
         const override = overrides.get(`${event.id}:${recurrenceId}`);
-        if (override) {
-          output.push({ ...override, recurringInstance: undefined });
-        } else if (overlapsRange(candidate, occurrenceEnd, rangeStart, rangeEnd)) {
+        if (!override && overlapsRange(candidate, occurrenceEnd, rangeStart, rangeEnd)) {
           output.push({
             ...event,
             id: `${event.id}:${recurrenceId}`,
@@ -283,11 +292,14 @@ export const expandRecurringEvents = (params: ExpandRecurringEventsParams): Expa
           });
         }
 
-        emitted += 1;
+        if (!override) emitted += 1;
         if (emitted >= expansionLimit) break;
       }
 
       cursor = nextCursor(cursor, rule, dateConfig);
+    }
+    if (params.requireComplete && (emitted >= expansionLimit || generated >= generationLimit)) {
+      throw new CalendarReadLimitError("Recurrence budget exceeded; narrow the calendar range or inspect the series directly.");
     }
   }
 

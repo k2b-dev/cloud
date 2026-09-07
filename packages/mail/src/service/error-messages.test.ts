@@ -6,7 +6,7 @@ describe("Mail service messages", () => {
   test("preserves stable error metadata while translating German regional locales", () => {
     expect(localizeMailError(err.notFound("Mailbox"), "de-CH")).toEqual({
       code: "NOT_FOUND",
-      message: "Die angeforderte Mail-Ressource wurde nicht gefunden",
+      message: "Das Postfach wurde nicht gefunden",
       status: 404,
     });
   });

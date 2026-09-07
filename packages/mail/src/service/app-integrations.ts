@@ -216,15 +216,35 @@ export const resolveContacts = async (
   };
 };
 
-export const listCalendarDestinations = (request: AppIntegrationRequest) =>
-  fetchAppCapability({
-    appId: "spaces",
-    kind: "query",
-    capabilityId: "calendar-destination.list",
-    request,
-    dataSchema: spacesMailDestinationsSchema,
-    input: {},
-  }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+export const listCalendarDestinations = async (
+  request: AppIntegrationRequest,
+): Promise<AppIntegrationResult<z.infer<typeof spacesMailDestinationsSchema>>> => {
+  const destinations: z.infer<typeof spacesMailDestinationsSchema> = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  // Match the existing Mail destination picker contract (at most 500 entries).
+  while (destinations.length < 500) {
+    const result = await fetchAppCapability({
+      appId: "spaces",
+      kind: "query",
+      capabilityId: "calendar-destination.list",
+      request,
+      dataSchema: spacesMailDestinationsSchema,
+      input: { limit: 100, ...(cursor ? { cursor } : {}) },
+    });
+    if (!result.ok) return result;
+    destinations.push(...result.data.data);
+    if (destinations.length > 500) break;
+    if (!result.data.page?.hasMore) return { ok: true, data: destinations };
+    const nextCursor = result.data.page.nextCursor;
+    if (result.data.data.length === 0 || !nextCursor || seenCursors.has(nextCursor)) {
+      return { ok: false, code: "INVALID_APP_RESPONSE", message: "Invalid calendar destination continuation.", status: 502 };
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  return { ok: false, code: "RESULT_TOO_LARGE", message: "Too many calendar destinations for the Mail picker.", status: 422 };
+};
 
 export const getCalendarSpace = (spaceId: string, request: AppIntegrationRequest) =>
   fetchAppCapability({

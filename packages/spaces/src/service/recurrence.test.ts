@@ -38,6 +38,49 @@ describe("parseRecurrenceRule", () => {
   });
 });
 
+test("moved overrides disappear from the original window and appear exactly once in the destination window", () => {
+  const events = [
+    {
+      id: "series",
+      title: "Original",
+      start: "2026-01-01T09:00:00Z",
+      end: "2026-01-01T10:00:00Z",
+      recurrence: { rrule: "FREQ=DAILY;COUNT=1" },
+    },
+  ];
+  const overrides = [
+    {
+      id: "override",
+      recurringEventId: "series",
+      recurrenceId: "2026-01-01T09:00:00Z",
+      title: "Moved",
+      start: "2026-01-02T09:00:00Z",
+      end: "2026-01-02T10:00:00Z",
+    },
+  ];
+  expect(expandRecurringEvents({ events, overrides, rangeStart: "2026-01-01T00:00:00Z", rangeEnd: "2026-01-02T00:00:00Z" })).toEqual([]);
+  expect(
+    expandRecurringEvents({ events, overrides, rangeStart: "2026-01-02T00:00:00Z", rangeEnd: "2026-01-03T00:00:00Z" }).map(
+      (item) => item.id,
+    ),
+  ).toEqual(["override"]);
+  expect(
+    expandRecurringEvents({ events, overrides, rangeStart: "2026-01-01T00:00:00Z", rangeEnd: "2026-01-03T00:00:00Z" }).map(
+      (item) => item.id,
+    ),
+  ).toEqual(["override"]);
+  expect(() =>
+    expandRecurringEvents({
+      events,
+      overrides,
+      rangeStart: "2026-01-02T00:00:00Z",
+      rangeEnd: "2026-01-03T00:00:00Z",
+      expansionLimit: 1,
+      requireComplete: true,
+    }),
+  ).toThrow("Recurrence budget exceeded");
+});
+
 describe("expandRecurringEvents", () => {
   test("expands daily series and preserves duration", () => {
     const events = expandRecurringEvents({

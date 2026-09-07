@@ -14,6 +14,7 @@ import { hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server"
 import { type AuditActor, audit } from "@valentinkolb/cloud/services";
 import type { z } from "zod";
 import {
+  CommentBrowseDataSchema,
   CommentCreateInputSchema,
   CommentDataSchema,
   CommentDeleteDataSchema,
@@ -22,10 +23,12 @@ import {
   CommentListInputSchema,
   CommentReadInputSchema,
   CommentUpdateInputSchema,
+  NotebookBrowseDataSchema,
   NotebookDataSchema,
   NotebookListDataSchema,
   NotebookListInputSchema,
   NotebookReadInputSchema,
+  NoteChildrenInputSchema,
   NoteCreateInputSchema,
   NoteDetailDataSchema,
   NoteEditDataSchema,
@@ -60,6 +63,34 @@ import * as noteSearch from "./service/search";
 import * as noteTags from "./service/tags";
 
 const encodePageCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
+
+const encodeOffsetCursor = (offset: number): string => Buffer.from(JSON.stringify({ v: 2, offset }), "utf8").toString("base64url");
+const decodeNotebookOffset = (cursor: string | undefined, limit: number, locale?: string): Result<number> => {
+  if (cursor) {
+    try {
+      const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        "v" in value &&
+        value.v === 2 &&
+        "offset" in value &&
+        typeof value.offset === "number" &&
+        Number.isSafeInteger(value.offset) &&
+        value.offset >= 0
+      )
+        return ok(value.offset);
+    } catch {
+      /* The legacy decoder returns the localized validation error. */
+    }
+  }
+  const page = decodeNotebookCapabilityCursor(cursor, locale);
+  return page.ok ? ok((page.data - 1) * limit) : page;
+};
+
+// Reserve 1 KiB for the outer invocation envelope and transport bookkeeping.
+const ENVELOPE_DATA_BUDGET = 256 * 1024 - 1024;
+export const notebookEnvelopeBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
 
 export const decodeNotebookCapabilityCursor = (cursor: string | undefined, locale?: string): Result<number> => {
   const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
@@ -372,7 +403,7 @@ const runNoteSearch = async (input: UniversalSearchInput, context: CapabilityExe
 };
 
 const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
+  const cursor = decodeNotebookOffset(input.cursor, input.limit, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopedNotebookId(context, input.minimumPermission);
   if (!scope.ok) return scope;
@@ -380,7 +411,7 @@ const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, c
     ...principalIds(context),
     boundNotebookId: scope.data,
     requiredLevel: input.minimumPermission,
-    pagination: { limit: input.limit, offset: (cursor.data - 1) * input.limit },
+    pagination: { limit: input.limit, offset: cursor.data },
     query: input.query,
   });
   const data = page.items.map((notebook: NotebookWithPermission) => ({
@@ -388,11 +419,14 @@ const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, c
     ref: { type: "notebooks.notebook" as const, id: notebook.shortId },
     links: [{ rel: "open" as const, href: notebookHref(notebook) }],
   }));
-  return ok({
-    data,
-    page: capabilityPage(cursor.data * input.limit < page.total ? encodePageCursor(cursor.data + 1) : undefined),
-    refs: page.items.map(notebookRef),
+  const result = (count: number) => ({
+    data: data.slice(0, count),
+    page: capabilityPage(cursor.data + count < page.total ? encodeOffsetCursor(cursor.data + count) : undefined),
+    refs: page.items.slice(0, count).map(notebookRef),
   });
+  let count = data.length;
+  while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+  return ok(result(count));
 };
 
 const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -407,18 +441,50 @@ const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, c
   });
 };
 
-const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: CapabilityExecutionContext) => {
+const runNotebookBrowse = async (input: z.infer<typeof NotebookListInputSchema>, context: CapabilityExecutionContext) => {
+  const result = await runNotebookList(input, context);
+  if (!result.ok) return result;
+  return ok({
+    ...result.data,
+    data: result.data.data.map((item) => ({
+      ref: item.ref,
+      title: item.name,
+      preview: item.description,
+      permission: item.permission,
+      homepageNoteId: item.homepageNoteId,
+      links: item.links,
+    })),
+  });
+};
+
+const runNoteTree = async (
+  input: z.infer<typeof NoteTreeInputSchema> & { parentId?: string },
+  context: CapabilityExecutionContext,
+  childrenOnly = false,
+) => {
   const cursor = decodeNotebookTreeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const access = await requireNotebookByShortId(input.notebookId, context);
   if (!access.ok) return access;
+  let parentId: string | null | undefined;
+  if (childrenOnly) {
+    parentId = null;
+    if (input.parentId) {
+      const parent = await requireNoteByShortId(input.parentId, context);
+      if (!parent.ok) return parent;
+      if (parent.data.notebook.id !== access.data.notebook.id) return capabilityNotFound(capabilityMessages(context).noteNotFound);
+      parentId = parent.data.note.id;
+    }
+  }
+  const limit = Math.min(input.limit, 100);
   const rows = await noteStore.listTreePage({
     notebookId: access.data.notebook.id,
     afterId: cursor.data,
-    limit: input.limit + 1,
+    limit: limit + 1,
+    ...(childrenOnly ? { parentId } : {}),
   });
-  const hasMore = rows.length > input.limit;
-  const pageRows = rows.slice(0, input.limit);
+  const hasMore = rows.length > limit;
+  const pageRows = rows.slice(0, limit);
   const shortIds = await noteStore.resolveIdsToShortIds({
     ids: pageRows.flatMap((note) => [note.id, ...(note.parentId ? [note.parentId] : [])]),
   });
@@ -431,12 +497,14 @@ const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: 
     hasChildren: note.hasChildren,
     links: [{ rel: "open" as const, href: noteHref(access.data.notebook, note) }],
   }));
-  const last = pageRows.at(-1);
-  return ok({
-    data,
-    page: capabilityPage(hasMore && last ? encodeTreeCursor(last.id) : undefined),
-    refs: pageRows.map((note) => noteRef(note, access.data.notebook.name)),
+  const result = (count: number) => ({
+    data: data.slice(0, count),
+    page: capabilityPage((hasMore || count < data.length) && count ? encodeTreeCursor(pageRows[count - 1]!.id) : undefined),
+    refs: pageRows.slice(0, count).map((note) => noteRef(note, access.data.notebook.name)),
   });
+  let count = data.length;
+  while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+  return ok(result(count));
 };
 
 const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -450,14 +518,14 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
   const end = Math.min(content.length, input.contentOffset + input.contentLimit);
   const blocks = summarizeNoteEditBlocks(content);
   const tags = noteTags.extractTags(content);
-  return ok({
+  const result = {
     data: {
       ...mapNote(note, resolved.data.notebook.shortId, await resolveParentShortId(note)),
       content: content.slice(input.contentOffset, end),
       contentOffset: input.contentOffset,
       contentLength: content.length,
       contentHash: noteContentHash(content),
-      contentComplete: end >= content.length,
+      contentComplete: input.contentOffset === 0 && end >= content.length,
       nextContentOffset: end < content.length ? end : null,
       lineCount: content.split("\n").length,
       tags: tags.slice(0, 500),
@@ -468,7 +536,22 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
     summary: t.readNote({ title: note.title }),
     refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
-  });
+  };
+  while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {
+    if (result.data.blocks.length) {
+      result.data.blocks = result.data.blocks.slice(0, Math.floor(result.data.blocks.length / 2));
+      result.data.blocksTruncated = true;
+    } else if (result.data.tags.length) {
+      result.data.tags = result.data.tags.slice(0, Math.floor(result.data.tags.length / 2));
+      result.data.tagsTruncated = true;
+    } else {
+      result.data.content = result.data.content.slice(0, Math.floor(result.data.content.length / 2));
+      result.data.contentComplete = false;
+      result.data.nextContentOffset = input.contentOffset + result.data.content.length;
+      if (!result.data.content.length) break;
+    }
+  }
+  return ok(result);
 };
 
 const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context: CapabilityExecutionContext) => {
@@ -514,7 +597,9 @@ const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context
   });
 };
 
-const mapComment = (comment: commentStore.NoteComment, notebook: Notebook, note: Note) => ({
+const mapComment = (comment: commentStore.NoteComment, notebook: Notebook, note: Note, permission: PermissionLevel) => ({
+  canEdit: comment.canEdit && hasPermission(permission, "write"),
+  canDelete: comment.canDelete && hasPermission(permission, "write"),
   id: comment.shortId,
   notebookId: notebook.shortId,
   noteId: note.shortId,
@@ -532,7 +617,9 @@ const requireCommentByShortId = async (shortId: string, context: CapabilityExecu
   const note = await noteStore.get({ id: comment.noteId });
   if (!note) return capabilityNotFound(t.commentNotFound);
   const access = await requireNotebook(note.notebookId, context, level);
-  return access.ok ? ok({ comment, note, notebook: access.data.notebook }) : capabilityNotFound(t.commentNotFound);
+  return access.ok
+    ? ok({ comment, note, notebook: access.data.notebook, permission: access.data.permission })
+    : capabilityNotFound(t.commentNotFound);
 };
 
 const requireMutableComment = async (commentId: string, context: CapabilityExecutionContext) => {
@@ -576,7 +663,7 @@ const runNotePreview = async (input: z.infer<typeof NotePreviewInputSchema>, con
 };
 
 const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
+  const cursor = decodeNotebookOffset(input.cursor, input.limit, context.locale);
   if (!cursor.ok) return cursor;
   const resolved = await requireNoteByShortId(input.noteId, context);
   if (!resolved.ok) return resolved;
@@ -584,21 +671,54 @@ const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, con
     notebookId: resolved.data.notebook.id,
     noteId: resolved.data.note.id,
     viewerUserId: context.user?.id ?? null,
-    pagination: { page: cursor.data, perPage: input.limit },
+    pagination: { page: 1, perPage: input.limit },
+    offset: cursor.data,
   });
   const data = page.items.map((comment) => ({
-    ...mapComment(comment, resolved.data.notebook, resolved.data.note),
+    ...mapComment(comment, resolved.data.notebook, resolved.data.note, resolved.data.permission),
     ref: { type: "notebooks.comment" as const, id: comment.shortId },
   }));
-  return ok({
-    data,
-    page: capabilityPage(page.hasNext ? encodePageCursor(cursor.data + 1) : undefined),
-    refs: [
-      ...page.items.map((comment) => commentRef(comment, resolved.data.note.title)),
-      noteRef(resolved.data.note, resolved.data.notebook.name),
-    ],
+  const result = (count: number) => ({
+    data: data.slice(0, count),
+    page: capabilityPage(page.hasNext || count < data.length ? encodeOffsetCursor(cursor.data + count) : undefined),
+    refs: page.items.slice(0, count).map((comment) => commentRef(comment, resolved.data.note.title)),
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
   });
+  let count = data.length;
+  while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+  return ok(result(count));
+};
+
+const runCommentBrowse = async (input: z.infer<typeof CommentListInputSchema>, context: CapabilityExecutionContext) => {
+  const cursor = decodeNotebookOffset(input.cursor, input.limit, context.locale);
+  if (!cursor.ok) return cursor;
+  const resolved = await requireNoteByShortId(input.noteId, context);
+  if (!resolved.ok) return resolved;
+  const page = await commentStore.listPage({
+    notebookId: resolved.data.notebook.id,
+    noteId: resolved.data.note.id,
+    viewerUserId: context.user?.id ?? null,
+    pagination: { page: 1, perPage: input.limit },
+    offset: cursor.data,
+  });
+  const data = page.items.map((item) => ({
+    ref: { type: "notebooks.comment" as const, id: item.shortId },
+    authorDisplayName: item.authorDisplayName,
+    createdAt: item.createdAt,
+    preview: item.content.slice(0, 300),
+    previewTruncated: item.content.length > 300,
+    canEdit: item.canEdit && hasPermission(resolved.data.permission, "write"),
+    canDelete: item.canDelete && hasPermission(resolved.data.permission, "write"),
+  }));
+  const result = (count: number) => ({
+    data: data.slice(0, count),
+    refs: page.items.slice(0, count).map((item) => commentRef(item, resolved.data.note.title)),
+    page: capabilityPage(page.hasNext || count < data.length ? encodeOffsetCursor(cursor.data + count) : undefined),
+    links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+  });
+  let count = data.length;
+  while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+  return ok(result(count));
 };
 
 const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -606,7 +726,7 @@ const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, con
   const resolved = await requireCommentByShortId(input.id, context);
   if (!resolved.ok) return resolved;
   return ok({
-    data: mapComment(resolved.data.comment, resolved.data.notebook, resolved.data.note),
+    data: mapComment(resolved.data.comment, resolved.data.notebook, resolved.data.note, resolved.data.permission),
     summary: t.readComment({ author: resolved.data.comment.authorDisplayName, title: resolved.data.note.title }),
     refs: [commentRef(resolved.data.comment, resolved.data.note.title), noteRef(resolved.data.note, resolved.data.notebook.name)],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
@@ -768,7 +888,7 @@ const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>,
       return fail(err.badInput(result.error.message));
     }
     return ok({
-      data: mapComment(result.data, resolved.data.notebook, resolved.data.note),
+      data: mapComment(result.data, resolved.data.notebook, resolved.data.note, resolved.data.permission),
       summary: t.commentCreated({ title: resolved.data.note.title }),
       refs: [commentRef(result.data, resolved.data.note.title), noteRef(resolved.data.note, resolved.data.notebook.name)],
       links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
@@ -791,7 +911,7 @@ const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>,
     });
     if (!result.ok) return commentMutationError(result.error.status, context.locale);
     return ok({
-      data: mapComment(result.data, notebook, note),
+      data: mapComment(result.data, notebook, note, resolved.data.permission),
       summary: t.commentUpdated({ title: note.title }),
       refs: [commentRef(result.data, note.title)],
       links: [{ rel: "open" as const, href: noteHref(notebook, note) }],
@@ -832,7 +952,7 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
   const resolved = await requireNoteByShortId(input.noteId, context, "write");
   if (!resolved.ok) return resolved;
   return audited(actionAudit(context, "note.edit", "note", resolved.data.note.id), async () => {
-    const { noteId, ...data } = input;
+    const { noteId, blockLimit = 500, ...data } = input;
     const result = await noteStore.editContent({
       noteId: resolved.data.note.id,
       data,
@@ -840,19 +960,24 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
       actor: activityActor(context),
     });
     if (!result.ok) return mutationError(result, context.locale);
-    return ok({
+    const receipt = {
       data: {
         note: mapNote(result.data.note, resolved.data.notebook.shortId, await resolveParentShortId(result.data.note)),
         changed: result.data.changed,
         beforeHash: result.data.beforeHash,
         afterHash: result.data.afterHash,
-        blocks: result.data.blocks.slice(0, 500),
-        blocksTruncated: result.data.blocks.length > 500,
+        blocks: result.data.blocks.slice(0, blockLimit),
+        blocksTruncated: result.data.blocks.length > blockLimit,
       },
       summary: noteEditCapabilitySummary(input.operations, result.data.note.title, result.data.changed, context.locale),
       refs: [noteRef(result.data.note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
       links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, result.data.note) }],
-    });
+    };
+    while (receipt.data.blocks.length && notebookEnvelopeBytes(receipt) > ENVELOPE_DATA_BUDGET) {
+      receipt.data.blocks = receipt.data.blocks.slice(0, Math.floor(receipt.data.blocks.length / 2));
+      receipt.data.blocksTruncated = true;
+    }
+    return ok(receipt);
   });
 };
 
@@ -939,6 +1064,15 @@ export const notebooksCapabilities = defineCapabilities({
       openWorld: false,
       run: runNotebookList,
     },
+    "notebook.browse": {
+      title: "Choose a notebook",
+      description:
+        "Compact notebook selection with effective permission and homepage. Use minimumPermission write before creating notes. Use returned ref.id with note.children or note.create; notebook.read is only needed for administrative details.",
+      input: NotebookListInputSchema,
+      data: NotebookBrowseDataSchema,
+      openWorld: false,
+      run: runNotebookBrowse,
+    },
     "notebook.read": {
       title: "Read notebook",
       description: "Read one notebooks.notebook ref returned by notebook.list or notebook.search, including its homepage note ID.",
@@ -950,16 +1084,25 @@ export const notebooksCapabilities = defineCapabilities({
     "note.tree": {
       title: "List note tree",
       description:
-        "Browse the hierarchy of one known notebook without loading Markdown. Get notebookId from notebook.list or notebook.search; use returned notebooks.note refs with note.read.",
+        "Browse the hierarchy of one known notebook without loading Markdown. Get notebookId from notebook.list or notebook.search; use returned notebooks.note refs with note.read. Each response returns at most 100 entries even for a larger requested limit; follow page.nextCursor for the rest. Prefer note.children to choose a local parent.",
       input: NoteTreeInputSchema,
       data: NoteTreeDataSchema,
       openWorld: false,
       run: runNoteTree,
     },
+    "note.children": {
+      title: "Browse child notes",
+      description:
+        "Browse immediate children without loading the whole tree. Omit parentId for roots; otherwise use a note from the same notebook. Follow page.nextCursor, open a child with note.read, or use its ID as note.create parentId.",
+      input: NoteChildrenInputSchema,
+      data: NoteTreeDataSchema,
+      openWorld: false,
+      run: (input, context) => runNoteTree(input, context, true),
+    },
     "note.read": {
       title: "Read note",
       description:
-        "Read one notebooks.note ref returned by note.search, note.tree, note.links, or tag.notes as a bounded Markdown window with hashes, tags, and named-block summaries.",
+        "Read one notebooks.note ref returned by note.search, note.tree, note.links, or tag.notes as a bounded Markdown window with hashes, tags, and named-block summaries. contentComplete means the entire source is present. Follow nextContentOffset while verifying contentHash is unchanged. Never replace a whole note with a partial window; prefer structural edits with ifContentHash.",
       input: NoteReadInputSchema,
       data: NoteDetailDataSchema,
       openWorld: false,
@@ -976,11 +1119,21 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "comment.list": {
       title: "List note comments",
-      description: "List durable Markdown discussion context for one known note, newest first.",
+      description:
+        "List complete Markdown comments for one known note, newest first. A response may contain fewer than limit to fit the transport budget; always follow page.nextCursor. Prefer comment.browse to select comments before reading full bodies.",
       input: CommentListInputSchema,
       data: CommentListDataSchema,
       openWorld: false,
       run: runCommentList,
+    },
+    "comment.browse": {
+      title: "Browse comment previews",
+      description:
+        "Select discussion context using short previews, newest first. Follow page.nextCursor; read the full text of any previewTruncated item with comment.read using ref.id.",
+      input: CommentListInputSchema,
+      data: CommentBrowseDataSchema,
+      openWorld: false,
+      run: runCommentBrowse,
     },
     "comment.read": {
       title: "Read note comment",

@@ -11,6 +11,7 @@ import {
   AI_SKILL_REFERENCE_MAX_CHARS,
   AI_SKILL_REFERENCE_MAX_ITEMS,
 } from "./skill-format";
+import { getBuiltinAiSkillTemplate } from "./skill-seeds";
 import {
   type AiSkill,
   AiSkillInputError,
@@ -57,6 +58,11 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("*"))
     .get("/", async (c) => respond(c, ok({ skills: (await aiSkills.list(c.get("accessSubject") ?? null)).map(publicSummary) })))
+    .get("/templates/:name", dependencies.authenticate ?? auth.requireRole("authenticated"), (c) => {
+      if (!c.get("accessSubject")) return respond(c, fail(err.forbidden("Skill templates require an authenticated access subject.")));
+      const template = getBuiltinAiSkillTemplate(c.req.param("name"));
+      return template ? respond(c, ok({ template })) : respond(c, fail(err.notFound("Skill template")));
+    })
     .post("/", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", SkillFieldsSchema), async (c) => {
       const subject = c.get("accessSubject");
       if (!subject) return respond(c, fail(err.forbidden("Skills require an authenticated access subject.")));
