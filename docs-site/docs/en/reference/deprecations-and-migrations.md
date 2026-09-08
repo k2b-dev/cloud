@@ -5,10 +5,45 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Deprecations and migrations
+
+## Grids schema baseline: bridge update
+
+This update retains the existing Grids migration paths and records
+`grids_schema_baseline_v1` after they finish successfully. Fresh databases
+receive the same marker. It uses the existing `grids.storage_contracts` table
+and commits with the schema changes; repeated startup preserves its original
+`activated_at` timestamp.
+
+Before updating an older installation, back up PostgreSQL and stop old Grids
+replicas and writers. Existing alpha migrations still include intentional
+removal of obsolete workflow, dashboard, and access structures; this update
+does not make those old transitions lossless. Start the bridge version after
+Core has prepared its authentication and workflow schemas, then verify:
+
+```sql
+SELECT name, activated_at
+FROM grids.storage_contracts
+WHERE name = 'grids_schema_baseline_v1';
+```
+
+One row confirms that the migration completed and checked the public-ID schema,
+the scalar contract, the workflow contract, and App definition versions. It does not certify
+artifact contents, business validity, or recovery of previously lost data.
+Missing resources can still leave a v5 App draft editable but invalid.
+An older App definition, including an archived one, prevents the first baseline
+activation; recover that definition and retry rather than inserting the marker
+manually. A failed migration does not create the marker.
+
+Keep a verified backup and the bridge build available. Do not run older Grids
+binaries against the marked schema. The planned next update will remove old
+migration code and accept only fresh schemas or this baseline; an older
+installation will need this bridge update first. That removal and rejection
+gate are **not part of this update**. Removing migration code must not delete
+current Records, grants, number-series state, Documents, or retained history.
 
 ## Mail automation authority is mandate-only
 

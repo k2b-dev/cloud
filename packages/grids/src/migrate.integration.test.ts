@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SQL, sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../core/src/migrate/core/workflows";
-import { gridsPublicIdsReady, migrate } from "./migrate";
+import { GRIDS_SCHEMA_BASELINE, gridsPublicIdsReady, migrate } from "./migrate";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./service/workflow-test-fixture";
 import { GRIDS_WORKFLOW_SCHEMA_VERSION } from "./workflows/migrate";
 
@@ -32,6 +32,66 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 };
 
 describe("grids schema migration", () => {
+  postgresTest(
+    "records the baseline only after all migration postconditions pass",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        await database`DELETE FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`;
+        const baseId = uuid();
+        const appId = uuid();
+        const definition = {
+          schemaVersion: 4,
+          kind: "grids.custom-app",
+          id: "APP001",
+          baseId: "BASE01",
+          name: "Archived draft",
+          startPageId: "home",
+          pages: [
+            {
+              id: "home",
+              title: "Home",
+              rows: [{ id: "row", columns: [{ id: "column", span: 12, blocks: [{ id: "intro", type: "markdown", markdown: "Hello" }] }] }],
+            },
+          ],
+        };
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'BASE01', 'Baseline')`;
+        await database`
+          INSERT INTO grids.custom_apps (id, short_id, base_id, name, draft_definition, draft_capabilities, deleted_at)
+          VALUES (${appId}::uuid, 'APP001', ${baseId}::uuid, 'Archived draft', ${definition}::jsonb, NULL, now())
+        `;
+        await database`ALTER TABLE grids.views ADD COLUMN query JSONB`.simple();
+
+        await expect(migrate(database)).rejects.toThrow("App APP001 still has a legacy definition");
+        expect(await database`SELECT name FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toHaveLength(0);
+        // The late check also rolls back earlier cleanup, not only the marker.
+        expect(
+          await database`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'views' AND column_name = 'query'
+        `,
+        ).toHaveLength(1);
+        const [preserved] = await database<Array<{ definition: unknown }>>`
+          SELECT draft_definition AS definition FROM grids.custom_apps WHERE id = ${appId}::uuid
+        `;
+        expect(preserved?.definition).toEqual(definition);
+
+        await database`
+          UPDATE grids.custom_apps SET draft_definition = ${{ ...definition, schemaVersion: 5 }}::jsonb
+          WHERE id = ${appId}::uuid
+        `;
+        await migrate(database);
+        expect(await database`SELECT name FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toHaveLength(1);
+        const [recovered] = await database<Array<{ capabilities: unknown }>>`
+          SELECT draft_capabilities AS capabilities FROM grids.custom_apps WHERE id = ${appId}::uuid
+        `;
+        expect(recovered?.capabilities).toBeNull();
+      });
+    },
+    30_000,
+  );
+
   postgresTest(
     "defines table-scoped Direct and Four-eyes Finalization storage",
     async () => {
@@ -285,8 +345,15 @@ describe("grids schema migration", () => {
       await withIsolatedDatabase(async (database) => {
         await migrateCoreWorkflows(database);
         await Promise.all([migrate(database), migrate(database)]);
+        const baseline = await database`
+          SELECT name, activated_at FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}
+        `;
+        expect(baseline).toHaveLength(1);
         await migrateCoreWorkflows(database);
         await migrate(database);
+        expect(await database`SELECT name, activated_at FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toEqual(
+          baseline,
+        );
         expect(await gridsPublicIdsReady(database)).toBe(true);
 
         const [row] = await database<Array<{ tableCount: number }>>`
@@ -1308,9 +1375,11 @@ describe("grids schema migration", () => {
         `;
         // Simulate the pre-v1 schema: a finalized six-character index means
         // the atomic public-ID/source migration has already completed.
+        await database`DELETE FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`;
         await database`DROP INDEX grids.idx_grids_custom_apps_short_id`.simple();
 
         await migrate(database);
+        expect(await database`SELECT name FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toHaveLength(1);
         const [migrated] = await database<Array<{ draft: typeof definition; published: typeof definition }>>`
           SELECT draft_definition AS draft, published_definition AS published
           FROM grids.custom_apps WHERE id = ${appId}::uuid
@@ -1437,6 +1506,7 @@ describe("grids schema migration", () => {
         `;
         await database`DROP INDEX grids.idx_grids_custom_apps_short_id`.simple();
 
+        await database`DELETE FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`;
         let migrationError: unknown;
         try {
           await migrate(database);
@@ -1468,6 +1538,7 @@ describe("grids schema migration", () => {
         const [record] = await database<Array<{ data: unknown }>>`SELECT data FROM grids.records WHERE id = ${recordId}::uuid`;
         expect(record?.data).toEqual({ keep: true });
         expect(await gridsPublicIdsReady(database)).toBe(false);
+        expect(await database`SELECT name FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toHaveLength(0);
       });
     },
     30_000,

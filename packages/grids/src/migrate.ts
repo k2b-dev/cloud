@@ -4,10 +4,11 @@ import { parseJsonbRow } from "./service/jsonb";
 import { numberSeriesFormatForField, numberSeriesSequenceName } from "./service/number-series";
 import { migratePersistedPublicIdReferences } from "./service/public-id-source-migration";
 import { newShortId, SHORT_ID_REGEX } from "./service/short-id";
-import { migrateGridsWorkflowTables } from "./workflows/migrate";
+import { GRIDS_WORKFLOW_SCHEMA_VERSION, migrateGridsWorkflowTables } from "./workflows/migrate";
 
 const MIGRATION_LOCK_NAME = "grids:migrate";
 const CANONICAL_SCALAR_STORAGE_CONTRACT = "canonical_scalar_values_v1";
+export const GRIDS_SCHEMA_BASELINE = "grids_schema_baseline_v1";
 
 const PUBLIC_ID_RESOURCES = [
   { table: "bases", key: "id", parent: null, index: "idx_grids_bases_short_id" },
@@ -2822,6 +2823,41 @@ const migrateOperationalHealth = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.operational_health view");
 };
 
+const recordSchemaBaseline = async (sql: SQL): Promise<void> => {
+  const [baseline] = await sql<Array<{ present: boolean }>>`
+    SELECT EXISTS (SELECT 1 FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}) AS present
+  `;
+  if (baseline?.present) return;
+
+  if (!(await gridsPublicIdsReady(sql))) throw new Error("cannot record Grids schema baseline: public IDs are not ready");
+  const [contracts] = await sql<Array<{ scalar: boolean; workflow: boolean }>>`
+    SELECT
+      EXISTS (SELECT 1 FROM grids.storage_contracts WHERE name = ${CANONICAL_SCALAR_STORAGE_CONTRACT}) AS scalar,
+      EXISTS (SELECT 1 FROM grids.workflow_migrations WHERE version = ${GRIDS_WORKFLOW_SCHEMA_VERSION}) AS workflow
+  `;
+  if (!contracts?.scalar || !contracts.workflow) throw new Error("cannot record Grids schema baseline: storage contracts are not ready");
+
+  // Check version boundaries, not business validity: unavailable resources may
+  // leave a v5 draft invalid but editable. Include archived Apps in the cutover.
+  const [legacyApp] = await sql<Array<{ shortId: string }>>`
+    SELECT short_id AS "shortId" FROM grids.custom_apps
+    WHERE draft_definition->>'schemaVersion' IS DISTINCT FROM '5'
+       OR (published_definition IS NOT NULL AND published_definition->>'schemaVersion' IS DISTINCT FROM '5')
+    LIMIT 1
+  `;
+  if (legacyApp)
+    throw new Error(
+      `cannot record Grids schema baseline: App ${legacyApp.shortId} still has a legacy definition; recover it before retrying`,
+    );
+
+  // Written last in the migration transaction. This is a completed upgrade
+  // checkpoint, not a replacement for constraints or a data-integrity audit.
+  await sql`
+    INSERT INTO grids.storage_contracts (name) VALUES (${GRIDS_SCHEMA_BASELINE})
+    ON CONFLICT (name) DO NOTHING
+  `;
+};
+
 export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
   const connection = await sql.reserve();
   let locked = false;
@@ -2857,6 +2893,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await removeObsoleteAccess(connection);
     await migrateRecordScanCodes(connection);
     await migrateOperationalHealth(connection);
+    await recordSchemaBaseline(connection);
     await connection`COMMIT`.simple();
     transactionStarted = false;
     console.log("  ✓ grids schema ready");
