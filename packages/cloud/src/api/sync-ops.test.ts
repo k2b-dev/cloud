@@ -150,7 +150,7 @@ describe("Core Sync operations broker", () => {
         return Response.json({ deleted: true });
       },
     });
-    for (const kind of ["queue", "job"]) {
+    for (const kind of ["queue", "job", "topic"]) {
       const path = `/dead-letters/${kind}/same/message`;
       expect((await routes.request(`/api/admin/sync/mail${path}`, { method: "DELETE" })).status).toBe(200);
       expect(operations.at(-1)).toBe(syncInvocationOperation("DELETE", path));
@@ -205,4 +205,27 @@ describe("Core Sync operations broker", () => {
       expect((await routes.request("/api/admin/sync/mail/resources")).status).toBe(502);
     }
   });
+});
+
+test("forwards topic replay as an operation-bound invocation", async () => {
+  const path = "/dead-letters/topic/telemetry/replay";
+  const routes = mount({
+    signInvocation: async (params) => {
+      expect(params.operation).toBe(syncInvocationOperation("POST", path));
+      return signInvocationToken(params);
+    },
+    fetch: async (url, init) => {
+      expect(String(url)).toBe(`http://app-mail:3000/_internal/sync${path}`);
+      expect(JSON.parse(String(init.body))).toEqual({ messageId: "42", consumer: "postgres-writer", tenantId: "ops" });
+      return Response.json({ completed: true });
+    },
+  });
+  expect(
+    (
+      await routes.request(`/api/admin/sync/mail${path}`, {
+        method: "POST",
+        body: JSON.stringify({ messageId: "42", consumer: "postgres-writer", tenantId: "ops" }),
+      })
+    ).status,
+  ).toBe(200);
 });

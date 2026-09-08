@@ -1,6 +1,14 @@
 /** Process-local Sync controls, exposed through Cloud's authenticated invocation boundary. */
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type DeadLetter, NotFoundError, type PublishReceipt, type ScheduleInfo, type Sync } from "@k2b/sync";
+import {
+  ConflictError,
+  type DeadLetter,
+  NotFoundError,
+  type PublishReceipt,
+  type ScheduleInfo,
+  type Sync,
+  SyncUsageError,
+} from "@k2b/sync";
 import { Hono } from "hono";
 import { z } from "zod";
 import { respond } from "../server/api/respond";
@@ -8,7 +16,7 @@ import type { AuthContext, RequestActor } from "../server/middleware/auth";
 import { v } from "../server/middleware/validator";
 import { type AuditActor, audit } from "./audit";
 
-export type SyncDeadLetterKind = "queue" | "job";
+export type SyncDeadLetterKind = "queue" | "job" | "topic";
 
 export type SyncDeadLetterEntry = {
   messageId: string;
@@ -19,6 +27,9 @@ export type SyncDeadLetterEntry = {
   error: string | null;
   /** Bounded JSON preview of the payload; the full message stays in the store. */
   dataPreview: string;
+  consumer?: string;
+  eventId?: string;
+  replayAvailable?: boolean;
 };
 
 export type SyncDeadLetterStoreView = {
@@ -101,14 +112,21 @@ const auditActor = (actor: RequestActor | undefined): AuditActor | null => {
 
 const asFailure = <T>(error: unknown, notFoundLabel: string): Result<T> => {
   if (error instanceof NotFoundError) return fail(err.notFound(notFoundLabel));
+  if (error instanceof ConflictError) return fail(err.conflict(error.message));
+  if (error instanceof SyncUsageError) return fail(err.badInput(error.message));
   return fail(err.internal(error instanceof Error ? error.message : String(error)));
 };
 
 const DeadLettersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(SYNC_OPS_DEAD_LETTER_LIMIT.max).default(SYNC_OPS_DEAD_LETTER_LIMIT.default),
 });
-const DeadLetterNameParamSchema = z.object({ kind: z.enum(["queue", "job"]), name: z.string().min(1).max(96) });
+const DeadLetterNameParamSchema = z.object({ kind: z.enum(["queue", "job", "topic"]), name: z.string().min(1).max(96) });
 const DeadLetterEntryParamSchema = DeadLetterNameParamSchema.extend({ messageId: z.string().min(1).max(256) });
+const ReplayBodySchema = z.object({
+  messageId: z.string().min(1).max(256),
+  consumer: z.string().min(1).max(96),
+  tenantId: z.string().min(1).max(256),
+});
 const RequeueBodySchema = z.object({ messageId: z.string().min(1).max(256) });
 const ScheduleParamSchema = z.object({ scheduler: z.string().min(1).max(96), id: z.string().min(1).max(96) });
 const RunParamSchema = ScheduleParamSchema.extend({ runId: z.string().min(1).max(256) });
@@ -154,12 +172,20 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const { limit } = c.req.valid("query");
         const entries = await Promise.all(
           stores().map(async (registration): Promise<SyncDeadLetterStoreView> => {
-            const page = await registration.deadLetters.list({ limit: limit + 1 });
+            const page: SyncDeadLetterEntry[] =
+              registration.kind === "topic"
+                ? (await registration.deadLetters.list({ limit: limit + 1 })).map((entry) => ({
+                    ...toEntry(entry),
+                    consumer: entry.consumer,
+                    eventId: entry.eventId,
+                    replayAvailable: entry.replayAvailable,
+                  }))
+                : (await registration.deadLetters.list({ limit: limit + 1 })).map(toEntry);
             return {
               name: registration.id,
               kind: registration.kind,
               description: null,
-              entries: page.slice(0, limit).map(toEntry),
+              entries: page.slice(0, limit),
               truncated: page.length > limit,
             };
           }),
@@ -173,6 +199,7 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const { messageId } = c.req.valid("json");
         const store = findStore(kind, name);
         if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
+        if (store.kind === "topic") return respond(c, fail(err.badInput("Topic dead letters must be replayed to their original consumer")));
         const idempotencyKey = `sync-ops:requeue:${crypto.randomUUID()}`;
         const result = await store.deadLetters
           .requeue({ messageId, idempotencyKey })
@@ -188,6 +215,34 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         });
         return respond(c, result);
       })
+
+      /** Retry the original consumer with the same event identity; never publish a new event. */
+      .post(
+        "/dead-letters/topic/:name/replay",
+        v("param", z.object({ name: z.string().min(1).max(96) })),
+        v("json", ReplayBodySchema),
+        async (c) => {
+          const { name } = c.req.valid("param");
+          const input = c.req.valid("json");
+          const store = findStore("topic", name);
+          if (!store || store.kind !== "topic") return respond(c, fail(err.notFound("Topic dead-letter store")));
+          const result = await store.deadLetters
+            .replay({ ...input, timeoutMs: 30_000, signal: c.req.raw.signal })
+            .then((receipt) => ok(receipt))
+            .catch((error: unknown) =>
+              asFailure<{ messageId: string; eventId: string; consumer: string; completed: true }>(error, "Dead letter"),
+            );
+          await auditLog.recordResultAfterSideEffect({
+            action: "sync.dead_letter.replay",
+            actor: auditActor(c.get("actor")),
+            target: { type: "sync_dead_letter", id: input.messageId, label: name },
+            metadata: { kind: "topic", consumer: input.consumer, tenantId: input.tenantId },
+            requestId: c.req.header("x-request-id") ?? null,
+            result,
+          });
+          return respond(c, result);
+        },
+      )
 
       /** Drop one dead letter permanently. */
       .delete("/dead-letters/:kind/:name/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {

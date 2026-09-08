@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { type DeadLetter, type DeadLetterStore, NotFoundError, type ScheduleInfo, type Sync, type SyncControl } from "@k2b/sync";
+import {
+  ConflictError,
+  type DeadLetter,
+  type DeadLetterStore,
+  NotFoundError,
+  type ScheduleInfo,
+  type Sync,
+  type SyncControl,
+  SyncUsageError,
+} from "@k2b/sync";
 import { Hono } from "hono";
 import type { AuthContext } from "../server/middleware/auth";
 import { createSyncOpsRoutes, type SyncOpsRoutesDependencies } from "./sync-ops";
@@ -350,4 +359,56 @@ describe("sync ops routes", () => {
     expect(queue.calls).toEqual([{ op: "delete", messageId: "shared" }]);
     expect(audits.map((entry) => entry.metadata?.kind)).toEqual(["job", "queue"]);
   });
+});
+
+test("topic dead letters retain consumer identity, replay without requeue, and audit failures", async () => {
+  const { controls, audits, json } = harness();
+  const calls: unknown[] = [];
+  const entry = { ...deadLetter("42"), consumer: "postgres-writer", eventId: "original-event", replayAvailable: true };
+  let failure: Error | undefined;
+  controls.push({
+    namespace: "test",
+    owner: "gateway-ops",
+    id: "telemetry",
+    kind: "topic",
+    deadLetters: {
+      list: async () => [entry],
+      get: async () => entry,
+      delete: async () => true,
+      replay: async (input) => {
+        calls.push(input);
+        if (failure) throw failure;
+        return { messageId: input.messageId, eventId: entry.eventId, consumer: input.consumer, completed: true };
+      },
+    },
+  });
+  const listed = await json("/dead-letters");
+  expect(listed.body.stores).toEqual([
+    expect.objectContaining({
+      kind: "topic",
+      entries: [expect.objectContaining({ consumer: "postgres-writer", eventId: "original-event", replayAvailable: true })],
+    }),
+  ]);
+  const request = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const input = { messageId: "42", consumer: "postgres-writer", tenantId: "default" };
+  expect((await json("/dead-letters/topic/telemetry/requeue", request(input))).status).toBe(400);
+  expect((await json("/dead-letters/topic/telemetry/replay", request({ messageId: "42" }))).status).toBe(400);
+  expect(calls).toHaveLength(0);
+  const replayed = await json("/dead-letters/topic/telemetry/replay", request(input));
+  expect(replayed.body).toEqual({ messageId: "42", eventId: "original-event", consumer: "postgres-writer", completed: true });
+  expect(calls[0]).toMatchObject({ ...input, timeoutMs: 30_000 });
+  expect(audits[0]).toMatchObject({
+    action: "sync.dead_letter.replay",
+    actor: { userId: ADMIN_ID },
+    metadata: { kind: "topic", consumer: "postgres-writer", tenantId: "default" },
+    result: { ok: true },
+  });
+  failure = new Error("writer unavailable");
+  expect((await json("/dead-letters/topic/telemetry/replay", request(input))).status).toBe(500);
+  expect(audits[1]).toMatchObject({ action: "sync.dead_letter.replay", result: { ok: false } });
+  failure = new ConflictError("The original consumer is already recovering this entry");
+  expect((await json("/dead-letters/topic/telemetry/replay", request(input))).status).toBe(409);
+  failure = new SyncUsageError("Historical entry has no original event context");
+  expect((await json("/dead-letters/topic/telemetry/replay", request(input))).status).toBe(400);
+  expect((await json("/dead-letters/topic/telemetry/42", { method: "DELETE" })).status).toBe(200);
 });

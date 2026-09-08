@@ -12,6 +12,7 @@ FROM oven/bun:1.3.14-alpine@sha256:5acc90a93e91ff07bf72aa90a7c9f0fa189765aec90b4
 WORKDIR /app
 
 COPY package.json bun.lock bunfig.toml ./
+COPY patches/ patches/
 COPY packages/accounts/package.json      packages/accounts/
 COPY packages/api-docs/package.json      packages/api-docs/
 COPY packages/assistant/package.json     packages/assistant/

@@ -42,6 +42,11 @@ jobs:
         working-directory: .
         run: bun ci --registry=https://registry.npmjs.org
 
+      - name: Require published Sync recovery support
+        working-directory: .
+        run: |
+          bun -e 'const root = await Bun.file("package.json").json(); if (Object.keys(root.patchedDependencies ?? {}).some(name => name.startsWith("@k2b/sync@"))) throw new Error("Publish and adopt the reviewed Sync release before publishing Cloud to npm; downstream consumers do not inherit this workspace patch.")'
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"

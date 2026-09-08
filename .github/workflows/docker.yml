@@ -76,7 +76,7 @@ jobs:
             fi
             changed=$(git diff --name-only "$base" HEAD || git diff --name-only HEAD~1 HEAD)
 
-            if echo "$changed" | grep -qE '^(packages/cloud/|Dockerfile|\.dockerignore|bun\.lock|bunfig\.toml|package\.json|styles\.css|\.github/workflows/docker\.yml)'; then
+            if echo "$changed" | grep -qE '^(packages/cloud/|patches/|Dockerfile|\.dockerignore|bun\.lock|bunfig\.toml|package\.json|styles\.css|\.github/workflows/docker\.yml)'; then
               apps="$ALL"
             else
               # Match packages/<id>/, intersect with ALL (drops pulse).

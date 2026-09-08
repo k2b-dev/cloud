@@ -639,6 +639,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@k2b/sync@6.3.2": "patches/@k2b%2Fsync@6.3.2.patch",
+  },
   "overrides": {
     "@k2b/sync": "6.3.2",
     "fast-uri": "3.1.5",

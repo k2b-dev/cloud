@@ -7,6 +7,7 @@ RUN test -n "$CLOUD_DOCS_SITE_URL" \
 ENV CLOUD_DOCS_SITE_URL=$CLOUD_DOCS_SITE_URL
 
 COPY package.json bun.lock bunfig.toml ./
+COPY patches/ patches/
 COPY docs-site/package.json docs-site/
 COPY packages/accounts/package.json packages/accounts/
 COPY packages/api-docs/package.json packages/api-docs/

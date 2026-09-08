@@ -30,8 +30,10 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
         method === "GET"
           ? /^\/(resources|dead-letters|schedules)$/.test(path) || /^\/schedules\/[^/]+\/[^/]+\/runs\/[^/]+$/.test(path)
           : method === "POST"
-            ? /^\/dead-letters\/(queue|job)\/[^/]+\/requeue$/.test(path) || /^\/schedules\/[^/]+\/[^/]+\/run-now$/.test(path)
-            : method === "DELETE" && /^\/dead-letters\/(queue|job)\/[^/]+\/[^/]+$/.test(path);
+            ? /^\/dead-letters\/(queue|job)\/[^/]+\/requeue$/.test(path) ||
+              /^\/dead-letters\/topic\/[^/]+\/replay$/.test(path) ||
+              /^\/schedules\/[^/]+\/[^/]+\/run-now$/.test(path)
+            : method === "DELETE" && /^\/dead-letters\/(queue|job|topic)\/[^/]+\/[^/]+$/.test(path);
       if (!allowed) return c.notFound();
       const app = await (dependencies.getApp ?? getApp)(c.req.param("appId"));
       if (!app) return c.json({ message: "App not found" }, 404);

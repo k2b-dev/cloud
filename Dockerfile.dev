@@ -4,6 +4,7 @@ WORKDIR /app
 # 1. Copy only package.json files first so the install layer is cached
 #    independently of source changes. Update this list when adding a new app.
 COPY package.json bun.lock bunfig.toml ./
+COPY patches/ patches/
 COPY packages/cloud/package.json packages/cloud/
 COPY packages/accounts/package.json packages/accounts/
 COPY packages/api-docs/package.json packages/api-docs/
