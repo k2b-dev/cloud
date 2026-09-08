@@ -219,7 +219,7 @@ monitoring as described in [NATS operations](/en/docs/operations/nats-operations
 
 ## Upgrade from Sync 6.2.0
 
-Deploy Cloud's pinned Sync 6.3.2 version after stopping every old producer and
+Deploy Cloud's pinned Sync 6.4.0 version after stopping every old producer and
 worker. Old workers can overwrite or delete repaired coalescing claims, so
 these versions must not share a running fleet. Keep Postgres, Valkey, and NATS
 data and take backups before starting the new release. If readiness reports a

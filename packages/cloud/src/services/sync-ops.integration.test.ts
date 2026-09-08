@@ -7,7 +7,7 @@ import { createSyncOpsRoutes } from "./sync-ops";
 
 const integration = process.env.CLOUD_SYNC_NATS_TEST === "1" ? test : test.skip;
 integration(
-  "installed Sync patch recovers a topic failure through the audited Cloud route without republishing",
+  "installed Sync recovers a topic failure through the audited Cloud route without republishing",
   async () => {
     const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222", ignoreClusterUpdates: true });
     const sync = createSync({ connection, namespace: `cloud-topic-ops-${crypto.randomUUID()}`, application: "test" });
@@ -82,7 +82,7 @@ integration(
 );
 
 integration(
-  "installed Sync patch paginates queue failures after cursor deletion and reads exact details",
+  "installed Sync paginates queue failures after cursor deletion and reads exact details",
   async () => {
     const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222", ignoreClusterUpdates: true });
     const sync = createSync({ connection, namespace: `cloud-dlq-pages-${crypto.randomUUID()}`, application: "test" });

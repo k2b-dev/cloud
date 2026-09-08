@@ -5,12 +5,8 @@ NATS JetStream. This requires a coordinated maintenance deployment. A Sync 5
 process cannot see Sync 6 registrations or work, and the new workers do not
 consume the old Redis queues.
 
-This checkout carries a reviewed Bun patch on Sync 6.3.2 for consumer-specific
-topic dead-letter recovery and its shutdown cleanup. Frozen installs and
-Docker builds apply it. No new Sync version has been published for this slice.
-Before publishing the Cloud npm library, publish and adopt the corresponding
-Sync version; downstream npm consumers do not inherit workspace patches.
-See [the patch instructions](patches/README.md).
+Cloud uses published Sync 6.4.0 for consumer-specific topic dead-letter recovery
+and bounded queue/job dead-letter inspection. No workspace patch is required.
 
 Keep Redis for Cloud caches, authentication flows, and Cloud-owned rate
 limits; those live outside the `sync:*` prefix. Do not flush Redis or delete
@@ -18,7 +14,7 @@ limits; those live outside the `sync:*` prefix. Do not flush Redis or delete
 checkpoints, and scheduler definitions) can still matter for recovery.
 
 Already running Sync 6.2.0? Use the
-[coordinated 6.3.2 upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
+[coordinated upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
 instead of repeating the Redis migration. Also follow the
 [notebook snapshot cutover](docs-site/docs/en/operations/notebooks-snapshot-cutover.md),
 [Grids runtime cutover](packages/grids/SYNC_RUNTIME_CUTOVER.md), and
