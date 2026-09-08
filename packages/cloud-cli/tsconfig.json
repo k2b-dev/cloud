@@ -19,6 +19,8 @@
       "@valentinkolb/cloud-app-spaces/cli": ["../spaces/src/cli.ts"],
       "@valentinkolb/cloud-app-tools/cli": ["../tools/src/cli.ts"]
     },
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,

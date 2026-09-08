@@ -7,7 +7,7 @@ import type {
   PublicFederatedSourceCandidate,
   PublicTable as Table,
 } from "../api/public-dto";
-import { PublicFederatedDraftInputSchema } from "../api/public-dto";
+import { PublicFederatedDraftInputSchema } from "../api/public-federated-contracts";
 import type { PublicRecordFinalizationStatus } from "../api/record-finalization";
 import type { MutationSource, TableKind, TableMutationPolicy } from "../contracts";
 

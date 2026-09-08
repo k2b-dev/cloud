@@ -1,3 +1,4 @@
+export { createWorkflowManifest } from "../manifest";
 export { bindWorkflow, type WorkflowCatalogBinder, type WorkflowCatalogBinding } from "./binder";
 export { canonicalWorkflowJson, hashWorkflowJson, hashWorkflowSource, normalizeWorkflowJson } from "./canonical";
 export { type CompileWorkflowResult, compileWorkflow } from "./compiler";

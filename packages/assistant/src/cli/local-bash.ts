@@ -1,4 +1,5 @@
-import { type CloudAiLocalBashInput, CloudAiLocalBashInputSchema, type CloudAiLocalBashOutput } from "@valentinkolb/cloud/ai";
+import type { CloudAiLocalBashInput, CloudAiLocalBashOutput } from "@valentinkolb/cloud/ai";
+import { CloudAiLocalBashInputSchema } from "@valentinkolb/cloud/ai/browser";
 
 const LOCAL_BASH_TIMEOUT_MS = 120_000;
 const LOCAL_BASH_MAX_STREAM_BYTES = 512 * 1024;

@@ -1,4 +1,5 @@
-import { type AiStoredMessage, type AiStreamSseEvent, type AiTurnBlock, parseAiSse } from "@valentinkolb/cloud/ai";
+import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@valentinkolb/cloud/ai";
+import { parseAiSse } from "@valentinkolb/cloud/ai/browser";
 import type { CloudCliContext } from "@valentinkolb/cloud/cli";
 import { AI_API, jsonRequest } from "./shared";
 

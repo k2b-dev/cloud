@@ -13,6 +13,14 @@ updated: 2026-08-05
 An application defines the language its users can author. It compiles and binds
 source before publishing an immutable version.
 
+Offline authoring tools can build the same language manifest with
+`createWorkflowManifest()` from `@valentinkolb/cloud/workflows/language`.
+Pass the language identity, limits, inputs, triggers, and an `actions` map with
+each action's `label`, `description`, `config`, `effect`, and optional
+`outputType`. Keep that metadata in a module without server imports and reuse
+it in the executable action declarations. This lets a CLI show the complete
+workflow reference without initializing application services.
+
 ## Define actions and runtime event names
 
 ```ts

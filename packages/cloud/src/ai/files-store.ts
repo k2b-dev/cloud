@@ -1,5 +1,7 @@
 import { sql } from "bun";
 
+export { guessAiMediaType } from "./file-media-type";
+
 /** Per-file and per-conversation caps — read once per operation from settings by the caller layer if needed. */
 export const AI_FILES_MAX_FILE_BYTES_DEFAULT = 50 * 1024 * 1024;
 export const AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT = 250 * 1024 * 1024;
@@ -105,35 +107,6 @@ export const decodeAiFileContent = (content: string, encoding: "utf8" | "base64"
   const bytes = Buffer.from(content, "base64");
   if (bytes.toString("base64") !== content) throw new Error("Invalid base64 file content.");
   return new Uint8Array(bytes);
-};
-
-const MEDIA_TYPES: Record<string, string> = {
-  txt: "text/plain",
-  md: "text/markdown",
-  csv: "text/csv",
-  tsv: "text/tab-separated-values",
-  json: "application/json",
-  yaml: "application/yaml",
-  yml: "application/yaml",
-  xml: "application/xml",
-  html: "text/html",
-  css: "text/css",
-  js: "text/javascript",
-  ts: "text/typescript",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  pdf: "application/pdf",
-  zip: "application/zip",
-  ics: "text/calendar",
-};
-
-export const guessAiMediaType = (path: string): string => {
-  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  return MEDIA_TYPES[ext] ?? "application/octet-stream";
 };
 
 /**

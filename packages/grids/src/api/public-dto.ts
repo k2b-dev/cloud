@@ -1,5 +1,9 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { z } from "zod";
+import { PublicFederatedDraftInputSchema, PublicFederatedMappingSchema } from "./public-federated-contracts";
+
+export { PublicFederatedDraftInputSchema } from "./public-federated-contracts";
+
 import {
   type Base,
   BaseSchema,
@@ -170,23 +174,6 @@ const PublicFederatedDiagnosticSchema = z
     sourceTableId: ShortIdSchema.optional(),
     targetFieldId: ShortIdSchema.optional(),
     sourceFieldId: ShortIdSchema.optional(),
-  })
-  .strict();
-const PublicFederatedMappingSchema = z
-  .object({
-    targetFieldId: ShortIdSchema,
-    sourceTableId: ShortIdSchema,
-    sourceFieldId: ShortIdSchema,
-    config: z.record(z.string(), z.unknown()),
-  })
-  .strict();
-const PublicFederatedMappingWriteSchema = PublicFederatedMappingSchema.extend({
-  config: z.record(z.string(), z.unknown()).optional(),
-});
-export const PublicFederatedDraftInputSchema = z
-  .object({
-    sourceTableIds: z.array(ShortIdSchema).max(50),
-    mappings: z.array(PublicFederatedMappingWriteSchema).max(10_000),
   })
   .strict();
 export const PublicUpdateFederatedDraftSchema = PublicFederatedDraftInputSchema.extend({ draftToken: z.string().min(1) });

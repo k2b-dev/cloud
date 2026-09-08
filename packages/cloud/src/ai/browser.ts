@@ -1,6 +1,16 @@
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiConversation, AiDraftContentPart } from "./types";
 
+export { parseAiSse } from "./client/transport";
+export {
+  CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
+  CloudAiCardInputSchema,
+  CloudAiLocalBashInputSchema,
+  CloudAiSurveyInputSchema,
+  CloudAiTextEditorInputSchema,
+} from "./default-tool-contracts";
+export { guessAiMediaType } from "./file-media-type";
+export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
 export {
   AI_SKILL_REFERENCE_MAX_ITEMS,
   AI_SKILL_REFERENCES_MAX_CHARS,
@@ -10,6 +20,7 @@ export {
   serializeAiSkillMarkdown,
   validateAiSkillReferences,
 } from "./skill-format";
+export { isAiImageMediaType } from "./types";
 
 export type LaunchAssistantInput = {
   title?: string;

@@ -1,21 +1,21 @@
 import { basename } from "node:path";
-import {
-  type AiConversation,
-  type AiConversationResourceOccurrence,
-  type AiConversationResourceRef,
-  type AiConversationTimelineEntry,
-  type AiFileStat,
-  type AiPendingTurnAction,
-  type AiPublicModelProfile,
-  type AiStoredMessage,
-  type AiUserPrefs,
-  guessAiMediaType,
+import type {
+  AiConversation,
+  AiConversationResourceOccurrence,
+  AiConversationResourceRef,
+  AiConversationTimelineEntry,
+  AiFileStat,
+  AiPendingTurnAction,
+  AiPublicModelProfile,
+  AiStoredMessage,
+  AiUserPrefs,
 } from "@valentinkolb/cloud/ai";
+import { guessAiMediaType } from "@valentinkolb/cloud/ai/browser";
 import { arg, command, confirmFlag, flag, readCliInput } from "@valentinkolb/cloud/cli";
+import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
 import { type ConversationDetail, conversationPath, submitAndMaybeWatch } from "./turn";
-import { buildAssistantChatDiagnostic } from "./diagnostics";
 
 type FullConversationDetail = ConversationDetail & {
   messages: AiStoredMessage[];
@@ -517,9 +517,7 @@ export const assistantManagementCommands = [
     },
     flags: { out: flag.string({ description: "Local output path; defaults to the remote file name" }) },
     async run({ ctx, args, flags }) {
-      const response = await ctx.fetch(
-        `${AI_API}${conversationPath(args.chat, "/files/content")}${queryString({ path: args.path })}`,
-      );
+      const response = await ctx.fetch(`${AI_API}${conversationPath(args.chat, "/files/content")}${queryString({ path: args.path })}`);
       if (!response.ok) await ctx.readJson(response);
       const out = flags.out ?? basename(args.path);
       await Bun.write(out, await response.arrayBuffer());

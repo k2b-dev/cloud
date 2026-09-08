@@ -10,7 +10,7 @@
   "scripts": {
     "build": "bun run scripts/build.ts",
     "test": "bun --cwd=../.. test packages/cloud-cli/src",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
     "@valentinkolb/cloud": "workspace:*",

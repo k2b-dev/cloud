@@ -1,16 +1,18 @@
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
+import type {
+  AiFileStat,
+  AiPendingTurnAction,
+  AiPublicModelProfile,
+  CloudAiSurveyInput,
+  CloudAiTextEditorInput,
+} from "@valentinkolb/cloud/ai";
 import {
   AI_TURN_ATTACHMENT_MAX_ITEMS,
-  type AiFileStat,
-  type AiPendingTurnAction,
-  type AiPublicModelProfile,
   CloudAiCardInputSchema,
-  type CloudAiSurveyInput,
   CloudAiSurveyInputSchema,
-  type CloudAiTextEditorInput,
   CloudAiTextEditorInputSchema,
-} from "@valentinkolb/cloud/ai";
+} from "@valentinkolb/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@valentinkolb/cloud/cli";
 import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
 import { jsonRequest, readApi } from "./shared";

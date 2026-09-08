@@ -175,7 +175,12 @@ Each execution attempt starts with one atomic, server-ordered block baseline.
 Resuming after an approval or frontend-tool response therefore keeps every
 existing item in its persisted timeline position while new output is appended.
 The same event feed backs both browser WebSockets and SSE. Use `parseAiSse()`
-for a low-level or CLI client. Solid applications should use
+from `@valentinkolb/cloud/ai/browser` for a low-level or CLI client. This
+client entry point also exports attachment limits, `guessAiMediaType()`,
+`isAiImageMediaType()`, the card, survey, text-editor, and local-bash input
+schemas, and `CLOUD_AI_TEXT_EDITOR_MAX_CHARS`. These helpers do not initialize
+Cloud server services. Import AI types with `import type` from
+`@valentinkolb/cloud/ai`. Solid applications should use
 `createAiChatController()` from `@valentinkolb/cloud/ai/solid`; it uses SSE by
 default and accepts a supported conversation-stream transport when its host
 already owns a shared connection.

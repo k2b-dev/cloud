@@ -1,16 +1,12 @@
 import { basename } from "node:path";
+import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnBlock, AiTurnContentPart } from "@valentinkolb/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
   AI_TURN_IMAGE_MAX_TOTAL_BYTES,
-  type AiConversation,
-  type AiDraftContentPart,
-  type AiFileStat,
-  type AiTurnBlock,
-  type AiTurnContentPart,
   guessAiMediaType,
   isAiImageMediaType,
-} from "@valentinkolb/cloud/ai";
+} from "@valentinkolb/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@valentinkolb/cloud/cli";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
@@ -101,13 +97,7 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
     ...(input.message?.trim() ? [{ type: "text" as const, text: input.message.trim() }] : []),
     ...(input.content ?? []).flatMap((part): AiDraftContentPart[] => {
       if (part.type === "text" && part.text?.trim()) return [{ type: "text" as const, text: part.text.trim() }];
-      if (
-        part.type === "attachment" &&
-        part.path &&
-        part.mediaType &&
-        typeof part.size === "number" &&
-        typeof part.version === "number"
-      ) {
+      if (part.type === "attachment" && part.path && part.mediaType && typeof part.size === "number" && typeof part.version === "number") {
         return [{ type: "file" as const, path: part.path, mediaType: part.mediaType, size: part.size, version: part.version }];
       }
       return [];
@@ -140,9 +130,7 @@ export const submitAssistantTurn = async (input: {
   if (streamResponse && (!streamResponse.ok || !streamResponse.body)) await input.ctx.readJson(streamResponse);
   let submitted: TurnSubmission;
   try {
-    const body = input.path.endsWith("/turns")
-      ? await submitDraftBody(input.ctx, input.conversationId, input.body)
-      : input.body;
+    const body = input.path.endsWith("/turns") ? await submitDraftBody(input.ctx, input.conversationId, input.body) : input.body;
     submitted = await readApi<TurnSubmission>(input.ctx, input.path, jsonRequest("POST", body));
   } catch (error) {
     await streamResponse?.body?.cancel().catch(() => undefined);

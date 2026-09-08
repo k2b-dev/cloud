@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { defineWorkflowModule } from "@valentinkolb/cloud/workflows";
 import { hashWorkflowJson } from "@valentinkolb/cloud/workflows/language";
 import { gridsWorkflows } from "./module";
 
 const gridsWorkflowManifest = gridsWorkflows.manifest;
 
 describe("Grids workflow manifest", () => {
+  test("client metadata matches executable action declarations", () => {
+    expect(defineWorkflowModule({ ...gridsWorkflowManifest, actions: gridsWorkflows.actions }).manifest).toEqual(gridsWorkflowManifest);
+  });
+
   test("is serializable and has unique vocabulary keys", () => {
     expect(JSON.parse(JSON.stringify(gridsWorkflowManifest))).toEqual(gridsWorkflowManifest);
     for (const descriptors of [gridsWorkflowManifest.inputs, gridsWorkflowManifest.triggers, gridsWorkflowManifest.actions]) {
