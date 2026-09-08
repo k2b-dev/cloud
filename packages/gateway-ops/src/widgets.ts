@@ -29,9 +29,11 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
       grow: true,
       tone: health.status,
       title:
-        unhealthy === 0
+        unhealthy === 0 && health.status === "ok"
           ? t.allSystemsOperational
-          : t.appsNeedAttention({ unhealthy: formatNumber(unhealthy, { locale }), total: formatNumber(total, { locale }) }),
+          : unhealthy === 0
+            ? t.needsAttention
+            : t.appsNeedAttention({ unhealthy: formatNumber(unhealthy, { locale }), total: formatNumber(total, { locale }) }),
       message: snapshot
         ? t.gatewayUptime({ uptime: formatDurationMs(Date.now() - snapshot.startedAt, { locale }), total: formatNumber(total, { locale }) })
         : t.widgetNoRouterSnapshot({ total: formatNumber(total, { locale }) }),

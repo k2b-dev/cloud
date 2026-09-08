@@ -1,4 +1,4 @@
-import { DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
@@ -41,12 +41,15 @@ export default ssr<AuthContext>(async (c) => {
   const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const overview = await syncOpsService.overview(syncOpsCredentials(c.req.raw));
+  const selectedResource = new URL(c.req.url).searchParams.get("resource");
   const number = (value: number) => formatNumber(value, { locale });
 
   const reachable = overview.apps.filter((app) => app.status === "ok");
   const unavailable = overview.apps.filter((app) => app.status !== "ok");
   const attention = overview.resources.filter(needsAttention);
-  const listedResources = overview.resources.filter(isListedResource);
+  const listedResources = overview.resources.filter((resource) =>
+    selectedResource ? resource.id === selectedResource : isListedResource(resource),
+  );
   const failingSchedules = overview.schedules.filter((schedule) => schedule.failureCount > 0 || schedule.lastError);
 
   const appColumns: DataTableColumn<SyncAppRow>[] = [
@@ -100,6 +103,11 @@ export default ssr<AuthContext>(async (c) => {
         </div>
 
         <NoticeCard tone="info" icon="ti ti-layers-intersect" title={t.syncLayersTitle} detail={t.syncLayersNotice} />
+        <div>
+          <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
+            NATS
+          </ButtonLink>
+        </div>
 
         <StatGrid columns={4}>
           <StatCell
@@ -150,6 +158,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
           <DataTable
             rows={overview.apps}
+            surface="plain"
             columns={appColumns}
             getRowId={(row) => row.appId}
             density="compact"
@@ -187,7 +196,17 @@ export default ssr<AuthContext>(async (c) => {
             empty={t.syncNoDeadLetters}
             renderCell={({ row, col, value, render }) => {
               if (col.id === "actions")
-                return <DeadLetterActions kind={row.kind} appId={row.appId} store={row.store} messageId={row.messageId} />;
+                return (
+                  <DeadLetterActions
+                    kind={row.kind}
+                    appId={row.appId}
+                    store={row.store}
+                    messageId={row.messageId}
+                    tenantId={row.tenantId}
+                    consumer={row.consumer}
+                    replayAvailable={row.replayAvailable}
+                  />
+                );
               if (col.id === "failedAt") return <span class="tabular-nums">{formatDateTime(row.failedAt, dateConfig)}</span>;
               if (col.id === "store") return <span title={row.description ?? row.kind}>{`${row.store} · ${row.kind}`}</span>;
               if (col.id === "reason")
@@ -203,6 +222,11 @@ export default ssr<AuthContext>(async (c) => {
           <div class="px-3 py-2">
             <h2 class="text-xs font-semibold text-primary">{t.syncResources}</h2>
             <p class="text-[10px] text-dimmed">{t.syncResourcesHint}</p>
+            {selectedResource ? (
+              <a class="link text-xs" href="/admin/observability/sync">
+                {t.clearSearch}: {selectedResource}
+              </a>
+            ) : null}
           </div>
           <DataTable
             rows={listedResources}
@@ -214,6 +238,12 @@ export default ssr<AuthContext>(async (c) => {
             empty={t.syncNoResources}
             renderCell={({ row, col, value, render }) => {
               if (col.id === "state") return <StatusBadge tone={resourceTone(row.state)} label={row.state} variant="dot" />;
+              if (col.id === "id" && row.natsNames[0])
+                return (
+                  <a class="link" href={`/admin/observability/nats?stream=${encodeURIComponent(row.natsNames[0])}`}>
+                    {render(value)}
+                  </a>
+                );
               if (col.id === "deadLetters" && row.deadLetters !== null && row.deadLetters > 0) {
                 return <span class="tabular-nums font-semibold text-red-500">{number(row.deadLetters)}</span>;
               }

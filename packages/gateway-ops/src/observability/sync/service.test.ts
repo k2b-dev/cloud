@@ -334,3 +334,55 @@ describe("sync ops aggregation", () => {
     expect(isListedResource(row("ephemeral", "failed"))).toBe(true);
   });
 });
+
+test("aggregates topic recovery metadata and routes replay through Core without republishing", async () => {
+  const { calls, fetch } = fakeFetch((call) => {
+    if (call.url.endsWith("/resources")) return json({ health, resources: [] });
+    if (call.url.endsWith("/schedules")) return json({ schedules: [] });
+    if (call.url.endsWith("/dead-letters"))
+      return json({
+        stores: [
+          {
+            name: "telemetry",
+            kind: "topic",
+            description: null,
+            truncated: false,
+            entries: [
+              {
+                messageId: "42",
+                eventId: "original",
+                consumer: "postgres-writer",
+                tenantId: "ops",
+                replayAvailable: false,
+                dataPreview: "{}",
+                attempts: 5,
+                failedAt: "2026-09-08T00:00:00Z",
+                reason: "failed",
+                error: null,
+              },
+            ],
+          },
+        ],
+      });
+    return json({ messageId: "42", eventId: "original", consumer: "postgres-writer", completed: true });
+  });
+  const service = createSyncOpsService({ listApps: async () => [app("gateway")], fetch, coreOrigin: async () => "http://core:3000" });
+  const overview = await service.overview(credentials);
+  expect(overview.apps[0]?.status).toBe("ok");
+  expect(overview.deadLetters[0]).toMatchObject({
+    kind: "topic",
+    consumer: "postgres-writer",
+    eventId: "original",
+    replayAvailable: false,
+  });
+  const result = await service.replayDeadLetter(
+    { appId: "gateway", store: "telemetry", messageId: "42", consumer: "postgres-writer", tenantId: "ops" },
+    credentials,
+  );
+  expect(result.ok).toBe(true);
+  expect(calls.at(-1)).toMatchObject({
+    url: "http://core:3000/api/admin/sync/gateway/dead-letters/topic/telemetry/replay",
+    method: "POST",
+    body: JSON.stringify({ messageId: "42", consumer: "postgres-writer", tenantId: "ops" }),
+  });
+});

@@ -42,6 +42,24 @@ const baseHealth = {
 } satisfies GatewayHealth;
 
 describe("scopeGatewayHealth", () => {
+  test("shared broker failures remain visible for an app-scoped webhook", () => {
+    const scoped = scopeGatewayHealth(
+      {
+        ...baseHealth,
+        sync: {
+          status: "warn",
+          signals: ["Sync broker inventory is incomplete or unavailable"],
+          checkedAt: baseHealth.checkedAt,
+          complete: false,
+        },
+      },
+      ["app-a"],
+    );
+    expect(scoped.status).toBe("warn");
+    expect(scoped.summary.degraded).toBe(0);
+    expect(scoped.sync?.signals).toHaveLength(1);
+  });
+
   test("recomputes app counters for scoped health without changing gateway-wide route counters", () => {
     const scoped = scopeGatewayHealth(baseHealth, ["app-a"]);
 
@@ -80,10 +98,13 @@ describe("scopeGatewayHealth", () => {
     expect(scoped.summary.degraded).toBe(1);
   });
 
-  test("keeps empty scope behavior compatible with the existing all-app health view", () => {
+  test("an empty include scope or excluding every app never expands back to all apps", () => {
     const scoped = scopeGatewayHealth(baseHealth, []);
 
-    expect(scoped.summary.apps).toBe(2);
-    expect(scoped.summary.degraded).toBe(1);
+    expect(scoped.summary.apps).toBe(0);
+    expect(scoped.summary.degraded).toBe(0);
+    expect(scoped.status).toBe("ok");
+    expect(scoped.apps).toEqual([]);
+    expect(scopeGatewayHealth(baseHealth).summary.apps).toBe(2);
   });
 });

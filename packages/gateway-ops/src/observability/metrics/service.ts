@@ -6,6 +6,9 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { getGridsOperationalSnapshot, listAppSloWindows } from "../../grids-operational-health";
 import { listRegisteredAppStatus } from "../../registered-apps";
 import { getPostgresDiagnostics, getRedisDiagnostics } from "../data/service";
+import { getNatsClusterDiagnostics, getNatsInventorySummary } from "../nats/service";
+import { natsMetricSamples } from "../nats/metrics";
+import { getNatsConsumerMetricSamples } from "../nats/consumer-metrics";
 
 export const METRICS_ENDPOINT = "/metrics";
 export const METRICS_SCOPE = "metrics:read";
@@ -72,6 +75,7 @@ export type CreatedMetricsToken = {
 };
 
 type CollectorDefinition = {
+  timeoutMs?: number;
   id: string;
   name: string;
   description: string;
@@ -688,6 +692,50 @@ const metricCatalog: CollectorDefinition[] = [
   },
 ];
 
+metricCatalog.push({
+  id: "nats",
+  name: "NATS and Sync",
+  description: "Broker capacity, replication and complete account-level Sync inventory.",
+  timeoutMs: 12_000,
+  metricNames: [
+    "cloud_nats_cluster_configured",
+    "cloud_nats_cluster_up",
+    "cloud_nats_inventory_up",
+    "cloud_nats_jetstream_enabled",
+    "cloud_nats_node_storage_bytes",
+    "cloud_nats_node_storage_limit_bytes",
+    "cloud_nats_node_memory_bytes",
+    "cloud_nats_node_memory_limit_bytes",
+    "cloud_nats_meta_replicas_unhealthy",
+    "cloud_nats_account_streams",
+    "cloud_nats_account_storage_bytes",
+    "cloud_sync_streams",
+    "cloud_sync_storage_bytes",
+    "cloud_sync_messages",
+    "cloud_sync_consumers",
+    "cloud_sync_dead_letters",
+    "cloud_sync_streams_replication_unhealthy",
+    "cloud_nats_consumer_inventory_up",
+    "cloud_nats_consumers_pending",
+    "cloud_nats_consumers_ack_pending",
+    "cloud_nats_consumers_redelivered",
+    "cloud_sync_consumers_pending",
+    "cloud_sync_consumers_ack_pending",
+    "cloud_sync_consumers_redelivered",
+  ],
+  collect: async () => {
+    const [cluster, inventory] = await Promise.all([getNatsClusterDiagnostics(), getNatsInventorySummary()]);
+    return [...natsMetricSamples(cluster, inventory), ...(await getNatsConsumerMetricSamples(inventory))];
+  },
+  degraded: (samples) =>
+    upGaugeIsDown(samples, "cloud_nats_inventory_up") ||
+    upGaugeIsDown(samples, "cloud_nats_consumer_inventory_up") ||
+    (samples.some((sample) => sample.name === "cloud_nats_cluster_configured" && sample.value === 1) &&
+      upGaugeIsDown(samples, "cloud_nats_cluster_up"))
+      ? "NATS diagnostics are unavailable or incomplete."
+      : null,
+});
+
 export const metricsCollectors = metricCatalog.map(({ id, name, description, metricNames }) => ({ id, name, description, metricNames }));
 
 const selfMetric = (name: string, help: string, value: number, labels?: MetricLabels): MetricSample => ({
@@ -702,7 +750,7 @@ const runCollector = async (collector: CollectorDefinition): Promise<{ status: M
   const start = performance.now();
   const lastRunAt = nowIso();
   try {
-    const samples = await withTimeout(collector.name, collector.collect(), COLLECTOR_TIMEOUT_MS);
+    const samples = await withTimeout(collector.name, collector.collect(), collector.timeoutMs ?? COLLECTOR_TIMEOUT_MS);
     const degraded = collector.degraded?.(samples) ?? null;
     return {
       samples,

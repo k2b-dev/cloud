@@ -53,6 +53,14 @@ services:
   app-gateway-ops:
     <<: *app-defaults
     image: ghcr.io/valentinkolb/cloud-app-gateway-ops:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    # System-account diagnostics credentials belong only to Gateway Ops.
+    # Mount the referenced files here, never in the shared application volumes.
+    environment:
+      <<: *shared-env
+      NATS_ADMIN_SERVERS: ${NATS_ADMIN_SERVERS:-}
+      NATS_ADMIN_CREDS_FILE: ${NATS_ADMIN_CREDS_FILE:-}
+      NATS_ADMIN_NKEY_SEED_FILE: ${NATS_ADMIN_NKEY_SEED_FILE:-}
+      NATS_ADMIN_TLS_CA_FILE: ${NATS_ADMIN_TLS_CA_FILE:-}
 
   # Apps — internal only, reached through the gateway.
   app-core:

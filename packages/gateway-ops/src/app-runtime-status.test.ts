@@ -14,9 +14,10 @@ const app = (id: string, syncVersion: string): AppRegistryEntry => ({
 
 describe("buildAppRuntimeStatuses", () => {
   test("attaches compatibility reasons to every affected app", () => {
-    const statuses = buildAppRuntimeStatuses([app("old", "5.8.9"), app("new", "5.9.1")], []);
+    const statuses = buildAppRuntimeStatuses([app("old", "5.9.1"), app("new", "6.3.2")], []);
     expect(statuses.get("old")?.status).toBe("error");
-    expect(statuses.get("new")?.signals[0]).toContain("durable namespaces");
+    expect(statuses.get("new")?.status).toBe("error");
+    expect(statuses.get("new")?.signals[0]).toContain("registrations or durable work");
   });
 
   test("keeps rejected unknown apps visible", () => {

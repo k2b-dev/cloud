@@ -9,6 +9,8 @@ x-nats: &nats
   configs:
     - source: nats_config
       target: /etc/nats/nats.conf
+    - source: nats_system_config
+      target: /etc/nats/system.conf
   healthcheck:
     test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
     interval: 2s
@@ -106,8 +108,12 @@ services:
       - "3001:3000"
 
 configs:
+  # Prepared by bun run dev:infra; contains only the admin public key.
+  nats_system_config:
+    file: ./.local/nats/system.conf
   nats_config:
     content: |
+      include system.conf
       # max_payload must cover the largest @k2b/sync publish (notebooks Yjs
       # full-state resync is ~8 MB); sync's ready() refuses smaller servers.
       max_payload: 16MB

@@ -105,6 +105,7 @@ export const consumeTelemetry = async (signal: AbortSignal): Promise<void> => {
   const worker = await gatewayTelemetryTopic().process(
     {
       consumer: WORKER_GROUP,
+      recoverDeadLetters: true,
       tenantId: GATEWAY_TELEMETRY_TENANT,
       start: "earliest",
       concurrency: 1,

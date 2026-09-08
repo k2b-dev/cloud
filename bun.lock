@@ -308,6 +308,7 @@
         "@k2b/stdlib": "catalog:",
         "@k2b/sync": "catalog:",
         "@k2b/ui": "workspace:*",
+        "@nats-io/transport-node": "catalog:",
         "@valentinkolb/cloud": "workspace:*",
         "hono": "catalog:",
         "hono-openapi": "catalog:",

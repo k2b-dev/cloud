@@ -819,7 +819,8 @@ export const gatewayOpsMessages = i18n.define({
       syncDrifted: "Drifted",
       syncDroppedEvents: "Dropped events",
       syncDeadLetters: "Dead letters",
-      syncDeadLettersHint: "Newest first. Requeue re-enqueues with a fresh idempotency key; both actions are audited by the owning app.",
+      syncDeadLettersHint:
+        "Newest first. Queues and jobs are requeued with a fresh idempotency key. Topic retries only run the original consumer. All actions are audited by the owning app.",
       syncDeadLettersTruncated: ({ count }: { count: number }) => `${count} ${count === 1 ? "store" : "stores"} cut at the page limit`,
       syncNoDeadLetters: "No dead letters in any reachable app.",
       syncStore: "Store",
@@ -849,6 +850,12 @@ export const gatewayOpsMessages = i18n.define({
       syncFailures: "Failures",
       syncLastError: "Last error",
       syncRequeue: "Requeue",
+      syncReplay: "Retry consumer",
+      syncReplayConfirm: ({ messageId, store, consumer }: { messageId: string; store: string; consumer: string }) =>
+        `Retry message ${messageId} from ${store} for consumer ${consumer}? Other consumers will not receive it again.`,
+      syncReplayFailed: "Consumer retry failed; inspect the retained dead letter before retrying",
+      syncReplayed: "Consumer retry completed",
+      syncReplayUnavailable: "This entry cannot be retried here because its original event context or recovery worker is unavailable.",
       syncRequeueConfirm: ({ messageId, store }: { messageId: string; store: string }) =>
         `Requeue message ${messageId} from ${store}? It is re-enqueued with a fresh idempotency key and removed from the dead-letter store.`,
       syncRequeueFailed: "Requeue failed",
@@ -1669,7 +1676,7 @@ export const gatewayOpsMessages = i18n.define({
       syncDroppedEvents: "Verworfene Ereignisse",
       syncDeadLetters: "Dead Letters",
       syncDeadLettersHint:
-        "Neueste zuerst. Erneut einreihen vergibt einen neuen Idempotenzschlüssel; beide Aktionen werden von der zuständigen App protokolliert.",
+        "Neueste zuerst. Queues und Jobs werden mit einem neuen Idempotenzschlüssel eingereiht. Topic-Wiederholungen führen nur den ursprünglichen Consumer aus. Alle Aktionen werden von der zuständigen App protokolliert.",
       syncDeadLettersTruncated: ({ count }) => `${count} ${count === 1 ? "Speicher" : "Speicher"} am Seitenlimit abgeschnitten`,
       syncNoDeadLetters: "Keine Dead Letters in einer erreichbaren App.",
       syncStore: "Speicher",
@@ -1700,6 +1707,13 @@ export const gatewayOpsMessages = i18n.define({
       syncFailures: "Fehler",
       syncLastError: "Letzter Fehler",
       syncRequeue: "Erneut einreihen",
+      syncReplay: "Consumer wiederholen",
+      syncReplayConfirm: ({ messageId, store, consumer }) =>
+        `Nachricht ${messageId} aus ${store} für Consumer ${consumer} wiederholen? Andere Consumer erhalten sie nicht erneut.`,
+      syncReplayFailed: "Consumer-Wiederholung fehlgeschlagen; vor einem weiteren Versuch den erhaltenen Dead Letter prüfen",
+      syncReplayed: "Consumer-Wiederholung abgeschlossen",
+      syncReplayUnavailable:
+        "Dieser Eintrag kann hier nicht wiederholt werden, weil sein ursprünglicher Ereigniskontext oder der Recovery-Worker fehlt.",
       syncRequeueConfirm: ({ messageId, store }) =>
         `Nachricht ${messageId} aus ${store} erneut einreihen? Sie wird mit neuem Idempotenzschlüssel eingereiht und aus dem Dead-Letter-Speicher entfernt.`,
       syncRequeueFailed: "Erneutes Einreihen fehlgeschlagen",

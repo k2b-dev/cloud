@@ -92,7 +92,7 @@ const deadLettersPayload: z.ZodType<DeadLettersPayload> = z.object({
   stores: z.array(
     z.object({
       name: z.string(),
-      kind: z.enum(["queue", "job"]),
+      kind: z.enum(["queue", "job", "topic"]),
       description: z.string().nullable(),
       truncated: z.boolean(),
       entries: z.array(
@@ -104,6 +104,9 @@ const deadLettersPayload: z.ZodType<DeadLettersPayload> = z.object({
           reason: z.string(),
           error: z.string().nullable(),
           dataPreview: z.string(),
+          consumer: z.string().optional(),
+          eventId: z.string().optional(),
+          replayAvailable: z.boolean().optional(),
         }),
       ),
     }),
@@ -317,6 +320,22 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
           `/dead-letters/${input.kind}/${encodeURIComponent(input.store)}/requeue`,
           credentials,
           { method: "POST", body: { messageId: input.messageId } },
+        ),
+      ),
+    replayDeadLetter: (
+      input: { appId: string; store: string; messageId: string; consumer: string; tenantId: string },
+      credentials: SyncOpsCredentials,
+    ) =>
+      withApp(input.appId, (app) =>
+        call<{ messageId: string; eventId: string; consumer: string; completed: true }>(
+          app,
+          `/dead-letters/topic/${encodeURIComponent(input.store)}/replay`,
+          credentials,
+          {
+            method: "POST",
+            body: { messageId: input.messageId, consumer: input.consumer, tenantId: input.tenantId },
+            timeoutMs: timeoutMs + 30_000,
+          },
         ),
       ),
     deleteDeadLetter: (

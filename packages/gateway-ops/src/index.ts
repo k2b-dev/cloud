@@ -17,6 +17,7 @@ import logsPage from "./observability/logs/page";
 import loggingWidgetRoutes, { loggingErrorsWidgetHandler } from "./observability/logs/widgets";
 import { metricsEndpoint } from "./observability/metrics/endpoint";
 import metricsPage from "./observability/metrics/page";
+import natsPage from "./observability/nats/page";
 import notificationsApiRoutes from "./observability/notifications/api";
 import notificationsPage from "./observability/notifications/page";
 import observabilityOverviewPage from "./observability/page";
@@ -74,6 +75,7 @@ const router = new Hono<AuthContext>()
   .get("/admin/observability/data", auth.requireRole("admin", ssr.access), (c) => c.redirect("/admin/observability/postgres"))
   .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
   .get("/admin/observability/redis", auth.requireRole("admin", ssr.access), ...redisPage)
+  .get("/admin/observability/nats", auth.requireRole("admin", ssr.access), ...natsPage)
   .get("/admin/observability/sync", auth.requireRole("admin", ssr.access), ...syncPage)
   .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
   .get("/admin/observability/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)

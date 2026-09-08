@@ -59,8 +59,13 @@ services:
   app-gateway-ops:
     <<: *app
     container_name: app-gateway-ops
-    environment: { <<: *env, APP_ID: gateway-ops }
+    environment:
+      <<: *env
+      APP_ID: gateway-ops
+      NATS_ADMIN_SERVERS: nats://ipa_nats_1:4222,nats://ipa_nats_2:4222,nats://ipa_nats_3:4222
+      NATS_ADMIN_NKEY_SEED_FILE: /run/secrets/nats-admin.seed
     volumes:
+      - ./.local/nats/admin.seed:/run/secrets/nats-admin.seed:ro
       - ./packages/cloud/src:/app/packages/cloud/src
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/gateway/src:/app/packages/gateway/src

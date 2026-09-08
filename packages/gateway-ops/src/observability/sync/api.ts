@@ -12,7 +12,7 @@ import { syncOpsService } from "./runtime";
 import { syncOpsCredentials } from "./service";
 
 const DeadLetterParamSchema = z.object({
-  kind: z.enum(["queue", "job"]),
+  kind: z.enum(["queue", "job", "topic"]),
   app: z.string().min(1).max(200),
   store: z.string().min(1).max(96),
 });
@@ -39,6 +39,23 @@ const syncApiRoutes = new Hono<AuthContext>()
     const { messageId } = c.req.valid("json");
     return respond(c, syncOpsService.requeueDeadLetter({ appId: app, kind, store, messageId }, syncOpsCredentials(c.req.raw)));
   })
+
+  .post(
+    "/dead-letters/:app/topic/:store/replay",
+    v("param", DeadLetterParamSchema.omit({ kind: true })),
+    v(
+      "json",
+      z.object({
+        messageId: z.string().min(1).max(256),
+        consumer: z.string().min(1).max(96),
+        tenantId: z.string().min(1).max(256),
+      }),
+    ),
+    async (c) => {
+      const { app, store } = c.req.valid("param");
+      return respond(c, syncOpsService.replayDeadLetter({ appId: app, store, ...c.req.valid("json") }, syncOpsCredentials(c.req.raw)));
+    },
+  )
 
   .delete("/dead-letters/:app/:kind/:store/:messageId", v("param", DeadLetterEntryParamSchema), async (c) => {
     const { app, kind, store, messageId } = c.req.valid("param");
