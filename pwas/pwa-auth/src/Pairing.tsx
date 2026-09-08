@@ -117,7 +117,7 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
           setComparison(saved.comparison ?? "");
           return;
         }
-        const key = await appApproval.createKey();
+        const key = await storage.createKey();
         await storage.saveEnrollment({ id, issuer: p.issuer, key, name: name().trim(), label: label().trim() });
         enrollment = await storage.enrollment(id);
         if (!enrollment || !(enrollment.key.privateKey instanceof CryptoKey) || enrollment.key.privateKey.extractable)

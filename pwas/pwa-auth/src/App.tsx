@@ -1,5 +1,5 @@
 import { Button, Dropdown, type DropdownItem, LocaleProvider, Placeholder, useLocale } from "@k2b/ui";
-import { createMemo, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
 import { Clouds } from "./Clouds";
 import { openDialog } from "./dialog";
@@ -8,18 +8,26 @@ import { authMessages } from "./i18n";
 import { createInstallation } from "./install";
 import { Pairing } from "./Pairing";
 import type { Preferences } from "./preferences";
+import { openSecurity } from "./Security";
 import { openSettings } from "./Settings";
+import { createVault } from "./vault";
 
 export function App(props: { preferences: Preferences }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const installation = createInstallation();
-  const auth = createAuthenticator();
+  const vault = createVault();
+  const auth = createAuthenticator(vault);
   let pairingOpen = false;
   const showPairing = async (link?: string) => {
     if (pairingOpen) return;
     pairingOpen = true;
     try {
+      if (vault.status() === "loading" || vault.status() === "legacy" || vault.status() === "error") return;
+      if (vault.status() !== "open") {
+        if (!(await openSecurity(vault, props.preferences, vault.status() === "empty" ? "setup" : "unlock"))) return;
+      }
+      if (vault.status() !== "open") return;
       await openDialog(
         (close) => (
           <LocaleProvider locale={props.preferences.locale()}>
@@ -42,18 +50,48 @@ export function App(props: { preferences: Preferences }) {
       installDialogOpen = false;
     }
   };
+  const [pendingLink, setPendingLink] = createSignal<string>();
+  createEffect(() => {
+    if (vault.status() === "loading") return;
+    const link = pendingLink();
+    if (link) {
+      setPendingLink(undefined);
+      void showPairing(link);
+    }
+  });
   onMount(() => {
     const link = consumePairingLocation();
-    if (link) void showPairing(link);
+    if (link) setPendingLink(link);
     else if (installation.shouldIntroduce()) void showInstall();
     const changed = () => {
       const next = consumePairingLocation();
-      if (next) void showPairing(next);
+      if (next) setPendingLink(next);
     };
     window.addEventListener("hashchange", changed);
     onCleanup(() => window.removeEventListener("hashchange", changed));
   });
   const items = createMemo<DropdownItem[]>(() => [
+    ...(vault.status() === "open"
+      ? [
+          {
+            label: t().security,
+            action: () => {
+              void openSecurity(vault, props.preferences, "manage");
+            },
+          },
+          { label: t().lockApp, action: () => vault.lock() },
+        ]
+      : []),
+    ...(["locked", "legacy", "error"].includes(vault.status())
+      ? [
+          {
+            label: t().resetApp,
+            action: () => {
+              void openSecurity(vault, props.preferences, "reset");
+            },
+          },
+        ]
+      : []),
     {
       label: t().addCloud,
       action: () => {
@@ -103,22 +141,45 @@ export function App(props: { preferences: Preferences }) {
           <p role="status">{t().offline}</p>
         </Show>
         <Show
-          when={auth.bindings().length > 0}
+          when={vault.status() === "open" || vault.status() === "empty"}
           fallback={
             <section class="auth-welcome">
               <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
-              <Placeholder title={t().emptyTitle} description={t().emptyDescription} />
-              <Button
-                onClick={() => {
-                  void showPairing();
-                }}
-              >
-                {t().addCloud}
-              </Button>
+              <Show when={vault.status() === "locked"}>
+                <Placeholder title={t().unlockApp} description={t().lockedHelp} />
+                <Button onClick={() => void openSecurity(vault, props.preferences, "unlock")}>{t().unlockApp}</Button>
+              </Show>
+              <Show when={vault.status() === "legacy"}>
+                <Placeholder title={t().legacyTitle} description={t().legacyHelp} />
+                <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
+              </Show>
+              <Show when={vault.status() === "loading"}>
+                <p role="status">{t().loadingSecurity}</p>
+              </Show>
+              <Show when={vault.status() === "error"}>
+                <p role="alert">{t().storage}</p>
+              </Show>
             </section>
           }
         >
-          <Clouds auth={auth} preferences={props.preferences} />
+          <Show
+            when={auth.bindings().length > 0}
+            fallback={
+              <section class="auth-welcome">
+                <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
+                <Placeholder title={t().emptyTitle} description={t().emptyDescription} />
+                <Button
+                  onClick={() => {
+                    void showPairing();
+                  }}
+                >
+                  {t().addCloud}
+                </Button>
+              </section>
+            }
+          >
+            <Clouds auth={auth} preferences={props.preferences} />
+          </Show>
         </Show>
       </main>
     </div>

@@ -39,3 +39,8 @@ export async function openDialog<T>(view: DialogRender<T>, options?: OpenDialogO
     }
   }
 }
+
+/** Remove sensitive modal content synchronously when the app locks. */
+export function closeDialogs() {
+  for (const entry of [...entries].reverse()) entry.close();
+}

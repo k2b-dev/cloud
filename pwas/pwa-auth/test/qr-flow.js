@@ -77,6 +77,11 @@ async function _run(page) {
       await p.goto("http://127.0.0.1:4178/");
       await p.getByRole("button", { name: "Continue in browser", exact: true }).click();
       await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
+      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
+      await p.getByLabel("App PIN", { exact: true }).fill("012345");
+      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByRole("button", { name: "Save protection", exact: true }).click();
+      await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
       if ((await p.evaluate(() => window.cameraTest.calls)) !== 0) throw new Error("Camera opened before click");
       await p.getByRole("button", { name: "Scan QR code", exact: true }).click();
       if (mode === "decode") {
@@ -135,14 +140,14 @@ async function _run(page) {
         }
         if (mode === "stop") await p.getByRole("button", { name: "Stop camera", exact: true }).click();
         else await p.evaluate(() => window.dispatchEvent(new Event("pagehide")));
-        await p.getByRole("button", { name: "Scan QR code", exact: true }).waitFor();
+        await p.getByRole("button", { name: mode === "pagehide" ? "Unlock" : "Scan QR code", exact: true }).waitFor();
       } else {
         await p.waitForFunction(() => window.cameraTest.tracks.length > 0);
         await p.evaluate(() => {
           Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
           document.dispatchEvent(new Event("visibilitychange"));
         });
-        await p.getByRole("button", { name: "Scan QR code", exact: true }).waitFor();
+        await p.getByRole("button", { name: "Unlock", exact: true }).waitFor();
         await p.evaluate(() => {
           delete document.visibilityState;
           document.dispatchEvent(new Event("visibilitychange"));

@@ -17,7 +17,7 @@ if (
   cache.port !== "56399"
 )
   throw new Error("Dedicated test database/cache required");
-const pwa = "http://127.0.0.1:4178";
+const pwa = "http://localhost:4178";
 for (const port of [43220, 43221]) {
   const issuer = `http://127.0.0.1:${port}`;
   let enabled = true;

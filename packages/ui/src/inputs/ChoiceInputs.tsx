@@ -8,6 +8,9 @@ export type PinInputProps = ValueFieldProps<string> & {
   length?: number;
   name?: string;
   stretch?: boolean;
+  password?: boolean;
+  readOnly?: boolean;
+  onSubmit?: () => void;
 };
 
 export function PinInput(props: PinInputProps): JSX.Element {
@@ -23,7 +26,7 @@ export function PinInput(props: PinInputProps): JSX.Element {
   };
 
   const updateDigit = (index: number, input: string) => {
-    if (props.disabled) return;
+    if (props.disabled || props.readOnly) return;
     const digit = input.replace(/\D/g, "").slice(-1);
     const current = digits();
     emit(`${current.slice(0, index)}${digit}${current.slice(index + 1)}`);
@@ -34,8 +37,11 @@ export function PinInput(props: PinInputProps): JSX.Element {
   };
 
   const handleKeyDown = (index: number, event: KeyboardEvent) => {
-    if (props.disabled) return;
-    if (event.key === "ArrowLeft" && index > 0) {
+    if (props.disabled || props.readOnly) return;
+    if (event.key === "Enter" && props.onSubmit && !event.shiftKey && !event.metaKey) {
+      event.preventDefault();
+      props.onSubmit();
+    } else if (event.key === "ArrowLeft" && index > 0) {
       event.preventDefault();
       inputs[index - 1]?.focus();
       inputs[index - 1]?.select();
@@ -53,7 +59,7 @@ export function PinInput(props: PinInputProps): JSX.Element {
   };
 
   const handlePaste = (event: ClipboardEvent) => {
-    if (props.disabled) return;
+    if (props.disabled || props.readOnly) return;
     const pasted = event.clipboardData?.getData("text").replace(/\D/g, "");
     if (!pasted) return;
     event.preventDefault();
@@ -94,7 +100,7 @@ export function PinInput(props: PinInputProps): JSX.Element {
               }}
               class="k2b-control k2b-pin-input__digit"
               data-filled={digits()[index()] ? "true" : undefined}
-              type="text"
+              type={props.password ? "password" : "text"}
               inputmode="numeric"
               autocomplete="off"
               pattern="[0-9]"
@@ -102,6 +108,7 @@ export function PinInput(props: PinInputProps): JSX.Element {
               value={digits()[index()] ?? ""}
               required={props.required}
               disabled={props.disabled}
+              readOnly={props.readOnly}
               aria-label={messages().pinDigit({ index: index() + 1, total: length() })}
               onInput={(event) => updateDigit(index(), event.currentTarget.value)}
               onKeyDown={(event) => handleKeyDown(index(), event)}

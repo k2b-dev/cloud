@@ -1,24 +1,28 @@
+import { appApprovalVault, assertVaultKey } from "./app-approval-vault";
+
+export { type AppVaultBlob, type AppVaultConfig, AppVaultError, type AppVaultMethod, type AppVaultSession } from "./app-approval-vault";
+
 import { z } from "zod";
 import {
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
   APP_APPROVAL_PROTOCOL,
-  AppDevicePublicKeySchema,
   AppDeviceCommandSchema,
   AppDeviceProofSchema,
+  type AppDevicePublicKey,
+  AppDevicePublicKeySchema,
   AppDeviceResponseSchema,
-  AppPairingClaimSchema,
   AppPairingClaimResultSchema,
+  AppPairingClaimSchema,
+  type AppPairingPayload,
   AppPairingPayloadSchema,
   AppPairingResultSchema,
+  type AppPendingLogin,
   AppPendingLoginSchema,
   appDeviceProofMessage,
-  appPairingProofMessage,
   appPairingLink,
+  appPairingProofMessage,
   parseAppPairingLink,
-  type AppDevicePublicKey,
-  type AppPairingPayload,
-  type AppPendingLogin,
 } from "../contracts/app-approval";
 
 export interface AppApprovalKey {
@@ -61,10 +65,12 @@ const createKey = async (): Promise<AppApprovalKey> => {
 };
 
 const sign = async (key: AppApprovalKey, message: string) => {
+  assertVaultKey(key.privateKey);
   if (key.privateKey.extractable || key.privateKey.type !== "private") throw new AppApprovalClientError("INVALID_INPUT");
   const signature = new Uint8Array(
     await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key.privateKey, new TextEncoder().encode(message)),
   );
+  assertVaultKey(key.privateKey);
   return btoa(String.fromCharCode(...signature))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
@@ -219,6 +225,7 @@ const connect = async (options: {
 
 /** Browser-only SDK. Never polls, approves, retries mutations, or reads clipboard automatically. */
 export const appApproval = {
+  vault: appApprovalVault,
   createPairingLink: appPairingLink,
   parsePairingLink: parseAppPairingLink,
   createKey,

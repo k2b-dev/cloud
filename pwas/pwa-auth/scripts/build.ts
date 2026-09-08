@@ -54,6 +54,10 @@ export async function build({ development = false } = {}) {
   await cp(resolve(packageRoot, "public"), dist, { recursive: true });
   await mkdir(resolve(dist, "licenses"), { recursive: true });
   await cp(resolve(dirname(Bun.resolveSync("qr-scanner", packageRoot)), "LICENSE"), resolve(dist, "licenses/qr-scanner.txt"));
+  await cp(
+    resolve(dirname(Bun.resolveSync("hash-wasm/package.json", resolve(packageRoot, "../../packages/cloud"))), "LICENSE"),
+    resolve(dist, "licenses/hash-wasm.txt"),
+  );
   const en = authMessages.resolve(["en"]).t;
   const de = authMessages.resolve(["de"]).t;
   await Bun.write(

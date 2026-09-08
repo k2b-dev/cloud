@@ -1,5 +1,5 @@
 import { AppApprovalClientError, appApproval } from "@valentinkolb/cloud/browser/app-approval";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { type Binding, storage } from "./storage";
 
 export type Client = Awaited<ReturnType<typeof appApproval.connect>>;
@@ -20,7 +20,7 @@ export function consumePairingLocation() {
   history.replaceState(null, "", location.pathname);
   return link;
 }
-export function createAuthenticator() {
+export function createAuthenticator(vault: import("./vault").Vault) {
   const [bindings, setBindings] = createSignal<Binding[]>([]);
   const [states, setStates] = createSignal<Record<string, { requests: Login[]; error?: Failure }>>({});
   const [storageError, setStorageError] = createSignal(false);
@@ -28,13 +28,21 @@ export function createAuthenticator() {
   const [online, setOnline] = createSignal(navigator.onLine);
   const clients = new Map<string, Client>();
   const active = new Map<string, AbortController>();
+  const mutations = new Set<AbortController>();
   const backoff = new Map<string, number>();
   const channel = new BroadcastChannel("cloud-login-bindings");
   const reload = async () => {
+    if (vault.status() !== "open") return;
+    const owner = vault.session();
     try {
-      setBindings(await storage.bindings());
+      const values = await storage.bindings();
+      owner.check();
+      if (vault.status() !== "open") return;
+      setBindings(values);
       setStorageError(false);
     } catch {
+      setBindings([]);
+      setStates({});
       setStorageError(true);
     }
   };
@@ -50,14 +58,17 @@ export function createAuthenticator() {
     return value;
   };
   const poll = async (binding: Binding) => {
-    if (active.has(binding.id)) return;
+    if (active.has(binding.id) || vault.status() !== "open") return;
     const abort = new AbortController();
     active.set(binding.id, abort);
     const pollId = `poll:${binding.id}`;
     try {
-      if (!(await storage.reserve(pollId, Date.now() + 2 * appApproval.limits.proofSeconds * 1000))) return;
+      // Reserve the server polling interval; an interrupted tab must not stall all tabs for a proof lifetime.
+      if (!(await storage.reserve(pollId, Date.now() + appApproval.limits.pollSeconds * 1000))) return;
       abort.signal.throwIfAborted();
       const result = await (await client(binding.issuer, abort.signal)).pending(binding, abort.signal);
+      abort.signal.throwIfAborted();
+      vault.session().check();
       setStates((s) => ({ ...s, [binding.id]: { requests: result.requests } }));
       channel.postMessage({ type: "pending", id: binding.id, requests: result.requests });
       backoff.delete(binding.id);
@@ -72,13 +83,13 @@ export function createAuthenticator() {
         await storage.defer(pollId, Date.now() + appApproval.limits.pollSeconds * 1000).catch(() => {});
       }
     } finally {
-      active.delete(binding.id);
+      if (active.get(binding.id) === abort) active.delete(binding.id);
     }
   };
   let cleanupAfter = Date.now() + appApproval.limits.loginSeconds * 1000;
   const tick = () => {
     setNow(Date.now());
-    if (document.visibilityState !== "visible" || !navigator.onLine || storageError()) return;
+    if (vault.status() !== "open" || document.visibilityState !== "visible" || !navigator.onLine || storageError()) return;
     if (Date.now() >= cleanupAfter) {
       cleanupAfter = Date.now() + appApproval.limits.loginSeconds * 1000;
       void storage.prune().catch(() => setStorageError(true));
@@ -91,20 +102,17 @@ export function createAuthenticator() {
     setOnline(navigator.onLine);
     if (document.visibilityState !== "visible" || !navigator.onLine) {
       for (const abort of active.values()) abort.abort();
+      for (const abort of mutations) abort.abort();
       setStates({});
     } else {
       void reload().then(tick);
     }
   };
   onMount(() => {
-    void storage
-      .prune()
-      .then(reload)
-      .then(tick)
-      .catch(() => setStorageError(true));
+    void reload().then(tick);
     const timer = setInterval(tick, 1000);
     channel.onmessage = (event: MessageEvent<{ type: "pending"; id: string; requests: Login[] }>) => {
-      if (event.data?.type === "pending" && bindings().some((b) => b.id === event.data.id)) {
+      if (vault.status() === "open" && event.data?.type === "pending" && bindings().some((b) => b.id === event.data.id)) {
         setStates((s) => ({ ...s, [event.data.id]: { requests: event.data.requests } }));
       } else {
         void reload();
@@ -116,23 +124,42 @@ export function createAuthenticator() {
     onCleanup(() => {
       clearInterval(timer);
       for (const abort of active.values()) abort.abort();
+      for (const abort of mutations) abort.abort();
       channel.close();
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("online", visibility);
       window.removeEventListener("offline", visibility);
     });
   });
+  createEffect(() => {
+    if (vault.status() !== "open") {
+      for (const abort of active.values()) abort.abort();
+      for (const abort of mutations) abort.abort();
+      setBindings([]);
+      setStates({});
+      clients.clear();
+    } else void reload().then(tick);
+  });
   const decide = async (binding: Binding, request: Login, decision: "approve" | "deny") => {
+    vault.session().check();
     if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(request.expiresAt) <= Date.now())
       throw new Error("stale");
+    const owner = vault.session();
     const api = await client(binding.issuer);
+    owner.check();
     // Persist before sending: a lost response or another tab must not silently send again.
     if (!(await storage.reserve(`decision:${binding.id}:${request.requestId}`, Date.parse(request.expiresAt))))
       throw new Error("uncertain");
+    const abort = new AbortController();
+    mutations.add(abort);
     try {
-      await api.decide(binding, request, decision);
+      owner.check();
+      await api.decide(binding, request, decision, abort.signal);
+      owner.check();
     } catch {
       throw new Error("uncertain");
+    } finally {
+      mutations.delete(abort);
     }
     setStates((s) => ({
       ...s,
@@ -141,13 +168,21 @@ export function createAuthenticator() {
     channel.postMessage("changed");
   };
   const revoke = async (binding: Binding) => {
+    const owner = vault.session();
     const api = await client(binding.issuer);
+    owner.check();
     // A failed revoke must be inspected in Cloud device management, not automatically retried.
     if (!(await storage.reserve(`revoke:${binding.id}`, Number.MAX_SAFE_INTEGER))) throw new Error("uncertain");
+    const abort = new AbortController();
+    mutations.add(abort);
     try {
-      await api.revoke(binding);
+      owner.check();
+      await api.revoke(binding, abort.signal);
+      owner.check();
     } catch {
       throw new Error("uncertain");
+    } finally {
+      mutations.delete(abort);
     }
     await storage.removeBinding(binding.id);
     await changed();

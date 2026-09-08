@@ -282,3 +282,39 @@ body.k2b-ui textarea {
   min-height: 44px;
   font-size: 16px;
 }
+
+.auth-security-feedback {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.auth-security-countdown {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.k2b-dialog:has(.auth-security--success) {
+  width: 9rem;
+  min-width: 0;
+}
+.auth-security--success .k2b-panel-dialog__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.auth-unlock-success {
+  display: grid;
+  place-items: center;
+  min-height: 6rem;
+  color: var(--k2b-success-text);
+  font-size: 4rem;
+}

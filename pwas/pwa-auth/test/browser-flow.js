@@ -1,17 +1,65 @@
-async function _run(page) {
+async function _run(page, protection = "pin") {
+  const fillAppPin = async (target, value) => {
+    await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
+    const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
+    if (await digits.count()) {
+      for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
+    } else await target.getByLabel("App PIN", { exact: true }).fill(value);
+  };
+
   const context = await page
     .context()
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
   const p = await context.newPage();
+  const attachAuthenticator = async (target) => {
+    const cdp = await context.newCDPSession(target);
+    await cdp.send("WebAuthn.enable");
+    await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        ctap2Version: "ctap2_1",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+        hasPrf: true,
+      },
+    });
+  };
+  if (protection !== "pin") await attachAuthenticator(p);
+  const unlock = async (target, dialog = false) => {
+    if (!dialog) {
+      await target.getByRole("button", { name: "Unlock", exact: true }).waitFor();
+      const intro = target.getByRole("button", { name: "Continue in browser", exact: true });
+      if (await intro.isVisible()) {
+        await intro.click();
+        await target.waitForFunction(() => !history.state?.cloudLoginDialog);
+      }
+      await target.getByRole("button", { name: "Unlock", exact: true }).click();
+    }
+    if (protection === "passkey") await target.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
+    else {
+      await fillAppPin(target, "012345");
+    }
+    if (!dialog) await target.waitForFunction(() => !history.state?.cloudLoginDialog);
+  };
   const events = [];
   let intentionallyDropped = false;
+  let navigatingDuringPairing = false;
   p.on("pageerror", (e) => {
     // WebKit reports the deliberately aborted decision as an access-control page error.
     if (
       intentionallyDropped &&
       (e.message.includes("43220/api/auth/app-approval/v1/device") ||
         e.message.includes("43220/api/auth/app-approval/v1/pairings/claim")) &&
+      e.message.includes("access control")
+    )
+      return;
+    if (
+      navigatingDuringPairing &&
+      e.message.includes("43221/api/auth/app-approval/v1/pairings/result") &&
       e.message.includes("access control")
     )
       return;
@@ -29,6 +77,14 @@ async function _run(page) {
     const first = await post(a, "pair");
     await p.goto(first.link);
     if (p.url().includes("#")) throw new Error("Pairing fragment retained");
+    if (protection !== "pin") await p.getByRole("button", { name: "Use a passkey · Recommended", exact: true }).click();
+    else {
+      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
+      await fillAppPin(p, "012345");
+      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByRole("button", { name: "Save protection", exact: true }).click();
+    }
+    await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     step = "first-fill";
     await p.getByRole("dialog").locator("input").nth(0).fill("Personal Cloud", { timeout: 5000 });
     let claims = 0;
@@ -47,6 +103,16 @@ async function _run(page) {
     await post(a, "confirm", { pairingId: first.pairingId, comparison: code });
     await p.getByRole("button", { name: "Finish pairing" }).click({ timeout: 15000 });
     await p.getByRole("heading", { name: "Personal Cloud", exact: true }).waitFor();
+    if (protection === "both") {
+      await p.getByRole("button", { name: "Menu", exact: true }).click();
+      await p.getByRole("menuitem", { name: "App security", exact: true }).click();
+      await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
+      await p.getByRole("button", { name: "Unlock with passkey", exact: true }).click();
+      await fillAppPin(p, "012345");
+      await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByRole("button", { name: "Save protection", exact: true }).click();
+      await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    }
     step = "second-pair";
     const second = await post(b, "pair");
     await p.getByRole("button", { name: "Menu", exact: true }).click();
@@ -59,8 +125,11 @@ async function _run(page) {
     const codeB = await p.locator(".auth-comparison").textContent();
     // Reload mid-pairing, then recover the same stored key from the same link.
     step = "reload-pairing";
-    await p.goto("http://127.0.0.1:4178/");
+    navigatingDuringPairing = true;
+    await p.goto("http://localhost:4178/");
     await p.goto(second.link);
+    await unlock(p, true);
+    await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await p.getByRole("dialog").locator("input").nth(0).fill("Temporary label");
     await p.getByRole("button", { name: "Trust Cloud and pair" }).click();
     await p.locator(".auth-comparison").waitFor();
@@ -72,9 +141,10 @@ async function _run(page) {
     await p.reload();
     const dismiss = p.getByRole("button", { name: "Continue in browser", exact: true });
     if (await dismiss.isVisible()) await dismiss.click();
+    await unlock(p);
     const keys = await p.evaluate(async () => {
       const db = await new Promise((resolve, reject) => {
-        const r = indexedDB.open("cloud-login", 1);
+        const r = indexedDB.open("cloud-login", 2);
         r.onsuccess = () => resolve(r.result);
         r.onerror = () => reject(r.error);
       });
@@ -83,20 +153,11 @@ async function _run(page) {
         r.onsuccess = () => resolve(r.result);
         r.onerror = () => reject(r.error);
       });
-      const result = [];
-      for (const v of bindings) {
-        let exported = false;
-        try {
-          await crypto.subtle.exportKey("jwk", v.key.privateKey);
-          exported = true;
-        } catch {}
-        result.push({ issuer: v.issuer, extractable: v.key.privateKey.extractable, exported, x: v.key.publicKey.x });
-      }
       db.close();
-      return result;
+      return bindings.map((v) => ({ sealed: !!v.blob?.data && !!v.blob?.iv && !v.key && !v.label, data: v.blob?.data }));
     });
-    if (keys.length !== 2 || keys.some((k) => k.extractable || k.exported) || keys[0].x === keys[1].x)
-      throw new Error("Key isolation/persistence failed");
+    if (keys.length !== 2 || keys.some((k) => !k.sealed) || keys[0].data === keys[1].data)
+      throw new Error("Encrypted key isolation/persistence failed");
     const loginA = await post(a, "start"),
       loginB = await post(b, "start");
     const cloudA = p.locator(".auth-cloud").filter({ has: p.getByRole("heading", { name: "Personal Cloud", exact: true }) });
@@ -133,8 +194,10 @@ async function _run(page) {
     await p.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await p.getByRole("alert").waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
-    const other = await context.newPage();
-    await other.goto("http://127.0.0.1:4178/");
+    // CDP does not export a virtual authenticator's PRF secret. Test PRF recovery in the same authenticator; PIN/both also exercise a second tab.
+    const other = protection === "passkey" ? p : await context.newPage();
+    await other.goto("http://localhost:4178/");
+    await unlock(other);
     await other
       .locator(".auth-cloud")
       .filter({ has: other.getByRole("heading", { name: "Personal Cloud", exact: true }) })
@@ -144,7 +207,7 @@ async function _run(page) {
     await other.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await other.getByRole("alert").waitFor();
     if (decisions !== 1 || (await post(a, "status", lost)).state !== "pending") throw new Error("Decision retried across tabs");
-    await other.close();
+    if (other !== p) await other.close();
     await context.unroute("**/api/auth/app-approval/v1/device");
     step = "independent-failure";
     await post(a, "enabled", { enabled: false });
@@ -169,6 +232,7 @@ async function _run(page) {
       delete document.visibilityState;
       document.dispatchEvent(new Event("visibilitychange"));
     });
+    await unlock(p);
     step = "revocation";
     await cloudB.getByRole("button", { name: "Disconnect Cloud: Work Cloud", exact: true }).click();
     await p.getByRole("button", { name: "Revoke device", exact: true }).click();
@@ -179,6 +243,7 @@ async function _run(page) {
     await p.screenshot({ path: "output/playwright/pwa-clouds.png", fullPage: true });
     if (events.length) throw new Error(events.join("\n"));
     return {
+      protection,
       pairedClouds: 2,
       copyPaste: true,
       sameDeviceFragment: true,
@@ -187,7 +252,8 @@ async function _run(page) {
       keysNonExtractable: true,
       approvalIsolated: true,
       explicitDenial: true,
-      lostResponseAcrossTabs: true,
+      lostResponseAcrossTabs: protection !== "passkey",
+      lostResponseAfterReload: protection === "passkey",
       independentFailure: true,
       foregroundOnly: true,
       revocation: true,

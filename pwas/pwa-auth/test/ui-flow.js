@@ -13,6 +13,13 @@ async function _run(page) {
       await p.goto("http://127.0.0.1:4178/");
       await p.getByRole("button", { name: locale === "de" ? "Im Browser fortfahren" : "Continue in browser", exact: true }).click();
       await p.getByRole("button", { name: locale === "de" ? "Cloud hinzufügen" : "Add Cloud", exact: true }).click();
+      await p
+        .getByRole("button", { name: locale === "de" ? "Sechsstellige App-PIN einrichten" : "Set a six-digit app PIN", exact: true })
+        .click();
+      await p.getByLabel(locale === "de" ? "App-PIN" : "App PIN", { exact: true }).fill("012345");
+      await p.getByLabel(locale === "de" ? "App-PIN wiederholen" : "Repeat app PIN", { exact: true }).fill("012345");
+      await p.getByRole("button", { name: locale === "de" ? "Schutz speichern" : "Save protection", exact: true }).click();
+      await p.getByRole("heading", { name: locale === "de" ? "Cloud hinzufügen" : "Add Cloud", exact: true }).waitFor();
       const d = p.getByRole("dialog");
       const next = p.getByRole("button", { name: locale === "de" ? "Weiter" : "Continue", exact: true });
       if (!(await next.isDisabled())) throw new Error("Empty link accepted");

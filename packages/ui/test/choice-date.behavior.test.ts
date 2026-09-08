@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 type PopoverPatch = {
@@ -717,6 +717,43 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(group?.querySelectorAll("input")).toHaveLength(4);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("masked PIN supports explicit Enter submission and respects disabled state", async () => {
+    const dom = createDomTestHarness();
+    // ChoiceInputs was imported in an earlier test with a different document.
+    delegateEvents(["keydown"], dom.document);
+    const { PinInput } = await import("../src/inputs/ChoiceInputs");
+    let submissions = 0;
+    const dispose = render(
+      () => createComponent(PinInput, { label: "App PIN", password: true, value: "012345", onSubmit: () => submissions++ }),
+      dom.root,
+    );
+    const input = dom.root.querySelector<HTMLInputElement>("input")!;
+    expect(input.type).toBe("password");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(submissions).toBe(1);
+    dispose();
+    const disabled = render(
+      () => createComponent(PinInput, { label: "App PIN", password: true, value: "012345", disabled: true, onSubmit: () => submissions++ }),
+      dom.root,
+    );
+    dom.root.querySelector("input")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(submissions).toBe(1);
+    disabled();
+    const readOnly = render(
+      () => createComponent(PinInput, { label: "App PIN", value: "012345", readOnly: true, onSubmit: () => submissions++ }),
+      dom.root,
+    );
+    const readonlyDigit = dom.root.querySelector<HTMLInputElement>("input")!;
+    readonlyDigit.focus();
+    expect(readonlyDigit.readOnly).toBe(true);
+    expect(readonlyDigit.disabled).toBe(false);
+    expect(dom.document.activeElement).toBe(readonlyDigit);
+    readonlyDigit.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(submissions).toBe(1);
+    readOnly();
     dom.cleanup();
   });
 

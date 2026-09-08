@@ -79,6 +79,53 @@ retry automatically. `AppApprovalClientError` exposes a stable `code` and an
 optional HTTP `status`, never a remote response body. Lost mutation responses
 require state inspection before a new action.
 
+### Encrypted local vault
+
+Cloud Login uses the additive `appApproval.vault` API instead of persisting bare
+CryptoKeys. `create()` returns an in-memory session; `session.pin(sixDigits)` or
+`session.passkey(signal)` wraps its random 256-bit vault key. Persist a validated
+`{version: 1, id: session.id, methods}` config only after an actual
+`vault.unlock(config, method, pin?, signal?)` roundtrip succeeds. At least one
+method is required; at most one PIN and one passkey are supported.
+
+`vault.capability()` returns `supported`, `unsupported`, or `unknown`. It checks
+browser capabilities without opening a credential dialog. Actual support still
+requires a credential with PRF enabled and a successful PRF evaluation.
+Passkeys request `userVerification: "required"` and use the exact local host as
+RP ID. PRF output is derived through HKDF-SHA-256 with the app origin as salt
+and `cloud-login-vault-wrap-v1` as purpose. PINs use `hash-wasm` Argon2id with
+64 MiB, three passes, one lane, a random 16-byte salt, and a 32-byte result.
+The fixed KDF identifier `argon2id-64m-t3-p1` rejects unknown work parameters.
+
+Use `session.createKey()` for each new pairing. `session.sealRecord(record,
+context)` encrypts a record containing that session-owned `key`;
+`session.openRecord(blob, context, validate)` decrypts and validates it while
+restoring a non-exportable runtime key. Bind `context` to the store, issuer and
+pairing/device ID. Do not persist the returned runtime record. Existing keys
+from `appApproval.createKey()` cannot be sealed because their private material
+is non-exportable; retain the original API only for consumers that deliberately
+own a different storage-protection policy.
+
+Encryption uses AES-256-GCM, fresh random 12-byte IVs, and 128-bit tags. Envelope
+AAD binds version, vault ID, method, salt and KDF/credential ID. Record AAD binds
+version, vault ID and caller context. Public and private signing keys are checked
+for correspondence on import. Neither raw vault keys, PINs, PRF outputs nor
+private key material belong in durable storage, logs or Cloud API requests.
+
+Call `session.lock()` on lock, hidden/page-exit lifecycle transitions and stale
+async results. It invalidates session operations and SDK signing with keys from
+that session. JavaScript memory cleanup is best effort, not guaranteed secure
+zeroization. Consumers must also abort requests, close sensitive UI, drop all
+runtime records, and prevent late unlock results from reactivating a session.
+Use an atomic storage revision check for config changes and record writes.
+Cloud Login implements this in IndexedDB and broadcasts invalidation to tabs.
+
+Replacing a method rewraps the same vault key; the current config rejects the
+old method. Previously copied envelopes still expose the same key if their
+old method is recovered. This local mechanism is not server-verified WebAuthn
+or fresh MFA for each approval. See [Protect the app](./cloud-login.md#protect-the-app)
+for PIN limits, lifecycle and recovery.
+
 Paths below are relative to `/api/auth/app-approval/v1`. JSON bodies are strict:
 extra fields and private JWK material are rejected.
 

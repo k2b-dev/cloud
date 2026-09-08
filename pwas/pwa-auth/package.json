@@ -15,7 +15,8 @@
     "@k2b/ui": "workspace:*",
     "@valentinkolb/cloud": "workspace:*",
     "qr-scanner": "1.4.2",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",

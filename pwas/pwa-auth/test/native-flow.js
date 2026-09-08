@@ -16,6 +16,11 @@ async function _run(page) {
     if (buttons.some((b) => b.height < 44)) throw new Error("Small touch target " + JSON.stringify(buttons));
     await p.screenshot({ path: "output/playwright/pwa-native-home.png" });
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
+    await p.getByRole("button", { name: "Set a six-digit app PIN", exact: true }).click();
+    await p.getByLabel("App PIN", { exact: true }).fill("012345");
+    await p.getByLabel("Repeat app PIN", { exact: true }).fill("012345");
+    await p.getByRole("button", { name: "Save protection", exact: true }).click();
+    await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     const input = await p
       .getByRole("dialog")
       .locator("input")

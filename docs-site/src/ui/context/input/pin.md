@@ -22,6 +22,13 @@ configured number of digits is complete.
 
 `length` defaults to `6`. Input is restricted to digits. Typing advances focus, Backspace can move to and clear the previous field, arrow keys move between fields, and pasted digits fill the remaining fields.
 
+Set `password` to mask each digit for a reusable secret such as an app PIN.
+The default keeps digits visible for verification codes. `onSubmit` handles Enter;
+the parent still validates the complete value before submitting.
+
+Use `readOnly` to temporarily prevent edits without disabling or blurring the
+focused digit, for example while checking a PIN.
+
 Set `stretch` when the fields should divide the available width. `description`, `error`, `required`, and `disabled` follow the shared input behavior.
 
 ## Accessibility

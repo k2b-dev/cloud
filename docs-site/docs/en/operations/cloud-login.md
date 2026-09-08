@@ -32,6 +32,53 @@ as described in [App approval API](./app-approval.md). Cloud Login uses the
 public browser SDK to validate discovery and send device-authenticated requests.
 Changing either origin requires reviewing the existing pairings.
 
+## Protect the app
+
+The first **Add Cloud** action requires app protection before pairing starts.
+Choose a passkey (recommended when available), a six-digit app PIN, or add the
+second method later through **App security**. When both are configured, the
+unlock dialog lets you switch between the six masked PIN fields and passkey
+unlock. Entering the sixth PIN digit starts unlocking automatically. Wrong PINs
+leave the app locked and impose a local delay rising from one to thirty seconds.
+Switching methods clears any entered PIN. Either configured method unlocks
+all Clouds in this browser installation. This does not approve a sign-in.
+
+A passkey can use face recognition, a fingerprint, or the device code, as chosen
+by the operating system. The app checks the selected provider's encryption
+support during setup; browser support alone is not sufficient. If that check
+fails, choose a compatible provider or explicitly set a PIN. Local development
+of passkey unlock requires `http://localhost:4178`, because numeric IP addresses
+are not valid WebAuthn relying-party IDs. Production requires stable HTTPS.
+
+Enter a PIN twice, with exactly six digits; leading zeroes count. A PIN has at
+most one million combinations. Its slow Argon2id derivation makes guessing more
+expensive but cannot prevent offline guessing against copied browser data.
+Adding a PIN fallback also gives such an attacker a PIN-based route into the
+vault, even when a passkey is configured. Local retry delays are not a hardware
+guess limit. Failed attempts and the remaining delay survive reloads, but
+clearing or changing browser data can bypass this local delay.
+
+The app starts locked after a reload and locks when hidden, on page exit, after
+five minutes without interaction, or through **Lock app**. Locking hides Cloud
+and account details, closes sensitive dialogs, and stops polling. Other open
+tabs receive the lock as well. Operating-system passkey dialogs may temporarily
+hide a page during authentication; they do not keep an unlocked vault alive.
+
+**App security** requires a fresh unlock before adding, replacing, or removing
+a method. A new method must successfully unlock before it is saved. The last
+method cannot be removed. Changing the PIN keeps your Cloud pairings. Changes
+replace the current unlock envelopes atomically, but cannot revoke access to
+previously copied envelopes or data: a previously recovered vault key remains
+sensitive. After suspected key compromise, revoke the affected Cloud devices
+and pair them again.
+
+If no configured method works, **Reset Cloud Login** removes local pairings
+and protection after confirmation. It does not revoke devices in the Clouds.
+Use another Cloud sign-in method to revoke old devices and pair again.
+Older installations with unencrypted, non-exportable keys also require this
+explicit reset and new pairings; those keys cannot be wrapped retrospectively.
+No automatic deletion or conversion takes place.
+
 ## Connect a Cloud
 
 On your own Cloud profile page, open **Security → Devices** and start pairing.
@@ -49,8 +96,8 @@ device and a device name, compare the code in both windows, and confirm in the
 original Cloud session. Finish pairing in Cloud Login after confirming that
 the codes match. The local label is user-chosen, not verified account metadata.
 
-Keep the pairing dialog open when switching to the Cloud window. After a reload,
-paste the same unexpired link again to reuse the stored key. Pairing links expire
+Switching to the Cloud window can lock Cloud Login and close the pairing dialog.
+Unlock and paste the same unexpired link again to reuse the stored key. Pairing links expire
 after five minutes. If the link expires, start again in Cloud and revoke any
 previously confirmed device you can no longer use.
 
@@ -66,8 +113,10 @@ silently resend the decision.
 Local removal does not revoke the device in Cloud. Existing browser sessions
 must be revoked separately.
 
-Private keys stay in this browser's IndexedDB and cannot be exported through
-WebCrypto. This is not a hardware-protection or biometric guarantee. Deleted
+IndexedDB stores encrypted Cloud keys and account records. Runtime signing keys
+are imported as non-exportable WebCrypto keys and discarded on lock. This is
+not a hardware-protection or biometric-only guarantee; malicious same-origin
+JavaScript or a compromised operating system can defeat the local lock. Deleted
 browser data has no automatic recovery: sign in with another supported method,
 revoke the old device and pair again. Do not assume that browser tabs, installed
 apps and embedded browsers share storage; pair in the app you will actually use.

@@ -473,6 +473,13 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain(`id="${groupLabelId}"`);
   });
 
+  test("masks secret PIN digits only when requested", () => {
+    const masked = renderToString(() => createComponent(PinInput, { label: "App PIN", password: true, value: "123456" }));
+    const visible = renderToString(() => createComponent(PinInput, { label: "Code", value: "123456" }));
+    expect(masked.match(/type="password"/g)).toHaveLength(6);
+    expect(visible.match(/type="text"/g)).toHaveLength(6);
+  });
+
   test("renders slider value, center track, and reset-capable range semantics", () => {
     const html = renderToString(() =>
       createComponent(Slider, {
