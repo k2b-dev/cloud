@@ -68,7 +68,7 @@ export function AssistantContextRow(props: {
   trailing?: JSX.Element;
 }) {
   const text = useAssistantText();
-  const leading = () => (props.icon ? <i class={props.icon} aria-hidden="true" /> : undefined);
+  const leading = () => (props.icon ? <i class={props.icon} style={{ width: "1rem", height: "1rem", "font-size": "1rem", "line-height": "1rem", "flex-shrink": 0 }} aria-hidden="true" /> : undefined);
   const trailing = () => (
     <>
       <Show when={props.showScope && props.scope === "project"}>

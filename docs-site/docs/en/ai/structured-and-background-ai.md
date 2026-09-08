@@ -16,7 +16,7 @@ It is the right API for classification, extraction, enrichment, and other
 bounded tasks that do not need a conversation.
 
 `runAiStructured()` executes a model request. It does not receive an actor or
-an access subject.
+an access subject. Optional usage attribution is metadata, not authorization.
 
 Cloud does not expose a generic `POST /api/ai/executions` endpoint. Application
 workflows authorize their domain input and use the durable shared AI workflow
@@ -80,6 +80,7 @@ structured-output metadata.
 | `signal` | Cancellation |
 | `traceParent` | Parent span for existing background work |
 | `appId` | Application attribution |
+| `attribution` | Optional authorized user, conversation, turn, and workflow-run identifiers for usage analysis |
 
 The function resolves the model, requests structured output, validates the
 result, and records a trace span.
@@ -105,7 +106,20 @@ personalization learning schedule, and each task's additional instructions in
 **Settings → AI → Background jobs**. Additional instructions can supply local
 terminology or conventions; they cannot replace the task, loosen privacy
 rules, or change the output schema. Compaction uses this same additive model;
-there is no full custom compaction prompt.
+there is no full custom compaction prompt. All three additional-instruction fields
+default to empty; their placeholders are examples, not active instructions.
+**View built-in prompts** opens the original task instructions and output rules
+in a read-only dialog. Personalization shows both turn learning and workflow
+pattern learning; the user locale is supplied separately at runtime. The viewer
+excludes organization additions and conversation content.
+
+Administrators can open **AI → Usage** for token and credit usage, model
+performance, user activity, quality feedback, and background failures over
+24-hour, 7-day, 30-day, or 90-day ranges.
+
+Core's admin UI obtains the built-in text from `AI_BACKGROUND_TASK_PROMPTS`
+in the server-only `@valentinkolb/cloud/ai/admin` entry point. These values use
+the same task constants as execution and are not editable prompt settings.
 
 Do not silently turn a failed AI result into application truth. Decide whether
 the caller should retry, skip the optional enrichment, or surface the error.
@@ -220,7 +234,8 @@ or output. Domain-owned run tables and traces remain the detailed operational
 source. Workflow inference uses this same accounting record, so task records
 do not add a second charge. Each retry that calls the model has its own record.
 See [Observability](/en/docs/operations/observability) for pricing coverage and
-historical accounting limits.
+historical accounting limits. See [Usage and feedback](/en/docs/ai/usage-and-feedback)
+for filters, error details, attribution, and the matching CLI commands.
 
 Use [Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming) when
 the user needs an interactive, stored conversation.

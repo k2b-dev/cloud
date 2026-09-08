@@ -4,3 +4,30 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* AdminLayout owns scrolling; this report grows with its tables. */
+.k2b-ui .ai-usage-page { height: auto; flex: none; overflow: visible; }
+.k2b-ui .ai-usage-page > .k2b-settings-page__body { flex: none; overflow: visible; }
+
+/* Data links inherit typography from their surrounding data or note. */
+.k2b-ui .ai-usage-page .k2b-data-table .k2b-button[data-variant="text"],
+.k2b-ui .ai-usage-page .ai-usage-note .k2b-button[data-variant="text"],
+.k2b-ui .ai-usage-page .ai-usage-summary .k2b-button[data-variant="text"] {
+  font: inherit;
+}
+
+/* Searchable facet selectors sit alongside the standard FilterChip controls. */
+.k2b-ui .ai-usage-filter { min-width: 0; max-width: 15rem; }
+.k2b-ui .ai-usage-filter .k2b-choice-trigger {
+  width: auto; min-height: 2.25rem; padding: 0.375rem 0.75rem;
+  gap: 0.375rem; border-color: transparent;
+  background: var(--k2b-surface-muted); color: var(--k2b-text-secondary);
+  font-size: 0.75rem; font-weight: 500; line-height: 1.25rem;
+}
+.k2b-ui .ai-usage-filter .k2b-choice-trigger:hover { background: var(--k2b-hover); color: var(--k2b-text); }
+.k2b-ui .ai-usage-filter--active .k2b-choice-trigger { background: var(--k2b-selected); color: var(--k2b-action); }
+/* Search menus need room for names even when their trigger is a compact chip. */
+.k2b-ui .ai-usage-filter .k2b-choice-popover {
+  min-width: min(22rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+}

@@ -67,8 +67,8 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("<AssistantComposer projectId=");
     expect(workspace).toContain("navigateTo(assistantConversationHref");
     expect(workspace).toContain("AssistantChatContextPanel");
-    expect(workspace).toContain('class="flex min-h-0 flex-1"');
-    expect(workspace).toContain('class="flex min-w-0 flex-1 flex-col"');
+    expect(workspace).toContain('class="assistant-chat-layout"');
+    expect(workspace).toContain('class="assistant-chat-messages min-h-0 overflow-hidden"');
     expect(workspace).toContain('class="flex justify-end lg:hidden"');
     expect(workspace).not.toContain("<AppWorkspace.Detail");
     expect(context).toContain("AssistantChatContextContent");

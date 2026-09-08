@@ -53,7 +53,7 @@ export default function AssistantEmptyChat(props: {
 
   return (
     <section class="flex min-h-full items-center justify-center px-[var(--ui-space-section)] py-10" aria-labelledby="assistant-empty-title">
-      <div class="w-full max-w-4xl -translate-y-[3vh] sm:-translate-y-[9vh]">
+      <div class="w-full max-w-3xl -translate-y-[3vh] sm:-translate-y-[9vh]">
         <h1 id="assistant-empty-title" class="mb-8 text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)] sm:mb-12">
           {t().workOn}
         </h1>

@@ -1,451 +1,315 @@
 import { sql } from "bun";
-import type { AiMessageFeedbackReason } from "./types";
+import { AiUsageQuerySchema, type AiUsageQuery } from "../shared/ai-usage";
+export { AI_USAGE_RANGES, type AiUsageRange } from "../shared/ai-usage";
 
-export const AI_USAGE_RANGES = ["24h", "7d", "30d", "90d"] as const;
-export type AiUsageRange = (typeof AI_USAGE_RANGES)[number];
-
-export type AiUsageOverview = {
-  range: AiUsageRange;
-  since: string;
-  turns: number;
-  responses: number;
-  activeUsers: number;
-  inputTokens: number;
-  outputTokens: number;
-  creditsUsed: number | null;
-  creditsCoverage: number;
-  failedTurns: number;
-  positiveFeedback: number;
-  negativeFeedback: number;
-  launchedChats: number;
-  modelSwitches: number;
-};
-
-export type AiUsagePoint = { bucket: string; turns: number; tokens: number; failed: number; credits: number | null };
-export type AiUsageModel = {
-  modelProfileId: string;
-  providerModel: string | null;
-  turns: number;
-  failed: number;
-  tokens: number;
-  credits: number | null;
-  avgGenerationMs: number | null;
-  p95GenerationMs: number | null;
-  avgOutputTokensPerSecond: number | null;
-  positiveFeedback: number;
-  negativeFeedback: number;
-  switchesAway: number;
-};
-export type AiUsageUser = {
-  userId: string;
-  label: string;
-  turns: number;
-  tokens: number;
-  credits: number | null;
-  failed: number;
-  capabilities: number;
-  feedbackGiven: number;
-};
-export type AiUsageCapability = {
-  name: string;
-  calls: number;
-  failed: number;
-  rejected: number;
-  avgDurationMs: number | null;
-  users: number;
-};
-export type AiUsageBackgroundTask = {
-  appId: string;
+export type AiUsageRun = {
+  id: string;
+  kind: "chat" | "background" | "tool";
   task: string;
+  status: string;
+  createdAt: string;
+  userId: string | null;
+  userLabel: string | null;
   modelProfileId: string | null;
-  runs: number;
-  failed: number;
-  tokens: number;
+  providerModel: string | null;
+  appId: string | null;
+  conversationId: string | null;
+  turnId: string | null;
+  workflowRunId: string | null;
+  traceId: string | null;
+  tokens: number | null;
   credits: number | null;
-  creditsCoverage: number;
-  avgDurationMs: number | null;
-  lastError: string | null;
-  lastRunAt: string;
+  durationMs: number | null;
+  errorCode: string | null;
+  error: string | null;
+  attempts: number | null;
 };
-export type AiUsageLaunch = { appId: string; chats: number; users: number };
 export type AiUsageFeedback = {
-  messageId: string;
+  id: string;
   conversationId: string;
   conversationTitle: string;
-  userLabel: string;
+  userId: string | null;
+  userLabel: string | null;
   modelProfileId: string | null;
+  providerModel: string | null;
   rating: "up" | "down";
-  reasons: AiMessageFeedbackReason[];
+  reasons: string[];
   comment: string | null;
+  createdAt: string;
   updatedAt: string;
 };
+export type AiUsageStats = {
+  runs: number;
+  failed: number;
+  tokens: number | null;
+  credits: number | null;
+  tokenCoverage: number;
+  creditsCoverage: number;
+  avgDurationMs: number | null;
+  p95DurationMs: number | null;
+  avgOutputTokensPerSecond: number | null;
+  switchesAway: number;
+  assistantMessages: number;
+  positive: number;
+  negative: number;
+  rated: number;
+};
+export type AiUsageGroup = AiUsageStats & { id: string | null; label: string | null; providerModel?: string | null; capabilities: number };
+export type AiUsagePoint = { bucket: string; turns: number; tokens: number | null; failed: number; credits: number | null };
 export type AiUsagePagination = { page: number; perPage: number; total: number };
-export type AiUsageReportOptions = {
-  usersPage?: number;
-  capabilitiesPage?: number;
-  backgroundTasksPage?: number;
-  feedbackPage?: number;
-};
+export type AiUsagePage<T> = AiUsagePagination & { items: T[] };
 export type AiUsageReport = {
-  pagination: Record<"users" | "capabilities" | "backgroundTasks" | "feedback", AiUsagePagination>;
-  overview: AiUsageOverview;
+  query: AiUsageQuery;
+  since: string;
+  until: string;
+  overview: AiUsageStats;
+  chat: AiUsageStats;
+  background: AiUsageStats;
+  tool: AiUsageStats;
+  unassignedBackgroundRuns: number;
   timeline: AiUsagePoint[];
-  models: AiUsageModel[];
-  users: AiUsageUser[];
-  capabilities: AiUsageCapability[];
-  backgroundTasks: AiUsageBackgroundTask[];
-  launches: AiUsageLaunch[];
-  feedback: AiUsageFeedback[];
+  users: AiUsagePage<AiUsageGroup>;
+  models: AiUsagePage<AiUsageGroup>;
+  launches: AiUsagePage<AiUsageLaunch>;
+  capabilities: AiUsagePage<AiUsageGroup>;
+  tasks: AiUsagePage<AiUsageGroup>;
+  apps: AiUsagePage<AiUsageGroup>;
+  feedback: AiUsagePage<AiUsageFeedback>;
+  runs: AiUsagePage<AiUsageRun>;
+};
+export type AiUsageReportOptions = Partial<AiUsageQuery>;
+// Aggregate rows share the same coverage and feedback definitions across dimensions.
+export type AiUsageOverview = AiUsageStats;
+export type AiUsageModel = AiUsageGroup;
+export type AiUsageUser = AiUsageGroup;
+export type AiUsageCapability = AiUsageGroup;
+export type AiUsageBackgroundTask = AiUsageGroup;
+export type AiUsageLaunch = { appId: string; chats: number; users: number };
+
+const days = { "24h": 1, "7d": 7, "30d": 30, "90d": 90 };
+const period = (input: Partial<AiUsageQuery>) => {
+  const query = AiUsageQuerySchema.parse(input);
+  const until = query.until ? new Date(query.until) : new Date();
+  const since = new Date(until.getTime() - days[query.range] * 86400000);
+  return { query: { ...query, until: until.toISOString() }, since, until };
 };
 
-const RANGE_MS: Record<AiUsageRange, number> = {
-  "24h": 24 * 60 * 60 * 1_000,
-  "7d": 7 * 24 * 60 * 60 * 1_000,
-  "30d": 30 * 24 * 60 * 60 * 1_000,
-  "90d": 90 * 24 * 60 * 60 * 1_000,
-};
-const number = (value: unknown): number => (typeof value === "number" ? value : Number(value ?? 0));
-const nullableNumber = (value: unknown): number | null => (value === null || value === undefined ? null : number(value));
-const iso = (value: Date | string): string => new Date(value).toISOString();
+/** One row per durable event. Tool events have no inference charge. No message content leaves this projection. */
+const events = (since: Date, until: Date) => sql`
+  SELECT t.id::text, 'chat'::text AS kind, 'chat'::text AS task, t.status,
+    t.created_at, c.created_by_user_id AS user_id, c.id AS conversation_id, t.id AS turn_id,
+    NULL::uuid AS workflow_run_id, NULL::text AS trace_id,
+    t.model_profile_id, t.provider_model, c.launched_by_app_id AS app_id,
+    NULLIF(t.usage->>'total','')::double precision AS tokens,
+    NULLIF(t.usage->>'creditsUsed','')::double precision AS credits,
+    NULLIF(t.loop_aggregate #>> '{timing,generationMs}','')::double precision AS duration_ms,
+    NULL::text AS error_code, t.error, t.attempt AS attempts,
+    f.messages AS assistant_messages, f.positive, f.negative,
+    NULLIF(t.loop_aggregate #>> '{timing,outputTokensPerSecond}','')::double precision AS speed,
+    CASE WHEN lead(t.id) OVER next_turn IS NOT NULL AND
+      (lead(t.model_profile_id) OVER next_turn IS DISTINCT FROM t.model_profile_id OR lead(t.provider_model) OVER next_turn IS DISTINCT FROM t.provider_model)
+      THEN 1 ELSE 0 END AS switches
 
-type OverviewRow = {
-  turns: unknown;
-  responses: unknown;
-  active_users: unknown;
-  input_tokens: unknown;
-  output_tokens: unknown;
-  credits_used: unknown;
-  credits_covered: unknown;
-  failed_turns: unknown;
-  positive_feedback: unknown;
-  negative_feedback: unknown;
-  launched_chats: unknown;
-  model_switches: unknown;
-};
-
-type BackgroundRow = {
-  app_id: string | null;
-  task: string;
-  model_profile_id: string | null;
-  runs: unknown;
-  failed: unknown;
-  tokens: unknown;
-  credits: unknown;
-  credits_covered: unknown;
-  avg_duration_ms: unknown;
-  last_error: string | null;
-  last_run_at: Date | string;
-};
-
-// Page size is the existing admin table budget; every row remains reachable.
-const PAGE_SIZE = 100;
-const pagination = (requested: number | undefined, total: unknown): AiUsagePagination => {
-  const count = number(total);
-  const page = Number.isSafeInteger(requested) && requested! > 0 ? requested! : 1;
-  return { page: Math.min(page, Math.max(1, Math.ceil(count / PAGE_SIZE))), perPage: PAGE_SIZE, total: count };
-};
-const offset = (page: AiUsagePagination) => (page.page - 1) * page.perPage;
-
-/** UTC buckets match the query and include inactive intervals at both range edges. */
-const fillTimeline = (points: AiUsagePoint[], since: Date, until: Date, range: AiUsageRange): AiUsagePoint[] => {
-  const step = range === "24h" ? 3_600_000 : 86_400_000;
-  const values = new Map(points.map((point) => [point.bucket, point]));
-  const result: AiUsagePoint[] = [];
-  for (let time = Math.floor(since.getTime() / step) * step; time <= until.getTime(); time += step) {
-    const bucket = new Date(time).toISOString();
-    result.push(values.get(bucket) ?? { bucket, turns: 0, tokens: 0, failed: 0, credits: 0 });
+  FROM ai.turns t JOIN ai.conversations c ON c.id = t.conversation_id
+  LEFT JOIN LATERAL (
+    SELECT count(*)::int AS messages, count(*) FILTER (WHERE feedback_rating=1)::int AS positive,
+      count(*) FILTER (WHERE feedback_rating=-1)::int AS negative
+    FROM ai.messages m WHERE m.conversation_id=t.conversation_id AND m.loop_id=t.id::text
+      AND m.kind='message' AND m.role='assistant'
+  ) f ON TRUE
+  WHERE t.created_at >= ${since} AND t.created_at <= ${until} AND COALESCE(t.run_config->>'kind','chat')='chat'
+  WINDOW next_turn AS (PARTITION BY t.conversation_id ORDER BY t.created_at,t.id)
+  UNION ALL
+  SELECT r.id::text, 'background', r.task, CASE WHEN r.status='ok' THEN 'completed' ELSE 'failed' END,
+    r.created_at, r.user_id, r.conversation_id, r.turn_id, r.workflow_run_id, r.trace_id,
+    r.model_profile_id,r.provider_model,r.app_id,r.total_tokens::double precision,r.credits_used,r.duration_ms::double precision,
+    r.error_code,r.error,r.attempts,0,0,0,NULL::double precision,0
+  FROM ai.structured_runs r WHERE r.created_at >= ${since} AND r.created_at <= ${until}
+  UNION ALL
+  SELECT tool.id::text,'tool',tool.tool_name,tool.status,tool.created_at,c.created_by_user_id,
+    c.id,tool.turn_id,NULL::uuid,NULL::text,t.model_profile_id,t.provider_model,c.launched_by_app_id,
+    NULL::double precision,NULL::double precision,
+    EXTRACT(EPOCH FROM (tool.completed_at-tool.started_at))*1000,NULL::text,tool.error,NULL::int,0,0,0,NULL::double precision,0
+  FROM ai.tool_calls tool JOIN ai.conversations c ON c.id=tool.conversation_id JOIN ai.turns t ON t.id=tool.turn_id
+  WHERE tool.created_at >= ${since} AND tool.created_at <= ${until}
+`;
+const globalFilter = (q: AiUsageQuery) => sql`
+  (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND e.user_id IS NULL) OR e.user_id::text=${q.userId ?? null})
+  AND (${q.modelProfileId ?? null}::text IS NULL OR e.model_profile_id=${q.modelProfileId ?? null})
+  AND (${q.providerModel ?? null}::text IS NULL OR e.provider_model=${q.providerModel ?? null})
+  AND (${q.appId ?? null}::text IS NULL OR e.app_id=${q.appId ?? null})
+`;
+const runFilter = (q: AiUsageQuery) => sql`
+  (${q.kind ?? null}::text IS NULL OR e.kind=${q.kind ?? null})
+  AND (${q.status ?? null}::text IS NULL OR e.status=${q.status ?? null})
+  AND (${q.task ?? null}::text IS NULL OR e.task=${q.task ?? null})
+  AND (${q.errorCode ?? null}::text IS NULL OR e.error_code=${q.errorCode ?? null})
+  AND (${q.search ?? ""}='' OR position(lower(${q.search ?? ""}) in lower(concat_ws(' ',e.task,e.error_code,e.error)))>0)
+`;
+const stats = sql`
+  count(*)::int AS runs, count(*) FILTER (WHERE status='failed')::int AS failed,
+  sum(tokens)::double precision AS tokens, sum(credits)::double precision AS credits,
+  COALESCE(count(tokens)::double precision/NULLIF(count(*),0),0) AS "tokenCoverage",
+  COALESCE(count(credits)::double precision/NULLIF(count(*),0),0) AS "creditsCoverage",
+  avg(duration_ms)::double precision AS "avgDurationMs",
+  avg(speed)::double precision AS "avgOutputTokensPerSecond", COALESCE(sum(switches),0)::int AS "switchesAway",
+  percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS "p95DurationMs",
+  COALESCE(sum(assistant_messages),0)::int AS "assistantMessages",
+  COALESCE(sum(positive),0)::int AS positive,COALESCE(sum(negative),0)::int AS negative,
+  COALESCE(sum(positive+negative),0)::int AS rated
+`;
+const comparisonOrder = (q: AiUsageQuery) => {
+  switch (q.sort) {
+    case "tokens":
+      return sql`tokens DESC NULLS LAST`;
+    case "credits":
+      return sql`credits DESC NULLS LAST`;
+    case "errors":
+      return sql`failed DESC`;
+    case "negative":
+      return sql`negative DESC`;
+    case "negativeRate":
+      return sql`negative::double precision/NULLIF(rated,0) DESC NULLS LAST, rated DESC`;
+    default:
+      return sql`runs DESC`;
   }
-  return result;
 };
+const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery): Promise<AiUsagePage<T>> => {
+  const [count] = await sql<{ total: number }[]>`WITH rows AS (${projection}) SELECT count(*)::int AS total FROM rows`;
+  const total = count?.total ?? 0;
+  const page = Math.min(q.page, Math.max(1, Math.ceil(total / q.perPage)));
+  const items = await sql<T[]>`${projection} LIMIT ${q.perPage} OFFSET ${(page - 1) * q.perPage}`;
+  return { items, total, page, perPage: q.perPage };
+};
+const runColumns = sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
+  COALESCE(NULLIF(u.display_name,''),u.uid) AS "userLabel",e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+  e.app_id AS "appId",e.conversation_id::text AS "conversationId",e.turn_id::text AS "turnId",e.workflow_run_id::text AS "workflowRunId",
+  e.trace_id AS "traceId",e.tokens,e.credits,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts`;
 
 export const aiUsage = {
-  report: async (range: AiUsageRange = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {
-    const until = new Date();
-    const since = new Date(until.getTime() - RANGE_MS[range]);
-    const bucket = range === "24h" ? "hour" : "day";
-    // One projection owns accounting for every chat breakdown. Message deletion cannot change usage.
-    const response = sql`
-      SELECT turn.id, turn.conversation_id, turn.model_profile_id, turn.status, turn.created_at,
-        turn.provider_model, turn.usage, turn.loop_aggregate,
-        COALESCE(feedback.positive, 0) AS positive_feedback, COALESCE(feedback.negative, 0) AS negative_feedback
-      FROM ai.turns turn LEFT JOIN LATERAL (
-        SELECT count(*) FILTER (WHERE feedback_rating = 1) AS positive,
-          count(*) FILTER (WHERE feedback_rating = -1) AS negative
-        FROM ai.messages message WHERE message.conversation_id = turn.conversation_id
-          AND message.loop_id = turn.id::text AND message.kind = 'message' AND message.role = 'assistant'
-      ) feedback ON TRUE
-      WHERE turn.created_at >= ${since} AND turn.created_at <= ${until}
-        AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
-    `;
-    const [counts] = await sql<{ users: unknown; capabilities: unknown; background: unknown; feedback: unknown }[]>`
-      WITH response AS (${response})
-      SELECT
-        (SELECT count(DISTINCT c.created_by_user_id) FROM response r JOIN ai.conversations c ON c.id = r.conversation_id) AS users,
-        (SELECT count(DISTINCT tool_name) FROM ai.tool_calls WHERE created_at >= ${since} AND position('.' in tool_name) > 0) AS capabilities,
-        (SELECT count(*) FROM (SELECT 1 FROM ai.structured_runs WHERE created_at >= ${since}
-          GROUP BY app_id, task, model_profile_id) groups) AS background,
-        (SELECT count(*) FROM ai.messages WHERE feedback_updated_at >= ${since}) AS feedback
-    `;
-    const pages = {
-      users: pagination(options.usersPage, counts?.users),
-      capabilities: pagination(options.capabilitiesPage, counts?.capabilities),
-      backgroundTasks: pagination(options.backgroundTasksPage, counts?.background),
-      feedback: pagination(options.feedbackPage, counts?.feedback),
+  report: async (range = "30d", options: AiUsageReportOptions = {}): Promise<AiUsageReport> => {
+    const { query: q, since, until } = period({ ...options, range: AiUsageQuerySchema.shape.range.parse(range) });
+    const source = events(since, until);
+    const filtered = sql`SELECT e.* FROM (${source}) e WHERE ${globalFilter(q)}`;
+    const inference = sql`SELECT * FROM (${filtered}) i WHERE kind<>'tool'`;
+    const summary = async (kind?: string) => {
+      const [row] = await sql<AiUsageStats[]>`SELECT ${stats} FROM (${filtered}) e WHERE ${kind ? sql`kind=${kind}` : sql`kind<>'tool'`}`;
+      return row!;
     };
-    const [overviewRows, timelineRows, modelRows, userRows, capabilityRows, backgroundRows, launchRows, feedbackRows] = await Promise.all([
-      sql<OverviewRow[]>`
-        WITH response AS (${response}), ordered AS (
-          SELECT model_profile_id, lag(model_profile_id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS previous_model
-          FROM response
-        )
-        SELECT
-          count(*) AS turns,
-          count(*) FILTER (WHERE usage IS NOT NULL OR loop_aggregate IS NOT NULL) AS responses,
-          (SELECT count(DISTINCT created_by_user_id) FROM ai.conversations c JOIN response r ON r.conversation_id = c.id) AS active_users,
-          COALESCE(sum(NULLIF(usage->>'input', '')::double precision), 0) AS input_tokens,
-          COALESCE(sum(NULLIF(usage->>'output', '')::double precision), 0) AS output_tokens,
-          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits_used,
-          count(*) FILTER (WHERE usage->>'creditsUsed' IS NOT NULL) AS credits_covered,
-          count(*) FILTER (WHERE status = 'failed') AS failed_turns,
-          COALESCE(sum(positive_feedback), 0) AS positive_feedback,
-          COALESCE(sum(negative_feedback), 0) AS negative_feedback,
-          (SELECT count(*) FROM ai.conversations WHERE launched_by_app_id IS NOT NULL AND created_at >= ${since}) AS launched_chats,
-          (SELECT count(*) FROM ordered WHERE previous_model IS NOT NULL AND model_profile_id IS DISTINCT FROM previous_model) AS model_switches
-        FROM response
-      `,
-      sql<
-        {
-          bucket: Date | string;
-          turns: unknown;
-          tokens: unknown;
-          failed: unknown;
-          credits: unknown;
-        }[]
-      >`
-        WITH response AS (${response})
-        SELECT date_trunc(${bucket}, created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket, count(*) AS turns,
-          COALESCE(sum(NULLIF(usage->>'total', '')::double precision), 0) AS tokens,
-          count(*) FILTER (WHERE status = 'failed') AS failed,
-          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits
-        FROM response GROUP BY 1 ORDER BY 1
-      `,
-      sql<
-        {
-          model_profile_id: string | null;
-          provider_model: string | null;
-          turns: unknown;
-          failed: unknown;
-          tokens: unknown;
-          credits: unknown;
-          avg_generation_ms: unknown;
-          p95_generation_ms: unknown;
-          avg_output_tps: unknown;
-          positive_feedback: unknown;
-          negative_feedback: unknown;
-          switches_away: unknown;
-        }[]
-      >`
-        WITH response AS (${response}), switches AS (
-          SELECT model_profile_id, lead(model_profile_id) OVER (PARTITION BY conversation_id ORDER BY created_at, id) AS next_model
-          FROM response
-        ), switch_counts AS (
-          SELECT model_profile_id, count(*) FILTER (WHERE next_model IS NOT NULL AND next_model IS DISTINCT FROM model_profile_id) AS switches_away
-          FROM switches GROUP BY model_profile_id
-        )
-        SELECT COALESCE(response.model_profile_id, 'unknown') AS model_profile_id, max(provider_model) AS provider_model,
-          count(*) AS turns, count(*) FILTER (WHERE status = 'failed') AS failed,
-          COALESCE(sum(NULLIF(usage->>'total', '')::double precision), 0) AS tokens,
-          sum(NULLIF(usage->>'creditsUsed', '')::double precision) AS credits,
-          avg(NULLIF(loop_aggregate #>> '{timing,generationMs}', '')::double precision) AS avg_generation_ms,
-          percentile_cont(0.95) WITHIN GROUP (ORDER BY NULLIF(loop_aggregate #>> '{timing,generationMs}', '')::double precision) AS p95_generation_ms,
-          avg(NULLIF(loop_aggregate #>> '{timing,outputTokensPerSecond}', '')::double precision) AS avg_output_tps,
-          COALESCE(sum(positive_feedback), 0) AS positive_feedback,
-          COALESCE(sum(negative_feedback), 0) AS negative_feedback,
-          max(COALESCE(switch_counts.switches_away, 0)) AS switches_away
-        FROM response LEFT JOIN switch_counts ON switch_counts.model_profile_id IS NOT DISTINCT FROM response.model_profile_id
-        GROUP BY response.model_profile_id ORDER BY turns DESC
-      `,
-      sql<
-        {
-          user_id: string;
-          label: string;
-          turns: unknown;
-          tokens: unknown;
-          credits: unknown;
-          failed: unknown;
-          capabilities: unknown;
-          feedback_given: unknown;
-        }[]
-      >`
-        WITH response AS (${response}), calls AS (
-          SELECT c.created_by_user_id, count(DISTINCT tool.tool_name) AS capabilities
-          FROM ai.tool_calls tool JOIN ai.conversations c ON c.id = tool.conversation_id
-          WHERE tool.created_at >= ${since} AND position('.' in tool.tool_name) > 0 GROUP BY c.created_by_user_id
-        )
-        SELECT c.created_by_user_id AS user_id, COALESCE(NULLIF(u.display_name, ''), NULLIF(u.uid, ''), c.created_by_user_id::text) AS label,
-          count(*) AS turns,
-          COALESCE(sum(NULLIF(r.usage->>'total', '')::double precision), 0) AS tokens,
-          sum(NULLIF(r.usage->>'creditsUsed', '')::double precision) AS credits,
-          count(*) FILTER (WHERE r.status = 'failed') AS failed,
-          max(COALESCE(calls.capabilities, 0)) AS capabilities,
-          COALESCE(sum(r.positive_feedback + r.negative_feedback), 0) AS feedback_given
-        FROM response r JOIN ai.conversations c ON c.id = r.conversation_id
-        LEFT JOIN auth.users u ON u.id = c.created_by_user_id LEFT JOIN calls ON calls.created_by_user_id = c.created_by_user_id
-        WHERE c.created_by_user_id IS NOT NULL
-        GROUP BY c.created_by_user_id, u.display_name, u.uid ORDER BY turns DESC, c.created_by_user_id
-        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.users)}
-      `,
-      sql<
-        {
-          name: string;
-          calls: unknown;
-          failed: unknown;
-          rejected: unknown;
-          avg_duration_ms: unknown;
-          users: unknown;
-        }[]
-      >`
-        SELECT tool.tool_name AS name, count(*) AS calls,
-          count(*) FILTER (WHERE tool.status = 'failed') AS failed,
-          count(*) FILTER (WHERE tool.status = 'rejected') AS rejected,
-          avg(EXTRACT(EPOCH FROM (tool.completed_at - tool.started_at)) * 1000) FILTER (WHERE tool.completed_at IS NOT NULL AND tool.started_at IS NOT NULL) AS avg_duration_ms,
-          count(DISTINCT conversation.created_by_user_id) AS users
-        FROM ai.tool_calls tool JOIN ai.conversations conversation ON conversation.id = tool.conversation_id
-        WHERE tool.created_at >= ${since} AND position('.' in tool.tool_name) > 0
-        GROUP BY tool.tool_name ORDER BY calls DESC, tool.tool_name
-        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.capabilities)}
-      `,
-      // Workflow AI already calls runAiStructured: task-state records are not another inference.
-      sql<BackgroundRow[]>`
-        SELECT COALESCE(app_id, 'core') AS app_id, task, model_profile_id, count(*) AS runs,
-          count(*) FILTER (WHERE status = 'failed') AS failed, COALESCE(sum(total_tokens), 0) AS tokens,
-          sum(credits_used) AS credits, count(credits_used) AS credits_covered, avg(duration_ms) AS avg_duration_ms,
-          (array_agg(error ORDER BY created_at DESC) FILTER (WHERE error IS NOT NULL))[1] AS last_error,
-          max(created_at) AS last_run_at
-        FROM ai.structured_runs WHERE created_at >= ${since}
-        GROUP BY app_id, task, model_profile_id ORDER BY runs DESC, app_id, task, model_profile_id
-        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.backgroundTasks)}
-      `,
-      sql<{ app_id: string; chats: unknown; users: unknown }[]>`
-        SELECT launched_by_app_id AS app_id, count(*) AS chats, count(DISTINCT created_by_user_id) AS users
-        FROM ai.conversations WHERE launched_by_app_id IS NOT NULL AND created_at >= ${since}
-        GROUP BY launched_by_app_id ORDER BY chats DESC
-      `,
-      sql<
-        {
-          message_id: string;
-          conversation_id: string;
-          conversation_title: string;
-          user_label: string;
-          model_profile_id: string | null;
-          feedback_rating: number;
-          feedback_reasons: AiMessageFeedbackReason[];
-          feedback_comment: string | null;
-          feedback_updated_at: Date | string;
-        }[]
-      >`
-        SELECT message.short_id AS message_id, conversation.short_id AS conversation_id,
-          conversation.title AS conversation_title,
-          COALESCE(NULLIF(users.display_name, ''), NULLIF(users.uid, ''), conversation.created_by_user_id::text, 'Deleted user') AS user_label,
-          message.model_profile_id, message.feedback_rating, message.feedback_reasons,
-          message.feedback_comment, message.feedback_updated_at
-        FROM ai.messages message JOIN ai.conversations conversation ON conversation.id = message.conversation_id
-        LEFT JOIN auth.users users ON users.id = conversation.created_by_user_id
-        WHERE message.feedback_updated_at >= ${since}
-        ORDER BY message.feedback_rating ASC, message.feedback_updated_at DESC, message.id
-        LIMIT ${PAGE_SIZE} OFFSET ${offset(pages.feedback)}
-      `,
-    ]);
-
-    const overview = overviewRows[0] ?? ({} as OverviewRow);
-    const turns = number(overview.turns);
+    const groups = (dimension: "users" | "models" | "tasks" | "apps" | "capabilities") => {
+      const key =
+        dimension === "users"
+          ? sql`e.user_id::text`
+          : dimension === "models"
+            ? sql`e.model_profile_id`
+            : dimension === "tasks" || dimension === "capabilities"
+              ? sql`e.task`
+              : sql`e.app_id`;
+      const label = dimension === "users" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid)` : key;
+      const provider = dimension === "models" ? sql`e.provider_model` : sql`NULL::text`;
+      return pageOf<AiUsageGroup>(
+        sql`WITH grouped AS (
+        SELECT ${key} AS id,${label} AS label,${provider} AS "providerModel",${stats}
+        FROM (${dimension === "capabilities" ? sql`SELECT * FROM (${filtered}) e WHERE kind='tool'` : inference}) e LEFT JOIN auth.users u ON u.id=e.user_id
+        GROUP BY ${key},${label},${provider}
+      ) SELECT grouped.*,${dimension === "users" ? sql`(SELECT count(DISTINCT task)::int FROM (${filtered}) e WHERE kind='tool' AND e.user_id::text=grouped.id)` : sql`0::int`} AS capabilities FROM grouped ORDER BY ${comparisonOrder(q)},id NULLS LAST,"providerModel" NULLS LAST`,
+        q,
+      );
+    };
+    const runRows = sql`SELECT ${runColumns} FROM (${filtered}) e LEFT JOIN auth.users u ON u.id=e.user_id
+      WHERE ${runFilter(q)} ORDER BY e.created_at DESC,e.kind,e.id`;
+    // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
+    const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
+      e.user_id::text AS "userId",COALESCE(NULLIF(u.display_name,''),u.uid) AS "userLabel",
+      e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+      CASE WHEN m.feedback_rating=1 THEN 'up' ELSE 'down' END AS rating,
+      m.feedback_reasons AS reasons,m.feedback_comment AS comment,m.created_at::text AS "createdAt",m.feedback_updated_at::text AS "updatedAt"
+      FROM (${filtered}) e JOIN ai.messages m ON m.loop_id=e.id AND m.conversation_id=e.conversation_id
+      JOIN ai.conversations c ON c.id=e.conversation_id LEFT JOIN auth.users u ON u.id=e.user_id
+      WHERE e.kind='chat' AND m.kind='message' AND m.role='assistant' AND m.feedback_rating IN (1,-1)
+      AND (${q.rating ?? null}::text IS NULL OR m.feedback_rating=${q.rating === "up" ? 1 : -1})
+      AND (${q.reason ?? null}::text IS NULL OR ${q.reason ?? null}=ANY(m.feedback_reasons))
+      ORDER BY m.created_at DESC,m.id`;
+    const [overview, chat, background, tool, users, models, tasks, apps, feedback, runs, timeline, unassigned, capabilities, launches] =
+      await Promise.all([
+        summary(),
+        summary("chat"),
+        summary("background"),
+        summary("tool"),
+        groups("users"),
+        groups("models"),
+        groups("tasks"),
+        groups("apps"),
+        pageOf<AiUsageFeedback>(feedbackRows, q),
+        pageOf<AiUsageRun>(runRows, q),
+        sql<
+          AiUsagePoint[]
+        >`SELECT date_trunc(${q.range === "24h" ? "hour" : "day"},created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS bucket,
+        count(*)::int AS turns,sum(tokens)::double precision AS tokens,count(*) FILTER (WHERE status='failed')::int AS failed,sum(credits)::double precision AS credits
+        FROM (${inference}) e GROUP BY 1 ORDER BY 1`,
+        sql<{ count: number }[]>`SELECT count(*)::int AS count FROM (${source}) e WHERE e.kind='background' AND e.user_id IS NULL
+        AND ${globalFilter({ ...q, userId: undefined })}`,
+        groups("capabilities"),
+        pageOf<AiUsageLaunch>(
+          sql`SELECT c.launched_by_app_id AS "appId",count(*)::int AS chats,count(DISTINCT c.created_by_user_id)::int AS users
+        FROM ai.conversations c WHERE c.created_at >= ${since} AND c.created_at <= ${until} AND c.launched_by_app_id IS NOT NULL
+        AND (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND c.created_by_user_id IS NULL) OR c.created_by_user_id::text=${q.userId ?? null})
+        AND (${q.appId ?? null}::text IS NULL OR c.launched_by_app_id=${q.appId ?? null})
+        AND ((${q.modelProfileId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
+          SELECT 1 FROM (${filtered}) e WHERE e.kind='chat' AND e.conversation_id=c.id
+        )) GROUP BY c.launched_by_app_id ORDER BY chats DESC,c.launched_by_app_id`,
+          q,
+        ),
+      ]);
+    const step = q.range === "24h" ? 3600000 : 86400000;
+    const points = new Map(timeline.map((p) => [new Date(p.bucket).toISOString(), p]));
+    const filled: AiUsagePoint[] = [];
+    for (let time = Math.floor(since.getTime() / step) * step; time <= until.getTime(); time += step) {
+      const bucket = new Date(time).toISOString();
+      filled.push({ ...(points.get(bucket) ?? { turns: 0, tokens: 0, failed: 0, credits: 0 }), bucket });
+    }
     return {
-      pagination: pages,
-      overview: {
-        range,
-        since: since.toISOString(),
-        turns,
-        responses: number(overview.responses),
-        activeUsers: number(overview.active_users),
-        inputTokens: number(overview.input_tokens),
-        outputTokens: number(overview.output_tokens),
-        creditsUsed: nullableNumber(overview.credits_used),
-        creditsCoverage: turns > 0 ? number(overview.credits_covered) / turns : 0,
-        failedTurns: number(overview.failed_turns),
-        positiveFeedback: number(overview.positive_feedback),
-        negativeFeedback: number(overview.negative_feedback),
-        launchedChats: number(overview.launched_chats),
-        modelSwitches: number(overview.model_switches),
-      },
-      timeline: fillTimeline(
-        timelineRows.map((row) => ({
-          bucket: iso(row.bucket),
-          turns: number(row.turns),
-          tokens: number(row.tokens),
-          failed: number(row.failed),
-          credits: nullableNumber(row.credits),
-        })),
-        since,
-        until,
-        range,
-      ),
-      models: modelRows.map((row) => ({
-        modelProfileId: row.model_profile_id ?? "unknown",
-        providerModel: row.provider_model,
-        turns: number(row.turns),
-        failed: number(row.failed),
-        tokens: number(row.tokens),
-        credits: nullableNumber(row.credits),
-        avgGenerationMs: nullableNumber(row.avg_generation_ms),
-        p95GenerationMs: nullableNumber(row.p95_generation_ms),
-        avgOutputTokensPerSecond: nullableNumber(row.avg_output_tps),
-        positiveFeedback: number(row.positive_feedback),
-        negativeFeedback: number(row.negative_feedback),
-        switchesAway: number(row.switches_away),
-      })),
-      users: userRows.map((row) => ({
-        userId: row.user_id,
-        label: row.label,
-        turns: number(row.turns),
-        tokens: number(row.tokens),
-        credits: nullableNumber(row.credits),
-        failed: number(row.failed),
-        capabilities: number(row.capabilities),
-        feedbackGiven: number(row.feedback_given),
-      })),
-      capabilities: capabilityRows.map((row) => ({
-        name: row.name,
-        calls: number(row.calls),
-        failed: number(row.failed),
-        rejected: number(row.rejected),
-        avgDurationMs: nullableNumber(row.avg_duration_ms),
-        users: number(row.users),
-      })),
-      backgroundTasks: backgroundRows.map((row) => ({
-        appId: row.app_id ?? "core",
-        task: row.task,
-        modelProfileId: row.model_profile_id,
-        runs: number(row.runs),
-        failed: number(row.failed),
-        tokens: number(row.tokens),
-        credits: nullableNumber(row.credits),
-        avgDurationMs: nullableNumber(row.avg_duration_ms),
-        creditsCoverage: number(row.runs) > 0 ? number(row.credits_covered) / number(row.runs) : 0,
-        lastError: row.last_error,
-        lastRunAt: iso(row.last_run_at),
-      })),
-      launches: launchRows.map((row) => ({ appId: row.app_id, chats: number(row.chats), users: number(row.users) })),
-      feedback: feedbackRows.map((row) => ({
-        messageId: row.message_id,
-        conversationId: row.conversation_id,
-        conversationTitle: row.conversation_title,
-        userLabel: row.user_label,
-        modelProfileId: row.model_profile_id,
-        rating: row.feedback_rating === 1 ? "up" : "down",
-        reasons: row.feedback_reasons,
-        comment: row.feedback_comment,
-        updatedAt: iso(row.feedback_updated_at),
-      })),
+      query: q,
+      since: since.toISOString(),
+      until: until.toISOString(),
+      overview,
+      chat,
+      background,
+      tool,
+      unassignedBackgroundRuns: unassigned[0]?.count ?? 0,
+      timeline: filled,
+      users,
+      models,
+      tasks,
+      apps,
+      feedback,
+      runs,
+      capabilities,
+      launches,
     };
+  },
+  /** Resolve one metadata record only; this never opens another user's chat content. */
+  detail: async (kind: AiUsageRun["kind"], id: string): Promise<AiUsageRun | null> => {
+    const [row] = await sql<AiUsageRun[]>`SELECT ${runColumns} FROM (${events(new Date(0), new Date())}) e
+      LEFT JOIN auth.users u ON u.id=e.user_id WHERE e.kind=${kind} AND e.id=${id}`;
+    return row ?? null;
+  },
+  facets: async (field: "userId" | "modelProfileId" | "providerModel" | "appId" | "task", search: string, input: Partial<AiUsageQuery>) => {
+    const { query, since, until } = period(input);
+    const key =
+      field === "userId"
+        ? sql`e.user_id::text`
+        : field === "modelProfileId"
+          ? sql`e.model_profile_id`
+          : field === "providerModel"
+            ? sql`e.provider_model`
+            : field === "appId"
+              ? sql`e.app_id`
+              : sql`e.task`;
+    const label = field === "userId" ? sql`COALESCE(NULLIF(u.display_name,''),u.uid,e.user_id::text)` : key;
+    return sql<{ id: string; label: string }[]>`SELECT DISTINCT ${key} AS id,${label} AS label FROM (${events(since, until)}) e
+      LEFT JOIN auth.users u ON u.id=e.user_id WHERE ${key} IS NOT NULL
+      AND (position(lower(${search}) in lower(${label}))>0 OR ${key}=${search} OR (${field === "userId"} AND position(lower(${search}) in lower(COALESCE(u.uid,'')))>0))
+      ORDER BY label,id LIMIT ${query.perPage}`;
   },
 };

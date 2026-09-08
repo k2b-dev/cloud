@@ -162,6 +162,7 @@ const indexConversationToolSource = async (input: {
   turnId: string;
   callId: string;
   name: string;
+  args: unknown;
   result: unknown;
   isError: boolean;
 }): Promise<void> => {
@@ -169,7 +170,9 @@ const indexConversationToolSource = async (input: {
   try {
     let source: Parameters<typeof aiConversations.indexConversationSource>[0]["source"] | null = null;
     if (input.name === "web_search") {
-      source = { kind: "activity", key: "web_search", title: "Web search", preview: "Searched the web", icon: "ti ti-world" };
+      const args = input.args;
+      const query = typeof args === "object" && args !== null && "query" in args && typeof args.query === "string" ? args.query.trim() : "";
+      source = { kind: "activity", key: "web_search", title: query || "Web search", preview: "Searched the web", icon: "ti ti-world" };
     } else if (input.name === "web_extract" && typeof input.result === "object" && input.result !== null) {
       const result = input.result as Record<string, unknown>;
       if (typeof result.url === "string" && result.url.trim()) {
@@ -998,6 +1001,7 @@ export class AiTurnExecutor {
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
       compact: createCloudCompactFn({
         conversationId,
+        turnId,
         modelProfileId: resolved.profile.id,
         additionalInstructions: settings.compactionInstructions,
         maxOutputTokens: resolved.profile.maxOutputTokens,
@@ -1131,11 +1135,13 @@ export class AiTurnExecutor {
           await aiToolAudit
             .noteToolCompleted({ turnId, callId: event.callId, result: event.result, isError: event.isError })
             .catch(() => undefined);
+          const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
           await indexConversationToolSource({
             conversationId,
             turnId,
             callId: event.callId,
             name: event.name,
+            args: toolBlock?.kind === "tool" ? toolBlock.args : undefined,
             result: event.result,
             isError: event.isError === true,
           });
@@ -1364,6 +1370,7 @@ export class AiTurnExecutor {
       signal: abortController.signal,
       compact: createCloudCompactFn({
         conversationId,
+        turnId,
         modelProfileId: resolved.profile.id,
         additionalInstructions: settings.compactionInstructions,
         maxOutputTokens: resolved.profile.maxOutputTokens,
@@ -1591,6 +1598,7 @@ class StreamPipeline {
 }
 
 export const __aiExecutorTest = {
+  indexConversationToolSource,
   StreamPipeline,
   applyToolRoundPolicy,
   createEventMapper,

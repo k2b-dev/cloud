@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
 import { aiTurnAllowsRememberedApprovals } from "./approvals";
 import { __aiExecutorTest } from "./executor";
+import { aiConversations } from "./store";
 import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 
 const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
@@ -537,4 +538,20 @@ describe("tool round policy", () => {
     policy.noteToolRound();
     expect(await (policy.tools as () => Promise<Tool[]>)()).toEqual([]);
   });
+});
+
+test("web search sources retain the query above the activity description", async () => {
+  const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
+  try {
+    await __aiExecutorTest.indexConversationToolSource({
+      conversationId: "conversation", turnId: "turn", callId: "search", name: "web_search",
+      args: { query: "  Wetter Ulm  " }, result: [], isError: false,
+    });
+    expect(index).toHaveBeenCalledWith({
+      conversationId: "conversation", turnId: "turn", callId: "search",
+      source: { kind: "activity", key: "web_search", title: "Wetter Ulm", preview: "Searched the web", icon: "ti ti-world" },
+    });
+  } finally {
+    index.mockRestore();
+  }
 });

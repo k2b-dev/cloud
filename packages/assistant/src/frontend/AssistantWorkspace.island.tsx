@@ -1052,9 +1052,9 @@ export default function AssistantWorkspace(props: Props) {
               when={projectView()}
               fallback={
                 <Chat class="min-h-0 flex-1">
-                  <div class="flex min-h-0 flex-1">
-                    <div class="flex min-w-0 flex-1 flex-col">
-                      <section class="min-h-0 flex-1 overflow-hidden" data-scroll-preserve="assistant-messages">
+                  <div class="assistant-chat-layout">
+                    <div class="contents">
+                      <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
                         <Show
                           when={emptyChat()}
                           fallback={
@@ -1109,8 +1109,8 @@ export default function AssistantWorkspace(props: Props) {
                       </section>
 
                       <Show when={!emptyChat()}>
-                        <div class="shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                          <div class="mx-auto flex max-w-4xl flex-col gap-2">
+                        <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+                          <div class="mx-auto flex max-w-3xl flex-col gap-2">
                             <ComposerNotices />
                             <AssistantComposer />
                             <Show when={activeConversation() && chatContextPresence() === true ? activeConversation() : null}>

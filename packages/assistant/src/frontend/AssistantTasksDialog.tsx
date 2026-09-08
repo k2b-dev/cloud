@@ -1,6 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, DateTimePicker, Placeholder, prompts, Select, StatusBadge, TextInput, toast } from "@k2b/ui";
+import { useLocale, Button, DateTimePicker, Placeholder, prompts, Select, StatusBadge, TextInput, toast } from "@k2b/ui";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type {
@@ -47,12 +47,13 @@ const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], tex
   return { label: text("Queued"), tone: "neutral" as const };
 };
 
-export const formatAssistantTaskSchedule = (task: AssistantChatTask): string =>
+export const formatAssistantTaskSchedule = (task: AssistantChatTask, locale = "en"): string =>
   task.schedule.kind === "once"
-    ? dates.formatDateTime(task.schedule.runAt, { timeZone: task.timezone })
+    ? dates.formatDateTime(task.schedule.runAt, { locale, timeZone: task.timezone })
     : `${task.schedule.cron} · ${task.timezone}`;
 
 export function AssistantTasksView(props: { chatId: string }) {
+  const locale = useLocale();
   const text = useAssistantText();
   const copy = useAssistantCopy();
   const tasks = query.create<string, AssistantChatTask[], AssistantLiveInvalidation>({
@@ -308,7 +309,7 @@ export function AssistantTasksView(props: { chatId: string }) {
                       <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
                           <p class="line-clamp-3 text-sm font-medium text-primary">{task.prompt}</p>
-                          <p class="mt-1 text-xs text-dimmed">{formatAssistantTaskSchedule(task)}</p>
+                          <p class="mt-1 text-xs text-dimmed">{formatAssistantTaskSchedule(task, locale())}</p>
                         </div>
                         <StatusBadge label={state().label} tone={state().tone} variant="chip" />
                       </div>

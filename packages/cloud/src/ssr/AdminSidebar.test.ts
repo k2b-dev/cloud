@@ -13,6 +13,18 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 });
 
 describe("buildAdminGroups", () => {
+  it("links to AI usage in both supported locales", () => {
+    for (const [locale, label] of [
+      ["en", "Usage"],
+      ["de", "Nutzung"],
+    ] as const) {
+      expect(buildAdminGroups([], locale).flatMap((group) => group.links)).toContainEqual({
+        href: "/admin/settings?tab=ai-usage",
+        icon: "ti-chart-histogram",
+        label,
+      });
+    }
+  });
   it("renders app-declared groups in the existing core group order", () => {
     const groups = buildAdminGroups([
       app({

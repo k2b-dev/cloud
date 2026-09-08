@@ -1,4 +1,4 @@
-import { err, fail, ok } from "@k2b/stdlib";
+import { dates, i18n, err, fail, ok } from "@k2b/stdlib";
 import {
   AI_SHORT_ID_PATTERN,
   AI_SKILL_DESCRIPTION_MAX_CHARS,
@@ -141,6 +141,27 @@ const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
 });
 const taskScheduleLabel = (task: AiChatTask): string =>
   task.schedule.kind === "once" ? `${task.schedule.runAt} (${task.timezone})` : `${task.schedule.cron} (${task.timezone})`;
+const referenceMessages = i18n.define({ baseLocale: "en", messages: {
+  en: { active: "Active", paused: "Paused", completed: "Completed", needs_attention: "Needs attention", recurring: "Recurring", chat: "AI conversation" },
+  de: { active: "Aktiv", paused: "Pausiert", completed: "Abgeschlossen", needs_attention: "Eingriff erforderlich", recurring: "Wiederkehrend", chat: "KI-Chat" },
+} });
+const taskReference = (task: AiChatTask, locale: string) => {
+  const resolved = referenceMessages.resolve([locale]);
+  const t = resolved.t;
+  const schedule = task.schedule.kind === "once"
+    ? dates.formatDateTime(task.schedule.runAt, { locale: resolved.locale, timeZone: task.timezone })
+    : `${t.recurring}: ${task.schedule.cron}`;
+  return { type: "core.ai.task", id: task.shortId, title: task.prompt.trim().slice(0, 500),
+    preview: `${t[task.state]} · ${schedule} · ${task.timezone}`, icon: "ti ti-calendar-clock" };
+};
+const taskChatReference = (task: AiChatTask, locale: string) => ({
+  type: "core.ai.chat", id: task.chatId, title: task.chatTitle,
+  preview: referenceMessages.resolve([locale]).t.chat, icon: "ti ti-message-chatbot",
+});
+const chatReference = (chat: AiConversation) => ({
+  type: "core.ai.chat", id: chat.shortId, title: chat.title,
+  preview: chat.description, icon: "ti ti-message-chatbot",
+});
 const taskChatTitle = (task: AiChatTask): string => `“${task.chatTitle}”`;
 const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask): string => {
   if (input.prompt !== undefined && input.schedule !== undefined)
@@ -435,6 +456,7 @@ const chatSummary = (chat: AiConversation) => ({
 const toResourceView = (chat: AiConversation): CloudResourceView => ({
   ref: { type: "core.ai.chat", id: chat.shortId },
   title: chat.title,
+  icon: "ti ti-message-chatbot",
   ...(chat.description.trim() ? { preview: chat.description } : {}),
   priority: chat.pinnedAt ? 8 : 6,
   metadata: [
@@ -587,7 +609,7 @@ export const aiCapabilities = defineCapabilities({
         const items = tasks.slice(0, input.limit);
         return ok({
           data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
-          refs: items.map((task) => ({ type: "core.ai.task", id: task.shortId })),
+          refs: items.map((task) => taskReference(task, context.locale)),
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
       },
@@ -619,8 +641,8 @@ export const aiCapabilities = defineCapabilities({
           },
           summary: `Read ${task.state} scheduled task in “${task.chatTitle}”.`,
           refs: [
-            { type: "core.ai.task", id: task.shortId },
-            { type: "core.ai.chat", id: task.chatId },
+            taskReference(task, context.locale),
+            taskChatReference(task, context.locale),
           ],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
@@ -663,7 +685,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
           summary: `Read AI conversation “${chat.title}”.`,
-          refs: [{ type: "core.ai.chat", id: chat.shortId }],
+          refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.hasMore && oldestSeq !== undefined ? String(oldestSeq) : undefined),
         });
@@ -690,7 +712,7 @@ export const aiCapabilities = defineCapabilities({
         });
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
-          refs: [{ type: "core.ai.chat", id: chat.shortId }],
+          refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.nextCursor),
         });
@@ -1044,8 +1066,8 @@ export const aiCapabilities = defineCapabilities({
               data: taskData(replay),
               summary: `Scheduled a task in ${taskChatTitle(replay)}.`,
               refs: [
-                { type: "core.ai.task", id: replay.shortId },
-                { type: "core.ai.chat", id: replay.chatId },
+                taskReference(replay, context.locale),
+                taskChatReference(replay, context.locale),
               ],
             });
         } catch (error) {
@@ -1078,8 +1100,8 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: `Scheduled a task in ${taskChatTitle(task)}.`,
           refs: [
-            { type: "core.ai.task", id: task.shortId },
-            { type: "core.ai.chat", id: task.chatId },
+            taskReference(task, context.locale),
+            taskChatReference(task, context.locale),
           ],
         });
       },
@@ -1133,7 +1155,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: taskUpdateSummary(input, task),
-          refs: [{ type: "core.ai.task", id: task.shortId }],
+          refs: [taskReference(task, context.locale)],
         });
       },
     },
@@ -1177,7 +1199,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: `Paused the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.ai.task", id: task.shortId }],
+          refs: [taskReference(task, context.locale)],
         });
       },
     },
@@ -1219,7 +1241,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: `Resumed the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.ai.task", id: task.shortId }],
+          refs: [taskReference(task, context.locale)],
         });
       },
     },
@@ -1266,7 +1288,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: { id: occurrence.shortId, state: occurrence.state },
           summary: `Queued a run of the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.ai.task", id: task.shortId }],
+          refs: [taskReference(task, context.locale)],
         });
       },
     },
@@ -1355,7 +1377,8 @@ export const aiCapabilities = defineCapabilities({
             status === "delivered"
               ? `Sent a message to “${created.message.targetTitle}”.`
               : `Queued a message for “${created.message.targetTitle}”.`,
-          refs: [{ type: "core.ai.chat", id: created.message.targetChatId }],
+          refs: [{ type: "core.ai.chat", id: created.message.targetChatId, title: created.message.targetTitle,
+            preview: referenceMessages.resolve([context.locale]).t.chat, icon: "ti ti-message-chatbot" }],
           links: [{ rel: "open", href: chatHref(created.message.targetChatId) }],
         });
       },

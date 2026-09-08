@@ -5,7 +5,7 @@ import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
 import { resolveAiModel } from "./settings";
-import { safelyRecordStructuredRun } from "./structured-runs";
+import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
 
 export const AI_BACKGROUND_MODEL_SETTING_KEY = "ai.background_model_id";
@@ -57,6 +57,8 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   /** Parent trace span when the caller already runs inside one (e.g. a sync job). */
   traceParent?: TraceContext;
   appId?: string;
+  /** Metadata-only attribution, supplied by the authorized caller. */
+  attribution?: AiUsageAttribution;
   /** Model resolution seam — tests inject a fake so they never touch shared settings. */
   resolveModel?: (requestedModelId?: string) => Promise<AiResolvedModel>;
 };
@@ -124,6 +126,8 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
         });
         await safelyRecordStructuredRun({
           task: input.task,
+          attribution: input.attribution,
+          traceId: span.traceId,
           appId: input.appId,
           modelProfileId: resolved.profile.id,
           providerModel: resolved.profile.model,
@@ -148,6 +152,8 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
             : undefined;
         await safelyRecordStructuredRun({
           task: input.task,
+          attribution: input.attribution,
+          traceId: span.traceId,
           appId: input.appId,
           modelProfileId: resolved?.profile.id,
           providerModel: resolved?.profile.model,

@@ -8,3 +8,55 @@
 .k2b-ui .assistant-empty-project-trigger > .k2b-button__label {
   width: 100%;
 }
+
+/* The timeline owns the full-width scrollport; its contents keep the same
+   column as the composer. Context occupies the reserved column without moving
+   the native scrollbar between the two columns. */
+.k2b-ui .assistant-chat-layout {
+  --assistant-chat-context-width: 0px;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) var(--assistant-chat-context-width);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.k2b-ui .assistant-chat-messages {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.k2b-ui .assistant-chat-composer {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__viewport {
+  padding-inline-end: var(--assistant-chat-context-width);
+}
+
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__latest {
+  left: calc((100% - var(--assistant-chat-context-width)) / 2);
+}
+
+@media (min-width: 64rem) {
+  .k2b-ui .assistant-chat-layout:has([data-assistant-context="compact"]) {
+    --assistant-chat-context-width: 19rem;
+  }
+
+  .k2b-ui .assistant-chat-layout [data-assistant-context="compact"] {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    z-index: 1;
+  }
+}
+
+.k2b-ui .assistant-chat-layout .k2b-chat-message[data-status="pending"] .k2b-chat-message__status {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .assistant-chat-layout .k2b-chat-message[data-status="pending"] .k2b-chat-message__status > i {
+  font-size: 1em;
+}

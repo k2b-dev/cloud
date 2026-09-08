@@ -188,14 +188,14 @@ export const CORE_SETTINGS = {
   },
   "ai.chat_enrichment_instructions": {
     kind: "text",
-    label: "Chat Enrichment Instructions",
+    label: "Additional Chat Enrichment Instructions",
     default: "",
     description: "Optional organization guidance added to the fixed chat enrichment task and output contract.",
     placeholder: "Prefer organization-specific terminology when it is present in the chat.",
   },
   "ai.memory_learning_instructions": {
     kind: "text",
-    label: "Personalization Learning Instructions",
+    label: "Additional Personalization Instructions",
     default: "",
     description: "Optional organization guidance added to the fixed personalization learning task and privacy contract.",
     placeholder: "Keep learned preferences concise and use the user's language.",
@@ -211,7 +211,7 @@ export const CORE_SETTINGS = {
   },
   "ai.compaction_instructions": {
     kind: "text",
-    label: "Compaction Instructions",
+    label: "Additional Compaction Instructions",
     default: "",
     description: "Optional organization guidance added to the fixed long-chat compaction task and completeness contract.",
     placeholder: "Preserve internal ticket ids and use the organization's canonical team names.",

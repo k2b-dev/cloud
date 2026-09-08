@@ -90,7 +90,7 @@ export type AiMemoryLearningRunSummary = {
 
 const log = logger("ai:memory-learning");
 
-const MEMORY_LEARNING_PROMPT = [
+export const MEMORY_LEARNING_PROMPT = [
   "Maintain a small, useful personal profile from one newly completed private chat turn.",
   "The normal result is no changes. Keep only durable information likely to help in multiple future chats.",
   "Facts and preferences require an explicit statement in NEW USER TEXT. Do not infer them from Assistant text or actions.",
@@ -102,21 +102,21 @@ const MEMORY_LEARNING_PROMPT = [
   "Examples: 'Always answer briefly in German' adds a preference. 'Use Accounting for invoice mail' plus a successful mail.mailbox ref adds a workflow. 'Find this invoice in Accounting' does not establish a lasting workflow.",
 ].join("\n");
 
-const MEMORY_LEARNING_OUTPUT_CONTRACT = [
+export const MEMORY_LEARNING_OUTPUT_CONTRACT = [
   "Return exactly {changes:[...]} with at most five changes.",
   "add uses no memoryIds; replace uses one; merge uses two or more; retire uses one or more and empty content.",
   "fact and preference use resourceRef null. workflow uses exactly one resourceRef from SUCCESSFUL ACTIONS.",
   "Use only mutable memory ids shown in the input. Return an empty changes array when uncertain.",
 ].join("\n");
 
-const WORKFLOW_PATTERN_PROMPT = [
+export const WORKFLOW_PATTERN_PROMPT = [
   "Decide whether three successful uses of the same Cloud capability and resource reveal one reusable workflow default.",
   "Return a workflow only when the user requests share a clear recurring category and defaulting to this resource would avoid a future search or clarification.",
   "Do not generalize from unrelated requests, resource contents, or the Assistant wording. Uncertainty returns null.",
   "If an existing mutable workflow is corrected, return its id. Return multiple ids only when one new workflow genuinely consolidates them. Protected memories cannot be changed.",
 ].join("\n");
 
-const WORKFLOW_PATTERN_OUTPUT_CONTRACT =
+export const WORKFLOW_PATTERN_OUTPUT_CONTRACT =
   "Return exactly {workflow:null} or {workflow:{content,memoryIds}}. Content is one short reusable rule; memoryIds contains only shown mutable ids.";
 
 const boundedText = (value: string, maxChars: number): string => {
@@ -476,6 +476,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (!runId) continue;
       const result = await structured({
         task: "memory-learn-turn",
+        attribution: { userId: candidate.userId, conversationId: candidate.conversationId, turnId: candidate.turnId },
         appId: "ai",
         systemPrompt,
         input: taskInput,
@@ -563,6 +564,7 @@ export const learnAiMemoriesFromPrivateChats = async (
       if (!runId) continue;
       const result = await structured({
         task: "memory-learn-workflow",
+        attribution: { userId: pattern.userId, conversationId: context.source.candidate.conversationId, turnId: context.source.candidate.turnId },
         appId: "ai",
         systemPrompt: workflowPrompt,
         input: context.input,

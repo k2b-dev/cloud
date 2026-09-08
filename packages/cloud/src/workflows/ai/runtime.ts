@@ -96,6 +96,7 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
   const request = task.request;
   const common = {
     appId: task.appId,
+    attribution: { workflowRunId: task.runId, userId: task.usageUserId },
     requestedModelId: task.modelProfileId,
     signal,
     temperature: 0,

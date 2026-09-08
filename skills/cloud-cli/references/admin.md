@@ -196,6 +196,26 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
 
+## AI usage and feedback
+
+Use `cld admin ai usage report --json` for the complete filtered report.
+List commands are `users`, `models`, `tasks`, `apps`, `launches`, `capabilities`,
+`feedback`, and `runs`. Discover identifiers with
+`cld admin ai usage facets --field userId --search <name> --json`.
+
+Shared filters: `--range 24h|7d|30d|90d`, `--user <uuid|unassigned>`,
+`--model <profile-id>`, `--provider-model <model>`, and `--app <app-id>`.
+Use `--sort negativeRate` or `--sort negative` for user/model comparisons.
+Feedback accepts `--rating up|down` and `--reason`; runs accept
+`--kind chat|background|tool`, `--status`, `--task`, `--error-code`, and `--search`.
+These local filters affect only their list, preserving report denominators.
+
+List JSON includes `items`, `total`, `page`, `perPage`, and the resolved query.
+Use `--page` and `--per-page` (1–100) and preserve `--until` from the first
+response when collecting pages. `--jsonl` emits one full item per line from
+that page. `cld admin ai usage get <kind> <uuid> --json` reads a single run,
+including its full stored error. No command exposes private chat message text.
+
 
 ## Sync and NATS
 

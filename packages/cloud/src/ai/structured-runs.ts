@@ -2,7 +2,16 @@ import type { Usage } from "@k2b/nessi";
 import { sql } from "bun";
 import { logger } from "../services/logging";
 
+export type AiUsageAttribution = {
+  userId?: string;
+  conversationId?: string;
+  turnId?: string;
+  workflowRunId?: string;
+};
+
 export type AiStructuredRunRecord = {
+  attribution?: AiUsageAttribution;
+  traceId?: string;
   task: string;
   appId?: string;
   modelProfileId?: string;
@@ -28,14 +37,18 @@ export const recordAiStructuredRun = async (record: AiStructuredRunRecord): Prom
     INSERT INTO ai.structured_runs (
       task, app_id, model_profile_id, provider_model, status, duration_ms,
       input_tokens, output_tokens, total_tokens, credits_used,
-      mode, repaired, attempts, error_code, error
+      mode, repaired, attempts, error_code, error, user_id, conversation_id, turn_id, workflow_run_id, trace_id
     ) VALUES (
       ${record.task}, ${record.appId ?? null}, ${record.modelProfileId ?? null}, ${record.providerModel ?? null},
       ${record.status}, ${Math.max(0, Math.round(record.durationMs))},
       ${usageNumber(record.usage, "input")}, ${usageNumber(record.usage, "output")},
       ${usageNumber(record.usage, "total")}, ${usageNumber(record.usage, "creditsUsed")},
       ${record.mode ?? null}, ${record.repaired ?? null}, ${record.attempts ?? null},
-      ${record.errorCode ?? null}, ${record.error?.slice(0, 2_000) ?? null}
+      ${record.errorCode ?? null}, ${record.error?.slice(0, 2_000) ?? null},
+      COALESCE(${record.attribution?.userId ?? null}::uuid,
+        (SELECT created_by_user_id FROM ai.conversations WHERE id = ${record.attribution?.conversationId ?? null}::uuid)),
+      ${record.attribution?.conversationId ?? null}::uuid, ${record.attribution?.turnId ?? null}::uuid,
+      ${record.attribution?.workflowRunId ?? null}::uuid, ${record.traceId ?? null}
     )
   `;
 };

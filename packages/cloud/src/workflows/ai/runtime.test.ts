@@ -9,6 +9,7 @@ describe("workflow structured AI runtime", () => {
     const task = {
       id: "00000000-0000-4000-8000-000000000001",
       appId: "mail",
+      usageUserId: "00000000-0000-4000-8000-000000000003",
       runId: "00000000-0000-4000-8000-000000000002",
       stepKey: "step:extract",
       effectKey: "workflow:extract",
@@ -38,11 +39,14 @@ describe("workflow structured AI runtime", () => {
     } satisfies WorkflowAiTask;
     const runStructured = (async <TOutput extends z.ZodType>(
       input: RunAiStructuredInput<TOutput>,
-    ): Promise<RunAiStructuredResult<TOutput>> => ({
-      output: input.output.parse({ ready: true, startsAt: "2026-08-22T09:00:00+02:00" }),
-      modelProfileId: "model",
-      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
-    })) as typeof import("../../ai")["runAiStructured"];
+    ): Promise<RunAiStructuredResult<TOutput>> => {
+      expect(input.attribution).toEqual({ userId: task.usageUserId, workflowRunId: task.runId });
+      return {
+        output: input.output.parse({ ready: true, startsAt: "2026-08-22T09:00:00+02:00" }),
+        modelProfileId: "model",
+        structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+      };
+    }) as typeof import("../../ai")["runAiStructured"];
 
     await expect(executeWorkflowAiRequest(task, runStructured, new AbortController().signal)).resolves.toMatchObject({
       output: { ready: true, startsAt: "2026-08-22T09:00:00+02:00" },

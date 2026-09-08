@@ -12,6 +12,7 @@ import {
 export const WORKFLOW_AI_DEPENDENCY_KIND = "ai.workflow-task";
 
 type WorkflowAiTaskRow = {
+  usage_user_id: string | null;
   id: string;
   app_id: string;
   run_id: string;
@@ -49,6 +50,7 @@ const taskFromRow = (row: WorkflowAiTaskRow): WorkflowAiTask => ({
   id: row.id,
   appId: row.app_id,
   runId: row.run_id,
+  usageUserId: row.usage_user_id ?? undefined,
   stepKey: row.step_key,
   effectKey: row.effect_key,
   kind: row.kind,
@@ -69,6 +71,7 @@ const taskFromRow = (row: WorkflowAiTaskRow): WorkflowAiTask => ({
 });
 
 const TASK_COLUMNS = `
+  (SELECT u.id::text FROM workflows.run r JOIN auth.users u ON u.id::text = r.authorization_snapshot #>> '{actor,userId}' WHERE r.id = task.run_id) AS usage_user_id,
   task.id::text,
   task.app_id,
   task.run_id::text,

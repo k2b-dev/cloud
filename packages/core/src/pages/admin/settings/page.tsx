@@ -10,13 +10,13 @@ import {
   listAiCredentialProfileIds,
 } from "@valentinkolb/cloud/ai";
 import {
+  AI_BACKGROUND_TASK_PROMPTS,
   aiModelAccess,
   type AiModelAccessMap,
-  AI_USAGE_RANGES,
-  type AiUsageRange,
   type AiUsageReport,
   aiUsage,
 } from "@valentinkolb/cloud/ai/admin";
+import { AiUsageQuerySchema } from "@valentinkolb/cloud/shared";
 import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
 import { settingsService, linuxIdentities } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
@@ -218,8 +218,6 @@ export default ssr<AuthContext>(async (c) => {
   let aiUsageReport: AiUsageReport | null = null;
   const search = (c.req.query("search") ?? "").trim();
   const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
-  const requestedRange = c.req.query("range");
-  const aiUsageRange: AiUsageRange = AI_USAGE_RANGES.some((range) => range === requestedRange) ? (requestedRange as AiUsageRange) : "30d";
 
   if (tab.group) {
     entries = await buildEntries(tab.group, locale);
@@ -243,12 +241,9 @@ export default ssr<AuthContext>(async (c) => {
     aiSkillPage = skills.page;
     aiSkillPerPage = skills.perPage;
   } else if (tab.id === "ai-usage") {
-    aiUsageReport = await aiUsage.report(aiUsageRange, {
-      usersPage: Number(c.req.query("usersPage") ?? 1),
-      capabilitiesPage: Number(c.req.query("capabilitiesPage") ?? 1),
-      backgroundTasksPage: Number(c.req.query("backgroundTasksPage") ?? 1),
-      feedbackPage: Number(c.req.query("feedbackPage") ?? 1),
-    });
+    const parsed = AiUsageQuerySchema.safeParse(c.req.query());
+    if (!parsed.success) return c.text("Invalid AI usage filters", 400);
+    aiUsageReport = await aiUsage.report(parsed.data.range, parsed.data);
   } else if (tab.id === "ai-projects") {
     const [projects, summary] = await Promise.all([
       aiProjects.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
@@ -263,7 +258,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <AdminLayout c={c} title={tab.title}>
-      <div class="flex min-h-0 flex-1 flex-col" style="view-transition-name: admin-settings-content">
+      <div class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"} style="view-transition-name: admin-settings-content">
         {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} /> : null}
         {tab.group ? (
           <CoreSettingsForm
@@ -276,6 +271,7 @@ export default ssr<AuthContext>(async (c) => {
             showTestFreeIpaAction={tab.id === "freeipa"}
             showLegacySettings={tab.id === "general"}
             aiEnrichmentOverview={aiEnrichmentOverview}
+            backgroundTaskPrompts={tab.id === "ai-jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
             aiCredentialProfileIds={aiCredentialProfileIds}
             aiModelAccess={modelAccess}
             aiSection={aiSection}

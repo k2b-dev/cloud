@@ -53,6 +53,7 @@ export const createCloudAiViewImageTool = (options: { resolveModel?: () => Promi
 
     const result = await runAiStructured({
       task: "view-image",
+      attribution: { conversationId: ctx.conversationId, turnId: ctx.turnId },
       input: [
         { type: "text", text: input.prompt ?? "Describe the image accurately, including relevant visible text and uncertainty." },
         { type: "file", mediaType: stored.mediaType, data: Buffer.from(stored.bytes).toString("base64") },

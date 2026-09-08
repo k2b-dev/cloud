@@ -2066,6 +2066,14 @@ export const migrateCloudAi = async (): Promise<void> => {
     }
   }
 
+  await sql`ALTER TABLE ai.structured_runs
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES ai.conversations(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS turn_id UUID REFERENCES ai.turns(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS workflow_run_id UUID,
+    ADD COLUMN IF NOT EXISTS trace_id TEXT`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_ai_structured_runs_user_created ON ai.structured_runs(user_id, created_at DESC)`.simple();
+
   await migrateAiTurnUsage();
   await migrateAiModelAccess();
 

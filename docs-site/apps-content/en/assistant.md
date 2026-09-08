@@ -40,6 +40,9 @@ available when the work continues later.
 - Choose a model when the task needs a capability that the default model does
   not provide, and review requested actions before approving them.
 
+The Sources panel shows the latest web search query above “Searched the web”.
+Extracted pages show their title and description.
+
 Assistant can make mistakes. Check consequential facts, calculations, and
 proposed actions before relying on them.
 
@@ -156,3 +159,13 @@ messages, files, preferences, Projects, and turn actions. Run
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+The context sidebar uses reference titles and previews supplied by each app.
+It hides a reference to the current chat and a task already shown under
+Scheduled; both remain in the conversation's reference index. AI reference
+labels and task status use the request language, with English as the fallback.
+Chat titles and task instructions retain their original language.
+
+The chat scrollbar sits at the outer edge, to the right of the context panel.
+Messages and the fixed composer retain their own column. On smaller screens,
+context remains available through its dialog.

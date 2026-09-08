@@ -93,16 +93,20 @@ credit usage, pricing coverage, model use, generation speed, per-user usage,
 application capability calls and failures, mid-chat model switches,
 application-launched chats, message ratings, and background AI failures.
 
-The headline metrics and model/user breakdowns cover interactive chats.
-**Background AI** shows structured tasks, workflow inference attempts, and
-conversation compaction separately, including credits and pricing coverage.
-A missing price is shown as unavailable; a reported zero remains zero.
-Credits follow the configured model prices and are not a provider invoice.
+Headline metrics and user/model comparisons combine chat and background inference.
+Tool calls have separate counts and do not add inference charges. Missing token
+or price measurements remain unavailable; reported zero values remain zero.
+Credits follow configured model prices and are not a provider invoice.
 
-User, capability, background, and feedback tables show 100 rows per page with
-separate page navigation and total counts. The selected range and pages remain
-in the URL. Charts include inactive hours or days as zero values; their buckets
-use UTC boundaries, with date labels displayed in your locale.
+Use the four views to inspect totals, compare users and models, read feedback,
+and open complete stored errors. User, model, provider-model and application
+filters apply across views. Filter chips apply selections immediately; data
+notes are expandable.
+Lists have bounded pagination; range, filters and snapshot time remain in the URL.
+Charts use UTC buckets with localized dates and zero for inactive intervals.
+The same reports, filters and run details are available through the admin CLI.
+See [AI usage and feedback](../ai/usage-and-feedback.md) for metric definitions,
+attribution limits, API access and CLI examples.
 
 Retrying or editing a message preserves previously recorded chat token and
 credit usage. Workflow inference is counted once through structured accounting;

@@ -6,6 +6,7 @@
  * shows the same data stay easy to find together.
  */
 import { defineCliCommands } from "../commands";
+import { aiUsageCommands } from "./ai-usage";
 import { dataCommands } from "./data";
 import { gatewayCommands } from "./gateway";
 import { instanceCommands } from "./instance";
@@ -30,6 +31,7 @@ export default defineCliCommands({
     "linux config": "Manage Linux identity defaults and allocation range.",
   },
   commands: [
+    ...aiUsageCommands,
     ...instanceCommands,
     ...gatewayCommands,
     ...logCommands,

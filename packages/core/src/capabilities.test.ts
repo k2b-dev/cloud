@@ -731,3 +731,16 @@ describe("Core AI capabilities", () => {
     expect(list).not.toHaveBeenCalled();
   });
 });
+
+test("task reference metadata uses the request locale with English fallback", async () => {
+  spyOn(aiChatTasks, "list").mockResolvedValue([scheduledTask]);
+  for (const [locale, prefix] of [["de-DE", "Aktiv · Wiederkehrend:"], ["fr", "Active · Recurring:"]] as const) {
+    const result = await aiCapabilities.queries["ai.tasks.list"].run({ limit: 20 }, { ...context, locale });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Task query failed");
+    expect(result.data.refs?.[0]).toMatchObject({ type: "core.ai.task", id: scheduledTask.shortId,
+      title: scheduledTask.prompt, icon: "ti ti-calendar-clock" });
+    expect(result.data.refs?.[0]?.preview).toStartWith(prefix);
+    expect(result.data.refs?.[0]?.preview).toContain("Europe/Berlin");
+  }
+});

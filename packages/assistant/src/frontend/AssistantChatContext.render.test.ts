@@ -10,6 +10,7 @@ import type { AssistantChatContextSnapshot } from "../chat-context";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
+  visibleAssistantReferences,
   assistantResourceTypeLabel,
   splitAssistantConversationSources,
 } from "./assistant-context";
@@ -65,7 +66,7 @@ describe("Assistant chat context", () => {
     expect(assistantResourceTypeLabel(item.ref)).toBe("Mail message");
   });
 
-  test("renders a concrete resource title above its stable resource type", () => {
+  test("renders the resource preview below its title", () => {
     const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
     const reference = source("resource", "mail.message:MsG123");
     reference.ref = { type: "mail.message", id: "MsG123" };
@@ -85,8 +86,8 @@ describe("Assistant chat context", () => {
     live.dispose();
 
     expect(html).toContain("Quarterly update");
-    expect(html).toContain("Mail message");
-    expect(html).not.toContain("A preview that is not used as the resource type.");
+    expect(html).not.toContain("Mail message");
+    expect(html).toContain("A preview that is not used as the resource type.");
   });
 
   test("keeps used sources, Cloud references, and files in distinct user-facing groups", () => {
@@ -263,4 +264,25 @@ describe("Assistant chat context", () => {
     expect(shared).toContain("<DetailPanel.Action");
     expect(workspace).toContain("chatContextPresence() === true");
   });
+});
+
+test("hides only the current chat and the task already shown in Scheduled", () => {
+  const refs = [
+    { ...source("resource", "self"), ref: { type: "core.ai.chat", id: "cHt234" } },
+    { ...source("resource", "other-chat"), ref: { type: "core.ai.chat", id: "cHt999" } },
+    { ...source("resource", "visible-task"), ref: { type: "core.ai.task", id: "tSk234" } },
+    { ...source("resource", "other-task"), ref: { type: "core.ai.task", id: "tSk999" } },
+  ];
+  expect(visibleAssistantReferences(refs, "cHt234", "tSk234").map((item) => item.key)).toEqual(["other-chat", "other-task"]);
+  expect(visibleAssistantReferences(refs, "cHt234").map((item) => item.key)).toEqual(["other-chat", "visible-task", "other-task"]);
+  expect(assistantChatContextHasContent({ chatId: "cHt234", sources: refs.slice(0, 1), files: [], tasks: [] })).toBe(false);
+  expect(refs).toHaveLength(4);
+});
+
+test("uses readable AI type labels and preserves authored titles", () => {
+  expect(assistantResourceTypeLabel({ type: "core.ai.task", id: "tSk234" })).toBe("Scheduled AI task");
+  expect(assistantResourceTypeLabel({ type: "core.ai.chat", id: "cHt234" })).toBe("AI conversation");
+  const item = { ...source("resource", "task"), ref: { type: "core.ai.task", id: "tSk234" }, title: "core.ai.task tSk234" };
+  expect(assistantReferenceTitle(item, () => "Geplante KI-Aufgabe")).toBe("Geplante KI-Aufgabe");
+  expect(assistantReferenceTitle({ ...item, title: "Read my mail" }, () => "Geplante KI-Aufgabe")).toBe("Read my mail");
 });

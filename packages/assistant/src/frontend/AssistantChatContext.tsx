@@ -1,5 +1,5 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, Lightbox, Placeholder, prompts, StatusBadge } from "@k2b/ui";
+import { useLocale, Button, Lightbox, Placeholder, prompts, StatusBadge } from "@k2b/ui";
 import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@valentinkolb/cloud/ai";
 import { conversationFileSource } from "@valentinkolb/cloud/ai/solid";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
@@ -27,6 +27,7 @@ import { AssistantTasksView, formatAssistantTaskSchedule } from "./AssistantTask
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
+  visibleAssistantReferences,
   assistantResourceTypeLabel,
   splitAssistantConversationSources,
 } from "./assistant-context";
@@ -44,7 +45,7 @@ export { splitAssistantConversationSources } from "./assistant-context";
 const CONTEXT_PREVIEW_LIMIT = 3;
 
 export const assistantChatContextHasContent = (snapshot: AssistantChatContextSnapshot): boolean =>
-  snapshot.sources.some((source) => source.kind !== "file") ||
+  visibleAssistantReferences(snapshot.sources, snapshot.chatId, snapshot.tasks.find((task) => task.state !== "completed")?.id).some((source) => source.kind !== "file") ||
   snapshot.files.length > 0 ||
   snapshot.tasks.some((task) => task.state !== "completed");
 
@@ -137,6 +138,7 @@ const createAssistantChatContextState = (props: AssistantChatContextQueryProps) 
 type AssistantChatContextState = ReturnType<typeof createAssistantChatContextState>;
 
 function AssistantChatContextView(props: { state: AssistantChatContextState }) {
+  const locale = useLocale();
   const text = useAssistantText();
   const [lightbox, setLightbox] = createSignal<{ images: Awaited<ReturnType<typeof loadAssistantContextImages>>; index: number } | null>(
     null,
@@ -201,10 +203,10 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
           }
         };
         const references = () => [
-          ...value().chat.references.map((source) => ({
+          ...visibleAssistantReferences(value().chat.references, value().chat.chatId, value().chat.tasks[0]?.id).map((source) => ({
             kind: "source" as const,
-            title: assistantReferenceTitle(source),
-            description: source.ref ? assistantResourceTypeLabel(source.ref) : text("Cloud resource"),
+            title: assistantReferenceTitle(source, text),
+            description: source.preview || (source.ref ? assistantResourceTypeLabel(source.ref, text) : text("Cloud resource")),
             searchText: source.preview ?? "",
             icon: source.icon,
             source,
@@ -212,7 +214,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
           ...(value().projectContext?.references ?? []).map((reference) => ({
             kind: "project" as const,
             title: reference.label || `${reference.ref.type} · ${reference.ref.id}`,
-            description: assistantResourceTypeLabel(reference.ref),
+            description: assistantResourceTypeLabel(reference.ref, text),
             searchText: text("Project"),
             icon: "ti ti-link",
             reference,
@@ -387,7 +389,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                       <div class="flex items-start justify-between gap-2">
                         <span class="min-w-0">
                           <span class="block line-clamp-2 text-xs text-secondary">{task().prompt}</span>
-                          <span class="mt-1 block truncate text-xs text-dimmed">{formatAssistantTaskSchedule(task())}</span>
+                          <span class="mt-1 block truncate text-xs text-dimmed">{formatAssistantTaskSchedule(task(), locale())}</span>
                         </span>
                         <StatusBadge label={status().label} tone={status().tone} variant="text" />
                       </div>

@@ -448,7 +448,7 @@ export default function AssistantProjectView(props: Props) {
               </ScrollArea>
             </section>
 
-            <div class="shrink-0">{props.composer}</div>
+            <div class="mx-auto w-full max-w-3xl shrink-0">{props.composer}</div>
           </div>
         </main>
 

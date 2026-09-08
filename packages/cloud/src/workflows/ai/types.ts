@@ -86,6 +86,8 @@ export type WorkflowAiRequestInput = z.input<typeof workflowAiRequestSchema>;
 export type WorkflowAiTaskStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
 export type WorkflowAiTask = {
+  /** Existing user in the run authorization snapshot, when this is user-owned work. */
+  usageUserId?: string;
   id: string;
   appId: string;
   runId: string;

@@ -56,7 +56,7 @@ import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/a
 import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "@valentinkolb/cloud/shared";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
 import { localizeSettingField } from "./setting-copy";
@@ -108,6 +108,7 @@ type Props = {
   showTestFreeIpaAction?: boolean;
   showLegacySettings?: boolean;
   aiEnrichmentOverview?: AiEnrichmentOverview | null;
+  backgroundTaskPrompts?: Record<string, string[]>;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   aiCredentialProfileIds?: string[];
   aiModelAccess?: AiModelAccessMap;
@@ -547,6 +548,7 @@ export default function CoreSettingsForm(props: Props) {
           errorFor={(key) => fieldErrors()[key]}
           onChange={setDraft}
           enrichmentOverview={props.aiEnrichmentOverview ?? null}
+          backgroundTaskPrompts={props.backgroundTaskPrompts}
           credentialProfileIds={props.aiCredentialProfileIds ?? []}
           modelAccess={props.aiModelAccess ?? {}}
           section={props.aiSection ?? "general"}
@@ -1007,6 +1009,7 @@ function AiSettingsPanel(props: {
   errorFor: (key: string) => string | undefined;
   onChange: (key: string, value: unknown) => void;
   enrichmentOverview: AiEnrichmentOverview | null;
+  backgroundTaskPrompts?: Record<string, string[]>;
   credentialProfileIds: string[];
   modelAccess: AiModelAccessMap;
   section: "general" | "providers" | "jobs";
@@ -1014,6 +1017,42 @@ function AiSettingsPanel(props: {
 }) {
   const locale = useLocale();
   const t = () => aiSettingsMessages.resolve([locale()]).t;
+  const promptViewer = (key: string, title: string) => (
+    <Show when={props.backgroundTaskPrompts?.[key]}>
+      {(texts) => (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-label={`${t().viewBuiltInPrompts}: ${title}`}
+          onClick={() =>
+            dialogCore.open<void>(
+              (close) => (
+                <PanelDialog>
+                  <PanelDialog.Header title={title} subtitle={t().builtInPromptsDescription} icon="ti ti-file-text" close={close} />
+                  <PanelDialog.Body>
+                    <For each={texts()}>
+                      {(text, index) => (
+                        <PanelDialog.Section
+                          title={texts().length > 1 ? (index() === 0 ? t().turnLearningPrompt : t().workflowLearningPrompt) : title}
+                          icon="ti ti-file-text"
+                        >
+                          <pre class="whitespace-pre-wrap break-words text-sm">{text}</pre>
+                        </PanelDialog.Section>
+                      )}
+                    </For>
+                  </PanelDialog.Body>
+                </PanelDialog>
+              ),
+              panelDialogWideOptions,
+            )
+          }
+        >
+          {t().viewBuiltInPrompts}
+        </Button>
+      )}
+    </Show>
+  );
   const modelGroupLabels = () => ({ hosted: t().hosted, private: t().private, vision: t().vision, tools: t().tools });
   const entry = (key: string) => props.entries.find((item) => item.key === key);
   // Secret values are redacted server-side; valueSource tells whether a stored/env key exists.
@@ -1375,9 +1414,10 @@ function AiSettingsPanel(props: {
             description={t().chatEnrichmentInstructionsDescription}
             value={() => asString(props.valueOf(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY, value)}
-            placeholder={entry(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY)?.placeholder}
+            placeholder={t().chatEnrichmentPlaceholder}
             error={() => props.errorFor(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY)}
           />
+          {promptViewer(AI_CHAT_ENRICHMENT_INSTRUCTIONS_SETTING_KEY, t().chatEnrichmentInstructions)}
 
           <TextInput
             label={t().personalizationSchedule}
@@ -1408,9 +1448,10 @@ function AiSettingsPanel(props: {
             description={t().personalizationInstructionsDescription}
             value={() => asString(props.valueOf(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY, value)}
-            placeholder={entry(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY)?.placeholder}
+            placeholder={t().personalizationPlaceholder}
             error={() => props.errorFor(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY)}
           />
+          {promptViewer(AI_MEMORY_LEARNING_INSTRUCTIONS_SETTING_KEY, t().personalizationInstructions)}
 
           <TextInput
             variant="ai"
@@ -1420,9 +1461,10 @@ function AiSettingsPanel(props: {
             description={t().compactionInstructionsDescription}
             value={() => asString(props.valueOf(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY, value)}
-            placeholder={entry(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY)?.placeholder}
+            placeholder={t().compactionPlaceholder}
             error={() => props.errorFor(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY)}
           />
+          {promptViewer(AI_COMPACTION_INSTRUCTIONS_SETTING_KEY, t().compactionInstructions)}
 
           <Show when={props.enrichmentOverview}>
             {(overview) => <AiEnrichmentOverviewPanel overview={overview()} showJobsLink={props.showJobsLink} />}

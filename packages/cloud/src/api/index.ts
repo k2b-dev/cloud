@@ -20,6 +20,7 @@ import { aiProjectsRoutes } from "../ai/projects-routes";
 import { aiRoutes } from "../ai/routes";
 import { aiSkillsRoutes } from "../ai/skills-routes";
 import accountsEntitiesRoutes from "./accounts-entities";
+import adminAiUsageRoutes from "./admin-ai-usage";
 import adminAiProjectsRoutes from "./admin-ai-projects";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminCoreSettingsRoutes from "./admin-core-settings";
@@ -62,6 +63,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/accounts", accountsEntitiesRoutes)
     .route("/apps", appDiscoveryRoutes)
     .route("/announcements", announcementRoutes)
+    .route("/admin/core/ai-usage", adminAiUsageRoutes)
     .route("/admin/core/ai-projects", adminAiProjectsRoutes)
     .route("/admin/core/ai-skills", adminAiSkillsRoutes)
     .route("/admin/core/announcements", adminAnnouncementRoutes)
