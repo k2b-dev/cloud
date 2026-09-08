@@ -83,43 +83,6 @@ export const TYPE_OPTIONS = [
   { value: "html_template", label: "HTML template" },
 ];
 
-export const TYPE_LABELS: Record<string, string> = Object.fromEntries(TYPE_OPTIONS.map((o) => [o.value, o.label]));
-
-// System fields are read-only and never reach this editor, but include them
-// for the column-type pill in the list view.
-TYPE_LABELS["created_at"] = "Created at";
-TYPE_LABELS["updated_at"] = "Updated at";
-TYPE_LABELS["created_by"] = "Created by";
-TYPE_LABELS["updated_by"] = "Updated by";
-
-/**
- * Plain-language primer per field type. Aimed at someone who's never
- * built a database — explain WHAT the field is for and WHEN to pick it,
- * not how it's stored. The constraint inputs further down (precision,
- * regex, cardinality) should make sense after reading these.
- */
-export const FIELD_TYPE_DESCRIPTIONS: Record<string, string> = {
-  text: "A single line of text — names, titles, codes, anything short. Set min/max length if the value should be a certain size, or a regex pattern to enforce a format like a postcode.",
-  longtext: "Multi-line text — paragraphs, notes, instructions. Bound the size the same way as text if you need to.",
-  number: "A number, stored decimal-safe. Use decimal places for money or exact measurements; set 0 decimal places for whole numbers.",
-  boolean: "A yes/no checkbox.",
-  date: "A calendar date, optionally with a time. Bound it to a min and/or max date if you only want values in a certain range.",
-  select: "A fixed list of choices. Use single mode for one choice, or multiple mode for tags/categories.",
-  principal: "One or more Cloud users or groups. People can only select identities they are allowed to discover.",
-  id: "A server-generated identifier. Use it for inventory numbers, loan numbers, short codes, UUIDs, or other values users should not type manually.",
-  percent: "A percentage from 0 to 100.",
-  duration: "A length of time. Type as HH:MM:SS or seconds; displayed as HH:MM:SS.",
-  json: "A free-form JSON value. Use this when no other type fits.",
-  file: "Small files stored directly in Postgres. The app-level upload limit is controlled from the Grids admin settings.",
-  relation: "A link to one or more records in another table. Pick the target table and which of its columns to show.",
-  lookup: "Pulls a column from a linked record so you can see it on this row, without copying the data.",
-  rollup: "Summarises values from linked records — count them, add them up, average them, or take the smallest or largest.",
-  formula:
-    'A computed value, recalculated whenever the row is read. Reference columns by name, quote names with spaces like "Unit price", and use functions like IF, CONCAT, ROUND, AVG.',
-  html_template:
-    "A computed HTML value rendered for every record from Liquid, the other fields, and optional CSS. Use it for email bodies, descriptions, and exports.",
-};
-
 /** Default config blob for a brand-new field of `type`. */
 export const defaultConfigForType = (type: string): FieldConfigState => {
   switch (type) {

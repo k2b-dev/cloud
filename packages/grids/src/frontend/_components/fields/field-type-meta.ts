@@ -61,31 +61,6 @@ export const FIELD_TYPE_ICONS: Record<string, string> = {
   updated_by: "ti ti-user-edit",
 };
 
-export const FIELD_TYPE_LABELS: Record<string, string> = {
-  text: "Text",
-  longtext: "Long text",
-  number: "Number",
-  decimal: "Decimal",
-  boolean: "Boolean",
-  date: "Date",
-  select: "Select",
-  principal: "People and groups",
-  id: "ID",
-  percent: "Percent",
-  duration: "Duration",
-  json: "JSON",
-  file: "File",
-  relation: "Relation",
-  lookup: "Lookup",
-  rollup: "Rollup",
-  formula: "Formula",
-  html_template: "HTML template",
-  created_at: "Created at",
-  updated_at: "Updated at",
-  created_by: "Created by",
-  updated_by: "Updated by",
-};
-
 export const fieldTypeLabel = (type: string, locale = "en"): string => gridsFieldMessages.resolve([locale]).t.typeLabel({ type });
 
 export const fieldTypeIcon = (type: string, customIcon?: string | null): string => customIcon || FIELD_TYPE_ICONS[type] || "ti ti-columns";
