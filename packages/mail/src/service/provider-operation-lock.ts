@@ -4,6 +4,13 @@ import { withLeaseHeartbeat } from "./lease-heartbeat";
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 
+/**
+ * Delay before a job retries after finding the remote resource locked by a
+ * sibling job (hydration, rediscovery, commands). Contention is routine, so
+ * callers resubmit with this delay instead of consuming a delivery attempt.
+ */
+export const providerBusyRetryDelayMs = (): number => 5_000 + Math.floor(Math.random() * 25_000);
+
 export const mailProviderOperationMutex = lazySync((sync) =>
   sync.mutex({
     id: "mail:remote-resource-sync",

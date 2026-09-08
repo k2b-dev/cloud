@@ -378,7 +378,8 @@ export const createMailNotificationService = (
   const deliveryJob = lazySync((sync) =>
     sync.job<DeliveryJobInput>({
       id: options.jobId ?? "mail:collaboration-notification-delivery",
-      delivery: { ackWaitMs: 120_000, maxAttempts: 1, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+      // One transport attempt: the delivery row carries the backoff and the minutely recovery re-dispatches it.
+      delivery: { ackWaitMs: 120_000, maxAttempts: 1 },
     }),
   );
   let deliveryJobWorker: Worker | undefined;
@@ -407,7 +408,13 @@ export const createMailNotificationService = (
         });
       } catch (error) {
         await retryClaimedDelivery(claimed.delivery, claimed.claimId, error);
-        throw error;
+        await trace.end({
+          spanKey,
+          status: "error",
+          statusMessage: error instanceof Error ? error.message : "Notification delivery failed",
+          summary: { outcome: "retry_scheduled" },
+        });
+        return;
       }
       await trace.end({ spanKey, summary: { outcome } });
     });
@@ -511,14 +518,8 @@ export const createMailNotificationService = (
           await trace.end({ spanKey, summary });
         },
       });
+      // No boot run: the minutely schedule with misfire "latest" covers downtime.
       recoverySchedulerWorker = await recoveryScheduler().process();
-      await recoveryScheduler()
-        .runNow({ id: RECOVERY_SCHEDULE_ID, requestId: crypto.randomUUID() })
-        .catch((error) => {
-          log.warn("Initial Mail collaboration notification recovery failed", {
-            error: error instanceof Error ? error.message : "Notification recovery failed",
-          });
-        });
     },
     stop: async () => {
       await stopRuntimeResources([

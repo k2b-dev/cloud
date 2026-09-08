@@ -213,9 +213,13 @@ suite("mail collaboration backend", () => {
     });
     expect(invalidAssignee.ok).toBe(false);
     const eventAbort = new AbortController();
-    const eventCursor = (await latestMailInvalidationCursor(mailboxId)) ?? "0-0";
-    const eventIterator = liveMailInvalidations({ mailboxId, after: eventCursor, signal: eventAbort.signal })[Symbol.asyncIterator]();
-    const nextEvent = eventIterator.next();
+    const eventCursor = await latestMailInvalidationCursor();
+    const nextEvent = (async () => {
+      for await (const event of liveMailInvalidations({ after: eventCursor, signal: eventAbort.signal })) {
+        if (event.data.mailboxId === mailboxShortId) return event;
+      }
+      throw new Error("Mail invalidation stream ended");
+    })();
     const future = new Date(Date.now() + 60 * 60_000).toISOString();
     const waiting = await updateConversationCollaboration({
       context: writerContext,
@@ -236,15 +240,14 @@ suite("mail collaboration backend", () => {
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for Mail collaboration event")), 5_000)),
     ]);
     eventAbort.abort();
-    expect(liveEvent.done).toBe(false);
-    expect(liveEvent.value?.data).toMatchObject({
+    expect(liveEvent.data).toMatchObject({
       type: "mail.invalidated",
       mailboxId: mailboxShortId,
       changeId: expect.any(String),
     });
-    expect([null, conversationShortId]).toContain(liveEvent.value?.data.conversationId);
-    expect(liveEvent.value?.data.mailboxId).not.toBe(mailboxId);
-    expect(liveEvent.value?.data.conversationId).not.toBe(conversationId);
+    expect([null, conversationShortId]).toContain(liveEvent.data.conversationId);
+    expect(liveEvent.data.mailboxId).not.toBe(mailboxId);
+    expect(liveEvent.data.conversationId).not.toBe(conversationId);
 
     const stale = await updateConversationCollaboration({
       context: writerContext,

@@ -1,5 +1,4 @@
 import { lazySync } from "@valentinkolb/cloud";
-import { latestTopicCursor } from "@valentinkolb/cloud/services";
 import { createPgOutbox } from "@valentinkolb/cloud/services/outbox";
 import type { sql } from "bun";
 import type { MailInvalidation } from "../live-events";
@@ -71,8 +70,10 @@ const publishMailInvalidation = (row: OutboxRow): Promise<unknown> => {
     changeId: row.id,
     at: new Date(row.created_at).toISOString(),
   };
+  // One topic-wide tenant: every subscriber tails one shared hub and filters
+  // by the event's mailboxId; per-mailbox tenants would cost one whole-topic
+  // follower per open mailbox per pod (tenant filtering is client-side).
   return invalidationTopic().publish({
-    tenantId: row.mailbox_id,
     orderingKey: row.conversation_id ?? row.mailbox_id,
     idempotencyKey: event.changeId,
     data: event,
@@ -100,13 +101,14 @@ export const publishMailCollaborationEvent = async (_event: LegacyConversationIn
 
 export const publishMailMailboxEvent = async (_event: LegacyMailboxInvalidation): Promise<void> => notifyMailInvalidations();
 
-export const liveMailInvalidations = (params: { mailboxId: string; after?: string | null; signal?: AbortSignal }) =>
+/** Every mailbox's invalidations after `after`; callers filter on `data.mailboxId`. */
+export const liveMailInvalidations = (params: { after?: string | null; signal?: AbortSignal }) =>
   invalidationTopic()
-    .hub({ tenantId: params.mailboxId })
+    .hub()
     .subscribe({
       after: params.after ?? undefined,
       signal: params.signal,
     });
 
-export const latestMailInvalidationCursor = (mailboxId: string): Promise<string> =>
-  latestTopicCursor({ topic: invalidationTopic(), resourceId: "mail:invalidations", tenantId: mailboxId });
+/** Topic-wide head: the replay baseline for every mailbox (mailbox filtering happens on the subscriber). */
+export const latestMailInvalidationCursor = (): Promise<string> => invalidationTopic().head();

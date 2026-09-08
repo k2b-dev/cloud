@@ -23,7 +23,7 @@ import { assertMailboxTransportFence, loadMailboxTransportFence, type MailboxTra
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
 type ProjectionState =
@@ -1386,10 +1386,13 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
   }
 };
 
+const PROJECTION_MAX_ATTEMPTS = 8;
+const PROJECTION_BACKOFF_MS = [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000];
+
 const exportJob = lazySync((sync) =>
   sync.job<{ snapshotId: string }>({
     id: "mail:project-draft",
-    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 8, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: PROJECTION_MAX_ATTEMPTS, backoffMs: PROJECTION_BACKOFF_MS },
   }),
 );
 let exportJobWorker: Worker | undefined;
@@ -1397,11 +1400,11 @@ const startExportJob = async (): Promise<void> => {
   exportJobWorker = await exportJob().process(
     {
       onError: async ({ context, error }) => {
-        if (context.attempt >= 8) {
+        if (context.attempt >= PROJECTION_MAX_ATTEMPTS) {
           await markProjectionFailure(context.input.snapshotId, "needs_attention", error);
           log.error("Draft projection exhausted retries", { snapshotId: context.input.snapshotId, error: error.message });
         }
-        return context.attempt >= 8
+        return context.attempt >= PROJECTION_MAX_ATTEMPTS
           ? { action: "dead_letter", reason: error instanceof Error ? error.message : String(error) }
           : { action: "retry" };
       },
@@ -1410,7 +1413,13 @@ const startExportJob = async (): Promise<void> => {
       try {
         await processExportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat());
       } catch (error) {
-        if (failureCode(error, "DRAFT_EXPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
+        const code = failureCode(error, "DRAFT_EXPORT_FAILED");
+        if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+        // A sibling job holds the remote resource: routine contention, not a failed attempt.
+        if (code === "SYNC_BUSY") {
+          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+          return;
+        }
         throw error;
       }
     },
@@ -1420,7 +1429,7 @@ const startExportJob = async (): Promise<void> => {
 const importJob = lazySync((sync) =>
   sync.job<{ snapshotId: string }>({
     id: "mail:import-draft",
-    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 8, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: PROJECTION_MAX_ATTEMPTS, backoffMs: PROJECTION_BACKOFF_MS },
   }),
 );
 let importJobWorker: Worker | undefined;
@@ -1428,11 +1437,11 @@ const startImportJob = async (): Promise<void> => {
   importJobWorker = await importJob().process(
     {
       onError: async ({ context, error }) => {
-        if (context.attempt >= 8) {
+        if (context.attempt >= PROJECTION_MAX_ATTEMPTS) {
           await markProjectionFailure(context.input.snapshotId, "needs_attention", error);
           log.error("Draft projection exhausted retries", { snapshotId: context.input.snapshotId, error: error.message });
         }
-        return context.attempt >= 8
+        return context.attempt >= PROJECTION_MAX_ATTEMPTS
           ? { action: "dead_letter", reason: error instanceof Error ? error.message : String(error) }
           : { action: "retry" };
       },
@@ -1441,7 +1450,13 @@ const startImportJob = async (): Promise<void> => {
       try {
         await processImportSnapshot(ctx.input.snapshotId, () => ctx.heartbeat());
       } catch (error) {
-        if (failureCode(error, "DRAFT_IMPORT_FAILED") === "MAILBOX_TRANSPORT_CHANGED") return;
+        const code = failureCode(error, "DRAFT_IMPORT_FAILED");
+        if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+        // A sibling job holds the remote resource: routine contention, not a failed attempt.
+        if (code === "SYNC_BUSY") {
+          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+          return;
+        }
         throw error;
       }
     },

@@ -1020,19 +1020,29 @@ export const startIncomingAutomationBackfill = async (params: {
                 "mail.backfill.operation_id": parsed.data.operationId,
               },
             });
-            await assertLeaseActive();
-            await pump.start({
-              key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
-              input: {
-                operationId: parsed.data.operationId,
-                mailboxId: params.mailboxId,
-                automationId: automation.id,
-                workflowId: automation.workflowId,
-                workflowVersionId: automation.workflowVersionId,
-                scope: automation.scope,
-                cutoffAt: new Date().toISOString(),
-              },
-            });
+            try {
+              await assertLeaseActive();
+              await pump.start({
+                key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),
+                input: {
+                  operationId: parsed.data.operationId,
+                  mailboxId: params.mailboxId,
+                  automationId: automation.id,
+                  workflowId: automation.workflowId,
+                  workflowVersionId: automation.workflowVersionId,
+                  scope: automation.scope,
+                  cutoffAt: new Date().toISOString(),
+                },
+              });
+            } catch (error) {
+              // The span was opened before the pump run existed; close it so it does not dangle.
+              await trace.end({
+                spanKey: trace.syncSpanKey("pump", BACKFILL_PUMP_ID, key),
+                status: "error",
+                statusMessage: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
+            }
           }
           const state = existing ?? (await pump.get({ key }));
           if (!state) throw new Error("Mail automation backfill was not persisted");

@@ -767,11 +767,14 @@ suite("mail PostgreSQL foundation", () => {
     ]);
 
     const liveAbort = new AbortController();
-    const liveCursor = (await latestMailInvalidationCursor(mailbox.data.id)) ?? "0-0";
-    const liveIterator = liveMailInvalidations({ mailboxId: mailbox.data.id, after: liveCursor, signal: liveAbort.signal })[
-      Symbol.asyncIterator
-    ]();
-    const nextLiveInvalidation = liveIterator.next();
+    const liveCursor = await latestMailInvalidationCursor();
+    const liveMailboxId = await publicMailboxId(mailbox.data.id);
+    const nextLiveInvalidation = (async () => {
+      for await (const event of liveMailInvalidations({ after: liveCursor, signal: liveAbort.signal })) {
+        if (event.data.mailboxId === liveMailboxId) return event;
+      }
+      throw new Error("Mail invalidation stream ended");
+    })();
     const conversationRead = await createConversationTriageCommands({
       context,
       mailboxId: mailbox.data.id,
@@ -790,9 +793,9 @@ suite("mail PostgreSQL foundation", () => {
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for triage invalidation")), 5_000)),
     ]);
     liveAbort.abort();
-    expect(liveInvalidation.value?.data).toMatchObject({
+    expect(liveInvalidation.data).toMatchObject({
       type: "mail.invalidated",
-      mailboxId: await publicMailboxId(mailbox.data.id),
+      mailboxId: liveMailboxId,
       conversationId: null,
       changeId: expect.any(String),
     });

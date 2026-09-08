@@ -12,7 +12,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')",
     "test": "bun --cwd=../.. test packages/mail/src",
-    "test:integration": "MAIL_INTEGRATION_TESTS=1 bun --cwd=../.. test --parallel=1 packages/mail/src",
+    "test:integration": "MAIL_INTEGRATION_TESTS=1 bun --cwd=../.. test --preload ./packages/mail/test/integration-preload.ts packages/mail/src",
     "test:connector": "bun --cwd=../.. test packages/mail/src/service/connectors/connector-conformance.integration.test.ts",
     "test:performance:100k": "MAIL_PERFORMANCE_TESTS=1 MAIL_PERFORMANCE_MESSAGE_COUNT=100000 bun --cwd=../.. test packages/mail/src/service/performance.integration.test.ts",
     "browser-smoke": "bun --env-file=../../.env run scripts/browser-smoke.ts"

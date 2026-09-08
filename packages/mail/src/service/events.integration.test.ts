@@ -36,11 +36,15 @@ suite("Mail live invalidation outbox", () => {
   });
 
   test("coalesces activity writes in one transaction and publishes one invalidation", async () => {
-    const cursor = await latestMailInvalidationCursor(mailboxId);
+    const cursor = await latestMailInvalidationCursor();
     const aborts = [new AbortController(), new AbortController()];
-    const pendingEvents = aborts.map((abort) =>
-      liveMailInvalidations({ mailboxId, after: cursor, signal: abort.signal })[Symbol.asyncIterator]().next(),
-    );
+    // The topic carries every mailbox; each subscriber keeps only this mailbox's events.
+    const pendingEvents = aborts.map(async (abort) => {
+      for await (const event of liveMailInvalidations({ after: cursor, signal: abort.signal })) {
+        if (event.data.mailboxId === mailboxShortId) return event;
+      }
+      throw new Error("Mail invalidation stream ended");
+    });
 
     await sql.begin(async (tx) => {
       for (const action of ["test.first", "test.second"]) {
@@ -78,14 +82,13 @@ suite("Mail live invalidation outbox", () => {
       ),
     );
     for (const abort of aborts) abort.abort();
-    const changeIds = events.map((event) => event.value?.data.changeId);
+    const changeIds = events.map((event) => event.data.changeId);
     for (const event of events) {
-      expect(event.done).toBe(false);
-      expect(event.value?.data.type).toBe("mail.invalidated");
-      expect(event.value?.data.mailboxId).toBe(mailboxShortId);
-      expect(event.value?.data.conversationId).toBe(conversationShortId);
-      expect(event.value?.data.changeId).toMatch(/^[0-9a-f-]{36}$/);
-      expect(Number.isFinite(Date.parse(event.value!.data.at))).toBe(true);
+      expect(event.data.type).toBe("mail.invalidated");
+      expect(event.data.mailboxId).toBe(mailboxShortId);
+      expect(event.data.conversationId).toBe(conversationShortId);
+      expect(event.data.changeId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(Number.isFinite(Date.parse(event.data.at))).toBe(true);
     }
     expect(changeIds[0]).toBe(changeIds[1]);
   });

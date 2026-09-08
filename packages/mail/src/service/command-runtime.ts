@@ -33,7 +33,7 @@ import { loadOutboundProjectionByOutbox } from "./outbound-message-projection";
 import { buildMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 import { type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
-import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
@@ -42,6 +42,12 @@ const log = logger("mail:commands");
 const STALE_EXECUTION_MINUTES = 10;
 const MUTATION_JOB_LEASE_MS = 3 * 60_000;
 const OUTBOX_JOB_LEASE_MS = 4 * 60_000;
+/**
+ * Longest broker-side delay an outbox job is scheduled with. Sends due later
+ * are left to the `commands-due` cron, which submits them once
+ * `scheduled_at <= now()`, so a far-future send never keeps polling.
+ */
+const OUTBOX_SCHEDULE_WINDOW_MS = 6 * 24 * 60 * 60_000;
 const JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 const commandTasks = createRuntimeTaskTracker();
 
@@ -2952,14 +2958,24 @@ const outboxJob = lazySync((sync) =>
 let outboxJobWorker: Worker | undefined;
 const startOutboxJob = async (): Promise<void> => {
   outboxJobWorker = await outboxJob().process({}, async (ctx) => {
-    const state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
-      try {
-        await ctx.heartbeat();
-      } catch (cause) {
-        throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
+    let state: string | null;
+    try {
+      state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
+        try {
+          await ctx.heartbeat();
+        } catch (cause) {
+          throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
+        }
+        await heartbeatOutboxFence(loaded);
+      });
+    } catch (error) {
+      // A sibling job holds the remote resource: routine contention, not a failed attempt.
+      if ((error as { code?: unknown } | null)?.code === "REMOTE_RESOURCE_BUSY") {
+        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        return;
       }
-      await heartbeatOutboxFence(loaded);
-    });
+      throw error;
+    }
     const [pending] = await sql<{ state: string; delay_ms: string | number }[]>`
     SELECT
       state,
@@ -2971,17 +2987,25 @@ const startOutboxJob = async (): Promise<void> => {
     WHERE id = ${ctx.input.outboxId}::uuid
       AND state IN ('scheduled', 'undo_window')
     `;
-    const data = {
-      state: state ?? pending?.state ?? null,
-      delayMs: pending ? Math.max(1_000, Math.min(Number(pending.delay_ms), 60_000)) : null,
-    };
-    // Sync continuations are fresh deliveries; carry the logical attempt across them.
-    const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
-    const input = { ...ctx.input, continuationAttempt: attempt };
-    if (data?.delayMs != null) ctx.resubmit({ delayMs: data.delayMs, input });
-    else if (data?.state === "unknown") ctx.resubmit({ delayMs: 2_000, input });
-    else if (data?.state === "sent_sync_pending")
-      ctx.resubmit({ delayMs: expBackoff(attempt, { baseMs: 10_000, maxMs: 10 * 60_000 }), input });
+    if (pending) {
+      // Still scheduled or inside the undo window: sleep until it is due. Beyond
+      // the schedule window the commands-due cron submits it again when due.
+      const remainingMs = Number(pending.delay_ms);
+      if (remainingMs <= OUTBOX_SCHEDULE_WINDOW_MS) ctx.resubmit({ delayMs: Math.max(1_000, remainingMs) });
+      return;
+    }
+    if (state === "unknown") {
+      ctx.resubmit({ delayMs: 2_000 });
+      return;
+    }
+    if (state === "sent_sync_pending") {
+      // Sync continuations are fresh deliveries; carry the logical attempt across them.
+      const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
+      ctx.resubmit({
+        delayMs: expBackoff(attempt, { baseMs: 10_000, maxMs: 10 * 60_000 }),
+        input: { ...ctx.input, continuationAttempt: attempt },
+      });
+    }
   });
 };
 
@@ -2996,7 +3020,7 @@ const submitOutboxJob = async (outboxId: string, at?: number): Promise<void> => 
       coalesce: true,
       key: `outbox:${outboxId}`,
       input: { outboxId },
-      ...(at === undefined ? {} : { at: new Date(Math.min(at, Date.now() + 6 * 24 * 60 * 60_000)) }),
+      ...(at === undefined ? {} : { at: new Date(Math.min(at, Date.now() + OUTBOX_SCHEDULE_WINDOW_MS)) }),
     }),
   ) ?? Promise.resolve());
 };

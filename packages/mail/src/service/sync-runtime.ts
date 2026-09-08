@@ -44,7 +44,7 @@ import { normalizeMailSubject } from "./message-threading";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isConcurrentCredentialRefresh, isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { cleanupProviderOAuthFlows } from "./provider-oauth-cleanup";
-import { mailProviderOperationMutex, withProviderOperationBarrier } from "./provider-operation-lock";
+import { mailProviderOperationMutex, providerBusyRetryDelayMs, withProviderOperationBarrier } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
@@ -1374,10 +1374,11 @@ const normalizeSyncErrorCode = (error: unknown): string => {
   return providerErrorCode(error, "MAIL_SYNC_FAILED");
 };
 
+const SYNC_FOLDER_MAX_ATTEMPTS = 5;
 const syncFolderJob = lazySync((sync) =>
   sync.job<{ folderId: string }>({
     id: "mail:sync-folder",
-    delivery: { ackWaitMs: 3 * 60_000, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000] },
+    delivery: { ackWaitMs: 3 * 60_000, maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000] },
   }),
 );
 let syncFolderJobWorker: Worker | undefined;
@@ -1385,8 +1386,10 @@ const startSyncFolderJob = async (): Promise<void> => {
   syncFolderJobWorker = await syncFolderJob().process(
     {
       onError: async ({ context, error }) => {
-        if (context.attempt >= 5) {
-          await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${context.input.folderId}::uuid`;
+        if (context.attempt >= SYNC_FOLDER_MAX_ATTEMPTS) {
+          await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${context.input.folderId}::uuid`.catch((cause: Error) =>
+            log.error("Failed to mark a Mail folder as degraded", { folderId: context.input.folderId, error: cause.message }),
+          );
           log.error("Mail folder sync exhausted retries", {
             folderId: context.input.folderId,
             attempt: context.attempt,
@@ -1402,13 +1405,19 @@ const startSyncFolderJob = async (): Promise<void> => {
         const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
         if (data.hasMore) ctx.resubmit({ delayMs: 0 });
       } catch (error) {
-        if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
+        const code = normalizeSyncErrorCode(error);
+        if (code === "MAILBOX_TRANSPORT_CHANGED") return;
         if (isConcurrentCredentialRefresh(error)) {
           ctx.resubmit({ delayMs: 2_000 });
           return;
         }
-        if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+        if (code === "MAIL_RATE_LIMITED") {
           ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
+          return;
+        }
+        // A sibling job holds the remote resource: routine contention, not a failed attempt.
+        if (code === "SYNC_BUSY") {
+          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
           return;
         }
         throw error;
@@ -1565,10 +1574,11 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
   });
 };
 
+const HYDRATION_MAX_ATTEMPTS = 5;
 const hydrationJob = lazySync((sync) =>
   sync.job<{ messageId: string }>({
     id: "mail:hydrate-message",
-    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 5, backoffMs: [10_000, 20_000, 40_000, 80_000] },
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: HYDRATION_MAX_ATTEMPTS, backoffMs: [10_000, 20_000, 40_000, 80_000] },
   }),
 );
 let hydrationJobWorker: Worker | undefined;
@@ -1577,17 +1587,18 @@ const startHydrationJob = async (): Promise<void> => {
     try {
       await hydrateMessageBatch(ctx);
     } catch (error) {
-      if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.attempt >= 5) {
-        log.error("Mail message hydration exhausted retries", {
-          messageId: ctx.input.messageId,
-          failureCount: ctx.failureCount,
-          code: normalizeSyncErrorCode(error),
-        });
-      }
-      if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
-      if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+      const code = normalizeSyncErrorCode(error);
+      if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+      if (code === "MAIL_RATE_LIMITED") {
         ctx.resubmit({ delayMs: retryAfterMs(error, 10_000) });
         return;
+      }
+      if (code === "SYNC_BUSY") {
+        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        return;
+      }
+      if (ctx.attempt >= HYDRATION_MAX_ATTEMPTS) {
+        log.error("Mail message hydration exhausted retries", { messageId: ctx.input.messageId, failureCount: ctx.failureCount, code });
       }
       throw error;
     }
@@ -1631,10 +1642,11 @@ export const executeBindingRediscovery = async (
   }
 };
 
+const REDISCOVERY_MAX_ATTEMPTS = 5;
 const rediscoveryJob = lazySync((sync) =>
   sync.job<{ bindingId: string; allowCredentialRevision: boolean }>({
     id: "mail:rediscover-binding",
-    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: 5, backoffMs: [15_000, 30_000, 60_000, 120_000] },
+    delivery: { ackWaitMs: 5 * 60_000, maxAttempts: REDISCOVERY_MAX_ATTEMPTS, backoffMs: [15_000, 30_000, 60_000, 120_000] },
   }),
 );
 let rediscoveryJobWorker: Worker | undefined;
@@ -1643,17 +1655,18 @@ const startRediscoveryJob = async (): Promise<void> => {
     try {
       await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () => ctx.heartbeat());
     } catch (error) {
-      if (normalizeSyncErrorCode(error) !== "MAIL_RATE_LIMITED" && ctx.attempt >= 5) {
-        log.error("Mail provider rediscovery exhausted retries", {
-          bindingId: ctx.input.bindingId,
-          failureCount: ctx.failureCount,
-          code: normalizeSyncErrorCode(error),
-        });
-      }
-      if (normalizeSyncErrorCode(error) === "MAILBOX_TRANSPORT_CHANGED") return;
-      if (normalizeSyncErrorCode(error) === "MAIL_RATE_LIMITED") {
+      const code = normalizeSyncErrorCode(error);
+      if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+      if (code === "MAIL_RATE_LIMITED") {
         ctx.resubmit({ delayMs: retryAfterMs(error, 15_000) });
         return;
+      }
+      if (code === "SYNC_BUSY") {
+        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        return;
+      }
+      if (ctx.attempt >= REDISCOVERY_MAX_ATTEMPTS) {
+        log.error("Mail provider rediscovery exhausted retries", { bindingId: ctx.input.bindingId, failureCount: ctx.failureCount, code });
       }
       throw error;
     }

@@ -316,7 +316,7 @@ export const executeMaintenanceCommand = async (
 const maintenanceJob = lazySync((sync) =>
   sync.job<{ commandId: string; continuationAttempt?: number }>({
     id: "mail:execute-maintenance-command",
-    delivery: { ackWaitMs: MAINTENANCE_JOB_LEASE_MS, maxAttempts: 1, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
+    delivery: { ackWaitMs: MAINTENANCE_JOB_LEASE_MS, maxAttempts: 1 },
   }),
 );
 let maintenanceJobWorker: Worker | undefined;

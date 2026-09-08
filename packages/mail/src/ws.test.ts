@@ -1,9 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
+import { CursorMismatchError } from "@k2b/sync";
 import { UserSchema } from "@valentinkolb/cloud/contracts";
-import type { MailInvalidation } from "./live-events";
+import { MAIL_LIVE_WS_TYPE, type MailInvalidation, type MailLiveServerMessage, parseMailLiveServerMessage } from "./live-events";
 import type { MailRequestContext } from "./service/auth";
-import { evaluateMailLiveAccess, type MailLiveAccessDependencies, parseMailLiveReplayEvent, resolveMailLiveCursor } from "./ws";
+import {
+  createMailLiveConnection,
+  evaluateMailLiveAccess,
+  type MailLiveAccessDependencies,
+  type MailLiveConnectionDependencies,
+  type MailLiveSocket,
+  parseMailLiveReplayEvent,
+  resolveMailLiveCursor,
+} from "./ws";
 
 const MAILBOX_ID = "Box001";
 
@@ -99,7 +108,7 @@ describe("Mail live cursors", () => {
   test("preserves explicit replay cursors without reading the stream tail", async () => {
     let latestReads = 0;
     expect(
-      await resolveMailLiveCursor(MAILBOX_ID, "s6t.mailtest.82", async () => {
+      await resolveMailLiveCursor("s6t.mailtest.82", async () => {
         latestReads++;
         return "s6t.mailtest.91";
       }),
@@ -108,12 +117,12 @@ describe("Mail live cursors", () => {
   });
 
   test("uses the current stream tail and the empty-stream baseline", async () => {
-    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => "s6t.mailtest.91")).toBe("s6t.mailtest.91");
-    expect(await resolveMailLiveCursor(MAILBOX_ID, null, async () => "s6t.mailtest.0")).toBe("s6t.mailtest.0");
+    expect(await resolveMailLiveCursor(null, async () => "s6t.mailtest.91")).toBe("s6t.mailtest.91");
+    expect(await resolveMailLiveCursor(null, async () => "s6t.mailtest.0")).toBe("s6t.mailtest.0");
   });
 
   test("rejects malformed cursors returned by the replay log", async () => {
-    await expect(resolveMailLiveCursor(MAILBOX_ID, null, async () => "")).rejects.toThrow();
+    await expect(resolveMailLiveCursor(null, async () => "")).rejects.toThrow();
   });
 
   test("validates replay cursors, payloads, and mailbox isolation", () => {
@@ -131,5 +140,80 @@ describe("Mail live cursors", () => {
     expect(parseMailLiveReplayEvent(MAILBOX_ID, event)).toEqual({ cursor: event.cursor, event: event.data });
     expect(parseMailLiveReplayEvent("Box002", event)).toBeNull();
     expect(parseMailLiveReplayEvent(MAILBOX_ID, { ...event, cursor: "" })).toBeNull();
+  });
+});
+
+const invalidation = (mailboxId: string): MailInvalidation => ({
+  type: "mail.invalidated",
+  mailboxId,
+  conversationId: null,
+  changeId: crypto.randomUUID(),
+  at: "2026-07-16T20:00:00.000Z",
+});
+
+const recordingSocket = () => {
+  const messages: MailLiveServerMessage[] = [];
+  const closes: { code?: number; reason?: string }[] = [];
+  const socket: MailLiveSocket = {
+    send: (data) => {
+      const message = parseMailLiveServerMessage(String(data));
+      if (message) messages.push(message);
+      return String(data).length;
+    },
+    close: (code, reason) => {
+      closes.push({ code, reason });
+    },
+  };
+  return { socket, messages, closes };
+};
+
+const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for the Mail live connection");
+    await Bun.sleep(5);
+  }
+};
+
+describe("Mail live connection", () => {
+  test("resyncs a legacy ms-seq cursor and keeps only the subscribed mailbox's events", async () => {
+    const context = contextFor("Alice");
+    const { socket, messages, closes } = recordingSocket();
+    const eventsCalls: string[] = [];
+    const deps: MailLiveConnectionDependencies = {
+      resolveMailboxId: async (publicId) => (publicId === MAILBOX_ID ? "internal-box-1" : null),
+      access: { resolveContext: async () => context, requireRead: async () => ok("read") },
+      latestCursor: async () => "s6t.mailtest.200",
+      events: ({ after, signal }) => {
+        eventsCalls.push(after);
+        return (async function* () {
+          // The pre-migration client cursor belongs to no NATS stream.
+          if (after.includes("-")) throw new CursorMismatchError("foreign cursor");
+          yield { cursor: "s6t.mailtest.201", data: invalidation("Box002") };
+          yield { cursor: "s6t.mailtest.202", data: invalidation(MAILBOX_ID) };
+          yield { cursor: "s6t.mailtest.203", data: { unexpected: true } };
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        })();
+      },
+    };
+    const connection = createMailLiveConnection(socket, { sessionToken: "session", requestId: null, locale: "en" }, deps);
+
+    connection.message(
+      JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "1700000000000-1" } }),
+    );
+    await waitFor(() => messages.length === 3);
+    await Bun.sleep(20);
+    await connection.close();
+
+    expect(eventsCalls).toEqual(["1700000000000-1", "s6t.mailtest.200"]);
+    expect(messages).toEqual([
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "1700000000000-1" } },
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.200" } },
+      {
+        type: MAIL_LIVE_WS_TYPE.event,
+        payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.202", event: expect.objectContaining({ mailboxId: MAILBOX_ID }) },
+      },
+    ]);
+    expect(closes).toEqual([]);
   });
 });

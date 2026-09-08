@@ -485,7 +485,7 @@ export const loadMailboxPageData = async (params: {
 
   let initialLiveCursor: string | null = null;
   try {
-    initialLiveCursor = await latestMailInvalidationCursor(params.mailboxId);
+    initialLiveCursor = await latestMailInvalidationCursor();
   } catch (error) {
     log.warn("Failed to capture the initial Mail live cursor", {
       mailboxId: params.mailboxId,
