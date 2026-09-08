@@ -96,3 +96,8 @@ const [draft, setDraft] = createSignal("");
   />
 </Chat>;
 ```
+
+The timeline starts at the latest message in server-rendered HTML, before
+JavaScript loads. Message DOM order stays chronological. Mount switches to
+normal scroll coordinates before following new messages; reading older messages
+and loading history retain the existing scroll behavior.

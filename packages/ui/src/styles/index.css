@@ -5693,6 +5693,17 @@
   scrollbar-gutter: stable;
 }
 
+/* SSR starts at the latest message before JavaScript mounts. Reverse only the
+   viewport's layout, never the message order. Mount restores normal scrolling. */
+.k2b-ui .k2b-chat-timeline__viewport[data-initializing] {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.k2b-ui .k2b-chat-timeline__viewport[data-initializing] > .k2b-chat-timeline__content {
+  flex-shrink: 0;
+}
+
 .k2b-ui {
   --k2b-scrollbar-thumb: rgb(82 82 91 / 0.55);
   --k2b-scrollbar-thumb-hover: rgb(82 82 91 / 0.75);

@@ -325,6 +325,8 @@ describe("@k2b/ui portable chat family", () => {
       }),
     );
 
+    expect(html).toMatch(/data-initializing(?:="")?\s/);
+    expect(html.indexOf("Hello")).toBeLessThan(html.indexOf("How can I help?"));
     expect(html).toContain('aria-label="Support conversation"');
     expect(html).toContain('role="log"');
     expect(html).toContain("Hello");

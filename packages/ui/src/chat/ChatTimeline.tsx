@@ -143,6 +143,8 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   };
 
   onMount(() => {
+    // Switch from CSS-only SSR anchoring to normal scroll coordinates before paint.
+    viewportRef?.removeAttribute("data-initializing");
     scrollToLatest();
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => scheduleFollow());
     if (contentRef) resizeObserver?.observe(contentRef);
@@ -190,6 +192,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
           props.viewportRef?.(element);
         }}
         class="k2b-chat-timeline__viewport"
+        data-initializing=""
         role="region"
         aria-label={messages().conversationMessages({ label: props.label ?? messages().conversation })}
         tabIndex={0}
