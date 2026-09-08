@@ -69,14 +69,34 @@ export const maxStreamCursor = (a: string | null, b: string | null): string | nu
   return compareStreamCursor(a, b) >= 0 ? a : b;
 };
 
+/** A retained event cannot be decoded as a Yjs update: retrying never helps, no replay can pass it. */
+export class MalformedSyncEventError extends Error {
+  constructor(
+    readonly noteId: string,
+    readonly cursor: string,
+    cause: unknown,
+  ) {
+    super(`Malformed sync event for note ${noteId} at cursor ${cursor}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "MalformedSyncEventError";
+  }
+}
+
+/** Ingress check: a publish is accepted only when it is base64 of a decodable Yjs update. */
+export const isValidYjsUpdate = (payload: string): boolean => {
+  try {
+    Y.decodeUpdate(fromBase64(payload));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const applyYjsTopicEvent = (doc: Y.Doc, event: { cursor: string; data: YjsTopicEvent }, noteId: string): void => {
   if (event.data.kind !== "sync") return;
   try {
     Y.applyUpdate(doc, fromBase64(event.data.payload), `replay:${event.cursor}`);
   } catch (error) {
-    throw new Error(
-      `Malformed sync event for note ${noteId} at cursor ${event.cursor}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new MalformedSyncEventError(noteId, event.cursor, error);
   }
 };
 

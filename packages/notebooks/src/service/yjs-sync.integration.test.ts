@@ -65,16 +65,23 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         yjsState: null,
         streamCursor: null,
         restoreRevision: "0",
+        contentMd: null,
       });
       const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: undefined });
+      const adopt = spyOn(notes, "adoptSnapshotAtHead").mockResolvedValue({ cursor: second.cursor });
       try {
         await yjsSnapshotWorker.start();
         await yjsSnapshotWorker.queueSnapshotSave({ noteId, targetCursor: second.cursor, reason: "unload" });
-        const deadline = Date.now() + 5_000;
+        // One handler slot rotates across eight partition consumers while idle (1.5 s polls each).
+        const deadline = Date.now() + 25_000;
         while (readState.mock.calls.length === 0 && Date.now() < deadline) await Bun.sleep(10);
         expect(readState).toHaveBeenCalled();
         await yjsSnapshotWorker.stop();
         expect(save).not.toHaveBeenCalled();
+        // The gap is terminal: the stored snapshot is re-anchored once and the
+        // job is dead-lettered as the durable record, on the first attempt.
+        expect(adopt).toHaveBeenCalledTimes(1);
+        expect(adopt.mock.calls[0]?.[0]).toMatchObject({ noteId, gap: expect.any(RetentionGapError) });
         const failures = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
         expect(failures).toHaveLength(1);
         expect(failures[0]?.reason).toContain("Document history is incomplete");
@@ -90,10 +97,39 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
             entry.state.messages === 2,
         );
         expect(pending.length).toBeGreaterThan(0);
+
+        // A retained event that is not a Yjs update can never be replayed: it
+        // dead-letters on the first attempt instead of retrying in place.
+        const poisonedId = crypto.randomUUID();
+        await createYjsTopic(poisonedId).publish({
+          data: { kind: "sync", payload: toBase64(new Uint8Array([255, 255, 255, 255])), originNodeId: NODE_ID, originPeerId: null },
+        });
+        readState.mockClear();
+        await yjsSnapshotWorker.start();
+        await yjsSnapshotWorker.queueSnapshotSave({
+          noteId: poisonedId,
+          targetCursor: createYjsTopic(poisonedId).cursorAt(1),
+          reason: "unload",
+        });
+        const poisonDeadline = Date.now() + 25_000;
+        while (Date.now() < poisonDeadline) {
+          const letters = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
+          if (letters.some((letter) => letter.data.key.startsWith(`${poisonedId}:`))) break;
+          await Bun.sleep(25);
+        }
+        await yjsSnapshotWorker.stop();
+        const poisoned = (await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list()).filter((letter) =>
+          letter.data.key.startsWith(`${poisonedId}:`),
+        );
+        expect(poisoned).toHaveLength(1);
+        expect(poisoned[0]).toMatchObject({ attempts: 1, reason: expect.stringContaining("Retained event cannot be applied") });
+        expect(readState).toHaveBeenCalledTimes(1);
+        expect(save).not.toHaveBeenCalled();
       } finally {
         await yjsSnapshotWorker.stop();
         readState.mockRestore();
         save.mockRestore();
+        adopt.mockRestore();
       }
       // A fully saved idle document remains joinable after every retained update
       // expires. Its saved cursor still covers that history; zero does not.
@@ -121,5 +157,5 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
       await connection.drain();
     }
   },
-  30_000,
+  90_000,
 );

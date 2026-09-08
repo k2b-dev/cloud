@@ -19,7 +19,7 @@ import { notebooksService } from "./service";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "./service/presence";
 import { yjsSnapshotWorker } from "./service/yjs-snapshot-worker";
 import type { YjsTopicEvent } from "./service/yjs-sync";
-import { createYjsAwarenessTopic, createYjsTopic, maxStreamCursor, NODE_ID, toBase64 } from "./service/yjs-sync";
+import { createYjsAwarenessTopic, createYjsTopic, isValidYjsUpdate, maxStreamCursor, NODE_ID, toBase64 } from "./service/yjs-sync";
 import { type NotebooksWsMessages, notebooksWsMessages } from "./ws-messages";
 
 /**
@@ -155,12 +155,6 @@ type PushUpdate = {
   originPeerId: string | null;
 };
 
-type PushMessage = {
-  type: typeof WS_TYPE.syncPush | typeof WS_TYPE.awarenessPush;
-  noteId: string;
-  updates: PushUpdate[];
-};
-
 const isWritablePermission = (permission: "none" | "read" | "write" | "admin"): boolean => permission === "write" || permission === "admin";
 
 const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | null, locale: string): WsContext => ({
@@ -278,10 +272,10 @@ const broadcastPresenceChanged = async (noteId: string) => {
 const runPresenceChannel = async (channel: PresenceChannel): Promise<void> => {
   while (!channel.abort.signal.aborted) {
     try {
-      for await (const event of notebooksService.presence.watch({ noteId: channel.noteId, signal: channel.abort.signal })) {
+      // Live-only watch: every change re-reads the bounded snapshot, so no cursor is tracked.
+      for await (const _event of notebooksService.presence.watch({ noteId: channel.noteId, signal: channel.abort.signal })) {
         if (channel.abort.signal.aborted) break;
         await broadcastPresenceChanged(channel.noteId);
-        if (event.type === "resync_required") break;
       }
     } catch (error) {
       if (channel.abort.signal.aborted) break;
@@ -716,14 +710,34 @@ const toPushUpdate = (event: TopicEvent<YjsTopicEvent> | TopicLiveEvent<YjsTopic
   originPeerId: event.data.originPeerId,
 });
 
-const pushTypeForKind = (kind: YjsTopicEvent["kind"]): typeof WS_TYPE.syncPush | typeof WS_TYPE.awarenessPush =>
-  kind === "sync" ? WS_TYPE.syncPush : WS_TYPE.awarenessPush;
+/**
+ * Stream failures are never terminal for the editor. The client answers
+ * `RESYNC_REQUIRED` by reconnecting with its last cursor, which is the right
+ * recovery for a broker failover or a lost consumer as well as for a stale
+ * cursor; `INTERNAL_ERROR` would leave the editor stuck until a reload.
+ */
+const failLiveStream = async (ctx: WsContext, noteId: string, noteShortId: string, stream: "sync" | "awareness", error: unknown) => {
+  log.error(stream === "sync" ? "Yjs live stream failed" : "Yjs awareness stream failed", {
+    noteId,
+    error: error instanceof Error ? error.message : String(error),
+  });
+  await fatal(
+    ctx,
+    ERROR_CODE.resyncRequired,
+    stream === "sync" ? ctx.messages.liveSyncStreamFailed : ctx.messages.liveAwarenessStreamFailed,
+    noteShortId,
+  );
+};
 
 const startLiveStream = (
   ctx: WsContext,
   noteId: string,
   noteShortId: string,
-  afterCursor: string | null,
+  replay: {
+    after: string | null;
+    /** True when `after` is the stored snapshot's cursor: the client holds that snapshot as its base. */
+    storedBase: boolean;
+  },
   // Fired only after deterministic replay to the captured head.
   onCaughtUp: () => void,
 ) => {
@@ -744,20 +758,13 @@ const startLiveStream = (
         });
       }
     } catch (error) {
-      if (!abort.signal.aborted) {
-        log.error("Yjs awareness stream failed", {
-          noteId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await fatal(ctx, ERROR_CODE.internalError, ctx.messages.liveAwarenessStreamFailed, noteShortId);
-      }
+      if (!abort.signal.aborted) await failLiveStream(ctx, noteId, noteShortId, "awareness", error);
     }
   })();
 
   void (async () => {
     const noteTopic = createYjsTopic(noteId);
-    const pending: PushMessage[] = [];
-    let pendingEvents = 0;
+    const pending: PushUpdate[] = [];
     let pendingBytes = 0;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
@@ -766,11 +773,7 @@ const startLiveStream = (
         flushTimer = null;
       }
       if (pending.length === 0) return;
-      const batch = pending.splice(0, pending.length);
-      for (const entry of batch) {
-        send(ctx.socket, entry.type, { noteId: entry.noteId, updates: entry.updates });
-      }
-      pendingEvents = 0;
+      send(ctx.socket, WS_TYPE.syncPush, { noteId: noteShortId, updates: pending.splice(0, pending.length) });
       pendingBytes = 0;
     };
 
@@ -780,42 +783,43 @@ const startLiveStream = (
     };
 
     try {
-      const head = await noteTopic.latestCursor();
-      const replay = async function* () {
+      const events = async function* () {
+        let head = await noteTopic.latestCursor();
         if (head) {
-          yield* noteTopic.replay({ after: afterCursor ?? noteTopic.cursorAt(0), until: head, signal: abort.signal });
+          let delivered = 0;
+          try {
+            for await (const event of noteTopic.replay({
+              after: replay.after ?? noteTopic.cursorAt(0),
+              until: head,
+              signal: abort.signal,
+            })) {
+              delivered++;
+              yield event;
+            }
+          } catch (error) {
+            // The stored snapshot's own cursor fell below retention. Reconnecting
+            // cannot help: the client would receive the same snapshot and gap
+            // again. Re-anchor the snapshot at the head (loud, terminal) and
+            // continue from there. A gap after partial delivery, or a client
+            // cursor gap, still resyncs: the client then rebuilds from the store.
+            if (!(error instanceof RetentionGapError) || !replay.storedBase || delivered > 0) throw error;
+            const adopted = await notebooksService.note.adoptSnapshotAtHead({ noteId, gap: error });
+            if (!adopted) throw error;
+            head = adopted.cursor;
+          }
         }
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
         flush();
         onCaughtUp();
-        yield* noteTopic.hub().subscribe({ after: head ?? afterCursor ?? noteTopic.cursorAt(0), signal: abort.signal });
+        yield* noteTopic.hub().subscribe({ after: head ?? replay.after ?? noteTopic.cursorAt(0), signal: abort.signal });
       };
-      for await (const event of replay()) {
+      for await (const event of events()) {
         if (ctx.phase !== "joined" || ctx.noteId !== noteId) break;
-
-        // Ignore awareness entries written by pre-split deployments. New
-        // awareness updates use the short-lived awareness topic above.
-        if ((event.data as YjsTopicEvent).kind !== "sync") {
-          continue;
-        }
-
+        ctx.lastPublishedCursor = maxStreamCursor(ctx.lastPublishedCursor, event.cursor);
         const update = toPushUpdate(event);
-        const type = pushTypeForKind(event.data.kind);
-
-        if (event.data.kind === "sync") {
-          ctx.lastPublishedCursor = maxStreamCursor(ctx.lastPublishedCursor, event.cursor);
-        }
-
-        const lastPending = pending.at(-1);
-        if (lastPending && lastPending.type === type && lastPending.noteId === noteShortId) {
-          lastPending.updates.push(update);
-        } else {
-          pending.push({ type, noteId: noteShortId, updates: [update] });
-        }
-
-        pendingEvents++;
+        pending.push(update);
         pendingBytes += update.payload.length;
-        if (pendingEvents >= NOTIFY_BATCH_SIZE || pendingBytes >= NOTIFY_BATCH_MAX_BYTES) {
+        if (pending.length >= NOTIFY_BATCH_SIZE || pendingBytes >= NOTIFY_BATCH_MAX_BYTES) {
           flush();
         } else {
           scheduleFlush();
@@ -823,18 +827,7 @@ const startLiveStream = (
       }
       flush();
     } catch (error) {
-      if (!abort.signal.aborted) {
-        log.error("Yjs live stream failed", {
-          noteId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await fatal(
-          ctx,
-          error instanceof CursorMismatchError || error instanceof RetentionGapError ? ERROR_CODE.resyncRequired : ERROR_CODE.internalError,
-          ctx.messages.liveSyncStreamFailed,
-          noteShortId,
-        );
-      }
+      if (!abort.signal.aborted) await failLiveStream(ctx, noteId, noteShortId, "sync", error);
     } finally {
       if (flushTimer) clearTimeout(flushTimer);
       flush();
@@ -1046,8 +1039,9 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   await broadcastPresenceChanged(dbNoteId);
   startPresenceHeartbeat(ctx);
 
-  let replayCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
-  if (!replayCursor) {
+  const clientCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
+  let replayCursor = clientCursor;
+  if (!clientCursor) {
     const snapshot = await notebooksService.note.getYjsStateWithCursor({ noteId: dbNoteId });
     if (snapshot?.yjsState) {
       send(ctx.socket, WS_TYPE.syncPush, {
@@ -1064,14 +1058,10 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
     replayCursor = snapshot?.streamCursor ?? null;
   }
 
-  // `replayReady` is now deferred until the live-stream's catch-up
-  // phase ends — see `startLiveStream` for the gate logic. Sending it
-  // immediately would let the client publish edits while retained
-  // history is still being delivered, producing wonky merge order
-  // (codex review on commit d87df13). Catch-up usually resolves in
-  // <100ms on a healthy local Redis; the hard cap is `CATCH_UP_MAX_MS`
-  // (2 s) so dormant notes don't hang.
-  startLiveStream(ctx, dbNoteId, payload.noteId, replayCursor, () => {
+  // `replayReady` is deferred until retained history up to the captured head
+  // has been delivered (see `startLiveStream`). Sending it earlier would let
+  // the client publish edits while catch-up is still streaming.
+  startLiveStream(ctx, dbNoteId, payload.noteId, { after: replayCursor, storedBase: !clientCursor }, () => {
     send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId });
   });
   startAccessRefresh(ctx);
@@ -1086,8 +1076,9 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
 const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPublishMessageSchema.shape.payload>) => {
   if (!ensureJoinedNote(ctx, payload.noteId)) return;
   if (!ensureWritableNote(ctx, payload.noteId)) return;
-  if (!ensureValidBase64(payload.payload)) {
-    warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidBase64, payload.noteId);
+  // Once retained, an undecodable update poisons every replay of this note.
+  if (!isValidYjsUpdate(payload.payload)) {
+    warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidSyncUpdate, payload.noteId);
     return;
   }
 

@@ -1,4 +1,5 @@
 import { expect, mock, test } from "bun:test";
+import { RetentionGapError } from "@k2b/sync";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 
@@ -22,6 +23,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const replayReady = Promise.withResolvers<void>();
   const snapshots: unknown[] = [];
   const subscribedAfter: string[] = [];
+  const adoptions: unknown[] = [];
+  const replayGap = { head: null as string | null, gapBelow: null as string | null };
   let events: WSEvents | undefined;
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
@@ -48,7 +51,16 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
-        getYjsStateWithCursor: async () => ({ yjsState: new Uint8Array([0, 0]), streamCursor: "s6t.fixture.9", restoreRevision: "0" }),
+        getYjsStateWithCursor: async () => ({
+          yjsState: new Uint8Array([0, 0]),
+          streamCursor: "s6t.fixture.9",
+          restoreRevision: "0",
+          contentMd: null,
+        }),
+        adoptSnapshotAtHead: async (input: { noteId: string; gap: RetentionGapError }) => {
+          adoptions.push({ noteId: input.noteId, requested: input.gap.requested });
+          return { cursor: "s6t.fixture.20" };
+        },
       },
       notebook: { permission: { get: async () => "write" } },
       workspaceEvents: { live: waitUntilAborted },
@@ -64,10 +76,14 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("./service/yjs-sync", () => ({
     NODE_ID: "fixture-node",
     toBase64: () => "",
+    isValidYjsUpdate: () => true,
     maxStreamCursor: (_previous: string | null, next: string) => next,
     createYjsTopic: () => ({
-      latestCursor: async () => null,
+      latestCursor: async () => replayGap.head,
       cursorAt: () => "s6t.fixture.0",
+      replay: async function* (config: { after: string }) {
+        if (config.after === replayGap.gapBelow) throw new RetentionGapError(config.after, "s6t.fixture.15", "s6t.fixture.14");
+      },
       hub: () => ({
         subscribe: (config: { after: string; signal?: AbortSignal }) => {
           subscribedAfter.push(config.after);
@@ -94,7 +110,64 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
 
   const { default: app, drainNotebookConnections } = await import("./ws");
 
+  const openSocket = async () => {
+    await app.request("/");
+    const handlers = events!;
+    const sent: Array<{ type: string; payload: { code?: string } }> = [];
+    const closed = Promise.withResolvers<number>();
+    const raw = {
+      send: (data: string) => sent.push(JSON.parse(data)),
+      close: (code: number) => {
+        closed.resolve(code);
+        void handlers.onClose?.(new CloseEvent("close"), socket);
+      },
+    };
+    const socket = new WSContext({ raw, readyState: 1, send: () => {}, close: () => {} });
+    handlers.onOpen?.(new Event("open"), socket);
+    const request = (fromCursor?: string) =>
+      handlers.onMessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef", fromCursor } }),
+        }),
+        socket,
+      );
+    const waitFor = async (predicate: () => boolean) => {
+      const deadline = Date.now() + 5_000;
+      while (!predicate() && Date.now() < deadline) await Bun.sleep(5);
+      expect(predicate()).toBe(true);
+    };
+    return { sent, closed, request, waitFor };
+  };
+
+  test("a stored snapshot whose cursor fell below retention is re-anchored once instead of resyncing forever", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = "s6t.fixture.9";
+    subscribedAfter.length = 0;
+    const socket = await openSocket();
+    socket.request();
+    await socket.waitFor(() => socket.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+    expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.9" }]);
+    expect(subscribedAfter).toEqual(["s6t.fixture.20"]);
+    expect(socket.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+  }, 10_000);
+
+  test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = "s6t.fixture.3";
+    adoptions.length = 0;
+    const socket = await openSocket();
+    socket.request("s6t.fixture.3");
+    expect(await socket.closed.promise).toBe(1012);
+    expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
+      "RESYNC_REQUIRED",
+    ]);
+    expect(adoptions).toEqual([]);
+  }, 10_000);
+
   test("shutdown waits for accepted edits and unload snapshots even after remote close begins", async () => {
+    replayGap.head = null;
+    replayGap.gapBelow = null;
+    subscribedAfter.length = 0;
     await app.request("/");
     const handlers = events!;
     let closes = 0;

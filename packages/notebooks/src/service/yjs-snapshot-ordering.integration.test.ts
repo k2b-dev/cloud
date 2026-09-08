@@ -7,7 +7,7 @@ import { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic } from "./yjs-sync";
 
 (process.env.NOTEBOOKS_NATS_TEST === "1" ? test : test.skip)(
-  "snapshot ordering serializes same and different notes across competing workers",
+  "snapshot ordering serializes the same note across competing workers while other notes proceed",
   async () => {
     const connection = await connect({ servers: "nats://127.0.0.1:4222" });
     const namespace = `snapshot-ordering-${crypto.randomUUID()}`;
@@ -22,11 +22,8 @@ import { createYjsTopic } from "./yjs-sync";
       const firstNote = crypto.randomUUID();
       const secondNote = crypto.randomUUID();
       const seen: string[] = [];
-      let active = 0;
-      let maximumActive = 0;
+      const finished: string[] = [];
       const handler = async ({ input }: { input: { noteId: string } }) => {
-        active++;
-        maximumActive = Math.max(maximumActive, active);
         seen.push(input.noteId);
         try {
           if (seen.length === 1) {
@@ -34,8 +31,8 @@ import { createYjsTopic } from "./yjs-sync";
             await releaseFirst.promise;
           }
         } finally {
-          active--;
-          if (seen.length === 3) complete.resolve();
+          finished.push(input.noteId);
+          if (finished.length === 3) complete.resolve();
         }
       };
       workers.push(await job.process({ concurrency: 1 }, handler));
@@ -58,23 +55,26 @@ import { createYjsTopic } from "./yjs-sync";
         targetCursor: createYjsTopic(secondNote).cursorAt(1),
         reason: "unload",
       });
+      // Give the idle worker time to pick up anything the broker offers: the
+      // other note may start, the same note's newer cursor must not.
+      await Bun.sleep(2_000);
       const manager = await jetstreamManager(connection);
-      let observedPending = false;
+      let partitionConsumers = 0;
       for await (const stream of manager.streams.list()) {
         if (stream.config.metadata?.["sync.namespace"] !== namespace || stream.config.retention !== "workqueue") continue;
         for await (const consumer of manager.consumers.list(stream.config.name)) {
           expect(consumer.config.max_ack_pending).toBe(1);
-          expect(consumer.num_ack_pending).toBe(1);
-          expect(consumer.num_pending).toBe(2);
-          observedPending = true;
+          partitionConsumers++;
         }
       }
-      expect(observedPending).toBe(true);
-      expect(seen).toEqual([firstNote]);
+      expect(partitionConsumers).toBe(8);
+      expect(seen.filter((noteId) => noteId === firstNote)).toEqual([firstNote]);
       releaseFirst.resolve();
       await complete.promise;
-      expect(maximumActive).toBe(1);
-      expect(seen).toEqual([firstNote, firstNote, secondNote]);
+      expect(seen.filter((noteId) => noteId === firstNote)).toEqual([firstNote, firstNote]);
+      expect(seen).toContain(secondNote);
+      // The same note's second snapshot started only after its first one finished.
+      expect(seen.lastIndexOf(firstNote)).toBeGreaterThan(finished.indexOf(firstNote));
     } finally {
       releaseFirst.resolve();
       for (const worker of workers) worker.stop();

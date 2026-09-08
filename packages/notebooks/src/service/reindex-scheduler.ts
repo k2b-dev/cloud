@@ -20,11 +20,13 @@ import type { Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
 import { logger, get as settingsGet } from "@valentinkolb/cloud/services";
 import { reindexAll } from "./note-refs";
+import { yjsSnapshotWorker } from "./yjs-snapshot-worker";
 
 const log = logger("notebooks:reindex");
 
 const DEFAULT_REINDEX_CRON = "0 */12 * * *";
 const SETTING_KEY = "notebooks.reindex_cron";
+const SNAPSHOT_RECONCILE_CRON = "0 * * * *";
 
 const getCron = async (): Promise<string> => {
   const value = String((await settingsGet<string>(SETTING_KEY)) || "").trim();
@@ -122,8 +124,31 @@ const createSchedule = async (cron: string, tz: string): Promise<void> => {
   log.info("Reindex schedule registered", { cron, tz });
 };
 
+/**
+ * Hourly safety net for the Yjs snapshot worker: notes whose topic moved past
+ * their stored snapshot without a settled snapshot job (lost enqueue, crashed
+ * process, dead letter) get their snapshot re-queued.
+ */
+const createSnapshotReconcileSchedule = async (tz: string): Promise<void> => {
+  await reindexScheduler().create({
+    id: "notebooks:yjs-snapshot-reconcile",
+    cron: SNAPSHOT_RECONCILE_CRON,
+    timezone: tz,
+    meta: {
+      appId: "notebooks",
+      family: "notebooks:maintenance",
+      label: "Notebook snapshot reconcile",
+      source: "notebooks:yjs-snapshot-reconcile",
+    },
+    process: async (ctx) => {
+      await yjsSnapshotWorker.reconcile({ signal: ctx.signal, heartbeat: ctx.heartbeat });
+    },
+  });
+};
+
 const registerSchedule = async (cron?: string): Promise<void> => {
   const [tz, resolvedCron] = await Promise.all([getTimezone(), cron ? Promise.resolve(cron) : getCron()]);
+  await createSnapshotReconcileSchedule(tz);
   try {
     await createSchedule(resolvedCron, tz);
     registered = true;

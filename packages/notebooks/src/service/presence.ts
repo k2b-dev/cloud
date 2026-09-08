@@ -1,8 +1,11 @@
+import { SnapshotOverflowError } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
 import type { NotebookPresenceParticipant } from "@valentinkolb/cloud/contracts";
+import { logger } from "@valentinkolb/cloud/services";
 import { getNotebookPresenceColor } from "../lib/yjs";
 import { NODE_ID } from "./yjs-sync";
 
+const log = logger("notebooks:presence");
 const PRESENCE_TTL_MS = 30_000;
 export const PRESENCE_HEARTBEAT_INTERVAL_MS = 10_000;
 
@@ -24,14 +27,14 @@ const presenceStore = lazySync((sync) =>
   sync.ephemeral<PresenceEntry>({
     id: "notebooks.presence",
     ttlMs: PRESENCE_TTL_MS,
-    maxEntries: 250,
+    // Bounds one note's participant snapshot; beyond it the list degrades to empty instead of failing joins.
+    maxEntries: 1_000,
     maxValueBytes: 4_000,
   }),
 );
 
 export type NotebookPresenceSnapshot = {
   participants: NotebookPresenceParticipant[];
-  cursor: string;
 };
 
 const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPresenceParticipant[] => {
@@ -86,11 +89,18 @@ const toParticipants = (entries: Array<{ value: PresenceEntry }>): NotebookPrese
 };
 
 export const snapshot = async (config: { noteId: string }): Promise<NotebookPresenceSnapshot> => {
-  const state = await presenceStore().snapshot({ tenantId: config.noteId });
-  return {
-    participants: toParticipants(state.entries),
-    cursor: state.revision,
-  };
+  try {
+    const state = await presenceStore().snapshot({ tenantId: config.noteId });
+    return { participants: toParticipants(state.entries) };
+  } catch (error) {
+    if (!(error instanceof SnapshotOverflowError)) throw error;
+    // Collaboration must keep working when a note is unusually crowded; only the participant list is lost.
+    log.warn("Presence participant list exceeds the snapshot bound; reporting no participants", {
+      noteId: config.noteId,
+      maxEntries: error.maxEntries,
+    });
+    return { participants: [] };
+  }
 };
 
 export const watch = (config: { noteId: string; after?: string; signal?: AbortSignal }) =>

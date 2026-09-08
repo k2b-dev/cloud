@@ -16,11 +16,13 @@ existing resource's ordering causes provisioning drift. A normal restart also
 leaves queued jobs behind: worker drain waits for active handlers, and closing
 editing connections can enqueue additional snapshots.
 
-The ordered worker uses one partition and one handler per process. The broker
-serializes snapshots across the entire deployment, including different notes.
-This preserves the previous per-process reconstruction load and avoids a
-separate distributed lock. It limits multi-instance throughput; raising the
-partition count is a separate capacity and resource migration decision.
+The ordered worker uses eight partitions keyed by note and one handler per
+process. Snapshots of the same note stay serialized, and each process still
+reconstructs one document at a time, which preserves the previous per-process
+reconstruction load without a separate distributed lock. Across the deployment
+up to eight notes can be snapshotted concurrently, one per process at most.
+The partition count is fixed in the resource declaration; changing it later is
+another coordinated resource migration.
 
 ## Prepare and drain existing work
 
@@ -78,10 +80,28 @@ workers: ordering applies only within the new job resource.
 
 The new job uses the same seven-day work retention, per-note-and-cursor
 submission keys, replay coverage checks, contributor history, and restore
-revision guard. A missing retained history segment goes directly to dead letters;
-retrying cannot reconstruct deleted updates. Transient database or transport
-failures still retry up to twenty attempts. It continues to read existing document topics and Postgres
-snapshots. It does not import or erase the old job or mutex resources.
+revision guard. Transient database or transport failures retry up to twenty
+attempts. It continues to read existing document topics and Postgres snapshots.
+It does not import or erase the old job or mutex resources.
+
+Two conditions are terminal instead of retried:
+
+- A missing retained history segment. The lost updates cannot be reconstructed,
+  so the worker re-anchors the stored snapshot at the topic's current head,
+  logs the loss at error level, records a failed `Notebook Yjs history gap`
+  trace, and dead-letters the job as the durable record. Opening the note in
+  the editor performs the same re-anchoring when its stored cursor has fallen
+  out of retention, so editing continues from the stored content. Requeueing
+  such a dead letter is harmless and does nothing.
+- A retained update that cannot be decoded as a Yjs update. Publishes are
+  validated before they enter the topic, so this indicates broker or client
+  tampering; the job dead-letters immediately.
+
+An hourly `notebooks:yjs-snapshot-reconcile` schedule re-queues snapshots for
+notes whose topic head moved past their stored cursor without a settled job,
+for example after a crashed process or a lost enqueue. It covers notes that
+have saved a cursor; a note that never saved one is covered by its next editing
+session.
 
 Verify a new edit survives saving, reconnecting, and an application restart.
 Confirm the stored snapshot cursor reaches the note topic's latest sequence,

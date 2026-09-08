@@ -222,6 +222,118 @@ if (!databaseName) {
         createdBy: null,
       });
       expect((await notes.getWithContent({ id: noteId }))?.contentMd).toBe("first v6");
+
+      // A stored cursor that fell below retention is re-anchored at the head:
+      // the stored content stays authoritative, the loss is traced, and the
+      // note replays cleanly afterwards instead of gapping forever.
+      const { RetentionGapError } = await import("@k2b/sync");
+      const { TOPIC_PREFIX } = await import("./yjs-sync");
+      const { jetstreamManager } = await import("@nats-io/jetstream");
+      const manager = await jetstreamManager(connection);
+      const gapId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, created_at)
+        VALUES (${gapId}::uuid, 'gap001', ${notebookId}::uuid, '', '2020-01-01')`;
+      const gapTopic = createYjsTopic(gapId);
+      const publishTo = async (topic: ReturnType<typeof createYjsTopic>, content: string) =>
+        topic.publish({
+          data: { kind: "sync", payload: Buffer.from(encode(content)).toString("base64"), originNodeId: "test", originPeerId: null },
+        });
+      const gapOne = await publishTo(gapTopic, "GAP-ONE");
+      expect(
+        (
+          await notes.save({
+            noteId: gapId,
+            streamCursor: gapOne.cursor,
+            requestedAt: Date.now(),
+            yjsState: encode("GAP-ONE"),
+            contentMd: "GAP-ONE",
+            createdBy: null,
+          })
+        ).ok,
+      ).toBe(true);
+      const gapTwo = await publishTo(gapTopic, "GAP-TWO");
+      const gapThree = await publishTo(gapTopic, "GAP-THREE");
+      // A topic owns an event stream and a consumer DLQ stream with the same identity.
+      const gapStream = (await Array.fromAsync(manager.streams.list())).find(
+        (entry) =>
+          entry.config.metadata?.["sync.namespace"] === namespace &&
+          entry.config.metadata?.["sync.id"] === `${TOPIC_PREFIX}:${gapId}` &&
+          entry.config.subjects.some((subject) => subject.endsWith(".event")),
+      );
+      if (!gapStream) throw new Error("Gap topic stream missing");
+      await manager.streams.deleteMessage(gapStream.config.name, gapTwo.streamSequence);
+      const gap = await notes.getCurrentWithContent({ id: gapId }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(gap).toBeInstanceOf(RetentionGapError);
+      const services = await import("@valentinkolb/cloud/services");
+      const traced: unknown[] = [];
+      const traceComplete = spyOn(services.trace, "complete").mockImplementation(async (params) => {
+        traced.push({ status: params.status, summary: params.summary });
+        return { traceId: "t", spanId: "s", traceparent: "00-t-s-01" };
+      });
+      try {
+        expect(await notes.adoptSnapshotAtHead({ noteId: gapId, gap: gap as InstanceType<typeof RetentionGapError> })).toEqual({
+          cursor: gapThree.cursor,
+        });
+      } finally {
+        traceComplete.mockRestore();
+      }
+      expect(traced).toEqual([
+        {
+          status: "error",
+          summary: {
+            noteId: gapId,
+            storedCursor: gapOne.cursor,
+            firstRetainedCursor: gapThree.cursor,
+            headCursor: gapThree.cursor,
+            outcome: "adopted",
+          },
+        },
+      ]);
+      const [reanchored] = await sql<{ content_md: string; yjs_stream_cursor: string }[]>`
+        SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${gapId}::uuid`;
+      expect(reanchored).toEqual({ content_md: "GAP-ONE", yjs_stream_cursor: gapThree.cursor });
+      expect((await notes.getCurrentWithContent({ id: gapId }))?.contentMd).toBe("GAP-ONE");
+
+      // The hourly reconcile re-queues only notes whose topic moved past their
+      // stored cursor, and the worker then brings them up to date.
+      const lagId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title, created_at)
+        VALUES (${lagId}::uuid, 'lag001', ${notebookId}::uuid, '', '2020-01-01')`;
+      const lagTopic = createYjsTopic(lagId);
+      const lagOne = await publishTo(lagTopic, "LAG-ONE");
+      await notes.save({
+        noteId: lagId,
+        streamCursor: lagOne.cursor,
+        requestedAt: Date.now(),
+        yjsState: encode("LAG-ONE"),
+        contentMd: "LAG-ONE",
+        createdBy: null,
+      });
+      const lagTwo = await publishTo(lagTopic, "LAG-TWO");
+      const { yjsSnapshotWorker: reconcilingWorker } = await import("./yjs-snapshot-worker");
+      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 5, queued: 1 });
+      try {
+        await reconcilingWorker.start();
+        const deadline = Date.now() + 20_000;
+        let caughtUp: { content_md: string; yjs_stream_cursor: string | null } | undefined;
+        while (Date.now() < deadline) {
+          const [row] = await sql<{ content_md: string; yjs_stream_cursor: string | null }[]>`
+            SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${lagId}::uuid`;
+          if (row?.yjs_stream_cursor === lagTwo.cursor) {
+            caughtUp = row;
+            break;
+          }
+          await Bun.sleep(50);
+        }
+        expect(caughtUp?.content_md).toContain("LAG-ONE");
+        expect(caughtUp?.content_md).toContain("LAG-TWO");
+      } finally {
+        await reconcilingWorker.stop();
+      }
+      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 5, queued: 0 });
     } finally {
       await sync.drain();
       unbindProcessSync();

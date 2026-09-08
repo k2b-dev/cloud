@@ -7,6 +7,7 @@ const cloudServices = await import("@valentinkolb/cloud/services");
 const cloud = await import("@valentinkolb/cloud");
 const accessModule = await import("./access");
 const noteRefsModule = await import("./note-refs");
+const snapshotWorkerModule = await import("./yjs-snapshot-worker");
 
 const existingServiceAccount: ServiceAccount = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -50,7 +51,7 @@ type CreatedSchedule = {
   id: string;
   cron: string;
   timezone: string;
-  process: (config: { runId: string }) => Promise<void>;
+  process: (config: { runId: string; signal?: AbortSignal; heartbeat?: () => Promise<void> }) => Promise<void>;
 };
 
 let serviceAccountLookupCount = 0;
@@ -62,6 +63,7 @@ let submittedJobs: SubmittedJob[] = [];
 let createdSchedules: CreatedSchedule[] = [];
 let schedulerStarts = 0;
 let reindexRuns = 0;
+let reconcileRuns = 0;
 let jobHandler:
   | ((context: { input: { trigger: "scheduler" }; signal: AbortSignal; heartbeat: () => Promise<void> }) => Promise<void>)
   | undefined;
@@ -80,10 +82,6 @@ mock.module("@valentinkolb/cloud/services", () => ({
     warn: () => {},
     error: () => {},
   }),
-  trace: {
-    fromSyncJob: () => () => {},
-    fromSyncSchedule: () => () => {},
-  },
   serviceAccounts: {
     getByResource: async () => {
       serviceAccountLookupCount += 1;
@@ -187,6 +185,17 @@ mock.module("./note-refs", () => ({
   },
 }));
 
+mock.module("./yjs-snapshot-worker", () => ({
+  ...snapshotWorkerModule,
+  yjsSnapshotWorker: {
+    ...snapshotWorkerModule.yjsSnapshotWorker,
+    reconcile: async () => {
+      reconcileRuns += 1;
+      return { checked: 0, queued: 0 };
+    },
+  },
+}));
+
 const apiKeys = await import("./api-keys");
 const { reindexRuntime } = await import("./reindex-scheduler");
 
@@ -201,6 +210,7 @@ beforeEach(async () => {
   createdSchedules = [];
   schedulerStarts = 0;
   reindexRuns = 0;
+  reconcileRuns = 0;
   workerStops = 0;
   workerDrains = 0;
 });
@@ -256,19 +266,27 @@ describe("notebook reindex runtime", () => {
     await reindexRuntime.start();
 
     expect(schedulerStarts).toBe(1);
-    expect(createdSchedules).toHaveLength(1);
-    expect(createdSchedules[0]).toMatchObject({
-      id: "notebooks:reindex",
-      cron: "0 */12 * * *",
-      timezone: "Europe/Berlin",
-    });
+    expect(createdSchedules.map((schedule) => [schedule.id, schedule.cron, schedule.timezone])).toEqual([
+      ["notebooks:yjs-snapshot-reconcile", "0 * * * *", "Europe/Berlin"],
+      ["notebooks:reindex", "0 */12 * * *", "Europe/Berlin"],
+    ]);
     expect(submittedJobs).toEqual([]);
     expect(reindexRuns).toBe(0);
 
-    await createdSchedules[0]!.process({ runId: "run:12345" });
+    await createdSchedules[1]!.process({ runId: "run:12345" });
 
     expect(submittedJobs).toContainEqual({ key: "run:12345", input: { trigger: "scheduler" } });
     expect(reindexRuns).toBe(0);
+  });
+
+  test("runs the hourly snapshot reconcile inline on its schedule", async () => {
+    await reindexRuntime.start();
+    const reconcile = createdSchedules.find((schedule) => schedule.id === "notebooks:yjs-snapshot-reconcile")!;
+
+    await reconcile.process({ runId: "run:reconcile", signal: new AbortController().signal, heartbeat: async () => {} });
+
+    expect(reconcileRuns).toBe(1);
+    expect(submittedJobs).toEqual([]);
   });
 });
 
