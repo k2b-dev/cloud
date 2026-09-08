@@ -10,6 +10,13 @@ Die verfügbaren Anmeldeverfahren hängen vom Kontodienst und den Einstellungen 
 
 ## Anmelden und Zugriff wiederherstellen {icon="shield-lock"}
 
+Die Accounttypen heißen **Guest**, **Login** (gegebenenfalls mit einem anderen
+Namen deiner Organisation) und **FreeIPA**. Guest und Login verwenden
+E-Mail-Codes statt lokaler Passwörter. Ein bestehender Passkey funktioniert
+weiter, solange der Accounttyp erlaubt ist. Nutze bei einem verborgenen Typ
+deinen Einladungs- oder direkten Anmeldelink. Verbergen ist nicht dasselbe wie
+Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.
+
 - Verwende die normale Anmeldung für den Kontodienst deines Kontos.
 - Verwende einen bereits registrierten Passkey, wenn Browser und Gerät ihn unterstützen.
 - Fordere die Passwortwiederherstellung nur für Konten mit wiederherstellbarer Passwortanmeldung an.

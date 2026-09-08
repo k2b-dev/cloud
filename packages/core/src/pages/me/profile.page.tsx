@@ -1,6 +1,7 @@
 import { dates } from "@k2b/stdlib";
+import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
+import { coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
@@ -18,6 +19,7 @@ const formatAddress = (address: {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
@@ -30,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.profile }]}>
-      <AccountHub user={user} active="profile">
+      <AccountHub user={user} active="profile" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader
             title={t.profileTitle}
@@ -82,12 +84,8 @@ export default ssr<AuthContext>(async (c) => {
             </div>
             <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
               <div>
-                <p class="section-label mb-1">{t.provider}</p>
-                <p class="text-sm text-secondary">{user.provider === "ipa" ? "FreeIPA" : t.localAccount}</p>
-              </div>
-              <div>
-                <p class="section-label mb-1">{t.profile}</p>
-                <p class="text-sm text-secondary">{user.profile === "guest" ? t.accountTypeGuest : t.accountTypeFull}</p>
+                <p class="section-label mb-1">{t.accountType}</p>
+                <p class="text-sm text-secondary">{accountCategoryLabel(user, categoryPolicy.login.label)}</p>
               </div>
               <div>
                 <p class="section-label mb-1">{t.accountExpiry}</p>

@@ -1,7 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard } from "@k2b/ui";
+import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService, coreSettings } from "@valentinkolb/cloud/services";
+import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { canManageAnyGroups } from "@valentinkolb/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
@@ -12,6 +13,7 @@ import WithdrawAccountRequest from "./WithdrawAccountRequest.island";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
@@ -31,7 +33,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
-      <AccountHub user={user} active="access">
+      <AccountHub user={user} active="access" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader
             title={t.accessAndGroups}
@@ -52,8 +54,8 @@ export default ssr<AuthContext>(async (c) => {
           <section class="paper p-5 sm:p-6">
             <div class="grid gap-5 sm:grid-cols-3">
               <div>
-                <p class="section-label mb-1">{t.provider}</p>
-                <p class="text-sm font-medium text-primary">{user.provider === "ipa" ? "FreeIPA" : t.localAccount}</p>
+                <p class="section-label mb-1">{t.accountType}</p>
+                <p class="text-sm font-medium text-primary">{accountCategoryLabel(user, categoryPolicy.login.label)}</p>
               </div>
               <div>
                 <p class="section-label mb-1">{t.directMemberships}</p>
@@ -66,7 +68,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </section>
 
-          {user.provider === "local" && (freeIpaEnabled || pendingRequest) && (
+          {user.provider === "local" && ((freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest) && (
             <section class="paper p-5 sm:p-6">
               <div class="mb-4">
                 <h3 class="text-sm font-semibold text-primary">{t.freeIpaAccount}</h3>

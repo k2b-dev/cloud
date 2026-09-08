@@ -1,6 +1,8 @@
 import { redis, sql } from "bun";
+import { accountCategory } from "../../contracts/account-categories";
 import type { User } from "../../contracts/shared";
 import { createAuthLoginUrl } from "../../shared/redirect";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accounts } from "../accounts";
 import { logger } from "../logging";
 import { providers } from "../providers";
@@ -49,16 +51,21 @@ const sendIpaEmailLoginHint = async (
 };
 
 export const request = async (
-  params: { email: string; redirectTo?: string; locale?: string },
+  params: { email: string; redirectTo?: string; locale?: string; category?: "guest" | "login" },
   notificationSender: AuthNotificationSender,
 ): Promise<{ ok: true } | { ok: false; status: 400; message: string }> => {
   const email = normalizeEmail(params.email);
   const hasIpaUser = await hasIpaAccountForEmail(email);
-  const userRows = hasIpaUser ? [] : await sql`SELECT uid, provider FROM auth.users WHERE lower(btrim(mail)) = ${email}`;
-  const hasLocalUser = userRows.some((row: { provider: string | null }) => row.provider === "local");
+  const userRows = hasIpaUser
+    ? []
+    : await sql<
+        { provider: "local" | "ipa"; profile: "guest" | "user" }[]
+      >`SELECT provider, profile FROM auth.users WHERE lower(btrim(mail)) = ${email}`;
+  const localUser = userRows.find((row) => row.provider === "local");
   const allowSelfRegistration = await settings.get<boolean>("user.allow_self_registration");
 
   if (hasIpaUser) {
+    if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return { ok: true };
     if (await claimIpaHintCooldown(email)) {
       void sendIpaEmailLoginHint({ email, redirectTo: params.redirectTo, locale: params.locale }, notificationSender).catch((error) => {
         log.warn("Failed to send FreeIPA email-login hint", {
@@ -70,11 +77,16 @@ export const request = async (
     return { ok: true };
   }
 
-  if (!hasLocalUser && !allowSelfRegistration) {
+  if (localUser && ((params.category && accountCategory(localUser) !== params.category) || !(await isAccountCategoryAllowed(localUser))))
+    return { ok: true };
+  if (
+    !localUser &&
+    (!allowSelfRegistration || params.category === "login" || !(await isAccountCategoryAllowed({ provider: "local", profile: "guest" })))
+  ) {
     return { ok: true };
   }
 
-  const token = await providers.local.auth.createMagicLinkToken({ email, ttlSeconds: 300 });
+  const token = await providers.local.auth.createMagicLinkToken({ email, category: params.category, ttlSeconds: 300 });
   const appUrl = await getAppUrl();
   const magicLink = createAuthLoginUrl(appUrl, { token, redirectTo: params.redirectTo });
 
@@ -104,7 +116,7 @@ export const verify = async (params: {
     return { ok: false, status: 401, message: "Invalid or expired token" };
   }
 
-  const { email } = payload;
+  const { email, category } = payload;
   const normalizedEmail = normalizeEmail(email);
   if (await hasIpaAccountForEmail(normalizedEmail)) {
     return {
@@ -147,7 +159,7 @@ export const verify = async (params: {
       };
     }
     const allowSelfRegistration = await settings.get<boolean>("user.allow_self_registration");
-    if (!allowSelfRegistration) {
+    if (!allowSelfRegistration || category === "login" || !(await isAccountCategoryAllowed({ provider: "local", profile: "guest" }))) {
       return {
         ok: false,
         status: 401,
@@ -166,6 +178,8 @@ export const verify = async (params: {
   if (!user) {
     return { ok: false, status: 401, message: "User not found" };
   }
+  if (!(await isAccountCategoryAllowed(user)) || (category && accountCategory(user) !== category))
+    return { ok: false, status: 403, message: "This account cannot sign in through this category. Contact an administrator." };
 
   return { ok: true, userId, user, email, createdGuest };
 };

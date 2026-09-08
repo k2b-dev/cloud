@@ -155,6 +155,7 @@ export const accountsMessages = i18n.define({
       guestTypeDescription:
         "Local account managed in Cloud, with the restricted guest profile. The configured guest expiry policy applies.",
       displayNameHelp: "Filled from first and last name. Change it if a different name should be shown in Cloud.",
+      noAllowedAccountTypes: "No account type is allowed for this action. Check Account settings in Administration.",
       login: "Login",
       magicLink: "Magic link",
       freeIpaPassword: "FreeIPA password",
@@ -907,6 +908,7 @@ export const accountsMessages = i18n.define({
       guestTypeDescription:
         "Lokales, in Cloud verwaltetes Konto mit eingeschränktem Gastprofil. Es gelten die konfigurierten Ablaufregeln für Gäste.",
       displayNameHelp: "Wird aus Vor- und Nachname ausgefüllt. Ändere ihn, wenn in Cloud ein anderer Name erscheinen soll.",
+      noAllowedAccountTypes: "Für diese Aktion ist kein Accounttyp erlaubt. Prüfe die Account-Einstellungen in der Administration.",
       login: "Anmeldung",
       magicLink: "Anmeldelink",
       freeIpaPassword: "FreeIPA-Passwort",

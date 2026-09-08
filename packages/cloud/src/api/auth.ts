@@ -5,8 +5,10 @@ import { z } from "zod";
 import { env } from "../config";
 import { ChangeExpiredPasswordSchema } from "../contracts";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v } from "../server";
-import { accounts, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
+import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
+import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
+import * as categorySettings from "../services/settings";
 
 const log = logger("auth");
 
@@ -181,9 +183,9 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       }),
       v("json", EmailLoginSchema),
       async (c) => {
-        const { email, redirectTo } = c.req.valid("json");
+        const { email, redirectTo, category } = c.req.valid("json");
 
-        const requestResult = await authFlows.magicLink.request({ email, redirectTo, locale: getLocale(c) }, notificationSender);
+        const requestResult = await authFlows.magicLink.request({ email, redirectTo, category, locale: getLocale(c) }, notificationSender);
         if (!requestResult.ok) {
           return c.json({ message: requestResult.message }, requestResult.status);
         }
@@ -299,12 +301,37 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         if (!env.ADMIN_LOGIN_TOKEN) {
           return jsonError(c, "Admin login is not configured.", 500);
         }
-        const { token } = c.req.valid("json");
+        const { token, restoreLocalLogin } = c.req.valid("json");
         const a = Buffer.from(token);
         const b = Buffer.from(env.ADMIN_LOGIN_TOKEN);
         if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
           log.warn("Admin login failed: invalid token");
           return jsonError(c, "Invalid token.", 401);
+        }
+        if (!(await isAccountCategoryAllowed({ provider: "local", profile: "user" }))) {
+          if (!restoreLocalLogin)
+            return c.json(
+              {
+                message: "Local Login accounts are disabled. Confirm restoring local Login access to use emergency recovery.",
+                code: "CATEGORY_RECOVERY_REQUIRED",
+              },
+              403,
+            );
+          await sql.begin(async (tx) => {
+            await categorySettings.set("user.category.login.enabled", true, tx);
+            await audit.record(
+              {
+                action: "auth.admin-recovery",
+                outcome: "allowed",
+                actor: { uid: "admin", provider: "local" },
+                target: { type: "setting", id: "user.category.login.enabled" },
+                metadata: { restoredLocalLogin: true },
+              },
+              tx,
+            );
+          });
+          await categorySettings.invalidateSettingsCache(["user.category.login.enabled"]);
+          log.warn("Admin recovery restored local Login account access");
         }
 
         // Ensure the admin user exists and has emergency-admin semantics. The

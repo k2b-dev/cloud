@@ -2,6 +2,8 @@ import { type SQL, sql } from "bun";
 import type { BaseUser, MutationResult, PaginationResponse, Role, User, UserProfile, UserProvider } from "../../contracts/shared";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
+import { isAccountCategoryAllowed } from "../account-category-policy";
+import type { AuditActor } from "../audit";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
@@ -22,7 +24,6 @@ import {
 } from "./model";
 import type { AccountsNotificationSender } from "./notification-sender";
 import { transitionIpaUserToLocal } from "./switching";
-import type { AuditActor } from "../audit";
 
 export { clearAvatar, getAvatar, parseAvatarDataUrl, setAvatar } from "./avatar";
 
@@ -424,6 +425,8 @@ export const create = async (params: {
   data: CreateUserData;
   actor?: AuditActor;
 }): Promise<MutationResult<{ user: User; temporaryPassword?: string }>> => {
+  if (!(await isAccountCategoryAllowed(params.data)))
+    return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
   if (params.data.provider === "local" && params.data.admin && !canPersistStoredAdmin("local", params.data.profile)) {
     return { ok: false, error: "Only local full accounts can be created as admins", status: 400 };
   }

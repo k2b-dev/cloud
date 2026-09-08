@@ -20,11 +20,13 @@ import type { createAiNotificationService } from "./ai-notifications";
 import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
+import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateSettings } from "./migrate/core/settings";
 import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
+import { appApprovalRuntime } from "./app-approval-runtime";
 
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopIdentityMaintenance: (() => void) | null = null;
@@ -34,6 +36,7 @@ let stopMandateMaintenance: (() => void) | null = null;
 export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "auth", run: migrateAuth },
+    { name: "app-approval", run: migrateAppApproval },
     { name: "audit", run: migrateAudit },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
@@ -75,6 +78,7 @@ export const startCoreServices = async (
     await aiChatTaskRuntime.start();
     await deliverPendingAiMessages();
     await startNotificationRuntime();
+    await appApprovalRuntime.start(notificationSender);
     await lifecycleJobs.start({ notificationSender });
   } catch (error) {
     stopIdentityMaintenance?.();
@@ -88,6 +92,7 @@ export const startCoreServices = async (
       aiChatTaskRuntime.stop(),
       aiNotifications.stop(),
       lifecycleJobs.stop(),
+      appApprovalRuntime.stop(),
       stopNotificationRuntime(),
     ]);
     browserNotifications.stop();
@@ -102,7 +107,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopIdentityMaintenance = null;
     stopMandateMaintenance?.();
     stopMandateMaintenance = null;
-    await lifecycleJobs.stop();
+    await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {
       await stopNotificationRuntime();

@@ -1,6 +1,7 @@
 import { redis, sql } from "bun";
 import type { User } from "../../contracts/shared";
 import { createAuthPasswordResetUrl } from "../../shared/redirect";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { logger } from "../logging";
@@ -164,6 +165,7 @@ export const request = async (
   params: { email: string; redirectTo?: string; locale?: string },
   notificationSender: AuthNotificationSender,
 ): Promise<{ ok: true; message: string }> => {
+  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return { ok: true, message: GENERIC_MESSAGE };
   const email = normalizeEmail(params.email);
   if (await isInCooldown(email)) {
     log.info("Password reset request ignored during cooldown");
@@ -196,6 +198,8 @@ export const request = async (
 };
 
 export const complete = async (params: { token?: string; newPassword: string }): Promise<ResetAttemptSuccess | ResetAttemptFailure> => {
+  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })))
+    return { ok: false, status: 403, reason: "reset_failed", message: "FreeIPA accounts are disabled. Contact an administrator." };
   if (!params.token) {
     return {
       ok: false,

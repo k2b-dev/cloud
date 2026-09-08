@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { isAccountCategoryAllowed } from "@valentinkolb/cloud/services";
 import { withActiveIdentitySigner } from "@valentinkolb/cloud/services/identity";
 import * as settings from "@valentinkolb/cloud/services/settings";
 import { publicCloudOrigin } from "@valentinkolb/cloud/shared";
@@ -75,6 +76,7 @@ type AuthorityRow = {
   user_id: string | null;
   uid: string | null;
   profile: string | null;
+  provider: "local" | "ipa" | null;
   display_name: string | null;
   given_name: string | null;
   family_name: string | null;
@@ -168,7 +170,7 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
         EXISTS (SELECT 1 FROM oauth.client_access_users cau WHERE cau.client_id = c.id AND cau.user_id = u.id)
         OR EXISTS (SELECT 1 FROM oauth.client_access_groups cag JOIN user_all_groups ug ON ug.group_id = cag.group_id WHERE cag.client_id = c.id)
       ) AS specific_access,
-      u.id AS user_id, u.uid, u.profile, u.display_name, u.given_name, u.sn AS family_name,
+      u.id AS user_id, u.uid, u.profile, u.provider, u.display_name, u.given_name, u.sn AS family_name,
       u.mail, u.account_expires,
       COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id ORDER BY g.name), ARRAY[]::text[]) AS groups,
       sa.id AS service_account_id, sa.kind AS service_account_kind, sa.status AS service_account_status,
@@ -180,6 +182,13 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
     LIMIT 1
   `;
   if (!row) return null;
+  if (
+    row.user_id !== null &&
+    (!row.provider ||
+      (row.profile !== "guest" && row.profile !== "user") ||
+      !(await isAccountCategoryAllowed({ provider: row.provider, profile: row.profile }, db)))
+  )
+    return null;
   if (row.user_id !== null && (row.uid === null || row.profile === null)) return null;
   if (row.service_account_id !== null && (row.service_account_kind === null || row.service_account_status === null)) return null;
   const resolvedUserId = row.user_id;

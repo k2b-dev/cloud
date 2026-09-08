@@ -17,6 +17,11 @@ settings, legal pages, and links into the admin surfaces owned by other apps.
 
 ## Use Core
 
+Sign-in distinguishes **Guest**, passwordless local **Login** (with an
+operator-defined label), and **FreeIPA**. Configure access independently from
+login visibility in **Accounts & sign-in**. See
+[Account types](/en/docs/operations/account-categories) for examples and recovery.
+
 - Sign in with the method configured for your account and recover access when
   password recovery is available.
 - Review your profile, account provider, roles, groups, expiry, and recent

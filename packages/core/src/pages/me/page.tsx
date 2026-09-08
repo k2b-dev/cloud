@@ -1,7 +1,15 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard, Placeholder } from "@k2b/ui";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService, audit, coreSettings, notifications, serviceAccountCredentials, webauthn } from "@valentinkolb/cloud/services";
+import {
+  accountsAppService,
+  audit,
+  coreSettings,
+  notifications,
+  readAccountCategoryPolicy,
+  serviceAccountCredentials,
+  webauthn,
+} from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
@@ -17,6 +25,7 @@ const accountExpiryCopy = (expiresAt: string, t: AccountMessages): string => {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
@@ -38,6 +47,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <AccountHub
+        loginLabel={categoryPolicy.login.label}
         user={user}
         active="overview"
         actions={

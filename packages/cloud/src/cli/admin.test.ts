@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "../contracts/account-categories";
 import adminCli from "./admin";
 import type { CloudCliContext, CloudCliFlags, CloudCliTableColumn } from "./index";
 
@@ -53,6 +54,37 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  test("exports the complete account policy", async () => {
+    const { ctx, calls, lines } = createContext(["accounts", "config", "get"], {}, [jsonResponse(DEFAULT_ACCOUNT_CATEGORY_POLICY)]);
+    ctx.options.output = "json";
+    await adminCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/admin/core/settings/account-categories");
+    expect(JSON.parse(lines[0]!)).toEqual(DEFAULT_ACCOUNT_CATEGORY_POLICY);
+  });
+  test("account policy writes require confirmation and complete valid input", async () => {
+    const cases: CloudCliFlags[] = [{ config: JSON.stringify(DEFAULT_ACCOUNT_CATEGORY_POLICY) }, { config: "{}", yes: true }];
+    for (const flags of cases) {
+      const { ctx, calls } = createContext(["accounts", "config", "set"], flags);
+      await expect(adminCli.run(ctx)).rejects.toThrow();
+      expect(calls).toHaveLength(0);
+    }
+  });
+  test("account policy uses the existing atomic settings API with no post-save request", async () => {
+    const policy = structuredClone(DEFAULT_ACCOUNT_CATEGORY_POLICY);
+    policy.guest.enabled = policy.freeipa.enabled = false;
+    policy.login.label = "Firmenaccount";
+    const { ctx, calls } = createContext(["accounts", "config", "set"], { config: JSON.stringify(policy), yes: true }, [
+      new Response(null, { status: 204 }),
+    ]);
+    await adminCli.run(ctx);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe("/api/admin/core/settings");
+    expect(JSON.parse(String(calls[0]?.init?.body)).updates).toMatchObject({
+      "user.category.login.label": "Firmenaccount",
+      "user.category.freeipa.enabled": false,
+      "user.category.guest.enabled": false,
+    });
+  });
   const linuxConfig = { enabled: true, rangeStart: 200000, rangeEnd: 299999, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
 
   test("exports Linux configuration without preview metadata", async () => {

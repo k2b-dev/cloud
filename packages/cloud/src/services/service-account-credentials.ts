@@ -856,6 +856,7 @@ export const authenticateApiToken = async (token: string): Promise<Authenticated
 
   const serviceAccount = mapServiceAccount(row);
   const delegatedUser = serviceAccount.delegatedUserId ? await accounts.users.get({ id: serviceAccount.delegatedUserId }) : null;
+  if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser))) return null;
   if (serviceAccount.kind === "user_delegated" && !delegatedUser) {
     return recordDeniedAuthentication({
       reason: "Delegated user is missing",
@@ -886,3 +887,5 @@ export const serviceAccountCredentials = {
   revoke,
   authenticateApiToken,
 };
+
+import { isAccountCategoryAllowed } from "./account-category-policy";

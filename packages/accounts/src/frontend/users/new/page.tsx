@@ -8,6 +8,7 @@ import AccountsWorkspace from "../../AccountsWorkspace";
 import { accountsMessages } from "../../messages";
 import DenyRequest from "../DenyRequest.island";
 import CreateUserForm from "./CreateUserForm.island";
+import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 
 type AccountRequest = {
   id: string;
@@ -23,6 +24,7 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = accountsMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const categoryPolicy = await readAccountCategoryPolicy();
   const requestId = c.req.query("request");
   let accountRequest: AccountRequest | null = null;
   const pendingRequestsPage = await accountsService.accountRequest.list({
@@ -109,6 +111,7 @@ export default ssr<AuthContext>(async (c) => {
               <p class="text-sm text-dimmed">{t.createPageDescription}</p>
             </div>
             <CreateUserForm
+              categoryPolicy={categoryPolicy}
               autoOpen
               freeIpaEnabled={freeIpaEnabled}
               prefill={

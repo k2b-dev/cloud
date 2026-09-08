@@ -2,6 +2,7 @@ import { err, fail, ok, type PageParams, type Paginated, paginate, type Result }
 import { type SQL, sql } from "bun";
 import { z } from "zod";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { audit } from "../audit";
 import { logger } from "../logging";
 import { parsePgJsonValue } from "../postgres";
@@ -186,14 +187,12 @@ const selectMandate = sql`
 
 const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> => {
   if (subject.type === "user") {
-    const [row] = await db<{ active: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1 FROM auth.users
+    const [row] = await db<{ provider: "local" | "ipa"; profile: "guest" | "user" }[]>`
+        SELECT provider, profile FROM auth.users
         WHERE id = ${subject.id}::uuid
           AND (account_expires IS NULL OR account_expires > now())
-      ) AS active
     `;
-    return row?.active === true;
+    return !!row && (await isAccountCategoryAllowed(row, db));
   }
   const [row] = await db<{ active: boolean }[]>`
     SELECT EXISTS (
@@ -653,7 +652,8 @@ export const validateMandateIssueAuthority = async (
     FOR SHARE OF mandate
   `;
   if (!row) return denyMandateIssue(err.forbidden("Mandate is unavailable"));
-  if (!row.subject_active) return denyMandateIssue(err.forbidden("Mandate subject is unavailable"));
+  if (!row.subject_active || !(await validSubject(subjectFromRow(row), db)))
+    return denyMandateIssue(err.forbidden("Mandate subject is unavailable"));
   if (row.owner_app_id !== owner.data) {
     return denyMandateIssue(err.forbidden("Mandate owner does not match"));
   }

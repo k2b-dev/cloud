@@ -4,6 +4,7 @@ import { type CapabilityDispatchDependencies, dispatchCapability } from "../api/
 import { type CapabilityActionManifest, type CapabilityActionReview, CapabilityActionReviewSchema } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import type { AccessSubject } from "../server/services/access";
+import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -27,6 +28,7 @@ export const resolveAiCapabilityActor = async (input: {
 
   const user = await (input.getUser ?? accounts.users.get)({ id: conversation.createdByUserId });
   if (!user || isAccountExpired(user.accountExpires)) throw new Error("Cloud capability actor is no longer active.");
+  if (!(await isAccountCategoryAllowed(user))) throw new Error("Cloud capability actor category is disabled.");
   return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
 };
 

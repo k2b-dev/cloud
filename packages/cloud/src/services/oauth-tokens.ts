@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from "jose";
 import type { User } from "../contracts/shared";
+import { isAccountCategoryAllowed } from "./account-category-policy";
 import { isAccountExpired } from "./account-model";
 import { IDENTITY_JWKS_MAX_AGE_SECONDS } from "./identity/constants";
 import { getIdentityRuntimeConfig } from "./identity/runtime-config";
@@ -85,7 +86,7 @@ const mapServiceAccount = (row: ServiceAccountActorRow): ServiceAccount => ({
   createdAt: new Date(row.service_account_created_at).toISOString(),
 });
 
-/** Resolve the live OAuth client and principal in one PostgreSQL query. */
+/** Resolve the live OAuth client/principal, then check current account-category policy. */
 export const resolveOAuthTokenActor = async (
   payload: JWTPayload,
   groupsAdmin: string[],
@@ -124,6 +125,7 @@ export const resolveOAuthTokenActor = async (
     const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
     if (serviceAccount.kind === "user_delegated" && !delegatedUser) return null;
     if (delegatedUser && isAccountExpired(delegatedUser.accountExpires)) return null;
+    if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
     return { kind: "service_account", payload, serviceAccount, delegatedUser, scopes };
   }
 
@@ -142,6 +144,7 @@ export const resolveOAuthTokenActor = async (
   `;
   const user = rows[0] ? buildProjectedUser(rows[0]) : null;
   if (!user || isAccountExpired(user.accountExpires)) return null;
+  if (!(await isAccountCategoryAllowed(user, query))) return null;
   return { kind: "user", payload, user, scopes };
 };
 

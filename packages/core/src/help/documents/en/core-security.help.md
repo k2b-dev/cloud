@@ -10,6 +10,12 @@ The available sign-in methods depend on the account provider and platform settin
 
 ## Sign in and recover access {icon="shield-lock"}
 
+The account types are **Guest**, **Login** (your organization may use another
+name) and **FreeIPA**. Guest and Login use email codes, not local passwords.
+An existing passkey still works while the account type is allowed. If your
+type is hidden, use your invitation or direct sign-in link. A hidden entry is
+not the same as disabled access; ask your administrator if access is disabled.
+
 - Use the normal login form for the provider configured for your account.
 - Use a passkey when one is already registered and the browser or device supports it.
 - Request password recovery only for accounts that use a recoverable password login.

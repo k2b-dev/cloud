@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@valentinkolb/cloud";
-import { notifications, renderTemplate } from "@valentinkolb/cloud/services";
+import { notifications, renderTemplate, type AppDeviceEnrollmentNotice } from "@valentinkolb/cloud/services";
 import type { AccountLifecycleNotificationSender } from "@valentinkolb/cloud/services/account-lifecycle/notification-sender";
 import type { AuthNotificationSender } from "@valentinkolb/cloud/services/auth-flows";
 import * as settings from "@valentinkolb/cloud/services/settings";
@@ -14,6 +14,9 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      deviceTitle: "New sign-in device linked",
+      deviceBody: ({ name, assisted }: { name: string; assisted: boolean }) =>
+        `The device “${name}” can now approve Cloud sign-ins.${assisted ? " An administrator helped link it." : ""} If this was not you, contact your administrator and revoke the device.`,
       signInCode: "Sign-in code",
       signInBody: "Enter this code or open the link in this email to sign in. Both work once.",
       signInSubject: ({ appName }: { appName: string }) => `Sign-in code for ${appName}`,
@@ -28,6 +31,9 @@ const notificationMessages = i18n.define({
       expirySubject: ({ appName }: { appName: string }) => `${appName} account expires soon`,
     },
     de: {
+      deviceTitle: "Neues Anmeldegerät gekoppelt",
+      deviceBody: ({ name, assisted }) =>
+        `Das Gerät „${name}“ kann jetzt Cloud-Anmeldungen bestätigen.${assisted ? " Ein Administrator hat die Kopplung unterstützt." : ""} Falls du das nicht warst, kontaktiere deinen Administrator und widerrufe das Gerät.`,
       signInCode: "Anmeldecode",
       signInBody: "Melde dich mit diesem Code oder über den Link in dieser E-Mail an. Beides funktioniert einmalig.",
       signInSubject: ({ appName }) => `Anmeldecode für ${appName}`,
@@ -55,6 +61,16 @@ const accountExtensionUrl = async (): Promise<string> => {
 };
 
 export const NOTIFICATIONS = {
+  deviceEnrollment: notification({
+    recipient: "user",
+    label: "Sign-in device enrollment",
+    description: "Security notice when a device is linked to approve Cloud sign-ins.",
+    presentation: presentation("Anmeldegerät gekoppelt", "Sicherheitshinweis, wenn ein Gerät für Cloud-Anmeldungen gekoppelt wird."),
+    delivery: requiredEmail,
+    data: z.object({ name: z.string(), assisted: z.boolean() }),
+    render: (data, { locale }) => ({ title: text(locale).deviceTitle, body: text(locale).deviceBody(data), targetHref: "/me/security" }),
+    email: (data, { locale }) => ({ subject: text(locale).deviceTitle, content: text(locale).deviceBody(data) }),
+  }),
   magicLink: notification({
     recipient: "email",
     label: "Email sign-in links",
@@ -170,9 +186,19 @@ type CoreNotificationDescriptors = BoundNotificationMap<"core", typeof NOTIFICAT
 
 const fingerprint = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-export type CoreNotificationSender = AuthNotificationSender & AccountLifecycleNotificationSender;
+export type CoreNotificationSender = AuthNotificationSender &
+  AccountLifecycleNotificationSender & {
+    sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
+  };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
+  sendDeviceEnrollment: async ({ deviceId, userId, name, assisted }) =>
+    notifications.send(definitions.deviceEnrollment, {
+      recipient: { userId },
+      data: { name, assisted },
+      idempotencyKey: `device-enrollment:${deviceId}`,
+      locale: await configuredLocale(),
+    }),
   sendMagicLink: async ({ email, token, magicLink, locale }) =>
     notifications.send(definitions.magicLink, {
       recipient: { email },

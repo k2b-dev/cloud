@@ -1,10 +1,12 @@
 import { sql } from "bun";
 import type { User } from "../../contracts/shared";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accounts } from "../accounts";
 import { logger } from "../logging";
 import { providers } from "../providers";
 
 type IpaLoginFailure =
+  | { ok: false; status: 403; reason: "category_disabled"; message: string }
   | { ok: false; status: 401; reason: "password_expired"; message: string; uid: string }
   | { ok: false; status: 401; reason: "invalid_credentials"; message: string }
   | { ok: false; status: 400; reason: "user_not_synced"; message: string }
@@ -87,6 +89,8 @@ const loadSyncedIpaUser = async (uid: string): Promise<{ ok: true; userId: strin
 };
 
 export const login = async (params: { username: string; password: string }): Promise<IpaLoginFlowResult> => {
+  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })))
+    return { ok: false, status: 403, reason: "category_disabled", message: "FreeIPA accounts are disabled. Contact an administrator." };
   const uid = await resolveIpaLoginUid(params.username);
   if (!uid) {
     return failInvalidCredentials({ identifier: params.username, password: params.password });
@@ -177,6 +181,8 @@ export const changeExpiredPassword = async (params: {
   currentPassword: string;
   newPassword: string;
 }): Promise<IpaLoginFlowResult | { ok: false; status: number; reason: "change_failed"; message: string }> => {
+  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" })))
+    return { ok: false, status: 403, reason: "category_disabled", message: "FreeIPA accounts are disabled. Contact an administrator." };
   const changeResult = await providers.ipa.auth.changeExpiredPassword(params);
   if (!changeResult.ok) {
     return {

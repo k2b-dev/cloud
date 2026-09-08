@@ -30,6 +30,7 @@ import adminLinuxIdentityRoutes from "./admin-linux-identities";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
+import { createAppApprovalRoutes } from "./app-approval";
 import { createCapabilityRoutes } from "./capabilities";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
@@ -58,6 +59,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
   const widgetRoutes = createWidgetRoutes();
   return new Hono()
     .use(prettyJSON())
+    .route("/auth/app-approval/v1", createAppApprovalRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
     .route("/accounts", accountsEntitiesRoutes)

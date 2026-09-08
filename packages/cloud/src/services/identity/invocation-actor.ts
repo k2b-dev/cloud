@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import type { RequestActor } from "../../server/middleware/auth";
 import type { AccessSubject } from "../../server/services/access";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import type { ServiceAccount } from "../service-accounts";
 import { buildProjectedUser, loadCurrentUser, userProjectionSql } from "../session/user";
@@ -67,6 +68,7 @@ export const resolveInvocationAuthority = async (
   if (claims.principal_type === "user") {
     const user = await loadCurrentUser({ userId: claims.sub, groupsAdmin }, query);
     if (!user || isAccountExpired(user.accountExpires)) return null;
+    if (!(await isAccountCategoryAllowed(user, query))) return null;
     return {
       actor: { kind: "user", user, delegation },
       accessSubject: { type: "user", userId: user.id },
@@ -100,6 +102,7 @@ export const resolveInvocationAuthority = async (
   const serviceAccount = mapServiceAccount(row);
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
+  if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
 
   const actor: RequestActor = {
     kind: "service_account",

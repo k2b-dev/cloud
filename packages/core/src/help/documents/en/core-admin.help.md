@@ -18,6 +18,19 @@ Core admin pages configure platform services and link to app-specific admin pane
 
 ## Settings groups {icon="settings"}
 
+In **Accounts & sign-in**, configure **Guest**, passwordless local **Login** and
+**FreeIPA** separately. Rename Login, for example to **Company account**.
+**Allowed** controls access; **Show in login** only controls the general login
+page. A hidden, allowed account can still use direct links. One visible type
+opens its form without a selector. Guest self-registration stays separate.
+
+Disabling a type denies subsequent requests from existing sessions,
+user OAuth tokens, personal API keys and user-backed background work. It does
+not delete accounts or stop FreeIPA sync. Re-enabling restores otherwise-valid
+credentials. Keep another allowed admin or your emergency token available
+before disabling your own type. Emergency recovery explicitly re-enables all
+local Login accounts without changing login visibility.
+
 :::reference
 - **General and Accounts & sign-in:** Branding, public links, schedules, defaults, login behavior, expiry, reminders, and self-service behavior.
 - **Linux access:** Reserve an ID range and configure home and shell defaults. While enabled, new local full accounts and promoted guests receive Linux attributes automatically. Use **Backfill existing accounts** for older full accounts; enabling the feature does not change them. Disabling assignment hides the backfill table and retains existing identities in Accounts. This does not enable computer login or sudo.

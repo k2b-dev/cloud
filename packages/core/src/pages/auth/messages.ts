@@ -4,6 +4,10 @@ export const authMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      noLoginAvailable: "This sign-in option is unavailable. Contact your administrator or use your invitation link.",
+      restoreLoginTitle: "Local Login accounts are disabled",
+      restoreLoginConfirmation:
+        "Re-enable access for all local Login accounts to recover administration. Login visibility remains unchanged.",
       welcomeBack: "Welcome back",
       welcomeDescription:
         "Sign in with a passkey, email login link, or your organization account. You will continue automatically after signing in.",
@@ -81,6 +85,10 @@ export const authMessages = i18n.define({
       resetRequestDescription: "We will send a short-lived reset link if this email belongs to an eligible organization account.",
     },
     de: {
+      noLoginAvailable: "Diese Anmeldung ist nicht verfügbar. Wende dich an die Administration oder nutze deinen Einladungslink.",
+      restoreLoginTitle: "Lokale Login-Accounts sind deaktiviert",
+      restoreLoginConfirmation:
+        "Zugriff für alle lokalen Login-Accounts wieder erlauben, um die Administration wiederherzustellen. Die Sichtbarkeit im Login bleibt unverändert.",
       welcomeBack: "Willkommen zurück",
       welcomeDescription:
         "Melde dich mit einem Passkey, einem Link per E-Mail oder deinem Organisationskonto an. Danach wirst du automatisch weitergeleitet.",

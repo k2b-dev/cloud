@@ -1,8 +1,10 @@
 import { sql } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { HTTPException } from "hono/http-exception";
 import { env } from "../../config/env";
 import type { User } from "../../contracts/shared";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import {
   type CloudSessionClaims,
@@ -72,6 +74,7 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
     groupsAdmin,
   });
   if (!user) return null;
+  if (!(await isAccountCategoryAllowed(user))) return null;
   if (isAccountExpired(user.accountExpires)) {
     await session.revokeAllForUser(user.id);
     return null;
@@ -118,10 +121,12 @@ const issueJwtSession = async (c: Context, userId: string, ttlSeconds: number, a
   let authEpoch: number;
   try {
     authEpoch = await sql.begin(async (tx) => {
-      const [user] = await tx<Array<{ auth_epoch: string | number | bigint }>>`
-        SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
+      const [user] = await tx<Array<{ auth_epoch: string | number | bigint; provider: "local" | "ipa"; profile: "guest" | "user" }>>`
+        SELECT auth_epoch, provider, profile FROM auth.users WHERE id = ${userId}::uuid FOR UPDATE
       `;
       if (!user) throw new Error("Cannot create a session for an unknown user");
+      if (!(await isAccountCategoryAllowed(user, tx)))
+        throw new HTTPException(403, { message: "This account category is disabled. Contact an administrator." });
       const epoch = Number(user.auth_epoch);
       if (!Number.isSafeInteger(epoch) || epoch < 0) throw new Error("User auth_epoch is invalid");
       const [activeKey] = await tx<Array<{ kid: string }>>`

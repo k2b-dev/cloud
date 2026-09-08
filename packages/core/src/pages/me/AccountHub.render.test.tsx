@@ -46,6 +46,7 @@ const renderAccountHub = (locale: string) =>
         return createComponent(AccountHub, {
           user,
           active: "overview",
+          loginLabel: "Firmenaccount",
           get children() {
             return "Content";
           },
@@ -65,6 +66,7 @@ describe("AccountHub SSR locale", () => {
     expect(html).toContain("Übersicht");
     expect(html).toContain("Sicherheit");
     expect(html).toContain("Gruppenverwaltung");
+    expect(html).toContain("Firmenaccount");
     expect(html).toContain('aria-label="Kontobereiche"');
   });
 

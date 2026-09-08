@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { notifications } from "@valentinkolb/cloud/services";
+import { notifications, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
@@ -9,6 +9,7 @@ import NotificationPreferences, { type NotificationAppMeta } from "./Notificatio
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const preferences = await notifications.user.preferences.list(user.id, locale);
@@ -17,7 +18,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>
-      <AccountHub user={user} active="notifications">
+      <AccountHub user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader
             title={t.notifications}

@@ -1,4 +1,4 @@
-export type LoginMethodPreference = "email" | "ipa" | "passkey";
+export type LoginMethodPreference = "email" | "ipa" | "passkey" | "guest" | "login";
 export type LoginFallbackMethod = "email" | "ipa";
 
 const LOGIN_METHOD_COOKIE = "login_method";
@@ -12,7 +12,7 @@ const decodeCookieValue = (value: string): string => {
 };
 
 const isLoginMethodPreference = (value: string): value is LoginMethodPreference =>
-  value === "email" || value === "ipa" || value === "passkey";
+  value === "email" || value === "ipa" || value === "passkey" || value === "guest" || value === "login";
 
 export const readLoginMethodFromCookieHeader = (cookieHeader: string | null | undefined): LoginMethodPreference | null => {
   let resolved: LoginMethodPreference | null = null;

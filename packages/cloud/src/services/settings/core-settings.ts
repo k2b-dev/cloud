@@ -44,6 +44,57 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "user.app_approval.enabled": {
+    kind: "boolean", label: "Allow app approval", description: "Enable the device pairing and app approval API. Requires an explicit authenticator origin. Does not enable Linux login.", default: false,
+  },
+  "user.app_approval.origin": {
+    kind: "string", label: "Authenticator website origin", description: "Trusted HTTPS origin of the separately hosted authenticator. Changing this origin requires reviewing every existing device; never use a wildcard.", default: "",
+  },
+  "user.app_approval.admin_pairing": {
+    kind: "boolean", label: "Allow administrator-assisted pairing", description: "Allow recently authenticated administrators to enroll a device for another account, with explicit confirmation and audit.", default: false,
+  },
+  "user.category.guest.enabled": {
+    kind: "boolean",
+    label: "Guest accounts allowed",
+    description: "Allow Guest sign-in and user-bound credentials. Disabling retains accounts and their data.",
+    default: true,
+  },
+  "user.category.guest.visible": {
+    kind: "boolean",
+    label: "Show Guest in login",
+    description: "Hidden allowed accounts can still use direct login links. This does not enable self-registration.",
+    default: true,
+  },
+  "user.category.login.enabled": {
+    kind: "boolean",
+    label: "Login accounts allowed",
+    description: "Allow passwordless local full accounts to sign in and use user-bound credentials.",
+    default: true,
+  },
+  "user.category.login.visible": {
+    kind: "boolean",
+    label: "Show Login in login",
+    description: "Show this category in the general login page. Direct entry remains available when hidden but allowed.",
+    default: true,
+  },
+  "user.category.login.label": {
+    kind: "string",
+    label: "Login account label",
+    description: "Name used for local full accounts, for example Company account. Empty uses Login.",
+    default: "Login",
+  },
+  "user.category.freeipa.enabled": {
+    kind: "boolean",
+    label: "FreeIPA accounts allowed",
+    description: "Allow FreeIPA-backed accounts to sign in and use user-bound credentials. Directory synchronization is not stopped.",
+    default: true,
+  },
+  "user.category.freeipa.visible": {
+    kind: "boolean",
+    label: "Show FreeIPA in login",
+    description: "The FreeIPA connection must also be enabled to offer this login method.",
+    default: true,
+  },
   "linux.identity_config": {
     kind: "text",
     label: "Local Linux identities",

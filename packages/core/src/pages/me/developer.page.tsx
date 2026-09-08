@@ -1,6 +1,6 @@
 import { cloudMcpResourceUri, publicCloudOrigin } from "@valentinkolb/cloud/api";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings, serviceAccountCredentials } from "@valentinkolb/cloud/services";
+import { coreSettings, readAccountCategoryPolicy, serviceAccountCredentials } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
@@ -10,6 +10,7 @@ import { accountMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const { t } = accountMessages.resolve([getLocale(c)]);
   const [rawAppName, rawAppUrl, freeIpaEnabledRaw, apiKeys] = await Promise.all([
     coreSettings.get<string>("app.name"),
@@ -25,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.developer }]}>
-      <AccountHub user={user} active="developer">
+      <AccountHub user={user} active="developer" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader title={t.developer} description={t.developerDescription} />
 

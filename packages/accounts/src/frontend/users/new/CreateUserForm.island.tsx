@@ -16,6 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
+import { type AccountCategory, type AccountCategoryPolicy, accountCategoryLabel } from "@valentinkolb/cloud/contracts";
 import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";
@@ -29,8 +30,6 @@ type PrefillData = {
   displayName?: string;
   firstName: string;
 };
-
-type AccountType = "freeipa" | "login" | "guest";
 
 type ProviderChoice = "ipa" | "local";
 type LocalProfile = "user" | "guest";
@@ -63,6 +62,7 @@ type CreateFlowResult = {
 };
 
 type Props = {
+  categoryPolicy: AccountCategoryPolicy;
   prefill?: PrefillData;
   buttonLabel?: string;
   buttonIcon?: string;
@@ -74,12 +74,20 @@ type Props = {
 
 type AccountsCopy = ReturnType<typeof accountsMessages.resolve>["t"];
 
-export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: PrefillData; close: (result?: CreateFlowResult) => void }) {
+export function CreateUserDialog(props: {
+  freeIpaEnabled: boolean;
+  categoryPolicy: AccountCategoryPolicy;
+  prefill?: PrefillData;
+  close: (result?: CreateFlowResult) => void;
+}) {
   const messages = useAccountsMessages();
   const categories = (["freeipa", "login", "guest"] as const).filter(
-    (category) => (category !== "freeipa" || props.freeIpaEnabled) && (!props.prefill || !props.freeIpaEnabled || category === "freeipa"),
+    (category) =>
+      props.categoryPolicy[category].enabled &&
+      (category !== "freeipa" || props.freeIpaEnabled) &&
+      (!props.prefill || category === "freeipa"),
   );
-  const [category, setCategory] = createSignal<AccountType | undefined>();
+  const [category, setCategory] = createSignal<AccountCategory | undefined>();
   const provider = (): ProviderChoice => (category() === "freeipa" ? "ipa" : "local");
   const formId = createUniqueId();
   const [dirty, setDirty] = createSignal(false);
@@ -187,6 +195,9 @@ export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: Pre
           <Show when={props.prefill}>
             <NoticeCard tone="info">{messages().prefilledRequest}</NoticeCard>
           </Show>
+          <Show when={categories.length === 0}>
+            <NoticeCard tone="warning">{messages().noAllowedAccountTypes}</NoticeCard>
+          </Show>
           <Show when={categories.length > 0}>
             <Select
               label={messages().accountType}
@@ -196,7 +207,7 @@ export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: Pre
               error={() => errors().category}
               options={categories.map((value) => ({
                 value,
-                label: value === "freeipa" ? "FreeIPA" : value === "guest" ? "Guest" : "Login",
+                label: value === "freeipa" ? "FreeIPA" : value === "guest" ? "Guest" : props.categoryPolicy.login.label,
                 description:
                   value === "freeipa"
                     ? messages().freeIpaTypeDescription
@@ -293,7 +304,7 @@ export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: Pre
                 when={provider() === "ipa"}
                 fallback={
                   <>
-                    <p>{messages().localLoginHelp({ loginLabel: "Login" })}</p>
+                    <p>{messages().localLoginHelp({ loginLabel: props.categoryPolicy.login.label })}</p>
                     <p>{autoSendNotification() ? messages().localDeliveryHelp : messages().localNoDeliveryHelp}</p>
                   </>
                 }
@@ -325,7 +336,7 @@ export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: Pre
   );
 }
 
-const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse, t: AccountsCopy, locale: string) => {
+const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse, t: AccountsCopy, locale: string, loginLabel: string) => {
   const nfsCommands = `sudo nfsctl useradd ${data.uid}`;
   const isIpa = payload.provider === "ipa";
   const notificationMessage = data.notificationSent ? (isIpa ? t.ipaWelcomeSent : t.localWelcomeSent) : t.welcomeNotSent;
@@ -349,7 +360,10 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
             { term: "UID", description: data.uid },
             {
               term: t.accountType,
-              description: payload.provider === "ipa" ? "FreeIPA" : payload.profile === "guest" ? t.guestAccount : t.fullAccount,
+              description: accountCategoryLabel(
+                { provider: payload.provider, profile: payload.provider === "local" ? payload.profile : "user" },
+                loginLabel,
+              ),
             },
             ...(data.accountExpires ? [{ term: t.accountExpires, description: dates.formatDate(data.accountExpires, { locale }) }] : []),
           ]}
@@ -393,7 +407,9 @@ export default function CreateUserForm(props: Props) {
     setOpening(true);
     try {
       const result = await dialogCore.open<CreateFlowResult>(
-        (close) => <CreateUserDialog freeIpaEnabled={freeIpaEnabled} prefill={props.prefill} close={close} />,
+        (close) => (
+          <CreateUserDialog freeIpaEnabled={freeIpaEnabled} categoryPolicy={props.categoryPolicy} prefill={props.prefill} close={close} />
+        ),
         {
           ...panelDialogOptions,
           cancelBehavior: "ignore",
@@ -401,7 +417,7 @@ export default function CreateUserForm(props: Props) {
         },
       );
       if (result) {
-        const action = await buildSuccessDialog(result.payload, result.data, messages(), locale());
+        const action = await buildSuccessDialog(result.payload, result.data, messages(), locale(), props.categoryPolicy.login.label);
         if (action === "view") navigateTo(`/app/accounts/users/${result.data.id}`);
         else if (props.autoOpen) navigateTo("/app/accounts/users");
         else refreshCurrentPath();

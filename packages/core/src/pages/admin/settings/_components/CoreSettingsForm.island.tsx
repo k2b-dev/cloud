@@ -51,17 +51,17 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AccessEntry } from "@valentinkolb/cloud/contracts/shared";
-import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/ai/admin";
 import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
+import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/ai/admin";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
+import type { AccessEntry } from "@valentinkolb/cloud/contracts/shared";
 import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "@valentinkolb/cloud/shared";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
-import { LegacySettingsSection } from "./LegacySettingsPanel.island";
-import { localizeSettingField } from "./setting-copy";
-import { settingsMessages } from "./messages";
 import { aiSettingsMessages } from "./ai-settings-messages";
+import { LegacySettingsSection } from "./LegacySettingsPanel.island";
+import { settingsMessages } from "./messages";
+import { localizeSettingField } from "./setting-copy";
 
 type SettingValueSource = "custom" | "env" | "default";
 
@@ -334,7 +334,13 @@ export default function CoreSettingsForm(props: Props) {
   const hasChanges = () => changedKeys().length > 0;
   const isAiSettings = () => localizedEntries().some((entry) => entry.key === AI_PROFILE_SETTING_KEY);
   const genericEntries = () =>
-    isAiSettings() ? localizedEntries().filter((entry) => !AI_SETTINGS_HANDLED_BY_PANEL.has(entry.key)) : localizedEntries();
+    localizedEntries().filter(
+      (entry) =>
+        !entry.key.startsWith("user.category.") &&
+        (!entry.key.startsWith("user.app_approval.") || entry.key.endsWith(".enabled") || valueOf("user.app_approval.enabled") === true) &&
+        (entry.key !== "user.allow_self_registration" || valueOf("user.category.guest.enabled") !== false) &&
+        (!isAiSettings() || !AI_SETTINGS_HANDLED_BY_PANEL.has(entry.key)),
+    );
 
   const renderFieldRows = (entries: SettingFieldDef[]) =>
     entries.map((entry) => (
@@ -535,6 +541,29 @@ export default function CoreSettingsForm(props: Props) {
         when={isAiSettings()}
         fallback={
           <>
+            <Show when={entryMap()["user.category.guest.enabled"]}>
+              <NoticeCard tone="info" title={t().accountCategories} detail={t().accountCategoriesDescription} />
+              {(["guest", "login", "freeipa"] as const).map((category) => (
+                <SettingsSection
+                  title={
+                    category === "guest"
+                      ? "Guest"
+                      : category === "freeipa"
+                        ? "FreeIPA"
+                        : String(valueOf("user.category.login.label") || "Login")
+                  }
+                >
+                  {renderFieldRows(localizedEntries().filter((entry) => entry.key === `user.category.${category}.enabled`))}
+                  <Show when={valueOf(`user.category.${category}.enabled`) === true}>
+                    {renderFieldRows(
+                      localizedEntries().filter(
+                        (entry) => entry.key.startsWith(`user.category.${category}.`) && !entry.key.endsWith(".enabled"),
+                      ),
+                    )}
+                  </Show>
+                </SettingsSection>
+              ))}
+            </Show>
             {renderFieldSections(genericEntries())}
             <Show when={props.showLegacySettings}>
               <LegacySettingsSection />
@@ -590,6 +619,11 @@ const sectionDefs = (
     title: t.login,
     subtitle: t.loginDescription,
     icon: "ti ti-login",
+  },
+  "user.appApproval": {
+    title: t.appApproval,
+    subtitle: t.appApprovalDescription,
+    icon: "ti ti-device-mobile",
   },
   "user.expiry": {
     title: t.accountExpiry,
@@ -658,6 +692,7 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
   if (entry.key === "app.timezone" || entry.key === "app.cleanup_schedule") return "app.operations";
   if (entry.key.startsWith("app.")) return "app.identity";
 
+  if (entry.key.startsWith("user.app_approval.")) return "user.appApproval";
   if (entry.key === "user.allow_self_registration" || entry.key === "user.abbr_length" || entry.key === "user.session.expiry_hours") {
     return "user.login";
   }

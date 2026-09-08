@@ -3,6 +3,7 @@ import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeho
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
+import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
@@ -42,6 +43,7 @@ export default ssr<AuthContext>(async (c) => {
     value === "all" ? t.all : value === "pending" ? t.pending : value === "completed" ? t.completed : t.denied;
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const categoryPolicy = await readAccountCategoryPolicy();
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const status = parseStatus(c.req.query("status"));
@@ -94,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
               </ButtonLink>
             ))}
             <div class="ml-auto">
-              <CreateUserForm freeIpaEnabled={freeIpaEnabled} />
+              <CreateUserForm freeIpaEnabled={freeIpaEnabled} categoryPolicy={categoryPolicy} />
             </div>
           </div>
 
@@ -130,6 +132,7 @@ export default ssr<AuthContext>(async (c) => {
                         <div class="flex justify-end gap-1">
                           {freeIpaEnabled ? (
                             <CreateUserForm
+                              categoryPolicy={categoryPolicy}
                               buttonLabel={t.create}
                               buttonIcon="ti ti-user-plus"
                               freeIpaEnabled={freeIpaEnabled}

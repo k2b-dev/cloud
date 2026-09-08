@@ -182,3 +182,5 @@ export type {
 } from "./sync-ops";
 
 export { latestTopicCursor } from "./topic-cursor";
+export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
+export { appApproval, type AppDeviceEnrollmentNotice } from "./app-approval";

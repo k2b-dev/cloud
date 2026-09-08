@@ -1,11 +1,16 @@
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, Checkbox, TextInput, useLocale } from "@k2b/ui";
+import { Button, Checkbox, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import { createSignal, onMount, Show } from "solid-js";
 import { authMessages } from "./messages";
 
-export default function GuestLoginForm(props: { redirectTo?: string; token?: string; allowSelfRegistration: boolean }) {
+export default function GuestLoginForm(props: {
+  redirectTo?: string;
+  token?: string;
+  allowSelfRegistration: boolean;
+  category?: "guest" | "login";
+}) {
   const locale = useLocale();
   const t = () => authMessages.resolve([locale()]).t;
   const [email, setEmail] = createSignal("");
@@ -17,7 +22,7 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
     mutation: async () => {
       if (!acceptedAgb()) throw new Error(t().acceptLegal);
       const res = await apiClient.auth["email-login"].$post({
-        json: { email: email(), acceptedAgb: true, redirectTo: props.redirectTo },
+        json: { email: email(), acceptedAgb: true, redirectTo: props.redirectTo, category: props.category },
       });
       const data = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error((data.message as string) ?? t().requestFailed);
@@ -37,7 +42,7 @@ export default function GuestLoginForm(props: { redirectTo?: string; token?: str
       }
     },
     onSuccess: () => {
-      cookies.writeCookie("login_method", "email");
+      cookies.writeCookie("login_method", props.category ?? "email");
       window.location.href = props.redirectTo || "/";
     },
   });

@@ -25,6 +25,7 @@ import { accountLifecycle } from "../account-lifecycle";
 import { lifecycleJobs } from "../account-lifecycle/scheduler";
 import { type AuditActor, type AuditTarget, audit } from "../audit";
 import { getFreeIpaConfig } from "../freeipa-config";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { type LogEntry, logger, logging } from "../logging";
 import { isUniqueViolation } from "../postgres";
 import { providers } from "../providers";
@@ -1270,8 +1271,8 @@ export const accountsAppService = {
       data: { phone?: string; comment?: string; acceptedAgb: true };
     }) => {
       const actor = { userId: config.user.id, uid: config.user.uid, roles: config.user.roles, provider: config.user.provider };
-      if (!(await getFreeIpaConfig()).enabled) {
-        const result = fail(err.badInput("FreeIPA is disabled"));
+      if (!(await getFreeIpaConfig()).enabled || !(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) {
+        const result = fail(err.badInput("FreeIPA access is disabled"));
         return audit.recordResult({
           action: "accounts.request.create",
           actor: auditActor(actor),

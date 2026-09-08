@@ -16,6 +16,48 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
 };
 
 const de: Record<string, SettingCopy> = {
+  "user.app_approval.enabled": {
+    label: "App-Freigabe erlauben",
+    description: "API für Gerätekopplung und App-Freigaben aktivieren. Benötigt eine ausdrücklich konfigurierte Authenticator-Origin. Aktiviert keinen Linux-Login.",
+  },
+  "user.app_approval.origin": {
+    label: "Origin der Authenticator-Website",
+    description: "Vertrauenswürdige HTTPS-Origin der separat gehosteten App, ohne Pfad. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
+  },
+  "user.app_approval.admin_pairing": {
+    label: "Administratoren dürfen bei der Kopplung helfen",
+    description: "Frisch angemeldete Administratoren dürfen Geräte für andere Accounts koppeln. Die Kopplung verlangt eine ausdrückliche Bestätigung und wird protokolliert.",
+  },
+  "user.category.guest.enabled": {
+    label: "Guest-Accounts erlauben",
+    description:
+      "Anmeldung und benutzergebundene Zugänge für lokale Gastaccounts erlauben. Bestehende Accounts und Daten bleiben beim Deaktivieren erhalten.",
+  },
+  "user.category.guest.visible": {
+    label: "Guest im Login anzeigen",
+    description: "Verborgene, erlaubte Accounts können direkte Login-Links nutzen. Dies aktiviert keine Selbstregistrierung.",
+  },
+  "user.category.login.enabled": {
+    label: "Lokale Vollaccounts erlauben",
+    description: "Anmeldung und benutzergebundene Zugänge für passwortlose lokale Vollaccounts erlauben.",
+  },
+  "user.category.login.visible": {
+    label: "Im Login anzeigen",
+    description: "Diesen Accounttyp auf der allgemeinen Login-Seite anbieten. Direkte Links funktionieren auch bei ausgeblendeter Auswahl.",
+  },
+  "user.category.login.label": {
+    label: "Anzeigename",
+    description: "Name für lokale Vollaccounts, z. B. Firmenaccount. Leer verwendet Login.",
+  },
+  "user.category.freeipa.enabled": {
+    label: "FreeIPA-Accounts erlauben",
+    description:
+      "Anmeldung und benutzergebundene Zugänge für FreeIPA-Accounts erlauben. Die Verzeichnissynchronisierung bleibt unverändert.",
+  },
+  "user.category.freeipa.visible": {
+    label: "FreeIPA im Login anzeigen",
+    description: "Für diese Anmeldung muss auch die FreeIPA-Verbindung aktiviert sein.",
+  },
   "app.url": {
     label: "Öffentliche URL",
     description: "Öffentliche App-URL für Links in E-Mails, OAuth-Weiterleitungen und WebSocket-Verbindungen.",

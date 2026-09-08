@@ -1,6 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
+import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
+import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accountsAppService as accountsService,
@@ -48,6 +50,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!z.uuid().safeParse(id).success) return ssr.error(c, 404);
   const recursive = c.req.query("recursive") === "true";
   const sessionUser = expectUserBackedActor(c);
+  const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
 
   const listState = parseUsersListState({
@@ -118,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
   const facts: Array<{ label: string; value: JSX.Element }> = [
     { label: "UID", value: <span class="font-mono">{user.uid}</span> },
     { label: t.databaseId, value: <span class="truncate font-mono text-xs">{user.id}</span> },
-    { label: t.managedBy, value: <span>{user.provider === "ipa" ? "FreeIPA" : t.local}</span> },
+    { label: t.accountType, value: <span>{accountCategoryLabel(user, categoryPolicy.login.label)}</span> },
     { label: t.access, value: <span>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span> },
     {
       label: t.email,
@@ -257,8 +260,7 @@ export default ssr<AuthContext>(async (c) => {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h1 class="text-xl font-semibold tracking-tight text-primary">{displayTitle}</h1>
-                  <Tag>{user.profile === "user" ? t.fullAccount : t.guestAccount}</Tag>
-                  <Tag>{user.provider === "ipa" ? "FreeIPA" : t.local}</Tag>
+                  <Tag>{accountCategoryLabel(user, categoryPolicy.login.label)}</Tag>
                   {supplementalRoles.map((role) => (
                     <Tag>{role === "group-manager" ? t.groupManager : t.admin}</Tag>
                   ))}

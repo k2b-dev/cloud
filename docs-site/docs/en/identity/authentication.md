@@ -5,10 +5,15 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-04
+updated: 2026-09-08
 ---
 
 # Request identity
+
+The optional [app approval API](/en/docs/operations/app-approval) supports
+per-account device pairing and signed, browser-bound Cloud login approval from
+a separate authenticator. It is disabled by default; the PWA and user-facing
+integration are separate work.
 
 Cloud turns a browser session or bearer token into a request actor.
 Applications select an auth policy. They do not parse or store credentials.
@@ -47,6 +52,12 @@ invalid explicit bearer does not silently fall back to the cookie.
 | OAuth client-credentials token | Service integration | Resource-bound service account |
 
 All branches produce the same `actor` and `accessSubject` contract.
+
+Operators can disable Guest, local Login or FreeIPA account access separately
+from login-page visibility. Cloud rechecks the category on user-bound
+authentication, including existing credentials. See
+[Account types and sign-in](/en/docs/operations/account-categories) for the
+scope, recovery and upgrade defaults.
 
 For a framework-owned internal capability request, Core replaces the incoming
 credential with a short-lived `cloud-invocation+jwt`. Applications do not parse
@@ -158,7 +169,8 @@ JWKS, then makes
 one PostgreSQL query that resolves the live session family, user, account
 expiry, epoch, roles, groups, and managed groups. Revoking a family or changing
 the user's authentication epoch therefore takes effect without waiting for the
-JWT to expire. Normal authenticated requests do not read a session or
+JWT to expire. A separate durable setting read checks the account category.
+Normal authenticated requests do not read a session or
 generation from Valkey.
 
 Cloud accepts only JWT browser sessions. Upgrading from the compatibility

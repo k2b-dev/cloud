@@ -10,6 +10,7 @@ export const LoginSchema = z.object({
 
 export const EmailLoginSchema = z.object({
   email: z.email(),
+  category: z.enum(["guest", "login"]).optional(),
   acceptedAgb: z.literal(true),
   redirectTo: z.string().max(2048).optional(),
 });
@@ -39,6 +40,7 @@ export const PasswordResetCompleteSchema = z
 
 export const AdminLoginSchema = z.object({
   token: z.string().min(1),
+  restoreLocalLogin: z.boolean().default(false),
 });
 
 export const AuthResponseSchema = z.object({

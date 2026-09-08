@@ -1,5 +1,7 @@
 import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
+import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
+import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -18,6 +20,7 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = accountsMessages.resolve([getLocale(c)]);
   const perPage = 100;
   const user = expectUserBackedActor(c);
+  const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const listState = parseUsersListState({
     search: c.req.query("search"),
@@ -46,8 +49,7 @@ export default ssr<AuthContext>(async (c) => {
   const columns: DataTableColumn<UserRow>[] = [
     { id: "user", header: t.user, value: (entry) => entry.displayName || entry.mail || entry.uid },
     { id: "email", header: t.email, value: (entry) => entry.mail, cellClass: "max-w-[18rem]" },
-    { id: "managedBy", header: t.managedBy, value: (entry) => (entry.provider === "ipa" ? "FreeIPA" : t.local) },
-    { id: "access", header: t.access, value: (entry) => (entry.profile === "user" ? t.fullAccount : t.guestAccount) },
+    { id: "category", header: t.accountType, value: (entry) => accountCategoryLabel(entry, categoryPolicy.login.label) },
   ];
 
   return () => (
@@ -75,7 +77,7 @@ export default ssr<AuthContext>(async (c) => {
           <div class="flex flex-wrap items-center gap-2">
             <UsersFilters state={listState} />
             <div class="ml-auto">
-              <CreateUserForm buttonClass="shrink-0" freeIpaEnabled={freeIpaEnabled} />
+              <CreateUserForm buttonClass="shrink-0" freeIpaEnabled={freeIpaEnabled} categoryPolicy={categoryPolicy} />
             </div>
           </div>
 
@@ -112,18 +114,10 @@ export default ssr<AuthContext>(async (c) => {
                       </a>
                     );
                   }
-                  if (col.id === "managedBy" || col.id === "access") {
+                  if (col.id === "category") {
                     return (
                       <a href={href} class="block" tabindex={-1}>
-                        <Tag>
-                          {col.id === "managedBy"
-                            ? entry.provider === "ipa"
-                              ? "FreeIPA"
-                              : t.local
-                            : entry.profile === "user"
-                              ? t.fullAccount
-                              : t.guestAccount}
-                        </Tag>
+                        <Tag>{accountCategoryLabel(entry, categoryPolicy.login.label)}</Tag>
                       </a>
                     );
                   }

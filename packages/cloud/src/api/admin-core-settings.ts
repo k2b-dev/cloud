@@ -11,10 +11,18 @@ import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { listAiCredentialProfileIds, pruneAiCredentials, setAiCredential, splitAiProfileCredentials } from "../ai/credentials";
 import { enrichDirtyAiConversations } from "../ai/enrich";
-import { type AiModelAccessChange, AiModelAccessConflict, AiModelAccessInvalid, aiModelAccess, splitAiModelAccess } from "../ai/model-access";
+import {
+  type AiModelAccessChange,
+  AiModelAccessConflict,
+  AiModelAccessInvalid,
+  aiModelAccess,
+  splitAiModelAccess,
+} from "../ai/model-access";
 import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
 import { type AuthContext, auth, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
+import { readAccountCategoryPolicy } from "../services/account-category-policy";
+import { audit } from "../services/audit";
 import { validateFreeIpaCaCert } from "../services/freeipa-config";
 import { testFreeIpaConnection } from "../services/ipa/connection";
 import { sendEmail } from "../services/notifications/email";
@@ -102,7 +110,14 @@ const prepareAiSettingsMutation = async (
   const keys = [...Object.keys(updates), ...resets];
   if (!keys.some((key) => AI_CONFIGURATION_KEYS.has(key))) return { errors: {} };
 
-  const [currentEnabled, currentDefaultModelId, currentBackgroundModelId, currentVisionModelId, currentWorkflowModelId, currentProfilesJson] = await Promise.all([
+  const [
+    currentEnabled,
+    currentDefaultModelId,
+    currentBackgroundModelId,
+    currentVisionModelId,
+    currentWorkflowModelId,
+    currentProfilesJson,
+  ] = await Promise.all([
     settings.get<boolean>(AI_ENABLED_KEY),
     settings.get<string>(AI_DEFAULT_MODEL_KEY),
     settings.get<string>(AI_BACKGROUND_MODEL_KEY),
@@ -168,6 +183,7 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
+  .get("/account-categories", auth.requireRole("admin"), async (c) => c.json(await readAccountCategoryPolicy()))
   .get("/legal", auth.requireRole("admin"), async (c) => {
     const items = await Promise.all(
       LEGAL_DOCUMENTS.map(async ({ kind, path }) => {
@@ -275,10 +291,13 @@ const app = new Hono<AuthContext>()
         aiSplit.profilesJson = split.profilesJson;
         accessChanges = split.changes;
       } catch {
-        return c.json({
-          message: "Invalid model permissions",
-          errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
-        }, 400);
+        return c.json(
+          {
+            message: "Invalid model permissions",
+            errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
+          },
+          400,
+        );
       }
     }
     const finalValues: Record<string, unknown> = aiSplit ? { ...updates, [AI_PROFILES_KEY]: aiSplit.profilesJson } : updates;
@@ -338,6 +357,22 @@ const app = new Hono<AuthContext>()
             throw error;
           }
         }
+        const categoryKeys = keys.filter((key) => key.startsWith("user.category."));
+        if (categoryKeys.length > 0)
+          await audit.record(
+            {
+              action: "accounts.categories.configure",
+              outcome: "allowed",
+              actor: { userId: c.get("user").id },
+              target: { type: "settings", id: "user.category" },
+              metadata: {
+                keys: categoryKeys,
+                updates: Object.fromEntries(categoryKeys.filter((key) => key in validatedValues).map((key) => [key, validatedValues[key]])),
+                resets: resets.filter((key) => categoryKeys.includes(key)),
+              },
+            },
+            tx,
+          );
         if (aiSplit && aiPlan.keepCredentialProfileIds) {
           await storeAiCredentials(aiSplit, aiPlan.keepCredentialProfileIds, tx);
         } else if (aiPlan.keepCredentialProfileIds) {
@@ -390,6 +425,17 @@ const app = new Hono<AuthContext>()
     try {
       await sql.begin(async (tx) => {
         await settings.remove(key, tx);
+        if (key.startsWith("user.category."))
+          await audit.record(
+            {
+              action: "accounts.categories.configure",
+              outcome: "allowed",
+              actor: { userId: c.get("user").id },
+              target: { type: "setting", id: key },
+              metadata: { reset: true },
+            },
+            tx,
+          );
         if (aiPlan.keepCredentialProfileIds) {
           await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
         }

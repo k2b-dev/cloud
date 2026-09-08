@@ -4,6 +4,9 @@ export const settingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      accountCategories: "Account types and sign-in",
+      accountCategoriesDescription:
+        "Allowed controls access, including existing sessions and user-bound API credentials. Disabling does not delete accounts or stop FreeIPA sync. Visibility only controls the general login page; hidden, allowed accounts can use direct links. Keep an administrator in an allowed category or an emergency admin token available before disabling your own category.",
       updated: "Updated",
       access: "Access",
       admins: "Admins",
@@ -138,6 +141,8 @@ export const settingsMessages = i18n.define({
       operationsDescription: "Timezone and schedules used by automatic platform jobs.",
       login: "Sign-in",
       loginDescription: "Session and account creation behavior.",
+      appApproval: "App approval API",
+      appApprovalDescription: "Technical integration for a separately hosted authenticator. The authenticator and login interface must be connected separately.",
       accountExpiry: "Account expiry",
       accountExpiryDescription: "Default lifetimes for IPA, local user, and local guest accounts.",
       remindersRetention: "Reminders and retention",
@@ -189,6 +194,9 @@ export const settingsMessages = i18n.define({
       templatePreview: ({ label }: { label: string }) => `${label} preview`,
     },
     de: {
+      accountCategories: "Accounttypen und Anmeldung",
+      accountCategoriesDescription:
+        "Erlaubt steuert den Zugriff, auch für bestehende Sitzungen und benutzergebundene API-Zugänge. Deaktivieren löscht keine Accounts und stoppt nicht den FreeIPA-Sync. Sichtbarkeit betrifft nur die allgemeine Login-Seite; verborgene, erlaubte Accounts können direkte Links nutzen. Halte vor dem Deaktivieren deines eigenen Accounttyps einen anderen erlaubten Admin-Zugang oder den Notfall-Admin-Token bereit.",
       updated: "Aktualisiert",
       access: "Zugriff",
       admins: "Administration",
@@ -324,6 +332,8 @@ export const settingsMessages = i18n.define({
       operationsDescription: "Zeitzone und Zeitpläne automatischer Plattformaufgaben.",
       login: "Anmeldung",
       loginDescription: "Sitzungen und Erstellung von Konten.",
+      appApproval: "API für App-Freigaben",
+      appApprovalDescription: "Technische Anbindung einer separat gehosteten Authenticator-App. App und Login-Oberfläche müssen separat angebunden werden.",
       accountExpiry: "Ablauf von Konten",
       accountExpiryDescription: "Standardlaufzeiten für IPA-Konten, lokale Konten und Gastkonten.",
       remindersRetention: "Erinnerungen und Aufbewahrung",

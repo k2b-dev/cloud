@@ -1,5 +1,5 @@
 import { type AuthContext, auth, jsonResponse, rateLimit, v } from "@valentinkolb/cloud/server";
-import { accounts, get, logger } from "@valentinkolb/cloud/services";
+import { accounts, get, isAccountCategoryAllowed, logger } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
 import { createLoginRedirectUrl, publicCloudOrigin } from "@valentinkolb/cloud/shared";
 import { type Context, Hono } from "hono";
@@ -561,6 +561,7 @@ const app = new Hono<AuthContext>()
             if (
               !user ||
               isAccountExpired(user.accountExpires) ||
+              !(await isAccountCategoryAllowed(user)) ||
               grant.scopes.some((scope) => !client.scopes.includes(scope)) ||
               !audiencesAllowed ||
               !(await oauth.clients.canAuthorizeUser({ client, userId: user.id, profile: user.profile }))
@@ -640,6 +641,7 @@ const app = new Hono<AuthContext>()
         if (
           !user ||
           isAccountExpired(user.accountExpires) ||
+          !(await isAccountCategoryAllowed(user)) ||
           !(await oauth.clients.canAuthorizeUser({ client: result.client, userId: user.id, profile: user.profile }))
         ) {
           return tokenError(c, "access_denied", "User is not allowed to access this client", 403);

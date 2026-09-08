@@ -1,5 +1,6 @@
 import { Avatar, useLocale } from "@k2b/ui";
 import type { User } from "@valentinkolb/cloud/contracts";
+import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
 import type { JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
@@ -19,7 +20,13 @@ const roleClass = (role: string): string =>
     ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
     : "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300";
 
-export default function AccountHub(props: { user: User; active: AccountSection; children: JSXElement; actions?: JSXElement }) {
+export default function AccountHub(props: {
+  user: User;
+  active: AccountSection;
+  children: JSXElement;
+  actions?: JSXElement;
+  loginLabel: string;
+}) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const supplementalRoles = props.user.roles.filter((role) => role === "admin" || role === "group-manager");
@@ -47,8 +54,7 @@ export default function AccountHub(props: { user: User; active: AccountSection; 
               {props.user.displayName && props.user.profile !== "guest" ? ` · ${props.user.uid}` : ""}
             </p>
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <span class="tag tag-neutral">{props.user.profile === "guest" ? t().accountTypeGuest : t().accountTypeFull}</span>
-              <span class="tag tag-neutral">{props.user.provider === "ipa" ? "FreeIPA" : t().managementLocal}</span>
+              <span class="tag tag-neutral">{accountCategoryLabel(props.user, props.loginLabel)}</span>
               {supplementalRoles.map((role) => (
                 <span class={`tag ${roleClass(role)}`}>{role === "group-manager" ? t().roleGroupManager : t().roleAdmin}</span>
               ))}

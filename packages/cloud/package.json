@@ -25,6 +25,7 @@
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*",
     "./browser": "./src/server/api-client.ts",
+    "./browser/app-approval": "./src/browser/app-approval.ts",
     "./browser/live": "./src/browser/live-websocket.ts",
     "./browser/notifications": "./src/browser/notifications.ts",
     "./browser/resource-clipboard": "./src/browser/resource-clipboard.ts",

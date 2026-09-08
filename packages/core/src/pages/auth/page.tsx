@@ -1,30 +1,28 @@
-import { ButtonLink, LocaleProvider } from "@k2b/ui";
+import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
+import { type AccountCategory, resolveAccountCategoryLogin } from "@valentinkolb/cloud/contracts";
 import { getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings } from "@valentinkolb/cloud/services";
-import {
-  normalizeRedirectTo,
-  readLoginMethodFromCookieHeader,
-  readThemeFromCookieHeader,
-  resolveLoginFallbackMethod,
-} from "@valentinkolb/cloud/shared";
+import { coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
+import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../config";
+import AccountCategorySwitch from "./AccountCategorySwitch.island";
 import AdminLoginForm from "./AdminLoginForm.island";
 import GuestLoginForm from "./GuestLoginForm.island";
 import LoginForm from "./LoginForm.island";
-import PasskeyLoginButton from "./PasskeyLoginButton.island";
 import { authMessages } from "./messages";
+import PasskeyLoginButton from "./PasskeyLoginButton.island";
 
 /** Login page. */
 export default ssr(async (c) => {
   const locale = getLocale(c);
   const t = authMessages.resolve([locale]).t;
-  const [rawAppName, freeIpaEnabledRaw, allowSelfRegistrationRaw, contactEmailRaw, legalLinks] = await Promise.all([
+  const [rawAppName, freeIpaEnabledRaw, allowSelfRegistrationRaw, contactEmailRaw, legalLinks, policy] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
     coreSettings.get<boolean>("user.allow_self_registration"),
     coreSettings.get<string>("app.contact_email"),
     listLegalLinks(locale),
+    readAccountCategoryPolicy(),
   ]);
   const appName = rawAppName || "My App";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
@@ -48,33 +46,39 @@ export default ssr(async (c) => {
   // Admin login: hidden method, no switch link, no cookie interaction
   const isAdminLogin = method === "admin" && !token;
 
-  // Priority: magic-link token forces email > hide=guest forces ipa > ?method= > remembered fallback > email.
-  const activeMethod = resolveLoginFallbackMethod({
+  const { active: activeMethod, visible: visibleCategories } = resolveAccountCategoryLogin({
+    policy,
     freeIpaEnabled,
     hasToken: Boolean(token),
-    isGuestHidden,
-    queryMethod: method,
-    persistedMethod: persistedLoginMethod,
+    hideGuest: isGuestHidden,
+    method,
+    remembered: persistedLoginMethod,
   });
 
-  const isEmailLogin = activeMethod === "email";
+  const isEmailLogin = activeMethod === "email" || activeMethod === "guest" || activeMethod === "login";
+  const categoryLabel = (category: AccountCategory) =>
+    category === "login" ? policy.login.label : category === "guest" ? "Guest" : "FreeIPA";
 
-  const buildMethodUrl = (nextMethod: "email" | "ipa" | "admin") => {
+  const buildMethodUrl = (nextMethod: AccountCategory | "admin") => {
     const methodParams = new URLSearchParams();
-    methodParams.set("method", nextMethod);
+    methodParams.set("method", nextMethod === "freeipa" ? "ipa" : nextMethod);
     if (redirectTo) methodParams.set("redirectTo", redirectTo);
-    if (hide && freeIpaEnabled && nextMethod !== "email") methodParams.set("hide", hide);
-    if (hasBanner && nextMethod === "ipa") methodParams.set("banner", hasBanner);
-    if (ipaUid && nextMethod === "ipa") methodParams.set("ipa-uid", ipaUid);
+    if (hide && freeIpaEnabled && nextMethod === "freeipa") methodParams.set("hide", hide);
+    if (hasBanner && nextMethod === "freeipa") methodParams.set("banner", hasBanner);
+    if (ipaUid && nextMethod === "freeipa") methodParams.set("ipa-uid", ipaUid);
     return `/auth/login?${methodParams.toString()}`;
   };
-  const emailHref = buildMethodUrl("email");
-  const ipaHref = buildMethodUrl("ipa");
   const adminHref = buildMethodUrl("admin");
   const supportHref = contactEmail ? `mailto:${contactEmail}` : "/legal/imprint";
-  const showPasskey = !isAdminLogin && !token;
-  const formTitle = isAdminLogin ? t.adminToken : token ? t.completeEmailSignIn : t.signIn;
-  const formSubtitle = isAdminLogin ? t.adminTokenDescription : token ? t.verifyingEmailLink : t.signInDescription;
+  const showPasskey = !isAdminLogin && !token && !!activeMethod;
+  const formTitle = isAdminLogin
+    ? t.adminToken
+    : token
+      ? t.completeEmailSignIn
+      : activeMethod && activeMethod !== "email"
+        ? categoryLabel(activeMethod)
+        : t.signIn;
+  const formSubtitle = isAdminLogin ? t.adminTokenDescription : token ? t.verifyingEmailLink : activeMethod ? t.signInDescription : null;
 
   return () => (
     <LocaleProvider locale={locale}>
@@ -111,7 +115,7 @@ export default ssr(async (c) => {
                 <div>
                   <h1 class="sr-only">{t.signIn}</h1>
                   <h2 class="text-3xl font-semibold tracking-tight text-primary">{formTitle}</h2>
-                  <p class="mt-1 text-sm text-dimmed">{formSubtitle}</p>
+                  {formSubtitle && <p class="mt-1 text-sm text-dimmed">{formSubtitle}</p>}
                 </div>
 
                 {showPasskey && (
@@ -127,49 +131,34 @@ export default ssr(async (c) => {
                   </>
                 )}
 
-                {!isAdminLogin && freeIpaEnabled && !isGuestHidden && !token && (
-                  <div
-                    role="radiogroup"
-                    aria-label={t.fallbackMethod}
-                    class="mb-5 inline-flex w-full items-stretch rounded-xl border border-zinc-300/50 bg-zinc-200/60 p-0.5 [box-shadow:var(--ui-control-recess)] dark:border-zinc-700/50 dark:bg-zinc-900/50"
-                    style={{ "view-transition-name": "login-switch" }}
-                  >
-                    <a
-                      href={emailHref}
-                      role="radio"
-                      aria-checked={isEmailLogin}
-                      class={`relative z-0 flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs font-medium leading-4 transition-[background-color,color,box-shadow] ${
-                        isEmailLogin
-                          ? "z-10 rounded-[0.95rem] bg-white text-zinc-900 [box-shadow:0_1px_3px_-1px_rgb(0_0_0/0.2)] dark:bg-zinc-800/95 dark:text-zinc-100"
-                          : "text-zinc-700 hover:bg-zinc-50/65 hover:text-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800/35 dark:hover:text-zinc-300"
-                      }`}
-                    >
-                      <i class="ti ti-mail" />
-                      Email
-                    </a>
-                    <a
-                      href={ipaHref}
-                      role="radio"
-                      aria-checked={!isEmailLogin}
-                      class={`relative z-0 flex min-w-0 flex-1 items-center justify-center gap-1 rounded-lg px-2 py-1 text-xs font-medium leading-4 transition-[background-color,color,box-shadow] ${
-                        !isEmailLogin
-                          ? "z-10 rounded-[0.95rem] bg-white text-zinc-900 [box-shadow:0_1px_3px_-1px_rgb(0_0_0/0.2)] dark:bg-zinc-800/95 dark:text-zinc-100"
-                          : "text-zinc-700 hover:bg-zinc-50/65 hover:text-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800/35 dark:hover:text-zinc-300"
-                      }`}
-                    >
-                      <i class="ti ti-building-fortress" />
-                      FreeIPA
-                    </a>
+                {!isAdminLogin && visibleCategories.length > 1 && !token && (
+                  <div class="mb-5" style={{ "view-transition-name": "login-switch" }}>
+                    <AccountCategorySwitch
+                      options={visibleCategories.map((category) => ({
+                        value: category,
+                        label: categoryLabel(category),
+                        href: buildMethodUrl(category),
+                      }))}
+                      value={activeMethod}
+                      ariaLabel={t.fallbackMethod}
+                    />
                   </div>
                 )}
 
                 <div class="flex flex-col gap-4">
                   {isAdminLogin ? (
-                    <AdminLoginForm redirectTo={redirectTo} />
+                    <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
                   ) : isEmailLogin ? (
-                    <GuestLoginForm redirectTo={redirectTo} token={token} allowSelfRegistration={allowSelfRegistration} />
-                  ) : (
+                    <GuestLoginForm
+                      redirectTo={redirectTo}
+                      token={token}
+                      category={activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined}
+                      allowSelfRegistration={allowSelfRegistration && policy.guest.enabled && activeMethod !== "login"}
+                    />
+                  ) : activeMethod === "freeipa" ? (
                     <LoginForm redirectTo={redirectTo} showBanner={hasBanner === "true"} defaultUsername={ipaUid} appName={appName} />
+                  ) : (
+                    <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
                   )}
                 </div>
 

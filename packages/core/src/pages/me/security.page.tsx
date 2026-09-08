@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { audit, coreSettings, webauthn } from "@valentinkolb/cloud/services";
+import { audit, coreSettings, readAccountCategoryPolicy, webauthn } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountActivity from "./AccountActivity.island";
@@ -16,6 +16,7 @@ const parseActivityDays = (value: string | undefined): 7 | 30 | 90 => {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const categoryPolicy = await readAccountCategoryPolicy();
   const { t } = accountMessages.resolve([getLocale(c)]);
   const activityDays = parseActivityDays(c.req.query("activityDays"));
   const [freeIpaEnabledRaw, passkeys, activityPage] = await Promise.all([
@@ -26,7 +27,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.security }]}>
-      <AccountHub user={user} active="security">
+      <AccountHub user={user} active="security" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader title={t.security} description={t.securityDescription} />
           <PasskeysSettings initialPasskeys={passkeys} />

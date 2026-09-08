@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../../contracts/shared";
+import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { resolveStoredAdminState } from "../../accounts/model";
 import { writeLocalAccount } from "../../accounts/posix";
@@ -39,6 +40,8 @@ export const create = async (params: {
 
   try {
     return await writeLocalAccount(async (tx) => {
+      if (!(await isAccountCategoryAllowed({ provider: "local", profile: params.profile }, tx)))
+        return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
       const rows = await tx<{ id: string }[]>`
       INSERT INTO auth.users (
         uid,
@@ -148,6 +151,8 @@ export const setProfile = async (params: {
     if (rows[0]!.provider !== "local") {
       return { ok: false, error: "Only local accounts can change profile locally", status: 400 };
     }
+    if (rows[0]!.profile !== params.profile && !(await isAccountCategoryAllowed({ provider: "local", profile: params.profile }, tx)))
+      return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
 
     const admin = resolveStoredAdminState({
       provider: "local",

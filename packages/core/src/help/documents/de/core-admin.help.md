@@ -18,6 +18,21 @@ Die Core-Administrationsseiten konfigurieren Plattformdienste und verlinken die 
 
 ## Einstellungsgruppen {icon="settings"}
 
+Unter **Accounts & Anmeldung** konfigurierst du **Guest**, passwortlose lokale
+**Login**-Accounts und **FreeIPA** getrennt. Login lässt sich etwa in
+**Firmenaccount** umbenennen. **Erlauben** steuert den Zugriff; **Im Login
+anzeigen** nur die allgemeine Login-Seite. Verborgene, erlaubte Accounts können
+direkte Links nutzen. Bei nur einem sichtbaren Typ entfällt die Auswahl.
+Gast-Selbstregistrierung bleibt eine eigene Entscheidung.
+
+Deaktivieren sperrt auch nachfolgende Anfragen bestehender Sitzungen,
+benutzergebundener OAuth-Tokens, persönlicher API-Schlüssel und Hintergrundarbeit.
+Es löscht keine Accounts und stoppt nicht den FreeIPA-Sync. Erneutes Erlauben
+macht ansonsten gültige Zugangsdaten wieder nutzbar. Halte vor dem Sperren
+deines eigenen Typs einen anderen erlaubten Admin-Zugang oder den Notfall-Token
+bereit. Die Notfallwiederherstellung erlaubt nach ausdrücklicher Bestätigung
+wieder alle lokalen Login-Accounts; die Login-Sichtbarkeit bleibt unverändert.
+
 :::reference
 - **Allgemein und Accounts & Anmeldung:** Branding, öffentliche Links, Zeitpläne, Vorgaben, Anmeldeverhalten, Ablauf, Erinnerungen und Selbstverwaltung.
 - **Linux-Zugang:** Reserviere einen ID-Bereich und lege Home- und Shell-Standardwerte fest. Bei aktivierter Vergabe erhalten neue lokale Vollaccounts und hochgestufte Gäste ihre Linux-Attribute automatisch. Nutze **Backfill bestehender Accounts** für ältere Vollaccounts; das Aktivieren ändert sie nicht. Deaktivieren blendet die Backfill-Tabelle aus und erhält bestehende Identitäten in Accounts. Dies aktiviert weder Rechneranmeldung noch sudo.

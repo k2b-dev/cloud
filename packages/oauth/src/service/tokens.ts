@@ -1,4 +1,4 @@
-import { accounts, serviceAccounts, toPgTextArray } from "@valentinkolb/cloud/services";
+import { accounts, isAccountCategoryAllowed, serviceAccounts, toPgTextArray } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
 import { sql } from "bun";
 import * as jose from "jose";
@@ -365,6 +365,7 @@ export const createUserInfo = async (params: {
   const { userId, subject, scopes } = params;
   const user = await accounts.users.get({ id: userId });
   if (!user || isAccountExpired(user.accountExpires)) return null;
+  if (!(await isAccountCategoryAllowed(user))) return null;
 
   const userInfo: Record<string, unknown> = {
     sub: subject,

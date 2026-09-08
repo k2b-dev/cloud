@@ -104,6 +104,19 @@ It checks administrator access on reads and writes. See
 [Linux identities](/en/docs/operations/linux-identities) for configuration,
 explicit provisioning, and the compatible FreeIPA mirror.
 
+`readAccountCategoryPolicy` supplies server-side presentation settings;
+`isAccountCategoryAllowed` is for platform-owned credential eligibility checks,
+not application resource authorization. The browser-safe contracts barrel
+exports `AccountCategory`, `AccountCategoryPolicySchema`, `accountCategory`
+and `accountCategoryLabel`. See
+[Account types](/en/docs/operations/account-categories) for their use.
+
+The contracts barrel also exports the versioned app-approval input schemas,
+signing-message helpers and protocol limits for independent authenticator
+clients. `appApproval` in the services barrel is a Core-owned maintainer service,
+not general application authentication. Use the
+[app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
+
 ## Share types with the browser
 
 Export the Hono router type from the server. Use it with the browser client.
@@ -160,6 +173,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@valentinkolb/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting behind the Admin AI Usage report | [Observability](/en/docs/operations/observability) |
 | `@valentinkolb/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@valentinkolb/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
+| `@valentinkolb/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@valentinkolb/cloud/browser/live` | Supported, browser | Live WebSocket transport with typed channel sends | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@valentinkolb/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@valentinkolb/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |

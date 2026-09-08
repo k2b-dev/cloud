@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@valentinkolb/cloud/contracts";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -52,6 +53,7 @@ describe("Accounts creation forms", () => {
     const dispose = render(
       () =>
         createComponent(CreateUserDialog, {
+          categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY,
           freeIpaEnabled: false,
           close: (value) => results.push(value),
         }),
@@ -102,7 +104,10 @@ describe("Accounts creation forms", () => {
   test("provider and profile switches preserve person data and clear incompatible administrator access", async () => {
     const dom = createDomTestHarness();
     const { CreateUserDialog } = await import("../src/frontend/users/new/CreateUserForm.island");
-    const dispose = render(() => createComponent(CreateUserDialog, { freeIpaEnabled: true, close: () => {} }), dom.root);
+    const dispose = render(
+      () => createComponent(CreateUserDialog, { categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY, freeIpaEnabled: true, close: () => {} }),
+      dom.root,
+    );
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -202,7 +207,10 @@ describe("Accounts creation forms", () => {
     dom.window.location.href = "http://localhost/app/accounts/users/new";
     const { default: CreateUserForm } = await import("../src/frontend/users/new/CreateUserForm.island");
     const { dialogCore } = await import("@k2b/ui");
-    const dispose = render(() => createComponent(CreateUserForm, { freeIpaEnabled: false, autoOpen: true }), dom.root);
+    const dispose = render(
+      () => createComponent(CreateUserForm, { categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY, freeIpaEnabled: false, autoOpen: true }),
+      dom.root,
+    );
     cleanup = () => {
       dialogCore.close();
       dispose();
@@ -233,6 +241,7 @@ describe("Accounts creation forms", () => {
     const dispose = render(
       () =>
         createComponent(CreateUserDialog, {
+          categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY,
           freeIpaEnabled: true,
           prefill: { requestId: "request-1", email: "ada@example.com", givenname: "Ada", sn: "Lovelace", firstName: "Ada" },
           close: () => {},

@@ -17,6 +17,11 @@ and change the records they are allowed to manage.
 
 ## Use Accounts
 
+Account types are **Guest**, configurable **Login** and **FreeIPA**. These are
+derived from the existing provider and profile; they are not new providers.
+Configure which types are allowed and visible in Core's **Accounts & sign-in**
+settings, not in Accounts. See [Account types](/en/docs/operations/account-categories).
+
 - Find a user by uid, name, or email and review provider, profile, roles,
   expiry, and group membership.
 - Search groups, distinguish direct from inherited membership, and maintain

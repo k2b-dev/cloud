@@ -135,6 +135,21 @@ cld admin legal reset imprint --yes
 directly, from a file, or through standard input. `reset` clears the complete
 document configuration and requires confirmation.
 
+## Account categories
+
+`admin accounts config get --json` returns the complete policy for `guest`,
+`login`, and `freeipa`. Each has independent `enabled` and `visible` booleans;
+`login` also has a configurable `label` (default `Login`). Save the complete
+object with `admin accounts config set --config-file ./accounts.json --yes`,
+or use exactly one of `--config` and `--stdin` instead.
+
+Hiding a category only removes it from the general login selector; allowed
+accounts can still use direct login links. Disabling also blocks subsequent
+user-bound authentication, including existing sessions and delegated credentials.
+Data and credentials are retained. Disabling your own category can prevent your
+next CLI request. Emergency recovery requires a valid admin token and explicit
+confirmation to re-enable all local Login accounts; visibility is preserved.
+
 ## Linux identities
 
 ```bash
@@ -200,6 +215,7 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Announcements | `announcements list`, `announcements create`, `announcements update`, `announcements delete` |
 | Legal documents | `legal list`, `legal get`, `legal set`, `legal reset` |
 | Linux identities | `linux preview`, `linux config get`, `linux config set` |
+| Account categories | `accounts config get`, `accounts config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
 
