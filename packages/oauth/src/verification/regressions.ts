@@ -28,7 +28,7 @@ const env = {
 const children: ReturnType<typeof Bun.spawn>[] = [];
 const start = async (role: "core" | "oauth") => {
   const ready = Promise.withResolvers<void>();
-  const child = Bun.spawn(["bun", "src/verification/server.ts"], {
+  const child = Bun.spawn(["bun", "test/verification/server.ts"], {
     env: {
       ...env,
       APP_ID: role,

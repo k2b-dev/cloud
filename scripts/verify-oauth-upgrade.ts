@@ -27,10 +27,10 @@ const archive = Bun.spawn(
 const extract = Bun.spawn(["tar", "-xf", "-", "-C", source], { stdin: archive.stdout, stdout: "inherit", stderr: "inherit" });
 assert.equal(await extract.exited, 0);
 assert.equal(await archive.exited, 0);
-await mkdir(join(source, "packages/oauth/src/verification"), { recursive: true });
+await mkdir(join(source, "packages/oauth/test/verification"), { recursive: true });
 await mkdir(join(source, "node_modules"));
 for (const pkg of ["cloud", "core", "oauth", "ui"]) await mkdir(join(source, "packages", pkg, "node_modules"));
-await cp(join(root, "packages/oauth/src/verification/server.ts"), join(source, "packages/oauth/src/verification/server.ts"));
+await cp(join(root, "packages/oauth/test/verification/server.ts"), join(source, "packages/oauth/test/verification/server.ts"));
 const unchanged = [
   "packages/oauth/src/contracts.ts",
   "packages/oauth/src/api",

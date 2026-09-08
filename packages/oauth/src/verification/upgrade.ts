@@ -14,7 +14,7 @@ const start = async (role: "core" | "oauth", version: "baseline" | "current") =>
   const directory = version === "baseline" ? "/baseline/packages/oauth" : "/workspace/packages/oauth";
   const ready = Promise.withResolvers<void>();
   const revoked = Promise.withResolvers<void>();
-  const child = Bun.spawn(["bun", "src/verification/server.ts"], {
+  const child = Bun.spawn(["bun", "test/verification/server.ts"], {
     cwd: directory,
     stdout: "inherit",
     stderr: "inherit",

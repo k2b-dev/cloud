@@ -38,6 +38,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["./src/**/*.ts", "./src/**/*.tsx", "../cloud/src/types/**/*.d.ts"],
+  "include": ["./src/**/*.ts", "./src/**/*.tsx", "./test/**/*.ts", "../cloud/src/types/**/*.d.ts"],
   "exclude": ["./dist", "./node_modules"]
 }

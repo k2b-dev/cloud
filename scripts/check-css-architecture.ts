@@ -196,8 +196,15 @@ for (const [property, owners] of customPropertyOwners) {
 
 const runtimePropertyPrefixes = ["--app-", "--color-", "--sidebar-", "--tw-", "--workspace-"];
 const componentRuntimeProperties = new Set(["--ac-h", "--md-h"]);
+// Cloud imports the UI package stylesheet. Its defaults are valid owners,
+// while Cloud and application styles may override those theme tokens.
+const uiCustomProperties = new Set(
+  readCssFiles(uiStylesRoot).flatMap((file) =>
+    [...withoutCssComments(readFileSync(file, "utf8")).matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map((match) => match[1]!),
+  ),
+);
 for (const [property, consumers] of customPropertyReferences) {
-  if (customPropertyOwners.has(property)) continue;
+  if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;
   if (runtimePropertyPrefixes.some((prefix) => property.startsWith(prefix))) continue;
   if (componentRuntimeProperties.has(property)) continue;
   report([...consumers][0]!, `${property} is referenced but has no CSS or documented runtime owner`);
