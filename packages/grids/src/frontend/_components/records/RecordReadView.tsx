@@ -90,7 +90,6 @@ export default function RecordReadView(props: RecordReadViewProps) {
         mode="detail"
         empty="—"
         linkLookup={mode() !== "snapshot"}
-        relationValueMode={mode() === "snapshot" ? "labels" : "ids"}
         showBarcodeOpenAction={mode() !== "snapshot"}
       />
     );
@@ -258,42 +257,59 @@ export default function RecordReadView(props: RecordReadViewProps) {
           <DetailPanel.Group label={t().relationships}>
             <Show when={relationFields().length > 0}>
               <DetailPanel.Section title={t().relations} icon="ti ti-link" tone="accent">
-                <For each={relationFields()}>
-                  {(field) => {
-                    const items = relationItems(field);
-                    const targetTableId = relationTargetTableId(field);
-                    return (
-                      <Show
-                        when={items.length > 0 && targetTableId ? targetTableId : undefined}
-                        fallback={
-                          <DetailPanel.Action
-                            type="button"
-                            disabled
-                            title={`${field.name} · —`}
-                            description={field.description ?? undefined}
-                            leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
-                          />
-                        }
-                      >
-                        {(resolvedTableId) => (
-                          <For each={items}>
-                            {(item) => (
-                              <DetailPanel.Action
-                                href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(
-                                  resolvedTableId(),
-                                )}?record=${encodeURIComponent(item.id)}`}
-                                title={`${field.name} · ${item.label}`}
-                                description={field.description ?? undefined}
-                                leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
-                                trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                              />
-                            )}
-                          </For>
-                        )}
-                      </Show>
-                    );
-                  }}
-                </For>
+                <Show
+                  when={mode() !== "snapshot"}
+                  fallback={
+                    <DescriptionList
+                      layout="rows"
+                      size="sm"
+                      items={relationFields().map((field) => ({
+                        term: fieldTerm(field),
+                        description:
+                          relationItems(field)
+                            .map((item) => item.label)
+                            .join(", ") || "—",
+                      }))}
+                    />
+                  }
+                >
+                  <For each={relationFields()}>
+                    {(field) => {
+                      const items = relationItems(field);
+                      const targetTableId = relationTargetTableId(field);
+                      return (
+                        <Show
+                          when={items.length > 0 && targetTableId ? targetTableId : undefined}
+                          fallback={
+                            <DetailPanel.Action
+                              type="button"
+                              disabled
+                              title={`${field.name} · —`}
+                              description={field.description ?? undefined}
+                              leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
+                            />
+                          }
+                        >
+                          {(resolvedTableId) => (
+                            <For each={items}>
+                              {(item) => (
+                                <DetailPanel.Action
+                                  href={`/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(
+                                    resolvedTableId(),
+                                  )}?record=${encodeURIComponent(item.id)}`}
+                                  title={`${field.name} · ${item.label}`}
+                                  description={field.description ?? undefined}
+                                  leading={<i class={fieldTypeIcon(field.type, field.icon)} aria-hidden="true" />}
+                                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                                />
+                              )}
+                            </For>
+                          )}
+                        </Show>
+                      );
+                    }}
+                  </For>
+                </Show>
               </DetailPanel.Section>
             </Show>
             {props.relationsAfter}

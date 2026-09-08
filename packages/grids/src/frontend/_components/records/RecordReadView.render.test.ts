@@ -151,4 +151,41 @@ describe("RecordReadView", () => {
     expect(hasRecordDetailValue(false)).toBe(true);
     expect(hasRecordDetailValue([])).toBe(true);
   });
+
+  test("keeps snapshot relation labels as text instead of live record destinations", () => {
+    const relation = field({ id: "rel001", name: "Customer", type: "relation", config: { targetTableId: "TABLE2" } });
+    const html = renderToString(() =>
+      createComponent(RecordReadView, {
+        cloudUrl: "https://cloud.example",
+        baseId: "BASE01",
+        tableId: "TABLE1",
+        tableName: "Invoices",
+        fields: [relation],
+        record: record({ rel001: ["REC002"] }),
+        relationLabels: { REC002: "Historic customer" },
+        mode: "snapshot",
+      }),
+    );
+    expect(html).toContain("Historic customer");
+    expect(html).not.toContain("?record=");
+    expect(html).not.toContain("Unavailable record");
+  });
+
+  test("exposes HTML templates only through the preview action in the detail body", () => {
+    const template = field({ id: "html01", name: "Letter", type: "html_template" });
+    const html = renderToString(() =>
+      createComponent(RecordReadView, {
+        cloudUrl: "https://cloud.example",
+        baseId: "BASE01",
+        tableId: "TABLE1",
+        tableName: "Letters",
+        fields: [template],
+        record: record({ html01: "<script>danger()</script><b>Private letter</b>" }),
+      }),
+    );
+    expect(html).toContain("Preview");
+    expect(html).not.toContain("danger()");
+    expect(html).not.toContain("Private letter");
+    expect(html).not.toContain("<iframe");
+  });
 });
