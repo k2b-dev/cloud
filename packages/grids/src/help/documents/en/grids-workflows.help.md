@@ -284,6 +284,8 @@ Use `atomicRecords` when a current Grids condition and several record writes mus
 
 An empty query has no row of its own to lock. For a reservation, lock the shared item (or another stable coordination record), then check that no active reservation references it. If competing workflows lock different records, the transaction cannot serialize that business decision for them.
 
+Atomic checks support stored fields, not Formula fields or aggregate arithmetic. Check the stored facts that establish your decision under the same lock. Relation values in `createRecord` and `updateRecord`, and values for relation filters, use public Record IDs such as `${{ inputs.item.recordId }}`. Do not pass internal UUIDs, labels, or a whole record-reference object as a Relation value. Record targets and locks use the reference itself, such as `inputs.item`. Related records must remain readable in the configured target table and Base; dry run checks that boundary too.
+
 **Reserve one available item atomically**
 
 ```yaml
@@ -402,7 +404,8 @@ Control flow is still a normal step. That keeps nested behavior explicit and mak
 - **switch:** Requires a value and at least one `cases` entry. Every case has `when` and a non-empty `do` list. `default` is optional.
 - **forEach:** Requires a raw `recordList` reference, an `as` identifier, and a non-empty `do` list. It preserves list order.
 - **Value comparisons:** `equals` and `notEquals` take exactly two literal or dynamic values.
-- **Text and list comparisons:** `startsWith` and `endsWith` take two text values. `contains` accepts either two text values or a list and one exact value.
+- **Text comparisons:** `textEquals`, `contains`, `startsWith`, and `endsWith` take two text values.
+- **List membership:** `includes` takes a list and one exact value. Use it to check whether a record belongs to a relation list; `contains` is for text only.
 - **Presence and nesting:** `exists` takes one raw value reference. `all` and `any` require at least one condition. `not` wraps one condition.
 :::
 

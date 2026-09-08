@@ -1,12 +1,26 @@
 import { i18n } from "@k2b/stdlib";
 import { createMockCover } from "@valentinkolb/cloud/shared";
-import { currentMonthDate, field, form, formula, type GridTemplate, launcher, record, table, view, viewColumns } from "./types";
+import {
+  currentMonthDate,
+  documentTemplate,
+  field,
+  form,
+  formula,
+  type GridTemplate,
+  launcher,
+  record,
+  table,
+  view,
+  viewColumns,
+} from "./types";
 
 const bookshopMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
       templateName: "Bookshop",
+      orderJourney:
+        "Add order lines from the overview and select this order. Review the customer email and line amounts before marking the order ready to invoice. Replace example.test addresses in Customers before sending. Generated invoices appear below; later edits do not change an existing document.",
       templateDescription: "Manage a book catalog, customers, orders, fulfillment, and invoice delivery.",
       highlightCatalog: "Relational catalog and order tracking",
       highlightSales: "Sales and fulfillment overview",
@@ -92,8 +106,12 @@ const bookshopMessages = i18n.define({
       statusDelivered: "Delivered",
       readyToInvoice: "Ready to invoice",
       readyToInvoiceDescription: "Confirm that all order lines are complete before the invoice workflow can run.",
-      invoiceSent: "Invoice sent",
-      invoiceSentDescription: "Set once the invoice workflow has succeeded, so it is not replayed accidentally.",
+      invoiceSent: "Invoice delivery",
+      invoiceSentDescription:
+        "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
+      deliveryReady: "Ready",
+      deliveryProcessing: "In progress",
+      deliverySent: "Sent",
       customerName: "Customer name",
       customerNameLookupDescription: "Lookup from the linked customer.",
       customerEmail: "Customer email",
@@ -171,7 +189,7 @@ const bookshopMessages = i18n.define({
 </main>`,
       sendOrderInvoice: "Send order invoice",
       sendOrderInvoiceDescription: "Generates an invoice, creates a private link, and emails it to the customer.",
-      invoiceAlreadySent: "This invoice was already sent. Open the generated documents to download or share it again.",
+      invoiceAlreadySent: "Invoice delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
       addCustomerEmail: "Add a customer email address before sending the invoice.",
       replaceSampleEmail: "Replace the sample customer email before sending a real invoice.",
       completeOrderLines: "Add every order line, then mark the order as ready to invoice.",
@@ -188,6 +206,8 @@ const bookshopMessages = i18n.define({
     },
     de: {
       templateName: "Buchhandlung",
+      orderJourney:
+        "Füge Positionen über die Übersicht hinzu und wähle diese Bestellung. Prüfe die Kundenadresse und Positionsbeträge, bevor du die Bestellung zur Rechnungsstellung freigibst. Ersetze example.test-Adressen in Kunden vor dem Versand. Erzeugte Rechnungen erscheinen unten; spätere Änderungen verändern bestehende Dokumente nicht.",
       templateDescription: "Verwalte Buchkatalog, Kundschaft, Bestellungen, Versand und Rechnungszustellung.",
       highlightCatalog: "Verknüpfter Katalog und Bestellverfolgung",
       highlightSales: "Übersicht über Umsatz und Versand",
@@ -274,8 +294,12 @@ const bookshopMessages = i18n.define({
       readyToInvoice: "Bereit zur Rechnungsstellung",
       readyToInvoiceDescription:
         "Bestätigt, dass alle Bestellpositionen vollständig sind und der Rechnungsworkflow ausgeführt werden kann.",
-      invoiceSent: "Rechnung gesendet",
-      invoiceSentDescription: "Wird nach erfolgreichem Rechnungsworkflow gesetzt, damit dieser nicht versehentlich erneut ausgeführt wird.",
+      invoiceSent: "Rechnungsversand",
+      invoiceSentDescription:
+        "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
+      deliveryReady: "Bereit",
+      deliveryProcessing: "In Bearbeitung",
+      deliverySent: "Gesendet",
       customerName: "Kundenname",
       customerNameLookupDescription: "Aus dem verknüpften Kunden übernommen.",
       customerEmail: "E-Mail-Adresse des Kunden",
@@ -354,7 +378,7 @@ const bookshopMessages = i18n.define({
       sendOrderInvoice: "Bestellrechnung senden",
       sendOrderInvoiceDescription: "Erstellt eine Rechnung und einen privaten Link und sendet beides per E-Mail an den Kunden.",
       invoiceAlreadySent:
-        "Diese Rechnung wurde bereits gesendet. Öffne die erstellten Dokumente, um sie erneut herunterzuladen oder zu teilen.",
+        "Der Rechnungsversand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und vorhandene Dokumente.",
       addCustomerEmail: "Füge vor dem Senden der Rechnung eine E-Mail-Adresse des Kunden hinzu.",
       replaceSampleEmail: "Ersetze die Beispieladresse des Kunden, bevor du eine echte Rechnung sendest.",
       completeOrderLines: "Füge alle Bestellpositionen hinzu und markiere die Bestellung anschließend als rechnungsbereit.",
@@ -725,8 +749,16 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             key: "invoice_sent",
             name: t.invoiceSent,
             description: t.invoiceSentDescription,
-            type: "boolean",
-            defaultValue: false,
+            type: "select",
+            required: true,
+            config: {
+              options: [
+                { id: "ready", label: t.deliveryReady },
+                { id: "processing", label: t.deliveryProcessing },
+                { id: "sent", label: t.deliverySent },
+              ],
+            },
+            defaultValue: ["ready"],
             icon: "ti ti-mail-check",
           },
           {
@@ -1000,7 +1032,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           ordered_at: currentMonthDate(3),
           status: ["delivered"],
           invoice_ready: false,
-          invoice_sent: true,
+          invoice_sent: ["sent"],
         },
       },
       {
@@ -1011,7 +1043,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           ordered_at: currentMonthDate(8),
           status: ["shipped"],
           invoice_ready: false,
-          invoice_sent: true,
+          invoice_sent: ["sent"],
         },
       },
       {
@@ -1022,7 +1054,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
           ordered_at: currentMonthDate(13),
           status: ["new"],
           invoice_ready: true,
-          invoice_sent: false,
+          invoice_sent: ["ready"],
         },
       },
       {
@@ -1332,7 +1364,7 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
             {
               kind: "form_value",
               fieldId: field("orders.invoice_sent"),
-              value: false,
+              value: ["ready"],
             },
           ],
         },
@@ -1461,9 +1493,9 @@ export const createBookshopTemplate = (locale?: string): GridTemplate => {
     required: true
 steps:
   - if:
-      equals:
+      notEquals:
         - \${{ inputs.order.${t.invoiceSent} }}
-        - true
+        - [ready]
     then:
       - fail:
           message: ${t.invoiceAlreadySent}
@@ -1487,6 +1519,27 @@ steps:
     then:
       - fail:
           message: ${t.completeOrderLines}
+  - atomicRecords:
+      locks: [inputs.order]
+      checks:
+        - table: ${t.orders}
+          where:
+            - field: ${t.orderNumber}
+              op: equals
+              value: \${{ inputs.order.${t.orderNumber} }}
+            - field: ${t.invoiceSent}
+              op: is
+              value: ready
+            - field: ${t.readyToInvoice}
+              op: '='
+              value: true
+          assert: notEmpty
+          message: ${t.invoiceAlreadySent}
+      changes:
+        - updateRecord:
+            record: inputs.order
+            set:
+              ${t.invoiceSent}: [processing]
   - generateDocument:
       template: ${t.orderInvoice}
       record: inputs.order
@@ -1507,7 +1560,7 @@ steps:
       record: inputs.order
       set:
         ${t.readyToInvoice}: false
-        ${t.invoiceSent}: true
+        ${t.invoiceSent}: [sent]
   - succeed:
       message: "${t.invoiceSentMessage({
         orderNumber: `\${{ inputs.order.${t.orderNumber} }}`,
@@ -1654,6 +1707,11 @@ steps:
                           title: t.newOrder,
                           formId: form("new_order"),
                           fixedValues: {},
+                          onSuccessNavigate: {
+                            kind: "navigate",
+                            pageId: "order",
+                            params: { order_id: { source: "RESULT", path: "recordId" } },
+                          },
                         },
                       ],
                     },
@@ -1761,7 +1819,7 @@ steps:
                         {
                           id: "w-invoice-orders",
                           type: "records",
-                          title: t.ordersReadyToInvoice,
+                          title: t.orders,
                           source: { kind: "view", viewId: view("order_calendar") },
                           display: {
                             kind: "table",
@@ -1777,6 +1835,91 @@ steps:
                               kind: "workflow",
                               launcherId: launcher("send_order_invoice_custom_app"),
                               inputs: { order: { source: "ROW", path: "id" } },
+                            },
+                          ],
+                          rowNavigate: {
+                            history: "push",
+                            kind: "navigate",
+                            pageId: "order",
+                            params: { order_id: { source: "ROW", path: "id" } },
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              id: "order",
+              title: t.order,
+              navigation: { visible: false },
+              parameters: { order_id: { type: "record", tableId: table("orders"), required: true } },
+              record: { tableId: table("orders"), id: { source: "PARAMS", path: "order_id" } },
+              rows: [
+                {
+                  id: "detail",
+                  columns: [
+                    {
+                      id: "content",
+                      span: 12,
+                      blocks: [
+                        { id: "instructions", type: "markdown", markdown: t.orderJourney },
+                        {
+                          id: "order",
+                          type: "record",
+                          title: t.order,
+                          fieldIds: [
+                            field("orders.order_no"),
+                            field("orders.customer"),
+                            field("orders.customer_email"),
+                            field("orders.ordered_at"),
+                            field("orders.status"),
+                            field("orders.invoice_ready"),
+                            field("orders.invoice_sent"),
+                          ],
+                          editableFieldIds: [field("orders.status"), field("orders.invoice_ready")],
+                          documents: { templateIds: [documentTemplate("order_invoice")] },
+                        },
+                        {
+                          id: "lines",
+                          type: "referenced_records",
+                          title: t.orderLines,
+                          sourceTableId: table("order_lines"),
+                          relationFieldId: field("order_lines.order"),
+                          fieldIds: [
+                            field("order_lines.line_no"),
+                            field("order_lines.book"),
+                            field("order_lines.quantity"),
+                            field("order_lines.unit_price"),
+                            field("order_lines.line_total"),
+                          ],
+                          display: { kind: "table" },
+                          searchable: true,
+                          pageSize: 25,
+                          rowActions: [],
+                        },
+                        {
+                          id: "actions",
+                          type: "actions",
+                          actions: [
+                            {
+                              id: "send-invoice",
+                              kind: "workflow",
+                              label: t.sendInvoice,
+                              launcherId: launcher("send_order_invoice_custom_app"),
+                              inputs: { order: { source: "RECORD", path: "id" } },
+                              availableWhen: {
+                                query: formula(
+                                  "from table ",
+                                  table("orders"),
+                                  "\nwhere record.id = @params.order_id and ",
+                                  field("orders.invoice_ready"),
+                                  " = true and ",
+                                  field("orders.invoice_sent"),
+                                  " = 'ready'\nlimit 1",
+                                ),
+                              },
                             },
                           ],
                         },

@@ -58,7 +58,8 @@ import {
   type AtomicRecordRef,
   atomicQueryMatches,
   lockAtomicRecords,
-  requireAtomicTable,
+  requireWorkflowTable,
+  resolveWorkflowRecordValues,
 } from "./service/workflow-atomic-records";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
@@ -767,7 +768,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const record = await recordReference(ctx, config.record, "record");
         await currentTable(ctx, scope, record.tableId);
         await requireTableAccess(scope, record.tableId, "write", tx);
-        const values = fieldPayload(ctx, "set", config.set);
+        const values = await resolveWorkflowRecordValues(
+          scope,
+          await listFields(record.tableId, false, tx),
+          fieldPayload(ctx, "set", config.set),
+          tx,
+        );
         const audit = auditAnswerPayload(ctx, config.audit);
         const updated = requireOk(
           await updateRecordInTransaction(tx, record.tableId, record.recordId, values, actorId(scope), "workflow", undefined, {
@@ -801,7 +807,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope);
         const record = await recordReference(ctx, config.record, "record");
         await readableRecord(ctx, scope, record, "write");
-        const values = fieldPayload(ctx, "set", config.set);
+        const values = await resolveWorkflowRecordValues(scope, await listFields(record.tableId), fieldPayload(ctx, "set", config.set));
         auditAnswerPayload(ctx, config.audit);
         return {
           summary: runtimeText(ctx).updateFields({ count: Object.keys(values).length }),
@@ -821,7 +827,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
         await requireTableAccess(scope, tableId, "write", tx);
-        const values = fieldPayload(ctx, "values", config.values);
+        const values = await resolveWorkflowRecordValues(
+          scope,
+          await listFields(tableId, false, tx),
+          fieldPayload(ctx, "values", config.values),
+          tx,
+        );
         const created = requireOk(
           await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
@@ -852,7 +863,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
         await requireTableAccess(scope, tableId, "write");
-        const values = fieldPayload(ctx, "values", config.values);
+        const values = await resolveWorkflowRecordValues(scope, await listFields(tableId), fieldPayload(ctx, "values", config.values));
         return {
           summary: runtimeText(ctx).createRecordWithFields({ count: Object.keys(values).length }),
           // Marked planned: a later step that cannot tell this from a real
@@ -896,7 +907,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const accessFor = async (tableId: string, required: "read" | "write") => {
           const key = `${tableId}:${required}`;
           if (authorizedTables.has(key)) return;
-          await requireAtomicTable(tx, scope.baseId, tableId);
+          await requireWorkflowTable(tx, scope.baseId, tableId);
           await requireTableAccess(scope, tableId, required, tx);
           authorizedTables.add(key);
         };
@@ -912,7 +923,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             ...(predicate.value === undefined ? {} : { value: predicate.value }),
             ...(predicate.caseInsensitive === undefined ? {} : { caseInsensitive: predicate.caseInsensitive }),
           }));
-          const matches = await atomicQueryMatches({ client: tx, tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
+          const matches = await atomicQueryMatches({ scope, client: tx, tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
           const passed = check.assert === "empty" ? !matches : matches;
           if (!passed) throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || runtimeText(ctx).atomicCheckFailed);
         }
@@ -924,7 +935,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           if ("createRecord" in change) {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
             await accessFor(tableId, "write");
-            const values = atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values);
+            const values = await resolveWorkflowRecordValues(
+              scope,
+              await listFields(tableId, false, tx),
+              atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values),
+              tx,
+            );
             const result = requireOk(
               await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
                 dateConfig: dates,
@@ -948,7 +964,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
 
           const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
           await accessFor(record.tableId, "write");
-          const values = atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set);
+          const values = await resolveWorkflowRecordValues(
+            scope,
+            await listFields(record.tableId, false, tx),
+            atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set),
+            tx,
+          );
           const audit = auditAnswerPayload(ctx, change.updateRecord.audit);
           const result = requireOk(
             await updateRecordInTransaction(
@@ -1007,7 +1028,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             ...(predicate.value === undefined ? {} : { value: predicate.value }),
             ...(predicate.caseInsensitive === undefined ? {} : { caseInsensitive: predicate.caseInsensitive }),
           }));
-          const matches = await atomicQueryMatches({ tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
+          const matches = await atomicQueryMatches({ scope, tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
           if ((check.assert === "empty" && matches) || (check.assert === "notEmpty" && !matches)) {
             issues.push(check.message?.trim() || runtimeText(ctx).checkDoesNotPass({ index: checkIndex + 1 }));
           }
@@ -1018,11 +1039,19 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
             await currentTable(ctx, scope, tableId);
             await requireTableAccess(scope, tableId, "write");
-            atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values);
+            await resolveWorkflowRecordValues(
+              scope,
+              await listFields(tableId),
+              atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values),
+            );
           } else {
             const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
             await readableRecord(ctx, scope, record, "write");
-            atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set);
+            await resolveWorkflowRecordValues(
+              scope,
+              await listFields(record.tableId),
+              atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set),
+            );
             auditAnswerPayload(ctx, change.updateRecord.audit);
           }
         }

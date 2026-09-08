@@ -33,7 +33,7 @@ import { field, formula } from "./types";
 const isRef = (value: unknown): value is TemplateRef =>
   !!value &&
   typeof value === "object" &&
-  ["table", "field", "record", "view", "form", "launcher"].includes(String((value as Record<string, unknown>).$ref)) &&
+  ["table", "field", "record", "view", "form", "launcher", "documentTemplate"].includes(String((value as Record<string, unknown>).$ref)) &&
   typeof (value as Record<string, unknown>).key === "string";
 
 const isViewColumnsRef = (value: unknown): value is { $ref: "viewColumns"; key: string } =>
@@ -63,6 +63,7 @@ type TemplateTestContext = {
   viewColumns: Map<string, string[]>;
   forms: Map<string, string>;
   launchers: Map<string, string>;
+  documentTemplates: Map<string, string>;
 };
 
 const testUuid = (index: number): string => `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
@@ -76,6 +77,7 @@ const templateTestContext = (template: GridTemplate): TemplateTestContext => {
   const viewColumns = new Map<string, string[]>();
   const forms = new Map<string, string>();
   const launchers = new Map<string, string>();
+  const documentTemplates = new Map<string, string>();
 
   for (const table of template.tables) {
     tables.set(table.key, testUuid(index++));
@@ -92,7 +94,8 @@ const templateTestContext = (template: GridTemplate): TemplateTestContext => {
   for (const form of template.forms ?? []) forms.set(form.key, testUuid(index++));
   for (const launcher of template.workflowLaunchers ?? []) launchers.set(launcher.key, testUuid(index++));
 
-  return { tables, fields, records, views, viewColumns, forms, launchers };
+  for (const document of template.documentTemplates ?? []) documentTemplates.set(document.key, testUuid(index++));
+  return { tables, fields, records, views, viewColumns, forms, launchers, documentTemplates };
 };
 
 const resolveTestRef = (ref: TemplateRef, ctx: TemplateTestContext): string => {
@@ -103,6 +106,7 @@ const resolveTestRef = (ref: TemplateRef, ctx: TemplateTestContext): string => {
     view: () => ctx.views.get(ref.key),
     form: () => ctx.forms.get(ref.key),
     launcher: () => ctx.launchers.get(ref.key),
+    documentTemplate: () => ctx.documentTemplates.get(ref.key),
   }[ref.$ref]();
   if (!value) throw new Error(`missing template test ref ${ref.$ref}:${ref.key}`);
   return value;
@@ -159,7 +163,8 @@ const indexTemplate = (template: GridTemplate) => {
   const views = new Set((template.views ?? []).map((view) => view.key));
   const forms = new Set((template.forms ?? []).map((form) => form.key));
   const launchers = new Set((template.workflowLaunchers ?? []).map((launcher) => launcher.key));
-  return { tables, fields, records, views, forms, launchers };
+  const documentTemplates = new Set((template.documentTemplates ?? []).map((document) => document.key));
+  return { tables, fields, records, views, forms, launchers, documentTemplates };
 };
 
 const assertUnique = (values: string[], label: string) => {
@@ -354,6 +359,43 @@ describe("built-in grid templates", () => {
     );
   });
 
+  test("every localized template connects documents and workflows to record detail pages", () => {
+    for (const locale of ["en", "de"]) {
+      for (const template of getTemplates(locale)) {
+        expect(template.workflows?.length, template.id).toBeGreaterThan(0);
+        expect(template.workflows?.every((workflow) => workflow.enabled !== false)).toBe(true);
+        expect(template.documentTemplates?.length, template.id).toBeGreaterThan(0);
+        expect(template.customApps?.length, template.id).toBeGreaterThan(0);
+        const apps = (template.customApps ?? []).map((app) => {
+          const resolved = resolveTestCustomAppValue(app.definition, templateTestContext(template));
+          if (!resolved || typeof resolved !== "object") throw new Error("Expected App definition");
+          return CustomAppDefinitionSchema.parse({ ...resolved, id: "APP001", baseId: "BASE01" });
+        });
+        const documentIds = apps.flatMap((app) =>
+          app.pages.flatMap((page) =>
+            page.rows.flatMap((row) =>
+              row.columns.flatMap((column) =>
+                column.blocks.flatMap((block) => (block.type === "record" ? (block.documents?.templateIds ?? []) : [])),
+              ),
+            ),
+          ),
+        );
+        for (const document of template.documentTemplates ?? []) {
+          expect(documentIds).toContain(publicTestRef({ $ref: "documentTemplate", key: document.key }));
+        }
+        for (const app of apps) {
+          const blocks = app.pages.flatMap((page) => page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks)));
+          expect(blocks.some((block) => block.type === "actions" && block.actions.some((action) => action.kind === "workflow"))).toBe(true);
+          expect(blocks.some((block) => block.type === "record" && block.documents)).toBe(true);
+          for (const block of blocks) {
+            const navigation = block.type === "records" ? block.rowNavigate : block.type === "form" ? block.onSuccessNavigate : undefined;
+            if (navigation) expect(app.pages.find((page) => page.id === navigation.pageId)?.record).toBeDefined();
+          }
+        }
+      }
+    }
+  });
+
   test("template cards explain three concrete outcomes", () => {
     for (const template of templates) {
       expect(template.highlights).toHaveLength(3);
@@ -489,7 +531,7 @@ describe("built-in grid templates", () => {
     expect(customers?.fields.find((item) => item.key === "email")?.required).toBe(true);
     expect(orders?.fields.some((item) => item.key === "book")).toBe(false);
     expect(orders?.fields.find((item) => item.key === "invoice_ready")?.defaultValue).toBe(false);
-    expect(orders?.fields.find((item) => item.key === "invoice_sent")?.defaultValue).toBe(false);
+    expect(orders?.fields.find((item) => item.key === "invoice_sent")?.defaultValue).toEqual(["ready"]);
     expect(lines?.fields.find((item) => item.key === "unit_price")?.required).toBe(true);
     expect((lines?.fields.find((item) => item.key === "line_total")?.config as { expression?: unknown })?.expression).toEqual(
       formula(field("order_lines.quantity"), " * ", field("order_lines.unit_price")),
@@ -512,9 +554,10 @@ describe("built-in grid templates", () => {
 
     const workflow = template.workflows?.find((item) => item.key === "send_order_invoice")?.source ?? "";
     expect(workflow).toContain("Ready to invoice");
-    expect(workflow).toContain("Invoice sent");
+    expect(workflow).toContain("Invoice delivery");
     expect(workflow).toContain("Replace the sample customer email");
-    expect(workflow).toContain("Invoice sent: true");
+    expect(workflow).toContain("Invoice delivery: [sent]");
+    expect(workflow.indexOf("Invoice delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
 
     const launcher = template.workflowLaunchers?.find((item) => item.key === "send_order_invoice_custom_app");
     expect(launcher?.config).toEqual({ kind: "customApp", inputMode: "prompt" });
@@ -534,7 +577,7 @@ describe("built-in grid templates", () => {
       expect(loans?.fields.find((item) => item.key === key)?.required, `inventory loans.${key} required`).toBe(true);
     }
     expect(loans?.fields.find((item) => item.key === "availability_confirmed")?.defaultValue).toBe(false);
-    expect(loans?.fields.find((item) => item.key === "agreement_sent")?.defaultValue).toBe(false);
+    expect(loans?.fields.find((item) => item.key === "agreement_sent")?.defaultValue).toEqual(["ready"]);
     expect((loans?.fields.find((item) => item.key === "schedule_valid")?.config as { expression?: unknown })?.expression).toEqual(
       formula(field("loans.start_date"), " <= ", field("loans.due_date")),
     );
@@ -548,7 +591,8 @@ describe("built-in grid templates", () => {
     expect(workflow).toContain("Approve this loan after checking availability");
     expect(workflow).toContain("Availability confirmed");
     expect(workflow).toContain("The due date must be on or after");
-    expect(workflow).toContain("Agreement sent: true");
+    expect(workflow).toContain("Agreement delivery: [sent]");
+    expect(workflow.indexOf("Agreement delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
     expect(workflow).not.toContain("Status: [approved]");
     expect(workflow).toContain("Replace the sample requester email");
 
@@ -592,7 +636,7 @@ describe("built-in grid templates", () => {
       expect(transactions?.fields.find((item) => item.key === key)?.required, `finance transactions.${key} required`).toBe(true);
     }
     expect(transactions?.fields.find((item) => item.key === "cleared")?.defaultValue).toBe(false);
-    expect(transactions?.fields.find((item) => item.key === "receipt_sent")?.defaultValue).toBe(false);
+    expect(transactions?.fields.find((item) => item.key === "receipt_sent")?.defaultValue).toEqual(["ready"]);
 
     const formFields = (template.forms?.find((item) => item.key === "log_expense")?.config.fields ?? []) as Array<Record<string, unknown>>;
     expect(
@@ -601,11 +645,12 @@ describe("built-in grid templates", () => {
     expect(
       formFields.find((item) => item.kind === "form_value" && isRef(item.fieldId) && item.fieldId.key === "transactions.receipt_sent")
         ?.value,
-    ).toBe(false);
+    ).toEqual(["ready"]);
 
     const workflow = template.workflows?.find((item) => item.key === "clear_and_send_receipt")?.source ?? "";
     expect(workflow).toContain("Receipts can only be sent for expense transactions");
-    expect(workflow).toContain("Receipt sent: true");
+    expect(workflow).toContain("Receipt delivery: [sent]");
+    expect(workflow.indexOf("Receipt delivery: [processing]")).toBeLessThan(workflow.indexOf("- generateDocument:"));
     expect(workflow).toContain("Replace the sample receipt email");
     const launcher = template.workflowLaunchers?.find((item) => item.key === "clear_and_send_receipt_custom_app");
     expect(launcher?.config).toEqual({ kind: "customApp", inputMode: "prompt" });
@@ -644,7 +689,6 @@ describe("built-in grid templates", () => {
         config: {
           kind: "scanner",
           inputSources: {
-            loan: { kind: "session" },
             item: { kind: "scan", value: "record", resolve: { by: "field", field: "Asset ID" } },
             condition: { kind: "afterScan" },
           },
@@ -716,7 +760,9 @@ describe("built-in grid templates", () => {
                   ? index.views
                   : ref.$ref === "form"
                     ? index.forms
-                    : index.launchers;
+                    : ref.$ref === "documentTemplate"
+                      ? index.documentTemplates
+                      : index.launchers;
         expect(target.has(ref.key), `${template.id} missing ${ref.$ref}:${ref.key}`).toBe(true);
       }
 
@@ -997,9 +1043,10 @@ describe("built-in grid templates", () => {
 
       for (const app of template.customApps ?? []) {
         const resolvedDefinition = resolveTestCustomAppValue(app.definition, ctx) as Record<string, unknown>;
+        const checkedDefinition = CustomAppDefinitionSchema.safeParse({ ...resolvedDefinition, id: "APP001", baseId: "BASE01" });
         expect(
-          CustomAppDefinitionSchema.safeParse({ ...resolvedDefinition, id: "APP001", baseId: "BASE01" }).success,
-          `${template.id}.${app.key} canonical Grids App definition`,
+          checkedDefinition.success,
+          `${template.id}.${app.key} canonical Grids App definition: ${checkedDefinition.success ? "" : checkedDefinition.error.message}`,
         ).toBe(true);
         const page = app.definition.pages[0]!;
         assertUnique(
@@ -1180,6 +1227,14 @@ describe("built-in grid templates", () => {
               id: ctx.fields.get(`${table.key}.${templateField.key}`) ?? "",
               shortId: templateField.key,
               name: templateField.name,
+              ...(templateField.type === "relation" && isRef(templateField.config?.targetTableId)
+                ? {
+                    relation: {
+                      targetTableId: ctx.tables.get(templateField.config.targetTableId.key)!,
+                      cardinality: templateField.config?.cardinality === "single" ? ("single" as const) : ("multiple" as const),
+                    },
+                  }
+                : {}),
             })),
           ]),
         ),

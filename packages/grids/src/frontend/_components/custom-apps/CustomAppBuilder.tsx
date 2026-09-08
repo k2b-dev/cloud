@@ -66,7 +66,7 @@ import {
   renameCustomAppPage,
   renameCustomAppPageParameter,
 } from "./custom-app-builder-model";
-import { createCustomAppBuilderState } from "./custom-app-builder-state";
+import { createCustomAppBuilderState, customAppDiagnosticSelection } from "./custom-app-builder-state";
 import type { CustomAppCatalog } from "./custom-app-catalog";
 
 type PublicCustomAppDraftSave = { app: PublicCustomApp; valid: boolean; diagnostics: CustomAppDiagnostic[] };
@@ -510,7 +510,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     );
   const [app, setApp] = createSignal(props.app);
   const draft = createCustomAppBuilderState(props.initialDefinition);
-  const [diagnostics, setDiagnostics] = createSignal<CustomAppDiagnostic[]>([]);
+  const [diagnostics, setDiagnostics] = createSignal<CustomAppDiagnostic[]>(props.app.draftDiagnostics);
   const [saveState, setSaveState] = createSignal<"idle" | "saving" | "saved" | "error" | "invalid">(
     props.app.draftValid === false ? "invalid" : "idle",
   );
@@ -868,15 +868,19 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     const selectedId = selectedBlockId();
     const pageId = selectedPage().id;
     return diagnostics().filter((diagnostic) => {
-      if (selectedId && diagnostic.path.includes(selectedId)) return true;
-      if (!selectedId && diagnostic.path.includes(pageId)) return true;
+      const target = customAppDiagnosticSelection(draft.draft(), diagnostic);
+      if (target?.pageId === pageId && selectedId && "blockId" in target && target.blockId === selectedId) return true;
+      if (!selectedId && target?.pageId === pageId && target.kind !== "sidebar-action") return true;
       return !diagnostic.path.includes("blocks") && !diagnostic.path.includes("pages");
     });
   });
   const panelDiagnostics = createMemo(() => {
     if (inspectorMode() === "sidebar-action") {
       const id = selectedSidebarAction()?.id;
-      return diagnostics().filter((diagnostic) => id && diagnostic.path.includes(id) && !isCustomAppAvailabilityDiagnostic(diagnostic, id));
+      return diagnostics().filter((diagnostic) => {
+        const target = customAppDiagnosticSelection(draft.draft(), diagnostic);
+        return id && target?.kind === "sidebar-action" && target.actionId === id && !isCustomAppAvailabilityDiagnostic(diagnostic, id);
+      });
     }
     if (inspectorMode() === "page") {
       return diagnosticsForSelection().filter((diagnostic) => !isCustomAppAvailabilityDiagnostic(diagnostic, selectedPage().id));
@@ -886,9 +890,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     if (!selected) return diagnosticsForSelection();
     if (inspectorMode() === "action") {
       const actionId = selectedActionId();
-      return diagnosticsForSelection().filter(
-        (diagnostic) => actionId && diagnostic.path.includes(actionId) && !isCustomAppAvailabilityDiagnostic(diagnostic, actionId),
-      );
+      return diagnosticsForSelection().filter((diagnostic) => {
+        const target = customAppDiagnosticSelection(draft.draft(), diagnostic);
+        return (
+          actionId && target?.kind === "action" && target.actionId === actionId && !isCustomAppAvailabilityDiagnostic(diagnostic, actionId)
+        );
+      });
     }
     return diagnosticsForSelection().filter(
       (diagnostic) =>
@@ -1869,6 +1876,48 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   };
 
   let closeSettings: (() => void) | undefined;
+  const reviewDraft = () =>
+    dialogCore.open<void>(
+      (close) => (
+        <PanelDialog>
+          <PanelDialog.Header title={text("Review draft")} icon="ti ti-alert-circle" close={close} />
+          <PanelDialog.Body>
+            <p>{text("Choose an issue to open its settings. Correct the draft, then publish again.")}</p>
+            <ul class="flex flex-col gap-3">
+              <For each={diagnostics()}>
+                {(diagnostic) => (
+                  <li class="flex flex-col gap-2">
+                    <p>{diagnostic.message}</p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const selection = customAppDiagnosticSelection(draft.draft(), diagnostic);
+                        close();
+                        if (selection) {
+                          draft.select(selection);
+                          setInspectorOpen(true);
+                        } else void openSettings();
+                      }}
+                    >
+                      {text("Open settings")}
+                    </Button>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <Show when={diagnostics().length === 0}>
+              <p>
+                {text(
+                  "No detailed diagnostics are available. Review the App settings and referenced resources, then save the draft again.",
+                )}
+              </p>
+            </Show>
+          </PanelDialog.Body>
+        </PanelDialog>
+      ),
+      panelDialogOptions,
+    );
   const openSettings = async () => {
     if (closeSettings) return;
     try {
@@ -2037,7 +2086,12 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                     : (saveError() ?? text("Changes are saved automatically. Publish the draft when it is ready for everyone."))
                 }
               >
-                <div class="flex flex-wrap gap-2">
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <Show when={saveState() === "invalid"}>
+                    <Button size="xs" variant="secondary" onClick={() => void reviewDraft()}>
+                      {text("Review draft")}
+                    </Button>
+                  </Show>
                   <Show when={app().publishedAt}>
                     <Button
                       size="xs"

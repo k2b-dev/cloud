@@ -26,7 +26,6 @@ const verifyRuntimeSurfaces = async (baseId: string, withSampleData: boolean) =>
     expect(CustomAppCapabilitiesSchema.safeParse(app.published_capabilities).success).toBe(true);
   }
 
-  if (!withSampleData) return;
   const documentRows = await sql<DocumentTemplateRow[]>`
     SELECT dt.id::text AS id, dt.table_id::text AS table_id, dt.name
     FROM grids.document_templates dt
@@ -35,6 +34,14 @@ const verifyRuntimeSurfaces = async (baseId: string, withSampleData: boolean) =>
     ORDER BY dt.created_at, dt.id
   `;
   expect(documentRows.length).toBeGreaterThan(0);
+  const exposedDocuments = apps.flatMap((app) => CustomAppCapabilitiesSchema.parse(app.published_capabilities).documents);
+  for (const document of documentRows) {
+    expect(
+      exposedDocuments.some((surface) => surface.tableId === document.table_id && surface.templateIds.includes(document.id)),
+      `${document.name} App document access`,
+    ).toBe(true);
+  }
+  if (!withSampleData) return;
 
   for (const documentRow of documentRows) {
     const [recordRow] = await sql<Array<{ id: string }>>`
@@ -69,6 +76,29 @@ const verifyRuntimeSurfaces = async (baseId: string, withSampleData: boolean) =>
 
 describe("built-in template instantiation", () => {
   postgresTest(
+    "publishes German templates with document and workflow bindings",
+    async () => {
+      await migrate();
+      for (const templateId of ["bookshop", "finance", "inventory"]) {
+        const created = await instantiate(
+          templateId,
+          { name: `German template integration ${Bun.randomUUIDv7()}`, withSampleData: false },
+          null,
+          "de",
+        );
+        expect(created.ok, `${templateId} German instantiation`).toBe(true);
+        if (!created.ok) throw new Error(created.error.message);
+        try {
+          await verifyRuntimeSurfaces(created.data.id, false);
+        } finally {
+          await deleteTestWorkflowScope(created.data.id);
+          await sql`DELETE FROM grids.bases WHERE id = ${created.data.id}::uuid`;
+        }
+      }
+    },
+    90_000,
+  );
+  postgresTest(
     "creates complete product resources through production services",
     async () => {
       await migrate();
@@ -77,18 +107,18 @@ describe("built-in template instantiation", () => {
           templateId: "bookshop",
           documentNames: ["Order invoice"],
           emailName: "Order invoice ready",
-          workflows: [{ name: "Send order invoice", steps: 9 }],
+          workflows: [{ name: "Send order invoice", steps: 10 }],
           launchers: ["Choose order to send invoice"],
-          workflowCapabilities: 1,
+          workflowCapabilities: 2,
           scannerCapabilities: 0,
         },
         {
           templateId: "finance",
           documentNames: ["Transaction receipt"],
           emailName: "Transaction receipt ready",
-          workflows: [{ name: "Clear and send receipt", steps: 9 }],
+          workflows: [{ name: "Clear and send receipt", steps: 10 }],
           launchers: ["Choose transaction to process receipt"],
-          workflowCapabilities: 1,
+          workflowCapabilities: 2,
           scannerCapabilities: 0,
         },
         {
@@ -98,19 +128,25 @@ describe("built-in template instantiation", () => {
           workflows: [
             { name: "Cancel requested loan", steps: 3 },
             { name: "Approve equipment loan", steps: 5 },
-            { name: "Send approved loan agreement", steps: 11 },
+            { name: "Send approved loan agreement", steps: 12 },
             { name: "Report damaged item", steps: 3 },
-            { name: "Mark loan item as returned", steps: 6 },
+            { name: "Mark loan item as returned", steps: 4 },
+            { name: "Issue loan position", steps: 4 },
+            { name: "Close returned loan", steps: 2 },
+            { name: "Add loan position", steps: 2 },
           ],
           launchers: [
             "Cancel requested loan",
             "Approve equipment loan",
             "Choose loan to send agreement",
             "Scan damaged inventory item",
-            "Return items for one loan",
+            "Scan returned inventory item",
+            "Issue loan position",
+            "Close returned loan",
+            "Add loan position",
           ],
-          workflowCapabilities: 3,
-          scannerCapabilities: 1,
+          workflowCapabilities: 6,
+          scannerCapabilities: 2,
         },
       ];
 
@@ -200,7 +236,7 @@ describe("built-in template instantiation", () => {
           expect(
             blocks.some((block) => block.type === "actions"),
             `${expected.templateId} workflow actions`,
-          ).toBe(expected.templateId === "inventory");
+          ).toBe(true);
           expect(capabilities.flatMap((item) => item.workflowLaunchers)).toHaveLength(expected.workflowCapabilities);
           expect(capabilities.flatMap((item) => item.scannerLaunchers)).toHaveLength(expected.scannerCapabilities);
           expect(documentAudit?.action).toBe("document_template.created");

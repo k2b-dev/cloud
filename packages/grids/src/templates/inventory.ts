@@ -1,6 +1,18 @@
 import { i18n } from "@k2b/stdlib";
 import { createMockCover } from "@valentinkolb/cloud/shared";
-import { currentMonthDate, field, form, formula, type GridTemplate, launcher, record, table, view, viewColumns } from "./types";
+import {
+  currentMonthDate,
+  documentTemplate,
+  field,
+  form,
+  formula,
+  type GridTemplate,
+  launcher,
+  record,
+  table,
+  view,
+  viewColumns,
+} from "./types";
 
 const inventoryMessages = i18n.define({
   baseLocale: "en",
@@ -56,7 +68,25 @@ const inventoryMessages = i18n.define({
       calibrated: "Calibrated",
       shared: "Shared",
       quantity: "Quantity",
-      quantityDescription: "Number of units represented by this record.",
+      quantityDescription: "One individually labelled item per record. Model bulk stock separately.",
+      loanPositions: "Loan positions",
+      positionNumber: "Position number",
+      positionLoan: "Loan",
+      positionItem: "Item",
+      currentPosition: "Current loan position",
+      currentPositionDescription: "The exact issued position currently holding this item. Issue and return workflows maintain this link.",
+      issuedAt: "Issued at",
+      planned: "Planned",
+      issuePosition: "Issue loan position",
+      addPosition: "Add loan position",
+      closeLoan: "Close returned loan",
+      positionUnavailable: "The position, item or loan is no longer ready for this operation. Refresh and inspect the current allocation.",
+      positionIssued: "Item issued. Its loan position records this handover.",
+      positionReturned: "Item returned. Its loan position records the return and condition.",
+      noCurrentPosition: "This item has no current loan position to return.",
+      outstandingPositions:
+        "This operation needs loan positions. Before closing, every planned position must have been issued and returned.",
+      loanClosed: "Loan closed. Every loan position has been returned.",
       replacementValue: "Replacement value",
       replacementValueDescription: "Estimated cost to replace one unit.",
       totalValue: "Total value",
@@ -110,8 +140,12 @@ const inventoryMessages = i18n.define({
       cancelled: "Cancelled",
       availabilityConfirmed: "Availability confirmed",
       availabilityConfirmedDescription: "An admin has checked the selected kits, their items, and the requested dates before approval.",
-      agreementSent: "Agreement sent",
-      agreementSentDescription: "Set once the agreement workflow has succeeded, so it is not replayed.",
+      agreementSent: "Agreement delivery",
+      agreementSentDescription:
+        "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
+      deliveryReady: "Ready",
+      deliveryProcessing: "In progress",
+      deliverySent: "Sent",
       purpose: "Purpose",
       purposeDescription: "Requester-provided reason for the loan.",
       loanNotesDescription: "Internal staff notes about this loan.",
@@ -148,7 +182,7 @@ const inventoryMessages = i18n.define({
       statusHelp: "Current availability.",
       conditionHelp: "Physical state of the item.",
       tagsHelp: "Optional handling or usage labels.",
-      quantityHelp: "How many units are available.",
+      quantityHelp: "One individually labelled item per record. Add another record for another physical item.",
       replacementValueHelp: "Cost to replace one unit.",
       notesHelp: "Extra context for admins.",
       requestLoan: "Request loan",
@@ -226,7 +260,7 @@ const inventoryMessages = i18n.define({
       sendApprovedLoanAgreementDescription:
         "Generates and emails an agreement after an admin has approved the loan and confirmed availability.",
       approveBeforeSendingAgreement: "Approve this loan after checking availability before sending its agreement.",
-      agreementAlreadySent: "This agreement was already sent. Open the generated documents to download or share it again.",
+      agreementAlreadySent: "Agreement delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
       confirmAvailabilityBeforeSending: "Confirm kit, item, and date availability before sending the agreement.",
       addRequesterEmail: "Add a requester email address before sending this agreement.",
       replaceSampleEmail: "Replace the sample requester email before sending a real agreement.",
@@ -236,22 +270,14 @@ const inventoryMessages = i18n.define({
       itemAlreadyInMaintenance: ({ assetId }: { assetId: string }) => `Item ${assetId} is already in maintenance.`,
       itemMovedToMaintenance: ({ assetId, name }: { assetId: string; name: string }) => `Item ${assetId} · ${name} moved to maintenance.`,
       markLoanItemReturned: "Mark loan item as returned",
-      markLoanItemReturnedDescription: "Uses one selected loan for the scanner session, then records the condition of every scanned item.",
-      returnLoanDescription: "Select the active loan being returned.",
+      markLoanItemReturnedDescription:
+        "Returns the scanned item's current loan position and records its condition. No historical loan selection is needed.",
       returnedItem: "Returned item",
       returnedCondition: "Returned condition",
       returnedConditionDescription: "Assess this item after scanning it.",
-      loanNotActive: ({ loanNumber }: { loanNumber: string }) => `Loan ${loanNumber} is not active.`,
-      itemNotInLoan: ({ assetId, loanNumber }: { assetId: string; loanNumber: string }) =>
-        `Item ${assetId} does not belong to loan ${loanNumber}.`,
-      itemNotInUse: ({ assetId }: { assetId: string }) => `Item ${assetId} is not currently in use.`,
-      itemReturnedForRepair: ({ assetId, loanNumber }: { assetId: string; loanNumber: string }) =>
-        `Item ${assetId} returned for loan ${loanNumber} and moved to maintenance.`,
-      itemReturnedWithCondition: ({ assetId, condition, loanNumber }: { assetId: string; condition: string; loanNumber: string }) =>
-        `Item ${assetId} returned for loan ${loanNumber} in ${condition} condition.`,
       chooseLoanToSendAgreement: "Choose loan to send agreement",
       scanDamagedInventoryItem: "Scan damaged inventory item",
-      returnItemsForLoan: "Return items for one loan",
+      returnItemsForLoan: "Scan returned inventory item",
     },
     de: {
       templateName: "Inventar",
@@ -304,7 +330,27 @@ const inventoryMessages = i18n.define({
       calibrated: "Kalibriert",
       shared: "Gemeinsam genutzt",
       quantity: "Anzahl",
-      quantityDescription: "Anzahl der Einheiten, die dieser Datensatz darstellt.",
+      quantityDescription: "Ein einzeln gekennzeichneter Gegenstand pro Datensatz. Mengenbestände separat modellieren.",
+      loanPositions: "Ausleihpositionen",
+      positionNumber: "Positionsnummer",
+      positionLoan: "Ausleihe",
+      positionItem: "Gegenstand",
+      currentPosition: "Aktuelle Ausleihposition",
+      currentPositionDescription:
+        "Die ausgegebene Position, die diesen Gegenstand aktuell belegt. Ausgabe- und Rückgabe-Workflows pflegen diese Verknüpfung.",
+      issuedAt: "Ausgegeben am",
+      planned: "Geplant",
+      issuePosition: "Ausleihposition ausgeben",
+      addPosition: "Ausleihposition hinzufügen",
+      closeLoan: "Zurückgegebene Ausleihe abschließen",
+      positionUnavailable:
+        "Position, Gegenstand oder Ausleihe ist nicht mehr für diesen Vorgang bereit. Lade die Daten neu und prüfe die aktuelle Zuordnung.",
+      positionIssued: "Gegenstand ausgegeben. Die Ausleihposition dokumentiert diese Übergabe.",
+      positionReturned: "Gegenstand zurückgegeben. Die Ausleihposition dokumentiert Rückgabe und Zustand.",
+      noCurrentPosition: "Dieser Gegenstand hat keine aktuelle Ausleihposition für eine Rückgabe.",
+      outstandingPositions:
+        "Diese Aktion benötigt Ausleihpositionen. Vor dem Abschluss muss jede geplante Position ausgegeben und zurückgegeben worden sein.",
+      loanClosed: "Ausleihe abgeschlossen. Alle Ausleihpositionen wurden zurückgegeben.",
       replacementValue: "Wiederbeschaffungswert",
       replacementValueDescription: "Geschätzte Kosten für den Ersatz einer Einheit.",
       totalValue: "Gesamtwert",
@@ -359,9 +405,12 @@ const inventoryMessages = i18n.define({
       availabilityConfirmed: "Verfügbarkeit bestätigt",
       availabilityConfirmedDescription:
         "Eine Person mit Admin-Rechten hat die ausgewählten Sets, deren Gegenstände und den angefragten Zeitraum vor der Freigabe geprüft.",
-      agreementSent: "Vereinbarung gesendet",
+      agreementSent: "Vereinbarungsversand",
       agreementSentDescription:
-        "Wird gesetzt, nachdem der Workflow für die Vereinbarung erfolgreich war, damit er nicht erneut ausgeführt wird.",
+        "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
+      deliveryReady: "Bereit",
+      deliveryProcessing: "In Bearbeitung",
+      deliverySent: "Gesendet",
       purpose: "Verwendungszweck",
       purposeDescription: "Von der anfragenden Person angegebener Grund für die Ausleihe.",
       loanNotesDescription: "Interne Notizen von Mitarbeitenden zu dieser Ausleihe.",
@@ -398,7 +447,7 @@ const inventoryMessages = i18n.define({
       statusHelp: "Aktuelle Verfügbarkeit.",
       conditionHelp: "Physischer Zustand des Gegenstands.",
       tagsHelp: "Optionale Schlagwörter für Handhabung oder Verwendung.",
-      quantityHelp: "Anzahl der verfügbaren Einheiten.",
+      quantityHelp: "Ein einzeln gekennzeichneter Gegenstand pro Datensatz. Weitere Gegenstände erhalten eigene Datensätze.",
       replacementValueHelp: "Kosten für den Ersatz einer Einheit.",
       notesHelp: "Zusätzlicher Kontext für Personen mit Admin-Rechten.",
       requestLoan: "Ausleihe anfragen",
@@ -477,7 +526,7 @@ const inventoryMessages = i18n.define({
         "Erzeugt und sendet eine Vereinbarung per E-Mail, nachdem die Ausleihe freigegeben und die Verfügbarkeit bestätigt wurde.",
       approveBeforeSendingAgreement: "Gib diese Ausleihe nach der Verfügbarkeitsprüfung frei, bevor du die Vereinbarung sendest.",
       agreementAlreadySent:
-        "Diese Vereinbarung wurde bereits gesendet. Öffne die erzeugten Dokumente, um sie erneut herunterzuladen oder zu teilen.",
+        "Der Vereinbarungsversand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und vorhandene Dokumente.",
       confirmAvailabilityBeforeSending: "Bestätige vor dem Versand der Vereinbarung die Verfügbarkeit von Set, Gegenständen und Zeitraum.",
       addRequesterEmail: "Füge vor dem Versand der Vereinbarung eine E-Mail-Adresse für die anfragende Person hinzu.",
       replaceSampleEmail: "Ersetze vor dem Versand einer echten Vereinbarung die Beispiel-E-Mail-Adresse.",
@@ -489,21 +538,13 @@ const inventoryMessages = i18n.define({
       itemMovedToMaintenance: ({ assetId, name }) => `Gegenstand ${assetId} · ${name} wurde in die Wartung verschoben.`,
       markLoanItemReturned: "Ausgeliehenen Gegenstand zurückgeben",
       markLoanItemReturnedDescription:
-        "Verwendet eine ausgewählte Ausleihe für die Scanner-Sitzung und erfasst anschließend den Zustand jedes gescannten Gegenstands.",
-      returnLoanDescription: "Wähle die aktive Ausleihe aus, die zurückgegeben wird.",
+        "Gibt die aktuelle Ausleihposition des gescannten Gegenstands zurück und erfasst dessen Zustand. Keine Auswahl einer historischen Ausleihe nötig.",
       returnedItem: "Zurückgegebener Gegenstand",
       returnedCondition: "Zustand bei Rückgabe",
       returnedConditionDescription: "Bewerte den Gegenstand nach dem Scannen.",
-      loanNotActive: ({ loanNumber }) => `Ausleihe ${loanNumber} ist nicht aktiv.`,
-      itemNotInLoan: ({ assetId, loanNumber }) => `Gegenstand ${assetId} gehört nicht zur Ausleihe ${loanNumber}.`,
-      itemNotInUse: ({ assetId }) => `Gegenstand ${assetId} wird derzeit nicht verwendet.`,
-      itemReturnedForRepair: ({ assetId, loanNumber }) =>
-        `Gegenstand ${assetId} wurde für Ausleihe ${loanNumber} zurückgegeben und in die Wartung verschoben.`,
-      itemReturnedWithCondition: ({ assetId, condition, loanNumber }) =>
-        `Gegenstand ${assetId} wurde für Ausleihe ${loanNumber} im Zustand ${condition} zurückgegeben.`,
       chooseLoanToSendAgreement: "Ausleihe für den Versand der Vereinbarung wählen",
       scanDamagedInventoryItem: "Beschädigten Inventargegenstand scannen",
-      returnItemsForLoan: "Gegenstände einer Ausleihe zurückgeben",
+      returnItemsForLoan: "Zurückgegebenen Inventargegenstand scannen",
     },
   },
 });
@@ -516,6 +557,35 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
     itemName: `\${{ inputs.item.${t.name} }}`,
     loanNumber: `\${{ inputs.loan.${t.loanNumber} }}`,
   };
+  const returnPosition = (status: "available" | "maintenance") => `- atomicRecords:
+    locks: [inputs.item, position, position.${t.positionLoan}]
+    checks:
+      - table: ${t.loanPositions}
+        where:
+          - { field: ${t.positionNumber}, op: equals, value: "\${{ position.${t.positionNumber} }}" }
+          - { field: ${t.positionItem}, op: containsAny, value: ["\${{ inputs.item.recordId }}"] }
+          - { field: ${t.status}, op: is, value: issued }
+        assert: notEmpty
+        message: ${t.positionUnavailable}
+      - table: ${t.items}
+        where:
+          - { field: ${t.assetId}, op: equals, value: "\${{ inputs.item.${t.assetId} }}" }
+          - { field: ${t.currentPosition}, op: containsAny, value: ["\${{ position.recordId }}"] }
+        assert: notEmpty
+        message: ${t.positionUnavailable}
+    changes:
+      - updateRecord:
+          record: position
+          set:
+            ${t.status}: [returned]
+            ${t.returnedAt}: \${{ now() }}
+            ${t.returnedCondition}: ["\${{ inputs.condition }}"]
+      - updateRecord:
+          record: inputs.item
+          set:
+            ${t.currentPosition}: null
+            ${t.status}: [${status}]
+            ${t.condition}: ["\${{ inputs.condition }}"]`;
 
   return {
     id: "inventory",
@@ -627,6 +697,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             icon: "ti ti-barcode",
           },
           {
+            key: "current_position",
+            name: t.currentPosition,
+            type: "relation",
+            icon: "ti ti-link",
+            description: t.currentPositionDescription,
+            config: { targetTableId: table("loan_positions"), cardinality: "single" },
+          },
+          {
             key: "name",
             name: t.name,
             description: t.itemNameDescription,
@@ -713,7 +791,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             type: "number",
             required: true,
             defaultValue: "1",
-            config: { min: "0", decimalPlaces: 0 },
+            config: { min: "1", max: "1", decimalPlaces: 0 },
             icon: "ti ti-hash",
           },
           {
@@ -904,14 +982,6 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             config: { targetTableId: table("kits"), cardinality: "multiple" },
           },
           {
-            key: "items",
-            name: t.loanedItems,
-            description: t.loanedItemsDescription,
-            type: "relation",
-            icon: "ti ti-package",
-            config: { targetTableId: table("items"), cardinality: "multiple" },
-          },
-          {
             key: "start_date",
             name: t.requestedFrom,
             description: t.requestedFromDescription,
@@ -942,6 +1012,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             name: t.returnedAt,
             description: t.returnedAtDescription,
             type: "date",
+            config: { includeTime: true },
             icon: "ti ti-calendar-check",
           },
           {
@@ -975,8 +1046,16 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             key: "agreement_sent",
             name: t.agreementSent,
             description: t.agreementSentDescription,
-            type: "boolean",
-            defaultValue: false,
+            type: "select",
+            required: true,
+            config: {
+              options: [
+                { id: "ready", label: t.deliveryReady },
+                { id: "processing", label: t.deliveryProcessing },
+                { id: "sent", label: t.deliverySent },
+              ],
+            },
+            defaultValue: ["ready"],
             icon: "ti ti-mail-check",
           },
           {
@@ -993,6 +1072,86 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             type: "longtext",
             config: { markdown: true },
             icon: "ti ti-notes",
+          },
+        ],
+      },
+      {
+        key: "loan_positions",
+        name: t.loanPositions,
+        description: t.loanedItemsDescription,
+        fields: [
+          {
+            key: "position_no",
+            name: t.positionNumber,
+            description: t.positionNumber,
+            icon: "ti ti-id",
+            type: "id",
+            presentable: true,
+            config: { strategy: "sequence", prefix: "POS-", padding: 4 },
+          },
+          {
+            key: "loan",
+            name: t.positionLoan,
+            description: t.loanedItemsDescription,
+            icon: "ti ti-link",
+            type: "relation",
+            required: true,
+            config: { targetTableId: table("loans"), cardinality: "single" },
+          },
+          {
+            key: "item",
+            name: t.positionItem,
+            description: t.quantityDescription,
+            icon: "ti ti-package",
+            type: "relation",
+            required: true,
+            config: { targetTableId: table("items"), cardinality: "single" },
+          },
+          {
+            key: "status",
+            name: t.status,
+            description: t.loanStatusDescription,
+            icon: "ti ti-progress",
+            type: "select",
+            required: true,
+            defaultValue: ["planned"],
+            config: {
+              options: [
+                { id: "planned", label: t.planned },
+                { id: "issued", label: t.inUse },
+                { id: "returned", label: t.returned },
+              ],
+            },
+          },
+          {
+            key: "issued_at",
+            name: t.issuedAt,
+            description: t.issuedAt,
+            icon: "ti ti-calendar",
+            type: "date",
+            config: { includeTime: true },
+          },
+          {
+            key: "returned_at",
+            name: t.returnedAt,
+            description: t.returnedAtDescription,
+            icon: "ti ti-calendar",
+            type: "date",
+            config: { includeTime: true },
+          },
+          {
+            key: "condition",
+            name: t.returnedCondition,
+            description: t.returnedConditionDescription,
+            icon: "ti ti-stars",
+            type: "select",
+            config: {
+              options: [
+                { id: "good", label: t.good },
+                { id: "used", label: t.used },
+                { id: "repair", label: t.needsRepair },
+              ],
+            },
           },
         ],
       },
@@ -1026,7 +1185,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           name: t.sonyA7Body,
           category: [record("categories.cameras")],
           location: [record("locations.studio")],
-          status: ["in_use"],
+          status: ["available"],
           condition: ["good"],
           serial_no: "A7-001",
           tags: ["fragile", "portable"],
@@ -1057,7 +1216,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           status: ["available"],
           condition: ["good"],
           tags: ["portable", "shared"],
-          quantity: "2",
+          quantity: "1",
           replacement_value: "320.00",
         },
         files: [
@@ -1083,7 +1242,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           status: ["available"],
           condition: ["used"],
           tags: ["shared"],
-          quantity: "8",
+          quantity: "1",
           replacement_value: "18.00",
         },
         files: [
@@ -1119,12 +1278,11 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           requester_email: "mara@example.test",
           organization: t.designTeam,
           kits: [record("kits.video")],
-          items: [record("items.camera")],
           start_date: currentMonthDate(10),
           due_date: currentMonthDate(12),
           status: ["active"],
           availability_confirmed: true,
-          agreement_sent: false,
+          agreement_sent: ["ready"],
           purpose: t.productInterviewPurpose,
         },
       },
@@ -1140,9 +1298,14 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
           due_date: currentMonthDate(20),
           status: ["rejected"],
           availability_confirmed: false,
-          agreement_sent: false,
+          agreement_sent: ["ready"],
           purpose: t.trainingRecordingPurpose,
         },
+      },
+      {
+        key: "loan_positions.demo",
+        table: "loan_positions",
+        values: { loan: [record("loans.demo")], item: [record("items.camera")], status: ["planned"] },
       },
     ],
     views: [
@@ -1422,7 +1585,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
             {
               kind: "form_value",
               fieldId: field("loans.agreement_sent"),
-              value: false,
+              value: ["ready"],
             },
           ],
         },
@@ -1584,6 +1747,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                           id: "loan",
                           type: "record",
                           title: t.loanOverview,
+                          documents: { templateIds: [documentTemplate("loan_agreement")] },
                           fieldIds: [
                             field("loans.loan_no"),
                             field("loans.requester_name"),
@@ -1666,6 +1830,7 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                         {
                           id: "item",
                           type: "record",
+                          documents: { templateIds: [documentTemplate("asset_label")] },
                           fieldIds: [
                             field("items.asset_id"),
                             field("items.name"),
@@ -1871,6 +2036,12 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                           title: t.reportDamagedItem,
                           launcherId: launcher("report_item_defect_scanner"),
                         },
+                        {
+                          id: "return-item",
+                          type: "scanner",
+                          title: t.markLoanItemReturned,
+                          launcherId: launcher("return_loan_item_scanner"),
+                        },
                       ],
                     },
                   ],
@@ -1895,13 +2066,13 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                           id: "loan",
                           type: "record",
                           title: t.loanAndHandover,
+                          documents: { templateIds: [documentTemplate("loan_agreement")] },
                           fieldIds: [
                             field("loans.loan_no"),
                             field("loans.requester_name"),
                             field("loans.requester_email"),
                             field("loans.organization"),
                             field("loans.kits"),
-                            field("loans.items"),
                             field("loans.start_date"),
                             field("loans.due_date"),
                             field("loans.returned_at"),
@@ -1913,13 +2084,66 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                           ],
                           editableFieldIds: [
                             field("loans.kits"),
-                            field("loans.items"),
                             field("loans.start_date"),
                             field("loans.due_date"),
-                            field("loans.returned_at"),
-                            field("loans.status"),
                             field("loans.availability_confirmed"),
                             field("loans.notes"),
+                          ],
+                        },
+                        {
+                          id: "loan-positions",
+                          type: "referenced_records",
+                          title: t.loanPositions,
+                          sourceTableId: table("loan_positions"),
+                          relationFieldId: field("loan_positions.loan"),
+                          fieldIds: [
+                            field("loan_positions.position_no"),
+                            field("loan_positions.item"),
+                            field("loan_positions.status"),
+                            field("loan_positions.issued_at"),
+                            field("loan_positions.returned_at"),
+                            field("loan_positions.condition"),
+                          ],
+                          display: { kind: "table" },
+                          searchable: true,
+                          pageSize: 25,
+                          rowActions: [
+                            {
+                              id: "issue",
+                              kind: "workflow",
+                              label: t.issuePosition,
+                              launcherId: launcher("issue_position"),
+                              inputs: { position: { source: "ROW", path: "id" } },
+                              showLabel: true,
+                            },
+                          ],
+                        },
+                        {
+                          id: "add-position",
+                          type: "records",
+                          title: t.addPosition,
+                          source: { kind: "view", viewId: view("available_items") },
+                          display: { kind: "table", columnIds: viewColumns("available_items") },
+                          searchable: true,
+                          pageSize: 10,
+                          availableWhen: {
+                            query: formula(
+                              "from table ",
+                              table("loans"),
+                              "\nwhere record.id = @params.loan_id and ",
+                              field("loans.status"),
+                              " = 'requested'\nlimit 1",
+                            ),
+                          },
+                          rowActions: [
+                            {
+                              id: "add",
+                              kind: "workflow",
+                              label: t.addPosition,
+                              launcherId: launcher("add_position"),
+                              inputs: { loan: { source: "RECORD", path: "id" }, item: { source: "ROW", path: "id" } },
+                              showLabel: true,
+                            },
                           ],
                         },
                       ],
@@ -1966,7 +2190,23 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
                                   field("loans.status"),
                                   " = 'approved' and ",
                                   field("loans.agreement_sent"),
-                                  " = false\nlimit 1",
+                                  " = 'ready'\nlimit 1",
+                                ),
+                              },
+                            },
+                            {
+                              id: "close-loan",
+                              kind: "workflow",
+                              label: t.closeLoan,
+                              launcherId: launcher("close_loan"),
+                              inputs: { loan: { source: "RECORD", path: "id" } },
+                              availableWhen: {
+                                query: formula(
+                                  "from table ",
+                                  table("loans"),
+                                  "\nwhere record.id = @params.loan_id and ",
+                                  field("loans.status"),
+                                  " = 'active'\nlimit 1",
                                 ),
                               },
                             },
@@ -2026,30 +2266,45 @@ export const createInventoryTemplate = (locale?: string): GridTemplate => {
         description: t.loanAgreementDescription,
         source: formula(
           "from table ",
+          table("loan_positions"),
+          " as position\nleft join table ",
           table("loans"),
-          "\nselect ",
+          " as loan on ",
+          field("loan_positions.loan"),
+          " = loan.id",
+          "\nleft join table ",
+          table("items"),
+          " as item on ",
+          field("loan_positions.item"),
+          " = item.id",
+          "\nselect loan.",
           field("loans.loan_no"),
           " as loan_number",
-          ", ",
+          ", loan.",
           field("loans.requester_name"),
           " as borrower_name",
-          ", ",
+          ", loan.",
           field("loans.requester_email"),
           " as borrower_email",
-          ", ",
+          ", loan.",
           field("loans.organization"),
           " as borrower_organization",
-          ", ",
-          field("loans.kits"),
-          ", ",
+          ", loan.",
           field("loans.start_date"),
           " as loan_start",
-          ", ",
+          ", loan.",
           field("loans.due_date"),
           " as return_due",
-          ", ",
-          field("loans.purpose"),
-          "\nwhere record.id = '{{ record.id }}'\nlimit 1",
+          ", item.",
+          field("items.asset_id"),
+          " as asset_id, item.",
+          field("items.name"),
+          " as item_name",
+          "\nwhere ",
+          field("loan_positions.loan"),
+          " = '{{ record.id }}'\nsort ",
+          field("loan_positions.position_no"),
+          " asc",
         ),
         enabled: true,
       },
@@ -2091,10 +2346,20 @@ steps:
     then:
       - fail:
           message: ${t.onlyRequestedLoanCanBeCancelled}
-  - updateRecord:
-      record: inputs.loan
-      set:
-        ${t.status}: [cancelled]
+  - atomicRecords:
+      locks: [inputs.loan]
+      checks:
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ inputs.loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: is, value: requested }
+          assert: notEmpty
+          message: ${t.onlyRequestedLoanCanBeCancelled}
+      changes:
+        - updateRecord:
+            record: inputs.loan
+            set:
+              ${t.status}: [cancelled]
   - succeed:
       message: "${t.loanCancelled({ loanNumber: workflowRefs.loanNumber })}"`,
         enabled: true,
@@ -2131,10 +2396,23 @@ steps:
     then:
       - fail:
           message: ${t.confirmAvailabilityBeforeApproval}
-  - updateRecord:
-      record: inputs.loan
-      set:
-        ${t.status}: [approved]
+  - atomicRecords:
+      locks: [inputs.loan]
+      checks:
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ inputs.loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: is, value: requested }
+            - { field: ${t.availabilityConfirmed}, op: '=', value: true }
+            - { field: ${t.requestedFrom}, op: '=', value: "\${{ inputs.loan.${t.requestedFrom} }}" }
+            - { field: ${t.dueDate}, op: onOrAfter, value: "\${{ inputs.loan.${t.requestedFrom} }}" }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+      changes:
+        - updateRecord:
+            record: inputs.loan
+            set:
+              ${t.status}: [approved]
   - succeed:
       message: "${t.loanApproved({ loanNumber: workflowRefs.loanNumber })}"`,
         enabled: true,
@@ -2158,9 +2436,9 @@ steps:
       - fail:
           message: ${t.approveBeforeSendingAgreement}
   - if:
-      equals:
+      notEquals:
         - \${{ inputs.loan.${t.agreementSent} }}
-        - true
+        - [ready]
     then:
       - fail:
           message: ${t.agreementAlreadySent}
@@ -2191,6 +2469,41 @@ steps:
     then:
       - fail:
           message: ${t.replaceSampleEmail}
+  - atomicRecords:
+      locks: [inputs.loan]
+      checks:
+        - table: ${t.loans}
+          where:
+            - field: ${t.loanNumber}
+              op: equals
+              value: \${{ inputs.loan.${t.loanNumber} }}
+            - field: ${t.agreementSent}
+              op: is
+              value: ready
+            - field: ${t.status}
+              op: is
+              value: approved
+            - field: ${t.availabilityConfirmed}
+              op: '='
+              value: true
+            - field: ${t.requestedFrom}
+              op: '='
+              value: \${{ inputs.loan.${t.requestedFrom} }}
+            - field: ${t.dueDate}
+              op: onOrAfter
+              value: \${{ inputs.loan.${t.requestedFrom} }}
+          assert: notEmpty
+          message: ${t.agreementAlreadySent}
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+          assert: notEmpty
+          message: ${t.outstandingPositions}
+      changes:
+        - updateRecord:
+            record: inputs.loan
+            set:
+              ${t.agreementSent}: [processing]
   - generateDocument:
       template: ${t.loanAgreement}
       record: inputs.loan
@@ -2211,7 +2524,7 @@ steps:
   - updateRecord:
       record: inputs.loan
       set:
-        ${t.agreementSent}: true
+        ${t.agreementSent}: [sent]
         ${t.status}: [active]
   - succeed:
       message: "${t.agreementSentMessage({ loanNumber: workflowRefs.loanNumber })}"`,
@@ -2245,16 +2558,140 @@ steps:
         enabled: true,
       },
       {
-        key: "return_loan_item",
-        name: t.markLoanItemReturned,
-        description: t.markLoanItemReturnedDescription,
+        key: "add_position",
+        name: t.addPosition,
+        description: t.loanedItemsDescription,
+        enabled: true,
         source: `inputs:
   loan:
     type: record
     table: ${t.loans}
-    label: ${t.loanAgreement}
-    description: ${t.returnLoanDescription}
     required: true
+  item:
+    type: record
+    table: ${t.items}
+    required: true
+steps:
+  - atomicRecords:
+      locks: [inputs.loan, inputs.item]
+      checks:
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ inputs.loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: is, value: requested }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+            - { field: ${t.positionItem}, op: containsAny, value: ["\${{ inputs.item.recordId }}"] }
+          assert: empty
+          message: ${t.positionUnavailable}
+      changes:
+        - createRecord:
+            table: ${t.loanPositions}
+            values:
+              ${t.positionLoan}: \${{ inputs.loan.recordId }}
+              ${t.positionItem}: \${{ inputs.item.recordId }}
+              ${t.status}: [planned]
+  - succeed:
+      message: ${t.addPosition}`,
+      },
+      {
+        key: "issue_position",
+        name: t.issuePosition,
+        description: t.positionIssued,
+        enabled: true,
+        source: `inputs:
+  position:
+    type: record
+    table: ${t.loanPositions}
+    required: true
+steps:
+  - setVariable:
+      name: item
+      value: \${{ inputs.position.${t.positionItem} }}
+  - setVariable:
+      name: loan
+      value: \${{ inputs.position.${t.positionLoan} }}
+  - atomicRecords:
+      locks: [inputs.position, item, loan]
+      checks:
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionNumber}, op: equals, value: "\${{ inputs.position.${t.positionNumber} }}" }
+            - { field: ${t.status}, op: is, value: planned }
+            - { field: ${t.positionItem}, op: containsAny, value: ["\${{ item.recordId }}"] }
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ loan.recordId }}"] }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+        - table: ${t.items}
+          where:
+            - { field: ${t.assetId}, op: equals, value: "\${{ item.${t.assetId} }}" }
+            - { field: ${t.status}, op: is, value: available }
+            - { field: ${t.currentPosition}, op: isEmpty }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: is, value: active }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+      changes:
+        - updateRecord:
+            record: inputs.position
+            set:
+              ${t.status}: [issued]
+              ${t.issuedAt}: \${{ now() }}
+        - updateRecord:
+            record: item
+            set:
+              ${t.status}: [in_use]
+              ${t.currentPosition}: \${{ inputs.position.recordId }}
+  - succeed:
+      message: ${t.positionIssued}`,
+      },
+      {
+        key: "close_loan",
+        name: t.closeLoan,
+        description: t.outstandingPositions,
+        enabled: true,
+        source: `inputs:
+  loan:
+    type: record
+    table: ${t.loans}
+    required: true
+steps:
+  - atomicRecords:
+      locks: [inputs.loan]
+      checks:
+        - table: ${t.loans}
+          where:
+            - { field: ${t.loanNumber}, op: equals, value: "\${{ inputs.loan.${t.loanNumber} }}" }
+            - { field: ${t.status}, op: is, value: active }
+          assert: notEmpty
+          message: ${t.positionUnavailable}
+        - table: ${t.loanPositions}
+          where:
+            - { field: ${t.positionLoan}, op: containsAny, value: ["\${{ inputs.loan.recordId }}"] }
+            - { field: ${t.status}, op: isNot, value: returned }
+          assert: empty
+          message: ${t.outstandingPositions}
+      changes:
+        - updateRecord:
+            record: inputs.loan
+            set:
+              ${t.status}: [returned]
+              ${t.returnedAt}: \${{ now() }}
+  - succeed:
+      message: ${t.loanClosed}`,
+      },
+      {
+        key: "return_loan_item",
+        name: t.markLoanItemReturned,
+        description: t.markLoanItemReturnedDescription,
+        source: `inputs:
   item:
     type: record
     table: ${t.items}
@@ -2271,55 +2708,49 @@ steps:
     required: true
 steps:
   - if:
-      notEquals:
-        - \${{ inputs.loan.${t.status} }}
-        - [active]
-    then:
-      - fail:
-          message: "${t.loanNotActive({ loanNumber: workflowRefs.loanNumber })}"
-  - if:
       not:
-        includes:
-          - \${{ inputs.loan.${t.loanedItems} }}
-          - \${{ inputs.item }}
+        exists: inputs.item.${t.currentPosition}
     then:
       - fail:
-          message: "${t.itemNotInLoan({ assetId: workflowRefs.assetId, loanNumber: workflowRefs.loanNumber })}"
-  - if:
-      notEquals:
-        - \${{ inputs.item.${t.status} }}
-        - [in_use]
-    then:
-      - fail:
-          message: "${t.itemNotInUse({ assetId: workflowRefs.assetId })}"
+          message: ${t.noCurrentPosition}
+  - setVariable:
+      name: position
+      value: \${{ inputs.item.${t.currentPosition} }}
   - if:
       equals:
         - \${{ inputs.condition }}
         - repair
     then:
-      - updateRecord:
-          record: inputs.item
-          set:
-            ${t.status}: [maintenance]
-            ${t.condition}: [repair]
-      - succeed:
-          message: "${t.itemReturnedForRepair({ assetId: workflowRefs.assetId, loanNumber: workflowRefs.loanNumber })}"
-  - updateRecord:
-      record: inputs.item
-      set:
-        ${t.status}: [available]
-        ${t.condition}:
-          - \${{ inputs.condition }}
+${returnPosition("maintenance")
+  .split("\n")
+  .map((line) => `      ${line}`)
+  .join("\n")}
+    else:
+${returnPosition("available")
+  .split("\n")
+  .map((line) => `      ${line}`)
+  .join("\n")}
   - succeed:
-      message: "${t.itemReturnedWithCondition({
-        assetId: workflowRefs.assetId,
-        condition: workflowRefs.condition,
-        loanNumber: workflowRefs.loanNumber,
-      })}"`,
+      message: ${t.positionReturned}`,
         enabled: true,
       },
     ],
     workflowLaunchers: [
+      {
+        key: "add_position",
+        workflow: "add_position",
+        name: t.addPosition,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      {
+        key: "issue_position",
+        workflow: "issue_position",
+        name: t.issuePosition,
+        config: { kind: "customApp", inputMode: "prompt" },
+        enabled: true,
+      },
+      { key: "close_loan", workflow: "close_loan", name: t.closeLoan, config: { kind: "customApp", inputMode: "prompt" }, enabled: true },
       {
         key: "cancel_loan_custom_app",
         workflow: "cancel_loan",
@@ -2359,7 +2790,6 @@ steps:
         config: {
           kind: "scanner",
           inputSources: {
-            loan: { kind: "session" },
             item: {
               kind: "scan",
               value: "record",

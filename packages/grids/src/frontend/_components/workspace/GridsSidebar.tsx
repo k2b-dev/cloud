@@ -172,7 +172,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         <AppWorkspace.SidebarSection title={t.apps}>
           {state.catalog.customApps.map((app) => (
             <SidebarLink
-              href={keepEdit(`/app/grids/${state.base.id}/apps/${app.id}`, true)}
+              href={keepEdit(`/app/grids/${state.base.id}/apps/${app.id}`, state.adminModeRequested)}
               active={activeCustomAppId === app.id}
               title={app.name}
             >

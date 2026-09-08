@@ -28,6 +28,7 @@ const expectedTopics = [
   "grids-overview",
   "grids-core-model",
   "grids-build-base",
+  "grids-build-business-app",
   "grids-tables-fields",
   "grids-views-reports",
   "grids-combined-tables",
@@ -48,6 +49,60 @@ const expectedTopics = [
 ];
 
 describe("grids help", () => {
+  test("connects the business application guide to existing help in both locales", () => {
+    for (const locale of ["en", "de"]) {
+      const guide = gridsHelp.getMarkdown("grids-build-business-app", locale)!;
+      expect(gridsHelp.getMarkdown("grids-build-base", locale)).toContain("/app/grids/help/grids-build-business-app");
+      const links = [...guide.matchAll(/\]\(\/app\/grids\/help\/([^)#]+)\)/g)];
+      expect(links.length).toBeGreaterThanOrEqual(4);
+      for (const [, id] of links) expect(gridsHelp.getMarkdown(id!, locale), id).toBeDefined();
+    }
+  });
+
+  test("states record-level review and payment boundaries in both business guides", () => {
+    const english = gridsHelp.getMarkdown("grids-build-business-app", "en")!;
+    const german = gridsHelp.getMarkdown("grids-build-business-app", "de")!;
+    expect(english).toContain("does not recursively finalize its line records");
+    expect(english).toContain("It does not compare a separate claimant field");
+    expect(english).toContain("Editing a related line record is not the same as editing the reviewed Record");
+    expect(english).toContain("A Paid checkbox does not transfer money");
+    expect(german).toContain("finalisiert seine Positionsdatensätze nicht rekursiv");
+    expect(german).toContain("Sie vergleicht kein separates Anspruchstellerfeld");
+    expect(german).toContain("Die Bearbeitung eines verknüpften Positionsdatensatzes");
+    expect(german).toContain("Ein Bezahlt-Kontrollkästchen überweist kein Geld");
+  });
+
+  test("explains bound App action inputs and table-scoped Document evidence", () => {
+    const english = gridsHelp.getMarkdown("grids-build-business-app", "en")!;
+    const german = gridsHelp.getMarkdown("grids-build-business-app", "de")!;
+    expect(english).toContain("This mode does not open a free-form input dialog in the App");
+    expect(german).toContain("Dieser Modus öffnet in der App keinen freien Eingabedialog");
+    for (const guide of [english, german]) {
+      expect(guide).toContain("`inputMode: prompt`");
+      expect(guide).toContain("`ROW.id`");
+      expect(guide).toContain("`RECORD.id`");
+    }
+    const evidenceEn = gridsHelp.getMarkdown("grids-evidence-exports", "en")!;
+    const evidenceDe = gridsHelp.getMarkdown("grids-evidence-exports", "de")!;
+    expect(evidenceEn).not.toContain("native application snapshots");
+    expect(evidenceEn).toContain("a table-scoped package includes that table's Documents");
+    expect(evidenceDe).not.toContain("nativen Anwendungssnapshots");
+    expect(evidenceDe).toContain("enthält ein Tabellenpaket die Dokumente dieser Tabelle");
+  });
+
+  test("describes immutable Documents without retired run metadata or edit controls", () => {
+    const english = gridsHelp.getMarkdown("grids-documents-pdfs", "en")!;
+    const german = gridsHelp.getMarkdown("grids-documents-pdfs", "de")!;
+    expect(english).not.toContain("`template`, `run`, and `date`");
+    expect(english).not.toContain("change its filename or tags later");
+    expect(english).not.toContain("create a new run and artifact");
+    expect(english).toContain("number, filename, tags, and artifacts are immutable");
+    expect(german).not.toContain("`template`, `run` und `date`");
+    expect(german).not.toContain("Dateinamen oder Tags später ändern");
+    expect(german).not.toContain("eine neue Ausführung und ein neues Artefakt");
+    expect(german).toContain("Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich");
+  });
+
   test("keeps every established topic in its existing order", () => {
     expect(gridsHelp.documents.map((document) => document.id)).toEqual(expectedTopics);
 

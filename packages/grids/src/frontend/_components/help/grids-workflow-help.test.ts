@@ -221,7 +221,19 @@ describe("Grids workflow help", () => {
   });
 
   test("documents every recursive workflow condition operator", () => {
-    for (const operator of ["equals", "notEquals", "contains", "startsWith", "endsWith", "exists", "all", "any", "not"]) {
+    for (const operator of [
+      "equals",
+      "notEquals",
+      "includes",
+      "textEquals",
+      "contains",
+      "startsWith",
+      "endsWith",
+      "exists",
+      "all",
+      "any",
+      "not",
+    ]) {
       expect(controlFlowHelp, `missing workflow condition help for ${operator}`).toContain(`\`${operator}\``);
       expect(cliSkillReference, `CLI reference missing workflow condition ${operator}`).toContain(`\`${operator}\``);
     }

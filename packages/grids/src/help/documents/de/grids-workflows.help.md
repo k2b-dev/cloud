@@ -284,6 +284,8 @@ Nutze `atomicRecords`, wenn eine aktuelle Grids-Bedingung und mehrere Schreibvor
 
 Eine leere Abfrage besitzt keine eigene Zeile zum Sperren. Sperre bei einer Reservierung das gemeinsam verwendete Element oder einen anderen stabilen Koordinationsdatensatz und prüfe anschließend, dass keine aktive Reservierung darauf verweist. Wenn konkurrierende Workflows unterschiedliche Datensätze sperren, kann die Transaktion diese fachliche Entscheidung nicht für sie serialisieren.
 
+Atomare Prüfungen unterstützen gespeicherte Felder, keine Formelfelder oder Aggregatberechnungen. Prüfe die zugrunde liegenden gespeicherten Werte unter derselben Sperre. Relationswerte in `createRecord` und `updateRecord` sowie Werte für Relationsfilter verwenden öffentliche Datensatz-IDs wie `${{ inputs.item.recordId }}`. Übergib keine internen UUIDs, Labels oder vollständigen Referenzobjekte als Relationswert. Datensatzziele und Sperren verwenden dagegen die Referenz selbst, etwa `inputs.item`. Verknüpfte Datensätze müssen in der konfigurierten Zieltabelle und Basis lesbar bleiben; auch der Testlauf prüft diese Grenze.
+
 **Ein verfügbares Element atomar reservieren**
 
 ```yaml
@@ -402,7 +404,8 @@ Kontrollfluss ist weiterhin ein gewöhnlicher Schritt. Dadurch bleibt verschacht
 - **switch:** Erfordert einen Wert und mindestens einen Eintrag unter `cases`. Jeder Fall besitzt `when` und eine nicht leere Liste `do`. `default` ist optional.
 - **forEach:** Erfordert eine rohe `recordList`-Referenz, einen Bezeichner unter `as` und eine nicht leere Liste `do`. Die Listenreihenfolge bleibt erhalten.
 - **Wertvergleiche:** `equals` und `notEquals` erwarten genau zwei literale oder dynamische Werte.
-- **Text- und Listenvergleiche:** `startsWith` und `endsWith` erwarten zwei Textwerte. `contains` akzeptiert entweder zwei Textwerte oder eine Liste und einen exakten Wert.
+- **Textvergleiche:** `textEquals`, `contains`, `startsWith` und `endsWith` erwarten zwei Textwerte.
+- **Listenzugehörigkeit:** `includes` erwartet eine Liste und einen exakten Wert. Prüfe damit beispielsweise, ob ein Datensatz zu einer Relationsliste gehört; `contains` ist nur für Text vorgesehen.
 - **Vorhandensein und Verschachtelung:** `exists` erwartet eine rohe Wertreferenz. `all` und `any` erfordern mindestens eine Bedingung. `not` umschließt eine Bedingung.
 :::
 

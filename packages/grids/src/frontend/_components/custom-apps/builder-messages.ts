@@ -180,6 +180,12 @@ const deCopy = {
   "New action": "Neue Aktion",
   "Changes are in a draft": "Änderungen befinden sich in einem Entwurf",
   "This app is a draft": "Diese App ist ein Entwurf",
+  "Review draft": "Entwurf prüfen",
+  "Open settings": "Einstellungen öffnen",
+  "Choose an issue to open its settings. Correct the draft, then publish again.":
+    "Wähle ein Problem, um die zugehörigen Einstellungen zu öffnen. Korrigiere den Entwurf und veröffentliche ihn anschließend erneut.",
+  "No detailed diagnostics are available. Review the App settings and referenced resources, then save the draft again.":
+    "Es sind keine detaillierten Fehlermeldungen verfügbar. Prüfe die App-Einstellungen und referenzierten Ressourcen und speichere den Entwurf erneut.",
   "Saving changes automatically…": "Änderungen werden automatisch gespeichert…",
   "Changes are saved automatically. Publish the draft when it is ready for everyone.":
     "Änderungen werden automatisch gespeichert. Veröffentliche den Entwurf, sobald er für alle bereit ist.",

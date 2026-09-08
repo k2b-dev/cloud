@@ -2,7 +2,7 @@ import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import type { CustomAppDefinition } from "../custom-apps/contracts";
 import type { GridsWorkflowLauncherConfig } from "../workflows/contracts";
 
-type TemplateRefKind = "table" | "field" | "record" | "view" | "form" | "launcher";
+type TemplateRefKind = "table" | "field" | "record" | "view" | "form" | "launcher" | "documentTemplate";
 
 export type TemplateRef = {
   $ref: TemplateRefKind;
@@ -21,7 +21,7 @@ type TemplateViewColumnsRef = {
 type TemplateResolvable<T> = T extends string
   ? T | TemplateRef | TemplateFormulaExpression
   : T extends Array<infer Item>
-    ? Item extends string
+    ? [Item] extends [string]
       ? Array<TemplateResolvable<Item>> | TemplateViewColumnsRef
       : Array<TemplateResolvable<Item>>
     : T extends object
@@ -153,6 +153,7 @@ export const record = (key: string): TemplateRef => ({ $ref: "record", key });
 export const view = (key: string): TemplateRef => ({ $ref: "view", key });
 export const viewColumns = (key: string): TemplateViewColumnsRef => ({ $ref: "viewColumns", key });
 export const form = (key: string): TemplateRef => ({ $ref: "form", key });
+export const documentTemplate = (key: string): TemplateRef => ({ $ref: "documentTemplate", key });
 export const launcher = (key: string): TemplateRef => ({
   $ref: "launcher",
   key,

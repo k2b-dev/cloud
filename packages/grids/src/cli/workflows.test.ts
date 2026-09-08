@@ -117,8 +117,29 @@ const basePage = { items: [{ id: baseId, name: "Bookshop" }], total: 1, limit: 5
 const resolutionResponses = () => [jsonResponse(basePage), jsonResponse([workflow])];
 
 describe("Grids workflow CLI", () => {
+  test("advertises condition operators accepted by the workflow compiler", async () => {
+    const unary = new Set(["exists", "not", "all", "any"]);
+    for (const operator of Object.keys(WORKFLOW_REFERENCE.language.conditions)) {
+      const operand =
+        operator === "exists"
+          ? "inputs.value"
+          : operator === "not"
+            ? { equals: [1, 1] }
+            : operator === "all" || operator === "any"
+              ? [{ equals: [1, 1] }]
+              : operator === "includes"
+                ? [["value"], "value"]
+                : ["value", "value"];
+      const source = JSON.stringify({
+        ...(unary.has(operator) && operator === "exists" ? { inputs: { value: { type: "text" } } } : {}),
+        steps: [{ if: { [operator]: operand }, then: [{ succeed: { message: "Matches" } }] }],
+      });
+      const compiled = await compileWorkflow(source, gridsWorkflows);
+      expect(compiled.ok, operator).toBe(true);
+    }
+  });
   test("keeps the reference invocation aligned with a compilable and bindable YAML example", async () => {
-    expect(WORKFLOW_REFERENCE.invocation.direct.inputs).toEqual({ item: "00000000-0000-4000-8000-000000000001" });
+    expect(WORKFLOW_REFERENCE.invocation.direct.inputs).toEqual({ item: "Rec001" });
     expect(WORKFLOW_REFERENCE.launchers.correctionDraft.config.intent).toBe("correction");
     expect(WORKFLOW_REFERENCE.launchers.cancellationDraft.config.intent).toBe("cancellation");
 

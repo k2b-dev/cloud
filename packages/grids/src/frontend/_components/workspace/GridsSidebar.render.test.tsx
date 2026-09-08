@@ -84,7 +84,7 @@ describe("GridsSidebar workflows", () => {
 
     expect(html).toContain("Documents");
     expect(html).toContain("All documents");
-    expect(html).toContain('/app/grids/BASE01/documents');
+    expect(html).toContain("/app/grids/BASE01/documents");
   });
 
   test("uses workflow rows as the selector without a duplicate overview item", () => {
@@ -159,9 +159,12 @@ describe("GridsSidebar Apps", () => {
 
     expect(html).toContain("Apps");
     expect(html).toContain("Loan desk");
-    expect(html).toContain("/app/grids/BASE01/apps/APP001?edit=true");
+    expect(html).toContain('href="/app/grids/BASE01/apps/APP001"');
     expect(html).toContain("settings=app");
     expect(html).toContain("draft");
+    state.adminModeRequested = true;
+    const editing = renderToString(() => createComponent(GridsSidebar, { state }));
+    expect(editing).toContain('href="/app/grids/BASE01/apps/APP001?edit=true"');
   });
 
   test("shows app creation before the first app exists in Edit mode", () => {

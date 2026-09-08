@@ -54,7 +54,7 @@ Das Paket läuft nach sieben Tagen ab. Beim Ablauf werden seine gespeicherten By
 
 Grids-Ressourcenreferenzen verwenden ihre öffentlichen IDs aus sechs Zeichen. UUID-förmige Werte ohne öffentliche ID im ausgewählten Grids-Bereich werden als stabile private Referenzen dargestellt, statt interne Kennungen offenzulegen. Derselbe Quellwert erhält innerhalb des Pakets dieselbe private Referenz.
 
-Dokumente aus nativen Anwendungssnapshots gehören zu ihrer Basis und nicht zu einer Grids-Tabelle. Sie sind deshalb nur in einem Paket für die gesamte Basis enthalten. Ein Paket für eine Tabelle weist im Manifest auf diese Grenze hin, statt aus beliebigen Quellmetadaten eine Tabelle abzuleiten.
+Jedes Dokument gehört zu einer Grids-Tabelle und einem Datensatz. Wenn Dokumentartefakte ausgewählt sind, enthält ein Tabellenpaket die Dokumente dieser Tabelle im gewählten Zeitraum; ein Basispaket umfasst die Tabellen der Basis. Beide enthalten die exakten gespeicherten Artefakte und ihre Metadaten.
 
 ## Den Download prüfen {icon="shield-check"}
 

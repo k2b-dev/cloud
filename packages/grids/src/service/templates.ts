@@ -50,6 +50,7 @@ type TemplateContext = {
   forms: Map<string, string>;
   workflows: Map<string, GridsWorkflow>;
   launchers: Map<string, string>;
+  documentTemplates: Map<string, string>;
   publicRefs: Map<string, string>;
   publicViewColumns: Map<string, string[]>;
 };
@@ -113,6 +114,7 @@ const resolveRef = (ref: TemplateRef, ctx: TemplateContext): string => {
     view: () => ctx.views.get(ref.key),
     form: () => ctx.forms.get(ref.key),
     launcher: () => ctx.launchers.get(ref.key),
+    documentTemplate: () => ctx.documentTemplates.get(ref.key),
   }[ref.$ref]();
 
   if (!value) throw new TemplateError(err.badInput(`template reference not found: ${ref.$ref}:${ref.key}`));
@@ -438,7 +440,7 @@ const createDocumentTemplates = async (template: GridTemplate, actorId: string |
       throw new TemplateError(err.badInput(`document template "${definition.key}" must provide a GQL source`));
     }
 
-    requireResult(
+    const created = requireResult(
       await documents.createTemplate(
         tableId,
         {
@@ -452,6 +454,8 @@ const createDocumentTemplates = async (template: GridTemplate, actorId: string |
         locale,
       ),
     );
+    ctx.documentTemplates.set(definition.key, created.id);
+    ctx.publicRefs.set(`documentTemplate:${definition.key}`, created.shortId);
   }
 };
 
@@ -547,6 +551,7 @@ export const instantiate = async (
     forms: new Map(),
     workflows: new Map(),
     launchers: new Map(),
+    documentTemplates: new Map(),
     publicRefs: new Map(),
     publicViewColumns: new Map(),
   };

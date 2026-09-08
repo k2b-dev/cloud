@@ -35,6 +35,7 @@ Read the app reference for the current task. Follow specialized links inside it 
 - Read [Contacts](references/contacts.md) for contact books, contacts, tags, notes, exports, and access grants.
 - Read [FAQ](references/faq.md) to list and manage localized, audience-aware FAQ entries as an administrator.
 - Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.
+- For a complete Grids business application, also read [Build a business application](references/grids-build-apps.md): inventory, CRM, invoicing, expense reimbursement, and merchandise-management model choices and verification.
 - Read [Mail](references/mail.md) to configure and share mailboxes, search and collaborate on conversations, then follow its compose, automation, and operations references for the complete Mail CLI.
 - Read [Notebooks](references/notebooks.md) for collaborative notes, knowledge search, safe Markdown editing, query and TOC preview validation, comments, notebook views, attachments, formulas, exports, and access.
 - Read [Pulse](references/pulse.md) to explore telemetry and observed fields, ingest structured events, run queries, create DSL dashboards, manage sources, and share public displays.

@@ -97,11 +97,28 @@ export const WORKFLOW_REFERENCE = {
     triggers: gridsWorkflowManifest.triggers,
     actions: gridsWorkflowManifest.actions,
     controlFlow: ["if/then/else", "switch/cases/default", "forEach/as/do"],
+    recordValues:
+      "Record targets use references such as inputs.item. Relation field values and relation filters use public Record IDs, for example ${{ inputs.item.recordId }}, never internal UUIDs or display labels.",
+    atomicPredicates:
+      "Checks use stored-field filter operators. Formula fields and aggregate arithmetic are not supported; check the stored facts under the same coordination lock.",
+    conditions: {
+      equals: "Exact value equality; notEquals negates it.",
+      notEquals: "Exact value inequality.",
+      includes: "List membership: [list, value].",
+      textEquals: "Normalized, case-insensitive text equality: [text, text].",
+      contains: "Normalized, case-insensitive text containment: [text, text], not list membership.",
+      startsWith: "Normalized, case-insensitive text prefix: [text, text].",
+      endsWith: "Normalized, case-insensitive text suffix: [text, text].",
+      exists: "Whether a binding has a value.",
+      all: "Every nested condition matches.",
+      any: "At least one nested condition matches.",
+      not: "Negates one nested condition.",
+    },
   },
   invocation: {
     direct: {
       mode: "execute",
-      inputs: { item: "00000000-0000-4000-8000-000000000001" },
+      inputs: { item: "Rec001" },
       idempotencyKey: "agent-job-42",
       expectedRevision: 3,
     },

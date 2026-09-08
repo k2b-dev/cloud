@@ -2,6 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { DOCUMENT_TEMPLATE_STARTERS, documentTemplateStarterById, getDocumentTemplateStarters } from "./document-template-starters";
 
 describe("document template starter localization", () => {
+  test("does not assert operational checks that document generation never performs", () => {
+    for (const locale of ["en", "de-DE"]) {
+      const starters = getDocumentTemplateStarters(locale);
+      const bodies = starters.map((starter) => starter.renderer.body).join("\n");
+      expect(bodies).not.toContain("generated from approved operational records");
+      expect(bodies).not.toContain("Identification checked before handover");
+      expect(bodies).not.toContain("Identität vor Übergabe geprüft");
+      expect(bodies).toContain('class="checkbox"');
+    }
+  });
   test("preserves the existing English starter objects by default", () => {
     expect(getDocumentTemplateStarters()).toBe(DOCUMENT_TEMPLATE_STARTERS);
     expect(documentTemplateStarterById("invoice")).toBe(DOCUMENT_TEMPLATE_STARTERS[0]);

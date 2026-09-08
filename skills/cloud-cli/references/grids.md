@@ -37,6 +37,8 @@ Permissions are enforced by the backend on every command. Raw Grids commands req
 
 ## Agent workflow
 
+For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](grids-build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.
+
 Work from discovery to mutation, then read the result back.
 
 1. Confirm that Grids is installed and discover accessible bases:
@@ -106,7 +108,7 @@ Use `--json` whenever another command or agent will consume the result. Normal t
 
 CLI requests use the Cloud instance's `app.timezone` for date grouping, relative date filters, generated date sequences, and document
 dates. Browser requests may use the user's timezone cookie instead. Workflow schedules use the IANA timezone declared in their YAML and
-default to UTC. Grids uses the platform English locale for server-rendered number and date output; Grids App `valueFormat` controls
+default to UTC. Server-rendered number and date output uses the resolved request locale; Grids App `valueFormat` controls
 numeric style and precision, not locale or query values.
 
 ## Build schema and records
@@ -195,7 +197,7 @@ The shipped field types are:
 
 - Writable values: `boolean`, `date`, `duration`, `json`, `longtext`, `number`, `percent`, `principal`, `select`, `text`.
 - Writable links: `relation`.
-- Read-only computed values: `formula`, `lookup`, `rollup`.
+- Read-only computed values: `formula`, `lookup`, `rollup`, `html_template`.
 - Read-only system or generated values: `created_at`, `created_by`, `id`, `updated_at`, `updated_by`.
 - External file storage: `file`; use `records files` commands instead of record JSON.
 
@@ -207,7 +209,9 @@ Important encodings:
 - `principal` always stores an array of typed Cloud references such as `[{"type":"user","id":"..."},{"type":"group","id":"..."}]`, even when its cardinality is `single`. Writes are revalidated against the current actor's identity-discovery scope.
 - `date` uses `YYYY-MM-DD` unless `includeTime` is enabled; date-time values must include a timezone.
 - `duration` accepts seconds, `MM:SS`, or `HH:MM:SS` and stores integer seconds.
-- `id`, formula, lookup, rollup, and timestamp fields must not be sent in record writes.
+- `id`, formula, lookup, rollup, HTML template, and timestamp fields must not be sent in record writes.
+
+`html_template` renders Liquid and CSS per record. Inspect `fields type html_template --json` for its configuration. Use stable public field IDs in `record.data`, and preview before using `raw`. HTML fields are stored-table output only: no filtering, sorting, grouping, aggregation, formula use, relation lookup, or recursive HTML templates. Default exports omit them; explicit HTML exports require a query limit of at most 1,000 records. One read renders at most 2,000 HTML cells and 32 MB total. A Rendered HTML App block displays one such field in a non-interactive sandbox; immutable downloadable output belongs in Documents.
 
 Create a field only after inspecting its type:
 
@@ -913,6 +917,8 @@ entry selects a bound `table`, has 1–20 `where` predicates combined with AND, 
 `audit`). Grids rechecks current Base permission and commits the writes, relations, audit rows, event outbox, and step outcome
 together. A failure rolls back all of them. Dry run validates and evaluates but neither locks nor writes.
 
+Use stored fields for atomic predicates; Formula fields and aggregate arithmetic are not supported. Relation field values in `createRecord`/`updateRecord` and relation-filter values use public Record IDs (for example `${{ inputs.item.recordId }}`), not internal UUIDs, display labels, or whole record-reference objects. Record targets and locks still use references such as `inputs.item`. Relation targets must remain readable in the expected table and Base, including during dry run.
+
 An empty query has no row to lock. Competing reservation workflows must therefore name the same stable coordination record in `locks`, then
 check for the absence of an active relation while that record is locked:
 
@@ -1006,7 +1012,7 @@ steps:
             Status: Checked
 ```
 
-Conditions are `equals`, `notEquals`, `contains`, `startsWith`, `endsWith`, `exists`, `all`, `any`, and `not`. Binary conditions take
+Conditions are `equals`, `notEquals`, `includes`, `textEquals`, `contains`, `startsWith`, `endsWith`, `exists`, `all`, `any`, and `not`. Use `includes` for exact list membership, not `contains`. Text operators require text operands. Binary conditions take
 exactly two values; `exists` takes one raw reference; `all` and `any` take non-empty condition lists.
 
 Plain strings are literals. A dynamic value must occupy the whole string as `${{ reference }}` or `${{ now() }}`. References include
@@ -1134,6 +1140,8 @@ happened. Run commands are `workflow-runs list|get|cancel|steps|documents|downlo
 Run options expose a workflow as a scanner, bulk, Record, or Grids App interaction. The API and CLI call these resources launchers. The **Close selected Records** starter installs the dedicated bulk profile `closeSelection`; it accepts only exact public Record IDs and is rejected if the workflow no longer has the canonical close-only plan. The browser reviews up to 100 Records and supplies the current Finalization mode and policy revision. API and CLI callers must review and provide those two inputs themselves; every action verifies them again before changing anything. The linked follow-up Draft starter installs the Record profile `correctionDraft`; callers supply one finalized Record public ID, and the canonical action creates one normal Draft linked through the configured existing fields. Set action and launcher `intent` to the same `correction` or `cancellation` value; omitted intent remains `correction` for legacy workflows and launchers. A mismatch is rejected so user-facing wording cannot disagree with the workflow contract, while the selected type value remains the stored business meaning. Its optional `copyFields` list carries over at most 100 stored value fields. Unique fields, generated IDs, Files, other Relations, calculated fields, and Documents are not copied. Grids does not calculate cancellation amounts, taxes, or counter-bookings or generate a Document. Ordinary bulk options may use explicit IDs or a row-shaped query. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
 
 A Grids App definition may also embed an enabled Scanner run option as a `scanner` block. Embedded scanners require a signed-in App reader and pin the exact launcher configuration and workflow revision at publish time. They accept scalar session and after-scan prompts; use the full Workflow scanner when those prompts must select records.
+
+For actions published inside an App, bind every required Workflow input in the App definition. A `prompt` launcher accepts those runtime bindings; the App button does not open a free-input dialog. Use a Records row action with `ROW.id` and page `RECORD.id` when the user must choose a child item for the current parent. Publication rejects missing required inputs.
 
 ```bash
 cld grids workflow-launchers create "Check in" --body-file scanner-launcher.json --json

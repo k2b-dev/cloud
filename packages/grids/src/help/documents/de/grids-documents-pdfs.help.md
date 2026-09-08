@@ -90,7 +90,7 @@ Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle
 
 Der Tab Daten ist die maßgebliche Quelle für den aktuellen Vorschaudatensatz. Er zeigt die exakte Struktur, die Liquid nach der Ausführung der GQL-Quelle erhält. Kopiere Pfade aus diesem Baum, statt Objektstrukturen zu erraten.
 
-Betrachte die Daten in Ebenen: `record` ist der ausgewählte Datensatz, `rows` und `columns` sind das GQL-Ergebnis und `document` beschreibt ein gespeichertes Dokument. `template`, `run` und `date` liefern stabile Metadaten für Nummern und Dateinamen. `app` enthält öffentliche Plattformwerte für die Darstellung. `business` enthält die gemeinsamen Dokumentangaben der Basis. Zeilen stellen zusätzlich GQL-Ausgabebezeichnungen bereit, weshalb lesbare Aliasse Vorlagen leichter wartbar machen.
+Betrachte die Daten in Ebenen: `record` ist der ausgewählte Datensatz, `rows` und `columns` sind das GQL-Ergebnis und `document` beschreibt ein gespeichertes Dokument. `template`, `document` und `date` liefern stabile Metadaten für Nummern und Dateinamen. `app` enthält öffentliche Plattformwerte für die Darstellung. `business` enthält die gemeinsamen Dokumentangaben der Basis. Zeilen stellen zusätzlich GQL-Ausgabebezeichnungen bereit, weshalb lesbare Aliasse Vorlagen leichter wartbar machen.
 
 :::reference
 - **record:** Der aktuelle Datensatz: öffentliche `record.id` und `record.tableId`, `record.version`, `record.data` sowie Erstellungs- und Aktualisierungszeitpunkte.
@@ -100,7 +100,7 @@ Betrachte die Daten in Ebenen: `record` ist der ausgewählte Datensatz, `rows` u
 - **business:** Dokumentangaben der Basis wie `{{ business.legalName }}`, `{{ business.senderLine }}`, `{{ business.address }}`, `{{ business.paymentTerms }}`, `{{ business.iban }}` und Fußzeilen-/Kontaktfelder. Bearbeite sie unter Basiseinstellungen → Dokumente.
 - **images:** Bilddateien, die an Dateifelder des ausgewählten Datensatzes angehängt sind. Nutze `{{ primaryImage.url }}` für das erste unterstützte Bild oder durchlaufe `images`. Zu große und nicht unterstützte Dateien werden ausgelassen.
 - **document:** Dokumentmetadaten wie `{{ document.number }}` und `{{ document.createdAt }}`. Nutze sie in Dateinamen und Inhalt/Kopf-/Fußzeilen-HTML, nachdem das Nummernmuster gerendert wurde. Entwurfsvorschauen besitzen möglicherweise noch keine endgültigen Werte.
-- **snapshot:** Der erfasste Datensatzgraph für generierte Ausführungen. In aktiven Entwurfsvorschauen vor einer Ausführung ist er `null`.
+- **snapshot:** Der erfasste Datensatzgraph für ein generiertes Dokument. In aktiven Entwurfsvorschauen ist er `null`.
 - **barcode_data_url:** Ein Grids-Liquid-Filter für Etiketten und Ausweise. Er gibt eine SVG-Daten-URL für QR-Codes und unterstützte BWIP-Barcodesymbole zurück.
 :::
 
@@ -173,7 +173,7 @@ invoice-{{ record.data.Name | default: document.number }}-{{ document.number }}.
 ```
 
 :::reference
-- **Kontext des Nummernmusters:** Darf `record`, `table`, `template`, `run`, `series`, `date`, `app` und `business` verwenden. `series.id` ist die öffentliche ID des Nummernkreises, `series.value` die vergebene Nummer. `document` ist nicht verfügbar, weil die Dokumentnummer noch nicht existiert.
+- **Kontext des Nummernmusters:** Darf `record`, `table`, `template`, `document`, `series`, `date`, `app` und `business` verwenden. `series.id` ist die öffentliche ID des Nummernkreises, `series.value` die vergebene Nummer. `document.id` ist bereits verfügbar; `document.number` wird erst berechnet und ist noch nicht verfügbar.
 - **Kontext des Dateinamenmusters:** Darf den vollständigen gerenderten Datenbaum einschließlich `{{ document.number }}` verwenden. Der endgültige Dateiname wird für sichere PDF-Downloads im Dateisystem bereinigt.
 - **Validierung:** Unbekannte Liquid-Variablen auf oberster Ebene, ungültige Tags, nicht unterstützte Filter, leere Muster und zu große Muster lassen das Speichern der Vorlage scheitern.
 :::
@@ -418,25 +418,25 @@ Zusätzliche BWIP-Symbol-IDs
 
 ## Mit generierten Dokumenten arbeiten {icon="file-description"}
 
-Die Dokumentseite listet jede generierte Ausführung einer Vorlage auf. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu navigieren. Eine Suche wechselt zum Tabellenergebnis, damit passende Dokumente nicht in Ordnern verborgen bleiben.
+Die Dokumentseite listet jedes generierte Dokument einer Vorlage auf. Nutze **Tabelle** für eine durchsuchbare Liste oder **Ordner**, um nach Jahr und Monat zu navigieren. Eine Suche wechselt zum Tabellenergebnis, damit passende Dokumente nicht in Ordnern verborgen bleiben.
 
-Vor der Generierung kannst du den Dateinamen der Vorlage überschreiben und Tags ergänzen. Mit Schreibzugriff auf die Basis kannst du die Details eines generierten Dokuments öffnen und Dateinamen oder Tags später ändern. Die Dokumentnummer bleibt stabil.
+Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
 
-Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung und Änderungen an Metadaten. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur eine Ausführung für den aktuellen Seitendatensatz herunterladen, deren Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.
+Leseberechtigung auf die Basis erlaubt das Durchsuchen und erneute Herunterladen generierter Dokumente. Schreibberechtigung erlaubt zusätzlich Generierung. Personen mit Verwaltungsrechten verwalten Vorlagen. Eine lesende Person einer Grids App darf nur ein Dokument für den aktuellen Seitendatensatz herunterladen, dessen Vorlage in der veröffentlichten Capability dieses Datensatzblocks enthalten ist. Dieser App-begrenzte Download gewährt keinen allgemeinen Dokumentzugriff auf die Basis.
 
 Erstelle einen öffentlichen Link für 1, 7, 30 oder 90 Tage, um ein generiertes PDF ohne Cloud-Anmeldung zu teilen. Der Link öffnet eine minimale Seite mit dem Dateinamen des Dokuments, seiner verbleibenden Gültigkeit und einer Schaltfläche zum Herunterladen des PDFs. Er gewährt niemals Zugriff auf andere Dokumente oder Datensätze. Ein optionaler Kommentar erklärt Personen mit Bearbeitungsrechten den Zweck des Links. Die erstellende Person oder eine Person mit Dokumentbearbeitung kann den Link vor Ablauf widerrufen.
 
-## Snapshots und Ausführungen {icon="point"}
+## Snapshots und gespeicherte Dokumente {icon="point"}
 
 Beim Generieren eines PDFs entsteht ein rekursiver Snapshot des Wurzeldatensatzes und der über Relationsfelder erreichten verknüpften Datensätze. Ein Snapshot umfasst höchstens vier Relationsebenen und 500 Datensätze. Grids rendert einmal und speichert die exakten abgeschlossenen PDF-Bytes zusammen mit SHA-256, MIME-Typ, Größe, Renderer-Version, Vorlagenrevision, Dokumentnummer und Quell-Snapshot. Downloads geben diese gespeicherten Bytes auch dann zurück, wenn sich aktive Datensätze, Vorlage oder Renderer geändert haben.
 
-Nutze **Erneut generieren**, um eine neue Ausführung und ein neues Artefakt zu erstellen. Eine ältere Ausführung wird nie ersetzt. Öffne **Technische Details** einer Ausführung, um ihre Artefaktmetadaten zu sehen.
+Nutze **Erneut generieren**, um ein neues Dokument und seine Artefakte zu erstellen. Ein älteres Dokument wird nie ersetzt. Öffne die Dokumentdetails, um Renderer, Quelldatensatz, Validierungsstatus und Artefakthashes zu prüfen.
 
 :::reference
-- **Dokumentnummern:** Jede Ausführung erhält eine dauerhafte Nummernkreisvergabe und eine stabile Dokumentnummer aus dem aktuellen Muster der Vorlage. Vergaben werden nie wiederverwendet; technische Lücken sind zu erwarten. Änderungen am Muster betreffen nur zukünftige Ausführungen.
+- **Dokumentnummern:** Jedes Dokument erhält eine stabile Nummer. HTML-Vorlagen verwenden ihr konfiguriertes Nummernmuster; ein E-Rechnungsrenderer bestimmt seine Nummerierung selbst. Vergaben werden nie wiederverwendet; technische Lücken sind möglich. Änderungen am Muster betreffen nur zukünftige Dokumente.
 - **Vorlagenänderungen:** Eine Änderung der Vorlage betrifft zukünftige Generierungen. Vorhandene gespeicherte Artefakte werden nie erneut gerendert.
 - **Manuelle Snapshots:** Der Detailbereich eines Datensatzes besitzt zusätzlich eine Snapshot-Schaltfläche, um einen Datensatzzustand ohne PDF-Erzeugung zu erfassen.
-- **Gelöschte Vorlagen:** Das Löschen einer Vorlage archiviert ihren Nummernkreis und entfernt sie aus der aktiven Liste. Die Wiederherstellung verbindet denselben Nummernkreis und Höchststand erneut. Vorhandene generierte Dokumente bleiben über ihre Ausführungen verfügbar.
+- **Gelöschte Vorlagen:** Das Löschen einer Vorlage entfernt sie aus der aktiven Liste und archiviert ihren vorlageneigenen Nummernkreis. Die Wiederherstellung einer HTML-Vorlage verbindet diesen Nummernkreis und Höchststand erneut. Vorhandene generierte Dokumente bleiben im unveränderlichen Katalog.
 :::
 
 ## Praktische Grenzen {icon="point"}

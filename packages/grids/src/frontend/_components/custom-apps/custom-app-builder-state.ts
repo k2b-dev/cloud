@@ -1,6 +1,6 @@
 import { batch, createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
-import type { CustomAppDefinition } from "../../../custom-apps/contracts";
+import type { CustomAppDefinition, CustomAppDiagnostic } from "../../../custom-apps/contracts";
 
 const clone = (definition: CustomAppDefinition): CustomAppDefinition => structuredClone(unwrap(definition));
 
@@ -9,6 +9,41 @@ export type CustomAppBuilderSelection =
   | { kind: "sidebar-action"; pageId: string; actionId: string }
   | { kind: "block"; pageId: string; blockId: string }
   | { kind: "action"; pageId: string; blockId: string; actionId: string };
+
+// Schema diagnostics use array indices; semantic diagnostics use local IDs.
+// Resolve both against the exact draft that produced them before navigating.
+export const customAppDiagnosticSelection = (
+  definition: CustomAppDefinition,
+  diagnostic: CustomAppDiagnostic,
+): CustomAppBuilderSelection | null => {
+  const path = diagnostic.path;
+  let cursor = 0;
+  const find = <T extends { id: string }>(items: readonly T[], key: string): T | undefined => {
+    if (path[cursor] !== key) return undefined;
+    const value = path[cursor + 1];
+    cursor += 2;
+    return typeof value === "number" ? items[value] : items.find((item) => item.id === value);
+  };
+  if (path[0] === "sidebar") {
+    cursor = 1;
+    const action = find(definition.sidebar?.actions ?? [], "actions");
+    return action ? { kind: "sidebar-action", pageId: definition.startPageId, actionId: action.id } : null;
+  }
+  const page = find(definition.pages, "pages");
+  if (!page) return null;
+  const hasLayoutPath = path[cursor] === "rows";
+  const row = find(page.rows, "rows");
+  const column = row && find(row.columns, "columns");
+  if (hasLayoutPath && !column) return { kind: "page", pageId: page.id };
+  const blocks = column?.blocks ?? page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks));
+  const block = find(blocks, "blocks");
+  if (!block) return { kind: "page", pageId: page.id };
+  const actions = block.type === "actions" ? block.actions : "rowActions" in block ? (block.rowActions ?? []) : [];
+  const action = find<{ id: string }>(actions, block.type === "actions" ? "actions" : "rowActions");
+  return action
+    ? { kind: "action", pageId: page.id, blockId: block.id, actionId: action.id }
+    : { kind: "block", pageId: page.id, blockId: block.id };
+};
 
 const normalizeSelection = (definition: CustomAppDefinition, selection: CustomAppBuilderSelection): CustomAppBuilderSelection => {
   const page = definition.pages.find((page) => page.id === selection.pageId);

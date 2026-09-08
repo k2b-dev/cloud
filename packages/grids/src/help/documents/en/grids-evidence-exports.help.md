@@ -54,7 +54,7 @@ The package expires after seven days. Expiry removes its stored bytes; create a 
 
 Grids resource references use their six-character public IDs. UUID-shaped values without a Public ID in the selected Grids scope are represented as stable private references instead of exposing internal identifiers. The same source value receives the same private reference within the package.
 
-Documents created from native application snapshots belong to their Base rather than one Grids table. They are therefore included only in a Base-scoped package. A table-scoped package reports that boundary in the manifest instead of guessing a table from arbitrary source metadata.
+Every Document belongs to a Grids table and Record. With Document artifacts selected, a table-scoped package includes that table's Documents within the selected date range; a Base-scoped package covers the Base's tables. Both include the exact stored artifacts and their metadata.
 
 ## Verify the download {icon="shield-check"}
 

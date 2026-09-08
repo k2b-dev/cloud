@@ -278,7 +278,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     </div>
     <div>
       <div class="section-title">Notes</div>
-      <p class="fine-print">This invoice was generated from approved operational records. Please quote the invoice number on all payment references and correspondence.</p>
+      <p class="fine-print">Please quote the invoice number on all payment references and correspondence.</p>
     </div>
   </section>
 </main>`,
@@ -348,7 +348,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
       <div class="document-kicker">Borrower</div>
       <p class="strong">{% if hasLoan and borrowerNameColumns.size > 0 %}{{ loan[borrowerNameColumns[0].key] }}{% else %}Borrower name{% endif %}</p>
       <p>{% if hasLoan and borrowerOrganizationColumns.size > 0 %}{{ loan[borrowerOrganizationColumns[0].key] }}{% else %}Borrower organization{% endif %}{% if hasLoan and borrowerEmailColumns.size > 0 %}<br>{{ loan[borrowerEmailColumns[0].key] }}{% endif %}</p>
-      <p class="small muted">Identification checked before handover.</p>
+      <p class="small muted">Identity check at handover: <span class="checkbox"></span></p>
     </div>
   </section>
 
@@ -911,8 +911,8 @@ const GERMAN_DOCUMENT_COPY: ReadonlyArray<readonly [string, string]> = [
     "Bitte überweisen Sie den Gesamtbetrag{% if business.iban %} auf das im Fußbereich angegebene Bankkonto{% endif %} und geben Sie die Rechnungsnummer als Verwendungszweck an.",
   ],
   [
-    "This invoice was generated from approved operational records. Please quote the invoice number on all payment references and correspondence.",
-    "Diese Rechnung wurde aus freigegebenen Betriebsdaten erzeugt. Geben Sie die Rechnungsnummer bei Zahlungen und im Schriftverkehr an.",
+    "Please quote the invoice number on all payment references and correspondence.",
+    "Geben Sie die Rechnungsnummer bei Zahlungen und im Schriftverkehr an.",
   ],
   ["Notes", "Hinweise"],
   ["Currency", "Währung"],
@@ -927,7 +927,7 @@ const GERMAN_DOCUMENT_COPY: ReadonlyArray<readonly [string, string]> = [
   ["Lender", "Verleiher"],
   ["Represented by authorized staff.", "Vertreten durch autorisierte Mitarbeitende."],
   ["Borrower", "Entleiher"],
-  ["Identification checked before handover.", "Identität vor der Übergabe geprüft."],
+  ["Identity check at handover:", "Identitätsprüfung bei der Übergabe:"],
   ["Loan starts", "Leihbeginn"],
   ["Return due", "Rückgabe fällig"],
   ["Return condition", "Rückgabezustand"],

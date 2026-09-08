@@ -1,5 +1,6 @@
 import { defineHelp } from "@valentinkolb/cloud/server";
 import buildBaseDe from "./documents/de/grids-build-base.help.md" with { type: "text" };
+import buildBusinessAppDe from "./documents/de/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomAppDe from "./documents/de/grids-build-custom-app.help.md" with { type: "text" };
 import combinedTablesDe from "./documents/de/grids-combined-tables.help.md" with { type: "text" };
 import coreModelDe from "./documents/de/grids-core-model.help.md" with { type: "text" };
@@ -20,6 +21,7 @@ import tablesFieldsDe from "./documents/de/grids-tables-fields.help.md" with { t
 import viewsReportsDe from "./documents/de/grids-views-reports.help.md" with { type: "text" };
 import workflowsDe from "./documents/de/grids-workflows.help.md" with { type: "text" };
 import buildBase from "./documents/en/grids-build-base.help.md" with { type: "text" };
+import buildBusinessApp from "./documents/en/grids-build-business-app.help.md" with { type: "text" };
 import buildCustomApp from "./documents/en/grids-build-custom-app.help.md" with { type: "text" };
 import combinedTables from "./documents/en/grids-combined-tables.help.md" with { type: "text" };
 import coreModel from "./documents/en/grids-core-model.help.md" with { type: "text" };
@@ -47,6 +49,7 @@ export const gridsHelp = defineHelp({
       overview,
       coreModel,
       buildBase,
+      buildBusinessApp,
       tablesFields,
       viewsReports,
       combinedTables,
@@ -69,6 +72,7 @@ export const gridsHelp = defineHelp({
       overviewDe,
       coreModelDe,
       buildBaseDe,
+      buildBusinessAppDe,
       tablesFieldsDe,
       viewsReportsDe,
       combinedTablesDe,

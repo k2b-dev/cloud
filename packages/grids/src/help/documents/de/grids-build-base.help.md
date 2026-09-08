@@ -49,7 +49,7 @@ Nutze eine Grids App, wenn Personen eine engere Arbeitsoberfläche als den direk
 
 ## Beispiel: Geräteausleihen {icon="point"}
 
-Erstelle die Tabellen **Gegenstände**, **Personen** und **Ausleihen**. Ein Datensatz in Ausleihen kann sich auf eine Person und mehrere Gegenstände beziehen und Felder für Ausleihdatum, Fälligkeitsdatum, Rückgabedatum und Status speichern.
+Erstelle die Tabellen **Gegenstände**, **Ausleihen** und **Ausleihpositionen**. Jede Position verbindet einen Gegenstand mit einer Ausleihe und dokumentiert Ausgabe, Rückgabe und Zustand. Hinterlege die ausleihende Person an der Ausleihe. Unter [Eine Geschäftsanwendung aufbauen](/app/grids/help/grids-build-business-app) findest du die Prüfungen gegen doppelte Ausgaben und Rückgaben über eine alte Ausleihe.
 
 Erstelle anschließend:
 

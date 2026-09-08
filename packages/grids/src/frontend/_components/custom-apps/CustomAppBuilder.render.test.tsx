@@ -244,6 +244,8 @@ describe("CustomAppBuilder", () => {
       createComponent(CustomAppBuilder, { app: stale, baseId: "BASE01", catalog: catalog(), editMode: true }),
     );
     expect(html).toContain("The saved draft must be fixed before it can be published.");
+    expect(html).toContain("Review draft");
+    expect(html).toContain('class="mt-3 flex flex-wrap gap-2"');
     expect(html).toContain("Choose a request.");
     expect(html).toContain("Overview");
   });

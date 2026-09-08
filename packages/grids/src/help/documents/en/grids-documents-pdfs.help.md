@@ -89,7 +89,7 @@ A template has one data part and up to four layout parts. The GQL source is rend
 
 The Data tab is the source of truth for the current preview record. It shows the exact shape Liquid receives after the GQL source has run. Copy paths from this tree instead of guessing object shapes.
 
-Think of the data in layers: `record` is the selected record, `rows` and `columns` are the GQL result, and `document` describes a saved Document. `template`, `run`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the Base's shared document details. Rows also expose GQL output labels, so readable aliases make templates easier to maintain.
+Think of the data in layers: `record` is the selected record, `rows` and `columns` are the GQL result, and `document` describes a saved Document. `template`, `document`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the Base's shared document details. Rows also expose GQL output labels, so readable aliases make templates easier to maintain.
 
 :::reference
 - **record:** The current record: public `record.id` and `record.tableId`, `record.version`, `record.data`, created and updated timestamps.
@@ -99,7 +99,7 @@ Think of the data in layers: `record` is the selected record, `rows` and `column
 - **business:** Base-level document details such as `{{ business.legalName }}`, `{{ business.senderLine }}`, `{{ business.address }}`, `{{ business.paymentTerms }}`, `{{ business.iban }}`, and footer/contact fields. Edit them in Base settings → Documents.
 - **images:** Image files attached to file fields on the selected record. Use `{{ primaryImage.url }}` for the first supported image or loop over `images`. Oversized and unsupported files are omitted.
 - **document:** Document metadata such as `{{ document.number }}` and `{{ document.createdAt }}`. Use it in filenames and body/header/footer HTML after the number pattern has rendered. Draft previews may not have final values yet.
-- **snapshot:** The captured record graph for generated runs. It is null in live draft previews before a run exists.
+- **snapshot:** The captured record graph for a generated Document. It is null in live draft previews.
 - **barcode_data_url:** A Grids Liquid filter for labels and badges. It returns an SVG data URL for QR codes and supported BWIP barcode symbols.
 :::
 
@@ -172,7 +172,7 @@ invoice-{{ record.data.Name | default: document.number }}-{{ document.number }}.
 ```
 
 :::reference
-- **Number pattern context:** May use `record`, `table`, `template`, `run`, `series`, `date`, `app`, and `business`. `series.id` is the public series ID and `series.value` is the allocated number. It may not use `document`, because the document number does not exist yet.
+- **Number pattern context:** May use `record`, `table`, `template`, `document`, `series`, `date`, `app`, and `business`. `series.id` is the public series ID and `series.value` is the allocated number. `document.id` is already available; `document.number` is the result being calculated and is not yet available.
 - **Filename pattern context:** May use the full rendered data tree, including `{{ document.number }}`. The final filename is cleaned for filesystem-safe PDF downloads.
 - **Validation:** Unknown top-level Liquid variables, invalid tags, unsupported filters, empty patterns, and oversized patterns fail when the template is saved.
 :::
@@ -417,25 +417,25 @@ Additional BWIP symbol ids
 
 ## Work with generated documents {icon="file-description"}
 
-The document page lists every generated run for a template. Use **Table** for a searchable list or **Folders** to browse by year and month. Searching switches to the table result so matching documents are not hidden inside folders.
+The document page lists every generated Document for a template. Use **Table** for a searchable list or **Folders** to browse by year and month. Searching switches to the table result so matching documents are not hidden inside folders.
 
-Before generation you can override the template filename and add tags. With Base Write access, open a generated document's details to change its filename or tags later. The document number remains stable.
+Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
 
-Base Read allows browsing and redownloading generated documents. Base Write also allows generation and metadata changes. Base Admin manages templates. A Grids App reader may download only a run for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.
+Base Read allows browsing and redownloading generated documents. Base Write also allows generation. Base Admin manages templates. A Grids App reader may download only a Document for the current page record whose template is in that Record block's published capability. This App-scoped download does not grant the reader generic Base document access.
 
 To share one generated PDF without a Cloud login, create a public link for 1, 7, 30, or 90 days. The link opens a minimal page with the document filename, its remaining validity, and a PDF download button. It never grants access to other documents or records. An optional comment explains the link's purpose to document editors. The creator or a document editor can revoke the link before it expires.
 
-## Snapshots and runs {icon="point"}
+## Snapshots and stored Documents {icon="point"}
 
 Generating a PDF creates a recursive snapshot of the root record and related records reached through relation fields. A snapshot includes at most four relation levels and 500 records. Grids renders once and stores the exact completed PDF bytes together with their SHA-256, MIME type, size, renderer version, template revision, document number, and source snapshot. Downloads return those stored bytes even after live records, the template, or the renderer change.
 
-Use **Generate again** to create a new run and artifact. It never replaces an older run. Open **Technical details** on a run for its artifact metadata.
+Use **Generate again** to create a new Document and its artifacts. It never replaces an older Document. Open the Document details to inspect its renderer, source Record, validation status, and artifact hashes.
 
 :::reference
-- **Document numbers:** Each run receives one durable series allocation and a stable document number from the template's current pattern. Allocations are never reused; technical gaps are expected. Pattern changes affect future runs only.
+- **Document numbers:** Each Document receives a stable number. HTML templates use their configured number pattern; an E-Invoice renderer owns its numbering. Allocations are never reused; technical gaps are possible. Pattern changes affect future Documents only.
 - **Template edits:** Changing a template affects future generations. Existing stored artifacts never render again.
 - **Manual snapshots:** The record detail panel also has a Snapshot button for capturing a record state without generating a PDF.
-- **Deleted templates:** Deleting a template archives its number series and removes it from the active list. Restoring the template reconnects the same series and high-water mark. Existing generated documents remain available through their runs.
+- **Deleted templates:** Deleting a template removes it from the active list and archives its template-owned number series. Restoring an HTML template reconnects that series and its high-water mark. Existing generated Documents remain in the immutable catalog.
 :::
 
 ## Practical limits {icon="point"}

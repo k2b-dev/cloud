@@ -49,7 +49,7 @@ Use a Grids App when readers need a narrower operating surface than direct acces
 
 ## Example: equipment loans {icon="point"}
 
-Create **Items**, **People**, and **Loans** tables. A Loans record can relate to one person and several items, and store loaned-at, due-at, returned-at, and status fields.
+Create **Items**, **Loans**, and **Loan positions** tables. Each position links one item to one loan and records its issue, return, and condition. Keep the borrower on the loan. Follow [Build a business app](/app/grids/help/grids-build-business-app) for the checks that prevent double issues and returning an item through an old loan.
 
 Then create:
 

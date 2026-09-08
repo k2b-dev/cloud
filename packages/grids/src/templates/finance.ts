@@ -1,11 +1,25 @@
 import { i18n } from "@k2b/stdlib";
-import { currentMonthDate, field, form, formula, type GridTemplate, launcher, record, table, view, viewColumns } from "./types";
+import {
+  currentMonthDate,
+  documentTemplate,
+  field,
+  form,
+  formula,
+  type GridTemplate,
+  launcher,
+  record,
+  table,
+  view,
+  viewColumns,
+} from "./types";
 
 const financeTemplateMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
       templateName: "Personal finance",
+      receiptJourney:
+        "Review the transaction and replace the example receipt email with the intended recipient before processing. The action creates a transaction summary and sends it by email; it does not retrieve the merchant's original receipt or make a payment. Generated documents appear below.",
       templateDescription: "Track accounts, purchases, budgets, and receipt processing in one place.",
       highlightRecords: "Transactions, budgets, and a purchase form",
       highlightOverview: "Spending, budget, and merchant overview",
@@ -64,8 +78,12 @@ const financeTemplateMessages = i18n.define({
       notesDescription: "Optional notes about this transaction.",
       receiptEmail: "Receipt email",
       receiptEmailDescription: "Recipient used by the receipt workflow.",
-      receiptSent: "Receipt sent",
-      receiptSentDescription: "Set once the receipt workflow has succeeded, so it is not replayed accidentally.",
+      receiptSent: "Receipt delivery",
+      receiptSentDescription:
+        "Ready, in progress, or sent. Inspect the original run before resetting an interrupted delivery; it may already have sent email.",
+      deliveryReady: "Ready",
+      deliveryProcessing: "In progress",
+      deliverySent: "Sent",
       budgets: "Budgets",
       month: "Month",
       budgetMonthDescription: "Budget month.",
@@ -117,7 +135,7 @@ const financeTemplateMessages = i18n.define({
       clearAndSendReceiptDescription: "Creates a receipt link, emails it, and marks the transaction as cleared.",
       transaction: "Transaction",
       expenseOnlyError: "Receipts can only be sent for expense transactions.",
-      alreadySentError: "This receipt was already sent. Open the generated documents to download or share it again.",
+      alreadySentError: "Receipt delivery is not ready. Inspect the original workflow run and existing documents before retrying.",
       missingEmailError: "Add a receipt email address before processing this transaction.",
       sampleEmailError: "Replace the sample receipt email before sending a real receipt.",
       receiptSentSuccess: "Receipt ${{ inputs.transaction.Transaction reference }} sent and transaction cleared.",
@@ -134,6 +152,8 @@ const financeTemplateMessages = i18n.define({
     },
     de: {
       templateName: "Private Finanzen",
+      receiptJourney:
+        "Prüfe die Transaktion und ersetze die Beispieladresse vor der Verarbeitung durch die gewünschte Empfängeradresse. Die Aktion erstellt eine Transaktionsübersicht und versendet sie per E-Mail; sie ruft weder den Originalbeleg des Händlers ab noch führt sie eine Zahlung aus. Erzeugte Dokumente erscheinen unten.",
       templateDescription: "Konten, Ausgaben, Budgets und Belegverarbeitung an einem Ort verwalten.",
       highlightRecords: "Transaktionen, Budgets und ein Ausgabenformular",
       highlightOverview: "Übersicht über Ausgaben, Budgets und Händler",
@@ -192,9 +212,12 @@ const financeTemplateMessages = i18n.define({
       notesDescription: "Optionale Notizen zu dieser Transaktion.",
       receiptEmail: "E-Mail-Adresse für Beleg",
       receiptEmailDescription: "Empfängeradresse für den Beleg-Workflow.",
-      receiptSent: "Beleg gesendet",
+      receiptSent: "Belegversand",
       receiptSentDescription:
-        "Wird nach erfolgreichem Abschluss des Beleg-Workflows gesetzt, damit er nicht versehentlich erneut ausgeführt wird.",
+        "Bereit, in Bearbeitung oder gesendet. Prüfe vor dem Zurücksetzen eines unterbrochenen Versands den ursprünglichen Lauf; die E-Mail könnte bereits gesendet worden sein.",
+      deliveryReady: "Bereit",
+      deliveryProcessing: "In Bearbeitung",
+      deliverySent: "Gesendet",
       budgets: "Budgets",
       month: "Monat",
       budgetMonthDescription: "Monat des Budgets.",
@@ -246,7 +269,8 @@ const financeTemplateMessages = i18n.define({
       clearAndSendReceiptDescription: "Erstellt einen Beleg-Link, sendet ihn per E-Mail und markiert die Transaktion als gebucht.",
       transaction: "Transaktion",
       expenseOnlyError: "Belege können nur für Ausgabentransaktionen gesendet werden.",
-      alreadySentError: "Dieser Beleg wurde bereits gesendet. Öffne die erzeugten Dokumente, um ihn erneut herunterzuladen oder zu teilen.",
+      alreadySentError:
+        "Der Belegversand ist nicht bereit. Prüfe vor einem erneuten Versuch den ursprünglichen Workflow-Lauf und vorhandene Dokumente.",
       missingEmailError: "Füge eine E-Mail-Adresse für den Beleg hinzu, bevor du diese Transaktion verarbeitest.",
       sampleEmailError: "Ersetze die Beispieladresse, bevor du einen echten Beleg sendest.",
       receiptSentSuccess: "Beleg ${{ inputs.transaction.Transaktionsreferenz }} gesendet und Transaktion gebucht.",
@@ -546,9 +570,17 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
             key: "receipt_sent",
             name: t.receiptSent,
             description: t.receiptSentDescription,
-            type: "boolean",
+            type: "select",
+            required: true,
+            config: {
+              options: [
+                { id: "ready", label: t.deliveryReady },
+                { id: "processing", label: t.deliveryProcessing },
+                { id: "sent", label: t.deliverySent },
+              ],
+            },
             icon: "ti ti-mail-check",
-            defaultValue: false,
+            defaultValue: ["ready"],
           },
         ],
       },
@@ -1137,7 +1169,7 @@ export const createFinanceTemplate = (locale?: string): GridTemplate => {
             {
               kind: "form_value",
               fieldId: field("transactions.receipt_sent"),
-              value: false,
+              value: ["ready"],
             },
           ],
         },
@@ -1213,9 +1245,9 @@ steps:
       - fail:
           message: ${t.expenseOnlyError}
   - if:
-      equals:
+      notEquals:
         - \${{ inputs.transaction.${t.receiptSent} }}
-        - true
+        - [ready]
     then:
       - fail:
           message: ${t.alreadySentError}
@@ -1232,6 +1264,27 @@ steps:
     then:
       - fail:
           message: ${t.sampleEmailError}
+  - atomicRecords:
+      locks: [inputs.transaction]
+      checks:
+        - table: ${t.transactions}
+          where:
+            - field: ${t.transactionReference}
+              op: equals
+              value: \${{ inputs.transaction.${t.transactionReference} }}
+            - field: ${t.receiptSent}
+              op: is
+              value: ready
+            - field: ${t.type}
+              op: is
+              value: expense
+          assert: notEmpty
+          message: ${t.alreadySentError}
+      changes:
+        - updateRecord:
+            record: inputs.transaction
+            set:
+              ${t.receiptSent}: [processing]
   - generateDocument:
       template: ${t.transactionReceipt}
       record: inputs.transaction
@@ -1252,7 +1305,7 @@ steps:
       record: inputs.transaction
       set:
         ${t.cleared}: true
-        ${t.receiptSent}: true
+        ${t.receiptSent}: [sent]
   - succeed:
       message: "${t.receiptSentSuccess}"`,
         enabled: true,
@@ -1449,6 +1502,12 @@ steps:
                           searchable: true,
                           pageSize: 25,
                           title: t.recentTransactions,
+                          rowNavigate: {
+                            history: "push",
+                            kind: "navigate",
+                            pageId: "transaction",
+                            params: { transaction_id: { source: "ROW", path: "id" } },
+                          },
                           source: { kind: "view", viewId: view("recent_transactions") },
                           display: {
                             kind: "table",
@@ -1477,6 +1536,11 @@ steps:
                           title: t.logPurchaseTitle,
                           formId: form("log_expense"),
                           fixedValues: {},
+                          onSuccessNavigate: {
+                            kind: "navigate",
+                            pageId: "transaction",
+                            params: { transaction_id: { source: "RESULT", path: "recordId" } },
+                          },
                         },
                       ],
                     },
@@ -1535,6 +1599,71 @@ steps:
                             unitPosition: "suffix",
                           },
                           limit: 100,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              id: "transaction",
+              title: t.transaction,
+              navigation: { visible: false },
+              parameters: { transaction_id: { type: "record", tableId: table("transactions"), required: true } },
+              record: { tableId: table("transactions"), id: { source: "PARAMS", path: "transaction_id" } },
+              rows: [
+                {
+                  id: "detail",
+                  columns: [
+                    {
+                      id: "content",
+                      span: 12,
+                      blocks: [
+                        { id: "instructions", type: "markdown", markdown: t.receiptJourney },
+                        {
+                          id: "transaction",
+                          type: "record",
+                          title: t.transaction,
+                          fieldIds: [
+                            field("transactions.transaction_ref"),
+                            field("transactions.date"),
+                            field("transactions.merchant"),
+                            field("transactions.category"),
+                            field("transactions.account"),
+                            field("transactions.type"),
+                            field("transactions.amount"),
+                            field("transactions.cleared"),
+                            field("transactions.receipt_email"),
+                            field("transactions.receipt_sent"),
+                            field("transactions.notes"),
+                          ],
+                          editableFieldIds: [field("transactions.receipt_email"), field("transactions.notes")],
+                          documents: { templateIds: [documentTemplate("transaction_receipt")] },
+                        },
+                        {
+                          id: "actions",
+                          type: "actions",
+                          actions: [
+                            {
+                              id: "send-receipt",
+                              kind: "workflow",
+                              label: t.processReceipt,
+                              launcherId: launcher("clear_and_send_receipt_custom_app"),
+                              inputs: { transaction: { source: "RECORD", path: "id" } },
+                              availableWhen: {
+                                query: formula(
+                                  "from table ",
+                                  table("transactions"),
+                                  "\nwhere record.id = @params.transaction_id and ",
+                                  field("transactions.type"),
+                                  " = 'expense' and ",
+                                  field("transactions.receipt_sent"),
+                                  " = 'ready'\nlimit 1",
+                                ),
+                              },
+                            },
+                          ],
                         },
                       ],
                     },

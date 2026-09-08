@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { CustomAppDefinition } from "../../../custom-apps/contracts";
 import { applyCustomAppBlockDrop } from "./custom-app-builder-dnd";
-import { createCustomAppBuilderState } from "./custom-app-builder-state";
+import { createCustomAppBuilderState, customAppDiagnosticSelection } from "./custom-app-builder-state";
 
 const definition = (): CustomAppDefinition => ({
   schemaVersion: 5,
@@ -44,6 +44,87 @@ const definition = (): CustomAppDefinition => ({
 });
 
 describe("createCustomAppBuilderState", () => {
+  test("routes numeric and named diagnostics to the same block without changing the draft", () => {
+    const initial = definition();
+    for (const path of [
+      ["pages", 0, "rows", 0, "columns", 0, "blocks", 1, "source"],
+      ["pages", "home", "blocks", "records", "source"],
+    ]) {
+      expect(customAppDiagnosticSelection(initial, { path, message: "Missing View" })).toEqual({
+        kind: "block",
+        pageId: "home",
+        blockId: "records",
+      });
+    }
+    expect(customAppDiagnosticSelection(initial, { path: ["name"], message: "Name required" })).toBeNull();
+    expect(customAppDiagnosticSelection(initial, { path: ["pages", 0, "record"], message: "Invalid record" })).toEqual({
+      kind: "page",
+      pageId: "home",
+    });
+    expect(initial).toEqual(definition());
+  });
+  test("diagnostic navigation distinguishes structural segments from matching local IDs", () => {
+    const initial = definition();
+    const page = initial.pages[0]!;
+    page.id = "blocks";
+    initial.startPageId = page.id;
+    page.rows[0]!.columns[0]!.blocks.push({
+      id: "actions",
+      type: "actions",
+      actions: [
+        { id: "approve", kind: "workflow", label: "Approve", launcherId: "LAUNCH", inputs: {} },
+        { id: "reject", kind: "workflow", label: "Reject", launcherId: "LAUNCH", inputs: {} },
+      ],
+    });
+    for (const [actionIndex, actionId] of ["approve", "reject"].entries()) {
+      for (const path of [
+        ["pages", "blocks", "blocks", "actions", "actions", actionId, "launcherId"],
+        ["pages", 0, "rows", 0, "columns", 0, "blocks", 2, "actions", actionIndex, "launcherId"],
+      ]) {
+        expect(customAppDiagnosticSelection(initial, { path, message: "Missing launcher" })).toEqual({
+          kind: "action",
+          pageId: "blocks",
+          blockId: "actions",
+          actionId,
+        });
+      }
+    }
+    expect(
+      customAppDiagnosticSelection(initial, {
+        path: ["pages", 0, "rows", 99, "columns", 0, "blocks", 2],
+        message: "Missing row",
+      }),
+    ).toEqual({ kind: "page", pageId: "blocks" });
+  });
+
+  test("diagnostic navigation handles numeric and named row and sidebar actions", () => {
+    const initial = definition();
+    const block = initial.pages[0]!.rows[0]!.columns[0]!.blocks[1]!;
+    if (block.type !== "records") throw new Error("Expected records fixture");
+    block.rowActions = [{ id: "approve", kind: "workflow", label: "Approve", showLabel: true, launcherId: "LAUNCH", inputs: {} }];
+    initial.sidebar = {
+      actions: [{ id: "actions", kind: "form", formId: "FORM01", label: "Request", tone: "success", fixedValues: {} }],
+    };
+    for (const path of [
+      ["pages", "home", "blocks", "records", "rowActions", "approve", "launcherId"],
+      ["pages", 0, "rows", 0, "columns", 0, "blocks", 1, "rowActions", 0, "launcherId"],
+    ]) {
+      expect(customAppDiagnosticSelection(initial, { path, message: "Missing launcher" })).toEqual({
+        kind: "action",
+        pageId: "home",
+        blockId: "records",
+        actionId: "approve",
+      });
+    }
+    for (const action of [0, "actions"]) {
+      expect(customAppDiagnosticSelection(initial, { path: ["sidebar", "actions", action, "formId"], message: "Missing form" })).toEqual({
+        kind: "sidebar-action",
+        pageId: "home",
+        actionId: "actions",
+      });
+    }
+  });
+
   test("sidebar actions have their own selection and fall back after removal or restore", () =>
     createRoot((dispose) => {
       const initial = definition();
