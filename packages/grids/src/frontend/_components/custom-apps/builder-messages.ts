@@ -3,6 +3,15 @@ import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
 const deCopy = {
+  General: "Allgemein",
+  Lifecycle: "Lebenszyklus",
+  "Who can open the published app": "Wer die veröffentlichte App öffnen darf",
+  "App grants are separate from Base access. Choose users, groups, all signed-in users, or public access.":
+    "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
+  "App access never opens the raw Base, Record API, or GQL. Availability rules can only restrict this access further.":
+    "App-Zugriff gewährt keinen Zugriff auf die Base, die Datensatz-API oder GQL. Verfügbarkeitsregeln können diesen Zugriff nur weiter einschränken.",
+  "Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.":
+    "Formulare und Workflow-Aktionen erlauben nur die von dir veröffentlichten Funktionen. Workflow-Aktionen erfordern einen angemeldeten Nutzer.",
   Actions: "Aktionen",
   Chart: "Diagramm",
   Comments: "Kommentare",
@@ -187,11 +196,6 @@ const deCopy = {
   Identity: "Identität",
   Name: "Name",
   Icon: "Symbol",
-  "App sidebar": "App-Seitenleiste",
-  "Add app-wide Forms. They do not receive page, route, record, or row values.":
-    "App-weite Formulare hinzufügen. Sie erhalten keine Seiten-, Routen-, Datensatz- oder Zeilenwerte.",
-  "Pages appear automatically. These launchers stay available while readers move through the app; availability can use auth, app, Base, and time context.":
-    "Seiten erscheinen automatisch. Diese Auslöser bleiben beim Navigieren durch die App verfügbar; ihre Verfügbarkeit kann Auth-, App-, Base- und Zeitkontext verwenden.",
   Label: "Bezeichnung",
   Tone: "Darstellung",
   Default: "Standard",
@@ -205,12 +209,7 @@ const deCopy = {
   "After submission": "Nach dem Absenden",
   "Optionally open a record page for the newly created record.": "Optional eine Datensatzseite für den neu erstellten Datensatz öffnen.",
   "Stay on the current page": "Auf der aktuellen Seite bleiben",
-  "Add Form": "Formular hinzufügen",
   Access: "Zugriff",
-  "Who can open the published app. This is separate from availability rules.":
-    "Legt fest, wer die veröffentlichte App öffnen kann. Dies ist unabhängig von Verfügbarkeitsregeln.",
-  "App grants are independent from Base access. Public allows anonymous visitors to open the published app.":
-    "App-Freigaben sind unabhängig vom Base-Zugriff. Öffentlich erlaubt anonymen Besuchern, die veröffentlichte App zu öffnen.",
   "Danger zone": "Gefahrenbereich",
   "Take the live app offline or permanently remove it. Base data is not deleted.":
     "Die veröffentlichte App offline nehmen oder dauerhaft entfernen. Base-Daten werden nicht gelöscht.",
@@ -411,7 +410,6 @@ const deCopy = {
   "Before value": "Vor dem Wert",
   "After value": "Nach dem Wert",
   "Block management": "Blockverwaltung",
-  "Block order": "Blockreihenfolge",
   "Every page needs at least one block.": "Jede Seite benötigt mindestens einen Block.",
   "Permanently remove this block from the draft.": "Diesen Block dauerhaft aus dem Entwurf entfernen.",
   "Back to actions": "Zurück zu den Aktionen",

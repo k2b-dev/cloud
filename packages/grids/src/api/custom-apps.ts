@@ -198,7 +198,13 @@ const projectCapabilities = async (capabilities: CustomApp["draftCapabilities"])
   );
   collectCapabilityIds(capabilities, ids);
   const maps = new Map<PublicResourceType, Map<string, string>>();
-  for (const [type, values] of ids) maps.set(type, await projectPublicIds(type, [...values]));
+  for (const [type, values] of ids) {
+    const projectedIds = await projectPublicIds(type, [...values]);
+    // Stored capabilities can outlive their resources. Keep the definition
+    // editable, but never expose a partial capability snapshot or raw UUIDs.
+    if (projectedIds.size !== values.size) return null;
+    maps.set(type, projectedIds);
+  }
   projectCapabilityIds(projected, maps);
   return projected;
 };
@@ -221,8 +227,8 @@ export const projectCustomApp = async (app: CustomApp) => {
     publishedAt: app.publishedAt,
     createdAt: app.createdAt,
     updatedAt: app.updatedAt,
-    draftValid: app.draftValid,
-    publishedValid: app.publishedValid,
+    draftValid: app.draftValid && draftCapabilities !== null,
+    publishedValid: app.publishedValid && publishedCapabilities !== null,
     hasUnpublishedChanges: app.hasUnpublishedChanges,
   };
 };

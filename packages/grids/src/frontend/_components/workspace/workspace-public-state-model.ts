@@ -145,7 +145,7 @@ export type PublicWorkspaceRoute =
   | {
       kind: "customApp";
       app: PublicCustomApp;
-      initialInspectorMode: "app" | "page";
+      initialSettingsOpen: boolean;
     }
   | PublicWorkspaceRecordsRoute
   | PublicWorkspaceQueryResultViewRoute

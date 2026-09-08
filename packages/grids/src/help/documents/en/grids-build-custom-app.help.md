@@ -137,7 +137,7 @@ The app is ready when the requester journey is understandable without the Grids 
 
 ## Take an app offline or delete it {icon="alert-triangle"}
 
-Open **App settings**, then expand **Danger zone**. **Unpublish app** removes the live snapshot immediately while preserving the draft and access grants, so you can edit and publish it again later. **Delete app** removes the app and its live URL but does not delete Base tables or records. Both actions show a destructive confirmation before anything changes; deletion cannot be undone in the builder.
+Open **App settings → Lifecycle**. **Unpublish app** removes the live snapshot immediately while preserving the draft and access grants, so you can edit and publish it again later. **Delete app** removes the app and its live URL but does not delete Base tables or records. Both actions show a destructive confirmation before anything changes; deletion cannot be undone in the builder.
 
 ## Publish and verify {icon="rocket"}
 

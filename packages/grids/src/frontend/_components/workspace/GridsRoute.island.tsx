@@ -36,7 +36,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
         catalog={state.catalog}
         dateConfig={state.dateConfig}
         editMode={state.adminModeRequested}
-        initialInspectorMode={route.initialInspectorMode}
+        initialSettingsOpen={route.initialSettingsOpen}
       />
     );
   }

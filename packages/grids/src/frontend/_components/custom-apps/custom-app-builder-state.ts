@@ -1,19 +1,53 @@
-import { createMemo, createSignal } from "solid-js";
+import { batch, createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import type { CustomAppDefinition } from "../../../custom-apps/contracts";
 
 const clone = (definition: CustomAppDefinition): CustomAppDefinition => structuredClone(unwrap(definition));
 
+export type CustomAppBuilderSelection =
+  | { kind: "page"; pageId: string }
+  | { kind: "sidebar-action"; pageId: string; actionId: string }
+  | { kind: "block"; pageId: string; blockId: string }
+  | { kind: "action"; pageId: string; blockId: string; actionId: string };
+
+const normalizeSelection = (definition: CustomAppDefinition, selection: CustomAppBuilderSelection): CustomAppBuilderSelection => {
+  const page = definition.pages.find((page) => page.id === selection.pageId);
+  if (!page)
+    return {
+      kind: "page",
+      pageId: (definition.pages.find((page) => page.id === definition.startPageId) ?? definition.pages[0]!).id,
+    };
+  if (selection.kind === "sidebar-action")
+    return definition.sidebar?.actions.some((action) => action.id === selection.actionId) ? selection : { kind: "page", pageId: page.id };
+  if (!("blockId" in selection)) return selection;
+  const block = page.rows.flatMap((row) => row.columns.flatMap((column) => column.blocks)).find((block) => block.id === selection.blockId);
+  if (!block) return { kind: "page", pageId: page.id };
+  if (selection.kind === "block") return selection;
+  const actions =
+    block.type === "actions"
+      ? block.actions
+      : block.type === "records" || block.type === "referenced_records"
+        ? (block.rowActions ?? [])
+        : [];
+  return actions.some((action) => action.id === selection.actionId) ? selection : { kind: "block", pageId: page.id, blockId: block.id };
+};
+
 export const createCustomAppBuilderState = (initial: CustomAppDefinition) => {
   const [definition, setDefinition] = createStore(clone(initial));
   const [saved, setSaved] = createSignal(JSON.stringify(initial));
   const [version, setVersion] = createSignal(0);
+  const [selection, setSelection] = createSignal<CustomAppBuilderSelection>(
+    normalizeSelection(initial, { kind: "page", pageId: initial.startPageId }),
+  );
+  const normalizeCurrentSelection = () => setSelection((current) => normalizeSelection(definition, current));
   const dirty = createMemo(() => JSON.stringify(definition) !== saved());
 
-  const set = (next: CustomAppDefinition) => {
-    setDefinition(reconcile(clone(next), { key: "id" }));
-    setVersion((current) => current + 1);
-  };
+  const set = (next: CustomAppDefinition) =>
+    batch(() => {
+      setDefinition(reconcile(clone(next), { key: "id" }));
+      normalizeCurrentSelection();
+      setVersion((current) => current + 1);
+    });
 
   return {
     draft: () => definition,
@@ -21,6 +55,8 @@ export const createCustomAppBuilderState = (initial: CustomAppDefinition) => {
     version,
     dirty,
     set,
+    selection,
+    select: (next: CustomAppBuilderSelection) => setSelection(normalizeSelection(definition, next)),
     updateBlock: (
       pageId: string,
       blockId: string,
@@ -35,19 +71,24 @@ export const createCustomAppBuilderState = (initial: CustomAppDefinition) => {
         for (const [columnIndex, column] of row.columns.entries()) {
           const blockIndex = column.blocks.findIndex((block) => block.id === blockId);
           if (blockIndex < 0) continue;
-          setDefinition("pages", pageIndex, "rows", rowIndex, "columns", columnIndex, "blocks", blockIndex, (block) =>
-            update(structuredClone(unwrap(block))),
-          );
-          setVersion((current) => current + 1);
+          batch(() => {
+            setDefinition("pages", pageIndex, "rows", rowIndex, "columns", columnIndex, "blocks", blockIndex, (block) =>
+              update(structuredClone(unwrap(block))),
+            );
+            normalizeCurrentSelection();
+            setVersion((current) => current + 1);
+          });
           return;
         }
       }
     },
-    replace: (next: CustomAppDefinition) => {
-      setDefinition(reconcile(clone(next), { key: "id" }));
-      setSaved(JSON.stringify(next));
-      setVersion((current) => current + 1);
-    },
+    replace: (next: CustomAppDefinition) =>
+      batch(() => {
+        setDefinition(reconcile(clone(next), { key: "id" }));
+        normalizeCurrentSelection();
+        setSaved(JSON.stringify(next));
+        setVersion((current) => current + 1);
+      }),
     markSaved: (snapshot: CustomAppDefinition) => setSaved(JSON.stringify(snapshot)),
   };
 };

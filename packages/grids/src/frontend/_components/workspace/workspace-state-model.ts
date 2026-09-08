@@ -199,7 +199,7 @@ export type WorkspaceDocumentTemplateRoute = {
 export type WorkspaceCustomAppRoute = {
   kind: "customApp";
   app: CustomApp;
-  initialInspectorMode: "app" | "page";
+  initialSettingsOpen: boolean;
 };
 
 export type GridsWorkspaceRoute =

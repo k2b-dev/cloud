@@ -152,7 +152,7 @@ describe("GridsSidebar Apps", () => {
         publishedCapabilities: null,
         createdAt: "2026-08-07T00:00:00.000Z",
       },
-      initialInspectorMode: "app",
+      initialSettingsOpen: true,
     };
 
     const html = renderToString(() => createComponent(GridsSidebar, { state }));

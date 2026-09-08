@@ -137,7 +137,7 @@ Die App ist bereit, wenn der Ablauf für anfragende Personen ohne Grids-Arbeitsb
 
 ## Eine App offline nehmen oder löschen {icon="alert-triangle"}
 
-Öffne **App-Einstellungen** und klappe **Gefahrenzone** auf. **App-Veröffentlichung aufheben** entfernt den aktiven Snapshot sofort, erhält aber Entwurf und Zugriffsfreigaben. Du kannst die App später weiter bearbeiten und erneut veröffentlichen. **App löschen** entfernt die App und ihre aktive URL, löscht aber keine Tabellen oder Datensätze der Basis. Beide Aktionen zeigen vor der Änderung eine destruktive Bestätigung; das Löschen kann im Builder nicht rückgängig gemacht werden.
+Öffne **App-Einstellungen → Lebenszyklus**. **App-Veröffentlichung aufheben** entfernt den aktiven Snapshot sofort, erhält aber Entwurf und Zugriffsfreigaben. Du kannst die App später weiter bearbeiten und erneut veröffentlichen. **App löschen** entfernt die App und ihre aktive URL, löscht aber keine Tabellen oder Datensätze der Basis. Beide Aktionen zeigen vor der Änderung eine destruktive Bestätigung; das Löschen kann im Builder nicht rückgängig gemacht werden.
 
 ## Veröffentlichen und prüfen {icon="rocket"}
 

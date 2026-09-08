@@ -84,7 +84,9 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).toContain("only active Grids App launchers");
     expect(overview).toContain("apps restore");
     expect(overview).toContain("--published");
-    expect(builder).toContain("**Danger zone**");
+    expect(builder).toContain("**App settings → Lifecycle**");
+    expect(overview).toContain("**General**, **Access**, and **Lifecycle**");
+    expect(overview).toContain("Choose an existing entry under **Actions**");
     expect(builder).toContain("does not delete Base tables or records");
     expect(pages).toContain("there are no Liquid conditions or loops");
     expect(pages).toContain("the raw GQL console deliberately does not offer Grids App `@…` context");

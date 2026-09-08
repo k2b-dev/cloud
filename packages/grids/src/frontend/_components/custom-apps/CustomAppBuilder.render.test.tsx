@@ -17,6 +17,11 @@ const { customAppContextKeys } = await import("../../../custom-apps/context-keys
 const { default: CustomAppBlockPreview } = await import("./CustomAppBlockPreview");
 const { CustomAppAvailabilitySection } = await import("./CustomAppGqlField");
 const { CustomAppMarkdownField } = await import("./CustomAppMarkdownField");
+const { CustomAppChartEditor } = await import("./CustomAppChartEditor");
+const { CustomAppHtmlEditor } = await import("./CustomAppHtmlEditor");
+const { CustomAppSettings } = await import("./CustomAppSettings");
+const { LocaleProvider } = await import("@k2b/ui");
+const { CustomAppLifecycleActions } = await import("./CustomAppBuilder");
 
 const app = (): PublicCustomApp => {
   const draftDefinition: NonNullable<PublicCustomApp["draftDefinition"]> = {
@@ -182,6 +187,42 @@ const catalogWithAuthoringResources = (): CustomAppCatalog => {
 };
 
 describe("CustomAppBuilder", () => {
+  test("renders the extracted chart controls with existing labels and formatting values", () => {
+    const html = renderToString(() =>
+      createComponent(CustomAppChartEditor, {
+        block: {
+          id: "chart",
+          type: "chart",
+          source: { kind: "view", viewId: "VIEW01" },
+          chartType: "bar",
+          limit: 10,
+          subtitle: "Chart subtitle",
+          valueFormat: { style: "number", unit: "EUR", decimalPlaces: 2, unitPosition: "suffix" },
+        },
+        update: () => {},
+      }),
+    );
+    for (const label of ["Chart settings", "Subtitle", "Chart type", "Result limit", "Decimal places", "Unit position"])
+      expect(html).toContain(label);
+    expect(html).toContain("Chart subtitle");
+    expect(html).toContain("EUR");
+  });
+
+  test("renders HTML controls without clearing an unavailable field reference", () => {
+    const html = renderToString(() =>
+      createComponent(CustomAppHtmlEditor, {
+        block: { id: "html", type: "html", fieldId: "FIELD1", height: "large" },
+        fields: [],
+        error: "Unavailable field",
+        update: () => {},
+      }),
+    );
+    expect(html).toContain("HTML template field");
+    expect(html).toContain("FIELD1");
+    expect(html).toContain("Unavailable field");
+    expect(html).toContain("Large");
+  });
+
   test("creates a blank schema v5 draft without legacy condition inputs", () => {
     const blank = blankCustomAppDefinition(app());
 
@@ -193,6 +234,18 @@ describe("CustomAppBuilder", () => {
     });
     expect(JSON.stringify(blank)).not.toContain("visibleWhen");
     expect(JSON.stringify(blank)).not.toContain('"inputs"');
+  });
+
+  test("keeps a valid definition editable when its stored capabilities are unavailable", () => {
+    const stale = app();
+    stale.draftCapabilities = null;
+    stale.draftValid = false;
+    const html = renderToString(() =>
+      createComponent(CustomAppBuilder, { app: stale, baseId: "BASE01", catalog: catalog(), editMode: true }),
+    );
+    expect(html).toContain("The saved draft must be fixed before it can be published.");
+    expect(html).toContain("Choose a request.");
+    expect(html).toContain("Overview");
   });
 
   test("lists exact implicit context keys for the selected page", () => {
@@ -373,15 +426,77 @@ describe("CustomAppBuilder", () => {
     expect(html.match(/disabled/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
-  test("renders independent App access in app settings", () => {
+  test("renders focused App settings with the permission boundary and no sidebar editor", () => {
     const html = renderToString(() =>
-      createComponent(CustomAppBuilder, { app: app(), baseId: "BASE01", catalog: catalog(), editMode: true, initialInspectorMode: "app" }),
+      createComponent(CustomAppSettings, {
+        appId: "APP001",
+        definition: app().draftDefinition!,
+        defaultTab: "access",
+        onNameChange: () => {},
+        onIconChange: () => {},
+        onClose: () => {},
+        status: "Saving changes automatically…",
+        error: false,
+        lifecycle: null,
+      }),
     );
-
-    expect(html).toContain("App grants are independent from Base access");
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain("General");
+    expect(html).toContain("Lifecycle");
+    expect(html).toContain("App grants are separate from Base access");
+    expect(html).toContain("Record API, or GQL");
+    expect(html).toContain("Workflow actions require a signed-in user");
     expect(html).toContain("Loading access");
-    expect(html).toContain("Delete app");
-    expect(html).not.toContain("Unpublish app");
+    expect(html).toContain("Saving changes automatically…");
+    expect(html).not.toContain("App sidebar");
+    expect(html).not.toContain("Add Form");
+  });
+
+  test.each(["general", "access", "lifecycle"] as const)("keeps autosave errors inside the %s settings body", (defaultTab) => {
+    const html = renderToString(() =>
+      createComponent(CustomAppSettings, {
+        appId: "APP001",
+        definition: app().draftDefinition!,
+        onNameChange: () => {},
+        onIconChange: () => {},
+        onClose: () => {},
+        status: "Could not save draft",
+        defaultTab,
+        error: true,
+        lifecycle: null,
+      }),
+    );
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Could not save draft");
+    const panel = html.match(/<section[^>]*role="tabpanel"[\s\S]*<\/section>/)?.[0];
+    expect(panel).toContain("Could not save draft");
+    expect(panel).toMatch(/<\/section>[\s\S]*<article[^>]*class="[^"]*mt-6[^"]*"[\s\S]*Could not save draft/);
+    expect(html).not.toContain("<footer");
+  });
+
+  test("renders settings and permission guidance in the inherited German locale", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CustomAppSettings, {
+            appId: "APP001",
+            definition: app().draftDefinition!,
+            defaultTab: "access",
+            onNameChange: () => {},
+            onIconChange: () => {},
+            onClose: () => {},
+            status: "Gespeichert",
+            error: false,
+            lifecycle: null,
+          });
+        },
+      }),
+    );
+    expect(html).toContain("Allgemein");
+    expect(html).toContain("Lebenszyklus");
+    expect(html).toContain("App-Berechtigungen sind unabhängig vom Base-Zugriff");
+    expect(html).toContain("Workflow-Aktionen erfordern einen angemeldeten Nutzer");
   });
 
   test("renders confirmed lifecycle actions for a published App", async () => {
@@ -391,12 +506,18 @@ describe("CustomAppBuilder", () => {
     published.publishedCapabilities = published.draftCapabilities;
     published.publishedValid = true;
     const html = renderToString(() =>
-      createComponent(CustomAppBuilder, {
-        app: published,
-        baseId: "BASE01",
-        catalog: catalog(),
-        editMode: true,
-        initialInspectorMode: "app",
+      createComponent(CustomAppSettings, {
+        appId: published.id,
+        definition: published.draftDefinition!,
+        defaultTab: "lifecycle",
+        onNameChange: () => {},
+        onIconChange: () => {},
+        onClose: () => {},
+        status: "Saved",
+        error: false,
+        get lifecycle() {
+          return createComponent(CustomAppLifecycleActions, { app: published, baseId: "BASE01", onUnpublished: () => {} });
+        },
       }),
     );
     const source = await Bun.file(resolve(import.meta.dir, "CustomAppBuilder.tsx")).text();
@@ -607,8 +728,11 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain("Actions");
     expect(html).toContain("New request");
     expect(html).toContain("New action");
-    expect(source).toContain('title={text("App sidebar")}');
-    expect(source).toContain('text("Add Form")');
+    expect(source).not.toContain('title={text("App sidebar")}');
+    expect(source).not.toContain('text("Add Form")');
+    expect(source).toContain("<Show when={selectedSidebarAction()}>");
+    expect(source).not.toContain("<AppWorkspace.SidebarItemLabel>{action.label}");
+    expect(source).toContain('tone={props.editMode ? "default" : action.tone}');
     expect(source).not.toContain('text("Add Workflow")');
     expect(source).toContain('text("Hide this input and inject one trusted value on the server.")');
     expect(source).toContain('<PanelDialog.Header title={text("Choose block type")}');
@@ -684,7 +808,10 @@ describe("CustomAppBuilder", () => {
     expect(markdownFieldSource).not.toContain("<PanelDialog.Section");
     expect(createAppSource).toContain("subtitle={t.newAppSubtitle}");
     expect(createAppSource).not.toContain("<PanelDialog.Section");
-    expect(source).toContain('<DetailPanel.Group label={text("App settings")}>');
+    expect(source).toContain("<CustomAppSettings");
+    expect(source).not.toContain('text("Block order")');
+    expect(source).not.toContain("const moveSelectedBlock =");
+    expect(source).not.toContain('<DetailPanel.Group label={text("App settings")}>');
     expect(source).toContain('<DetailPanel.Summary title={text("Page")}>');
     expect(source).toContain('title={text("Route parameters")}');
     expect(source).toContain('<DetailPanel.Group label={text("Page behavior")}>');
@@ -718,7 +845,9 @@ describe("CustomAppBuilder", () => {
     expect(source).toContain('title={text("Values supplied by this page")}');
     expect(source).not.toContain('title="Prefilled relations"');
     expect(source).toContain('<DetailPanel.Group label={text("Record settings")}>');
-    expect(source).toContain('<DetailPanel.Group label={text("Chart settings")}>');
+    const chartSource = await Bun.file(new URL("./CustomAppChartEditor.tsx", import.meta.url)).text();
+    expect(chartSource).toContain('<DetailPanel.Group label={text("Chart settings")}>');
+    expect(source).toContain("<CustomAppChartEditor");
     expect(source).toContain('<DetailPanel.Group label={text("Block management")}>');
     expect(source).not.toContain('<DetailPanel.Group label="Page settings">');
     expect(source).not.toContain('<DetailPanel.Group label="Block settings">');

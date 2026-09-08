@@ -618,6 +618,43 @@ describe("Grids App Form runtime", () => {
         expect(publicApp.publishedDefinition).not.toBeNull();
         expect(publicApp).not.toHaveProperty("draftDefinitionRaw");
         expect(publicApp).not.toHaveProperty("publishedDefinitionRaw");
+        // A stored capability snapshot can reference a hard-deleted resource.
+        // The editor must remain reachable without publishing partial IDs.
+        const [storedCapabilities] = await sql<
+          Array<{ draft_capabilities: Record<string, unknown>; published_capabilities: Record<string, unknown> }>
+        >`SELECT draft_capabilities, published_capabilities FROM grids.custom_apps WHERE id = ${appId}::uuid`;
+        if (!storedCapabilities) throw new Error("Expected stored App capabilities");
+        const missingTemplateId = testUuid();
+        const staleCapabilities = {
+          ...storedCapabilities.draft_capabilities,
+          documents: [{ pageId: "request", blockId: "record", tableId, templateIds: [missingTemplateId] }],
+        };
+        try {
+          for (const side of ["draft", "published"] as const) {
+            await sql`
+              UPDATE grids.custom_apps SET
+                draft_capabilities = ${side === "draft" ? staleCapabilities : storedCapabilities.draft_capabilities}::jsonb,
+                published_capabilities = ${side === "published" ? staleCapabilities : storedCapabilities.published_capabilities}::jsonb
+              WHERE id = ${appId}::uuid
+            `;
+            const response = await api.request(`/apps/${applied.data.shortId}`);
+            expect(response.status).toBe(200);
+            const projected = await response.json();
+            expect(projected[`${side}Capabilities`]).toBeNull();
+            expect(projected[`${side}Valid`]).toBe(false);
+            expect(projected.draftDefinition).toEqual(publicApp.draftDefinition);
+            expect(projected.publishedDefinition).toEqual(publicApp.publishedDefinition);
+            expect(projected[`${side === "draft" ? "published" : "draft"}Valid`]).toBe(true);
+            expect(JSON.stringify(projected)).not.toContain(missingTemplateId);
+          }
+        } finally {
+          await sql`
+            UPDATE grids.custom_apps SET
+              draft_capabilities = ${storedCapabilities.draft_capabilities}::jsonb,
+              published_capabilities = ${storedCapabilities.published_capabilities}::jsonb
+            WHERE id = ${appId}::uuid
+          `;
+        }
         const response = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/apply/submit`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-forwarded-for": `custom-app-${baseId}` },

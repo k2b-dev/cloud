@@ -13,6 +13,7 @@ import {
   NoticeCard,
   NumberInput,
   PanelDialog,
+  panelDialogFixedOptions,
   panelDialogOptions,
   panelDialogWorkspaceOptions,
   prompts,
@@ -23,7 +24,7 @@ import {
   Toolbar,
 } from "@k2b/ui";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse as DslQueryPreviewResponse } from "../../../api/gql-public";
 import type { PublicField as Field, PublicView as View } from "../../../api/public-dto";
@@ -39,14 +40,16 @@ import type {
 } from "../../../custom-apps/contracts";
 import { type CustomAppBlockDragMeta, type CustomAppBlockDropMeta, CustomAppPageLayout } from "../../custom-app/PageLayout";
 import { isRecordInputField } from "../fields/field-render";
-import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import type { PublicCustomApp } from "../workspace/workspace-public-state-model";
 import { type CustomAppBuilderText, useCustomAppBuilderMessages } from "./builder-messages";
 import CustomAppBlockPreview from "./CustomAppBlockPreview";
+import { CustomAppChartEditor } from "./CustomAppChartEditor";
 import { CustomAppAvailabilitySection, CustomAppGqlField } from "./CustomAppGqlField";
+import { CustomAppHtmlEditor } from "./CustomAppHtmlEditor";
 import { CustomAppMarkdownField } from "./CustomAppMarkdownField";
+import { CustomAppSettings } from "./CustomAppSettings";
 import {
   applyCustomAppBlockDrop,
   type CustomAppBlockDropIntent,
@@ -125,16 +128,6 @@ export const customAppStarterGqlSources = (
 };
 
 const localId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
-const chartTypeFrom = (value: string): Extract<CustomAppBlock, { type: "chart" }>["chartType"] | null => {
-  switch (value) {
-    case "bar":
-    case "line":
-    case "donut":
-      return value;
-    default:
-      return null;
-  }
-};
 
 const fieldsForView = (view: View, fieldsByTable: CustomAppCatalog["fieldsByTable"], fieldsById: ReadonlyMap<string, Field>): Field[] => {
   const tableFields = (fieldsByTable[view.tableId] ?? [])
@@ -299,7 +292,7 @@ function JsonValueInput(props: { label: string; value: WorkflowJsonValue; onValu
   );
 }
 
-function CustomAppLifecycleActions(props: {
+export function CustomAppLifecycleActions(props: {
   app: PublicCustomApp;
   baseId: string;
   beforeDelete?: () => Promise<void>;
@@ -486,7 +479,7 @@ type CustomAppBuilderProps = {
   catalog: CustomAppCatalog;
   editMode: boolean;
   dateConfig?: DateContext;
-  initialInspectorMode?: "app" | "page";
+  initialSettingsOpen?: boolean;
 };
 
 export default function CustomAppBuilder(props: CustomAppBuilderProps) {
@@ -524,12 +517,18 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   const [saveError, setSaveError] = createSignal<string | null>(
     props.app.draftValid === false ? text("The saved draft must be fixed before it can be published.") : null,
   );
-  const [selectedPageId, setSelectedPageId] = createSignal(props.initialDefinition.startPageId);
-  const [selectedBlockId, setSelectedBlockId] = createSignal<string | null>(null);
-  const [selectedActionId, setSelectedActionId] = createSignal<string | null>(null);
+  const selectedPageId = () => draft.selection().pageId;
+  const selectedBlockId = () => {
+    const selected = draft.selection();
+    return "blockId" in selected ? selected.blockId : null;
+  };
+  const selectedActionId = () => {
+    const selected = draft.selection();
+    return selected.kind === "action" ? selected.actionId : null;
+  };
   const [previewResults, setPreviewResults] = createSignal<Record<string, DslQueryPreviewResponse>>({});
   const [inspectorOpen, setInspectorOpen] = createSignal(props.editMode);
-  const [inspectorMode, setInspectorMode] = createSignal<"app" | "page" | "block" | "action">(props.initialInspectorMode ?? "page");
+  const inspectorMode = () => draft.selection().kind;
   const selectedPage = createMemo(() => draft.draft().pages.find((page) => page.id === selectedPageId()) ?? draft.draft().pages[0]!);
   const alternateStartPage = createMemo(() =>
     draft.draft().pages.find((page) => page.id !== selectedPage().id && Object.keys(page.parameters).length === 0),
@@ -569,6 +568,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   const selectedChartBlock = createMemo(() => {
     const block = selectedBlock()?.block;
     return block?.type === "chart" ? block : null;
+  });
+  const selectedHtmlBlock = createMemo(() => {
+    const block = selectedBlock()?.block;
+    return block?.type === "html" ? block : null;
   });
   const selectedActionsBlock = createMemo(() => {
     const block = selectedBlock()?.block;
@@ -688,6 +691,14 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     })),
   );
   const sidebarActions = createMemo(() => draft.draft().sidebar?.actions ?? []);
+  const selectedSidebarAction = createMemo(() => {
+    const selection = draft.selection();
+    return selection.kind === "sidebar-action" ? sidebarActions().find((action) => action.id === selection.actionId) : undefined;
+  });
+  const selectSidebarAction = (actionId: string) => {
+    draft.select({ kind: "sidebar-action", pageId: selectedPageId(), actionId });
+    setInspectorOpen(true);
+  };
   const updateSidebarAction = (actionId: string, update: (action: CustomAppSidebarAction) => CustomAppSidebarAction) =>
     setDefinition((definition) => ({
       ...definition,
@@ -702,18 +713,18 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     }));
   const addSidebarForm = () => {
     const form = forms()[0];
-    if (!form) return;
+    if (!form || sidebarActions().length >= 12) return;
+    const actionId = localId("form");
     setDefinition((definition) => ({
       ...definition,
       sidebar: {
         actions: [
           ...(definition.sidebar?.actions ?? []),
-          { id: localId("form"), kind: "form", label: form.name, icon: "forms", tone: "success", formId: form.id, fixedValues: {} },
+          { id: actionId, kind: "form", label: form.name, icon: "forms", tone: "success", formId: form.id, fixedValues: {} },
         ],
       },
     }));
-    setInspectorMode("app");
-    setInspectorOpen(true);
+    selectSidebarAction(actionId);
   };
   const formBindingOptions = (formId: string) => {
     const form = formsById().get(formId);
@@ -863,6 +874,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     });
   });
   const panelDiagnostics = createMemo(() => {
+    if (inspectorMode() === "sidebar-action") {
+      const id = selectedSidebarAction()?.id;
+      return diagnostics().filter((diagnostic) => id && diagnostic.path.includes(id) && !isCustomAppAvailabilityDiagnostic(diagnostic, id));
+    }
     if (inspectorMode() === "page") {
       return diagnosticsForSelection().filter((diagnostic) => !isCustomAppAvailabilityDiagnostic(diagnostic, selectedPage().id));
     }
@@ -885,24 +900,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     diagnostics().find((diagnostic) => diagnostic.path.includes(blockId) && diagnostic.path.includes(segment))?.message;
 
   const selectPage = (pageId: string) => {
-    setSelectedPageId(pageId);
-    setSelectedBlockId(null);
-    setSelectedActionId(null);
+    draft.select({ kind: "page", pageId });
     if (!props.editMode) return;
-    setInspectorMode("page");
     setInspectorOpen(true);
   };
 
   const selectBlock = (blockId: string) => {
-    setSelectedBlockId(blockId);
-    setSelectedActionId(null);
-    setInspectorMode("block");
+    draft.select({ kind: "block", pageId: selectedPageId(), blockId });
     setInspectorOpen(true);
   };
 
   const selectAction = (actionId: string) => {
-    setSelectedActionId(actionId);
-    setInspectorMode("action");
+    const blockId = selectedBlockId();
+    if (!blockId) return;
+    draft.select({ kind: "action", pageId: selectedPageId(), blockId, actionId });
     setInspectorOpen(true);
   };
 
@@ -1339,22 +1350,9 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     },
   });
 
-  const moveSelectedBlock = (direction: -1 | 1) => {
-    const selected = selectedBlock();
-    if (!selected) return;
-    const nextIndex = selected.blockIndex + direction;
-    if (nextIndex < 0 || nextIndex >= selected.column.blocks.length) return;
-    const target = selected.column.blocks[nextIndex]!;
-    const next = applyCustomAppBlockDrop(
-      selectedPage(),
-      selected.block.id,
-      { kind: "stack", targetBlockId: target.id, edge: direction < 0 ? "before" : "after" },
-      newLayoutIds(),
-    );
-    if (next !== selectedPage()) patchPage({ rows: next.rows });
-  };
-
   const removeSelectedBlock = async () => {
+    const version = draft.version();
+    const selection = draft.selection();
     const selected = selectedBlock();
     if (!selected || blockCount() === 1) return;
     const removingLastRecord =
@@ -1375,7 +1373,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
         variant: "danger",
       },
     );
-    if (!confirmed) return;
+    if (!confirmed || draft.version() !== version || draft.selection() !== selection) return;
     const page = normalizeCustomAppPageLayout({
       ...selectedPage(),
       rows: selectedPage().rows.map((row) => ({
@@ -1387,7 +1385,6 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       })),
     });
     patchPage({ rows: page.rows, ...(removingLastRecord ? { record: undefined } : {}) });
-    setSelectedBlockId(null);
   };
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1590,8 +1587,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   const renameSelectedPage = (nextId: string) => {
     const currentId = selectedPage().id;
     if (nextId === currentId || !/^[a-z][a-z0-9-]{0,79}$/.test(nextId) || draft.draft().pages.some((page) => page.id === nextId)) return;
-    setDefinition((definition) => renameCustomAppPage(definition, currentId, nextId));
-    setSelectedPageId(nextId);
+    const selection = draft.selection();
+    batch(() => {
+      setDefinition((definition) => renameCustomAppPage(definition, currentId, nextId));
+      draft.select({ ...selection, pageId: nextId });
+    });
   };
 
   const nextParameterId = () => {
@@ -1782,6 +1782,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
   };
 
   const removeSelectedAction = async () => {
+    const version = draft.version();
+    const selection = draft.selection();
     const selected = selectedAction();
     if (!selected) return;
     const count =
@@ -1793,7 +1795,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       confirmText: text("Remove"),
       variant: "danger",
     });
-    if (!confirmed) return;
+    if (!confirmed || draft.version() !== version || draft.selection() !== selection) return;
     updateSelectedBlock((candidate) =>
       selected.owner === "actions" && candidate.type === "actions"
         ? { ...candidate, actions: candidate.actions.filter((action) => action.id !== selected.action.id) }
@@ -1801,11 +1803,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           ? { ...candidate, rowActions: (candidate.rowActions ?? []).filter((action) => action.id !== selected.action.id) }
           : candidate,
     );
-    setSelectedActionId(null);
-    setInspectorMode("block");
   };
 
   const removePage = async () => {
+    const version = draft.version();
+    const selection = draft.selection();
     const definition = draft.draft();
     if (definition.pages.length === 1) return;
     const page = selectedPage();
@@ -1815,7 +1817,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       confirmText: text("Remove"),
       variant: "danger",
     });
-    if (!confirmed) return;
+    if (!confirmed || draft.version() !== version || draft.selection() !== selection) return;
     const pages = definition.pages.filter((candidate) => candidate.id !== page.id);
     const nextPage = pages[0]!;
     setDefinition((current) => ({
@@ -1866,6 +1868,41 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     if (confirmed) restoreMutation.mutate(undefined);
   };
 
+  let closeSettings: (() => void) | undefined;
+  const openSettings = async () => {
+    if (closeSettings) return;
+    try {
+      await dialogCore.open<void>(
+        (close) => {
+          closeSettings = close;
+          return (
+            <CustomAppSettings
+              appId={app().id}
+              definition={draft.draft()}
+              onNameChange={(name) => setDefinition((definition) => ({ ...definition, name }))}
+              onIconChange={(icon) => setDefinition((definition) => ({ ...definition, icon }))}
+              onClose={close}
+              error={saveState() === "error" || saveState() === "invalid"}
+              status={
+                saveState() === "saving"
+                  ? text("Saving changes automatically…")
+                  : (saveError() ?? text("Changes are saved automatically. Publish the draft when it is ready for everyone."))
+              }
+              lifecycle={<CustomAppLifecycleActions app={app()} baseId={props.baseId} beforeDelete={stopAutosave} onUnpublished={setApp} />}
+            />
+          );
+        },
+        { ...panelDialogFixedOptions, ariaLabel: text("App settings") },
+      );
+    } finally {
+      closeSettings = undefined;
+    }
+  };
+  onMount(() => {
+    if (props.editMode && props.initialSettingsOpen) void openSettings();
+  });
+  onCleanup(() => closeSettings?.());
+
   return (
     <>
       <AppWorkspace.Main class="p-0" mobilePane="main" scroll={false}>
@@ -1884,6 +1921,13 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
               <strong class="px-1 text-sm">{text("Pages")}</strong>
             </Toolbar.Group>
             <Toolbar.Spacer />
+            <Show when={props.editMode}>
+              <Toolbar.Group>
+                <IconButton size="sm" label={text("App settings")} onClick={() => void openSettings()}>
+                  <i class="ti ti-settings" aria-hidden="true" />
+                </IconButton>
+              </Toolbar.Group>
+            </Show>
             <Show when={app().publishedAt}>
               <Toolbar.Group>
                 <ButtonLink href={`/apps/${app().id}`} target="_blank" rel="noreferrer" size="xs" aria-label={text("Open live app")}>
@@ -1896,7 +1940,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             <AppWorkspace.SidebarSection>
               <For each={draft.draft().pages}>
                 {(page) => (
-                  <AppWorkspace.SidebarItem active={selectedPage().id === page.id} onClick={() => selectPage(page.id)}>
+                  <AppWorkspace.SidebarItem
+                    active={selectedPage().id === page.id && inspectorMode() !== "sidebar-action"}
+                    onClick={() => selectPage(page.id)}
+                  >
                     <AppWorkspace.SidebarItemIcon icon={page.navigation.visible ? "ti ti-file" : "ti ti-file-off"} />
                     <AppWorkspace.SidebarItemLabel>{page.title}</AppWorkspace.SidebarItemLabel>
                     {draft.draft().startPageId === page.id && (
@@ -1935,34 +1982,20 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   {(action) => (
                     <AppWorkspace.SidebarItem
                       icon={`ti ti-${action.icon ?? "forms"}`}
-                      tone={action.tone}
-                      onClick={
-                        props.editMode
-                          ? () => {
-                              setInspectorMode("app");
-                              setInspectorOpen(true);
-                            }
-                          : undefined
-                      }
+                      tone={props.editMode ? "default" : action.tone}
+                      active={props.editMode && selectedSidebarAction()?.id === action.id}
+                      onClick={props.editMode ? () => selectSidebarAction(action.id) : undefined}
                     >
-                      <AppWorkspace.SidebarItemLabel>{action.label}</AppWorkspace.SidebarItemLabel>
+                      {action.label}
                       <AppWorkspace.SidebarItemMeta>{text("Form")}</AppWorkspace.SidebarItemMeta>
-                      <Show when={props.editMode}>
-                        <AppWorkspace.SidebarItemAction
-                          icon="ti ti-settings"
-                          label={messages().settingsFor({ label: action.label })}
-                          onSelect={() => {
-                            setInspectorMode("app");
-                            setInspectorOpen(true);
-                          }}
-                        />
-                      </Show>
                     </AppWorkspace.SidebarItem>
                   )}
                 </For>
                 <Show when={props.editMode}>
-                  <AppWorkspace.SidebarItem
-                    tone="success"
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    class="mt-2 w-full"
                     onClick={addSidebarForm}
                     disabled={forms().length === 0 || sidebarActions().length >= 12}
                     title={
@@ -1973,12 +2006,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           : text("Add a global Form action")
                     }
                   >
-                    <AppWorkspace.SidebarItemIcon icon="ti ti-plus" />
-                    <AppWorkspace.SidebarItemLabel>{text("New action")}</AppWorkspace.SidebarItemLabel>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                    {text("New action")}
                     <Show when={sidebarActions().length >= 12}>
-                      <AppWorkspace.SidebarItemMeta>12 / 12</AppWorkspace.SidebarItemMeta>
+                      <span>12 / 12</span>
                     </Show>
-                  </AppWorkspace.SidebarItem>
+                  </Button>
+                  <Show when={forms().length === 0 || sidebarActions().length >= 12}>
+                    <InlineGuidance>
+                      {forms().length === 0 ? text("Create an active Form first.") : text("Apps support up to 12 global actions.")}
+                    </InlineGuidance>
+                  </Show>
                 </Show>
               </AppWorkspace.SidebarSection>
             </Show>
@@ -2082,8 +2120,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   : "ti ti-link"
                 : inspectorMode() === "block"
                   ? blockMeta[selectedBlock()?.block.type ?? "markdown"].icon
-                  : inspectorMode() === "app"
-                    ? "ti ti-app-window"
+                  : inspectorMode() === "sidebar-action"
+                    ? `ti ti-${selectedSidebarAction()?.icon ?? "forms"}`
                     : "ti ti-file-settings"
             }
             title={
@@ -2091,8 +2129,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 ? (selectedAction()?.action.label ?? text("Action"))
                 : inspectorMode() === "block"
                   ? selectedBlock()?.block.title || blockLabel(selectedBlock()?.block.type ?? "markdown")
-                  : inspectorMode() === "app"
-                    ? text("App settings")
+                  : inspectorMode() === "sidebar-action"
+                    ? (selectedSidebarAction()?.label ?? text("Action"))
                     : selectedPage().title
             }
             subtitle={
@@ -2100,8 +2138,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 ? text("Action settings")
                 : inspectorMode() === "block"
                   ? text("Content block")
-                  : inspectorMode() === "app"
-                    ? draft.draft().name
+                  : inspectorMode() === "sidebar-action"
+                    ? text("Action settings")
                     : text("Page settings")
             }
             actions={
@@ -2111,7 +2149,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             }
           />
           <DetailPanel.Body
-            scrollPreserveKey={`grids-custom-app-inspector-${app().id}-${inspectorMode()}-${selectedActionId() ?? selectedBlockId() ?? selectedPage().id}`}
+            scrollPreserveKey={`grids-custom-app-inspector-${app().id}-${inspectorMode()}-${selectedSidebarAction()?.id ?? selectedActionId() ?? selectedBlockId() ?? selectedPage().id}`}
           >
             <Show when={panelDiagnostics().length > 0}>
               <NoticeCard tone="danger" icon={false} role="alert">
@@ -2121,250 +2159,175 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 </ul>
               </NoticeCard>
             </Show>
-            <Show when={inspectorMode() === "app"}>
-              <DetailPanel.Group label={text("App settings")}>
-                <DetailPanel.Section title={text("Identity")} icon="ti ti-app-window" tone="accent">
-                  <div class="flex flex-col gap-3">
-                    <TextInput
-                      label={text("Name")}
-                      value={() => draft.draft().name}
-                      onValueChange={(name) => setDefinition((definition) => ({ ...definition, name }))}
-                      required
-                    />
-                    <IconInput
-                      label={text("Icon")}
-                      value={() => iconInputValue(draft.draft().icon)}
-                      onValueChange={(value) => setDefinition((definition) => ({ ...definition, icon: iconSlug(value) }))}
-                      clearable
-                    />
-                  </div>
-                </DetailPanel.Section>
-                <DetailPanel.Section
-                  title={text("App sidebar")}
-                  icon="ti ti-layout-sidebar-left"
-                  description={text("Add app-wide Forms. They do not receive page, route, record, or row values.")}
-                  collapsible
-                  defaultOpen={sidebarActions().length > 0}
-                >
-                  <div class="flex flex-col gap-4">
-                    <InlineGuidance>
-                      {text(
-                        "Pages appear automatically. These launchers stay available while readers move through the app; availability can use auth, app, Base, and time context.",
-                      )}
-                    </InlineGuidance>
-                    <For each={sidebarActions()}>
-                      {(sidebarAction) => {
-                        const selectedForm = () => formsById().get(sidebarAction.formId);
-                        return (
-                          <div class="rounded-xl border border-subtle bg-surface p-3">
-                            <div class="flex flex-col gap-3">
-                              <div class="flex items-center gap-2">
-                                <strong class="min-w-0 flex-1 truncate text-sm">{sidebarAction.label}</strong>
-                                <StatusBadge tone="neutral" label={text("Form")} variant="text" />
-                                <IconButton
-                                  size="sm"
-                                  label={messages().removeNamed({ label: sidebarAction.label })}
-                                  onClick={() => removeSidebarAction(sidebarAction.id)}
-                                >
-                                  <i class="ti ti-trash" aria-hidden="true" />
-                                </IconButton>
-                              </div>
-                              <TextInput
-                                label={text("Label")}
-                                value={() => sidebarAction.label}
-                                onValueChange={(label) => updateSidebarAction(sidebarAction.id, (action) => ({ ...action, label }))}
-                                required
-                              />
-                              <div class="grid gap-3 sm:grid-cols-2">
-                                <IconInput
-                                  label={text("Icon")}
-                                  value={() => iconInputValue(sidebarAction.icon)}
-                                  onValueChange={(value) =>
-                                    updateSidebarAction(sidebarAction.id, (action) => ({ ...action, icon: iconSlug(value) }))
-                                  }
-                                  clearable
-                                />
+            <Show when={selectedSidebarAction()}>
+              {(sidebarAction) => {
+                const selectedForm = () => formsById().get(sidebarAction().formId);
+                return (
+                  <DetailPanel.Group label={text("Action settings")}>
+                    <div class="flex flex-col gap-3">
+                      <div class="flex items-center gap-2">
+                        <strong class="min-w-0 flex-1 truncate text-sm">{sidebarAction().label}</strong>
+                        <StatusBadge tone="neutral" label={text("Form")} variant="text" />
+                        <IconButton
+                          size="sm"
+                          label={messages().removeNamed({ label: sidebarAction().label })}
+                          onClick={() => removeSidebarAction(sidebarAction().id)}
+                        >
+                          <i class="ti ti-trash" aria-hidden="true" />
+                        </IconButton>
+                      </div>
+                      <TextInput
+                        label={text("Label")}
+                        value={() => sidebarAction().label}
+                        onValueChange={(label) => updateSidebarAction(sidebarAction().id, (action) => ({ ...action, label }))}
+                        required
+                      />
+                      <div class="grid gap-3 sm:grid-cols-2">
+                        <IconInput
+                          label={text("Icon")}
+                          value={() => iconInputValue(sidebarAction().icon)}
+                          onValueChange={(value) =>
+                            updateSidebarAction(sidebarAction().id, (action) => ({ ...action, icon: iconSlug(value) }))
+                          }
+                          clearable
+                        />
+                        <Select
+                          label={text("Tone")}
+                          value={() => sidebarAction().tone}
+                          options={[
+                            { id: "default", label: text("Default") },
+                            { id: "success", label: text("Positive") },
+                            { id: "danger", label: text("Danger") },
+                          ]}
+                          onValueChange={(tone) =>
+                            (tone === "default" || tone === "success" || tone === "danger") &&
+                            updateSidebarAction(sidebarAction().id, (action) => ({ ...action, tone }))
+                          }
+                        />
+                      </div>
+                      <Show when={sidebarAction().kind === "form"}>
+                        <Select
+                          label={text("Form")}
+                          searchable
+                          value={() => (sidebarAction().kind === "form" ? sidebarAction().formId : null)}
+                          options={formOptions()}
+                          onValueChange={(formId) =>
+                            formId &&
+                            updateSidebarAction(sidebarAction().id, (action) =>
+                              action.kind === "form" ? { ...action, formId, fixedValues: {}, onSuccessNavigate: undefined } : action,
+                            )
+                          }
+                        />
+                        <For each={sidebarAction().kind === "form" ? formBindingOptions(sidebarAction().formId) : []}>
+                          {(binding) => {
+                            const current = () =>
+                              sidebarAction().kind === "form" ? sidebarAction().fixedValues[binding.field.id] : undefined;
+                            const literal = () => {
+                              const value = current();
+                              return value?.source === "LITERAL" ? value : null;
+                            };
+                            return (
+                              <div class="flex flex-col gap-2">
                                 <Select
-                                  label={text("Tone")}
-                                  value={() => sidebarAction.tone}
+                                  label={binding.label}
+                                  description={text("Hide this input and inject one trusted value on the server.")}
+                                  placeholder={text("Ask in Form")}
+                                  clearable
+                                  value={() => current()?.source ?? null}
                                   options={[
-                                    { id: "default", label: text("Default") },
-                                    { id: "success", label: text("Positive") },
-                                    { id: "danger", label: text("Danger") },
+                                    { id: "LITERAL", label: text("Fixed value") },
+                                    ...(binding.field.type === "principal" ? [{ id: "AUTH", label: text("Current signed-in user") }] : []),
                                   ]}
-                                  onValueChange={(tone) =>
-                                    (tone === "default" || tone === "success" || tone === "danger") &&
-                                    updateSidebarAction(sidebarAction.id, (action) => ({ ...action, tone }))
-                                  }
-                                />
-                              </div>
-                              <Show when={sidebarAction.kind === "form"}>
-                                <Select
-                                  label={text("Form")}
-                                  searchable
-                                  value={() => (sidebarAction.kind === "form" ? sidebarAction.formId : null)}
-                                  options={formOptions()}
-                                  onValueChange={(formId) =>
-                                    formId &&
-                                    updateSidebarAction(sidebarAction.id, (action) =>
-                                      action.kind === "form"
-                                        ? { ...action, formId, fixedValues: {}, onSuccessNavigate: undefined }
-                                        : action,
-                                    )
-                                  }
-                                />
-                                <For each={sidebarAction.kind === "form" ? formBindingOptions(sidebarAction.formId) : []}>
-                                  {(binding) => {
-                                    const current = () =>
-                                      sidebarAction.kind === "form" ? sidebarAction.fixedValues[binding.field.id] : undefined;
-                                    const literal = () => {
-                                      const value = current();
-                                      return value?.source === "LITERAL" ? value : null;
-                                    };
-                                    return (
-                                      <div class="flex flex-col gap-2">
-                                        <Select
-                                          label={binding.label}
-                                          description={text("Hide this input and inject one trusted value on the server.")}
-                                          placeholder={text("Ask in Form")}
-                                          clearable
-                                          value={() => current()?.source ?? null}
-                                          options={[
-                                            { id: "LITERAL", label: text("Fixed value") },
-                                            ...(binding.field.type === "principal"
-                                              ? [{ id: "AUTH", label: text("Current signed-in user") }]
-                                              : []),
-                                          ]}
-                                          onValueChange={(source) =>
-                                            updateSidebarAction(sidebarAction.id, (action) => {
-                                              if (action.kind !== "form") return action;
-                                              const fixedValues = { ...action.fixedValues };
-                                              if (!source) delete fixedValues[binding.field.id];
-                                              else if (source === "AUTH") {
-                                                fixedValues[binding.field.id] = { source: "AUTH", path: "currentUser" };
-                                              } else fixedValues[binding.field.id] = { source: "LITERAL", value: null };
-                                              return { ...action, fixedValues };
-                                            })
-                                          }
-                                        />
-                                        <Show when={literal()}>
-                                          {(value) => (
-                                            <JsonValueInput
-                                              label={messages().valueFor({ label: binding.label })}
-                                              value={value().value}
-                                              onValueChange={(next) =>
-                                                updateSidebarAction(sidebarAction.id, (action) =>
-                                                  action.kind === "form"
-                                                    ? {
-                                                        ...action,
-                                                        fixedValues: {
-                                                          ...action.fixedValues,
-                                                          [binding.field.id]: { source: "LITERAL", value: next },
-                                                        },
-                                                      }
-                                                    : action,
-                                                )
-                                              }
-                                            />
-                                          )}
-                                        </Show>
-                                      </div>
-                                    );
-                                  }}
-                                </For>
-                                <Select
-                                  label={text("After submission")}
-                                  description={text("Optionally open a record page for the newly created record.")}
-                                  placeholder={text("Stay on the current page")}
-                                  clearable
-                                  value={() => (sidebarAction.kind === "form" ? (sidebarAction.onSuccessNavigate?.pageId ?? null) : null)}
-                                  options={draft
-                                    .draft()
-                                    .pages.filter((page) => {
-                                      const form = selectedForm();
-                                      return (
-                                        form && Object.values(page.parameters).every((parameter) => parameter.tableId === form.tableId)
-                                      );
-                                    })
-                                    .map((page) => ({ id: page.id, label: page.title }))}
-                                  onValueChange={(pageId) =>
-                                    updateSidebarAction(sidebarAction.id, (action) => {
+                                  onValueChange={(source) =>
+                                    updateSidebarAction(sidebarAction().id, (action) => {
                                       if (action.kind !== "form") return action;
-                                      const page = pageId ? draft.draft().pages.find((candidate) => candidate.id === pageId) : undefined;
-                                      return {
-                                        ...action,
-                                        onSuccessNavigate: page
-                                          ? {
-                                              kind: "navigate",
-                                              pageId: page.id,
-                                              params: Object.fromEntries(
-                                                Object.keys(page.parameters).map((parameterId) => [
-                                                  parameterId,
-                                                  { source: "RESULT" as const, path: "recordId" as const },
-                                                ]),
-                                              ),
-                                            }
-                                          : undefined,
-                                      };
+                                      const fixedValues = { ...action.fixedValues };
+                                      if (!source) delete fixedValues[binding.field.id];
+                                      else if (source === "AUTH") {
+                                        fixedValues[binding.field.id] = { source: "AUTH", path: "currentUser" };
+                                      } else fixedValues[binding.field.id] = { source: "LITERAL", value: null };
+                                      return { ...action, fixedValues };
                                     })
                                   }
                                 />
-                              </Show>
-                              <CustomAppAvailabilitySection
-                                baseId={draft.draft().baseId}
-                                contextKeys={customAppGlobalContextKeys()}
-                                targetLabel={sidebarAction.label}
-                                value={() => sidebarAction.availableWhen?.query ?? ""}
-                                onValueChange={(query) =>
-                                  updateSidebarAction(sidebarAction.id, (action) => ({
-                                    ...action,
-                                    availableWhen: query.trim() ? { query } : undefined,
-                                  }))
-                                }
-                                error={() => diagnosticFor(sidebarAction.id, "availableWhen")}
-                              />
-                            </div>
-                          </div>
-                        );
-                      }}
-                    </For>
-                    <div class="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={forms().length === 0 || sidebarActions().length >= 12}
-                        onClick={addSidebarForm}
-                      >
-                        <i class="ti ti-plus" aria-hidden="true" /> {text("Add Form")}
-                      </Button>
+                                <Show when={literal()}>
+                                  {(value) => (
+                                    <JsonValueInput
+                                      label={messages().valueFor({ label: binding.label })}
+                                      value={value().value}
+                                      onValueChange={(next) =>
+                                        updateSidebarAction(sidebarAction().id, (action) =>
+                                          action.kind === "form"
+                                            ? {
+                                                ...action,
+                                                fixedValues: {
+                                                  ...action.fixedValues,
+                                                  [binding.field.id]: { source: "LITERAL", value: next },
+                                                },
+                                              }
+                                            : action,
+                                        )
+                                      }
+                                    />
+                                  )}
+                                </Show>
+                              </div>
+                            );
+                          }}
+                        </For>
+                        <Select
+                          label={text("After submission")}
+                          description={text("Optionally open a record page for the newly created record.")}
+                          placeholder={text("Stay on the current page")}
+                          clearable
+                          value={() => (sidebarAction().kind === "form" ? (sidebarAction().onSuccessNavigate?.pageId ?? null) : null)}
+                          options={draft
+                            .draft()
+                            .pages.filter((page) => {
+                              const form = selectedForm();
+                              return form && Object.values(page.parameters).every((parameter) => parameter.tableId === form.tableId);
+                            })
+                            .map((page) => ({ id: page.id, label: page.title }))}
+                          onValueChange={(pageId) =>
+                            updateSidebarAction(sidebarAction().id, (action) => {
+                              if (action.kind !== "form") return action;
+                              const page = pageId ? draft.draft().pages.find((candidate) => candidate.id === pageId) : undefined;
+                              return {
+                                ...action,
+                                onSuccessNavigate: page
+                                  ? {
+                                      kind: "navigate",
+                                      pageId: page.id,
+                                      params: Object.fromEntries(
+                                        Object.keys(page.parameters).map((parameterId) => [
+                                          parameterId,
+                                          { source: "RESULT" as const, path: "recordId" as const },
+                                        ]),
+                                      ),
+                                    }
+                                  : undefined,
+                              };
+                            })
+                          }
+                        />
+                      </Show>
+                      <CustomAppAvailabilitySection
+                        baseId={draft.draft().baseId}
+                        contextKeys={customAppGlobalContextKeys()}
+                        targetLabel={sidebarAction().label}
+                        value={() => sidebarAction().availableWhen?.query ?? ""}
+                        onValueChange={(query) =>
+                          updateSidebarAction(sidebarAction().id, (action) => ({
+                            ...action,
+                            availableWhen: query.trim() ? { query } : undefined,
+                          }))
+                        }
+                        error={() => diagnosticFor(sidebarAction().id, "availableWhen")}
+                      />
                     </div>
-                  </div>
-                </DetailPanel.Section>
-                <DetailPanel.Section
-                  title={text("Access")}
-                  icon="ti ti-shield"
-                  description={text("Who can open the published app. This is separate from availability rules.")}
-                  collapsible
-                  defaultOpen={false}
-                >
-                  <div class="flex flex-col gap-3">
-                    <InlineGuidance>
-                      {text("App grants are independent from Base access. Public allows anonymous visitors to open the published app.")}
-                    </InlineGuidance>
-                    <ScopedPermissionEditor scope={{ type: "customApp", id: app().id }} canEdit />
-                  </div>
-                </DetailPanel.Section>
-                <DetailPanel.Section
-                  title={text("Danger zone")}
-                  icon="ti ti-trash"
-                  tone="danger"
-                  description={text("Take the live app offline or permanently remove it. Base data is not deleted.")}
-                  collapsible
-                  defaultOpen={false}
-                >
-                  <CustomAppLifecycleActions app={app()} baseId={props.baseId} beforeDelete={stopAutosave} onUnpublished={setApp} />
-                </DetailPanel.Section>
-              </DetailPanel.Group>
+                  </DetailPanel.Group>
+                );
+              }}
             </Show>
 
             <Show when={inspectorMode() === "page"}>
@@ -2586,41 +2549,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                           }
                         />
                       </Show>
-                      <Show when={selected().block.type === "html"}>
-                        <Select
-                          label={text("HTML template field")}
-                          searchable
-                          value={() => {
-                            const block = selected().block;
-                            return block.type === "html" ? block.fieldId : null;
-                          }}
-                          options={pageHtmlFields().map((field) => ({
-                            id: field.id,
-                            label: field.name,
-                            description: text("HTML template"),
-                            icon: field.icon ?? "ti ti-code",
-                          }))}
-                          error={() => diagnosticFor(selected().block.id, "fieldId")}
-                          onValueChange={(fieldId) =>
-                            fieldId && updateSelectedBlock((block) => (block.type === "html" ? { ...block, fieldId } : block))
-                          }
-                        />
-                        <Select
-                          label={text("Height")}
-                          value={() => {
-                            const block = selected().block;
-                            return block.type === "html" ? block.height : null;
-                          }}
-                          options={[
-                            { id: "compact", label: text("Compact") },
-                            { id: "normal", label: text("Normal") },
-                            { id: "large", label: text("Large") },
-                          ]}
-                          onValueChange={(height) =>
-                            (height === "compact" || height === "normal" || height === "large") &&
-                            updateSelectedBlock((block) => (block.type === "html" ? { ...block, height } : block))
-                          }
-                        />
+                      <Show when={selectedHtmlBlock()}>
+                        {(block) => (
+                          <CustomAppHtmlEditor
+                            block={block()}
+                            fields={pageHtmlFields()}
+                            error={diagnosticFor(block().id, "fieldId")}
+                            update={(update) => updateSelectedBlock((current) => (current.type === "html" ? update(current) : current))}
+                          />
+                        )}
                       </Show>
                     </div>
                   </DetailPanel.Summary>
@@ -3642,199 +3579,15 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       </DetailPanel.Section>
                     </DetailPanel.Group>
                   </Show>
-                  <Show when={selected().block.type === "chart"}>
-                    <DetailPanel.Group label={text("Chart settings")}>
-                      <DetailPanel.Section
-                        title={text("Chart")}
-                        icon="ti ti-chart-bar"
-                        description={text("Choose the chart presentation and result limit.")}
-                        collapsible
-                        defaultOpen
-                      >
-                        <div class="flex flex-col gap-4">
-                          <TextInput
-                            label={text("Subtitle")}
-                            value={() => {
-                              const block = selected().block;
-                              return block.type === "chart" ? (block.subtitle ?? "") : "";
-                            }}
-                            onValueChange={(subtitle) =>
-                              updateSelectedBlock((block) =>
-                                block.type === "chart" ? { ...block, subtitle: subtitle || undefined } : block,
-                              )
-                            }
-                            clearable
-                          />
-                          <Select
-                            label={text("Chart type")}
-                            value={() => {
-                              const block = selected().block;
-                              return block.type === "chart" ? block.chartType : null;
-                            }}
-                            onValueChange={(chartType) => {
-                              const next = chartType ? chartTypeFrom(chartType) : null;
-                              if (!next) return;
-                              updateSelectedBlock((block) => (block.type === "chart" ? { ...block, chartType: next } : block));
-                            }}
-                            options={[
-                              { id: "bar", label: text("Bar") },
-                              { id: "line", label: text("Line") },
-                              { id: "donut", label: text("Donut") },
-                            ]}
-                          />
-                          <NumberInput
-                            label={text("Result limit")}
-                            value={() => {
-                              const block = selected().block;
-                              return block.type === "chart" ? block.limit : null;
-                            }}
-                            onValueChange={(limit) => {
-                              if (limit === null) return;
-                              updateSelectedBlock((block) => (block.type === "chart" ? { ...block, limit } : block));
-                            }}
-                            min={1}
-                            max={100}
-                            step={1}
-                          />
-                        </div>
-                      </DetailPanel.Section>
-                      <DetailPanel.Section
-                        title={text("Appearance")}
-                        icon="ti ti-palette"
-                        description={text("Optional axis labels and value formatting.")}
-                        collapsible
-                        defaultOpen={Boolean(
-                          selectedChartBlock()?.valueFormat || selectedChartBlock()?.xAxisLabel || selectedChartBlock()?.yAxisLabel,
-                        )}
-                      >
-                        <div class="flex flex-col gap-3">
-                          <TextInput
-                            label={text("X-axis label")}
-                            clearable
-                            value={() => selectedChartBlock()?.xAxisLabel ?? ""}
-                            onValueChange={(xAxisLabel) =>
-                              updateSelectedBlock((block) =>
-                                block.type === "chart" ? { ...block, xAxisLabel: xAxisLabel || undefined } : block,
-                              )
-                            }
-                          />
-                          <TextInput
-                            label={text("Y-axis label")}
-                            clearable
-                            value={() => selectedChartBlock()?.yAxisLabel ?? ""}
-                            onValueChange={(yAxisLabel) =>
-                              updateSelectedBlock((block) =>
-                                block.type === "chart" ? { ...block, yAxisLabel: yAxisLabel || undefined } : block,
-                              )
-                            }
-                          />
-                          <Select
-                            label={text("Value format")}
-                            placeholder={text("Automatic")}
-                            clearable
-                            value={() => selectedChartBlock()?.valueFormat?.style ?? null}
-                            options={[
-                              { id: "number", label: text("Number") },
-                              { id: "integer", label: text("Integer") },
-                              { id: "percent", label: text("Percent") },
-                            ]}
-                            onValueChange={(style) =>
-                              updateSelectedBlock((block) =>
-                                block.type === "chart"
-                                  ? {
-                                      ...block,
-                                      valueFormat: style === "number" || style === "integer" || style === "percent" ? { style } : undefined,
-                                    }
-                                  : block,
-                              )
-                            }
-                          />
-                          <Show when={selectedChartBlock()?.valueFormat?.style !== "integer" && selectedChartBlock()?.valueFormat}>
-                            <NumberInput
-                              label={text("Decimal places")}
-                              min={0}
-                              max={20}
-                              step={1}
-                              clearable
-                              value={() => selectedChartBlock()?.valueFormat?.decimalPlaces ?? null}
-                              onValueChange={(decimalPlaces) =>
-                                updateSelectedBlock((block) =>
-                                  block.type === "chart" && block.valueFormat
-                                    ? {
-                                        ...block,
-                                        valueFormat: {
-                                          ...block.valueFormat,
-                                          decimalPlaces: decimalPlaces === null ? undefined : decimalPlaces,
-                                        },
-                                      }
-                                    : block,
-                                )
-                              }
-                            />
-                          </Show>
-                          <Show when={selectedChartBlock()?.valueFormat?.style === "number"}>
-                            <TextInput
-                              label={text("Unit")}
-                              clearable
-                              value={() =>
-                                selectedChartBlock()?.valueFormat?.style === "number" ? (selectedChartBlock()?.valueFormat?.unit ?? "") : ""
-                              }
-                              onValueChange={(unit) =>
-                                updateSelectedBlock((block) =>
-                                  block.type === "chart" && block.valueFormat?.style === "number"
-                                    ? {
-                                        ...block,
-                                        valueFormat: {
-                                          ...block.valueFormat,
-                                          unit: unit || undefined,
-                                          unitPosition: unit ? (block.valueFormat.unitPosition ?? "suffix") : undefined,
-                                        },
-                                      }
-                                    : block,
-                                )
-                              }
-                            />
-                            <Select
-                              label={text("Unit position")}
-                              value={() =>
-                                selectedChartBlock()?.valueFormat?.style === "number"
-                                  ? (selectedChartBlock()?.valueFormat?.unitPosition ?? "suffix")
-                                  : "suffix"
-                              }
-                              options={[
-                                { id: "prefix", label: text("Before value") },
-                                { id: "suffix", label: text("After value") },
-                              ]}
-                              onValueChange={(unitPosition) =>
-                                (unitPosition === "prefix" || unitPosition === "suffix") &&
-                                updateSelectedBlock((block) =>
-                                  block.type === "chart" && block.valueFormat?.style === "number" && block.valueFormat.unit
-                                    ? { ...block, valueFormat: { ...block.valueFormat, unitPosition } }
-                                    : block,
-                                )
-                              }
-                            />
-                          </Show>
-                        </div>
-                      </DetailPanel.Section>
-                    </DetailPanel.Group>
+                  <Show when={selectedChartBlock()}>
+                    {(block) => (
+                      <CustomAppChartEditor
+                        block={block()}
+                        update={(update) => updateSelectedBlock((current) => (current.type === "chart" ? update(current) : current))}
+                      />
+                    )}
                   </Show>
                   <DetailPanel.Group label={text("Block management")}>
-                    <DetailPanel.Section title={text("Block order")} icon="ti ti-arrows-sort" collapsible defaultOpen={false}>
-                      <div class="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" disabled={selected().blockIndex === 0} onClick={() => moveSelectedBlock(-1)}>
-                          <i class="ti ti-arrow-up" aria-hidden="true" /> {text("Move up")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={selected().blockIndex === selected().column.blocks.length - 1}
-                          onClick={() => moveSelectedBlock(1)}
-                        >
-                          <i class="ti ti-arrow-down" aria-hidden="true" /> {text("Move down")}
-                        </Button>
-                      </div>
-                    </DetailPanel.Section>
                     <DetailPanel.Section
                       title={text("Danger zone")}
                       icon="ti ti-trash"
@@ -3874,8 +3627,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       }
                       leading={<i class="ti ti-arrow-left" aria-hidden="true" />}
                       onClick={() => {
-                        setSelectedActionId(null);
-                        setInspectorMode("block");
+                        const blockId = selectedBlockId();
+                        if (blockId) selectBlock(blockId);
                       }}
                     />
                     <DetailPanel.Group label={text("Action settings")}>

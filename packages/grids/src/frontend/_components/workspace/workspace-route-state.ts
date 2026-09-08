@@ -20,7 +20,7 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
       {
         kind: "customApp",
         app: request.requestedCustomApp,
-        initialInspectorMode: common.chrome.url.searchParams.get("settings") === "app" ? "app" : "page",
+        initialSettingsOpen: common.chrome.url.searchParams.get("settings") === "app",
       },
       [...common.chrome.titleBase, { title: request.requestedCustomApp.name }],
     );
