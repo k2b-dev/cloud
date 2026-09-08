@@ -19,7 +19,7 @@ const PayloadSchema = z
     expiresAt: z.number().int().positive(),
   })
   .strict();
-export type CustomAppFileTokenPayload = z.infer<typeof PayloadSchema>;
+type CustomAppFileTokenPayload = z.infer<typeof PayloadSchema>;
 
 const sameStringRecord = (left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean => {
   const leftEntries = Object.entries(left).sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey));

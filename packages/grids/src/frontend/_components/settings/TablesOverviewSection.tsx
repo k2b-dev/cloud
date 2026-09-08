@@ -306,7 +306,7 @@ function TablesOverviewDialog(props: { baseId: string; close: () => void }) {
   );
 }
 
-export const openTablesOverviewDialog = (baseId: string) =>
+const openTablesOverviewDialog = (baseId: string) =>
   dialogCore.open<void>((close) => <TablesOverviewDialog baseId={baseId} close={() => close()} />, panelDialogWorkspaceOptions);
 
 export function TablesOverviewSection(props: { baseId: string }) {

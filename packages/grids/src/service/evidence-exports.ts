@@ -27,7 +27,6 @@ const PAGE_SIZE = 200;
 const MAX_SOURCE_ROWS = 10_000;
 const MAX_DURATION_MS = 5 * 60_000;
 const ASSET_CHUNK_BYTES = 1024 * 1024;
-const RETENTION_MS = 7 * 24 * 60 * 60_000;
 const JOB_LEASE_MS = 60_000;
 const EXPORT_DELIVERY = { ackWaitMs: JOB_LEASE_MS, maxAttempts: 3, backoffMs: [1_000, 2_000] };
 /** After this, a `running` row without a lock holder has outlived every transport attempt. */
@@ -1291,11 +1290,3 @@ export const stopEvidenceExportJobs = async (): Promise<void> => {
   await exportWorker?.drain({ timeoutMs: JOB_LEASE_MS });
   exportWorker = undefined;
 };
-
-export const evidenceExportLimits = {
-  maxSourceRows: MAX_SOURCE_ROWS,
-  maxEntries: EVIDENCE_EXPORT_MAX_ENTRIES,
-  maxPackageBytes: EVIDENCE_EXPORT_MAX_PACKAGE_BYTES,
-  maxDurationMs: MAX_DURATION_MS,
-  retentionMs: RETENTION_MS,
-} as const;

@@ -3,7 +3,7 @@ import type { FormValidationRule } from "./contracts";
 import { getRecordWritableFieldType } from "./field-types";
 import type { Field } from "./service/types";
 
-export type FormValidationFailure = FormValidationRule & { errorFieldId: string };
+type FormValidationFailure = FormValidationRule & { errorFieldId: string };
 
 type ComparableKind = "number" | "percent" | "duration" | "date" | "dateTime";
 

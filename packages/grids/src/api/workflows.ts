@@ -6,7 +6,7 @@ import { createWorkflowTriggerRoutes } from "./workflow-trigger-routes";
 
 export { permissionedWorkflowCatalog } from "./workflow-api-shared";
 
-export const createWorkflowsApi = (deps: { requireAuthenticated?: MiddlewareHandler<AuthContext>; [key: string]: unknown } = {}) =>
+const createWorkflowsApi = (deps: { requireAuthenticated?: MiddlewareHandler<AuthContext>; [key: string]: unknown } = {}) =>
   new Hono<AuthContext>()
     .use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))
     .route("/", createWorkflowCatalogRoutes())

@@ -3,16 +3,6 @@ import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { EmailTemplateSampleDataSchema } from "../../../contracts";
 import { workflowMessages } from "./messages";
 
-export const DEFAULT_EMAIL_TEMPLATE_SAMPLE_DATA: Record<string, WorkflowJsonValue> = {
-  link: {
-    url: "https://cloud.example.org/documents/download/example",
-    expiresAt: "31 Dec 2026",
-  },
-  document: {
-    filename: "invoice-2026-001.pdf",
-  },
-};
-
 export const createDefaultEmailTemplateSampleData = (locale = "en"): Record<string, WorkflowJsonValue> => ({
   link: {
     url: "https://cloud.example.org/documents/download/example",

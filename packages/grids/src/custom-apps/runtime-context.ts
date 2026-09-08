@@ -10,7 +10,7 @@ type RuntimeApp = { shortId: string; name: string };
 type RuntimeBase = { shortId: string; name: string };
 type RuntimePage = { id: string; title: string };
 
-export type CustomAppRuntimeContext = {
+type CustomAppRuntimeContext = {
   query: DslQueryContextValues;
   now: Date;
 };

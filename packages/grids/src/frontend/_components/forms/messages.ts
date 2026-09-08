@@ -8,7 +8,8 @@ export const gridsFormMessages = i18n.define({
       defaultFormCannotEdit: "The default form cannot be edited directly.",
       saveFormFailed: "Failed to save form",
       nameRequired: "Name is required",
-      liveFormWarning: "This public form is live. Saved changes affect new submissions immediately. Existing submissions stay as-is. Continue?",
+      liveFormWarning:
+        "This public form is live. Saved changes affect new submissions immediately. Existing submissions stay as-is. Continue?",
       saveLiveForm: "Save live form?",
       save: "Save",
       name: "Name",
@@ -41,8 +42,7 @@ export const gridsFormMessages = i18n.define({
       fields: "Fields",
       fieldsDescription: "Form structure and behavior for each field.",
       crossFieldValidation: "Cross-field validation",
-      crossFieldValidationDescription:
-        "Compare compatible visible inputs before creating a record. The server enforces the same rules.",
+      crossFieldValidationDescription: "Compare compatible visible inputs before creating a record. The server enforces the same rules.",
       deleteForm: "Delete form",
       cancel: "Cancel",
       savingForm: "Saving form",
@@ -77,8 +77,7 @@ export const gridsFormMessages = i18n.define({
       addFieldDescription: "Choose a table field, then decide how the form uses it.",
       pickField: "Choose a field...",
       useField: ({ name }: { name: string }) => `How should "${name}" be used?`,
-      fieldKindDescription:
-        "A form field is completed by the visitor. A fixed value is hidden and stored with every submission.",
+      fieldKindDescription: "A form field is completed by the visitor. A fixed value is hidden and stored with every submission.",
       addFixedValue: "Add fixed value",
       addFormField: "Add form field",
       noValidations: "No relationships between fields are enforced.",
@@ -151,7 +150,8 @@ export const gridsFormMessages = i18n.define({
       description: "Beschreibung",
       descriptionDescription: "Optionale Unterzeile unter dem Titel der Formularseite.",
       titleImage: "Titelbild (optional)",
-      titleImageDescription: "Wird oben im Formular als Banner angezeigt. Freies Seitenverhältnis; die längste Seite ist auf 1600 px begrenzt.",
+      titleImageDescription:
+        "Wird oben im Formular als Banner angezeigt. Freies Seitenverhältnis; die längste Seite ist auf 1600 px begrenzt.",
       availability: "Verfügbarkeit",
       availabilityDescription: "Lege fest, ob Einsendungen und der öffentliche Link aktiv sind.",
       active: "Aktiv",
@@ -165,9 +165,9 @@ export const gridsFormMessages = i18n.define({
       submission: "Einsendung",
       submissionDescription: "Lege fest, was nach dem Absenden des Formulars geschieht.",
       submitButtonLabel: "Beschriftung der Absenden-Schaltfläche",
-      defaultsToSave: 'Standardmäßig „Speichern“.',
+      defaultsToSave: "Standardmäßig „Speichern“.",
       successMessage: "Erfolgsmeldung",
-      successMessageDescription: 'Wird nach einer erfolgreichen Einsendung angezeigt. Standardmäßig „Gespeichert“.',
+      successMessageDescription: "Wird nach einer erfolgreichen Einsendung angezeigt. Standardmäßig „Gespeichert“.",
       saved: "Gespeichert",
       redirectUrl: "Weiterleitungs-URL",
       redirectUrlDescription:
@@ -194,7 +194,8 @@ export const gridsFormMessages = i18n.define({
       confirmStagesSettings: "Mit Bestätigen übernimmst du diese Feldeinstellungen in den Entwurf. Speichere anschließend das Formular.",
       confirm: "Bestätigen",
       inlineCreate: "Verknüpfte Datensätze direkt erstellen",
-      inlineCreateDescription: "Erstelle den verknüpften Datensatz zusammen mit dem Hauptdatensatz. Bis zum Absenden wird nichts gespeichert.",
+      inlineCreateDescription:
+        "Erstelle den verknüpften Datensatz zusammen mit dem Hauptdatensatz. Bis zum Absenden wird nichts gespeichert.",
       inlineFields: "Direkt ausfüllbare Felder",
       inlineFieldsDescription: "Felder für den neuen verknüpften Datensatz.",
       pickFields: "Felder auswählen...",

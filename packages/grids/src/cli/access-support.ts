@@ -13,7 +13,7 @@ type AccessResourceType = (typeof ACCESS_RESOURCE_TYPES)[number];
 
 export type AccessPermission = (typeof PERMISSION_LEVELS)[number];
 
-export type AccessResource = {
+type AccessResource = {
   type: AccessResourceType;
   id: string;
   label: string;

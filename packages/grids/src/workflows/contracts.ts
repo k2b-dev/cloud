@@ -10,7 +10,7 @@ import { z } from "zod";
 
 export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const;
 
-export const CORRECTION_PREFILL_FIELD_TYPES = [
+const CORRECTION_PREFILL_FIELD_TYPES = [
   "text",
   "longtext",
   "number",
@@ -25,7 +25,7 @@ export const CORRECTION_PREFILL_FIELD_TYPES = [
 
 export const MAX_CORRECTION_PREFILL_FIELDS = 100;
 
-export const CORRECTION_DRAFT_INTENTS = ["correction", "cancellation"] as const;
+const CORRECTION_DRAFT_INTENTS = ["correction", "cancellation"] as const;
 
 export type CorrectionDraftIntent = (typeof CORRECTION_DRAFT_INTENTS)[number];
 
@@ -33,7 +33,7 @@ export const isCorrectionPrefillFieldType = (type: string): boolean => (CORRECTI
 
 export type GridsWorkflowChannel = (typeof GRIDS_WORKFLOW_CHANNELS)[number];
 
-export const GridsWorkflowCredentialBindingSchema = z
+const GridsWorkflowCredentialBindingSchema = z
   .object({
     appId: z.string().min(1),
     resourceType: z.string().min(1),
@@ -43,7 +43,7 @@ export const GridsWorkflowCredentialBindingSchema = z
 
 export type GridsWorkflowCredentialBinding = z.infer<typeof GridsWorkflowCredentialBindingSchema>;
 
-export const GridsWorkflowCredentialSchema = z
+const GridsWorkflowCredentialSchema = z
   .object({
     kind: z.enum(["api_token", "oauth"]),
     id: z.string().uuid().nullable(),
@@ -143,7 +143,7 @@ export type WorkflowTriggerRuntimeState = {
   }>;
 };
 
-export type GridsScannerResolve = { by: "scanCode" | "field"; field?: string };
+type GridsScannerResolve = { by: "scanCode" | "field"; field?: string };
 
 export type GridsScannerInputSource =
   | { kind: "scan"; value: "text" }
@@ -154,7 +154,7 @@ export type GridsScannerInputSource =
 
 export type GridsScannerPromptInputSource = Extract<GridsScannerInputSource, { kind: "session" | "afterScan" }>;
 
-export type GridsScannerLauncherConfig =
+type GridsScannerLauncherConfig =
   | {
       /** Legacy single-record scanner config. Kept readable for stored launchers. */
       kind: "scanner";
@@ -253,9 +253,9 @@ export const correctionDraftPlanIntent = (plan: WorkflowBoundPlan, recordInput: 
   return action.config.intent === "cancellation" ? "cancellation" : "correction";
 };
 
-export type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
+type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
 
-export type GridsRecordLauncherConfig = {
+type GridsRecordLauncherConfig = {
   kind: "record";
   input: string;
   profile: "correctionDraft";
@@ -299,13 +299,6 @@ export type CreateGridsWorkflowLauncherInput = {
 
 export type UpdateGridsWorkflowLauncherInput = Partial<CreateGridsWorkflowLauncherInput>;
 
-export type GridsWorkflowInvocationRequest = {
-  mode: WorkflowInvocationMode;
-  inputs: Record<string, WorkflowJsonValue>;
-  idempotencyKey: string;
-  expectedRevision?: number;
-};
-
 export type GridsWorkflowRun = {
   id: string;
   workflowId: string | null;
@@ -326,7 +319,7 @@ export type GridsWorkflowRun = {
   finishedAt: string | null;
 };
 
-export type GridsWorkflowStepStatus = z.infer<typeof GridsWorkflowStepStatusSchema>;
+type GridsWorkflowStepStatus = z.infer<typeof GridsWorkflowStepStatusSchema>;
 
 export type GridsWorkflowStepRun = {
   runId: string;
@@ -352,7 +345,7 @@ export const WorkflowDiagnosticSchema = z.object({
     .optional(),
 });
 
-export const WorkflowPlanSchema = z
+const WorkflowPlanSchema = z
   .object({
     schemaVersion: z.literal(2),
     languageId: z.string(),
@@ -417,44 +410,11 @@ export const GridsWorkflowRevisionSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const GridsWorkflowRevisionSummarySchema = GridsWorkflowRevisionSchema.pick({
-  workflowId: true,
-  revision: true,
-  name: true,
-  actorUserId: true,
-  createdAt: true,
-});
-
-export const GridsWorkflowRevisionListSchema = z.object({
-  items: z.array(GridsWorkflowRevisionSummarySchema),
-  nextRevision: z.number().int().positive().nullable(),
-});
-
 export const RestoreGridsWorkflowRevisionSchema = z
   .object({
     expectedRevision: z.number().int().positive(),
   })
   .strict();
-
-export const WorkflowTriggerRuntimeStateSchema = z.object({
-  schedule: z
-    .object({
-      cron: z.string(),
-      timezone: z.string(),
-      state: z.enum(["paused", "pending", "reconciled", "degraded"]),
-      nextRunAt: z.string().datetime().nullable(),
-      problem: z.string().nullable(),
-    })
-    .nullable(),
-  recordEvents: z.array(
-    z.object({
-      tableId: z.string().uuid().nullable(),
-      event: z.string(),
-      hasFilter: z.boolean(),
-      state: z.enum(["paused", "active"]),
-    }),
-  ),
-});
 
 const ScannerResolveSchema = z
   .object({
@@ -578,67 +538,6 @@ export const GridsWorkflowInvocationRequestSchema = z
 
 export const GridsWorkflowRunStatusSchema = z.enum(["queued", "running", "waiting", "succeeded", "failed", "canceled", "needs_attention"]);
 
-export const GridsWorkflowListSchema = z.array(GridsWorkflowSchema);
-
-export const GridsWorkflowLauncherSchema = z.object({
-  id: z.string().uuid(),
-  shortId: z.string().length(6),
-  baseId: z.string().uuid(),
-  workflowId: z.string().uuid(),
-  name: z.string(),
-  config: GridsWorkflowLauncherConfigSchema,
-  enabled: z.boolean(),
-  validatedRevision: z.number().int().positive(),
-  diagnostics: z.array(WorkflowDiagnosticSchema),
-  deletedAt: z.string().datetime().nullable(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
-
-export const GridsWorkflowLauncherListSchema = z.object({ items: z.array(GridsWorkflowLauncherSchema) });
-
-export const WorkflowInvocationReceiptSchema = z.object({
-  runId: z.string().uuid(),
-  workflowId: z.string().uuid(),
-  revision: z.string().min(1),
-  mode: z.enum(["execute", "dryRun"]),
-  channel: z.enum(GRIDS_WORKFLOW_CHANNELS),
-  created: z.boolean(),
-  status: GridsWorkflowRunStatusSchema,
-});
-
-export const GridsWorkflowRunSchema = z.object({
-  id: z.string().uuid(),
-  workflowId: z.string().uuid().nullable(),
-  launcherId: z.string().uuid().nullable(),
-  baseId: z.string().uuid(),
-  workflowRevision: z.number().int().positive(),
-  mode: z.enum(["execute", "dryRun"]),
-  channel: z.enum(GRIDS_WORKFLOW_CHANNELS),
-  actorUserId: z.string().uuid().nullable(),
-  serviceAccountId: z.string().uuid().nullable(),
-  inputs: z.record(z.string(), z.json()),
-  status: GridsWorkflowRunStatusSchema,
-  result: z.json().nullable(),
-  error: z
-    .object({
-      code: z.string(),
-      message: z.string(),
-      retryable: z.boolean(),
-      details: z.record(z.string(), z.json()).optional(),
-    })
-    .nullable(),
-  resultMessage: z.string().nullable(),
-  createdAt: z.string().datetime(),
-  startedAt: z.string().datetime().nullable(),
-  finishedAt: z.string().datetime().nullable(),
-});
-
-export const GridsWorkflowRunListSchema = z.object({
-  items: z.array(GridsWorkflowRunSchema),
-  nextCursor: z.string().nullable(),
-});
-
 /*
  * A step's states are the kernel's, not the run's. An executed step ends
  * "completed" and a planned one "planned" — neither is "succeeded", which is a
@@ -658,26 +557,7 @@ export const GridsWorkflowStepStatusSchema = z.enum([
   "canceled",
 ]);
 
-export const GridsWorkflowStepRunSchema = z.object({
-  runId: z.string().uuid(),
-  key: z.string(),
-  sourcePath: z.array(z.union([z.string(), z.number()])),
-  iterationPath: z.array(z.number().int().nonnegative()),
-  kind: z.string(),
-  action: z.string().nullable(),
-  status: GridsWorkflowStepStatusSchema,
-  outcome: z.json().nullable(),
-  executionGeneration: z.number().int().nonnegative(),
-  startedAt: z.string().datetime().nullable(),
-  finishedAt: z.string().datetime().nullable(),
-});
-
-export const GridsWorkflowStepRunListSchema = z.object({
-  items: z.array(GridsWorkflowStepRunSchema),
-  truncated: z.boolean(),
-});
-
-export const GridsWorkflowEmailDeliverySchema = z.object({
+const GridsWorkflowEmailDeliverySchema = z.object({
   id: z.string().uuid(),
   workflowId: z.string().uuid().nullable(),
   workflowRunId: z.string().uuid().nullable(),
@@ -698,11 +578,6 @@ export const GridsWorkflowEmailDeliverySchema = z.object({
 
 export type GridsWorkflowEmailDelivery = z.infer<typeof GridsWorkflowEmailDeliverySchema>;
 
-export const GridsWorkflowEmailDeliveryListSchema = z.object({
-  items: z.array(GridsWorkflowEmailDeliverySchema),
-  nextCursor: z.string().nullable(),
-});
-
 export const GridsWorkflowRunStatsWindowSchema = z.enum(["10m", "1h", "12h", "24h", "7d", "30d"]);
 export type GridsWorkflowRunStatsWindow = z.infer<typeof GridsWorkflowRunStatsWindowSchema>;
 
@@ -722,7 +597,7 @@ const GridsWorkflowRunStatsCountsSchema = z.object({
   lastRunAt: z.string().datetime().nullable(),
 });
 
-export const GridsWorkflowRunStatsSchema = GridsWorkflowRunStatsCountsSchema.extend({
+const GridsWorkflowRunStatsSchema = GridsWorkflowRunStatsCountsSchema.extend({
   window: GridsWorkflowRunStatsWindowSchema,
   failedLast24h: z.number().int().nonnegative(),
   byWorkflow: z.array(

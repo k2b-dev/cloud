@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 
-export const formServiceMessages = i18n.define({
+const formServiceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {

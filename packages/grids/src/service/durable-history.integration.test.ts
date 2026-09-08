@@ -90,14 +90,7 @@ describe("durable record history Postgres integration", () => {
       `;
       const beforeNoop = await recordMutationState(item.recordId);
 
-      const noop = await records.update(
-        item.tableId,
-        item.recordId,
-        { [item.nameFieldId]: "FX3" },
-        null,
-        "direct",
-        beforeNoop.version,
-      );
+      const noop = await records.update(item.tableId, item.recordId, { [item.nameFieldId]: "FX3" }, null, "direct", beforeNoop.version);
 
       expect(noop.ok && noop.data.version).toBe(beforeNoop.version);
       expect(await recordMutationState(item.recordId)).toEqual(beforeNoop);
@@ -151,7 +144,9 @@ describe("durable record history Postgres integration", () => {
       `;
       expect(activationAudit?.action).toBe("durable_history.enabled");
       expect(activationAudit?.diff).toMatchObject({ durableHistory: { old: false, new: { enabled: true } } });
-      expect((await records.update(item.tableId, item.recordId, { [item.relationFieldId]: [item.targetRecordId] }, null, "direct")).ok).toBe(true);
+      expect(
+        (await records.update(item.tableId, item.recordId, { [item.relationFieldId]: [item.targetRecordId] }, null, "direct")).ok,
+      ).toBe(true);
       const beforeNoop = await recordMutationState(item.recordId);
       const noop = await records.update(
         item.tableId,
@@ -201,7 +196,9 @@ describe("durable record history Postgres integration", () => {
         origin: "direct",
       });
       if (!replaced.ok) throw replaced.error;
-      expect((await files.remove({ ...item, fieldId: item.fileFieldId, fileId: replaced.data.id, userId: null, origin: "direct" })).ok).toBe(true);
+      expect(
+        (await files.remove({ ...item, fieldId: item.fileFieldId, fileId: replaced.data.id, userId: null, origin: "direct" })).ok,
+      ).toBe(true);
       expect((await records.softDelete(item.tableId, item.recordId, null, "direct")).ok).toBe(true);
       expect((await records.restore(item.tableId, item.recordId, null, "direct")).ok).toBe(true);
       expect((await fields.softDelete(item.nameFieldId, null)).ok).toBe(true);

@@ -85,8 +85,7 @@ export const workflowServiceMessages = i18n.define({
       runUnavailable: "Die Workflow-Ausführung ist nicht mehr verfügbar.",
       idempotencyConflict: "Dieser Idempotenzschlüssel wurde bereits für eine andere Anfrage verwendet.",
       workflowNotAcceptingRuns: "Der Workflow nimmt derzeit keine Ausführungen an",
-      emailTemplateUnavailable:
-        "Eine referenzierte E-Mail-Vorlage ist nicht mehr verfügbar. Validiere und speichere den Workflow erneut.",
+      emailTemplateUnavailable: "Eine referenzierte E-Mail-Vorlage ist nicht mehr verfügbar. Validiere und speichere den Workflow erneut.",
       httpUrlInvalid: "Die URL der HTTP-Anfrage ist ungültig",
       httpProtocolInvalid: "Die URL der HTTP-Anfrage muss http oder https verwenden",
       httpCredentialsForbidden: "Die URL der HTTP-Anfrage darf keine Zugangsdaten enthalten",

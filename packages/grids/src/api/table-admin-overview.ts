@@ -14,7 +14,7 @@ export const PublicTableAdminOverviewQuerySchema = z
   })
   .strict();
 
-export const PublicTableAdminOverviewItemSchema = z.object({
+const PublicTableAdminOverviewItemSchema = z.object({
   id: ShortIdSchema,
   name: z.string(),
   kind: z.enum(["stored", "combined"]),

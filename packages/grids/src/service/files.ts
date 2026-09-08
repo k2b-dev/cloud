@@ -30,9 +30,9 @@ type DbRow = {
   created_at: Date | string;
 };
 
-export type FileProtectionOwnerKind = "record_revision" | "document_artifact";
+type FileProtectionOwnerKind = "record_revision" | "document_artifact";
 
-export type ProtectedFileContent = {
+type ProtectedFileContent = {
   id: string;
   shortId: string;
   filename: string;
@@ -44,7 +44,7 @@ export type ProtectedFileContent = {
   bytes: Uint8Array;
 };
 
-export type ProtectedFileAsset = Omit<ProtectedFileContent, "bytes">;
+type ProtectedFileAsset = Omit<ProtectedFileContent, "bytes">;
 
 const mapRow = (row: DbRow, targetFieldId = row.field_id, exposeCreatedBy = true): GridFile => ({
   id: row.id,

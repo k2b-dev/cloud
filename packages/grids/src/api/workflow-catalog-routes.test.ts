@@ -5,6 +5,7 @@ import type { AuthContext, PermissionLevel } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { gridsService } from "../service";
+import * as publicResources from "../service/public-resources";
 import {
   type GridsWorkflow,
   type GridsWorkflowRevision,
@@ -19,7 +20,7 @@ const userId = "33333333-3333-4333-8333-333333333333";
 const basePublicId = "base01";
 const workflowPublicId = "work01";
 
-mock.module("../service/public-resources", () => ({
+const publicResourceMocks = {
   resolvePublicId: async (type: string, publicId: string) => {
     if (type === "base" && publicId === basePublicId) return baseId;
     if (type === "workflow" && publicId === workflowPublicId) return workflowId;
@@ -34,7 +35,7 @@ mock.module("../service/public-resources", () => ({
         return [];
       }),
     ),
-}));
+};
 
 const user: User = {
   id: userId,
@@ -160,6 +161,9 @@ const patchWorkflow = (revision?: number) =>
 
 describe("workflow catalog update route", () => {
   beforeEach(() => {
+    spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
+    spyOn(publicResources, "resolvePublicIds").mockImplementation(publicResourceMocks.resolvePublicIds);
+    spyOn(publicResources, "projectPublicIds").mockImplementation(publicResourceMocks.projectPublicIds);
     permissionLevel = "admin";
     updateRevision = null;
     getWorkflowCalls = 0;

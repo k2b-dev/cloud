@@ -13,7 +13,7 @@ export type ReferencedByItem = {
 };
 
 type ReferencedByPage = { items: ReferencedByItem[]; nextCursor: string | null };
-export type ReferencedByGroup = { tableName: string; fieldName: string; items: ReferencedByItem[] };
+type ReferencedByGroup = { tableName: string; fieldName: string; items: ReferencedByItem[] };
 export const REFERENCED_BY_PAGE_SIZE = 5;
 
 export const referencedByEndpoint = (tableId: string, recordId: string) =>

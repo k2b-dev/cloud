@@ -11,7 +11,7 @@ const LEVEL_RANK: Record<PermissionLevel, number> = {
 
 const LEVEL_BY_RANK: PermissionLevel[] = ["none", "read", "write", "admin"];
 
-export type ResourceType = "base" | "customApp";
+type ResourceType = "base" | "customApp";
 type PrincipalTier = "serviceAccount" | "user" | "group" | "authenticated" | "public";
 
 export type Grant = {
@@ -21,7 +21,7 @@ export type Grant = {
   level: PermissionLevel;
 };
 
-export type ResolveTarget = { baseId: string } | { customAppId: string };
+type ResolveTarget = { baseId: string } | { customAppId: string };
 
 const PRINCIPAL_TIERS: PrincipalTier[] = ["serviceAccount", "user", "group", "authenticated", "public"];
 
@@ -70,7 +70,7 @@ type DbRow = {
   level: PermissionLevel;
 };
 
-export type PermissionReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number };
+type PermissionReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number };
 
 const loadExactGrants = async (
   params:

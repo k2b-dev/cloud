@@ -1,4 +1,4 @@
-export type GqlExample = {
+type GqlExample = {
   title: string;
   description: string;
   code: string;

@@ -388,7 +388,7 @@ export const dropOrphanedFieldIndexes = async (db?: SQL): Promise<number> => {
 
 const FIELD_INDEX_MAINTENANCE_LOCK = "grids:field-index-maintenance:v2";
 
-export type FieldIndexMaintenanceBatchResult = {
+type FieldIndexMaintenanceBatchResult = {
   claimed: boolean;
   changed: number;
   hasMore: boolean;

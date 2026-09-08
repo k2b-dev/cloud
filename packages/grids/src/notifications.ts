@@ -71,7 +71,7 @@ type WorkflowNotificationSendResult = {
   error?: string;
 };
 
-export type WorkflowNotificationSender = {
+type WorkflowNotificationSender = {
   send: (input: WorkflowNotificationSendInput) => Promise<WorkflowNotificationSendResult>;
 };
 

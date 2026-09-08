@@ -67,7 +67,7 @@ export const workflowRunDocumentAccessWhere = (allowed: WorkflowRunDocumentScope
     .reduce((where, scope) => sql`${where} OR ${scope}`);
 };
 
-export const listDocuments = async (params: {
+const listDocuments = async (params: {
   baseId: string;
   tableId?: string;
   recordId?: string;

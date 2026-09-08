@@ -78,11 +78,7 @@ export const listDocumentTemplates = (
         `/documents/templates/by-table/${encodeURIComponent(tableId)}${queryString({ min: options.min ?? "read" })}`,
       );
 
-export const resolveDocumentTemplate = async (
-  ctx: CloudCliContext,
-  table: Table | null,
-  ref: string,
-): Promise<PublicDocumentTemplateSummary> => {
+const resolveDocumentTemplate = async (ctx: CloudCliContext, table: Table | null, ref: string): Promise<PublicDocumentTemplateSummary> => {
   if (!table) throw new Error("Resolving a document template requires --table because names and ids are table-scoped.");
   return resolveNamedResource((await listDocumentTemplates(ctx, table.id)) as PublicDocumentTemplateSummary[], ref, "document template");
 };

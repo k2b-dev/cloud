@@ -10,7 +10,7 @@ export const BARCODE_GROUPS = [
   { value: "publishing", label: "Publishing" },
 ] as const;
 
-export const CURATED_BARCODE_OPTIONS: BarcodeOption[] = [
+const CURATED_BARCODE_OPTIONS: BarcodeOption[] = [
   { id: "code128", label: "Code 128", description: "General-purpose linear barcode.", icon: "ti ti-barcode" },
   { id: "qrcode", label: "QR Code", description: "Compact 2D code for phones.", icon: "ti ti-qrcode" },
   { id: "datamatrix", label: "Data Matrix", description: "Small 2D code for labels.", icon: "ti ti-grid-dots" },
@@ -35,7 +35,7 @@ export const CURATED_BARCODE_OPTIONS: BarcodeOption[] = [
   { id: "dotcode", label: "DotCode", description: "Dot-based production code.", icon: "ti ti-grid-dots" },
 ];
 
-export const BARCODE_SYMBOL_IDS: string[] = [
+const BARCODE_SYMBOL_IDS: string[] = [
   "auspost",
   "azteccode",
   "azteccodecompact",
@@ -175,7 +175,22 @@ export const barcodeGroups = (id: string): readonly string[] => {
   if (includesAny(id, ["databar", "ean", "gs1", "isbn", "ismn", "issn", "itf14", "sscc", "upc"])) {
     groups.push("gs1-retail");
   }
-  if (includesAny(id, ["auspost", "daft", "flattermarken", "identcode", "japanpost", "kix", "leitcode", "mailmark", "onecode", "planet", "postnet", "royalmail"])) {
+  if (
+    includesAny(id, [
+      "auspost",
+      "daft",
+      "flattermarken",
+      "identcode",
+      "japanpost",
+      "kix",
+      "leitcode",
+      "mailmark",
+      "onecode",
+      "planet",
+      "postnet",
+      "royalmail",
+    ])
+  ) {
     groups.push("postal");
   }
   if (includesAny(id, ["code32", "hibc", "pharmacode", "pzn"])) groups.push("healthcare");

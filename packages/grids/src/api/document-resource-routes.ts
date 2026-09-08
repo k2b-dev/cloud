@@ -132,5 +132,3 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
         return artifact.ok ? artifactResponse(artifact.data) : respond(c, () => Promise.resolve(artifact));
       },
     );
-
-export default createDocumentResourceRoutes();

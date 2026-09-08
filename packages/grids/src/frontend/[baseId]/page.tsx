@@ -69,7 +69,11 @@ export default ssr<AuthContext>(async (c) => {
     );
   }
 
-  if (loadedState.kind !== "ok") return ssr.error(c, loadedState.kind === "accessDenied" ? 403 : 404, { description: loadedState.kind === "accessDenied" ? t.askBaseAdminForAccess : t.baseUnavailable, action: { label: t.allBases, href: "/app/grids" } });
+  if (loadedState.kind !== "ok")
+    return ssr.error(c, loadedState.kind === "accessDenied" ? 403 : 404, {
+      description: loadedState.kind === "accessDenied" ? t.askBaseAdminForAccess : t.baseUnavailable,
+      action: { label: t.allBases, href: "/app/grids" },
+    });
 
   const state = loaded.state;
   if (!state) throw new Error("Workspace state projection is missing");

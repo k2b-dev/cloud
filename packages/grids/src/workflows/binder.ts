@@ -29,9 +29,7 @@ import {
 } from "../service/workflow-catalog";
 import { gridsWorkflows } from "./module";
 
-export type BindGridsWorkflowResult =
-  | { ok: true; plan: WorkflowBoundPlan; source?: string }
-  | { ok: false; diagnostics: WorkflowDiagnostic[] };
+type BindGridsWorkflowResult = { ok: true; plan: WorkflowBoundPlan; source?: string } | { ok: false; diagnostics: WorkflowDiagnostic[] };
 
 type CanonicalEdit =
   | { kind: "value" | "key"; path: Array<string | number>; value: string }

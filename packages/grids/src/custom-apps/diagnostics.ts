@@ -5,7 +5,7 @@ type DiagnosticParams = Readonly<Record<string, string | number>>;
 
 const value = (params: DiagnosticParams, key: string) => String(params[key] ?? "");
 
-export const customAppDiagnosticMessages = i18n.define({
+const customAppDiagnosticMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {

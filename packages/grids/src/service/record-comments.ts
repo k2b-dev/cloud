@@ -34,7 +34,7 @@ export type RecordComment = {
   updatedAt: string;
 };
 
-export type RecordCommentPage = { items: RecordComment[]; nextCursor: string | null };
+type RecordCommentPage = { items: RecordComment[]; nextCursor: string | null };
 
 const iso = (value: Date | string): string => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
 

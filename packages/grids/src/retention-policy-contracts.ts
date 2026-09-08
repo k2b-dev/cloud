@@ -5,10 +5,10 @@ import { ShortIdSchema } from "./contracts";
 export const RETENTION_MIN_DAYS = 1;
 export const RETENTION_MAX_DAYS = 36_500;
 export const RETENTION_PREVIEW_LIMIT = 100;
-export const RETENTION_FILE_SEARCH_MAX_LENGTH = 100;
-export const RetentionFileStatusSchema = z.enum(["all", "retained", "reached"]);
+const RETENTION_FILE_SEARCH_MAX_LENGTH = 100;
+const RetentionFileStatusSchema = z.enum(["all", "retained", "reached"]);
 export type RetentionFileStatus = z.infer<typeof RetentionFileStatusSchema>;
-export const RetentionRecordStatusSchema = z.enum(["all", "protected", "retained", "reached"]);
+const RetentionRecordStatusSchema = z.enum(["all", "protected", "retained", "reached"]);
 export type RetentionRecordStatus = z.infer<typeof RetentionRecordStatusSchema>;
 
 export const RetentionPolicyInputSchema = z
@@ -16,7 +16,7 @@ export const RetentionPolicyInputSchema = z
   .strict();
 export type RetentionPolicyInput = z.infer<typeof RetentionPolicyInputSchema>;
 
-export const RetentionPolicySchema = z
+const RetentionPolicySchema = z
   .object({ baseId: ShortIdSchema, minimumDays: z.number().int().positive(), updatedAt: z.string().datetime({ offset: true }) })
   .strict();
 export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>;
@@ -82,9 +82,8 @@ export const RetentionFilesQuerySchema = z
     status: RetentionFileStatusSchema.optional().default("all"),
   })
   .strict();
-export type RetentionFilesQuery = z.infer<typeof RetentionFilesQuerySchema>;
 
-export const RetentionFileSchema = z
+const RetentionFileSchema = z
   .object({
     fileId: ShortIdSchema,
     filename: z.string(),
@@ -115,9 +114,8 @@ export const RetentionRecordsQuerySchema = z
     status: RetentionRecordStatusSchema.optional().default("all"),
   })
   .strict();
-export type RetentionRecordsQuery = z.infer<typeof RetentionRecordsQuerySchema>;
 
-export const RetentionRecordSchema = z
+const RetentionRecordSchema = z
   .object({
     recordId: ShortIdSchema,
     tableId: ShortIdSchema,

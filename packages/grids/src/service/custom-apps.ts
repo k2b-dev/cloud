@@ -71,12 +71,12 @@ export type CustomAppSummary = Pick<
   "id" | "shortId" | "baseId" | "name" | "icon" | "publishedAt" | "updatedAt" | "draftValid" | "publishedValid" | "hasUnpublishedChanges"
 >;
 
-export type CompiledCustomApp = {
+type CompiledCustomApp = {
   definition: CustomAppDefinition;
   capabilities: CustomAppCapabilities;
   bindings: { appId: string | null; baseId: string };
 };
-export type CustomAppCompilation = { ok: true; compiled: CompiledCustomApp } | { ok: false; diagnostics: CustomAppDiagnostic[] };
+type CustomAppCompilation = { ok: true; compiled: CompiledCustomApp } | { ok: false; diagnostics: CustomAppDiagnostic[] };
 export type CustomAppPlan = {
   valid: boolean;
   diagnostics: CustomAppDiagnostic[];

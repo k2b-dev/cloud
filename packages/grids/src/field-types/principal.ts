@@ -12,7 +12,7 @@ export const PrincipalReferenceSchema = z
 
 export type PrincipalReference = z.infer<typeof PrincipalReferenceSchema>;
 
-export const PrincipalConfigSchema = z
+const PrincipalConfigSchema = z
   .object({
     cardinality: z.enum(["single", "multiple"]).default("multiple"),
   })

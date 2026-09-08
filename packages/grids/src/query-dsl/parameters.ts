@@ -37,7 +37,7 @@ export type DslQueryContextValues = {
   "time.timeZone": string;
 } & Partial<Record<`params.${string}`, string>>;
 
-export type BindDslQueryContextResult = { ok: true; ast: DslQueryAst } | { ok: false; error: string };
+type BindDslQueryContextResult = { ok: true; ast: DslQueryAst } | { ok: false; error: string };
 
 export type DslQueryContextInput = Readonly<Partial<DslQueryContextValues>>;
 

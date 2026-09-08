@@ -244,7 +244,7 @@ export const UpdateBaseSchema = z
   .strict();
 
 // ── Table ─────────────────────────────────────────────────────────────────
-export const TableKindSchema = z.enum(["stored", "federated"]);
+const TableKindSchema = z.enum(["stored", "federated"]);
 export type TableKind = z.infer<typeof TableKindSchema>;
 
 export const TableSchema = z.object({
@@ -287,10 +287,10 @@ export const UpdateTableSchema = z.object({
 });
 
 // ── Federated table configuration ─────────────────────────────────────────
-export const FederatedRevisionStatusSchema = z.enum(["draft", "active", "degraded", "superseded"]);
+const FederatedRevisionStatusSchema = z.enum(["draft", "active", "degraded", "superseded"]);
 export type FederatedRevisionStatus = z.infer<typeof FederatedRevisionStatusSchema>;
 
-export const FederatedDiagnosticSchema = z.object({
+const FederatedDiagnosticSchema = z.object({
   code: z.string().min(1).max(100),
   message: z.string().min(1).max(1000),
   sourceTableId: z.string().uuid().optional(),
@@ -299,7 +299,7 @@ export const FederatedDiagnosticSchema = z.object({
 });
 export type FederatedDiagnostic = z.infer<typeof FederatedDiagnosticSchema>;
 
-export const FederatedSourceSchema = z.object({
+const FederatedSourceSchema = z.object({
   id: z.string().uuid(),
   revisionId: z.string().uuid(),
   sourceTableId: z.string().uuid(),
@@ -311,7 +311,7 @@ export const FederatedSourceSchema = z.object({
 });
 export type FederatedSource = z.infer<typeof FederatedSourceSchema>;
 
-export const FederatedFieldMappingSchema = z.object({
+const FederatedFieldMappingSchema = z.object({
   revisionId: z.string().uuid(),
   targetFieldId: z.string().uuid(),
   sourceTableId: z.string().uuid(),
@@ -320,7 +320,7 @@ export const FederatedFieldMappingSchema = z.object({
 });
 export type FederatedFieldMapping = z.infer<typeof FederatedFieldMappingSchema>;
 
-export const FederatedRevisionSchema = z.object({
+const FederatedRevisionSchema = z.object({
   id: z.string().uuid(),
   tableId: z.string().uuid(),
   revision: z.number().int().positive(),
@@ -336,62 +336,31 @@ export const FederatedRevisionSchema = z.object({
 });
 export type FederatedRevision = z.infer<typeof FederatedRevisionSchema>;
 
-export const FederatedMappingWriteSchema = z.object({
+const FederatedMappingWriteSchema = z.object({
   targetFieldId: z.string().uuid(),
   sourceTableId: z.string().uuid(),
   sourceFieldId: z.string().uuid(),
   config: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const FederatedDraftInputSchema = z.object({
+const FederatedDraftInputSchema = z.object({
   sourceTableIds: z.array(z.string().uuid()).max(50),
   retainedSourceIds: z.array(z.string().uuid()).max(50).optional(),
   mappings: z.array(FederatedMappingWriteSchema).max(10_000),
 });
 export type FederatedDraftInput = z.infer<typeof FederatedDraftInputSchema>;
 
-export const UpdateFederatedDraftSchema = FederatedDraftInputSchema.extend({
-  draftToken: z.string().min(1),
-});
-export type UpdateFederatedDraftInput = z.infer<typeof UpdateFederatedDraftSchema>;
-
-export const ValidateFederatedDraftSchema = FederatedDraftInputSchema;
-
-export const FederatedSourceViewSchema = z.object({
-  id: z.string().uuid(),
-  sourceTableId: z.string().uuid().nullable(),
-  position: z.number().int().nonnegative(),
-  authorizedAt: z.string().datetime().nullable(),
-  revokedAt: z.string().datetime().nullable(),
-});
-
-export const FederatedFieldMappingViewSchema = FederatedFieldMappingSchema.omit({ revisionId: true });
-
-export const FederatedRevisionViewSchema = FederatedRevisionSchema.omit({ sources: true, mappings: true }).extend({
-  revisionToken: z.string().min(1),
-  sources: z.array(FederatedSourceViewSchema),
-  mappings: z.array(FederatedFieldMappingViewSchema),
-});
-export type FederatedRevisionView = z.infer<typeof FederatedRevisionViewSchema>;
-
-export const FederatedTableConfigSchema = z.object({
-  current: FederatedRevisionViewSchema.nullable(),
-  draft: FederatedRevisionViewSchema,
-});
-export type FederatedTableConfig = z.infer<typeof FederatedTableConfigSchema>;
-
-export const FederatedSourceCandidateSchema = z.object({
+const FederatedSourceCandidateSchema = z.object({
   base: BaseSchema.pick({ id: true, shortId: true, name: true }),
   table: TableSchema.pick({ id: true, shortId: true, baseId: true, name: true, description: true, icon: true }),
   fieldCount: z.number().int().nonnegative(),
 });
-export type FederatedSourceCandidate = z.infer<typeof FederatedSourceCandidateSchema>;
 export const FederatedSourceCandidateQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
-export const FederatedSourceCandidatePageSchema = z.object({
+const FederatedSourceCandidatePageSchema = z.object({
   items: z.array(FederatedSourceCandidateSchema),
   total: z.number().int().nonnegative(),
   limit: z.number().int().min(1),
@@ -399,13 +368,13 @@ export const FederatedSourceCandidatePageSchema = z.object({
 });
 export type FederatedSourceCandidatePage = z.infer<typeof FederatedSourceCandidatePageSchema>;
 
-export const FederatedValidationSchema = z.object({
+const FederatedValidationSchema = z.object({
   valid: z.boolean(),
   diagnostics: z.array(FederatedDiagnosticSchema),
 });
 export type FederatedValidation = z.infer<typeof FederatedValidationSchema>;
 
-export const FederatedSourcePublicationSchema = z.object({
+const FederatedSourcePublicationSchema = z.object({
   targetBaseId: z.string().uuid(),
   targetBaseShortId: ShortIdSchema,
   targetBaseName: z.string(),
@@ -427,7 +396,6 @@ export const FederatedSourcePublicationSchema = z.object({
   ),
 });
 export type FederatedSourcePublication = z.infer<typeof FederatedSourcePublicationSchema>;
-export const FederatedSourcePublicationListSchema = z.array(FederatedSourcePublicationSchema);
 
 // ── Field ─────────────────────────────────────────────────────────────────
 export const FieldSchema = z.object({
@@ -465,25 +433,6 @@ export const CreateFieldSchema = z.object({
   defaultValue: z.unknown().optional(),
   indexed: z.boolean().optional(),
   uniqueConstraint: z.boolean().optional(),
-});
-
-export const UpdateFieldSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(2000).nullable().optional(),
-  icon: z.string().max(200).nullable().optional(),
-  config: z.record(z.string(), z.unknown()).optional(),
-  position: z.number().int().optional(),
-  required: z.boolean().optional(),
-  presentable: z.boolean().optional(),
-  hideInTable: z.boolean().optional(),
-  defaultValue: z.unknown().optional(),
-  indexed: z.boolean().optional(),
-  uniqueConstraint: z.boolean().optional(),
-});
-
-/** Reorder payload — list of field ids in the new desired order. */
-export const ReorderFieldsSchema = z.object({
-  fieldIds: z.array(z.string().uuid()).min(1),
 });
 
 // ── Record ────────────────────────────────────────────────────────────────
@@ -725,7 +674,7 @@ export type SearchSpec = z.infer<typeof SearchSpecSchema>;
 export const RecordMetaUserKeySchema = z.enum(["createdBy", "updatedBy", "deletedBy"]);
 export type RecordMetaUserKey = z.infer<typeof RecordMetaUserKeySchema>;
 
-export const RecordFinalizationStateSchema = z.enum(["draft", "awaitingReview", "finalized"]);
+const RecordFinalizationStateSchema = z.enum(["draft", "awaitingReview", "finalized"]);
 export type RecordFinalizationState = z.infer<typeof RecordFinalizationStateSchema>;
 
 const RecordMetaQuerySchema = z.object({
@@ -882,7 +831,6 @@ export const TableQueryResponseSchema = z.object({
     .optional(),
 });
 export type TableQueryBody = z.infer<typeof TableQueryBodySchema>;
-export type TableQueryResult = z.infer<typeof TableQueryResponseSchema>;
 
 // ── GQL preview / execution ──────────────────────────────────────────────
 //
@@ -1040,7 +988,7 @@ const DslQueryPreviewFailureSchema = z.object({
 
 export const DslQueryPreviewResponseSchema = z.union([DslQueryPreviewSuccessSchema, DslQueryPreviewFailureSchema]);
 export type DslQueryPreviewResponse = z.infer<typeof DslQueryPreviewResponseSchema>;
-export const DslQueryExecuteResponseSchema = DslQueryPreviewResponseSchema;
+const DslQueryExecuteResponseSchema = DslQueryPreviewResponseSchema;
 export type DslQueryExecuteResponse = z.infer<typeof DslQueryExecuteResponseSchema>;
 
 const DslQueryCompletionKindSchema = z.enum(["keyword", "source", "field", "column", "alias", "function", "modifier", "literal"]);
@@ -1078,7 +1026,7 @@ const DslQueryCompileViewSuccessSchema = z.object({
   tableId: z.string().uuid(),
   source: z.string().trim().min(1).max(20_000),
 });
-export const DslQueryCompileViewResponseSchema = z.union([DslQueryCompileViewSuccessSchema, DslQueryPreviewFailureSchema]);
+const DslQueryCompileViewResponseSchema = z.union([DslQueryCompileViewSuccessSchema, DslQueryPreviewFailureSchema]);
 export type DslQueryCompileViewResponse = z.infer<typeof DslQueryCompileViewResponseSchema>;
 
 // ── View entity ───────────────────────────────────────────────────────────
@@ -1129,10 +1077,8 @@ export const UpdateViewSchema = z.object({
   shared: z.boolean().optional(),
 });
 
-export const ViewListSchema = z.array(ViewSchema);
-
 // ── Documents ─────────────────────────────────────────────────────────────
-export const HtmlDocumentTemplateRendererSchema = z
+const HtmlDocumentTemplateRendererSchema = z
   .object({
     kind: z.literal("html"),
     body: z.string().trim().min(1).max(200_000),
@@ -1145,7 +1091,7 @@ export const HtmlDocumentTemplateRendererSchema = z
   .strict();
 export type HtmlDocumentTemplateRenderer = z.infer<typeof HtmlDocumentTemplateRendererSchema>;
 
-export const ProfileDocumentTemplateRendererSchema = z
+const ProfileDocumentTemplateRendererSchema = z
   .object({
     kind: z.literal("profile"),
     id: z.string().regex(/^[a-z][a-z0-9.-]{2,99}$/),
@@ -1153,7 +1099,6 @@ export const ProfileDocumentTemplateRendererSchema = z
     inputTemplate: z.string().trim().min(1).max(200_000),
   })
   .strict();
-export type ProfileDocumentTemplateRenderer = z.infer<typeof ProfileDocumentTemplateRendererSchema>;
 
 export const DocumentTemplateRendererSchema = z.discriminatedUnion("kind", [
   HtmlDocumentTemplateRendererSchema,
@@ -1165,7 +1110,6 @@ export const DocumentTemplateRendererSummarySchema = z.discriminatedUnion("kind"
   z.object({ kind: z.literal("html") }).strict(),
   ProfileDocumentTemplateRendererSchema.pick({ kind: true, id: true, version: true }).strict(),
 ]);
-export type DocumentTemplateRendererSummary = z.infer<typeof DocumentTemplateRendererSummarySchema>;
 
 export const DocumentTemplateSchema = z.object({
   id: z.string().uuid(),
@@ -1185,15 +1129,6 @@ export const DocumentTemplateSchema = z.object({
 });
 export type DocumentTemplate = z.infer<typeof DocumentTemplateSchema>;
 
-export const DocumentTemplateListSchema = z.array(DocumentTemplateSchema);
-
-export const ReorderDocumentTemplatesSchema = z.object({
-  templateIds: z
-    .array(z.string().uuid())
-    .min(1)
-    .refine((ids) => new Set(ids).size === ids.length, "template ids must be unique"),
-});
-
 const DocumentTemplateSummarySchema = DocumentTemplateSchema.pick({
   id: true,
   shortId: true,
@@ -1206,8 +1141,6 @@ const DocumentTemplateSummarySchema = DocumentTemplateSchema.pick({
   updatedAt: true,
 }).extend({ renderer: DocumentTemplateRendererSummarySchema });
 export type DocumentTemplateSummary = z.infer<typeof DocumentTemplateSummarySchema>;
-
-export const DocumentTemplateSummaryListSchema = z.array(DocumentTemplateSummarySchema);
 
 export const CreateDocumentTemplateSchema = z
   .object({
@@ -1232,15 +1165,7 @@ export const UpdateDocumentTemplateSchema = z
   .strict();
 export type UpdateDocumentTemplateInput = z.infer<typeof UpdateDocumentTemplateSchema>;
 
-export const DocumentTemplateDraftPreviewSchema = z
-  .object({
-    source: z.string().trim().min(1).max(20_000),
-    renderer: DocumentTemplateRendererSchema,
-    recordId: z.string().uuid(),
-  })
-  .strict();
-
-export const RecordSnapshotSchema = z.object({
+const RecordSnapshotSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
   baseId: z.string().uuid(),
@@ -1264,12 +1189,7 @@ const RecordSnapshotSummarySchema = RecordSnapshotSchema.pick({
 });
 export type RecordSnapshotSummary = z.infer<typeof RecordSnapshotSummarySchema>;
 
-export const RecordSnapshotListResponseSchema = z.object({
-  items: z.array(RecordSnapshotSummarySchema),
-});
-export type RecordSnapshotListResponse = z.infer<typeof RecordSnapshotListResponseSchema>;
-
-export const DocumentArtifactSchema = z
+const DocumentArtifactSchema = z
   .object({
     key: z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/),
     fileId: z.string().uuid(),
@@ -1303,7 +1223,7 @@ const DocumentSchema = z.object({
 });
 export type Document = z.infer<typeof DocumentSchema>;
 
-export const DocumentSummarySchema = DocumentSchema.pick({
+const DocumentSummarySchema = DocumentSchema.pick({
   id: true,
   shortId: true,
   templateId: true,
@@ -1323,7 +1243,7 @@ export const DocumentSummarySchema = DocumentSchema.pick({
 });
 export type DocumentSummary = z.infer<typeof DocumentSummarySchema>;
 
-export const DocumentSummaryListSchema = z.object({
+const DocumentSummaryListSchema = z.object({
   items: z.array(DocumentSummarySchema),
   total: z.number().int().nonnegative().optional(),
   limit: z.number().int().positive().optional(),
@@ -1337,7 +1257,7 @@ export type DocumentSummaryList = z.infer<typeof DocumentSummaryListSchema>;
 const DocumentLinkTtlSchema = z.enum(["1d", "7d", "30d", "90d"]);
 export type DocumentLinkTtl = z.infer<typeof DocumentLinkTtlSchema>;
 
-export const DocumentLinkSchema = z.object({
+const DocumentLinkSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
   documentId: z.string().uuid(),
@@ -1355,7 +1275,7 @@ export const DocumentLinkSchema = z.object({
 });
 export type DocumentLink = z.infer<typeof DocumentLinkSchema>;
 
-export const DocumentLinkListResponseSchema = z.object({
+const DocumentLinkListResponseSchema = z.object({
   items: z.array(DocumentLinkSchema),
 });
 export type DocumentLinkListResponse = z.infer<typeof DocumentLinkListResponseSchema>;
@@ -1366,7 +1286,7 @@ export const CreateDocumentLinkSchema = z.object({
 });
 export type CreateDocumentLinkInput = z.infer<typeof CreateDocumentLinkSchema>;
 
-export const CreateDocumentLinkResponseSchema = z.object({
+const CreateDocumentLinkResponseSchema = z.object({
   link: DocumentLinkSchema,
   url: z.string(),
 });
@@ -1399,15 +1319,13 @@ export const EmailTemplateSchema = z.object({
 });
 export type EmailTemplate = z.infer<typeof EmailTemplateSchema>;
 
-export const EmailTemplateListSchema = z.array(EmailTemplateSchema);
-
-export const EmailTemplateDependencySchema = z.object({
+const EmailTemplateDependencySchema = z.object({
   workflowId: z.string().uuid(),
   workflowShortId: ShortIdSchema,
   workflowName: z.string().min(1),
 });
 
-export const EmailTemplateDependencyMapSchema = z.record(z.string().uuid(), z.array(EmailTemplateDependencySchema));
+const EmailTemplateDependencyMapSchema = z.record(z.string().uuid(), z.array(EmailTemplateDependencySchema));
 
 export type EmailTemplateDependency = z.infer<typeof EmailTemplateDependencySchema>;
 export type EmailTemplateDependencyMap = z.infer<typeof EmailTemplateDependencyMapSchema>;
@@ -1443,7 +1361,7 @@ const DocumentFolderSchema = z.object({
 });
 export type DocumentFolder = z.infer<typeof DocumentFolderSchema>;
 
-export const DocumentBrowseResponseSchema = z.object({
+const DocumentBrowseResponseSchema = z.object({
   path: z.array(z.string()),
   folders: z.array(DocumentFolderSchema),
   items: z.array(DocumentSummarySchema),
@@ -1454,23 +1372,12 @@ export const DocumentBrowseResponseSchema = z.object({
 });
 export type DocumentBrowseResponse = z.infer<typeof DocumentBrowseResponseSchema>;
 
-export const DocumentRecordBodySchema = z.object({
-  recordId: z.string().uuid(),
-  filename: z.string().trim().min(1).max(255).optional(),
-  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional().default([]),
-});
-
-export const DocumentPreviewResponseSchema = z.object({
+const DocumentPreviewResponseSchema = z.object({
   html: z.string(),
   source: z.string(),
   data: z.record(z.string(), z.unknown()),
 });
 export type DocumentPreviewResponse = z.infer<typeof DocumentPreviewResponseSchema>;
-
-export const CreateRecordSnapshotResponseSchema = z.object({
-  snapshot: RecordSnapshotSchema,
-});
-export type CreateRecordSnapshotResponse = z.infer<typeof CreateRecordSnapshotResponseSchema>;
 
 // ── Forms ────────────────────────────────────────────────────────────────
 //
@@ -1489,7 +1396,7 @@ const InlineCreateConfigSchema = z.object({
   fields: z.array(InlineCreateFormFieldSchema).optional(),
 });
 
-export const UserInputFormFieldEntrySchema = z.object({
+const UserInputFormFieldEntrySchema = z.object({
   kind: z.literal("user_input"),
   fieldId: z.string().uuid(),
   label: z.string().optional(),
@@ -1531,29 +1438,6 @@ export const FormConfigSchema = z.object({
   titleImage: z.string().max(1_000_000).optional(),
 });
 
-// ── Lists ─────────────────────────────────────────────────────────────────
-export const BaseListSchema = z.object({
-  items: z.array(BaseSchema),
-  total: z.number().int().min(0),
-  limit: z.number().int().min(1),
-  offset: z.number().int().min(0),
-});
-export const TableListSchema = z.array(TableSchema);
-export const FieldListSchema = z.array(FieldSchema);
-
-// ── Field-dependents preflight ────────────────────────────────────────────
-const FieldDependentSchema = z.object({
-  type: z.enum(["view", "form", "formula", "lookup", "rollup", "relation_display", "audit_policy"]),
-  resourceId: z.string().uuid(),
-  resourceName: z.string(),
-  context: z.string().optional(),
-  blocking: z.boolean(),
-});
-export const FieldDependentsResponseSchema = z.object({
-  dependents: z.array(FieldDependentSchema),
-  hasBlocking: z.boolean(),
-});
-
 // ── Relation lookup ───────────────────────────────────────────────────────
 // Backs `GET /api/grids/tables/:tableId/lookup` — the search endpoint
 // the RelationPicker uses to populate its dropdown. Each item is a
@@ -1562,8 +1446,5 @@ export const FieldDependentsResponseSchema = z.object({
 const RelationLookupItemSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
-});
-export const RelationLookupResponseSchema = z.object({
-  items: z.array(RelationLookupItemSchema),
 });
 export type RelationLookupItem = z.infer<typeof RelationLookupItemSchema>;

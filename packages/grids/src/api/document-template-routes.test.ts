@@ -4,6 +4,8 @@ import type { AuthContext, PermissionLevel } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { gridsService } from "../service";
+import * as numberSeriesService from "../service/number-series";
+import * as publicResources from "../service/public-resources";
 import { createDocumentsApi } from "./documents";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
@@ -33,9 +35,6 @@ const numberSeries = {
   migrationStatus: "native",
   migrationNote: null,
 };
-mock.module("../service/number-series", () => ({
-  loadDocumentNumberSeries: async (ids: string[]) => new Map(ids.map((id) => [id, numberSeries])),
-}));
 
 const publicToInternal = new Map([
   [basePublicId, baseId],
@@ -46,16 +45,16 @@ const publicToInternal = new Map([
   [lookupRecordPublicId, lookupRecordId],
 ]);
 const internalToPublic = new Map([...publicToInternal].map(([publicId, internalId]) => [internalId, publicId]));
-mock.module("../service/public-resources", () => ({
+const publicResourceMocks = {
   resolvePublicId: async (_type: string, publicId: string) => publicToInternal.get(publicId) ?? null,
   resolveStoredPublicId: async (_type: string, publicId: string) => publicToInternal.get(publicId) ?? null,
-  resolvePublicIds: async (_type: string, publicIds: string[]) =>
+  resolvePublicIds: async (_type: string, publicIds: readonly string[]) =>
     new Map(publicIds.flatMap((publicId) => (publicToInternal.has(publicId) ? [[publicId, publicToInternal.get(publicId)!]] : []))),
-  projectPublicIds: async (_type: string, internalIds: string[]) =>
+  projectPublicIds: async (_type: string, internalIds: readonly string[]) =>
     new Map(
       internalIds.flatMap((internalId) => (internalToPublic.has(internalId) ? [[internalId, internalToPublic.get(internalId)!]] : [])),
     ),
-}));
+};
 
 const user: User = {
   id: userId,
@@ -208,6 +207,11 @@ const expectForbidden = async (response: Response) => {
 
 describe("document template routes", () => {
   beforeEach(() => {
+    spyOn(numberSeriesService, "loadDocumentNumberSeries").mockImplementation(async (ids) => new Map(ids.map((id) => [id, numberSeries])));
+    spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
+    spyOn(publicResources, "resolveStoredPublicId").mockImplementation(publicResourceMocks.resolveStoredPublicId);
+    spyOn(publicResources, "resolvePublicIds").mockImplementation(publicResourceMocks.resolvePublicIds);
+    spyOn(publicResources, "projectPublicIds").mockImplementation(publicResourceMocks.projectPublicIds);
     baseLevel = "admin";
     currentTable = table;
     currentTemplate = template;

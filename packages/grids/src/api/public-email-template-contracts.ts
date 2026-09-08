@@ -6,7 +6,7 @@ export const PublicEmailTemplateSchema = EmailTemplateSchema.omit({ id: true, sh
   baseId: ShortIdSchema,
 });
 export const PublicEmailTemplateListSchema = z.array(PublicEmailTemplateSchema);
-export const PublicEmailTemplateDependencySchema = z.object({ workflowId: ShortIdSchema, workflowName: z.string().min(1) }).strict();
+const PublicEmailTemplateDependencySchema = z.object({ workflowId: ShortIdSchema, workflowName: z.string().min(1) }).strict();
 export const PublicEmailTemplateDependencyMapSchema = z.record(ShortIdSchema, z.array(PublicEmailTemplateDependencySchema));
 
 export type PublicEmailTemplate = z.infer<typeof PublicEmailTemplateSchema>;

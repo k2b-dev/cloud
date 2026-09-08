@@ -1,9 +1,9 @@
 import type { z } from "zod";
 import type {
   PublicCreateDocumentLinkResponseSchema,
+  PublicDocumentBrowseResponseSchema,
   PublicDocumentLinkListResponseSchema,
   PublicDocumentLinkSchema,
-  PublicDocumentBrowseResponseSchema,
   PublicDocumentSchema,
   PublicDocumentTemplateSchema,
   PublicDocumentTemplateSummarySchema,

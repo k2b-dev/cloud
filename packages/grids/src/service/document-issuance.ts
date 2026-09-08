@@ -20,7 +20,7 @@ import { insertWithShortIdForDb } from "./short-id";
 const MAX_ARTIFACTS = 8;
 const MAX_TOTAL_ARTIFACT_BYTES = 100 * 1024 * 1024;
 export const MAX_DOCUMENT_PROFILE_INPUT_BYTES = 5 * 1024 * 1024;
-export const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v1";
+const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v1";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 

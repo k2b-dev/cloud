@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 
 export const EVIDENCE_EXPORT_MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
 export const EVIDENCE_EXPORT_MAX_ENTRIES = 25_000;
-export const EVIDENCE_EXPORT_CHUNK_BYTES = 1024 * 1024;
+const EVIDENCE_EXPORT_CHUNK_BYTES = 1024 * 1024;
 
-export type EvidenceArchiveEntry = {
+type EvidenceArchiveEntry = {
   path: string;
   category: string;
   mediaType: string;

@@ -15,11 +15,11 @@ import { get as getRecord } from "./record-read";
 import { insertWithShortIdForDb } from "./short-id";
 import type { Field, GridRecord } from "./types";
 
-export const finalizedRecordConflict = (locale?: string) => err.conflict(getGridsCrudMessages(locale).recordFinalized);
+const finalizedRecordConflict = (locale?: string) => err.conflict(getGridsCrudMessages(locale).recordFinalized);
 
-export type RecordFinalizationMode = "direct" | "fourEyes";
-export type RecordFinalizationRequestStatus = "pending" | "approved" | "rejected" | "superseded";
-export type RecordFinalizationRequest = {
+type RecordFinalizationMode = "direct" | "fourEyes";
+type RecordFinalizationRequestStatus = "pending" | "approved" | "rejected" | "superseded";
+type RecordFinalizationRequest = {
   id: string;
   status: RecordFinalizationRequestStatus;
   recordVersion: number;
@@ -47,7 +47,7 @@ export type RecordFinalizationStatus =
       policyRevision: number;
     };
 
-export type FinalizationRequirement = { fieldId: string; fieldName: string; message: string };
+type FinalizationRequirement = { fieldId: string; fieldName: string; message: string };
 export type RecordFinalizationReadiness = {
   enabled: boolean;
   mode: RecordFinalizationMode | null;

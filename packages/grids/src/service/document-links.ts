@@ -48,8 +48,7 @@ export const publicDocumentLinkPath = (token: string): string => `/share/grids/d
 
 const publicDocumentLinkOrigin = (appUrl: unknown): string => publicUrlValue(appUrl).replace(/\/+$/, "") || "http://localhost:3000";
 
-export const publicDocumentLinkBaseUrlForAppUrl = (appUrl: unknown): string =>
-  `${publicDocumentLinkOrigin(appUrl)}${publicDocumentLinkPath("")}`;
+const publicDocumentLinkBaseUrlForAppUrl = (appUrl: unknown): string => `${publicDocumentLinkOrigin(appUrl)}${publicDocumentLinkPath("")}`;
 
 export const publicDocumentLinkUrlForAppUrl = (appUrl: unknown, token: string): string =>
   `${publicDocumentLinkBaseUrlForAppUrl(appUrl)}${encodeURIComponent(token)}`;

@@ -5,7 +5,7 @@ import { buildPinnedRelationLabelCache } from "./relation-labels";
 import { relationLabelFields } from "./relation-targets";
 import type { Field, GridRecord } from "./types";
 
-export type CustomAppRecordRelation = CustomAppCapabilities["records"][number]["relationLabels"][number];
+type CustomAppRecordRelation = CustomAppCapabilities["records"][number]["relationLabels"][number];
 
 const relationTargetTableId = (field: Field): string | null => {
   if (field.type !== "relation" || field.deletedAt) return null;

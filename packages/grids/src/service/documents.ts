@@ -1,19 +1,26 @@
 export {
   browseDocumentsForTemplate,
-  listDocuments,
+  listDocumentSummariesForRecordByTemplates,
   listDocumentsForBase,
   listDocumentsForRecord,
-  listDocumentSummariesForRecordByTemplates,
   listDocumentsForTemplate,
   listDocumentsForWorkflow,
 } from "./document-browse";
+export {
+  createDocumentForRecord,
+  getDocument,
+  getDocumentArtifact,
+  getDocumentArtifacts,
+  getDocumentByShortId,
+  getDocumentPdf,
+  renderWorkflowDocumentsPdf,
+} from "./document-core";
 export {
   createDocumentLink,
   getDocumentLink,
   getDocumentLinkByShortId,
   listDocumentLinksForDocument,
   publicDocumentLinkBaseUrl,
-  publicDocumentLinkBaseUrlForAppUrl,
   publicDocumentLinkPath,
   publicDocumentLinkUrl,
   publicDocumentLinkUrlForAppUrl,
@@ -43,16 +50,6 @@ export {
   renderDocumentSource,
   rowsWithColumnLabels,
 } from "./document-rendering";
-export type { DocumentPdfRenderer } from "./document-core";
-export {
-  createDocumentForRecord,
-  getDocumentArtifact,
-  getDocumentArtifacts,
-  getDocument,
-  getDocumentByShortId,
-  getDocumentPdf,
-  renderWorkflowDocumentsPdf,
-} from "./document-core";
 export {
   createRecordSnapshot,
   createRecordSnapshotDraft,

@@ -353,4 +353,3 @@ export const GRID_FORMULA_FUNCTIONS: readonly FormulaFunction[] = FORMULA_FUNCTI
 const FORMULA_FUNCTION_BY_NAME: ReadonlyMap<string, FormulaFunction> = new Map(GRID_FORMULA_FUNCTIONS.map((fn) => [fn.name, fn]));
 
 export const formulaFunctionForName = (name: string): FormulaFunction | undefined => FORMULA_FUNCTION_BY_NAME.get(name.toUpperCase());
-export const formulaFunctionPattern = (): RegExp => new RegExp(`\\b(?:${GRID_FORMULA_FUNCTIONS.map((fn) => fn.name).join("|")})\\b`, "i");

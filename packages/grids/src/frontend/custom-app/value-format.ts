@@ -32,8 +32,7 @@ export const formatCustomAppValue = (
   const raw = numericText(value);
   if (raw === null) return String(value);
   const style = format?.style ?? "number";
-  const mathematicalValue =
-    style === "integer" ? new ValueDecimal(raw).toDecimalPlaces(0, Decimal.ROUND_HALF_CEIL).toFixed(0) : raw;
+  const mathematicalValue = style === "integer" ? new ValueDecimal(raw).toDecimalPlaces(0, Decimal.ROUND_HALF_CEIL).toFixed(0) : raw;
   const formatted = new Intl.NumberFormat(dateConfig?.locale ?? "en", {
     ...(style === "percent" ? { style: "percent" as const } : {}),
     ...fractionDigits(format),

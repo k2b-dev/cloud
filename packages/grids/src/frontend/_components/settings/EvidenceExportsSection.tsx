@@ -159,7 +159,7 @@ const download = async (item: EvidenceExport, unavailableMessage: string) => {
   URL.revokeObjectURL(href);
 };
 
-export const openEvidenceExportDialog = (base: PublicBase, tables: PublicTable[], onCreated: () => void) =>
+const openEvidenceExportDialog = (base: PublicBase, tables: PublicTable[], onCreated: () => void) =>
   dialogCore.open<void>(
     (close) => <EvidenceExportDialog base={base} tables={tables} close={close} onCreated={onCreated} />,
     panelDialogOptions,

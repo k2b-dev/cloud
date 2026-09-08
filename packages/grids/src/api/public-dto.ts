@@ -43,12 +43,12 @@ import type { GridFile } from "../service/types";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
 
 export const PublicBaseSchema = BaseSchema.omit({ id: true, shortId: true }).extend({ id: ShortIdSchema });
-export const PublicRecordDisplayConfigSchema = z.object({
+const PublicRecordDisplayConfigSchema = z.object({
   mode: z.enum(["table", "cards", "calendar"]),
   cards: z.object({ imageFieldId: ShortIdSchema.nullable().optional(), fieldIds: z.array(ShortIdSchema).optional() }).optional(),
   calendar: z.object({ dateFieldId: ShortIdSchema.nullable().optional() }).optional(),
 });
-export const PublicFieldColumnSchema = z.object({
+const PublicFieldColumnSchema = z.object({
   fieldId: ShortIdSchema,
   label: z.string().optional(),
   format: FormatSpecSchema.optional(),
@@ -58,7 +58,7 @@ const TableAuditPolicyObjectSchema = TableAuditPolicySchema.removeDefault();
 const PublicAuditUpdateRequirementSchema = TableAuditPolicyObjectSchema.shape.update
   .unwrap()
   .safeExtend({ fieldIds: z.array(ShortIdSchema).max(200).default([]) });
-export const PublicTableAuditPolicySchema = TableAuditPolicyObjectSchema.extend({
+const PublicTableAuditPolicySchema = TableAuditPolicyObjectSchema.extend({
   update: PublicAuditUpdateRequirementSchema.optional(),
 }).default({});
 
@@ -91,7 +91,7 @@ export const PublicMutationPolicyUpdateSchema = z
     }
   });
 export const PublicMutationPolicyResponseSchema = z.object({ policy: TableMutationPolicySchema }).strict();
-export const PublicMutationPolicyImpactItemSchema = z
+const PublicMutationPolicyImpactItemSchema = z
   .object({
     kind: z.enum(["form", "workflow", "action"]),
     id: ShortIdSchema,
@@ -272,7 +272,7 @@ const PublicGroupedColumnKeySchema = z
     }
   });
 
-export const PublicViewUiSettingsSchema = z.object({
+const PublicViewUiSettingsSchema = z.object({
   displayConfig: PublicRecordDisplayConfigSchema.optional(),
   columns: z
     .array(
@@ -386,7 +386,7 @@ export type PublicField = z.infer<typeof PublicFieldSchema>;
 export type PublicView = z.infer<typeof PublicViewSchema>;
 export type PublicGridRecord = z.infer<typeof PublicGridRecordSchema>;
 
-export const PublicRecordChangeFeedItemSchema = z
+const PublicRecordChangeFeedItemSchema = z
   .object({
     baseId: ShortIdSchema,
     tableId: ShortIdSchema,
@@ -416,7 +416,7 @@ const publicExternalIdentityPart = (max: number) =>
     .refine((value) => value.trim() === value, "Must not start or end with whitespace")
     .refine((value) => !value.includes("\0"), "Must not contain NUL");
 
-export const PublicExternalRecordIdentitySchema = z
+const PublicExternalRecordIdentitySchema = z
   .object({
     provider: publicExternalIdentityPart(100),
     providerAccount: publicExternalIdentityPart(200),
@@ -442,7 +442,7 @@ export const PublicExternalRecordPutResponseSchema = z
     replayed: z.boolean(),
   })
   .strict();
-export const PublicExternalRecordBatchItemSchema = PublicExternalRecordPutBodySchema.extend({
+const PublicExternalRecordBatchItemSchema = PublicExternalRecordPutBodySchema.extend({
   idempotencyKey: z
     .string()
     .trim()

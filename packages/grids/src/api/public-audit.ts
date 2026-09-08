@@ -54,8 +54,8 @@ const PublicAuditEntryShape = {
   userAvatarHash: z.string().nullable().optional(),
 };
 
-export const PublicRecordAuditEntrySchema = z.object({ ...PublicAuditEntryShape, context: RecordAuditContextSchema.nullable() }).strict();
-export const PublicCombinedAuditEntrySchema = z
+const PublicRecordAuditEntrySchema = z.object({ ...PublicAuditEntryShape, context: RecordAuditContextSchema.nullable() }).strict();
+const PublicCombinedAuditEntrySchema = z
   .object({
     ...PublicAuditEntryShape,
     context: CombinedAuditContextSchema.nullable(),

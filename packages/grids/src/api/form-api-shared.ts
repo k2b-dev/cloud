@@ -96,7 +96,7 @@ const SubmitEnvelopeSchema = z.object({
   inlineCreates: InlineCreatesSchema.optional(),
 });
 
-export const parseFormSubmission = (submitted: Record<string, unknown>): FormSubmission | null => {
+const parseFormSubmission = (submitted: Record<string, unknown>): FormSubmission | null => {
   const envelopeLike =
     Object.prototype.hasOwnProperty.call(submitted, "data") || Object.prototype.hasOwnProperty.call(submitted, "inlineCreates");
   if (!envelopeLike) return { data: submitted, inlineCreates: {} };

@@ -134,9 +134,9 @@ type WorkspaceEmptyRoute = {
   kind: "empty";
 };
 
-export type WorkspaceDocumentsRoute = { kind: "documents" };
+type WorkspaceDocumentsRoute = { kind: "documents" };
 
-export type WorkspaceWorkflowsRoute = {
+type WorkspaceWorkflowsRoute = {
   kind: "workflows";
   activeWorkflow: Workflow | null;
   canRunActiveWorkflow: boolean;
@@ -146,7 +146,7 @@ export type WorkspaceWorkflowsRoute = {
   initialSelectedRun: WorkspaceWorkflowRunDetail | null;
 };
 
-export type WorkspaceWorkflowOverview = {
+type WorkspaceWorkflowOverview = {
   filters: WorkflowUrlState;
   stats: GridsWorkflowRunStats;
   runs: { items: GridsWorkflowRun[]; nextCursor: string | null };
@@ -173,7 +173,7 @@ export type WorkspaceWorkflowRunDetail = {
   };
 };
 
-export type WorkspaceQueryRoute = {
+type WorkspaceQueryRoute = {
   kind: "query";
   initialQuery: string;
   initialCursor: string | null;
@@ -184,7 +184,7 @@ export type WorkspaceQueryRoute = {
     | { kind: "view"; viewId: string; label: string; ref: string };
 };
 
-export type WorkspaceDocumentTemplateRoute = {
+type WorkspaceDocumentTemplateRoute = {
   kind: "documentTemplate";
   table: Table;
   template: DocumentTemplateSummary;
@@ -196,7 +196,7 @@ export type WorkspaceDocumentTemplateRoute = {
   initialBrowserPage: DocumentBrowseResponse;
 };
 
-export type WorkspaceCustomAppRoute = {
+type WorkspaceCustomAppRoute = {
   kind: "customApp";
   app: CustomApp;
   initialSettingsOpen: boolean;

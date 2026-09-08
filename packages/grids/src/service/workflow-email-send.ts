@@ -40,7 +40,7 @@ const intentRecipient = (intent: WorkflowEmailDeliveryIntent, locale?: string) =
   return recipient;
 };
 
-export type SendWorkflowEmailInput = {
+type SendWorkflowEmailInput = {
   scope: GridsWorkflowActionScope;
   template: EmailTemplate;
   recipients: WorkflowEmailRecipient[];

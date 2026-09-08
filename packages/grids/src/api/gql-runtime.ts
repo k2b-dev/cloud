@@ -47,7 +47,7 @@ export type GridsGqlRuntimeContext = {
   signal: AbortSignal;
 };
 
-export type GqlDiagnosticCode = "gql.syntax" | "gql.context" | "gql.resolution" | "gql.execution" | "gql.cursor" | "gql.access";
+type GqlDiagnosticCode = "gql.syntax" | "gql.context" | "gql.resolution" | "gql.execution" | "gql.cursor" | "gql.access";
 
 export const gqlDiagnosticsForLocale = (
   diagnostics: DslQueryPreviewDiagnostic[],
@@ -70,7 +70,7 @@ export const gqlDiagnosticsForLocale = (
   }));
 };
 
-export type PermissionedGqlResolverContext = DslResolverContext & {
+type PermissionedGqlResolverContext = DslResolverContext & {
   tablePermissionsById: Record<string, PermissionLevel>;
   authorizedTableIds: ReadonlySet<string>;
   authorizedViewIds: ReadonlySet<string>;

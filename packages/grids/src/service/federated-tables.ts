@@ -27,10 +27,10 @@ import type { Field } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-export const MAX_FEDERATED_SOURCES = 50;
-export const MAX_FEDERATED_FIELDS = 200;
+const MAX_FEDERATED_SOURCES = 50;
+const MAX_FEDERATED_FIELDS = 200;
 
-export type FederatedPublicationAuthorization = BaseAdminAuthorization;
+type FederatedPublicationAuthorization = BaseAdminAuthorization;
 
 export const lockFederatedSchemaTables = async (tableIds: readonly string[], client: SqlClient): Promise<void> => {
   for (const tableId of [...new Set(tableIds)].sort()) {
@@ -743,7 +743,7 @@ const writeDraftRows = async (
   `;
 };
 
-export const resolveDraftInput = async (
+const resolveDraftInput = async (
   tableId: string,
   input: FederatedDraftInput,
   client: SqlClient = sql,

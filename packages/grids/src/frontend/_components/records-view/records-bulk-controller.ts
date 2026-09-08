@@ -28,7 +28,7 @@ type RecordsBulkControllerOptions = {
 };
 
 type CloseSelectionBlocker = { recordId: string; reason: string };
-export const MAX_CLOSE_SELECTION_RECORDS = 100;
+const MAX_CLOSE_SELECTION_RECORDS = 100;
 
 const CloseSelectionPreviewSchema = z.object({
   items: z.array(

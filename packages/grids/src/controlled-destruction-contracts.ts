@@ -3,7 +3,7 @@ import { ShortIdSchema } from "./contracts";
 
 export const CONTROLLED_DESTRUCTION_BATCH_MAX = 100;
 
-export const ControlledDestructionCandidateSchema = z
+const ControlledDestructionCandidateSchema = z
   .object({
     fileId: ShortIdSchema,
     tableId: ShortIdSchema,
@@ -14,9 +14,8 @@ export const ControlledDestructionCandidateSchema = z
     notBefore: z.string().datetime({ offset: true }),
   })
   .strict();
-export type ControlledDestructionCandidate = z.infer<typeof ControlledDestructionCandidateSchema>;
 
-export const ControlledDestructionPreviewSchema = z
+const ControlledDestructionPreviewSchema = z
   .object({
     observedAt: z.string().datetime({ offset: true }),
     minimumDays: z.number().int().positive().nullable(),
@@ -49,7 +48,7 @@ export const StartControlledDestructionInputSchema = z
   });
 export type StartControlledDestructionInput = z.infer<typeof StartControlledDestructionInputSchema>;
 
-export const ControlledDestructionRunStatusSchema = z.enum([
+const ControlledDestructionRunStatusSchema = z.enum([
   "queued",
   "running",
   "cancel_requested",
@@ -58,9 +57,8 @@ export const ControlledDestructionRunStatusSchema = z.enum([
   "canceled",
   "failed",
 ]);
-export type ControlledDestructionRunStatus = z.infer<typeof ControlledDestructionRunStatusSchema>;
 
-export const ControlledDestructionItemStatusSchema = z.enum(["pending", "destroyed", "skipped", "failed"]);
+const ControlledDestructionItemStatusSchema = z.enum(["pending", "destroyed", "skipped", "failed"]);
 
 export const ControlledDestructionRunSchema = z
   .object({

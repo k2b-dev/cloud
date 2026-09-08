@@ -24,7 +24,7 @@ const nextShortId = (): string => {
   return `T${counter.toString(36).toUpperCase().padStart(5, "0")}`.slice(0, 6);
 };
 
-export type TestWorkflowInput = {
+type TestWorkflowInput = {
   baseId: string;
   /** The connection the fixture belongs to — migration tests use an isolated one. */
   db?: SQL;
@@ -156,12 +156,7 @@ export const deleteTestWorkflowScope = async (baseId: string): Promise<void> => 
   await deleteWorkflowScope({ appId: GRIDS_APP_ID, scopeId: baseId });
 };
 
-/** Renames it. The name lives on the kernel row, not on the profile. */
-export const renameTestWorkflow = async (id: string, name: string): Promise<void> => {
-  await sql`UPDATE workflows.workflow SET name = ${name}, updated_at = now() WHERE id = ${id}::uuid`;
-};
-
-export type TestWorkflowRunInput = {
+type TestWorkflowRunInput = {
   workflowId: string;
   baseId: string;
   db?: SQL;

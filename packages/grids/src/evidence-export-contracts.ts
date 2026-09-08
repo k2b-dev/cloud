@@ -3,7 +3,7 @@ import { ShortIdSchema } from "./contracts";
 
 export const EVIDENCE_EXPORT_SECTIONS = ["records", "revisions", "audit", "schema", "relations", "files", "documents", "numbers"] as const;
 
-export const EvidenceExportSectionSchema = z.enum(EVIDENCE_EXPORT_SECTIONS);
+const EvidenceExportSectionSchema = z.enum(EVIDENCE_EXPORT_SECTIONS);
 export type EvidenceExportSection = z.infer<typeof EvidenceExportSectionSchema>;
 
 export const EvidenceExportRequestSchema = z
@@ -26,9 +26,8 @@ export const EvidenceExportRequestSchema = z
       ctx.addIssue({ code: "custom", path: ["to"], message: "End must not be before start" });
     }
   });
-export type EvidenceExportRequest = z.infer<typeof EvidenceExportRequestSchema>;
 
-export const EvidenceExportStatusSchema = z.enum(["queued", "running", "cancel_requested", "completed", "failed", "canceled", "expired"]);
+const EvidenceExportStatusSchema = z.enum(["queued", "running", "cancel_requested", "completed", "failed", "canceled", "expired"]);
 export type EvidenceExportStatus = z.infer<typeof EvidenceExportStatusSchema>;
 
 const EvidenceExportCountsSchema = z

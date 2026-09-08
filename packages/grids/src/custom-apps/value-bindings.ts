@@ -1,7 +1,7 @@
 import type { GridRecord } from "../contracts";
 import type { CustomAppFormValueBinding, CustomAppPage, CustomAppRowValueBinding, CustomAppValueBinding } from "./contracts";
 
-export type CustomAppBindingContext = {
+type CustomAppBindingContext = {
   parameterRecords: ReadonlyMap<string, GridRecord>;
   pageRecord?: GridRecord;
   rowRecordId?: string;

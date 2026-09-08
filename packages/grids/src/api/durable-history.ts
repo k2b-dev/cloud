@@ -29,7 +29,7 @@ const PublicRevisionFileSchema = z
   })
   .strict();
 
-export const PublicRecordRevisionSchema = z
+const PublicRecordRevisionSchema = z
   .object({
     id: ShortIdSchema,
     revision: z.number().int().positive(),

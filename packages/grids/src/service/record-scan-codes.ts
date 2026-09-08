@@ -28,7 +28,7 @@ const mapScanCodeRow = (row: DbRow): RecordScanCode => ({
   rotatedAt: row.rotated_at ? (row.rotated_at as Date).toISOString() : null,
 });
 
-export const getOrCreateRecordScanCode = async (params: {
+const getOrCreateRecordScanCode = async (params: {
   baseId: string;
   tableId: string;
   recordId: string;
@@ -74,13 +74,4 @@ export const ensureRecordScanCode = async (params: {
     }
   }
   throw err.internal(getGridsCrudMessages(params.locale).recordScanCollision);
-};
-
-export const getRecordScanCode = async (code: string): Promise<RecordScanCode | null> => {
-  const [row] = await sql<DbRow[]>`
-    SELECT id, base_id, table_id, record_id, code, active, created_at, rotated_at
-    FROM grids.record_scan_codes
-    WHERE code = ${code} AND active = TRUE
-  `;
-  return row ? mapScanCodeRow(row) : null;
 };

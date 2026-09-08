@@ -46,7 +46,7 @@ const sameBinding = (left: GridsWorkflowCredentialBinding | null, right: GridsWo
 
 const expired = (value: string | null | undefined, now: Date): boolean => Boolean(value && Date.parse(value) <= now.getTime());
 
-export type WorkflowAuthorizationRevalidation =
+type WorkflowAuthorizationRevalidation =
   | {
       ok: true;
       subject: AccessSubject;

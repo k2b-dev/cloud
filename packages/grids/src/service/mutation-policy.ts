@@ -43,13 +43,13 @@ export const assertMutationAllowed = async (
   return fail(err.forbidden(t.mutationSourceDenied({ source })));
 };
 
-export type MutationPolicyImpactItem = {
+type MutationPolicyImpactItem = {
   kind: "form" | "workflow" | "action";
   id: string;
   name: string;
 };
 
-export type MutationPolicyImpact = {
+type MutationPolicyImpact = {
   items: MutationPolicyImpactItem[];
   total: number;
   limit: number;

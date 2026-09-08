@@ -395,16 +395,12 @@ export const gridsService = {
   metadataEvents,
 };
 
-export type {
-  AggregationSpec,
-  GroupBySpec,
-  View,
-} from "../contracts";
+export type { View } from "../contracts";
 export type { GridsWorkflow as Workflow } from "../workflows/contracts";
-export type { CombinedAuditEntry, CombinedAuditPage, CombinedRecordOrigin } from "./combined-audit";
+export type { CombinedAuditPage, CombinedRecordOrigin } from "./combined-audit";
 export type { CustomApp, CustomAppSummary } from "./custom-apps";
 export type { Form, FormFieldEntry } from "./forms";
-export type { Grant, ResolveTarget, ResourceType } from "./permission-resolver";
+export type { Grant } from "./permission-resolver";
 export type { RecordHistoryEntry } from "./record-history";
 export type {
   Base,
@@ -412,6 +408,5 @@ export type {
   GridFile,
   GridFilePreview,
   GridRecord,
-  RecordList,
   Table,
 } from "./types";

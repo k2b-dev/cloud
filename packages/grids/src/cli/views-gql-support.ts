@@ -92,7 +92,7 @@ export const displayValue = (value: unknown): string => {
 export const listViews = (ctx: CloudCliContext, tableId: string): Promise<View[]> =>
   readApi<View[]>(ctx, `/views/by-table/${encodeURIComponent(tableId)}`);
 
-export const resolveView = async (ctx: CloudCliContext, tableId: string, ref: string): Promise<View> =>
+const resolveView = async (ctx: CloudCliContext, tableId: string, ref: string): Promise<View> =>
   resolveNamedResource(await listViews(ctx, tableId), ref, "view");
 
 export const resolveOptionalView = async (ctx: CloudCliContext, table: Table | null, ref: string | undefined): Promise<View | null> => {

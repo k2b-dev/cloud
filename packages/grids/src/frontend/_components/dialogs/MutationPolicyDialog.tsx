@@ -17,13 +17,13 @@ import type { MutationSource, TableMutationPolicy } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { gridsDialogMessages } from "./messages";
 
-export type MutationPolicyImpactItem = {
+type MutationPolicyImpactItem = {
   kind: "form" | "workflow" | "action";
   id: string;
   name: string;
 };
 
-export type MutationPolicyImpact = {
+type MutationPolicyImpact = {
   items: MutationPolicyImpactItem[];
   total: number;
   limit: number;

@@ -23,8 +23,8 @@ import type {
 import type { RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import type { CombinedRecordOrigin } from "../../../service";
 import type {
-  PublicDocumentBrowseResponse,
   PublicDocument,
+  PublicDocumentBrowseResponse,
   PublicDocumentTemplate,
   PublicDocumentTemplateSummary,
   PublicRecordSnapshotSummary,
@@ -35,7 +35,7 @@ import type { WorkflowUrlState } from "../workflows/workflow-url-state";
 import type { WorkspaceGroupBucket } from "./workspace-state-model";
 
 export type PublicCustomApp = Awaited<ReturnType<typeof projectCustomApp>>;
-export type PublicCustomAppSummary = Awaited<ReturnType<typeof projectCustomAppSummaries>>[number];
+type PublicCustomAppSummary = Awaited<ReturnType<typeof projectCustomAppSummaries>>[number];
 export type PublicWorkflow = z.infer<typeof PublicGridsWorkflowSchema>;
 export type PublicWorkflowLauncher = z.infer<typeof PublicGridsWorkflowLauncherSchema>;
 export type PublicWorkflowRun = z.infer<typeof PublicGridsWorkflowRunSchema>;
@@ -59,7 +59,7 @@ export type PublicWorkspaceCatalog = {
   sidebarDocumentTemplates: Array<{ template: PublicDocumentTemplateSummary; table: PublicTable }>;
 };
 
-export type PublicRuntimeView = PublicView & { query: RecordQuery; displayConfig: RecordDisplayConfig };
+type PublicRuntimeView = PublicView & { query: RecordQuery; displayConfig: RecordDisplayConfig };
 export type PublicWorkspaceBulkLauncher = PublicWorkflowLauncher & { workflowRevision: number; workflowId: string };
 export type PublicWorkspaceRecordLauncher = PublicWorkflowLauncher & {
   workflowRevision: number;
@@ -188,7 +188,7 @@ type WorkspaceFailureState =
   | { kind: "invalidQuery"; title: string; message: string }
   | { kind: "redirect"; href: string };
 
-export type PublicWorkspaceState =
+type PublicWorkspaceState =
   | WorkspaceFailureState
   | {
       kind: "ok";

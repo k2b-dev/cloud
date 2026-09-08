@@ -14,7 +14,7 @@ import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { PublicRecordRevision, PublicRecordRevisionPage } from "../../../api/durable-history";
 import { recordMessages } from "./messages";
 
-export const RECORD_VERSION_PAGE_SIZE = 5;
+const RECORD_VERSION_PAGE_SIZE = 5;
 
 const valueLabel = (value: unknown, empty: string): string => {
   if (value === null || value === undefined || value === "") return empty;

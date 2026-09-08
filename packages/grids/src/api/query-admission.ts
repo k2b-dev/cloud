@@ -126,7 +126,7 @@ export const createQueryAdmission = (options: QueryAdmissionOptions) => {
 
 type QueryAdmission = ReturnType<typeof createQueryAdmission>;
 
-export class QueryAdmissionError extends Error {
+class QueryAdmissionError extends Error {
   override readonly name = "QueryAdmissionError";
 
   constructor(readonly reason: QueryAdmissionRejection) {

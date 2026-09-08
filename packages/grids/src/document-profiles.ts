@@ -10,7 +10,7 @@ export type DocumentArtifactDraft = {
   bytes: Uint8Array;
 };
 
-export type DocumentProfileResult = {
+type DocumentProfileResult = {
   artifacts: DocumentArtifactDraft[];
   validationStatus: "valid" | "warning";
   validationReport: Record<string, unknown>;

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import type { ReferencedByPage } from "../service/referenced-by";
 
-export const PublicReferencedByItemSchema = z
+const PublicReferencedByItemSchema = z
   .object({
     sourceTableId: ShortIdSchema,
     sourceTableName: z.string(),
@@ -20,7 +20,7 @@ export const PublicReferencedByPageSchema = z
   })
   .strict();
 
-export type PublicReferencedByPage = z.infer<typeof PublicReferencedByPageSchema>;
+type PublicReferencedByPage = z.infer<typeof PublicReferencedByPageSchema>;
 
 export const toPublicReferencedByPage = (page: ReferencedByPage): PublicReferencedByPage =>
   PublicReferencedByPageSchema.parse({

@@ -5,12 +5,12 @@ import type { WorkflowValueResolution, WorkflowValueResolverPort, WorkflowVariab
 import { sql } from "bun";
 import { z } from "zod";
 import type { GridRecord } from "../contracts";
-import type { GridsWorkflowChannel, GridsWorkflowPrincipal } from "../workflows/contracts";
+import type { GridsWorkflowPrincipal } from "../workflows/contracts";
 import { createReader } from "./record-read";
 import { SHORT_ID_REGEX } from "./short-id";
 import { canAccessWorkflowBaseTable } from "./workflow-authorization";
 
-export type WorkflowRecordReference = {
+type WorkflowRecordReference = {
   kind: "record";
   tableId: string;
   recordId: string;
@@ -372,9 +372,3 @@ export const createGridsWorkflowValueResolverPort = (load: () => Promise<GridsWo
     },
   };
 };
-
-export const workflowPrincipalFromInvocation = (invocation: WorkflowInvocation<GridsWorkflowChannel>): GridsWorkflowPrincipal => ({
-  userId: invocation.actor.userId ?? null,
-  groupIds: invocation.actor.groupIds ?? [],
-  serviceAccountId: invocation.actor.serviceAccountId ?? null,
-});

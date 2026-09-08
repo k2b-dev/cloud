@@ -19,7 +19,6 @@ import type { WorkflowInvocationMode, WorkflowInvocationReceipt, WorkflowJsonVal
 import {
   createWorkflowRun,
   emitWorkflowEvent,
-  getWorkflowRun as getKernelRun,
   listWorkflowRunSteps,
   requestWorkflowRunCancel,
   type WorkflowStepSummary,
@@ -136,7 +135,7 @@ export type GridsWorkflowAuthorization =
  * `actor` is separated out because the kernel reads that key to build the
  * invocation; the rest is Grids' business.
  */
-export type GridsWorkflowAuthorizationSnapshot = {
+type GridsWorkflowAuthorizationSnapshot = {
   actor: { userId: string | null; groupIds: string[]; serviceAccountId: string | null };
   principal: GridsWorkflowPrincipal;
   authorization: GridsWorkflowAuthorization;
@@ -314,8 +313,6 @@ export const listWorkflowStepRunsPage = async (runId: string): Promise<{ items: 
   };
 };
 
-export const listWorkflowStepRuns = async (runId: string): Promise<GridsWorkflowStepRun[]> => (await listWorkflowStepRunsPage(runId)).items;
-
 export const getWorkflowStepRun = async (runId: string, stepKey: string): Promise<GridsWorkflowStepRun | null> => {
   const [step] = await listWorkflowRunSteps(runId, { stepKeys: [stepKey] });
   return step ? mapStepRun(runId, step) : null;
@@ -381,7 +378,7 @@ export const getWorkflowRunScope = async (runId: string, client?: SqlClient): Pr
  * refuses a terminal run by changing no rows, and reporting that as success
  * tells somebody their finished run was just cancelled.
  */
-export type CancelWorkflowRunOutcome =
+type CancelWorkflowRunOutcome =
   | { state: "canceled"; run: GridsWorkflowRun }
   | { state: "notFound" }
   | { state: "notCancelable"; run: GridsWorkflowRun };
@@ -413,7 +410,7 @@ export const cancelWorkflowRun = async (runId: string, actorUserId: string | nul
 
 // ─── Provenance and statistics ───────────────────────────────────────────────
 
-export type WorkflowRunProvenance = {
+type WorkflowRunProvenance = {
   workflowName: string | null;
   actorLabel: string | null;
   serviceAccountLabel: string | null;
@@ -616,9 +613,6 @@ export const getWorkflowRunStats = async (
   };
 };
 
-/** A run detail read straight from the kernel, for the parts Grids does not mirror. */
-export const getKernelWorkflowRun = getKernelRun;
-
 // ─── Starting a run ──────────────────────────────────────────────────────────
 
 /**
@@ -657,7 +651,7 @@ const writeRunProfile = async (input: {
   return { requestFingerprint: row?.request_fingerprint ?? input.requestFingerprint };
 };
 
-export type StartWorkflowRunInput = {
+type StartWorkflowRunInput = {
   workflow: { id: string; baseId: string; revision: number };
   mode: WorkflowInvocationMode;
   channel: GridsWorkflowChannel;

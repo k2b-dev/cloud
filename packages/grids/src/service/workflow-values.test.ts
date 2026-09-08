@@ -36,6 +36,15 @@ const plan: WorkflowBoundPlan = {
 };
 
 describe("workflow kernel inputs", () => {
+  test("preserves the preparation error identity and status", () => {
+    const error = new WorkflowInputPreparationError("No access", 403);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe("WorkflowInputPreparationError");
+    expect(error.message).toBe("No access");
+    expect(error.status).toBe(403);
+    expect(new WorkflowInputPreparationError("Invalid input").status).toBe(400);
+  });
+
   test("normalizes record inputs after permission and existence checks", async () => {
     const prepared = await prepareWorkflowInputs(
       plan,

@@ -43,7 +43,7 @@ const appState = (app: CliCustomApp): string => {
   return app.hasUnpublishedChanges ? "unpublished-changes" : "live";
 };
 
-export const listCustomApps = (ctx: Parameters<typeof readApi>[0], baseId: string): Promise<CliCustomApp[]> =>
+const listCustomApps = (ctx: Parameters<typeof readApi>[0], baseId: string): Promise<CliCustomApp[]> =>
   readApi<CliCustomApp[]>(ctx, `/apps/by-base/${encodeURIComponent(baseId)}`);
 
 export const resolveCustomApp = async (ctx: Parameters<typeof readApi>[0], baseId: string, reference: string): Promise<CliCustomApp> =>

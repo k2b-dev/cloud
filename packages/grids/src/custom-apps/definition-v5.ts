@@ -2,14 +2,12 @@ import { type CustomAppDefinition, CustomAppDefinitionSchema, type CustomAppDiag
 
 export type CustomAppDefinitionResourceKind = "app" | "base" | "table" | "field" | "view" | "form" | "documentTemplate" | "launcher";
 
-export type CustomAppDefinitionV5MigrationLookup = {
+type CustomAppDefinitionV5MigrationLookup = {
   resolve: (kind: CustomAppDefinitionResourceKind, legacyId: string) => string | null;
   migrateGql?: (source: string) => string;
 };
 
-export type CustomAppDefinitionV5Migration =
-  | { ok: true; definition: CustomAppDefinition }
-  | { ok: false; diagnostics: CustomAppDiagnostic[] };
+type CustomAppDefinitionV5Migration = { ok: true; definition: CustomAppDefinition } | { ok: false; diagnostics: CustomAppDiagnostic[] };
 
 type JsonObject = Record<string, unknown>;
 const object = (value: unknown): JsonObject | null =>

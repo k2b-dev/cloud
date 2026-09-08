@@ -9,7 +9,7 @@ import type { Field } from "./types";
 
 const BASELINE_BATCH_SIZE = 100;
 
-export type DurableHistoryAction =
+type DurableHistoryAction =
   | "baseline"
   | "created"
   | "updated"
@@ -31,7 +31,7 @@ export type DurableHistoryStatus =
       baseline: { captured: number; total: number };
     };
 
-export type RecordRevisionFile = {
+type RecordRevisionFile = {
   id: string;
   fieldId: string;
   position: number;
@@ -41,7 +41,7 @@ export type RecordRevisionFile = {
   sha256: string;
 };
 
-export type HistoricalFileContent = RecordRevisionFile & { bytes: Uint8Array };
+type HistoricalFileContent = RecordRevisionFile & { bytes: Uint8Array };
 
 export type RecordRevision = {
   id: string;

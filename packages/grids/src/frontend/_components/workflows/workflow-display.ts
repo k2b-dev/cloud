@@ -2,7 +2,7 @@ import type { StatusTone } from "@k2b/ui";
 import type { PublicWorkflowRun, PublicWorkflowStepRun } from "../workspace/workspace-public-state-model";
 import { workflowMessages } from "./messages";
 
-export const channelLabels: Record<PublicWorkflowRun["channel"], string> = {
+const channelLabels: Record<PublicWorkflowRun["channel"], string> = {
   api: "API",
   customApp: "App",
   scanner: "Scanner",

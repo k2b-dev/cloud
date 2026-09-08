@@ -29,7 +29,7 @@ export class BoundedQueryTimeoutError extends Error {
   }
 }
 
-export class BoundedQueryAbortedError extends Error {
+class BoundedQueryAbortedError extends Error {
   override readonly name = "BoundedQueryAbortedError";
 
   constructor(options?: ErrorOptions) {

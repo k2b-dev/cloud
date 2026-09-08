@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
-import { EvidenceExportManifestSchema, type EvidenceExportManifest } from "./evidence-export-contracts";
+import { type EvidenceExportManifest, EvidenceExportManifestSchema } from "./evidence-export-contracts";
 import { assertSafeArchivePath, EVIDENCE_EXPORT_MAX_ENTRIES, EVIDENCE_EXPORT_MAX_PACKAGE_BYTES } from "./service/evidence-archive";
 
 const TAR_BLOCK_BYTES = 512;
@@ -9,13 +9,13 @@ const MAX_MANIFEST_BYTES = EVIDENCE_EXPORT_MAX_ENTRIES * 1024;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const decoder = new TextDecoder();
 
-export type EvidenceVerificationIssue = {
+type EvidenceVerificationIssue = {
   code: string;
   message: string;
   path?: string;
 };
 
-export type EvidencePackageVerification = {
+type EvidencePackageVerification = {
   valid: boolean;
   package: { path: string; sizeBytes: number; sha256: string | null; expectedSha256: string | null };
   manifest: {

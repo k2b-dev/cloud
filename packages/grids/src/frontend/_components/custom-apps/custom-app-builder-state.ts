@@ -4,7 +4,7 @@ import type { CustomAppDefinition, CustomAppDiagnostic } from "../../../custom-a
 
 const clone = (definition: CustomAppDefinition): CustomAppDefinition => structuredClone(unwrap(definition));
 
-export type CustomAppBuilderSelection =
+type CustomAppBuilderSelection =
   | { kind: "page"; pageId: string }
   | { kind: "sidebar-action"; pageId: string; actionId: string }
   | { kind: "block"; pageId: string; blockId: string }

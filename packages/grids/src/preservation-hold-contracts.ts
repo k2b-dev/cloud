@@ -4,13 +4,12 @@ import { ShortIdSchema } from "./contracts";
 
 export const PRESERVATION_HOLD_REASON_MAX_LENGTH = 1000;
 
-export const PreservationHoldReasonSchema = z.string().trim().min(1).max(PRESERVATION_HOLD_REASON_MAX_LENGTH);
+const PreservationHoldReasonSchema = z.string().trim().min(1).max(PRESERVATION_HOLD_REASON_MAX_LENGTH);
 
-export const PreservationHoldScopeInputSchema = z.discriminatedUnion("type", [
+const PreservationHoldScopeInputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("base") }).strict(),
   z.object({ type: z.literal("table"), tableId: ShortIdSchema }).strict(),
 ]);
-export type PreservationHoldScopeInput = z.infer<typeof PreservationHoldScopeInputSchema>;
 
 export const PreservationHoldInputSchema = z.object({ reason: PreservationHoldReasonSchema }).strict();
 export type PreservationHoldInput = z.infer<typeof PreservationHoldInputSchema>;
@@ -23,14 +22,12 @@ export const CreatePreservationHoldInputSchema = z
   .strict();
 export type CreatePreservationHoldInput = z.infer<typeof CreatePreservationHoldInputSchema>;
 
-export const PreservationHoldStatusSchema = z.enum(["active", "released"]);
-export type PreservationHoldStatus = z.infer<typeof PreservationHoldStatusSchema>;
+const PreservationHoldStatusSchema = z.enum(["active", "released"]);
 
-export const PreservationHoldScopeSchema = z.discriminatedUnion("type", [
+const PreservationHoldScopeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("base") }).strict(),
   z.object({ type: z.literal("table"), tableId: ShortIdSchema, tableName: z.string().min(1) }).strict(),
 ]);
-export type PreservationHoldScope = z.infer<typeof PreservationHoldScopeSchema>;
 
 export const PreservationHoldSchema = z
   .object({

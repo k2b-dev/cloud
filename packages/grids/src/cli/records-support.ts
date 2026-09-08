@@ -8,7 +8,7 @@ export type CombinedAuditResponse = CombinedAuditPage;
 export type GridFile = PublicGridFile;
 export type RecordRevisionPage = PublicRecordRevisionPage;
 
-export type PublicRecordSnapshotSummary = {
+type PublicRecordSnapshotSummary = {
   id: string;
   recordId: string;
   tableId: string;

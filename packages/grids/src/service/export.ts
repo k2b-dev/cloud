@@ -23,7 +23,7 @@ type ExportFormatOptions = { markdown: "raw" | "html"; dateConfig?: DateContext 
 type RelationExportConfig = NonNullable<ExportFieldSpec["relation"]>;
 
 const EXPORT_PAGE_SIZE = 500;
-export const HTML_TEMPLATE_EXPORT_MAX_RECORDS = 1_000;
+const HTML_TEMPLATE_EXPORT_MAX_RECORDS = 1_000;
 const EXPORT_CURSOR_FINGERPRINT = "grids-internal-export";
 const EXPORT_CURSOR_SIGNING_KEY = "grids-internal-export-cursor";
 

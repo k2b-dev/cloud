@@ -1,13 +1,13 @@
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 
-export type WorkflowScannerRequest = {
+type WorkflowScannerRequest = {
   operationId: string;
   expectedRevision: number;
   code: string;
   inputs?: Record<string, WorkflowJsonValue>;
 };
 
-export type WorkflowScannerRequestTarget = {
+type WorkflowScannerRequestTarget = {
   launcherId: string;
 };
 

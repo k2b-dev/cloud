@@ -4,10 +4,10 @@ import { SQL, sql } from "bun";
 import type { SqlClient } from "./audit";
 import { insertWithShortIdForDb } from "./short-id";
 
-export type NumberSeriesAssignment = "creation" | "finalization";
-export type NumberSeriesStrategy = "sequence" | "date_sequence" | "document";
+type NumberSeriesAssignment = "creation" | "finalization";
+type NumberSeriesStrategy = "sequence" | "date_sequence" | "document";
 
-export type NumberSeriesFormat = {
+type NumberSeriesFormat = {
   strategy: NumberSeriesStrategy;
   prefix?: string;
   padding?: number;
@@ -15,7 +15,7 @@ export type NumberSeriesFormat = {
   numberTemplate?: string;
 };
 
-export type NumberSeriesAllocation = {
+type NumberSeriesAllocation = {
   id: string;
   seriesId: string;
   seriesShortId: string;

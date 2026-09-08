@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
-import { PublicDocumentSchema } from "./documents-api-shared";
 import { createDocumentResourceRoutes } from "./document-resource-routes";
+import { PublicDocumentSchema } from "./documents-api-shared";
 
 const authenticated: MiddlewareHandler<AuthContext> = async (_c, next) => next();
 

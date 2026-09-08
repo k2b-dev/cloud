@@ -171,7 +171,7 @@ export const enrichFormulaLookups = async (
   await enrichFormulaLookupsWithPlan(records, plan, options);
 };
 
-export type RecordReadOptions = {
+type RecordReadOptions = {
   includeRelations?: boolean;
   viewer?: ExpansionViewer;
   authorizeComputedTable?: (tableId: string) => Promise<boolean>;

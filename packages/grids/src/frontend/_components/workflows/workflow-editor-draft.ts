@@ -8,7 +8,7 @@ export type WorkflowEditorDraft = {
   revision: number;
 };
 
-export type WorkflowEditorSavePayload = {
+type WorkflowEditorSavePayload = {
   name?: string;
   description?: string | null;
   enabled?: boolean;

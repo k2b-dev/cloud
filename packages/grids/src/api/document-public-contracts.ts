@@ -3,7 +3,7 @@ import { ShortIdSchema } from "../contracts";
 
 export const PUBLIC_DOCUMENT_PAGE_LIMIT = 100;
 
-export const PublicDocumentArtifactSchema = z
+const PublicDocumentArtifactSchema = z
   .object({
     key: z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/),
     filename: z.string().trim().min(1).max(255),
@@ -13,7 +13,7 @@ export const PublicDocumentArtifactSchema = z
   })
   .strict();
 
-export const PublicDocumentRendererSchema = z.discriminatedUnion("kind", [
+const PublicDocumentRendererSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("html") }).strict(),
   z
     .object({

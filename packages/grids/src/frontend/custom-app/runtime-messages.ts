@@ -151,8 +151,6 @@ export const customAppRuntimeMessages = i18n.define({
   },
 });
 
-export type CustomAppRuntimeCopy = ReturnType<typeof customAppRuntimeMessages.resolve>["t"];
-
 export const useCustomAppRuntimeMessages = () => {
   const locale = useLocale();
   return createMemo(() => customAppRuntimeMessages.resolve([locale()]).t);

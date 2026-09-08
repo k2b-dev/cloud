@@ -7,8 +7,8 @@ type BasePage = { items: PublicBase[]; total: number; limit: number; offset: num
 
 export const GRIDS_BASE_DEFAULT_KEY = "grids.base";
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-export const PUBLIC_ID_RE = /^[A-Za-z0-9]{6}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PUBLIC_ID_RE = /^[A-Za-z0-9]{6}$/;
 
 type NamedResource = { id: string; name: string };
 
@@ -99,7 +99,7 @@ export const listTables = (ctx: CloudCliContext, baseId: string, params: { q?: s
 export const resolveTable = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> =>
   resolveNamedResource(await listTables(ctx, baseId), ref, "table");
 
-export const resolveTableFromSearch = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> => {
+const resolveTableFromSearch = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> => {
   if (UUID_RE.test(ref)) throw new Error("Table references do not accept UUIDs. Use its 6-character public id or exact name.");
   return resolveNamedResource(await listTables(ctx, baseId, { q: ref, limit: 100 }), ref, "table");
 };

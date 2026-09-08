@@ -110,5 +110,4 @@ export const workspaceMessages = i18n.define({
   },
 });
 
-export type WorkspaceMessages = ReturnType<typeof workspaceMessages.resolve>["t"];
 export const resolveWorkspaceMessages = (locale?: string) => workspaceMessages.resolve(locale ? [locale] : []).t;

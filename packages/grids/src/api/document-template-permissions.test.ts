@@ -3,6 +3,7 @@ import type { User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { gridsService } from "../service";
+import * as publicResources from "../service/public-resources";
 import { createDocumentsApi } from "./documents";
 import { permissionedWorkflowCatalog } from "./workflows";
 
@@ -30,15 +31,15 @@ const publicToInternal = new Map([
   [relationFieldPublicId, "88888888-8888-4888-8888-888888888888"],
 ]);
 const internalToPublic = new Map([...publicToInternal].map(([publicId, internalId]) => [internalId, publicId]));
-mock.module("../service/public-resources", () => ({
+const publicResourceMocks = {
   resolvePublicId: async (_type: string, publicId: string) => publicToInternal.get(publicId) ?? null,
-  resolvePublicIds: async (_type: string, publicIds: string[]) =>
+  resolvePublicIds: async (_type: string, publicIds: readonly string[]) =>
     new Map(publicIds.flatMap((publicId) => (publicToInternal.has(publicId) ? [[publicId, publicToInternal.get(publicId)!]] : []))),
-  projectPublicIds: async (_type: string, internalIds: string[]) =>
+  projectPublicIds: async (_type: string, internalIds: readonly string[]) =>
     new Map(
       internalIds.flatMap((internalId) => (internalToPublic.has(internalId) ? [[internalId, internalToPublic.get(internalId)!]] : [])),
     ),
-}));
+};
 
 const user: User = {
   id: "55555555-5555-4555-8555-555555555555",
@@ -207,6 +208,9 @@ const context = {
 
 describe("document template permission surfaces", () => {
   beforeEach(() => {
+    spyOn(publicResources, "resolvePublicId").mockImplementation(publicResourceMocks.resolvePublicId);
+    spyOn(publicResources, "resolvePublicIds").mockImplementation(publicResourceMocks.resolvePublicIds);
+    spyOn(publicResources, "projectPublicIds").mockImplementation(publicResourceMocks.projectPublicIds);
     baseLevel = "read";
     fieldListCalls = 0;
     snapshotListCalls = 0;

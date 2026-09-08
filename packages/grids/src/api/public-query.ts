@@ -141,7 +141,7 @@ export const PublicRecordQuerySchema = RecordQuerySchema.extend({
     .optional(),
 });
 
-export type PublicRecordQuery = z.infer<typeof PublicRecordQuerySchema>;
+type PublicRecordQuery = z.infer<typeof PublicRecordQuerySchema>;
 
 export const PublicTableQueryBodySchema = z
   .object({
@@ -164,7 +164,7 @@ export const PublicExportBodySchema = ExportBodySchema.omit({ query: true, field
   query: PublicRecordQuerySchema.optional().default({}),
   fields: z.array(PublicExportFieldSpecSchema).max(200).optional(),
 });
-export type PublicExportBody = z.infer<typeof PublicExportBodySchema>;
+type PublicExportBody = z.infer<typeof PublicExportBodySchema>;
 
 type PublicQueryDeps = {
   listFields?: typeof gridsService.field.listByTable;

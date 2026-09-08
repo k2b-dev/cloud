@@ -36,7 +36,7 @@ type CombinedAuditContext = {
   }>;
 };
 
-export type CombinedAuditEntry = Omit<AuditEntry, "context"> & {
+type CombinedAuditEntry = Omit<AuditEntry, "context"> & {
   context: CombinedAuditContext | null;
   userDisplayName: string | null;
   userAvatarHash: string | null;

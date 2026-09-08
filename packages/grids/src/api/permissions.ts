@@ -27,7 +27,7 @@ export const accessActorUser = (access: GridsAccessContext) => actorUser(access)
 export const currentActorUser = <T extends AuthContext>(c: Context<T>) => actorUser(gridsAccessContext(c));
 export const currentActorUserId = <T extends AuthContext>(c: Context<T>) => currentActorUser(c)?.id ?? null;
 
-export const accessSubjectFor = (access: GridsAccessContext): AccessSubject | null => {
+const accessSubjectFor = (access: GridsAccessContext): AccessSubject | null => {
   if (access.accessSubject) return access.accessSubject;
   const user = actorUser(access);
   return user ? { type: "user", userId: user.id } : null;
@@ -46,7 +46,7 @@ export const resourceBoundBaseIdFor = (access: GridsAccessContext): string | nul
 export const currentResourceBoundBaseId = <T extends AuthContext>(c: Context<T>): string | null | undefined =>
   resourceBoundBaseIdFor(gridsAccessContext(c));
 
-export const credentialPermissionFor = (access: GridsAccessContext): PermissionLevel =>
+const credentialPermissionFor = (access: GridsAccessContext): PermissionLevel =>
   access.actor?.kind === "service_account" ? permissionFromCredentialScopes(access.actor.scopes) : "admin";
 
 export const currentCredentialPermission = <T extends AuthContext>(c: Context<T>): PermissionLevel =>

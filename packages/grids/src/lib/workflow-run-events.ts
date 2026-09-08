@@ -1,6 +1,6 @@
 import type { GridsWorkflowRun, GridsWorkflowStepRun } from "../workflows/contracts";
 
-export type WorkflowRunStepSummary = Pick<
+type WorkflowRunStepSummary = Pick<
   GridsWorkflowStepRun,
   | "runId"
   | "key"
@@ -15,7 +15,7 @@ export type WorkflowRunStepSummary = Pick<
   | "finishedAt"
 >;
 
-export type WorkflowRunEventSummary = Pick<
+type WorkflowRunEventSummary = Pick<
   GridsWorkflowRun,
   | "id"
   | "workflowId"

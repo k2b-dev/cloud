@@ -1,5 +1,6 @@
 import { z } from "zod";
-export const DocumentProfileIdSchema = z.string().regex(/^[a-z][a-z0-9.-]{2,99}$/);
+
+const DocumentProfileIdSchema = z.string().regex(/^[a-z][a-z0-9.-]{2,99}$/);
 
 const boundedIdentity = (max: number) =>
   z

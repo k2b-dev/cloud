@@ -14,12 +14,12 @@ const MAX_TIMEOUT_MS = 60_000;
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 type LookupAddress = { address: string; family: number };
 
-export type WorkflowHttpClientDeps = {
+type WorkflowHttpClientDeps = {
   lookup?: (hostname: string, options: { all: true; verbatim: true }) => Promise<LookupAddress[]>;
   request?: RequestFactory;
 };
 
-export type WorkflowHttpRequestInput = {
+type WorkflowHttpRequestInput = {
   url: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   headers?: Record<string, string>;

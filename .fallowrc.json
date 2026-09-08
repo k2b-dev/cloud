@@ -21,6 +21,8 @@
     "packages/cloud/src/clients/core.ts"
   ],
   "dynamicallyLoaded": [
+    "packages/grids/scripts/*.test.ts",
+    "packages/grids/scripts/load-test.k6.js",
     "styles.css",
     "packages/*/src/config.ts",
     "packages/*/src/styles/app.css",
@@ -34,6 +36,7 @@
     "packages/cloud/scripts/preload.ts"
   ],
   "ignoreDependencies": [
+    "k6",
     "lean-qr",
     "@tailwindcss/typography",
     "@babel/preset-typescript",

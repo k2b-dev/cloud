@@ -109,7 +109,7 @@ export const LoadManifestSchema = z.object({
 export type LoadManifest = z.infer<typeof LoadManifestSchema>;
 export type LoadProfile = "load" | "smoke" | "soak" | "stress";
 
-export const LOAD_PROFILES: readonly LoadProfile[] = ["smoke", "load", "soak", "stress"];
+const LOAD_PROFILES: readonly LoadProfile[] = ["smoke", "load", "soak", "stress"];
 
 export const parsePositiveInteger = (value: string | undefined, fallback: number, label: string): number => {
   const parsed = value === undefined ? fallback : Number(value);
@@ -132,7 +132,7 @@ export const deterministicRecordId = (prefix: string, index: number): string => 
 
 type MetricValues = Record<string, number | undefined>;
 
-export type K6Summary = {
+type K6Summary = {
   metrics?: Record<string, { values?: MetricValues }>;
   state?: { testRunDurationMs?: number };
 };
@@ -168,7 +168,7 @@ export type LoadHealthSnapshot = {
   }>;
 };
 
-export type LoadReport = {
+type LoadReport = {
   profile: LoadProfile;
   k6ExitCode: number;
   rows: number;

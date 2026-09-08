@@ -31,8 +31,8 @@ const resetAlphaWorkflowSchema = async (sql: SQL): Promise<boolean> => {
    *
    * The ledger itself is dropped too. It was named after an engine Grids no
    * longer has, and carrying the old name forward would have meant explaining
-  * it to every reader from here on.
-  */
+   * it to every reader from here on.
+   */
   await sql`
     UPDATE grids.documents SET workflow_run_id = NULL, workflow_step_key = NULL WHERE workflow_run_id IS NOT NULL;
     DROP TABLE IF EXISTS grids.workflow_effect_intents CASCADE;

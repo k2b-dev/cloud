@@ -26,13 +26,13 @@ const StoredCursorSchema = z
 
 type CursorBoundary = { fieldId: string; recordId: string };
 
-export type ReferencedByCursorScope = {
+type ReferencedByCursorScope = {
   targetTableId: string;
   targetRecordId: string;
   relationFieldId?: string | null;
 };
 
-export type ReferencedByItem = {
+type ReferencedByItem = {
   sourceTableId: string;
   sourceTableShortId: string;
   sourceTableName: string;

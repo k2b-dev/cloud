@@ -5,7 +5,7 @@ import { SHORT_ID_REGEX } from "./short-id";
 
 export type WorkflowCatalogEntry = { id: string; name: string; shortId: string };
 /** Record events exist for stored tables only; Combined tables are derived and never emit them. */
-export type WorkflowTableCatalogEntry = WorkflowCatalogEntry & { kind: "stored" | "federated" };
+type WorkflowTableCatalogEntry = WorkflowCatalogEntry & { kind: "stored" | "federated" };
 export type WorkflowFieldCatalogEntry = WorkflowCatalogEntry & {
   relation?: { targetTableId: string; cardinality: "single" | "multiple" };
 };
@@ -36,7 +36,7 @@ export const WorkflowCatalogSnapshotSchema = z.object({
   emailTemplates: z.array(WorkflowCatalogEntrySchema),
 });
 
-export type WorkflowCatalogSnapshot = z.infer<typeof WorkflowCatalogSnapshotSchema>;
+type WorkflowCatalogSnapshot = z.infer<typeof WorkflowCatalogSnapshotSchema>;
 
 type WorkflowCatalogInput = {
   tables: WorkflowTableCatalogEntry[];
@@ -101,15 +101,6 @@ export const restoreWorkflowCatalog = (snapshot: WorkflowCatalogSnapshot): Workf
     templates: snapshot.templates,
     emailTemplates: snapshot.emailTemplates,
   });
-
-export const workflowRefDiagnostic = <T extends WorkflowCatalogEntry>(
-  index: WorkflowCatalogIndex<T>,
-  key: string,
-  label: string,
-): string | null => {
-  if (index.ambiguous.has(key)) return `${label}: ambiguous reference "${key}"`;
-  return index.refs.has(key) ? null : `${label}: unknown reference "${key}"`;
-};
 
 export const getWorkflowCatalogRef = <T extends WorkflowCatalogEntry>(index: WorkflowCatalogIndex<T>, key: string): T | null => {
   if (index.ambiguous.has(key)) return null;
@@ -183,16 +174,7 @@ export const loadWorkflowCatalog = (baseId: string, db: SQL = sql): Promise<Work
 export const loadWorkflowCatalogForMigration = (baseId: string, db: SQL): Promise<WorkflowCatalog> =>
   loadWorkflowCatalogWithDeleted(baseId, db, true);
 
-export const resolveWorkflowTableRef = (catalog: WorkflowCatalog, ref: string): WorkflowTableCatalogEntry | null =>
-  getWorkflowCatalogRef(catalog.tables, ref);
-
 export const resolveWorkflowFieldRef = (catalog: WorkflowCatalog, tableId: string, ref: string): WorkflowFieldCatalogEntry | null => {
   const fields = catalog.fieldsByTable.get(tableId);
   return fields ? getWorkflowCatalogRef(fields, ref) : null;
 };
-
-export const resolveWorkflowTemplateRef = (catalog: WorkflowCatalog, ref: string): (WorkflowCatalogEntry & { tableId: string }) | null =>
-  getWorkflowCatalogRef(catalog.templates, ref);
-
-export const resolveWorkflowEmailTemplateRef = (catalog: WorkflowCatalog, ref: string): WorkflowCatalogEntry | null =>
-  getWorkflowCatalogRef(catalog.emailTemplates, ref);

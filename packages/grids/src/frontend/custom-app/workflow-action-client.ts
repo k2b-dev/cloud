@@ -1,9 +1,9 @@
-export type CustomAppWorkflowOutcome = {
+type CustomAppWorkflowOutcome = {
   kind: "running" | "success" | "error";
   message: string;
 };
 
-export type CustomAppWorkflowMessages = {
+type CustomAppWorkflowMessages = {
   startFailed: string;
   statusUnavailable: string;
   completed: string;

@@ -50,7 +50,7 @@ import { GRIDS_EVENT } from "../workflows/events";
 import { gridsWorkflows } from "../workflows/module";
 import { reconcileStuckControlledDestructionRuns } from "./controlled-destruction";
 import { cleanupExpiredEvidenceExports } from "./evidence-exports";
-import { canExecuteWorkflow, canAccessWorkflowExecutionTable, canAccessWorkflowRunTable } from "./workflow-action-scope";
+import { canAccessWorkflowExecutionTable, canAccessWorkflowRunTable, canExecuteWorkflow } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
 import { createWorkflowRecordEventRuntime } from "./workflow-record-events";
@@ -86,7 +86,7 @@ const WORKER_INTERVAL_MS = 1_000;
 const MAX_DRY_RUNS_PER_TICK = 25;
 const SCHEDULE_PREFIX = "grids:workflow:";
 
-export const workflowScheduleId = (workflow: Pick<GridsWorkflow, "id" | "revision">): string => `${SCHEDULE_PREFIX}${workflow.id}`;
+const workflowScheduleId = (workflow: Pick<GridsWorkflow, "id" | "revision">): string => `${SCHEDULE_PREFIX}${workflow.id}`;
 
 const workflowScheduleIdPrefix = (workflowId: string): string => `${SCHEDULE_PREFIX}${workflowId}:revision:`;
 
@@ -99,7 +99,7 @@ const deleteWorkflowSchedules = async (workflowId: string): Promise<void> => {
   );
 };
 
-export const workflowScheduleMetadata = (workflow: Pick<GridsWorkflow, "id" | "name" | "revision">) => ({
+const workflowScheduleMetadata = (workflow: Pick<GridsWorkflow, "id" | "name" | "revision">) => ({
   appId: "grids",
   family: "grids:workflows",
   label: `Workflow: ${workflow.name}`,
@@ -109,7 +109,7 @@ export const workflowScheduleMetadata = (workflow: Pick<GridsWorkflow, "id" | "n
   revision: workflow.revision,
 });
 
-export type InvokeGridsWorkflowInput = {
+type InvokeGridsWorkflowInput = {
   workflowId: string;
   mode: WorkflowInvocationMode;
   channel: GridsWorkflowChannel;
@@ -409,9 +409,9 @@ const drainWorkflowRuns = async (): Promise<void> => {
 
 // ─── Schedules and record events ─────────────────────────────────────────────
 
-export type WorkflowScheduleConfig = { cron: string; timezone: string };
+type WorkflowScheduleConfig = { cron: string; timezone: string };
 
-export const workflowScheduleConfig = (workflow: Pick<GridsWorkflow, "plan">): WorkflowScheduleConfig | null => {
+const workflowScheduleConfig = (workflow: Pick<GridsWorkflow, "plan">): WorkflowScheduleConfig | null => {
   const trigger = workflow.plan.triggers.find((item) => item.kind === "schedule");
   if (!trigger) return null;
   return {
@@ -487,12 +487,12 @@ export const getWorkflowTriggerRuntimeState = async (
   };
 };
 
-export const workflowScheduleMatches = (workflow: Pick<GridsWorkflow, "plan">, expected: WorkflowScheduleConfig): boolean => {
+const workflowScheduleMatches = (workflow: Pick<GridsWorkflow, "plan">, expected: WorkflowScheduleConfig): boolean => {
   const current = workflowScheduleConfig(workflow);
   return current?.cron === expected.cron && current.timezone === expected.timezone;
 };
 
-export const workflowScheduleShouldRetry = (status: number): boolean => status === 409 || status >= 500;
+const workflowScheduleShouldRetry = (status: number): boolean => status === 409 || status >= 500;
 
 const registerSchedule = async (workflowId: string): Promise<void> => {
   const workflow = await getWorkflow(workflowId);
@@ -566,7 +566,7 @@ const registerSchedule = async (workflowId: string): Promise<void> => {
   });
 };
 
-export const registerWorkflowSchedules = async (
+const registerWorkflowSchedules = async (
   workflows: ReadonlyArray<Pick<GridsWorkflow, "id">>,
   register: (workflowId: string) => Promise<void> = registerSchedule,
 ): Promise<void> => {
@@ -606,10 +606,7 @@ let runtimeEventController: AbortController | null = null;
 let runtimeEventTask: Promise<void> | null = null;
 const workflowRuntimeTasks = createRuntimeTaskTracker();
 
-export const applyWorkflowRuntimeEvent = async <T>(
-  event: { cursor: string; data: T },
-  apply: (data: T) => Promise<void>,
-): Promise<string> => {
+const applyWorkflowRuntimeEvent = async <T>(event: { cursor: string; data: T }, apply: (data: T) => Promise<void>): Promise<string> => {
   await apply(event.data);
   return event.cursor;
 };

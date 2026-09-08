@@ -79,7 +79,7 @@ const MAX_PREVIEW_JOIN_FANOUT = 50;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATEMENT_TIMEOUT_CODE = "57014";
 const FEDERATED_REVISION_ERROR_CODE = "P0001";
-export const GQL_RESULT_TOO_LARGE_MESSAGE = "GQL result is too large. Select fewer fields or use a smaller pageSize, then retry.";
+const GQL_RESULT_TOO_LARGE_MESSAGE = "GQL result is too large. Select fewer fields or use a smaller pageSize, then retry.";
 
 const revisionScopeKey = (scope: FederatedRevisionScope): string =>
   scope

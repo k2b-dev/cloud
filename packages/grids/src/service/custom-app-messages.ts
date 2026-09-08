@@ -1,6 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 
-export const customAppServiceMessages = i18n.define({
+const customAppServiceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {

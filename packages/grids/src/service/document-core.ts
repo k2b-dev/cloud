@@ -14,7 +14,7 @@ import type { Table } from "./types";
 
 const WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS = 1_000;
 
-export type DocumentPdfRenderer = NonNullable<Parameters<typeof documentIssuanceService.issueDocument>[0]["renderPdf"]>;
+type DocumentPdfRenderer = NonNullable<Parameters<typeof documentIssuanceService.issueDocument>[0]["renderPdf"]>;
 
 export const createDocumentForRecord = async (params: {
   template: DocumentTemplate;

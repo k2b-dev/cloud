@@ -1,8 +1,8 @@
 import { sql } from "bun";
 
-export type GridsOperationalStatus = "error" | "ok" | "warn";
+type GridsOperationalStatus = "error" | "ok" | "warn";
 
-export type GridsOperationalIssue = {
+type GridsOperationalIssue = {
   detail: string;
   severity: Exclude<GridsOperationalStatus, "ok">;
   title: string;
@@ -119,7 +119,7 @@ export const operationalIssues = (health: Omit<GridsOperationalHealth, "issues">
   return issues;
 };
 
-export const mapOperationalHealth = (row: OperationalHealthRow, gqlRow?: GqlHealthRow): GridsOperationalHealth => {
+const mapOperationalHealth = (row: OperationalHealthRow, gqlRow?: GqlHealthRow): GridsOperationalHealth => {
   const health = {
     status: row.status,
     observedAt: new Date(row.observed_at).toISOString(),

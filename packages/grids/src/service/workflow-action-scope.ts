@@ -38,7 +38,7 @@ import {
 import { getLauncher } from "./workflow-launchers";
 import { type GridsWorkflowAuthorization, getWorkflowRunScope } from "./workflow-runs";
 
-export type PermissionLevel = "read" | "write" | "admin";
+type PermissionLevel = "read" | "write" | "admin";
 
 export type GridsWorkflowActionScope = {
   runId: string;
@@ -70,8 +70,7 @@ export class GridsWorkflowActionError extends Error {
 export const actionError = (code: string, message: string, retryable = false): GridsWorkflowActionError =>
   new GridsWorkflowActionError(code, message, retryable);
 
-export const forbidden = (): GridsWorkflowActionError =>
-  actionError("FORBIDDEN", "Workflow actor does not have permission for this action");
+const forbidden = (): GridsWorkflowActionError => actionError("FORBIDDEN", "Workflow actor does not have permission for this action");
 
 /** A service `Result` refused: its own code and status decide how it is reported. */
 export const requireOk = <T>(
@@ -89,7 +88,7 @@ export const workflowRunScope = (ctx: Pick<WorkflowActionContext, "runId">, clie
   });
 
 /** What deciding "may this run execute" needs, whether or not a run row exists yet. */
-export type GridsWorkflowExecutionClaim = {
+type GridsWorkflowExecutionClaim = {
   baseId: string;
   workflowId: string;
   principal: GridsWorkflowPrincipal;

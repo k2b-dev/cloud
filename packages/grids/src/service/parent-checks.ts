@@ -20,27 +20,6 @@ import { getGridsCrudMessages } from "./crud-messages";
  * trashed (the API layer translates conflict to 409).
  */
 
-/**
- * Verify the table and base are alive. Inside a transaction, the row locks
- * keep both parents alive until the caller's write commits.
- */
-export const requireTableAlive = async (tableId: string, client: SqlClient = sql, locale?: string): Promise<Result<void>> => {
-  const [row] = await client<{ id: string }[]>`
-    SELECT t.id::text AS id
-    FROM grids.tables t
-    JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
-    WHERE t.id = ${tableId}::uuid AND t.deleted_at IS NULL
-    FOR SHARE OF t, b
-  `;
-  return row
-    ? ok()
-    : fail({
-        code: "CONFLICT",
-        message: getGridsCrudMessages(locale).parentTrashed,
-        status: 409,
-      });
-};
-
 /** Record mutations are only valid for stored tables. Federated tables are
  * read models; their publication grants never authorize writes to sources. */
 export const requireStoredTableWritable = async (tableId: string, client: SqlClient = sql, locale?: string): Promise<Result<void>> => {

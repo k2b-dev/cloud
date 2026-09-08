@@ -93,7 +93,7 @@ export const germanEInvoiceSnapshotSchema = z
     if (value.dueDate < value.invoiceDate) ctx.addIssue({ code: "custom", path: ["dueDate"], message: "must not precede invoiceDate" });
   });
 
-export type GermanEInvoiceSnapshot = z.infer<typeof germanEInvoiceSnapshotSchema>;
+type GermanEInvoiceSnapshot = z.infer<typeof germanEInvoiceSnapshotSchema>;
 type Render = (input: RenderFacturXHtmlToPdfInput) => Promise<{ pdf: Uint8Array }>;
 type Validate = (input: { xml: string }) => Promise<{ valid: boolean; errors: unknown[] }>;
 type ExtractEmbedded = (pdf: Uint8Array) => Promise<{ filename: string; xml: string }>;

@@ -175,7 +175,7 @@ export const moveCustomAppPage = (definition: CustomAppDefinition, pageId: strin
   return { ...definition, pages };
 };
 
-export type CustomAppPageParameterUsage =
+type CustomAppPageParameterUsage =
   | "page record"
   | "page availability"
   | "block availability"

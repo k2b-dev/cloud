@@ -17,12 +17,7 @@ import { apiMessages } from "./messages";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
 import { currentActorViewer, gateAt } from "./permissions";
 
-export {
-  PUBLIC_DOCUMENT_PAGE_LIMIT,
-  PublicDocumentArtifactSchema,
-  PublicDocumentRendererSchema,
-  PublicDocumentSchema,
-} from "./document-public-contracts";
+export { PublicDocumentSchema } from "./document-public-contracts";
 
 export const documentActor = (actor: RequestActor | undefined) => {
   if (!actor) return { kind: "system" as const };
@@ -173,7 +168,7 @@ const PublicDocumentPreviewImageSchema = z
     url: z.string(),
   })
   .strict();
-export const PublicDocumentPreviewDataSchema = z
+const PublicDocumentPreviewDataSchema = z
   .object({
     record: PublicDocumentPreviewRecordSchema,
     table: z.object({ id: ShortIdSchema, name: z.string() }).strict(),

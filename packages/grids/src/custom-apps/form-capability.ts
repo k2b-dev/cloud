@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { FormConfig } from "../service/forms";
 import { stableCustomAppValue } from "./stable-value";
 
-export type CustomAppFormCapabilityField = {
+type CustomAppFormCapabilityField = {
   id: string;
   type: string;
   config: unknown;
@@ -15,7 +15,7 @@ export type CustomAppFormSecurityField = CustomAppFormCapabilityField & {
   defaultValue: unknown;
 };
 
-export type CustomAppFormInlineTargetReference = { tableId: string; fieldId: string };
+type CustomAppFormInlineTargetReference = { tableId: string; fieldId: string };
 
 export const customAppFormFieldHash = (fieldIds: readonly string[], fields: readonly CustomAppFormCapabilityField[]): string => {
   const fieldsById = new Map(fields.map((field) => [field.id, field]));

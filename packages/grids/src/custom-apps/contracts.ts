@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RecordDisplayConfigSchema } from "../contracts";
 
-export const CustomAppValueFormatSchema = z
+const CustomAppValueFormatSchema = z
   .object({
     style: z.enum(["number", "integer", "percent"]),
     decimalPlaces: z.number().int().min(0).max(20).optional(),
@@ -21,7 +21,7 @@ export const CustomAppValueFormatSchema = z
   });
 export type CustomAppValueFormat = z.infer<typeof CustomAppValueFormatSchema>;
 
-export const CustomAppLocalIdSchema = z
+const CustomAppLocalIdSchema = z
   .string()
   .trim()
   .min(1)
@@ -36,7 +36,7 @@ const CustomAppParameterIdSchema = z
   .regex(/^[a-z][a-z0-9_]*$/, "Use a lowercase parameter id");
 
 /** Public Grids resource identity. UUIDs never cross the Custom App authoring boundary. */
-export const CustomAppResourceIdSchema = z.string().regex(/^[A-Za-z0-9]{6}$/, "Use a 6-character Grids resource id");
+const CustomAppResourceIdSchema = z.string().regex(/^[A-Za-z0-9]{6}$/, "Use a 6-character Grids resource id");
 
 const CustomAppRecordParameterSchema = z
   .object({
@@ -80,14 +80,13 @@ const CustomAppGqlSourceSchema = z
 const CustomAppRecordIdValueSchema = z.object({ source: z.literal("RECORD"), path: z.literal("id") }).strict();
 const CustomAppRowIdValueSchema = z.object({ source: z.literal("ROW"), path: z.literal("id") }).strict();
 
-export const CustomAppAvailabilitySchema = z.object({ query: z.string().trim().min(1).max(20_000) }).strict();
-export type CustomAppAvailability = z.infer<typeof CustomAppAvailabilitySchema>;
+const CustomAppAvailabilitySchema = z.object({ query: z.string().trim().min(1).max(20_000) }).strict();
 
 const CustomAppAvailabilityShape = {
   availableWhen: CustomAppAvailabilitySchema.optional(),
 };
 
-export const CustomAppValueBindingSchema = z.discriminatedUnion("source", [
+const CustomAppValueBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("LITERAL"), value: z.json() }).strict(),
   CustomAppParamValueSchema,
   CustomAppRecordIdValueSchema,
@@ -95,19 +94,19 @@ export const CustomAppValueBindingSchema = z.discriminatedUnion("source", [
 
 const CustomAppAuthPrincipalValueSchema = z.object({ source: z.literal("AUTH"), path: z.literal("currentUser") }).strict();
 
-export const CustomAppFormValueBindingSchema = z.discriminatedUnion("source", [
+const CustomAppFormValueBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("LITERAL"), value: z.json() }).strict(),
   CustomAppParamValueSchema,
   CustomAppRecordIdValueSchema,
   CustomAppAuthPrincipalValueSchema,
 ]);
 
-export const CustomAppGlobalFormValueBindingSchema = z.discriminatedUnion("source", [
+const CustomAppGlobalFormValueBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("LITERAL"), value: z.json() }).strict(),
   CustomAppAuthPrincipalValueSchema,
 ]);
 
-export const CustomAppRowValueBindingSchema = z.discriminatedUnion("source", [
+const CustomAppRowValueBindingSchema = z.discriminatedUnion("source", [
   z.object({ source: z.literal("LITERAL"), value: z.json() }).strict(),
   CustomAppParamValueSchema,
   CustomAppRecordIdValueSchema,
@@ -153,7 +152,7 @@ const CustomAppActionSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
-export const CustomAppRowActionSchema = z
+const CustomAppRowActionSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     label: z.string().trim().min(1).max(120),
@@ -213,7 +212,7 @@ const CustomAppSidebarActionShape = {
   ...CustomAppAvailabilityShape,
 };
 
-export const CustomAppSidebarActionSchema = z
+const CustomAppSidebarActionSchema = z
   .object({
     ...CustomAppSidebarActionShape,
     kind: z.literal("form"),
@@ -223,7 +222,7 @@ export const CustomAppSidebarActionSchema = z
   })
   .strict();
 
-export const CustomAppMarkdownBlockSchema = z
+const CustomAppMarkdownBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("markdown"),
@@ -233,7 +232,7 @@ export const CustomAppMarkdownBlockSchema = z
   })
   .strict();
 
-export const CustomAppRecordsBlockSchema = z
+const CustomAppRecordsBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("records"),
@@ -274,7 +273,7 @@ export const CustomAppRecordsBlockSchema = z
     }
   });
 
-export const CustomAppReferencedRecordsBlockSchema = z
+const CustomAppReferencedRecordsBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("referenced_records"),
@@ -307,12 +306,12 @@ export const CustomAppReferencedRecordsBlockSchema = z
     }
   });
 
-export const CustomAppInsightSourceSchema = z.discriminatedUnion("kind", [
+const CustomAppInsightSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("view"), viewId: CustomAppResourceIdSchema }).strict(),
   CustomAppGqlSourceSchema,
 ]);
 
-export const CustomAppMetricsBlockSchema = z
+const CustomAppMetricsBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("metrics"),
@@ -322,7 +321,7 @@ export const CustomAppMetricsBlockSchema = z
   })
   .strict();
 
-export const CustomAppChartBlockSchema = z
+const CustomAppChartBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("chart"),
@@ -338,7 +337,7 @@ export const CustomAppChartBlockSchema = z
   })
   .strict();
 
-export const CustomAppRecordBlockSchema = z
+const CustomAppRecordBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("record"),
@@ -408,7 +407,7 @@ export const CustomAppCommentsBlockSchema = z
   })
   .strict();
 
-export const CustomAppFormBlockSchema = z
+const CustomAppFormBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("form"),
@@ -420,7 +419,7 @@ export const CustomAppFormBlockSchema = z
   })
   .strict();
 
-export const CustomAppActionsBlockSchema = z
+const CustomAppActionsBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("actions"),
@@ -438,7 +437,7 @@ export const CustomAppActionsBlockSchema = z
     }
   });
 
-export const CustomAppScannerBlockSchema = z
+const CustomAppScannerBlockSchema = z
   .object({
     id: CustomAppLocalIdSchema,
     type: z.literal("scanner"),
@@ -448,7 +447,7 @@ export const CustomAppScannerBlockSchema = z
   })
   .strict();
 
-export const CustomAppBlockSchema = z.discriminatedUnion("type", [
+const CustomAppBlockSchema = z.discriminatedUnion("type", [
   CustomAppMarkdownBlockSchema,
   CustomAppRecordsBlockSchema,
   CustomAppReferencedRecordsBlockSchema,
@@ -1085,9 +1084,7 @@ export type CustomAppRowNavigation = NonNullable<Extract<CustomAppBlock, { type:
 export type CustomAppRecordsBlock = Extract<CustomAppBlock, { type: "records" }>;
 export type CustomAppReferencedRecordsBlock = Extract<CustomAppBlock, { type: "referenced_records" }>;
 export type CustomAppFormBlock = Extract<CustomAppBlock, { type: "form" }>;
-export type CustomAppCommentsBlock = Extract<CustomAppBlock, { type: "comments" }>;
-export type CustomAppActionsBlock = Extract<CustomAppBlock, { type: "actions" }>;
-export type CustomAppScannerBlock = Extract<CustomAppBlock, { type: "scanner" }>;
+type CustomAppActionsBlock = Extract<CustomAppBlock, { type: "actions" }>;
 export type CustomAppAction = CustomAppActionsBlock["actions"][number];
 export type CustomAppValueBinding = z.infer<typeof CustomAppValueBindingSchema>;
 export type CustomAppFormValueBinding = z.infer<typeof CustomAppFormValueBindingSchema>;

@@ -23,7 +23,7 @@ import { get as getView } from "./views";
 
 type RecordsCapability = CustomAppCapabilities["views"][number] | CustomAppCapabilities["recordQueries"][number];
 
-export type PublishedCustomAppRecordsResult = {
+type PublishedCustomAppRecordsResult = {
   response: DslQueryPreviewResponse;
   primaryTableId: string;
   rowNavigationParams?: Record<string, Record<string, string>>;
