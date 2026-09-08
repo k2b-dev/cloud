@@ -44,7 +44,30 @@ async function _run(page) {
       const menuBox = await p.getByRole("menu").boundingBox();
       if (Math.abs(triggerBox.x + triggerBox.width - menuBox.x - menuBox.width) > 1) throw new Error("Menu is not end aligned");
       await p.keyboard.press("Escape");
-      results.push({ locale, colorScheme, menuEndAligned: true, ...style });
+      await trigger.click();
+      await p.getByRole("menuitem", { name: locale === "de" ? "Erscheinungsbild" : "Appearance", exact: true }).click();
+      const colors = [];
+      for (const [choice, label] of [
+        ["dark", locale === "de" ? "Dunkel" : "Dark"],
+        ["light", locale === "de" ? "Hell" : "Light"],
+      ]) {
+        await d.getByText(label, { exact: true }).click();
+        const state = await p.evaluate(() => ({
+          theme: document.body.dataset.theme,
+          colorScheme: getComputedStyle(document.body).colorScheme,
+          background: getComputedStyle(document.body).backgroundColor,
+          surface: getComputedStyle(document.querySelector("dialog")).getPropertyValue("--k2b-surface"),
+          meta: document.querySelector('meta[name="theme-color"]').content,
+        }));
+        if (state.theme !== choice || state.colorScheme !== choice || state.meta !== state.background)
+          throw new Error("Theme not applied: " + JSON.stringify(state));
+        colors.push(state.surface);
+      }
+      if (colors[0] === colors[1]) throw new Error("Dialog colors did not change");
+      await d.getByText(locale === "de" ? "Dunkel" : "Dark", { exact: true }).click();
+      await p.reload();
+      if ((await p.evaluate(() => document.body.dataset.theme)) !== "dark") throw new Error("Theme not persisted");
+      results.push({ locale, colorScheme, menuEndAligned: true, themeSwitchAndReload: true, ...style });
     } finally {
       await context.close();
     }

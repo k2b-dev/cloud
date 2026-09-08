@@ -1,14 +1,16 @@
-import { Button, Checkbox, PanelDialog, TextInput, useLocale } from "@k2b/ui";
+import { Button, Checkbox, PanelDialog, TextInput, toast, useLocale } from "@k2b/ui";
 import { appApproval } from "@valentinkolb/cloud/browser/app-approval";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { type Authenticator, failure, type PairingPayload } from "./authenticator";
 import { authMessages } from "./i18n";
+import { QrCamera } from "./QrCamera";
 import { bindingId, type Enrollment, storage } from "./storage";
 
 export function Pairing(props: { auth: Authenticator; link?: string; close: () => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [text, setText] = createSignal("");
+  const [scanning, setScanning] = createSignal(false);
   const [payload, setPayload] = createSignal<PairingPayload>();
   const [name, setName] = createSignal(t().defaultDeviceName);
   const [label, setLabel] = createSignal("");
@@ -30,8 +32,10 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
       const p = appApproval.parsePairingLink(link, location.origin);
       if (Date.parse(p.expiresAt) <= Date.now()) throw new Error();
       setPayload(p);
+      return true;
     } catch {
       setError(t().invalidLink);
+      return false;
     }
   };
   const inspect = async () => {
@@ -183,23 +187,54 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
             when={payload()}
             fallback={
               <>
-                <div class="auth-pairing-intro">
-                  <i class="ti ti-cloud-plus" aria-hidden="true" />
-                  <p>{t().pairingInstructions}</p>
-                </div>
-                <TextInput
-                  icon="ti ti-link"
-                  label={t().pairingLink}
-                  value={text}
-                  onValueChange={setText}
-                  maxLength={appApproval.limits.bodyBytes}
-                  autocomplete="off"
-                  spellcheck={false}
-                />
-                <div class="auth-pairing-alternative">
-                  <i class="ti ti-qrcode" aria-hidden="true" />
-                  <p>{t().scanInstructions}</p>
-                </div>
+                <Show when={!scanning()}>
+                  <div class="auth-pairing-intro">
+                    <i class="ti ti-cloud-plus" aria-hidden="true" />
+                    <p>{t().pairingInstructions}</p>
+                  </div>
+                </Show>
+                <Show
+                  when={scanning()}
+                  fallback={
+                    <>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setError("");
+                          setScanning(true);
+                        }}
+                      >
+                        <i class="ti ti-qrcode" aria-hidden="true" />
+                        {t().scanQr}
+                      </Button>
+                      <TextInput
+                        icon="ti ti-link"
+                        label={t().pairingLink}
+                        value={text}
+                        onValueChange={setText}
+                        maxLength={appApproval.limits.bodyBytes}
+                        autocomplete="off"
+                        spellcheck={false}
+                      />
+                    </>
+                  }
+                >
+                  <QrCamera
+                    onResult={(link) => {
+                      if (!parse(link)) {
+                        toast.error(t().invalidLink, { title: t().invalidQrTitle });
+                        return false;
+                      }
+                      setScanning(false);
+                      return true;
+                    }}
+                    onStop={() => setScanning(false)}
+                    onError={() => {
+                      setScanning(false);
+                      setError(t().cameraFailed);
+                    }}
+                  />
+                </Show>
               </>
             }
           >
@@ -249,7 +284,12 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
           <Button variant="ghost" onClick={props.close}>
             {t().close}
           </Button>
-          <Show when={!payload()}>
+          <Show when={scanning()}>
+            <Button variant="secondary" onClick={() => setScanning(false)}>
+              {t().stopCamera}
+            </Button>
+          </Show>
+          <Show when={!payload() && !scanning()}>
             <Button disabled={!text().trim()} onClick={() => parse(text())}>
               {t().continuePairing}
             </Button>

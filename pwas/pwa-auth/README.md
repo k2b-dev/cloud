@@ -75,8 +75,9 @@ A pairing link takes priority over the first-visit installation guide.
 
 1. On your own Cloud profile page, open **Security → Devices**, start pairing
    and copy the complete link. In Cloud Login, choose **Add Cloud** and paste it.
-   Alternatively, scan the QR with the phone's camera or open the same link on
-   the same device. No in-app camera permission is required.
+   Alternatively, choose **Scan QR code** to use the camera inside Cloud Login,
+   scan with the phone's camera, or open the same link on the same device.
+   The in-app camera asks for permission only after you choose to scan.
 2. Check the exact Cloud address before choosing **Trust Cloud and pair**.
    Choose a local account label and a device name. The local label distinguishes
    bindings; it is not an account identity attested by the server.
@@ -104,6 +105,24 @@ locally. Local removal does not revoke it in Cloud; existing browser sessions
 also require separate revocation. Deleted browser data has no key recovery or
 backup: use another supported sign-in method, revoke, and pair again.
 
+## QR camera
+
+**Scan QR code** opens a rear-camera preview where available. Stop it at any
+point to return to the paste field. Denied permission, an unavailable camera,
+or an invalid code shows help and keeps pasting available. Decoding a code only
+opens issuer consent; it neither connects to a Cloud nor claims a pairing.
+An invalid or expired QR link shows an error toast and briefly turns the scan markers red.
+The camera stays open for another code; repeated frames of the same rejected code
+do not produce more toasts. A different code or a one-second gap without a decoded
+QR code enables fresh feedback.
+
+`qr-scanner` and its fallback worker are bundled locally and loaded on demand.
+Camera frames stay on the device. Closing the dialog, stopping, successful
+scanning, hiding the page or leaving it destroys the scanner and stops tracks.
+Returning to the page does not reopen the camera automatically. A pending
+permission response after closing also releases any stream it returns.
+The distribution includes the library's MIT license in `licenses/`.
+
 ## Browser verification
 
 `test/server.ts` uses the real Cloud service and HTTP routes with two issuers.
@@ -128,7 +147,13 @@ two-Cloud isolation, decisions, lost-response protection across tabs, independen
 failures, foreground polling and revocation. It creates disposable test accounts
 when the fixture starts. Tests never enable a live Cloud installation.
 
-Real camera scanning, installed iOS/Safari and Android same-device handoff still
+`test/qr-flow.js` runs the real worker decoder over a synthetic camera stream
+with QR images from `test/fixtures/`. These encode a transport-only pairing with
+no backend enrollment and a non-pairing URL. The test checks decoding without
+automatic trust, invalid QR input, permission denial, late permission resolution,
+stop, page hiding and page exit. It never opens a physical camera.
+
+Physical camera scanning, installed iOS/Safari and Android same-device handoff still
 need device acceptance. Desktop browser tests do not establish those guarantees.
 
 ## Icons

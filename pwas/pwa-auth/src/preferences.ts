@@ -28,8 +28,8 @@ export function createPreferences() {
     document.documentElement.lang = locale();
   });
   createEffect(() => {
-    document.documentElement.dataset.theme = theme() === "system" ? (dark() ? "dark" : "light") : theme();
-    const color = getComputedStyle(document.documentElement).backgroundColor;
+    document.body.dataset.theme = theme() === "system" ? (dark() ? "dark" : "light") : theme();
+    const color = getComputedStyle(document.body).backgroundColor;
     for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
       meta.removeAttribute("media");
       meta.content = color;

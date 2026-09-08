@@ -1,5 +1,5 @@
 import { cp, mkdir, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import type { BunPlugin } from "bun";
 import { authMessages } from "../src/i18n";
@@ -33,6 +33,7 @@ export async function build() {
     entrypoints: [resolve(packageRoot, "src/main.tsx"), resolve(packageRoot, "src/styles.css")],
     outdir: resolve(dist, "assets"),
     target: "browser",
+    splitting: true,
     conditions: ["browser"],
     plugins: [solid],
     minify: true,
@@ -44,12 +45,14 @@ export async function build() {
   const css = result.outputs.find((output) => output.path.endsWith(".css"));
   if (!entry || !css) throw new Error("Missing PWA build output");
   await cp(resolve(packageRoot, "public"), dist, { recursive: true });
+  await mkdir(resolve(dist, "licenses"), { recursive: true });
+  await cp(resolve(dirname(Bun.resolveSync("qr-scanner", packageRoot)), "LICENSE"), resolve(dist, "licenses/qr-scanner.txt"));
   const en = authMessages.resolve(["en"]).t;
   const de = authMessages.resolve(["de"]).t;
   await Bun.write(
     resolve(dist, "index.html"),
     `<!doctype html>
-<html lang="en" class="k2b-ui">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -63,7 +66,7 @@ export async function build() {
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/assets/${css.path.split("/").pop()}">
 </head>
-<body>
+<body class="k2b-ui">
   <div id="root"></div>
   <noscript><p lang="en">${en.javascriptRequired}</p><p lang="de">${de.javascriptRequired}</p></noscript>
   <script type="module" src="/assets/${entry.path.split("/").pop()}"></script>

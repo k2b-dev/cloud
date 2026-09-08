@@ -87,7 +87,6 @@ export function App(props: { preferences: Preferences }) {
       <header class="auth-header">
         <h1>{t().appName}</h1>
         <div class="auth-header-actions">
-          <span class="auth-preview">{t().preview}</span>
           <Dropdown.Root items={items()} align="end" width="16rem">
             <Dropdown.Trigger iconOnly label={t().menu} class="auth-menu-button" tooltip={false}>
               <span aria-hidden="true">···</span>

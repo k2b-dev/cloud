@@ -13,7 +13,7 @@ export const getK2bPortalRoot = (scope?: HTMLElement | null): HTMLElement => {
   const root = document.createElement("div");
   root.setAttribute(PORTAL_ATTRIBUTE, "");
   root.classList.add("k2b-ui-portal");
-  if (owner === document.body) root.classList.add("k2b-ui");
+  if (owner === document.body && !owner.classList.contains("k2b-ui")) root.classList.add("k2b-ui");
   owner.appendChild(root);
   return root;
 };

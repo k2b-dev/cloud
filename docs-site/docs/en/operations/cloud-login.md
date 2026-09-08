@@ -29,8 +29,13 @@ Changing either origin requires reviewing the existing pairings.
 
 On your own Cloud profile page, open **Security → Devices** and start pairing.
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
-or scan the QR with the phone's camera. All three carry the same temporary link.
+or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
+also open the link. All paths carry the same temporary link.
 The PWA removes its fragment from browser history before contacting the Cloud.
+
+The in-app scanner requests camera access only after a click. Its images stay
+on the device; closing or hiding the page stops the camera. If access is denied,
+paste the link instead. Scanning never skips issuer consent or confirmation.
 
 Check the Cloud address before trusting it. Choose an account label for this
 device and a device name, compare the code in both windows, and confirm in the

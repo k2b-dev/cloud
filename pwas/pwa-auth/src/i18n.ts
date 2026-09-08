@@ -4,10 +4,17 @@ export const authMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      scanQr: "Scan QR code",
+      invalidQrTitle: "QR code cannot be used",
+      cameraPreview: "Camera preview for scanning the pairing QR code",
+      cameraStarting: "Starting camera…",
+      cameraInstructions: "Point the camera at the pairing QR code in your Cloud.",
+      cameraPrivacy: "Camera images stay on this device.",
+      stopCamera: "Stop camera",
+      cameraFailed: "The camera could not be opened. Allow camera access in your browser or paste the pairing link instead.",
       pairingInstructions: "Open your profile page in Cloud, then Security → Devices. Start pairing and copy the link.",
       pairingLink: "Pairing link",
       continuePairing: "Continue",
-      scanInstructions: "Using another screen? Scan its QR code with your phone’s camera.",
       defaultDeviceName: "My phone",
       accountLabel: "Account label",
       accountLabelHelp: "Choose a local label, e.g. “Work” or “Personal”.",
@@ -78,7 +85,6 @@ export const authMessages = i18n.define({
       nativeInstallDetail: "Your browser can install Cloud Login. Confirm installation in the dialog that opens next.",
 
       appName: "Cloud Login",
-      preview: "Preview",
       language: "Language",
       appearance: "Appearance",
       system: "System",
@@ -94,11 +100,19 @@ export const authMessages = i18n.define({
       javascriptRequired: "Enable JavaScript to use Cloud Login.",
     },
     de: {
+      scanQr: "QR-Code scannen",
+      invalidQrTitle: "QR-Code nicht verwendbar",
+      cameraPreview: "Kameravorschau zum Scannen des Kopplungs-QR-Codes",
+      cameraStarting: "Kamera wird gestartet…",
+      cameraInstructions: "Richte die Kamera auf den Kopplungs-QR-Code in deiner Cloud.",
+      cameraPrivacy: "Kamerabilder bleiben auf diesem Gerät.",
+      stopCamera: "Kamera stoppen",
+      cameraFailed:
+        "Die Kamera konnte nicht geöffnet werden. Erlaube den Kamerazugriff im Browser oder füge stattdessen den Kopplungslink ein.",
       pairingInstructions:
         "Öffne deine eigene Profilseite in der Cloud, dann Sicherheit → Geräte. Starte eine Kopplung und kopiere den Link.",
       pairingLink: "Kopplungslink",
       continuePairing: "Weiter",
-      scanInstructions: "Auf einem anderen Bildschirm? Scanne den QR-Code mit deiner Handykamera.",
       defaultDeviceName: "Mein Handy",
       accountLabel: "Account-Bezeichnung",
       accountLabelHelp: "Wähle eine lokale Bezeichnung, z. B. „Arbeit“ oder „Privat“.",
@@ -175,7 +189,6 @@ export const authMessages = i18n.define({
       nativeInstallDetail: "Dein Browser kann Cloud Login installieren. Bestätige die Installation im nächsten Dialog.",
 
       appName: "Cloud Login",
-      preview: "Vorschau",
       language: "Sprache",
       appearance: "Erscheinungsbild",
       system: "System",

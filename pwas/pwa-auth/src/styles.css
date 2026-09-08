@@ -42,11 +42,6 @@ body {
   letter-spacing: -0.035em;
 }
 
-.auth-preview {
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-}
-
 .auth-header-actions {
   display: flex;
   align-items: center;
@@ -248,21 +243,6 @@ body {
 .auth-flow p {
   font-size: 0.875rem;
 }
-.auth-pairing-alternative {
-  display: flex;
-  gap: 0.625rem;
-  align-items: center;
-  padding-top: 0.5rem;
-  color: var(--k2b-text-muted);
-}
-.auth-pairing-alternative p {
-  color: inherit;
-  font-size: 0.8125rem;
-}
-.auth-pairing-alternative > i {
-  font-size: 1.25rem;
-  flex: none;
-}
 .auth-flow .auth-flow-note {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
@@ -270,4 +250,24 @@ body {
 .auth-flow > strong {
   font-size: 0.875rem;
   font-weight: 600;
+}
+.auth-camera {
+  display: grid;
+  gap: 0.875rem;
+}
+.auth-camera-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface);
+  background: #09090b;
+}
+.auth-camera-preview video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.auth-camera-preview--invalid .scan-region-highlight-svg {
+  stroke: var(--k2b-danger-500) !important;
 }
