@@ -11,21 +11,42 @@ import type { FilterTree } from "../contracts";
 import type { GridsWorkflow } from "../workflows/contracts";
 import { listByTable as listFields } from "./fields";
 import { compileFilter, renderClause } from "./filter-compiler";
-import { getRecordEventDeliveryFailure } from "./record-event-delivery-failures";
+import { getRecordEventDeliveryFailure, recordRecordEventDeliveryFailure } from "./record-event-delivery-failures";
 import { redriveRecordEventOutbox } from "./record-event-outbox";
 import {
   type GridsRecordEvent,
   GridsRecordEventSchema,
   publishRecordEvent,
   RECORD_EVENT_WORK_LEASE_MS,
+  RECORD_EVENT_WORK_MAX_ATTEMPTS,
   RECORD_EVENT_WORK_PARTITIONS,
   recordEventWorkQueue,
+  requeueRecordEventWork,
 } from "./record-events";
 import { listRecordEventWorkflows } from "./workflow-definitions";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
 const log = logger("grids:workflow-record-events");
+const CONSUMER_GROUP = "workflow-kernel-queue-v1";
 const LEASE_HEARTBEAT_MS = Math.floor(RECORD_EVENT_WORK_LEASE_MS / 3);
+const DELIVERY_FAILURE_BASE_FOREIGN_KEY = "record_event_delivery_failures_base_id_fkey";
+
+export const isDeletedRecordEventBaseError = (error: unknown): boolean => {
+  const postgresError = error as { code?: string; errno?: string; constraint?: string; constraint_name?: string; message?: string } | null;
+  if (postgresError?.code !== "23503" && postgresError?.errno !== "23503") return false;
+  const constraint = postgresError.constraint ?? postgresError.constraint_name;
+  return constraint === DELIVERY_FAILURE_BASE_FOREIGN_KEY || postgresError.message?.includes(DELIVERY_FAILURE_BASE_FOREIGN_KEY) === true;
+};
+
+export type WorkflowRecordEventDeliveryPorts = {
+  recordFailure: typeof recordRecordEventDeliveryFailure;
+  requeue: typeof requeueRecordEventWork;
+};
+
+const defaultPorts: WorkflowRecordEventDeliveryPorts = {
+  recordFailure: recordRecordEventDeliveryFailure,
+  requeue: requeueRecordEventWork,
+};
 
 export const replayWorkflowRecordEventDeliveryFailure = async (baseId: string, id: string): Promise<boolean> => {
   const failure = await getRecordEventDeliveryFailure(baseId, id);
@@ -148,10 +169,65 @@ const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPri
   serviceAccountId: null,
 });
 
-/** Let the native worker retry failures and retain the exhausted delivery. */
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** The retained error names every failed workflow, not only the aggregate. */
+const describeDispatchError = (error: unknown): string =>
+  error instanceof AggregateError && error.errors.length > 0
+    ? `${error.message}: ${error.errors.map(errorMessage).join("; ")}`
+    : errorMessage(error);
+
+/**
+ * Retains a failed dispatch in PostgreSQL and re-queues the event behind its
+ * partition. Only an unavailable failure store propagates to the transport, so
+ * a broken workflow never holds the partition for other records.
+ */
+const retainDispatchFailure = async (
+  delivery: QueueMessage<GridsRecordEvent>,
+  event: GridsRecordEvent,
+  error: unknown,
+  ports: WorkflowRecordEventDeliveryPorts,
+): Promise<void> => {
+  const message = describeDispatchError(error);
+  const deliveryKey = typeof delivery.meta?.deliveryKey === "string" ? delivery.meta.deliveryKey : delivery.messageId;
+  const context = { baseId: event.baseId, deliveryKey, recordId: event.recordId, transportAttempt: delivery.attempt };
+  let failure: { attempts: number; dead: boolean };
+  try {
+    failure = await ports.recordFailure({
+      baseId: event.baseId,
+      consumerGroup: CONSUMER_GROUP,
+      eventId: deliveryKey,
+      payload: JSON.stringify(event),
+      error: message,
+      maxAttempts: RECORD_EVENT_WORK_MAX_ATTEMPTS,
+    });
+  } catch (storeError) {
+    if (isDeletedRecordEventBaseError(storeError)) {
+      log.info("Discarded record event for a deleted base", context);
+      return;
+    }
+    log.error("Could not persist workflow record event delivery failure; retrying in place", {
+      ...context,
+      error: storeError instanceof Error ? storeError.message : String(storeError),
+    });
+    throw storeError;
+  }
+  if (failure.dead) {
+    log.error("Workflow record event moved to the application dead-letter store", {
+      ...context,
+      attempts: failure.attempts,
+      error: message,
+    });
+    return;
+  }
+  await ports.requeue({ event, tenantId: delivery.tenantId, meta: delivery.meta, deliveryKey, attempts: failure.attempts });
+  log.warn("Workflow record event re-queued after a failed dispatch", { ...context, attempts: failure.attempts, error: message });
+};
+
 export const processWorkflowRecordEventDelivery = async (
   delivery: QueueMessage<GridsRecordEvent>,
   dispatch: (event: GridsRecordEvent) => Promise<void>,
+  ports: WorkflowRecordEventDeliveryPorts = defaultPorts,
 ): Promise<void> => {
   delivery.signal.throwIfAborted();
   const event = GridsRecordEventSchema.parse(delivery.data);
@@ -162,9 +238,17 @@ export const processWorkflowRecordEventDelivery = async (
     });
   }, LEASE_HEARTBEAT_MS);
   try {
-    await dispatch(event);
+    let dispatchError: unknown;
+    try {
+      await dispatch(event);
+    } catch (error) {
+      dispatchError = error;
+    }
+    // A lost lease or a shutdown leaves the delivery to the broker: redelivery
+    // repeats the dispatch instead of retaining a failure it may not own.
     delivery.signal.throwIfAborted();
     if (renewalFailure) throw renewalFailure;
+    if (dispatchError !== undefined) await retainDispatchFailure(delivery, event, dispatchError, ports);
     await delivery.heartbeat();
   } finally {
     clearInterval(timer);

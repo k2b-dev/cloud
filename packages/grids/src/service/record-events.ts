@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { MessageMeta } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
 import { latestTopicCursor } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
@@ -9,10 +10,17 @@ const TOPIC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const WORK_QUEUE_TENANT = "workflow-kernel";
 export const RECORD_EVENT_WORK_PARTITIONS = 32;
 export const RECORD_EVENT_WORK_LEASE_MS = 120_000;
+/** PostgreSQL-owned workflow delivery budget; each failed attempt re-queues the event behind its partition. */
 export const RECORD_EVENT_WORK_MAX_ATTEMPTS = 20;
-export const RECORD_EVENT_WORK_BACKOFF_MS = Array.from({ length: RECORD_EVENT_WORK_MAX_ATTEMPTS - 1 }, (_, index) =>
-  Math.min(300_000, 1_000 * 2 ** index),
-);
+/** In-place transport attempts, used only while the failure store itself is unavailable. */
+export const RECORD_EVENT_WORK_TRANSPORT_ATTEMPTS = 3;
+const RECORD_EVENT_WORK_TRANSPORT_BACKOFF_MS = [1_000, 5_000];
+const RECORD_EVENT_RETRY_BASE_MS = 1_000;
+const RECORD_EVENT_RETRY_MAX_MS = 5 * 60_000;
+
+/** Exponential delay for the next application retry: 1 s after the first failure, capped at five minutes. */
+export const workflowRecordEventRetryDelayMs = (attempts: number): number =>
+  Math.min(RECORD_EVENT_RETRY_MAX_MS, RECORD_EVENT_RETRY_BASE_MS * 2 ** Math.max(0, Math.min(attempts - 1, 12)));
 
 export const GridsRecordEventSchema = z
   .object({
@@ -67,8 +75,8 @@ export const recordEventWorkQueue = lazySync((sync) =>
     maxPayloadBytes: 68_000,
     delivery: {
       ackWaitMs: RECORD_EVENT_WORK_LEASE_MS,
-      maxAttempts: RECORD_EVENT_WORK_MAX_ATTEMPTS,
-      backoffMs: RECORD_EVENT_WORK_BACKOFF_MS,
+      maxAttempts: RECORD_EVENT_WORK_TRANSPORT_ATTEMPTS,
+      backoffMs: RECORD_EVENT_WORK_TRANSPORT_BACKOFF_MS,
     },
   }),
 );
@@ -78,16 +86,19 @@ const hashEventKey = (key: string): string => createHash("sha256").update(key).d
 const recordEventIdempotencyKey = (event: GridsRecordEvent): string =>
   `${event.type}:${event.tableId}:${event.recordId}:${event.version ?? "deleted"}:${event.occurredAt}`;
 
+const publishRecordEventToTopic = (event: GridsRecordEvent, idempotencyKey: string) =>
+  recordTopic().publish({
+    tenantId: event.baseId,
+    orderingKey: event.recordId,
+    idempotencyKey,
+    data: event,
+  });
+
 export const publishRecordEvent = async (event: GridsRecordEvent, options: { replayKey?: string } = {}): Promise<void> => {
   const idempotencyKey = hashEventKey(recordEventIdempotencyKey(event));
   const workIdempotencyKey = options.replayKey ? `${idempotencyKey}:replay:${options.replayKey}` : idempotencyKey;
   await Promise.all([
-    recordTopic().publish({
-      tenantId: event.baseId,
-      orderingKey: event.recordId,
-      idempotencyKey,
-      data: event,
-    }),
+    publishRecordEventToTopic(event, idempotencyKey),
     recordEventWorkQueue().send({
       orderingKey: event.recordId,
       tenantId: WORK_QUEUE_TENANT,
@@ -96,6 +107,28 @@ export const publishRecordEvent = async (event: GridsRecordEvent, options: { rep
       data: event,
     }),
   ]);
+};
+
+/**
+ * Re-queues a failed workflow delivery behind its partition instead of holding
+ * the partition for an in-place retry. `deliveryKey` identifies the original
+ * accepted delivery across retries so the PostgreSQL failure row accumulates.
+ */
+export const requeueRecordEventWork = async (input: {
+  event: GridsRecordEvent;
+  tenantId: string;
+  meta: MessageMeta | undefined;
+  deliveryKey: string;
+  attempts: number;
+}): Promise<void> => {
+  await recordEventWorkQueue().send({
+    orderingKey: input.event.recordId,
+    tenantId: input.tenantId,
+    idempotencyKey: hashEventKey(`${input.deliveryKey}:retry:${input.attempts}`),
+    delayMs: workflowRecordEventRetryDelayMs(input.attempts),
+    meta: { ...input.meta, deliveryKey: input.deliveryKey },
+    data: input.event,
+  });
 };
 
 export const resolveFederatedTargetsForRecordEvent = async (
@@ -143,6 +176,12 @@ export const resolveFederatedTargetsForRecordEvent = async (
   return rows.map((row) => ({ baseId: row.base_id, tableId: row.table_id, changedFieldIds: row.changed_field_ids }));
 };
 
+/**
+ * Combined-table targets receive the projected event on the topic only. The
+ * workflow queue cannot serve them: the committed snapshot belongs to the
+ * source table, so a record-event trigger on a Combined table has nothing to
+ * evaluate and would fail deterministically.
+ */
 export const publishRecordEventWithFederatedTargets = async (
   event: GridsRecordEvent,
   options: { replayKey?: string } = {},
@@ -150,19 +189,15 @@ export const publishRecordEventWithFederatedTargets = async (
   const targets = await resolveFederatedTargetsForRecordEvent(event);
   await Promise.all([
     publishRecordEvent(event, options),
-    ...targets.flatMap((target) => {
-      return [
-        publishRecordEvent(
-          {
-            ...event,
-            baseId: target.baseId,
-            tableId: target.tableId,
-            changedFieldIds: target.changedFieldIds,
-            actorId: null,
-          },
-          options,
-        ),
-      ];
+    ...targets.map((target) => {
+      const projected: GridsRecordEvent = {
+        ...event,
+        baseId: target.baseId,
+        tableId: target.tableId,
+        changedFieldIds: target.changedFieldIds,
+        actorId: null,
+      };
+      return publishRecordEventToTopic(projected, hashEventKey(recordEventIdempotencyKey(projected)));
     }),
   ]);
 };

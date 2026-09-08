@@ -2,7 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { cancel, overview, processRun, start } from "./controlled-destruction";
+import { cancel, overview, processRun, reconcileStuckControlledDestructionRuns, start } from "./controlled-destruction";
 import * as fields from "./fields";
 import { protect, remove, upload } from "./files";
 import { create as createHold } from "./preservation-holds";
@@ -281,4 +281,39 @@ describe("controlled File destruction", () => {
     },
     15_000,
   );
+  postgresTest("recovers abandoned running runs while progressing and fresh runs stay untouched", async () => {
+    const fixture = await createFixture();
+    try {
+      const insertRun = async (status: string, startedAgo: string) => {
+        const [row] = await sql<Array<{ id: string }>>`
+          INSERT INTO grids.controlled_destruction_runs (short_id, base_id, status, started_at)
+          VALUES (${testShortId("R")}, ${fixture.baseId}::uuid, ${status}, now() - ${startedAgo}::interval)
+          RETURNING id::text
+        `;
+        return row!.id;
+      };
+      const abandoned = await insertRun("running", "1 hour");
+      const abandonedCancel = await insertRun("cancel_requested", "1 hour");
+      const progressing = await insertRun("running", "1 hour");
+      const fresh = await insertRun("running", "10 seconds");
+      await sql`
+        INSERT INTO grids.controlled_destruction_items
+          (run_id, position, file_id, file_short_id, table_id, table_short_id, table_name, filename, size_bytes, status, processed_at)
+        VALUES (${progressing}::uuid, 0, ${testUuid()}::uuid, 'f00001', ${fixture.firstTableId}::uuid, 'tbl001', 'Invoices', 'a.txt', 1, 'destroyed', now() - interval '5 seconds')
+      `;
+
+      expect(await reconcileStuckControlledDestructionRuns()).toBe(2);
+      const rows = await sql<Array<{ id: string; status: string; last_error: string | null }>>`
+        SELECT id::text, status, last_error FROM grids.controlled_destruction_runs WHERE base_id = ${fixture.baseId}::uuid
+      `;
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(byId.get(abandoned)).toMatchObject({ status: "failed", last_error: expect.stringContaining("stopped before finishing") });
+      expect(byId.get(abandonedCancel)).toMatchObject({ status: "canceled", last_error: null });
+      expect(byId.get(progressing)).toMatchObject({ status: "running", last_error: null });
+      expect(byId.get(fresh)).toMatchObject({ status: "running", last_error: null });
+      expect(await reconcileStuckControlledDestructionRuns()).toBe(0);
+    } finally {
+      await cleanup(fixture.baseId);
+    }
+  });
 });

@@ -6,6 +6,8 @@ import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEventWithFe
 const log = logger("grids:record-event-outbox");
 const RECONCILE_INTERVAL_MS = 15_000;
 const RECONCILE_BATCH_SIZE = 500;
+/** Rows claimed and published together; each claim holds only records with no earlier unconfirmed event. */
+const PUBLISH_CONCURRENCY = 8;
 const RECONCILE_CLAIM_MS = 30_000;
 const MAX_DELIVERY_ATTEMPTS = 20;
 const DELIVERED_RETENTION_DAYS = 30;
@@ -297,11 +299,7 @@ export const dispatchRecordEventOutboxBatch = async (
   publish: (event: GridsRecordEvent) => Promise<void> = publishRecordEventWithFederatedTargets,
 ): Promise<number> => {
   let dispatched = 0;
-  // Keep the previous worker's one local in-flight publication. Claim immediately
-  // before dispatch, rather than leasing a backlog that may expire while queued.
-  while (!signal.aborted && dispatched < RECONCILE_BATCH_SIZE) {
-    const [id] = await claimRecordEventOutboxBatch(1);
-    if (!id || signal.aborted) break;
+  const dispatchOne = async (id: string): Promise<void> => {
     try {
       await trace.withSpan(
         {
@@ -321,7 +319,15 @@ export const dispatchRecordEventOutboxBatch = async (
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    dispatched += 1;
+  };
+  // Claim a small slice immediately before publishing it, rather than leasing a
+  // backlog that may expire while queued. The claim itself excludes any record
+  // with an earlier unconfirmed event, so the slice publishes in parallel.
+  while (!signal.aborted && dispatched < RECONCILE_BATCH_SIZE) {
+    const ids = await claimRecordEventOutboxBatch(Math.min(PUBLISH_CONCURRENCY, RECONCILE_BATCH_SIZE - dispatched));
+    if (ids.length === 0 || signal.aborted) break;
+    await Promise.all(ids.map(dispatchOne));
+    dispatched += ids.length;
   }
   return dispatched;
 };

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { ScheduleContext, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
-import { toPgTextArray } from "@valentinkolb/cloud/services";
+import { logger, toPgTextArray } from "@valentinkolb/cloud/services";
 import { type SQL, type SQLQuery, sql } from "bun";
 import {
   EVIDENCE_EXPORT_SECTIONS,
@@ -29,6 +29,12 @@ const MAX_DURATION_MS = 5 * 60_000;
 const ASSET_CHUNK_BYTES = 1024 * 1024;
 const RETENTION_MS = 7 * 24 * 60 * 60_000;
 const JOB_LEASE_MS = 60_000;
+const EXPORT_DELIVERY = { ackWaitMs: JOB_LEASE_MS, maxAttempts: 3, backoffMs: [1_000, 2_000] };
+/** After this, a `running` row without a lock holder has outlived every transport attempt. */
+const STUCK_EXPORT_MS =
+  EXPORT_DELIVERY.ackWaitMs * EXPORT_DELIVERY.maxAttempts + EXPORT_DELIVERY.backoffMs.reduce((sum, ms) => sum + ms, 0);
+const STUCK_EXPORT_MESSAGE = "The export worker stopped before finishing. Retry, or ask an operator to inspect the Grids logs.";
+const log = logger("grids:evidence-exports");
 const CLEANUP_BATCH_SIZE = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -1037,7 +1043,8 @@ const processExportLocked = async (exportId: string, heartbeat: () => Promise<vo
   });
 };
 
-export const processExport = async (exportId: string, heartbeat: () => Promise<void> = async () => undefined): Promise<void> => {
+/** Runs `run` while holding the export's session lock; `false` when another session holds it. */
+const withExportLock = async (exportId: string, run: () => Promise<void>): Promise<boolean> => {
   const connection = await sql.reserve();
   const lockName = `grids:evidence-export:${exportId}`;
   let locked = false;
@@ -1046,9 +1053,10 @@ export const processExport = async (exportId: string, heartbeat: () => Promise<v
     const [lock] = await connection<Array<{ acquired: boolean }>>`
       SELECT pg_try_advisory_lock(hashtextextended(${lockName}, 0)) AS acquired
     `;
-    if (!lock?.acquired) return;
+    if (!lock?.acquired) return false;
     locked = true;
-    await processExportLocked(exportId, heartbeat);
+    await run();
+    return true;
   } finally {
     if (locked) {
       try {
@@ -1064,6 +1072,10 @@ export const processExport = async (exportId: string, heartbeat: () => Promise<v
     }
     if (reusable) connection.release();
   }
+};
+
+export const processExport = async (exportId: string, heartbeat: () => Promise<void> = async () => undefined): Promise<void> => {
+  await withExportLock(exportId, () => processExportLocked(exportId, heartbeat));
 };
 
 const markFailed = async (exportId: string, error: Error): Promise<void> => {
@@ -1082,35 +1094,83 @@ const markFailed = async (exportId: string, error: Error): Promise<void> => {
   await sql`DELETE FROM grids.evidence_export_chunks WHERE export_id = ${exportId}::uuid`;
 };
 
+/**
+ * One job attempt. Cancellation and bound violations are outcomes of the
+ * export itself: they end in the row, not in the transport dead-letter store.
+ * Anything else propagates so the job retries and, exhausted, dead-letters.
+ */
+export const runEvidenceExportJob = async (
+  exportId: string,
+  heartbeat: () => Promise<void>,
+  run: typeof processExport = processExport,
+): Promise<void> => {
+  try {
+    await run(exportId, heartbeat);
+  } catch (error) {
+    if (!(error instanceof Error) || (error.name !== "AbortError" && !(error instanceof EvidenceExportBoundError))) throw error;
+    await markFailed(exportId, error);
+  }
+};
+
+/**
+ * A process killed on its last attempt dead-letters without `onError`, leaving
+ * the row `running` forever. Rows older than the whole transport budget whose
+ * session lock nobody holds are terminal; oldest first, one bounded batch.
+ */
+export const reconcileStuckEvidenceExports = async (context?: CleanupContext): Promise<number> => {
+  const rows = await sql<Array<{ id: string }>>`
+    SELECT id::text FROM grids.evidence_exports
+    WHERE status IN ('running', 'cancel_requested') AND started_at < now() - (${STUCK_EXPORT_MS} * interval '1 millisecond')
+    ORDER BY started_at, id
+    LIMIT ${CLEANUP_BATCH_SIZE}
+  `;
+  let reconciled = 0;
+  for (const row of rows) {
+    context?.signal.throwIfAborted();
+    await withExportLock(row.id, async () => {
+      const updated = await sql`
+        UPDATE grids.evidence_exports
+        SET status = CASE WHEN status = 'cancel_requested' THEN 'canceled' ELSE 'failed' END,
+            completed_at = now(),
+            last_error = CASE WHEN status = 'cancel_requested' THEN 'Canceled by an administrator.' ELSE ${STUCK_EXPORT_MESSAGE} END,
+            package_filename = NULL, package_size_bytes = NULL, package_sha256 = NULL, manifest_sha256 = NULL, manifest = NULL, expires_at = NULL
+        WHERE id = ${row.id}::uuid AND status IN ('running', 'cancel_requested')
+          AND started_at < now() - (${STUCK_EXPORT_MS} * interval '1 millisecond')
+        RETURNING id
+      `;
+      if (updated.length === 0) return;
+      await sql`DELETE FROM grids.evidence_export_chunks WHERE export_id = ${row.id}::uuid`;
+      reconciled += 1;
+    });
+    await context?.heartbeat();
+  }
+  if (reconciled > 0) log.warn("Marked abandoned evidence exports as failed", { count: reconciled });
+  return reconciled;
+};
+
 const exportJob = lazySync((sync) =>
-  sync.job<{ exportId: string; attempt: number }>({
-    id: "grids:evidence-export",
-    delivery: { ackWaitMs: JOB_LEASE_MS, maxAttempts: 3, backoffMs: [1_000, 2_000] },
-  }),
+  sync.job<{ exportId: string; attempt: number }>({ id: "grids:evidence-export", delivery: EXPORT_DELIVERY }),
 );
 let exportWorker: Worker | undefined;
 export const startEvidenceExportJobs = async (): Promise<void> => {
-  exportWorker ??= await exportJob().process(
+  if (exportWorker) return;
+  await reconcileStuckEvidenceExports().catch((error) => {
+    log.warn("Evidence export boot reconcile failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+  exportWorker = await exportJob().process(
     {
       onError: async ({ context, error }) => {
-        if (context.attempt < 3) return { action: "retry" };
+        if (context.attempt < EXPORT_DELIVERY.maxAttempts) return { action: "retry" };
         await markFailed(context.input.exportId, error);
         return { action: "dead_letter", reason: error.message };
       },
     },
-    async (context) => {
-      try {
-        await processExport(context.input.exportId, () => context.heartbeat());
-      } catch (error) {
-        if (!(error instanceof Error) || error.name !== "AbortError") throw error;
-        await markFailed(context.input.exportId, error);
-      }
-    },
+    (context) => runEvidenceExportJob(context.input.exportId, () => context.heartbeat()),
   );
 };
 
 const submitExport = (exportId: string, attempt: number) =>
-  exportJob().submit({ key: `export:${exportId}:${attempt}`, input: { exportId, attempt }, coalesce: true });
+  exportJob().submit({ key: `export:${exportId}:${attempt}`, input: { exportId, attempt } });
 
 const queueExport = async (exportId: string, attempt: number): Promise<void> => {
   try {
@@ -1169,6 +1229,7 @@ export const expireCompletedExports = async (baseId: string | null = null): Prom
 };
 
 export const cleanupExpiredEvidenceExports = async (context: CleanupContext): Promise<void> => {
+  await reconcileStuckEvidenceExports(context);
   while (true) {
     const count = await expireCompletedExportBatch(null, context);
     if (count < CLEANUP_BATCH_SIZE) return;

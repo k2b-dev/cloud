@@ -196,8 +196,8 @@ if (!databaseName) {
       expect(await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined)).toBe(500);
       expect(await dispatchRecordEventOutboxBatch(new AbortController().signal, async () => undefined)).toBe(1);
 
-      // An individual workflow's snapshot failure must reach native retry rather
-      // than being logged and silently acknowledged by the outer dispatcher.
+      // An individual workflow's snapshot failure must surface from dispatch so
+      // the delivery handler retains it instead of acknowledging silently.
       const { insertTestWorkflow } = await import("./workflow-test-fixture");
       await insertTestWorkflow({
         baseId,
@@ -227,15 +227,54 @@ if (!databaseName) {
         errors: [expect.objectContaining({ message: "record event snapshot is missing or inconsistent" })],
       });
 
+      // The delivery handler retains every failed attempt in PostgreSQL, re-queues
+      // the event with growing delays, and acknowledges once the budget is spent.
+      const { processWorkflowRecordEventDelivery } = await import("./workflow-record-events");
+      const { recordRecordEventDeliveryFailure } = await import("./record-event-delivery-failures");
+      const failingPayload = { v: 1 as const, ...event(recordId, 1), occurredAt: new Date().toISOString() };
+      const requeued: number[] = [];
+      for (let attempt = 1; attempt <= 20; attempt += 1) {
+        await processWorkflowRecordEventDelivery(
+          {
+            data: failingPayload,
+            messageId: "delivery-1",
+            attempt: 1,
+            publishedAt: new Date(),
+            tenantId: "workflow-kernel",
+            orderingKey: recordId,
+            meta: attempt === 1 ? { baseId } : { baseId, deliveryKey: "delivery-1" },
+            signal: new AbortController().signal,
+            heartbeat: async () => undefined,
+          },
+          runtime.dispatch,
+          {
+            recordFailure: recordRecordEventDeliveryFailure,
+            requeue: async (input) => {
+              requeued.push(input.attempts);
+            },
+          },
+        );
+      }
+      expect(requeued).toEqual(Array.from({ length: 19 }, (_, index) => index + 1));
+      const { listRecordEventDeliveryFailures, getRecordEventDeliveryFailure } = await import("./record-event-delivery-failures");
+      const [retained] = await listRecordEventDeliveryFailures(baseId);
+      expect(retained).toMatchObject({
+        consumerGroup: "workflow-kernel-queue-v1",
+        eventId: "delivery-1",
+        attempts: 20,
+        status: "dead",
+        payload: JSON.stringify(failingPayload),
+        error: expect.stringContaining("record event snapshot is missing or inconsistent"),
+      });
+
       // Pre-cutover application DLQ history remains readable and is not rewritten.
       const [legacy] = await sql<{ id: string }[]>`
         INSERT INTO grids.record_event_delivery_failures (base_id, consumer_group, event_id, payload, error, attempts, status, dead_at)
         VALUES (${baseId}::uuid, 'workflow-kernel-queue-v1', 'old-event', 'original payload', 'terminal error', 20, 'dead', now()) RETURNING id::text
       `;
-      const { listRecordEventDeliveryFailures, getRecordEventDeliveryFailure } = await import("./record-event-delivery-failures");
       const legacyFailure = await getRecordEventDeliveryFailure(baseId, legacy!.id);
       if (!legacyFailure) throw new Error("Historical failure is missing");
-      expect(await listRecordEventDeliveryFailures(baseId)).toEqual([legacyFailure]);
+      expect(await listRecordEventDeliveryFailures(baseId)).toContainEqual(legacyFailure);
       expect(await getRecordEventDeliveryFailure(crypto.randomUUID(), legacy!.id)).toBeNull();
       const retryPayload = { v: 1, ...event(recordId, 1), occurredAt: new Date().toISOString() };
       const [unfinished] = await sql<{ id: string }[]>`
@@ -244,7 +283,7 @@ if (!databaseName) {
         RETURNING id::text
       `;
       expect(await getRecordEventDeliveryFailure(baseId, unfinished!.id)).toMatchObject({ status: "retrying", deadAt: null, attempts: 3 });
-      expect(await listRecordEventDeliveryFailures(baseId)).toHaveLength(2);
+      expect(await listRecordEventDeliveryFailures(baseId)).toHaveLength(3);
       const { replayWorkflowRecordEventDeliveryFailure } = await import("./workflow-record-events");
       const replay = spyOn(events, "publishRecordEvent").mockResolvedValue(undefined);
       try {

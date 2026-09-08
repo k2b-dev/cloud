@@ -321,12 +321,12 @@ export const startExternalRecordOperationRetention = async (): Promise<void> => 
     timezone: "UTC",
     meta: { appId: "grids", family: "maintenance", label: "External Record idempotency retention" },
     process: async (context) => {
+      // A drain stops the loop between batches; the next slot resumes the backlog.
       while (!context.signal.aborted) {
         const deleted = await deleteExpiredExternalRecordOperations();
         if (deleted < EXTERNAL_RECORD_OPERATION_DELETE_BATCH) return;
         await context.heartbeat();
       }
-      throw context.signal.reason;
     },
   });
 };

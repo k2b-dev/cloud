@@ -1,6 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { Worker } from "@k2b/sync";
+import type { ScheduleContext, Worker } from "@k2b/sync";
 import { lazySync } from "@valentinkolb/cloud";
+import { logger } from "@valentinkolb/cloud/services";
 import { type SQL, sql } from "bun";
 import {
   CONTROLLED_DESTRUCTION_BATCH_MAX,
@@ -15,6 +16,14 @@ import { admitDestruction } from "./preservation-holds";
 import { insertWithShortIdForDb } from "./short-id";
 
 type Actor = { id: string | null; displayName: string | null };
+
+const log = logger("grids:controlled-destruction");
+const DESTRUCTION_DELIVERY = { ackWaitMs: 30_000, maxAttempts: 3, backoffMs: [1_000, 2_000] };
+/** A run heartbeats after every item; silence longer than the whole transport budget means no worker owns it. */
+const STUCK_RUN_MS =
+  DESTRUCTION_DELIVERY.ackWaitMs * DESTRUCTION_DELIVERY.maxAttempts + DESTRUCTION_DELIVERY.backoffMs.reduce((sum, ms) => sum + ms, 0);
+const STUCK_RUN_MESSAGE = "The destruction worker stopped before finishing. Ask an operator to inspect the Grids logs.";
+const RECONCILE_BATCH_SIZE = 100;
 
 type PreviewCountRow = {
   total: number;
@@ -333,18 +342,61 @@ export const processRun = async (runId: string, heartbeat: () => Promise<void> =
   });
 };
 
+/**
+ * A process killed on its last attempt dead-letters without `onError`, leaving
+ * the run `running` forever. A run that made no progress for the whole
+ * transport budget has no live worker; oldest first, one bounded batch.
+ */
+export const reconcileStuckControlledDestructionRuns = async (context?: Pick<ScheduleContext, "signal" | "heartbeat">): Promise<number> => {
+  const staleBefore = sql`now() - (${STUCK_RUN_MS} * interval '1 millisecond')`;
+  const rows = await sql<Array<{ id: string }>>`
+    SELECT run.id::text
+    FROM grids.controlled_destruction_runs run
+    WHERE run.status IN ('running', 'cancel_requested')
+      AND COALESCE(run.started_at, run.requested_at) < ${staleBefore}
+      AND NOT EXISTS (
+        SELECT 1 FROM grids.controlled_destruction_items item
+        WHERE item.run_id = run.id AND item.processed_at >= ${staleBefore}
+      )
+    ORDER BY run.started_at, run.id
+    LIMIT ${RECONCILE_BATCH_SIZE}
+  `;
+  let reconciled = 0;
+  for (const row of rows) {
+    context?.signal.throwIfAborted();
+    const updated = await sql`
+      UPDATE grids.controlled_destruction_runs run
+      SET status = CASE WHEN run.status = 'cancel_requested' THEN 'canceled' ELSE 'failed' END,
+          completed_at = now(),
+          last_error = CASE WHEN run.status = 'cancel_requested' THEN NULL ELSE ${STUCK_RUN_MESSAGE} END
+      WHERE run.id = ${row.id}::uuid AND run.status IN ('running', 'cancel_requested')
+        AND COALESCE(run.started_at, run.requested_at) < ${staleBefore}
+        AND NOT EXISTS (
+          SELECT 1 FROM grids.controlled_destruction_items item
+          WHERE item.run_id = run.id AND item.processed_at >= ${staleBefore}
+        )
+      RETURNING run.id
+    `;
+    reconciled += updated.length;
+    await context?.heartbeat();
+  }
+  if (reconciled > 0) log.warn("Marked abandoned controlled destruction runs as failed", { count: reconciled });
+  return reconciled;
+};
+
 const destructionJob = lazySync((sync) =>
-  sync.job<{ runId: string }>({
-    id: "grids:controlled-destruction",
-    delivery: { ackWaitMs: 30_000, maxAttempts: 3, backoffMs: [1_000, 2_000] },
-  }),
+  sync.job<{ runId: string }>({ id: "grids:controlled-destruction", delivery: DESTRUCTION_DELIVERY }),
 );
 let destructionWorker: Worker | undefined;
 export const startControlledDestructionJobs = async (): Promise<void> => {
-  destructionWorker ??= await destructionJob().process(
+  if (destructionWorker) return;
+  await reconcileStuckControlledDestructionRuns().catch((error) => {
+    log.warn("Controlled destruction boot reconcile failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+  destructionWorker = await destructionJob().process(
     {
       onError: async ({ context: ctx, error }) => {
-        if (ctx.attempt < 3) return { action: "retry" };
+        if (ctx.attempt < DESTRUCTION_DELIVERY.maxAttempts) return { action: "retry" };
         await sql.begin(async (tx) => {
           await tx`
         UPDATE grids.controlled_destruction_items
@@ -371,7 +423,7 @@ export const startControlledDestructionJobs = async (): Promise<void> => {
 
 const queueRun = async (runId: string): Promise<void> => {
   try {
-    await destructionJob().submit({ coalesce: true, key: `run:${runId}`, input: { runId } });
+    await destructionJob().submit({ key: `run:${runId}`, input: { runId } });
   } catch (error) {
     await sql`
       UPDATE grids.controlled_destruction_runs

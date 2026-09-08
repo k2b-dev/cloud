@@ -48,6 +48,7 @@ import type {
 } from "../workflows/contracts";
 import { GRIDS_EVENT } from "../workflows/events";
 import { gridsWorkflows } from "../workflows/module";
+import { reconcileStuckControlledDestructionRuns } from "./controlled-destruction";
 import { cleanupExpiredEvidenceExports } from "./evidence-exports";
 import { canExecuteWorkflow, resolveWorkflowExecutionRecordAccess, resolveWorkflowRunRecordAccess } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
@@ -428,7 +429,7 @@ const scheduleRegistrationMatches = (registered: RegisteredWorkflowSchedule, sch
   registered.timezone === schedule.timezone &&
   Number(registered.meta?.revision) === revision;
 
-const scheduleRuntimeState = (
+export const scheduleRuntimeState = (
   workflow: Pick<GridsWorkflow, "revision" | "enabled">,
   schedule: WorkflowScheduleConfig,
   registered: RegisteredWorkflowSchedule,
@@ -444,12 +445,13 @@ const scheduleRuntimeState = (
       problem: "The schedule is waiting for runtime reconciliation.",
     };
   }
-  if (registered.failureCount > 0) {
+  // failureCount only ever grows; lastError is cleared by the next successful run.
+  if (registered.lastError !== undefined) {
     return {
       ...schedule,
       state: "degraded",
       nextRunAt: null,
-      problem: registered.lastError ?? "The last scheduled run failed.",
+      problem: registered.lastError,
     };
   }
   return {
@@ -656,6 +658,14 @@ const workflowRuntimeLifecycle = createRuntimeLifecycle({
       cron: "17 * * * *",
       timezone: "UTC",
       process: cleanupExpiredEvidenceExports,
+    });
+    await workflowScheduler().create({
+      id: "grids:controlled-destruction-reconcile",
+      cron: "41 * * * *",
+      timezone: "UTC",
+      process: async (context) => {
+        await reconcileStuckControlledDestructionRuns(context);
+      },
     });
     scheduleWorker = await workflowScheduler().process();
     startRuntimeEventReader(eventCursor);

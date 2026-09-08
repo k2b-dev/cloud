@@ -12,8 +12,72 @@ export type RecordEventDeliveryFailure = {
   deadAt: string | null;
 };
 
-// Historical workflow failures remain available for inspection and replay.
-// New workflow deliveries use the Sync DLQ; PostgreSQL still owns outbox failures.
+export type RecordEventDeliveryFailureInput = {
+  baseId: string;
+  consumerGroup: string;
+  eventId: string;
+  payload: string | null;
+  error: string;
+  maxAttempts: number;
+};
+
+/**
+ * One row per accepted delivery. Every failed attempt increments it; the row
+ * turns `dead` at the budget and keeps its first terminal payload and error.
+ */
+export const recordRecordEventDeliveryFailure = async (
+  input: RecordEventDeliveryFailureInput,
+): Promise<{ attempts: number; dead: boolean }> => {
+  const maxAttempts = Math.max(1, input.maxAttempts);
+  const [row] = await sql<Array<{ attempts: number | string; status: "retrying" | "dead" }>>`
+    INSERT INTO grids.record_event_delivery_failures (
+      base_id,
+      consumer_group,
+      event_id,
+      payload,
+      error,
+      status,
+      dead_at
+    ) VALUES (
+      ${input.baseId}::uuid,
+      ${input.consumerGroup},
+      ${input.eventId},
+      ${input.payload},
+      ${input.error},
+      ${maxAttempts === 1 ? "dead" : "retrying"},
+      ${maxAttempts === 1 ? sql`now()` : null}
+    )
+    ON CONFLICT (base_id, consumer_group, event_id) DO UPDATE SET
+      payload = CASE
+        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.payload
+        ELSE EXCLUDED.payload
+      END,
+      error = CASE
+        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.error
+        ELSE EXCLUDED.error
+      END,
+      attempts = CASE
+        WHEN grids.record_event_delivery_failures.status = 'dead' THEN grids.record_event_delivery_failures.attempts
+        ELSE grids.record_event_delivery_failures.attempts + 1
+      END,
+      status = CASE
+        WHEN grids.record_event_delivery_failures.status = 'dead'
+          OR grids.record_event_delivery_failures.attempts + 1 >= ${maxAttempts} THEN 'dead'
+        ELSE 'retrying'
+      END,
+      last_seen_at = now(),
+      dead_at = CASE
+        WHEN grids.record_event_delivery_failures.status = 'dead'
+          OR grids.record_event_delivery_failures.attempts + 1 >= ${maxAttempts}
+          THEN COALESCE(grids.record_event_delivery_failures.dead_at, now())
+        ELSE NULL
+      END
+    RETURNING attempts, status
+  `;
+  if (!row) throw new Error("Record event delivery failure was not persisted");
+  return { attempts: Number(row.attempts), dead: row.status === "dead" };
+};
+
 export const listRecordEventDeliveryFailures = async (baseId: string, limit = 100): Promise<RecordEventDeliveryFailure[]> => {
   const rows = await sql<
     Array<{

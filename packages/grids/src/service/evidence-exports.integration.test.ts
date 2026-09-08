@@ -3,7 +3,17 @@ import { createHash } from "node:crypto";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { cancel, create as createExport, download, preflight, processExport, retry } from "./evidence-exports";
+import { EvidenceExportBoundError } from "./evidence-archive";
+import {
+  cancel,
+  create as createExport,
+  download,
+  preflight,
+  processExport,
+  reconcileStuckEvidenceExports,
+  retry,
+  runEvidenceExportJob,
+} from "./evidence-exports";
 
 const collect = async (stream: ReadableStream<Uint8Array>): Promise<Uint8Array> => {
   const chunks: Uint8Array[] = [];
@@ -527,6 +537,66 @@ describe("evidence export integration", () => {
       `;
       expect(queued?.count).toBe(0);
     } finally {
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+  postgresTest("ends bound violations in the row and recovers abandoned running rows without touching live ones", async () => {
+    const baseId = testUuid();
+    const shortIds = { bound: testShortId("E"), abandoned: testShortId("E"), live: testShortId("E"), fresh: testShortId("E") };
+    const ids = { bound: testUuid(), abandoned: testUuid(), live: testUuid(), fresh: testUuid() };
+    await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Reconcile fixture')`;
+    const holder = await sql.reserve();
+    try {
+      await sql`
+        INSERT INTO grids.evidence_exports (id, short_id, base_id, sections, status, started_at) VALUES
+          (${ids.bound}::uuid, ${shortIds.bound}, ${baseId}::uuid, ARRAY['records'], 'running', now()),
+          (${ids.abandoned}::uuid, ${shortIds.abandoned}, ${baseId}::uuid, ARRAY['records'], 'running', now() - interval '1 hour'),
+          (${ids.live}::uuid, ${shortIds.live}, ${baseId}::uuid, ARRAY['records'], 'running', now() - interval '1 hour'),
+          (${ids.fresh}::uuid, ${shortIds.fresh}, ${baseId}::uuid, ARRAY['records'], 'running', now() - interval '10 seconds')
+      `;
+      await sql`INSERT INTO grids.evidence_export_chunks (export_id, sequence, bytes) VALUES (${ids.abandoned}::uuid, 0, ${new Uint8Array([0])})`;
+
+      // A deterministic bound violation is the export's own outcome, not a job failure.
+      await runEvidenceExportJob(
+        ids.bound,
+        async () => undefined,
+        async () => {
+          throw new EvidenceExportBoundError("Evidence export exceeds the 10000 row budget for records.");
+        },
+      );
+      await expect(
+        runEvidenceExportJob(
+          ids.bound,
+          async () => undefined,
+          async () => {
+            throw new Error("database unavailable");
+          },
+        ),
+      ).rejects.toThrow("database unavailable");
+
+      // A live worker still holds the session lock of its export.
+      await holder`SELECT pg_advisory_lock(hashtextextended(${`grids:evidence-export:${ids.live}`}, 0))`;
+      expect(await reconcileStuckEvidenceExports()).toBe(1);
+
+      const rows = await sql<Array<{ id: string; status: string; last_error: string | null; chunks: number }>>`
+        SELECT export.id::text, export.status, export.last_error,
+               (SELECT count(*)::int FROM grids.evidence_export_chunks chunk WHERE chunk.export_id = export.id) AS chunks
+        FROM grids.evidence_exports export WHERE export.base_id = ${baseId}::uuid
+      `;
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      expect(byId.get(ids.bound)).toMatchObject({
+        status: "failed",
+        last_error: "Evidence export exceeds the 10000 row budget for records.",
+      });
+      expect(byId.get(ids.abandoned)).toMatchObject({
+        status: "failed",
+        last_error: expect.stringContaining("stopped before finishing"),
+        chunks: 0,
+      });
+      expect(byId.get(ids.live)).toMatchObject({ status: "running", last_error: null });
+      expect(byId.get(ids.fresh)).toMatchObject({ status: "running", last_error: null });
+    } finally {
+      await holder.close({ timeout: 0 }).catch(() => undefined);
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
