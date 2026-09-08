@@ -27,6 +27,8 @@ test("filters across the complete scan before paging and prioritizes problems", 
   const data = snapshot([stream("a"), stream("b", "core"), stream("c", "mail", true), stream("d")]);
   const query = NatsQuerySchema.parse({ app: "mail", namespace: "dev", resource: "JOB", limit: 1 });
   const first = selectNatsStreams(data, query);
+  expect(first.facets).toEqual({ apps: ["core", "mail"], namespaces: ["dev"] });
+  expect(selectNatsStreams(data, { ...query, resource: "no-match" }).facets).toEqual(first.facets);
   expect(first.streams.map((value) => value.name)).toEqual(["c"]);
   expect(first).toMatchObject({
     total: 3,

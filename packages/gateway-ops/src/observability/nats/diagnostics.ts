@@ -50,6 +50,10 @@ export const selectNatsStreams = (snapshot: NatsInventorySummary, query: NatsQue
       replicationStatus: replicaStatus(stream.cluster, stream.replicas),
       hasDeadLetters: stream.deadLetter && stream.messages > 0,
     })),
+    facets: {
+      apps: [...new Set(snapshot.streams.flatMap((stream) => (stream.sync ? [stream.sync.owner] : [])))].sort(),
+      namespaces: [...new Set(snapshot.streams.flatMap((stream) => (stream.sync ? [stream.sync.namespace] : [])))].sort(),
+    },
     total: matching.length,
     matchedTotal: snapshot.status === "available" ? matching.length : null,
     accountTotal: snapshot.total,

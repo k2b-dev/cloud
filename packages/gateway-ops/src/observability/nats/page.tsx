@@ -1,7 +1,8 @@
-import { Button, ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge, TextInput } from "@k2b/ui";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import { ssr } from "../../config";
 import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import { natsMessages } from "./messages";
@@ -136,25 +137,12 @@ export default ssr<AuthContext>(async (c) => {
             detail={inventory.status === "not_configured" ? t.inventoryMissing : t.inventoryIssue}
           />
         ) : null}
-        <form method="get" action="/admin/observability/nats" class="paper p-3 flex flex-wrap items-end gap-3">
-          <TextInput name="app" label={t.appFilter} value={query.app ?? ""} />
-          <TextInput name="namespace" label={t.namespaceFilter} value={query.namespace ?? ""} />
-          <TextInput name="resource" label={t.resourceFilter} value={query.resource ?? ""} type="search" />
-          {query.problems === "true" ? <input type="hidden" name="problems" value="true" /> : null}
-          <Button type="submit" size="sm">
-            {t.applyFilters}
-          </Button>
-          <ButtonLink
-            href={href({ problems: query.problems === "true" ? null : "true", offset: null, consumerOffset: null })}
-            variant="secondary"
-            size="sm"
-          >
-            {query.problems === "true" ? t.showAll : t.showProblems}
-          </ButtonLink>
-          <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
-            {t.clearFilters}
-          </ButtonLink>
-        </form>
+        <SyncNatsFilterBar
+          path="/admin/observability/nats"
+          search={url.search}
+          apps={inventory.facets.apps}
+          namespaces={inventory.facets.namespaces}
+        />
         <p class="text-xs text-dimmed">
           {t.problemStreams}: {count(inventory.accountTotal === null ? null : inventory.summary.problemStreams)} · {t.deadLetterStreams}:{" "}
           {count(inventory.accountTotal === null ? null : inventory.summary.deadLetterStreams)} · {t.replicationProblems}:{" "}

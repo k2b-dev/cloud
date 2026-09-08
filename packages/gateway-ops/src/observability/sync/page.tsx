@@ -1,19 +1,9 @@
-import {
-  Button,
-  Checkbox,
-  TextInput,
-  ButtonLink,
-  DataTable,
-  type DataTableColumn,
-  NoticeCard,
-  StatCell,
-  StatGrid,
-  StatusBadge,
-  type StatusTone,
-} from "@k2b/ui";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
+import { listApps } from "@valentinkolb/cloud";
+import SyncNatsFilterBar from "../_components/SyncNatsFilterBar.island";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
 import DeadLetterDetail from "./_components/DeadLetterDetail";
@@ -60,7 +50,10 @@ export default ssr<AuthContext>(async (c) => {
   const selectedApp = url.searchParams.get("app") || undefined;
   const problems = ["true", "on"].includes(url.searchParams.get("problems") ?? "");
   const credentials = syncOpsCredentials(c.req.raw);
-  const overview = await syncOpsService.overview(credentials, { app: selectedApp, resource: selectedResource, problems });
+  const [overview, registeredApps] = await Promise.all([
+    syncOpsService.overview(credentials, { app: selectedApp, resource: selectedResource, problems }),
+    listApps(),
+  ]);
   const href = (changes: Record<string, string | number | null | undefined>) => {
     const params = new URLSearchParams(url.searchParams);
     for (const [key, value] of Object.entries(changes)) {
@@ -162,17 +155,7 @@ export default ssr<AuthContext>(async (c) => {
             {o.refresh}
           </ButtonLink>
         </div>
-        <form method="get" action="/admin/observability/sync" class="flex flex-wrap items-end gap-3">
-          <TextInput name="app" label={o.app} value={selectedApp ?? ""} />
-          <TextInput name="resource" label={o.resource} value={selectedResource ?? ""} />
-          <Checkbox name="problems" label={o.problems} value={problems} />
-          <Button type="submit" size="sm">
-            {o.filter}
-          </Button>
-          <ButtonLink href="/admin/observability/sync" variant="secondary" size="sm">
-            {o.clear}
-          </ButtonLink>
-        </form>
+        <SyncNatsFilterBar path="/admin/observability/sync" search={url.search} apps={registeredApps.map((app) => app.id)} />
         <NoticeCard tone="info" icon="ti ti-layers-intersect" title={t.syncLayersTitle} detail={t.syncLayersNotice} />
         <div>
           <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
