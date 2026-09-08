@@ -4,11 +4,11 @@ import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "./query-blocks
 
 test("the shipped Assistant skill uses executable data, query and TOC examples", async () => {
   const source = await Bun.file(new URL("../../../cloud/src/ai/skill-seeds.ts", import.meta.url)).text();
-  const skill = source
-    .split("const CLOUD_NOTEBOOKS_INSTRUCTIONS = `")[1]!
-    .split("const CLOUD_CONTACTS_INSTRUCTIONS")[0]!
-    .replaceAll("\\`", "`");
-  const examples = [...skill.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
+  const reference = source
+    .match(/const CLOUD_NOTEBOOKS_REFERENCE = `([\s\S]*?)\n`;/)?.[1]
+    ?.replaceAll("\\`", "`");
+  expect(reference).toBeDefined();
+  const examples = [...reference!.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
   expect(examples).toHaveLength(3);
   const data = examples.find((example) => example.includes(":::data"))!;
   const parsedData = parseNamedDataBlockResult(data.split(":::data\n")[1]!.split("\n:::")[0]!);
