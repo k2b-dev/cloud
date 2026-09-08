@@ -1,7 +1,7 @@
 import { relative, resolve } from "node:path";
 import { build, dist } from "./build";
 
-await build();
+await build({ development: true });
 // A reload rebuilds the source. Keep one build in flight for concurrent tabs.
 let rebuilding: Promise<void> | undefined;
 const server = Bun.serve({
@@ -11,7 +11,7 @@ const server = Bun.serve({
     if (request.method !== "GET" && request.method !== "HEAD") return new Response(null, { status: 405 });
     const url = new URL(request.url);
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      rebuilding ??= build().finally(() => {
+      rebuilding ??= build({ development: true }).finally(() => {
         rebuilding = undefined;
       });
       await rebuilding;

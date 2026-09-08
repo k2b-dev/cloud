@@ -17,8 +17,15 @@ It does not require a central account or session server.
 
 Run `bun run --cwd pwas/pwa-auth build` in the monorepo and serve the resulting
 `dist/` directory at the root of one stable HTTPS origin. Use
-`Cache-Control: no-store` for HTML and `Referrer-Policy: no-referrer`. Host scripts
+`Cache-Control: no-store` for HTML and `sw.js` and `Referrer-Policy: no-referrer`. Host scripts
 and assets locally; do not add third-party scripts or analytics to this origin.
+
+The production build caches only its static app files for offline startup after
+one successful online load. Cloud APIs and credentials are never cached. Pairing
+and approvals require a connection. A downloaded update waits until all open
+Cloud Login tabs/windows close, then applies on a subsequent launch. Reloading
+an open app does not force the update. Publish builds atomically and retain old
+hashed assets during rollout. The development server does not register a worker.
 
 In each Cloud, enable app approval and configure this exact authenticator origin
 as described in [App approval API](./app-approval.md). Cloud Login uses the

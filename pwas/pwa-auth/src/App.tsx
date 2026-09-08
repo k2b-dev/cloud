@@ -1,7 +1,8 @@
-import { Button, Dropdown, type DropdownItem, dialogCore, LocaleProvider, Placeholder, useLocale } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, LocaleProvider, Placeholder, useLocale } from "@k2b/ui";
 import { createMemo, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
 import { Clouds } from "./Clouds";
+import { openDialog } from "./dialog";
 import { openInstallDialog } from "./InstallDialog";
 import { authMessages } from "./i18n";
 import { createInstallation } from "./install";
@@ -19,7 +20,7 @@ export function App(props: { preferences: Preferences }) {
     if (pairingOpen) return;
     pairingOpen = true;
     try {
-      await dialogCore.open(
+      await openDialog(
         (close) => (
           <LocaleProvider locale={props.preferences.locale()}>
             <Pairing auth={auth} link={link} close={() => close()} />

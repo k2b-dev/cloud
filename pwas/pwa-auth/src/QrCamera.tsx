@@ -18,8 +18,10 @@ export function QrCamera(props: { onResult: (text: string) => boolean; onStop: (
   let video!: HTMLVideoElement;
   let scanner: QrScanner | undefined;
   let closed = false;
+  let cleanupMotion: (() => void) | undefined;
   const destroy = () => {
     closed = true;
+    cleanupMotion?.();
     resetRejected.cancel();
     resetFeedback.cancel();
     // pause(true) stops existing tracks immediately; destroy also handles a still-pending permission request.
@@ -69,6 +71,16 @@ export function QrCamera(props: { onResult: (text: string) => boolean; onStop: (
             },
           },
         );
+        const motion = matchMedia("(prefers-reduced-motion: reduce)");
+        const applyMotion = () => {
+          for (const animation of scanner?.$overlay?.getAnimations({ subtree: true }) ?? []) {
+            if (motion.matches) animation.pause();
+            else animation.play();
+          }
+        };
+        applyMotion();
+        motion.addEventListener("change", applyMotion);
+        cleanupMotion = () => motion.removeEventListener("change", applyMotion);
         await scanner.start();
         if (!closed) setStarting(false);
       } catch {

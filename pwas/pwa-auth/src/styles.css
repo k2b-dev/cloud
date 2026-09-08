@@ -1,5 +1,4 @@
 @import "@k2b/ui/styles.css";
-@import "@k2b/ui/icons/tabler.css";
 
 html {
   font-family: var(--k2b-font-sans);
@@ -270,4 +269,16 @@ body {
 
 .auth-camera-preview--invalid .scan-region-highlight-svg {
   stroke: var(--k2b-danger-500) !important;
+}
+
+/* Touch sizing belongs to this mobile-first app, not desktop UI defaults. */
+body.k2b-ui .k2b-button,
+body.k2b-ui .k2b-dropdown__trigger,
+body.k2b-ui .k2b-segmented-control button {
+  min-height: 44px;
+}
+body.k2b-ui input:not([type="checkbox"]):not([type="radio"]),
+body.k2b-ui textarea {
+  min-height: 44px;
+  font-size: 16px;
 }

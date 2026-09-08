@@ -31,8 +31,10 @@ build and deployment. No Cloud server, session broker or runtime configuration
 is required. Hosting and deployment are separate work.
 Each Cloud must explicitly enable app approval and trust this exact PWA origin.
 See the [protocol guide](../../docs-site/docs/en/operations/app-approval.md).
-Serve HTML with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
-keep assets and scripts on this origin. Do not add analytics or remote scripts.
+Serve HTML and `sw.js` with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`;
+keep assets and scripts on this origin. Publish each build atomically and retain
+previous hashed assets during rollout so an already open page can finish loading.
+Do not add analytics or remote scripts.
 
 ## UI and language
 
@@ -46,7 +48,11 @@ persist on this origin through stdlib's `localStore`; no Cloud cookie is used.
 
 The dots button opens the public `Dropdown` with Add Cloud, Language,
 Appearance, and Install app. Add Cloud opens the pairing flow.
-Language and appearance each open a compact shared dialog.
+Language and appearance each open a compact shared dialog. Back dismisses the
+open dialog before leaving the app. Buttons use at least 44px touch targets and
+text inputs use 16px type. The saved theme is applied before the app module runs.
+OS-generated launch screens may still use the manifest's fixed light background;
+the manifest has no portable per-theme background field.
 
 An installation guide opens once
 on the first visit. The origin-local `pwa-auth.install-hint` record remembers
@@ -65,7 +71,13 @@ query strings and fragments. Unknown embedded browsers may receive general
 guidance. Standalone mode hides the action and suppresses the introduction.
 Confirmed installation closes an open guide. EN/DE text and the selected theme
 apply to every dialog; shared UI owns focus, Escape, and the rounded frame.
-No service worker, offline approval, or forced update behavior is introduced.
+Production builds include a service worker for the static app shell. After its first
+successful online load, Cloud Login can start offline and show saved Clouds with
+connection status. Pairing and decisions still require the Cloud; API responses,
+pairing links, and keys never enter the service worker cache. New releases wait
+until all old app tabs/windows close. Reloading an open app keeps its current
+version; it never forces a reload during pairing or a decision.
+The dev command does not register a service worker.
 Real iOS/Android installation still needs device verification. Guidance follows
 [Apple's Home Screen instructions](https://support.apple.com/en-euro/guide/iphone/iphea86e5236/ios)
 and [the browser install-event lifecycle](https://web.dev/articles/customize-install).
@@ -116,12 +128,14 @@ The camera stays open for another code; repeated frames of the same rejected cod
 do not produce more toasts. A different code or a one-second gap without a decoded
 QR code enables fresh feedback.
 
-`qr-scanner` and its fallback worker are bundled locally and loaded on demand.
+`qr-scanner` and its fallback worker are bundled locally. The decoder starts
+only when scanning opens; the production worker precaches its static files.
 Camera frames stay on the device. Closing the dialog, stopping, successful
 scanning, hiding the page or leaving it destroys the scanner and stops tracks.
 Returning to the page does not reopen the camera automatically. A pending
 permission response after closing also releases any stream it returns.
 The distribution includes the library's MIT license in `licenses/`.
+Scanner animation follows the reduced-motion preference, including live changes.
 
 ## Browser verification
 
@@ -156,7 +170,24 @@ stop, page hiding and page exit. It never opens a physical camera.
 Physical camera scanning, installed iOS/Safari and Android same-device handoff still
 need device acceptance. Desktop browser tests do not establish those guarantees.
 
+`test/native-flow.js` checks mobile target sizes, Back/Close behavior and theme
+initialization while the app module is blocked. Manifest screenshots are real
+390×844 captures of the welcome and pairing views plus a 1280×720 desktop view.
+
+To verify a production worker without affecting the dev origin, run a production
+build, then `bun run pwas/pwa-auth/test/offline-server.ts`. This loopback-only
+fixture serves a private snapshot on `127.0.0.1:4179` and simulates two releases.
+Run `test/offline-flow.js` with Playwright CLI. It checks offline startup, a
+static-only cache, waiting updates, and activation after old windows close.
+Playwright blocks network access separately from its simulated offline indicator.
+Stop the fixture after testing; never deploy it.
+
 ## Icons
+
+The build extracts literal Tabler names from all emitted JavaScript chunks and
+subsets the existing font using `subset-font`. It keeps Tabler's public CSS
+classes without shipping the whole icon catalog. Use literal icon names in this
+app so they remain discoverable by the build.
 
 `ti ti-cloud-lock-open` comes from Tabler 3.46.0 (MIT). `public/favicon.svg`
 was generated with the repository's Cloud favicon renderer in

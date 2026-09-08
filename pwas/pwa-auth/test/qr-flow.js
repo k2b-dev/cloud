@@ -4,7 +4,7 @@ async function _run(page) {
     const context = await page
       .context()
       .browser()
-      .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
+      .newContext({ locale: "en", viewport: { width: 390, height: 844 }, reducedMotion: mode === "stop" ? "reduce" : "no-preference" });
     const p = await context.newPage();
     let apiCalls = 0;
     const browserErrors = [];
@@ -119,7 +119,20 @@ async function _run(page) {
         await preview.waitFor({ state: "visible" });
         const size = await preview.boundingBox();
         if (!size || size.width < 100 || size.height < 100) throw new Error("Camera preview is hidden");
-        if (mode === "stop") await p.screenshot({ path: "output/playwright/pwa-qr-camera.png", fullPage: true });
+        if (mode === "stop") {
+          const paused = await preview.evaluate((video) =>
+            video.parentElement.getAnimations({ subtree: true }).every((a) => a.playState === "paused"),
+          );
+          if (!paused) throw new Error("Scanner ignored reduced motion");
+          await p.emulateMedia({ reducedMotion: "no-preference" });
+          await p.waitForFunction(() =>
+            document
+              .querySelector(".auth-camera-preview")
+              .getAnimations({ subtree: true })
+              .some((a) => a.playState === "running"),
+          );
+          await p.screenshot({ path: "output/playwright/pwa-qr-camera.png", fullPage: true });
+        }
         if (mode === "stop") await p.getByRole("button", { name: "Stop camera", exact: true }).click();
         else await p.evaluate(() => window.dispatchEvent(new Event("pagehide")));
         await p.getByRole("button", { name: "Scan QR code", exact: true }).waitFor();

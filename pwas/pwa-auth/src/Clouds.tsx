@@ -1,6 +1,7 @@
-import { Button, Checkbox, dialogCore, LocaleProvider, PanelDialog, useLocale } from "@k2b/ui";
+import { Button, Checkbox, LocaleProvider, PanelDialog, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { Authenticator, Login } from "./authenticator";
+import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
@@ -120,7 +121,7 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences })
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const open = (binding: Binding, request?: Login) =>
-    dialogCore.open(
+    openDialog(
       (close) => (
         <LocaleProvider locale={props.preferences.locale()}>
           <Show when={request} fallback={<Disconnect auth={props.auth} binding={binding} close={() => close()} />}>

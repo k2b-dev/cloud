@@ -1,6 +1,7 @@
 import { clipboard } from "@k2b/stdlib/solid";
-import { Button, dialogCore, LocaleProvider, PanelDialog, useLocale } from "@k2b/ui";
+import { Button, LocaleProvider, PanelDialog, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, For, Show } from "solid-js";
+import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Installation } from "./install";
 import type { Preferences } from "./preferences";
@@ -116,7 +117,7 @@ function InstallDialog(props: { installation: Installation; close: () => void })
 
 export function openInstallDialog(installation: Installation, preferences: Preferences) {
   installation.markIntroduced();
-  return dialogCore.open(
+  return openDialog(
     (close) => (
       <LocaleProvider locale={preferences.locale()}>
         <InstallDialog installation={installation} close={() => close()} />

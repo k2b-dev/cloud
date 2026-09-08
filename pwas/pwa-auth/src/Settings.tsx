@@ -1,5 +1,6 @@
-import { Button, dialogCore, LocaleProvider, PanelDialog, SegmentedControl, useLocale } from "@k2b/ui";
+import { Button, LocaleProvider, PanelDialog, SegmentedControl, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
+import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 
@@ -45,7 +46,7 @@ export function Settings(props: { preferences: Preferences; section: "language" 
 }
 
 export function openSettings(preferences: Preferences, section: "language" | "theme") {
-  return dialogCore.open(
+  return openDialog(
     (close) => (
       <LocaleProvider locale={preferences.locale()}>
         <Settings preferences={preferences} section={section} close={() => close()} />

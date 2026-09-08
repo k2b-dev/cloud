@@ -30,6 +30,7 @@ export function createPreferences() {
   createEffect(() => {
     document.body.dataset.theme = theme() === "system" ? (dark() ? "dark" : "light") : theme();
     const color = getComputedStyle(document.body).backgroundColor;
+    document.documentElement.style.backgroundColor = color;
     for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
       meta.removeAttribute("media");
       meta.content = color;
