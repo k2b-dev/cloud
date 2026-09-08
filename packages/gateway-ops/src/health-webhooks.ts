@@ -215,7 +215,15 @@ const markResult = async (webhook: HealthWebhook, health: GatewayHealth, ok: boo
   `;
 };
 
-const sendWebhook = async (webhook: HealthWebhook, health: GatewayHealth, mode: "scheduled" | "test") => {
+/** The endpoint rejected or never answered; the outcome is already recorded on the webhook row. */
+export class HealthWebhookDeliveryError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "HealthWebhookDeliveryError";
+  }
+}
+
+export const deliverHealthWebhook = async (webhook: HealthWebhook, health: GatewayHealth, mode: "scheduled" | "test"): Promise<void> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), webhook.timeoutMs);
   try {
@@ -236,7 +244,7 @@ const sendWebhook = async (webhook: HealthWebhook, health: GatewayHealth, mode: 
     const message = error instanceof Error ? error.message : String(error);
     await markResult(webhook, health, false, message);
     log.error("Health webhook failed", { webhookId: webhook.id, name: webhook.name, mode, status: health.status, error: message });
-    throw error;
+    throw new HealthWebhookDeliveryError(message, { cause: error });
   } finally {
     clearTimeout(timeout);
   }
@@ -254,23 +262,30 @@ export const healthWebhookDeliveryJob = lazySync((sync) => {
 let deliveryWorker: Worker | undefined;
 export const startHealthWebhookDelivery = async (): Promise<void> => {
   deliveryWorker ??= await healthWebhookDeliveryJob().process({}, async (context) => {
-    await trace.withSpan(
-      {
-        name: "Gateway health webhook delivery",
-        source: "gateway:health-webhook-delivery",
-        appId: "gateway-ops",
-        category: "job",
-        attributes: {
-          "cloud.gateway.webhook_id": context.input.webhookId,
-          "cloud.gateway.webhook_mode": context.input.mode ?? "scheduled",
+    await trace
+      .withSpan(
+        {
+          name: "Gateway health webhook delivery",
+          source: "gateway:health-webhook-delivery",
+          appId: "gateway-ops",
+          category: "job",
+          attributes: {
+            "cloud.gateway.webhook_id": context.input.webhookId,
+            "cloud.gateway.webhook_mode": context.input.mode ?? "scheduled",
+          },
         },
-      },
-      async () => {
-        const webhook = await getHealthWebhook(context.input.webhookId);
-        if (!webhook) return;
-        await sendWebhook(webhook, await scopedHealth(webhook), context.input.mode ?? "scheduled");
-      },
-    );
+        async () => {
+          const webhook = await getHealthWebhook(context.input.webhookId);
+          if (!webhook) return;
+          await deliverHealthWebhook(webhook, await scopedHealth(webhook), context.input.mode ?? "scheduled");
+        },
+      )
+      .catch((error: unknown) => {
+        // An unreachable or rejecting endpoint is a routine outcome: the webhook row
+        // carries it and the next health check re-sends. Only infrastructure
+        // failures (database, health snapshot) retry and reach the dead-letter store.
+        if (!(error instanceof HealthWebhookDeliveryError)) throw error;
+      });
   });
 };
 export const stopHealthWebhookDelivery = async (): Promise<void> => {

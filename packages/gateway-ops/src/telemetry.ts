@@ -126,20 +126,57 @@ export const consumeTelemetry = async (signal: AbortSignal): Promise<void> => {
 
 export type TelemetryCleanupResult = { events: number; rollups: number; total: number };
 
-export const cleanupTelemetry = async (retention: { eventsDays?: number; rollupsDays?: number } = {}): Promise<TelemetryCleanupResult> => {
+const CLEANUP_BATCH_SIZE = 10_000;
+
+const deleteExpiredEventsBatch = async (eventsDays: number): Promise<number> => {
+  const result = await sql`
+    WITH expired AS (
+      SELECT ctid
+      FROM gateway.telemetry_events
+      WHERE occurred_at < now() - (${eventsDays}::int * INTERVAL '1 day')
+      LIMIT ${CLEANUP_BATCH_SIZE}
+    )
+    DELETE FROM gateway.telemetry_events event
+    USING expired
+    WHERE event.ctid = expired.ctid
+  `;
+  return result.count;
+};
+
+const deleteExpiredRollupsBatch = async (rollupsDays: number): Promise<number> => {
+  const result = await sql`
+    WITH expired AS (
+      SELECT ctid
+      FROM gateway.telemetry_rollups_minute
+      WHERE bucket < date_trunc('minute', now() - (${rollupsDays}::int * INTERVAL '1 day'))
+      LIMIT ${CLEANUP_BATCH_SIZE}
+    )
+    DELETE FROM gateway.telemetry_rollups_minute rollup
+    USING expired
+    WHERE rollup.ctid = expired.ctid
+  `;
+  return result.count;
+};
+
+/** Deletes in bounded batches; `heartbeat` runs after each batch so a long cleanup keeps its scheduler lease. */
+export const cleanupTelemetry = async (
+  retention: { eventsDays?: number; rollupsDays?: number; heartbeat?: () => Promise<void> } = {},
+): Promise<TelemetryCleanupResult> => {
   const eventsDays = Math.max(1, Math.trunc(retention.eventsDays ?? 14));
   const rollupsDays = Math.max(eventsDays, Math.trunc(retention.rollupsDays ?? 90));
-  const [eventsResult, rollupsResult] = await Promise.all([
-    sql`
-    DELETE FROM gateway.telemetry_events
-    WHERE occurred_at < now() - (${eventsDays}::int * INTERVAL '1 day')
-    `,
-    sql`
-    DELETE FROM gateway.telemetry_rollups_minute
-    WHERE bucket < date_trunc('minute', now() - (${rollupsDays}::int * INTERVAL '1 day'))
-    `,
-  ]);
-  return { events: eventsResult.count, rollups: rollupsResult.count, total: eventsResult.count + rollupsResult.count };
+  const drain = async (deleteBatch: () => Promise<number>): Promise<number> => {
+    let total = 0;
+    let deleted: number;
+    do {
+      deleted = await deleteBatch();
+      total += deleted;
+      await retention.heartbeat?.();
+    } while (deleted === CLEANUP_BATCH_SIZE);
+    return total;
+  };
+  const events = await drain(() => deleteExpiredEventsBatch(eventsDays));
+  const rollups = await drain(() => deleteExpiredRollupsBatch(rollupsDays));
+  return { events, rollups, total: events + rollups };
 };
 
 export const getTelemetrySummary = async (hours = 24): Promise<TelemetrySummary> => {

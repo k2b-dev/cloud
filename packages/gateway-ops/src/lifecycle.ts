@@ -18,8 +18,10 @@ const TELEMETRY_CLEANUP_CRON = "17 3 * * *";
 const HEALTH_SCHEDULE_ID = "gateway:health-webhook-check";
 const OFFLINE_AUDIT_ID = "gateway:registered-apps:offline-audit";
 const SCHEDULER_ID = "gateway-ops-lifecycle";
+/** Retention ticks heartbeat per delete batch; `trace.cleanup` runs as one statement and must fit in this window. */
+const SCHEDULER_ACK_WAIT_MS = 5 * 60 * 1000;
 
-const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID }));
+const gatewayOpsScheduler = lazySync((sync) => sync.scheduler({ id: SCHEDULER_ID, delivery: { ackWaitMs: SCHEDULER_ACK_WAIT_MS } }));
 const offlineAuditJob = lazySync((sync) =>
   sync.job<void>({ id: OFFLINE_AUDIT_ID, delivery: { ackWaitMs: 120_000, maxAttempts: 3, backoffMs: [1_000, 2_000] } }),
 );
@@ -30,8 +32,6 @@ let telemetryAbort: AbortController | null = null;
 let telemetryTask: Promise<void> | null = null;
 let schedulerWorker: Worker | null = null;
 let offlineAuditWorker: Worker | null = null;
-
-let registryRefreshInFlight = false;
 
 const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
 
@@ -106,17 +106,14 @@ export const refreshRegisteredApps = async (): Promise<void> => {
   await upsertRegisteredApps(await listApps());
 };
 
+// `watchAppRegistry` awaits each change callback, so refreshes never overlap.
 const refreshRegisteredAppsOnce = async (): Promise<void> => {
-  if (registryRefreshInFlight) return;
-  registryRefreshInFlight = true;
   try {
     await refreshRegisteredApps();
   } catch (error) {
     log.error("Registered app refresh failed", {
       error: error instanceof Error ? error.message : String(error),
     });
-  } finally {
-    registryRefreshInFlight = false;
   }
 };
 
@@ -231,10 +228,8 @@ const createTelemetryCleanupSchedule = async (): Promise<void> => {
             getPositiveIntegerSetting("gateway.telemetry_rollup_retention_days", 90),
             getPositiveIntegerSetting("logs.trace_retention_days", 30),
           ]);
-          const [telemetry, traces] = await Promise.all([
-            cleanupTelemetry({ eventsDays, rollupsDays }),
-            trace.cleanup({ days: traceDays }),
-          ]);
+          const telemetry = await cleanupTelemetry({ eventsDays, rollupsDays, heartbeat: () => context.heartbeat() });
+          const traces = await trace.cleanup({ days: traceDays });
           const summary = { events: telemetry.events, rollups: telemetry.rollups, traces };
           log.info("Observability retention cleanup completed", summary);
           return summary;

@@ -70,7 +70,10 @@ Sort by error rate to find unhealthy routes. Sort by requests to find the
 highest traffic.
 
 For background work, inspect the latest run and then its history. A stuck run is
-an abandoned span, not proof that a worker is still active.
+an abandoned span, not proof that a worker is still active. The Sync page lists
+queue and job dead letters only; a topic consumer that gives up on a poison
+event (for example gateway telemetry) parks it in that consumer's own
+dead-letter stream, which is visible through the NATS CLI, not on the page.
 
 Use the dedicated pages for:
 

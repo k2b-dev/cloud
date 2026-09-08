@@ -58,6 +58,14 @@ const clearExpiredEventSensitiveChunk = async (baseId?: string): Promise<number>
   return result.count ?? 0;
 };
 
+/** The scrape ran and failed for a reason already recorded on `pulse.sources.last_error`. */
+class ScrapeOutcomeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScrapeOutcomeError";
+  }
+}
+
 const scrapeJob = lazySync((sync) =>
   sync.job<ScrapeInput>({
     id: "pulse:metrics:scrape",
@@ -320,22 +328,29 @@ export const pulseRuntime = {
     if (started) return;
     workers.push(
       await scrapeJob().process({}, async (context) => {
-        await trace.withSpan(
-          {
-            spanKey: trace.syncSpanKey("job", "pulse:metrics:scrape", context.jobId),
-            name: "Pulse metrics scrape",
-            source: "pulse:metrics:scrape",
-            appId: "pulse",
-            category: "job",
-            attributes: { "cloud.pulse.base_id": context.input.publicBaseId, "cloud.pulse.source_id": context.input.publicSourceId },
-          },
-          async () => {
-            const result = await scrapeMetricsSource(context.input);
-            if (!result.ok) throw new Error(result.error.message);
-            return result.data;
-          },
-          { summarize: (result) => result },
-        );
+        await trace
+          .withSpan(
+            {
+              spanKey: trace.syncSpanKey("job", "pulse:metrics:scrape", context.jobId),
+              name: "Pulse metrics scrape",
+              source: "pulse:metrics:scrape",
+              appId: "pulse",
+              category: "job",
+              attributes: { "cloud.pulse.base_id": context.input.publicBaseId, "cloud.pulse.source_id": context.input.publicSourceId },
+            },
+            async () => {
+              const result = await scrapeMetricsSource(context.input);
+              if (!result.ok) throw new ScrapeOutcomeError(result.error.message);
+              return result.data;
+            },
+            { summarize: (result) => result },
+          )
+          .catch((error: unknown) => {
+            // An unreachable or malformed target is a routine outcome: the source row carries
+            // `last_error` and the next due slot scrapes again. Only infrastructure failures
+            // (database, ingest writer) retry and reach the dead-letter store.
+            if (!(error instanceof ScrapeOutcomeError)) throw error;
+          });
       }),
     );
     workers.push(
@@ -413,7 +428,7 @@ export const pulseRuntime = {
     started = true;
   },
   stop: async (): Promise<void> => {
-    await Promise.all(workers.map((worker) => worker.stop()));
+    await Promise.all(workers.map((worker) => worker.drain()));
     workers = [];
     await stopPulseBaseDeletionJob();
     await stopPulseBaseDataClearJob();

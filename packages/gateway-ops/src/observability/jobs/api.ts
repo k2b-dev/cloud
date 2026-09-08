@@ -9,14 +9,15 @@ import { syncOpsCredentials } from "../sync/service";
  * same data the page renders: an overview joining schedules with trace stats,
  * the spans of a source, and the events of a single run.
  *
- * Read-only on purpose. Triggering a schedule stays a form POST on the page,
- * where it is an explicit human action.
+ * Read-only on purpose. Running a schedule now, like every other mutation of
+ * background work, goes through the Sync operations API (`../sync/api.ts`),
+ * where the owning app audits it.
  */
 
 import { ok } from "@k2b/stdlib";
 import { createPagination, parsePagination } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, rateLimit, respond, v } from "@valentinkolb/cloud/server";
-import { trace } from "@valentinkolb/cloud/services";
+import { type TraceWindow, trace } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
 import { z } from "zod";
 import { buildBackgroundJobRows, filterBackgroundJobRows, jobsObservabilityService } from "./service";
@@ -39,13 +40,7 @@ const StatsQuerySchema = z.object({
   window: WindowSchema,
 });
 
-/**
- * Schedule definitions are registration spans, not runs: one opens when a
- * schedule registers and closes when it deregisters. Counting them inflates
- * run totals and durations, so every read here excludes them — matching the
- * admin page.
- */
-const baseTraceFilter = (window: string) => ({ window: window as never });
+const baseTraceFilter = (window: TraceWindow) => ({ window });
 
 const RunsQuerySchema = z.object({
   source: z.string().optional(),

@@ -16,7 +16,7 @@ import { getSelectedContactFromUrl } from "./context";
 
 type Props = {
   scope: ContactLiveScope;
-  initialCursor: string;
+  initialCursor: string | null;
 };
 
 const ACTIVE_EDITOR_SELECTOR = '[data-contacts-editor="true"]';

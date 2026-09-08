@@ -34,6 +34,18 @@ type SyncHostgroup = {
 
 type IpaCallResponse = Awaited<ReturnType<typeof freeipa.client.call>>;
 
+/**
+ * FreeIPA could not deliver a usable snapshot (unreachable, misconfigured,
+ * rejected call, or an empty list that must not wipe the mirror). The run's
+ * trace span records it; the next cron slot retries. Not a dead-letter case.
+ */
+export class IpaHostsSyncError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "IpaHostsSyncError";
+  }
+}
+
 type SyncSummary = {
   durationMs: number;
   remoteHostsFetched: number;
@@ -67,11 +79,11 @@ const transformSyncHostgroup = (raw: Record<string, unknown>, excludedGroupsSet:
 
 const readIpaList = (config: { response: IpaCallResponse; entity: string }): Record<string, unknown>[] => {
   if (config.response.error) {
-    throw new Error(`IPA ${config.entity} fetch failed: ${config.response.error.message}`);
+    throw new IpaHostsSyncError(`IPA ${config.entity} fetch failed: ${config.response.error.message}`);
   }
   const records = config.response.result?.result;
   if (!Array.isArray(records)) {
-    throw new Error(`IPA ${config.entity} fetch returned invalid list payload`);
+    throw new IpaHostsSyncError(`IPA ${config.entity} fetch returned invalid list payload`);
   }
   return records as Record<string, unknown>[];
 };
@@ -84,6 +96,32 @@ const getSyncCron = async (): Promise<string> => {
 const getTimezone = async (): Promise<string> => {
   const value = String((await settingsGet<string>("app.timezone")) || "").trim();
   return value.length > 0 ? value : "Europe/Berlin";
+};
+
+const fetchIpaSnapshot = async (config: {
+  url: string;
+  serviceUser: string;
+  servicePassword: string;
+}): Promise<[IpaCallResponse, IpaCallResponse]> => {
+  try {
+    const ipaSession = await freeipa.session.getServiceSession({
+      url: config.url,
+      serviceUser: config.serviceUser,
+      servicePassword: config.servicePassword,
+    });
+    return await Promise.all([
+      freeipa.client.call({ url: config.url, ipaSession, method: "host_find", args: [], options: { sizelimit: 0, all: true } }),
+      freeipa.client.call({
+        url: config.url,
+        ipaSession,
+        method: "hostgroup_find",
+        args: [],
+        options: { sizelimit: 0, no_members: false, all: true },
+      }),
+    ]);
+  } catch (error) {
+    throw new IpaHostsSyncError(`FreeIPA request failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
 };
 
 export const syncFromIpaHosts = async (): Promise<SyncSummary> => {
@@ -104,26 +142,11 @@ export const syncFromIpaHosts = async (): Promise<SyncSummary> => {
     return summary;
   }
   if (!config.configured) {
-    throw new Error(`FreeIPA is enabled but not fully configured. Missing: ${config.missingSettings.join(", ")}.`);
+    throw new IpaHostsSyncError(`FreeIPA is enabled but not fully configured. Missing: ${config.missingSettings.join(", ")}.`);
   }
 
   const startedAt = Date.now();
-  const ipaSession = await freeipa.session.getServiceSession({
-    url: config.url,
-    serviceUser: config.serviceUser,
-    servicePassword: config.servicePassword,
-  });
-
-  const [hostsRes, hostgroupsRes] = await Promise.all([
-    freeipa.client.call({ url: config.url, ipaSession, method: "host_find", args: [], options: { sizelimit: 0, all: true } }),
-    freeipa.client.call({
-      url: config.url,
-      ipaSession,
-      method: "hostgroup_find",
-      args: [],
-      options: { sizelimit: 0, no_members: false, all: true },
-    }),
-  ]);
+  const [hostsRes, hostgroupsRes] = await fetchIpaSnapshot(config);
 
   const excludedGroupsSet = freeipa.util.toExcludedGroupsSet(config.groupsExcluded);
   const allRawHosts = readIpaList({ response: hostsRes, entity: "hosts" });
@@ -144,10 +167,12 @@ export const syncFromIpaHosts = async (): Promise<SyncSummary> => {
   const localHostgroups = Number(localCountsRow?.hostgroups ?? 0);
 
   if (hostFqdns.length === 0 && localHosts > 0) {
-    throw new Error(`Refusing IPA host sync: remote hosts list is empty while local mirror has ${localHosts} hosts`);
+    throw new IpaHostsSyncError(`Refusing IPA host sync: remote hosts list is empty while local mirror has ${localHosts} hosts`);
   }
   if (hostgroupCns.size === 0 && localHostgroups > 0) {
-    throw new Error(`Refusing IPA host sync: remote hostgroups list is empty while local mirror has ${localHostgroups} hostgroups`);
+    throw new IpaHostsSyncError(
+      `Refusing IPA host sync: remote hostgroups list is empty while local mirror has ${localHostgroups} hostgroups`,
+    );
   }
 
   let deletedHosts = 0;
@@ -315,17 +340,25 @@ const startWorkers = async (): Promise<void> => {
   if (started) return;
   syncWorker = await syncJob().process({}, async (context) => {
     context.signal.throwIfAborted();
-    await trace.withSpan(
-      {
-        spanKey: trace.syncSpanKey("job", "ipa-hosts:sync", context.jobId),
-        name: "IPA hosts sync",
-        source: "ipa-hosts:sync",
-        appId: "ipa-hosts",
-        category: "job",
-      },
-      syncFromIpaHosts,
-      { summarize: (result) => result },
-    );
+    await trace
+      .withSpan(
+        {
+          spanKey: trace.syncSpanKey("job", "ipa-hosts:sync", context.jobId),
+          name: "IPA hosts sync",
+          source: "ipa-hosts:sync",
+          appId: "ipa-hosts",
+          category: "job",
+        },
+        syncFromIpaHosts,
+        { summarize: (result) => result },
+      )
+      .catch((error: unknown) => {
+        // FreeIPA being down or refusing the snapshot is a routine outcome: the span carries
+        // it and the next cron slot retries. Only infrastructure failures (database) retry
+        // and reach the dead-letter store.
+        if (!(error instanceof IpaHostsSyncError)) throw error;
+        syncLog.error("Sync failed", { error: error.message });
+      });
   });
   schedulerWorker = await syncScheduler().process();
   started = true;
@@ -338,8 +371,8 @@ export const ipaHostsSyncRuntime = {
   },
   stop: async (): Promise<void> => {
     if (!started) return;
-    await schedulerWorker?.stop();
-    await syncWorker?.stop();
+    await schedulerWorker?.drain();
+    await syncWorker?.drain();
     schedulerWorker = undefined;
     syncWorker = undefined;
     started = false;

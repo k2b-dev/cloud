@@ -68,7 +68,6 @@ export type RunScheduleNowInput = {
   schedulerId: string;
   scheduleId: string;
   requestId?: string;
-  timeoutMs?: number;
 };
 
 export type RunScheduleNowAccepted = {

@@ -234,6 +234,33 @@ describe("sync ops aggregation", () => {
     expect(calls).toHaveLength(4);
   });
 
+  test("extends the transport budget of a run poll by the time the app holds the request open", async () => {
+    const respondAfter = async (delayMs: number, signal: AbortSignal | null | undefined): Promise<Response> => {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, delayMs);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        });
+      });
+      return json({ completed: true, error: null });
+    };
+    const fetch = (_input: URL, init: RequestInit) => respondAfter(60, init.signal);
+    const service = createSyncOpsService({
+      coreOrigin: async () => "http://core:3000",
+      fetch,
+      listApps: async () => [app("mail")],
+      timeoutMs: 20,
+    });
+    const run = { appId: "mail", schedulerId: "mail", scheduleId: "mail:sync-due", runId: "run-1" };
+
+    const withinBudget = await service.getScheduleRun({ ...run, timeoutMs: 100 }, credentials);
+    expect(withinBudget).toEqual({ ok: true, data: { completed: true, error: null } });
+
+    const transportOnly = await service.getScheduleRun(run, credentials);
+    expect(transportOnly.ok).toBe(false);
+  });
+
   test("preserves kind when mutating same-name queue and job stores", async () => {
     const { calls, fetch } = fakeFetch(() => json({ deleted: true }));
     const service = createSyncOpsService({ coreOrigin: async () => "http://core:3000", fetch, listApps: async () => [app("mail")] });

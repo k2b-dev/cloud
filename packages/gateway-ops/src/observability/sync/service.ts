@@ -196,7 +196,7 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     app: AppRef,
     path: string,
     credentials: SyncOpsCredentials,
-    init: { method?: "GET" | "POST" | "DELETE"; body?: unknown; schema?: z.ZodType<T> } = {},
+    init: { method?: "GET" | "POST" | "DELETE"; body?: unknown; schema?: z.ZodType<T>; timeoutMs?: number } = {},
   ): Promise<Result<T>> => {
     const headers = new Headers({ accept: "application/json" });
     if (credentials.cookie) headers.set("cookie", credentials.cookie);
@@ -216,7 +216,7 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
           method: init.method ?? "GET",
           headers,
           body: init.body === undefined ? undefined : JSON.stringify(init.body),
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(init.timeoutMs ?? timeoutMs),
           redirect: "manual",
         },
       );
@@ -349,10 +349,12 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     ) =>
       withApp(input.appId, (app) => {
         const query = input.timeoutMs === undefined ? "" : `?timeoutMs=${input.timeoutMs}`;
+        // The app holds the request open for `timeoutMs`; the transport budget comes on top.
         return call<{ completed: boolean; error: string | null }>(
           app,
           `/schedules/${encodeURIComponent(input.schedulerId)}/${encodeURIComponent(input.scheduleId)}/runs/${encodeURIComponent(input.runId)}${query}`,
           credentials,
+          { timeoutMs: timeoutMs + (input.timeoutMs ?? 0) },
         );
       }),
   };

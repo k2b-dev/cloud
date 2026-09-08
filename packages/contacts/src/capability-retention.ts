@@ -52,7 +52,7 @@ export const capabilityRetention = {
     worker = await retentionScheduler().process();
   },
   stop: async (): Promise<void> => {
-    await worker?.stop();
+    await worker?.drain();
     worker = undefined;
   },
 };

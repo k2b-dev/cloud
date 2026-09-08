@@ -68,19 +68,25 @@ export const liveContactEvents = (config: { after?: string | null; signal?: Abor
       signal: config.signal,
     });
 
-export const latestContactEventCursor = (): Promise<string | null> =>
+export const latestContactEventCursor = (): Promise<string> =>
   withTopicTimeout(
     latestTopicCursor({ topic: contactsTopic(), resourceId: "cloud:contacts:events:changes", tenantId: CONTACTS_EVENT_TENANT }),
   );
 
-/** SSR remains available when the best-effort live transport is unavailable. */
-export const captureContactEventCursor = async (): Promise<string> => {
+/**
+ * SSR remains available when the best-effort live transport is slow or down.
+ * `null` makes the island subscribe without a cursor, so the socket resolves
+ * the head once the transport answers instead of replaying from sequence 0
+ * (which is below retention on a busy topic and would loop through
+ * `resync_required` page reloads).
+ */
+export const captureContactEventCursor = async (): Promise<string | null> => {
   try {
-    return (await latestContactEventCursor()) ?? contactsTopic().cursorAt(0);
+    return await latestContactEventCursor();
   } catch (error) {
     log.warn("Failed to capture Contacts event cursor", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return contactsTopic().cursorAt(0);
+    return null;
   }
 };

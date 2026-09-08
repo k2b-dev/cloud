@@ -51,7 +51,8 @@ export const publishSpaceEvent = async (event: SpaceServiceEventData, known: Kno
     await spaceTopic().publish({
       tenantId: payload.spaceId,
       orderingKey: resourceId,
-      idempotencyKey: `${payload.type}:${resourceId}:${payload.at}`,
+      // No idempotency key: publish is not retried, and a key built from the millisecond
+      // timestamp would silently drop a second change to the same resource within one ms.
       data: { internal: payload, public: publicEvent },
     });
   } catch (error) {

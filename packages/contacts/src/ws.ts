@@ -19,7 +19,7 @@ import {
   projectContactEvent,
 } from "./live-events";
 import { contactsService } from "./service";
-import { captureContactEventCursor, latestContactEventCursor, liveContactEvents } from "./service/events";
+import { latestContactEventCursor, liveContactEvents } from "./service/events";
 import { type ContactsMessages, contactsMessages } from "./service/messages";
 import { resolvePublicId } from "./service/public-resources";
 
@@ -255,6 +255,15 @@ const startStream = (ctx: WsContext, scope: InternalLiveScope, after: string) =>
   })();
 };
 
+/**
+ * `null` means the page rendered without a cursor (SSR could not reach the
+ * transport); the head is resolved now instead of replaying from sequence 0.
+ */
+export const resolveContactLiveCursor = async (
+  fromCursor: string | null,
+  latestCursor: () => Promise<string> = latestContactEventCursor,
+): Promise<string> => fromCursor ?? (await latestCursor());
+
 const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fromCursor: string | null) => {
   if (isClosing(ctx)) return;
   if (fromCursor !== null && !/^s6t\.[A-Za-z0-9_-]+\.\d+$/.test(fromCursor)) {
@@ -278,7 +287,17 @@ const handleSubscribe = async (ctx: WsContext, publicScope: ContactLiveScope, fr
     return;
   }
 
-  const cursor = fromCursor ?? (await latestContactEventCursor()) ?? (await captureContactEventCursor());
+  let cursor: string;
+  try {
+    cursor = await resolveContactLiveCursor(fromCursor);
+  } catch (error) {
+    // The transport is slow or down: the client reconnects with backoff instead of reloading.
+    log.warn("Contacts WebSocket could not resolve the live cursor", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    closeWithError(ctx, "stream_failed", ctx.messages.liveStreamFailed, 1012);
+    return;
+  }
   if (ctx.phase === "closing") return;
   stopSubscription(ctx);
   ctx.phase = "subscribed";
