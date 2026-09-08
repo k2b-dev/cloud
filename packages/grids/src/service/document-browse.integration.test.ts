@@ -5,10 +5,13 @@ import { migrate } from "../migrate";
 import {
   browseDocumentsForTemplate,
   listDocumentSummariesForRecordByTemplates,
+  listDocumentsForBase,
   listDocumentsForRecord,
   listDocumentsForTemplate,
   listDocumentsForWorkflow,
 } from "./document-browse";
+import { getDocument } from "./document-core";
+import { summarizeDocument } from "./document-mappers";
 import { insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
 
 type Fixture = {
@@ -59,10 +62,16 @@ const insertFixture = async (): Promise<Fixture> => {
     source: "steps: []",
     enabled: true,
   });
-  await insertTestWorkflowRun({ id: workflowRunId, workflowId, baseId, state: "succeeded" });
+  await insertTestWorkflowRun({ id: workflowRunId, shortId: testShortId("W"), workflowId, baseId, state: "succeeded" });
 
   const rows = [
-    { id: documentIds[0]!, number: "INV-100", filename: "100%_done\\final.pdf", tags: ["customer", "paid"], at: "2025-12-31T23:30:00.000Z" },
+    {
+      id: documentIds[0]!,
+      number: "INV-100",
+      filename: "100%_done\\final.pdf",
+      tags: ["customer", "paid"],
+      at: "2025-12-31T23:30:00.000Z",
+    },
     { id: documentIds[1]!, number: "INV-101", filename: "invoice-101.pdf", tags: ["customer"], at: "2026-01-31T23:30:00.000Z" },
     { id: documentIds[2]!, number: "INV-102", filename: "invoice-102.pdf", tags: ["customer", "paid"], at: "2026-02-01T10:00:00.000Z" },
     { id: documentIds[3]!, number: "INV-103", filename: "invoice-103.pdf", tags: ["internal"], at: "2026-03-01T10:00:00.000Z" },
@@ -94,6 +103,39 @@ const cleanupFixture = async (fixture: Fixture): Promise<void> => {
 };
 
 describe("document browsing integration", () => {
+  postgresTest("returns the same lightweight summaries through every list path", async () => {
+    const fixture = await insertFixture();
+    const base = await listDocumentsForBase({ baseId: fixture.baseId });
+    const expected = await Promise.all(
+      base.items.map(async ({ id }) => {
+        const document = await getDocument(id);
+        if (!document) throw new Error("Fixture document is missing");
+        expect(document).toHaveProperty("templateSnapshot");
+        expect(document).toHaveProperty("renderData");
+        return summarizeDocument(document);
+      }),
+    );
+    const pages = [
+      base,
+      await listDocumentsForRecord({ baseId: fixture.baseId, tableId: fixture.tableId, recordId: fixture.recordId }),
+      await listDocumentsForTemplate({ templateId: fixture.templateId }),
+      await browseDocumentsForTemplate({ templateId: fixture.templateId, mode: "list" }),
+      await listDocumentsForWorkflow(fixture.workflowRunId, {}, async () => true),
+      { items: await listDocumentSummariesForRecordByTemplates(fixture.tableId, fixture.recordId, [fixture.templateId]) },
+    ];
+    for (const page of pages) expect(page.items).toEqual(expected);
+    const offsetPage = await listDocumentsForTemplate({ templateId: fixture.templateId, limit: 2, offset: 2 });
+    expect(offsetPage.items).toEqual(expected.slice(2, 4));
+    expect(offsetPage).toMatchObject({ total: 5, offset: 2, nextOffset: 4, hasMore: true });
+    const workflowPage = await listDocumentsForWorkflow(fixture.workflowRunId, { limit: 2, offset: 2 }, async () => true);
+    expect(workflowPage.items).toEqual(expected.slice(2, 4));
+    expect(workflowPage).toMatchObject({ total: 5, offset: 2, nextOffset: 4, hasMore: true });
+    const first = await listDocumentsForBase({ baseId: fixture.baseId, limit: 2 });
+    const second = await listDocumentsForBase({ baseId: fixture.baseId, limit: 2, cursor: first.nextCursor });
+    expect(first.items).toEqual(expected.slice(0, 2));
+    expect(second.items).toEqual(expected.slice(2, 4));
+  });
+
   postgresTest("escapes literal search patterns and applies all requested tags", async () => {
     const fixture = await insertFixture();
     try {
@@ -160,13 +202,16 @@ describe("document browsing integration", () => {
     const fixture = await insertFixture();
     try {
       expect(
-        (await listDocumentsForRecord({ baseId: fixture.baseId, tableId: fixture.tableId, recordId: fixture.recordId, limit: 1_000 })).items,
+        (await listDocumentsForRecord({ baseId: fixture.baseId, tableId: fixture.tableId, recordId: fixture.recordId, limit: 1_000 }))
+          .items,
       ).toHaveLength(5);
       expect(await listDocumentsForRecord({ baseId: fixture.baseId, tableId: fixture.tableId, recordId: testUuid() })).toMatchObject({
         items: [],
         hasMore: false,
       });
-      expect(await listDocumentSummariesForRecordByTemplates(fixture.tableId, fixture.recordId, [fixture.templateId], 1_000)).toHaveLength(5);
+      expect(await listDocumentSummariesForRecordByTemplates(fixture.tableId, fixture.recordId, [fixture.templateId], 1_000)).toHaveLength(
+        5,
+      );
       expect(await listDocumentSummariesForRecordByTemplates(fixture.tableId, fixture.recordId, [testUuid()])).toEqual([]);
       expect(await listDocumentSummariesForRecordByTemplates(fixture.tableId, fixture.recordId, [])).toEqual([]);
       expect(await listDocumentsForWorkflow(fixture.workflowRunId, { limit: 10 }, async () => true)).toMatchObject({

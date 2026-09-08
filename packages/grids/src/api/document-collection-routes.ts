@@ -45,7 +45,7 @@ export const createDocumentCollectionRoutes = () =>
           cursor: query.cursor || null,
         });
         return c.json({
-          items: await projectDocuments(page.items.map(gridsService.document.summarizeDocument)),
+          items: await projectDocuments(page.items),
           hasMore: page.hasMore,
           cursor: page.nextCursor,
         });
@@ -82,7 +82,7 @@ export const createDocumentCollectionRoutes = () =>
         return c.json({
           path: page.path,
           folders: page.folders,
-          items: await projectDocuments(page.items.map(gridsService.document.summarizeDocument)),
+          items: await projectDocuments(page.items),
           hasMore: page.hasMore ?? false,
           cursor: page.nextCursor ?? null,
         });
@@ -117,7 +117,7 @@ export const createDocumentCollectionRoutes = () =>
           cursor: query.cursor || null,
         });
         return c.json({
-          items: await projectDocuments(page.items.map(gridsService.document.summarizeDocument)),
+          items: await projectDocuments(page.items),
           cursor: page.nextCursor,
           hasMore: page.hasMore,
         });
@@ -152,7 +152,7 @@ export const createDocumentCollectionRoutes = () =>
           cursor: query.cursor || null,
         });
         return c.json({
-          items: await projectDocuments(page.items.map(gridsService.document.summarizeDocument)),
+          items: await projectDocuments(page.items),
           cursor: page.nextCursor,
           hasMore: page.hasMore,
         });

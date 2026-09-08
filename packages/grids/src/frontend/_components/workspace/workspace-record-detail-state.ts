@@ -56,7 +56,7 @@ export const loadRecordDetailData = async (params: {
     recordId: params.recordId,
     relationLabels,
     filesByField,
-    documents: { ...documents, items: documents.items.map(gridsService.document.summarizeDocument) },
+    documents,
     snapshots,
     auditEntries,
     combinedOrigin,

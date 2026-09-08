@@ -124,7 +124,7 @@ export const mapRecordSnapshotSummary = (row: DocumentDbRow): RecordSnapshotSumm
   createdAt: (row.created_at as Date).toISOString(),
 });
 
-export const mapDocument = (row: DocumentDbRow, artifacts: DocumentArtifact[]): Document => {
+export const mapDocumentSummary = (row: DocumentDbRow, artifacts: DocumentArtifact[]): DocumentSummary => {
   const pdf = artifacts.find((artifact) => artifact.key === "pdf");
   if (!pdf || pdf.mimeType !== "application/pdf" || pdf.filename !== row.filename) throw new Error("document artifact invariant violated");
   return {
@@ -139,8 +139,6 @@ export const mapDocument = (row: DocumentDbRow, artifacts: DocumentArtifact[]): 
     documentNumber: row.document_number as string,
     filename: (row.filename as string | null) ?? `${row.document_number as string}.pdf`,
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
-    templateSnapshot: strictJsonObject(row.template_snapshot, "Document template snapshot"),
-    renderData: strictJsonObject(row.render_data, "Document render data"),
     artifacts,
     profile:
       typeof row.profile_id === "string" && typeof row.profile_version === "number"
@@ -150,6 +148,20 @@ export const mapDocument = (row: DocumentDbRow, artifacts: DocumentArtifact[]): 
     createdBy: (row.created_by as string | null) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
   };
+};
+
+export const mapDocument = (row: DocumentDbRow, artifacts: DocumentArtifact[]): Document => ({
+  ...mapDocumentSummary(row, artifacts),
+  templateSnapshot: strictJsonObject(row.template_snapshot, "Document template snapshot"),
+  renderData: strictJsonObject(row.render_data, "Document render data"),
+});
+
+export const hydrateDocumentSummaries = async (rows: DocumentDbRow[], db: SQL = sql): Promise<DocumentSummary[]> => {
+  const artifacts = await loadDocumentArtifacts(
+    rows.map((row) => String(row.id)),
+    db,
+  );
+  return rows.map((row) => mapDocumentSummary(row, artifacts.get(String(row.id)) ?? []));
 };
 
 export const hydrateDocuments = async (rows: DocumentDbRow[], db: SQL = sql): Promise<Document[]> => {

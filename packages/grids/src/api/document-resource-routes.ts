@@ -66,7 +66,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
           cursor: query.cursor || null,
         });
         return c.json({
-          items: await projectDocuments(page.items.map(gridsService.document.summarizeDocument)),
+          items: await projectDocuments(page.items),
           cursor: page.nextCursor,
           hasMore: page.hasMore,
         });

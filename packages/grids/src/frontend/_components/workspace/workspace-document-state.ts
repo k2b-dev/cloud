@@ -41,15 +41,7 @@ export const loadDocumentTemplateState = async (
       canManageTemplate,
       initialRecordId: common.chrome.url.searchParams.get("record"),
       initialDocumentViewMode,
-      initialBrowserPage: {
-        path: initialBrowserPage.path,
-        folders: initialBrowserPage.folders,
-        items: initialBrowserPage.items.map(gridsService.document.summarizeDocument),
-        total: initialBrowserPage.total,
-        limit: initialBrowserPage.limit,
-        hasMore: initialBrowserPage.hasMore,
-        nextCursor: initialBrowserPage.nextCursor,
-      },
+      initialBrowserPage,
     },
     [...common.chrome.titleBase, { title: t.documents }, { title: template.name }],
   );

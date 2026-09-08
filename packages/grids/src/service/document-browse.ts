@@ -1,11 +1,14 @@
 import { escapeLikePattern, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { Document, DocumentFolder, DocumentSummary, DocumentSummaryList } from "../contracts";
-import { type DocumentDbRow, hydrateDocuments, summarizeDocument } from "./document-mappers";
+import { type DocumentDbRow, hydrateDocumentSummaries } from "./document-mappers";
 import { decodeDocumentCursor, encodeDocumentCursor, normalizeDocumentTags } from "./document-values";
 
+const summaryColumns = sql`id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
+  document_number, filename, tags, profile_id, profile_version, validation_status, created_by, created_at`;
+
 type DocumentPage = {
-  items: Document[];
+  items: DocumentSummary[];
   total: number;
   limit: number;
   offset: number;
@@ -17,7 +20,7 @@ type DocumentPage = {
 type DocumentBrowsePage = {
   path: string[];
   folders: DocumentFolder[];
-  items: Document[];
+  items: DocumentSummary[];
   total?: number;
   limit?: number;
   hasMore?: boolean;
@@ -71,11 +74,11 @@ export const listDocuments = async (params: {
   templateId?: string;
   limit?: number;
   cursor?: string | null;
-}): Promise<{ items: Document[]; nextCursor: string | null; hasMore: boolean }> => {
+}): Promise<{ items: DocumentSummary[]; nextCursor: string | null; hasMore: boolean }> => {
   const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
   const cursor = decodeDocumentCursor(params.cursor);
   const rows = await sql<DocumentDbRow[]>`
-    SELECT * FROM grids.documents
+    SELECT ${summaryColumns} FROM grids.documents
     WHERE base_id = ${params.baseId}::uuid
       AND (${params.tableId ?? null}::uuid IS NULL OR table_id = ${params.tableId ?? null}::uuid)
       AND (${params.recordId ?? null}::uuid IS NULL OR record_id = ${params.recordId ?? null}::uuid)
@@ -88,7 +91,7 @@ export const listDocuments = async (params: {
     LIMIT ${limit + 1}
   `;
   const hasMore = rows.length > limit;
-  const items = await hydrateDocuments(rows.slice(0, limit));
+  const items = await hydrateDocumentSummaries(rows.slice(0, limit));
   const last = items.at(-1);
   return { items, nextCursor: hasMore && last ? encodeDocumentCursor(last) : null, hasMore };
 };
@@ -113,7 +116,7 @@ export const listDocumentSummariesForRecordByTemplates = async (
   if (templateIds.length === 0) return [];
   const cap = Math.min(Math.max(limit, 1), 100);
   const rows = await sql<DocumentDbRow[]>`
-    SELECT *
+    SELECT ${summaryColumns}
     FROM grids.documents
     WHERE table_id = ${tableId}::uuid
       AND record_id = ${recordId}::uuid
@@ -121,7 +124,7 @@ export const listDocumentSummariesForRecordByTemplates = async (
     ORDER BY created_at DESC, id DESC
     LIMIT ${cap}
   `;
-  return (await hydrateDocuments(rows)).map(summarizeDocument);
+  return hydrateDocumentSummaries(rows);
 };
 
 export const listDocumentsForWorkflow = async (
@@ -139,7 +142,7 @@ export const listDocumentsForWorkflow = async (
       AND (${accessWhere})
   `;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT * FROM grids.documents
+    SELECT ${summaryColumns} FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
       AND (${accessWhere})
     ORDER BY created_at DESC, id DESC
@@ -149,7 +152,7 @@ export const listDocumentsForWorkflow = async (
   const nextOffset = offset + rows.length;
   const total = count ?? 0;
   return {
-    items: (await hydrateDocuments(rows)).map(summarizeDocument),
+    items: await hydrateDocumentSummaries(rows),
     total,
     limit,
     offset,
@@ -207,7 +210,7 @@ export const listDocumentsForTemplate = async (params: {
     WHERE ${baseWhere}
   `;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT *
+    SELECT ${summaryColumns}
     FROM grids.documents
     WHERE ${where}
     ORDER BY created_at DESC, id DESC
@@ -215,7 +218,7 @@ export const listDocumentsForTemplate = async (params: {
     OFFSET ${cursor ? 0 : offset}
   `;
   const hasMore = rows.length > limit;
-  const items = await hydrateDocuments(rows.slice(0, limit));
+  const items = await hydrateDocumentSummaries(rows.slice(0, limit));
   const total = Number(countRow?.total ?? items.length);
   const nextOffset = offset + items.length;
   const last = items.at(-1);

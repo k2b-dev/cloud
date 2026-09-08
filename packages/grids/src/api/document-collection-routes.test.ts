@@ -225,7 +225,7 @@ describe("document routes", () => {
     spyOn(gridsService.document, "listDocumentsForTemplate").mockImplementation(async (input) => {
       listTemplateInput = input;
       return {
-        items: [document],
+        items: [summarizeDocument(document)],
         hasMore: true,
         nextCursor: "next-list-cursor",
       } as never;
@@ -235,7 +235,7 @@ describe("document routes", () => {
       return {
         path: ["2026", "07"],
         folders: [{ kind: "month", key: "08", label: "August", path: ["2026", "08"], count: 2 }],
-        items: [document],
+        items: [summarizeDocument(document)],
         hasMore: true,
         nextCursor: "next-browse-cursor",
       } as never;
@@ -243,14 +243,14 @@ describe("document routes", () => {
     spyOn(gridsService.document, "listForRecord").mockImplementation(async (input) => {
       listRecordInput = input;
       return {
-        items: input.templateId ? [document] : [document, otherTemplateDocument],
+        items: (input.templateId ? [document] : [document, otherTemplateDocument]).map(summarizeDocument),
         hasMore: true,
         nextCursor: "next-record-cursor",
       } as never;
     });
     spyOn(gridsService.document, "listForBase").mockImplementation(async (input) => {
       listBaseInput = input;
-      return { items: [document], hasMore: true, nextCursor: "next-base-cursor" } as never;
+      return { items: [summarizeDocument(document)], hasMore: true, nextCursor: "next-base-cursor" } as never;
     });
     spyOn(gridsService.document, "getDocument").mockImplementation(async (id) => (id === documentId ? currentDocument : null) as never);
     spyOn(gridsService.document, "getDocumentArtifact").mockImplementation(async (documentId, key) => {
