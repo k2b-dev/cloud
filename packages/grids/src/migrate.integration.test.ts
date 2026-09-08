@@ -1326,7 +1326,38 @@ describe("grids schema migration", () => {
         expect((records?.source as Record<string, unknown> | undefined)?.query).toBe(`from table {${tableShortId}}\nlimit 40`);
         expect(records?.source).not.toHaveProperty("maxRows");
 
-        const once = JSON.stringify(migrated?.draft);
+        // Keep a newer draft distinct from the live v5 snapshot. Startup must
+        // preserve both, including capability snapshots, timestamps and grants.
+        await database`
+          UPDATE grids.custom_apps
+          SET draft_definition = jsonb_set(draft_definition, '{name}', '"Unpublished edits"'::jsonb)
+          WHERE id = ${appId}::uuid
+        `;
+        await database`UPDATE grids.custom_apps SET published_at = now() WHERE id = ${appId}::uuid`;
+        const accessId = uuid();
+        await database`INSERT INTO auth.access (id) VALUES (${accessId}::uuid)`;
+        await database`
+          INSERT INTO grids.custom_app_access (custom_app_id, access_id)
+          VALUES (${appId}::uuid, ${accessId}::uuid)
+        `;
+        const readSnapshot = async () => {
+          const [row] = await database<Array<{ app: Record<string, unknown>; grants: unknown }>>`
+            SELECT to_jsonb(app) AS app,
+              (SELECT jsonb_agg(to_jsonb(grant_row) ORDER BY access_id)
+               FROM grids.custom_app_access grant_row WHERE custom_app_id = app.id) AS grants
+            FROM grids.custom_apps app WHERE id = ${appId}::uuid
+          `;
+          return row;
+        };
+        const snapshot = await readSnapshot();
+        expect(snapshot?.app.published_definition).not.toBeNull();
+        expect(snapshot?.app.published_capabilities).not.toBeNull();
+        for (let run = 0; run < 2; run++) {
+          await migrate(database);
+          expect(await readSnapshot()).toEqual(snapshot);
+        }
+
+        const once = JSON.stringify(snapshot?.app.draft_definition);
         // Simulate an installation that completed the Custom App v5 hard cut
         // before number_series became a public-ID resource. The incremental
         // resource migration must not replay the one-shot v4 -> v5 migration.
@@ -1337,6 +1368,7 @@ describe("grids schema migration", () => {
           SELECT draft_definition AS draft FROM grids.custom_apps WHERE id = ${appId}::uuid
         `;
         expect(JSON.stringify(rerun?.draft)).toBe(once);
+        expect(await readSnapshot()).toEqual(snapshot);
         expect(await gridsPublicIdsReady(database)).toBe(true);
       });
     },

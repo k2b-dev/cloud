@@ -2437,6 +2437,8 @@ const migrateCustomApps = async (sql: SQL): Promise<void> => {
     WHERE draft_definition->>'schemaVersion' = '3'
        OR published_definition->>'schemaVersion' = '3'
   `.simple();
+  // Completed v5 installations also run this startup migration. Their live
+  // snapshots are not unsupported legacy definitions and must remain intact.
   await sql`
     UPDATE grids.custom_apps
     SET
@@ -2451,6 +2453,7 @@ const migrateCustomApps = async (sql: SQL): Promise<void> => {
       updated_at = now()
     WHERE published_definition IS NOT NULL
       AND published_definition->>'schemaVersion' IS DISTINCT FROM '4'
+      AND published_definition->>'schemaVersion' IS DISTINCT FROM '5'
   `.simple();
   await sql`DROP FUNCTION grids.custom_app_definition_v4(JSONB)`.simple();
   await sql`DROP FUNCTION grids.custom_app_definition_v4_supported(JSONB)`.simple();
