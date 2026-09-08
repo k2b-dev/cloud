@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "pwa-auth",
-  "short_name": "pwa-auth",
+  "name": "Cloud Login",
+  "short_name": "Cloud Login",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
