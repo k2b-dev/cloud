@@ -74,7 +74,9 @@ export function ItemChat(props: {
               ? chat.steer(payload.message ?? "")
               : chat.send({ ...payload, modelProfileId: props.selectedModelId() });
           }}
-          onStop={chat.abort}
+          onStop={async () => {
+            await chat.abort();
+          }}
         />
       </Chat>
     );

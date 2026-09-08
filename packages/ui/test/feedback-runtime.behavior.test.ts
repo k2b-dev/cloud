@@ -158,7 +158,7 @@ describe("@k2b/ui feedback runtime", () => {
           ),
       },
       { name: "Error", open: () => prompts.error("Failed", { cancelBehavior: "ignore" }) },
-      { name: "Search", open: () => prompts.search(async () => [], { cancelBehavior: "ignore" }) },
+      { name: "Search...", open: () => prompts.search(async () => [], { cancelBehavior: "ignore" }) },
     ];
 
     for (const entry of openers) {

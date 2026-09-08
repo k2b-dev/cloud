@@ -217,5 +217,5 @@ Use [Pagination and filtering](/en/docs/server/pagination-and-filtering) for
 the HTTP pagination contract.
 
 The complete
-[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/examples/cloud-docs/data.ts)
+[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 is checked by TypeScript.

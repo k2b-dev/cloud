@@ -50,3 +50,13 @@ docker run --rm \
   -p 3000:3000 \
   cloud-website
 ```
+
+## Release
+
+Run `bun run verify:docs` from this directory before releasing. This checks
+the documentation, API reference, compiled examples, UI catalog, and website
+build. Example sources live in `examples/cloud-docs` and use this package's
+declared dependencies.
+
+[Release instructions](./RELEASING.md) cover npm setup, image publication,
+and the checks required before exposing `cloud.k2b.dev`.

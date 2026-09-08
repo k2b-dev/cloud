@@ -4,13 +4,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ui-certification-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -27,6 +28,9 @@ jobs:
 
       - name: Install workspace dependencies
         run: bun ci
+
+      - name: Build package
+        run: bun run --cwd packages/ui build
 
       - name: Typecheck package
         run: bun run --cwd packages/ui typecheck
@@ -54,33 +58,20 @@ jobs:
       - name: Install workspace dependencies
         run: bun ci
 
-      - name: Build @k2b/ui assets
-        run: bun run --cwd packages/ui build
-
-      - name: Install Fibel documentation dependencies
-        working-directory: docs-site
-        run: bun ci
-
-      - name: Verify UI catalog
-        run: bun run --cwd docs-site check:ui-catalog
-
-      - name: Typecheck Fibel documentation
-        run: bun run --cwd docs-site typecheck
-
-      - name: Build Fibel documentation
-        env:
-          CLOUD_DOCS_SITE_URL: http://localhost:3000
-        run: bun run --cwd docs-site build
+      - name: Verify documentation and build website
+        run: bun run --cwd docs-site verify:docs
 
       - name: Smoke-test built UI catalog
         env:
+          NODE_ENV: production
+          PORT: "4187"
           CLOUD_DOCS_SITE_URL: http://localhost:3000
           CLOUD_UI_CATALOG_URL: http://127.0.0.1:4187
         run: |
           bun run --cwd docs-site start > /tmp/cloud-ui-catalog.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
-          for attempt in {1..30}; do
+          for _attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:4187/health > /dev/null; then
               bun run --cwd docs-site check:ui-catalog:http
               exit 0

@@ -1,6 +1,6 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "k2b-ui-packed-consumer-"));
@@ -54,11 +54,19 @@ try {
     throw new Error("packed @k2b/ui resolved outside the isolated consumer");
   }
 
-  for (const dependency of ["@k2b/ssr", "@k2b/stdlib", "marked", "solid-js"]) {
-    const link = join(consumer, "node_modules", dependency);
-    mkdirSync(dirname(link), { recursive: true });
-    symlinkSync(realpathSync(join(packageRoot, "node_modules", dependency)), link, "dir");
+  for (const file of ["LICENSE", "dist/licenses/ibm-plex-sans.txt", "dist/licenses/ibm-plex-mono.txt", "dist/licenses/tabler-icons.txt"]) {
+    if (!(await Bun.file(join(installedUi, file)).text()).trim()) throw new Error(`missing packed license: ${file}`);
   }
+  const manifest = await Bun.file(join(installedUi, "package.json")).json();
+  await Bun.write(
+    join(consumer, "package.json"),
+    JSON.stringify({
+      private: true,
+      type: "module",
+      dependencies: { ...manifest.dependencies, ...manifest.peerDependencies },
+    }),
+  );
+  run([process.execPath, "install", "--ignore-scripts", "--registry=https://registry.npmjs.org"], consumer);
 
   const serverSmoke = `
     const resolved = import.meta.resolve("@k2b/ui");

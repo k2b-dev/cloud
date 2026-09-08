@@ -1,9 +1,8 @@
 import { defineApp, notification } from "@valentinkolb/cloud";
 import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
 import type { AppContext } from "@valentinkolb/cloud/server";
-import { audit, logger, notifications, renderHtmlToPdf, trace } from "@valentinkolb/cloud/services";
+import { audit, logger, notifications, renderHtmlToPdf, renderMarkdownToPdf, trace } from "@valentinkolb/cloud/services";
 import { extractDocumentMarkdown } from "@valentinkolb/cloud/services/document-extraction";
-import { renderMarkdownToPdf } from "@valentinkolb/cloud/services/pdf";
 import { z } from "zod";
 
 const INVENTORY_NOTIFICATIONS = {

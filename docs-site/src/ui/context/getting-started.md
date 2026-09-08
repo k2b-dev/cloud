@@ -2,6 +2,11 @@
 
 `@k2b/ui` is a standalone, production-ready component library for SolidJS. It includes accessible interaction patterns, scoped styles, configurable design tokens, and separate browser and server builds. Use it inside Cloud or in another Solid application.
 
+## License
+
+`@k2b/ui` uses AGPL-3.0-or-later, the same license as Cloud. The npm package
+includes the license and the separate notices for IBM Plex and Tabler Icons.
+
 ## Install
 
 Add the package to an existing Solid project:

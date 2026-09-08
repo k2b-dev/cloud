@@ -45,8 +45,8 @@ export const inventoryCapabilities = defineCapabilities({
 export const openItemInAssistant = (item: InventoryItem) =>
   launchAssistant({
     title: `Work with ${item.name}`,
+    preloadTools: [{ appId: "inventory", kind: "query", id: "item.read" }],
     draft: { content: [{ type: "resource", ref: { type: "inventory.item", id: item.id }, title: item.name }] },
-    preloadCapabilities: [{ appId: "inventory", kind: "query", id: "item.read" }],
   });
 
 const ClassificationSchema = z.object({

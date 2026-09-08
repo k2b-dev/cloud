@@ -1,0 +1,66 @@
+name: Cloud website image
+
+on:
+  pull_request:
+    paths: ["docs-site/**", "packages/ui/**", "packages/cloud/**", "packages/*/package.json", "fixtures/*/package.json", "package.json", "bun.lock", "bunfig.toml", "patches/**", ".dockerignore", ".github/workflows/website.yml"]
+  push:
+    tags: ["website-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ui.yml
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build smoke-test image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docs-site/Dockerfile
+          build-args: CLOUD_DOCS_SITE_URL=https://cloud.k2b.dev
+          load: true
+          tags: cloud-website:test
+          cache-from: type=gha,scope=website
+          cache-to: type=gha,mode=max,scope=website
+      - name: Verify production routes
+        run: |
+          container=$(docker run -d -p 127.0.0.1:4188:3000 cloud-website:test)
+          trap 'docker logs "$container"; docker rm -f "$container"' EXIT
+          curl --retry 30 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:4188/health
+          for path in en en/docs en/ui robots.txt sitemap.xml llms.txt .well-known/agent-skills/index.json; do
+            curl --fail --silent --output /dev/null "http://127.0.0.1:4188/$path"
+          done
+      - name: Resolve image name
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "name=ghcr.io/${OWNER,,}/cloud-website" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: startsWith(github.ref, 'refs/tags/website-v')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish release image
+        if: startsWith(github.ref, 'refs/tags/website-v')
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: docs-site/Dockerfile
+          build-args: CLOUD_DOCS_SITE_URL=https://cloud.k2b.dev
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=website

@@ -12,6 +12,7 @@ COPY docs-site/package.json docs-site/
 COPY packages/accounts/package.json packages/accounts/
 COPY packages/api-docs/package.json packages/api-docs/
 COPY packages/assistant/package.json packages/assistant/
+COPY packages/capabilities/package.json packages/capabilities/
 COPY packages/cloud/package.json packages/cloud/
 COPY packages/cloud-cli/package.json packages/cloud-cli/
 COPY packages/contacts/package.json packages/contacts/
@@ -38,13 +39,15 @@ COPY packages/weather/package.json packages/weather/
 COPY fixtures/ui-ssr/package.json fixtures/ui-ssr/
 RUN bun install --frozen-lockfile --ignore-scripts --filter @valentinkolb/cloud-docs
 
+COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY docs-site docs-site
 RUN bun packages/ui/scripts/build.ts \
   && bun run --cwd docs-site typecheck \
-  && NODE_ENV=production bun docs-site/src/build.ts
+  && cd docs-site \
+  && NODE_ENV=production bun src/build.ts
 
 FROM oven/bun:1.3.14-slim@sha256:d56a2534ffd262e92c12fd3249d3924d296d97086da773f821d7d0477435ea04
 

@@ -19,7 +19,7 @@
     "pretypecheck": "bun run build:ui",
     "typecheck": "tsc -p ./tsconfig.json --noEmit --pretty false",
     "pretypecheck:examples": "bun run build:ui",
-    "typecheck:examples": "tsc -p ../examples/cloud-docs/tsconfig.json --noEmit --pretty false",
+    "typecheck:examples": "tsc -p ./examples/cloud-docs/tsconfig.json --noEmit --pretty false",
     "prebuild": "bun run build:ui",
     "build": "NODE_ENV=production bun ./src/build.ts",
     "start": "bun dist/server.js",
@@ -27,14 +27,17 @@
   },
   "dependencies": {
     "@hono/standard-validator": "0.2.2",
-    "@k2b/fibel": "0.7.3",
+    "@k2b/fibel": "0.7.4",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
     "@valentinkolb/cloud": "workspace:*",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "zod": "catalog:",
+    "@k2b/sync": "catalog:",
+    "seroval": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

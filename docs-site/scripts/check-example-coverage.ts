@@ -120,7 +120,7 @@ const listFiles = async (directory: string, extensions: Set<string>): Promise<st
 
 if (import.meta.main) {
   const docsRoot = resolve(import.meta.dir, "../docs/en");
-  const examplesRoot = resolve(import.meta.dir, "../../examples/cloud-docs");
+  const examplesRoot = resolve(import.meta.dir, "../examples/cloud-docs");
   const docs = await listFiles(docsRoot, new Set([".md"]));
   const examples = await listFiles(examplesRoot, new Set([".ts", ".tsx"]));
 

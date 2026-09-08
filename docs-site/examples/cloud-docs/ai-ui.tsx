@@ -1,11 +1,6 @@
 import type { AiPublicModelProfile } from "@valentinkolb/cloud/ai";
 import { createAiChatController } from "@valentinkolb/cloud/ai/solid";
-import {
-  AiChatActionsProvider,
-  aiChatModelOptions,
-  aiComposerSendInput,
-  createAiChatTimeline,
-} from "@valentinkolb/cloud/ai/ui";
+import { AiChatActionsProvider, aiChatModelOptions, aiComposerSendInput, createAiChatTimeline } from "@valentinkolb/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 import { createSignal } from "solid-js";
 
@@ -49,7 +44,9 @@ export function ItemChat(props: {
               ? chat.steer(payload.message ?? "")
               : chat.send({ ...payload, modelProfileId: props.selectedModelId() });
           }}
-          onStop={chat.abort}
+          onStop={async () => {
+            await chat.abort();
+          }}
           contextUsage={{ contextWindow: 128_000 }}
         />
       </Chat>

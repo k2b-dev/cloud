@@ -45,7 +45,7 @@ Use `renderMarkdownToPdf()` for a deterministic Markdown document with a
 code-owned print preset:
 
 ```ts
-import { renderMarkdownToPdf } from "@valentinkolb/cloud/services/pdf";
+import { renderMarkdownToPdf } from "@valentinkolb/cloud/services";
 
 const result = await renderMarkdownToPdf({
   markdown: "# Stock report\n\n| Item | Remaining |\n| --- | ---: |\n| Cable | 4 |",
@@ -70,28 +70,6 @@ authorization, request limits, filenames, response headers, and persistence.
 `external_asset_unsupported`. These errors are safe to translate into a
 bounded caller-owned API response. Gotenberg failures continue to use
 `GotenbergRenderError`.
-
-## Render Factur-X
-
-Use `renderFacturXHtmlToPdf()` when an application already owns valid Factur-X
-XML and needs one PDF/A-3b with that XML embedded:
-
-```ts
-import { renderFacturXHtmlToPdf } from "@valentinkolb/cloud/services/pdf";
-
-const result = await renderFacturXHtmlToPdf({
-  html: invoiceHtml,
-  xml: validatedFacturXXml,
-  conformanceLevel: "EN 16931",
-});
-```
-
-Cloud sends the HTML and `factur-x.xml` to the pinned Gotenberg Factur-X
-renderer in one bounded request. Gotenberg creates the PDF/A-3 container,
-embedding relationship, and metadata. The application still owns invoice
-semantics, exact arithmetic, XML generation and validation, authorization,
-idempotency, persistence, and any legal or tax review. This transport helper
-does not declare an invoice compliant.
 
 ## Render a Liquid template
 

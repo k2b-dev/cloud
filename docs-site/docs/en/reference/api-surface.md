@@ -171,7 +171,6 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@valentinkolb/cloud/workflows/ai` | Supported, server-only | Durable AI task migration and lifecycle for opted-in workflow apps | [Structured and background AI](/en/docs/ai/structured-and-background-ai) |
 | `@valentinkolb/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@valentinkolb/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
-| `@valentinkolb/cloud/services/pdf` | Supported, server-only | Render bounded HTML or untrusted Markdown as PDF and merge PDF files | [PDF and templates](/en/docs/platform/pdf-and-templates) |
 | `@valentinkolb/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@valentinkolb/cloud/ssr/*` | Advanced | Named SSR modules; prefer the barrel | — |
 | `@valentinkolb/cloud/workflows/editor` | Supported, SolidJS | Workflow authoring controls | [Shared components](/en/docs/frontend#choose-shared-components) |

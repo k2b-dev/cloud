@@ -1,0 +1,41 @@
+name: Publish UI
+
+on:
+  push:
+    tags: ["npm-ui-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ui.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@11.5.1
+      - run: bun ci
+      - name: Require tag to match package version
+        run: |
+          bun -e 'const p = await Bun.file("packages/ui/package.json").json(); if (process.env.GITHUB_REF_NAME !== ("npm-ui-v" + p.version)) throw new Error("UI tag must match package.json version");'
+      - name: Publish verified package
+        working-directory: packages/ui
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          tag=latest
+          if [[ "$version" == *-* ]]; then tag=next; fi
+          npm publish --provenance --access public --tag "$tag"

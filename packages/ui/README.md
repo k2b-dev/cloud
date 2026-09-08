@@ -332,3 +332,12 @@ regressed silently during the extraction:
 - Per-group single-ownership tests — a selector may be declared in only one
   stylesheet. Two partial declarations of the same selector merge into a third
   geometry matching neither Cloud nor either source.
+
+## License
+
+`@k2b/ui` uses AGPL-3.0-or-later, the same license as Cloud. See `LICENSE`.
+The bundled IBM Plex fonts retain their SIL Open Font License, and Tabler
+Icons retain their MIT license. Their complete notices ship in `dist/licenses`.
+
+See [Release instructions](https://github.com/ValentinKolb/cloud/blob/main/docs-site/RELEASING.md) for package verification
+and the first npm publication.

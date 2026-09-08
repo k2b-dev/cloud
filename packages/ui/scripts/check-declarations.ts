@@ -8,7 +8,7 @@ const output = mkdtempSync(join(tmpdir(), "k2b-ui-declarations-"));
 try {
   const result = Bun.spawnSync({
     cmd: [
-      resolve(packageRoot, "../../node_modules/.bin/tsc"),
+      resolve(packageRoot, "node_modules/.bin/tsc"),
       "-p",
       resolve(packageRoot, "tsconfig.build.json"),
       "--outDir",

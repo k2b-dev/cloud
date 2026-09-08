@@ -155,5 +155,5 @@ Deletion must cover both the stored object and its database reference, with a
 recoverable retry when one side fails.
 
 The complete
-[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/examples/cloud-docs/data.ts)
+[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 shows encrypted application credentials.

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, relative, resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import tsPreset from "@babel/preset-typescript";
@@ -12,6 +12,14 @@ const sourceRoot = resolve(root, "src");
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
+await mkdir(resolve(dist, "licenses"));
+for (const [dependency, name] of [
+  ["@fontsource/ibm-plex-sans", "ibm-plex-sans"],
+  ["@fontsource/ibm-plex-mono", "ibm-plex-mono"],
+  ["@tabler/icons-webfont", "tabler-icons"],
+] as const) {
+  await copyFile(resolve(root, "node_modules", dependency, "LICENSE"), resolve(dist, "licenses", `${name}.txt`));
+}
 
 const ignoredSource = (path: string): boolean =>
   /\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path.endsWith("styles/css-contract-test-helpers.ts");
@@ -111,7 +119,7 @@ for (const asset of await readdir(dist)) {
 await writeFile(buildComplete, "");
 
 const declarations = Bun.spawnSync({
-  cmd: [resolve(root, "../../node_modules/.bin/tsc"), "-p", resolve(root, "tsconfig.build.json"), "--pretty", "false"],
+  cmd: [resolve(root, "node_modules/.bin/tsc"), "-p", resolve(root, "tsconfig.build.json"), "--pretty", "false"],
   stdout: "inherit",
   stderr: "inherit",
 });
