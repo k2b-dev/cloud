@@ -36,7 +36,7 @@ describe("record parent invariants", () => {
       });
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe("Parent table or base is trashed; restore the parent first");
+      if (!result.ok) expect(result.error.message).toBe("The parent Table or Base is in the trash. Restore the parent first.");
       const [{ count } = { count: 0 }] = await sql<Array<{ count: number }>>`
         SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
       `;
@@ -51,15 +51,15 @@ describe("record parent invariants", () => {
     const recordId = Bun.randomUUIDv7();
     try {
       await sql`
-        INSERT INTO grids.records (id, table_id, data, deleted_at)
-        VALUES (${recordId}::uuid, ${fixture.tableId}::uuid, '{}'::jsonb, now())
+        INSERT INTO grids.records (short_id, id, table_id, data, deleted_at)
+        VALUES (${shortId("R")}, ${recordId}::uuid, ${fixture.tableId}::uuid, '{}'::jsonb, now())
       `;
       await sql`UPDATE grids.tables SET deleted_at = now() WHERE id = ${fixture.tableId}::uuid`;
 
       const result = await restore(fixture.tableId, recordId, null, "direct");
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe("Parent table or base is trashed; restore the parent first");
+      if (!result.ok) expect(result.error.message).toBe("The parent Table or Base is in the trash. Restore the parent first.");
       const [row] = await sql<Array<{ deleted: boolean }>>`
         SELECT deleted_at IS NOT NULL AS deleted FROM grids.records WHERE id = ${recordId}::uuid
       `;

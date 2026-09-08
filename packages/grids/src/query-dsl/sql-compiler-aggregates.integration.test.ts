@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect } from "bun:test";
+import { sql } from "bun";
 import { migrate } from "../migrate";
 import type { ExpansionViewer } from "../service/relations";
 import { decodeDslResultCursor } from "./result-cursor";
@@ -25,16 +26,16 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const fixture = await insertDslDbFixture();
       try {
         const source = `
-          group by STAT1
-          aggregate count(*) as rows, sum(AMT01) as revenue
-          sort STAT1 asc
+          group by STAT1x
+          aggregate count(*) as rows, sum(AMT01x) as revenue
+          sort STAT1x asc
         `;
         const results = await Promise.all(Array.from({ length: 16 }, () => preview(fixture, source)));
 
         expect(results).toHaveLength(16);
         expect(results.every((result) => result.mode === "groups" && result.rows.length === 3)).toBe(true);
 
-        const followUp = await preview(fixture, "sort AMT01 asc");
+        const followUp = await preview(fixture, "sort AMT01x asc");
         expect(followUp.mode).toBe("rows");
         expect(followUp.rows).toHaveLength(3);
       } finally {
@@ -47,7 +48,7 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
   postgresTest("paginates grouped results without duplicate buckets", async () => {
     const fixture = await insertDslDbFixture();
     try {
-      const source = `from table ${fixture.orders.shortId}\ngroup by STAT1\naggregate count(*) as rows\nsort STAT1 asc`;
+      const source = `from table ${fixture.orders.shortId}\ngroup by STAT1x\naggregate count(*) as rows\nsort STAT1x asc`;
       const first = await previewPage(fixture, source, { pageSize: 1 });
       const cursor = decodeDslResultCursor(first.page?.nextCursor, integrationCursorSigningKey);
       expect(cursor).not.toBeNull();
@@ -66,8 +67,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const result = await preview(
         fixture,
         `
-          group by DATE1 by month
-          aggregate count(*) as rows, median(AMT01) as middle, earliest(DATE1) as first_order, latest(DATE1) as last_order
+          group by DATE1x by month
+          aggregate count(*) as rows, median(AMT01x) as middle, earliest(DATE1x) as first_order, latest(DATE1x) as last_order
         `,
       );
 
@@ -89,9 +90,9 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const groupKey = await preview(
         fixture,
         `
-          group by AMT01
+          group by AMT01x
           aggregate count(*) as rows
-          sort AMT01 asc nulls first
+          sort AMT01x asc nulls first
         `,
       );
       expect(groupKey.rows.map((row) => row.values.gk_0)).toEqual([null, "4", "12.5"]);
@@ -99,8 +100,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const aggregateAlias = await preview(
         fixture,
         `
-          group by STAT1
-          aggregate sum(AMT01) as revenue
+          group by STAT1x
+          aggregate sum(AMT01x) as revenue
           sort revenue asc nulls first
         `,
       );
@@ -116,7 +117,7 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const result = await preview(
         fixture,
         `
-          group by TAGS1
+          group by TAGS1x
           aggregate count(*) as rows
         `,
       );
@@ -137,8 +138,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const rows = await preview(
         fixture,
         `
-          select CUSTL as customer_label, PARNT as parent_label
-          sort AMT01 asc
+          select CUSTLx as customer_label, PARNTx as parent_label
+          sort AMT01x asc
         `,
         ctx(fixture),
         1,
@@ -155,7 +156,7 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const grouped = await preview(
         fixture,
         `
-          group by CUSTL
+          group by CUSTLx
           aggregate count(*) as rows
         `,
       );
@@ -176,8 +177,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const visibleLabels = await preview(
         fixture,
         `
-          select CUSTL as customer_label
-          sort AMT01 asc
+          select CUSTLx as customer_label
+          sort AMT01x asc
         `,
         ctx(fixture),
         2,
@@ -189,8 +190,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const blockedLabels = await preview(
         fixture,
         `
-          select CUSTL as customer_label
-          sort AMT01 asc
+          select CUSTLx as customer_label
+          sort AMT01x asc
         `,
         ctx(fixture),
         2,
@@ -199,11 +200,11 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       expect(blockedLabels.mode).toBe("rows");
       expect(blockedLabels.rows.map((row) => row.values.q_col_0)).toEqual([["Unknown record"], ["Unknown record"]]);
 
-      const visibleSearch = await preview(fixture, `search 'Alice' in CUSTL`, ctx(fixture), 10, adminViewer);
+      const visibleSearch = await preview(fixture, `search 'Alice' in CUSTLx`, ctx(fixture), 10, adminViewer);
       expect(visibleSearch.mode).toBe("rows");
       expect(visibleSearch.rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
 
-      const blockedSearch = await preview(fixture, `search 'Alice' in CUSTL`, ctx(fixture), 10, blockedViewer);
+      const blockedSearch = await preview(fixture, `search 'Alice' in CUSTLx`, ctx(fixture), 10, blockedViewer);
       expect(blockedSearch.mode).toBe("rows");
       expect(blockedSearch.rows).toHaveLength(0);
     } finally {
@@ -217,8 +218,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       const rows = await preview(
         fixture,
         `
-          select CSCOR as score, formula(CSCOR + AMT01) as adjusted
-          where CSCOR > 5
+          select CSCORx as score, formula(CSCORx + AMT01x) as adjusted
+          where CSCORx > 5
         `,
       );
 
@@ -227,19 +228,19 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
       expect(Number(rows.rows[0]?.values.q_col_0)).toBe(8);
       expect(Number(rows.rows[0]?.values.q_col_1)).toBe(20.5);
 
-      const aggregate = await preview(fixture, `aggregate sum(formula(CSCOR + AMT01)) as adjusted_total`);
+      const aggregate = await preview(fixture, `aggregate sum(formula(CSCORx + AMT01x)) as adjusted_total`);
       expect(aggregate.mode).toBe("groups");
       expect(Number(aggregate.rows[0]?.values.adjusted_total__sum)).toBe(27.5);
 
-      const directAggregate = await preview(fixture, `aggregate sum(CSCOR) as score_total`);
+      const directAggregate = await preview(fixture, `aggregate sum(CSCORx) as score_total`);
       expect(directAggregate.mode).toBe("groups");
       expect(Number(directAggregate.rows[0]?.values.score_total__sum)).toBe(11);
 
       const groupedDirectAggregate = await preview(
         fixture,
         `
-          group by STAT1
-          aggregate sum(CSCOR) as score_total
+          group by STAT1x
+          aggregate sum(CSCORx) as score_total
           sort score_total desc
         `,
       );
@@ -259,8 +260,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
         fixture,
         `
           from table ${fixture.orders.shortId}
-          group by STAT1
-          aggregate sum(formula(AMT01 - COST1)) as margin
+          group by STAT1x
+          aggregate sum(formula(AMT01x - COST1x)) as margin
           having margin > 5
         `,
       );
@@ -278,11 +279,12 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
   postgresTest("executes a relation = filter via record-link containment", async () => {
     const fixture = await insertDslDbFixture();
     try {
-      const linked = await preview(fixture, `where CUSTL = '${fixture.customerAId}'`);
+      const [customer] = await sql<{ short_id: string }[]>`SELECT short_id FROM grids.records WHERE id = ${fixture.customerAId}::uuid`;
+      const linked = await preview(fixture, `where CUSTLx = '${customer!.short_id}'`);
       expect(linked.mode).toBe("rows");
       expect(linked.rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
 
-      const excluded = await preview(fixture, `where CUSTL != '${fixture.customerAId}'`);
+      const excluded = await preview(fixture, `where CUSTLx != '${customer!.short_id}'`);
       expect(excluded.rows.map((row) => row.recordId)).toEqual([fixture.orderBId, fixture.orderCId]);
     } finally {
       await cleanupFixture(fixture.baseId);
@@ -292,7 +294,7 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
   postgresTest("executes a mixed filter + cross-field formula predicate in one SQL pass", async () => {
     const fixture = await insertDslDbFixture();
     try {
-      const result = await preview(fixture, `where Status = 'Open' and AMT01 > COST1`);
+      const result = await preview(fixture, `where Status = 'Open' and AMT01x > COST1x`);
       expect(result.mode).toBe("rows");
       expect(result.rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
     } finally {
@@ -318,8 +320,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
         fixture,
         `
           from table ${fixture.orders.shortId}
-          where AMT01 > COST1
-          aggregate count(*) as rows, sum(AMT01) as revenue
+          where AMT01x > COST1x
+          aggregate count(*) as rows, sum(AMT01x) as revenue
         `,
       );
 
@@ -339,8 +341,8 @@ describe("Query DSL Postgres smoke — computed, labels, and aggregates", () => 
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          aggregate sum(customer.SCORE) as total_score, avg(customer.FAMT1) as favorite_avg, sum(formula(AMT01 + customer.SCORE)) as weighted
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          aggregate sum(customer.SCOREx) as total_score, avg(customer.FAMT1x) as favorite_avg, sum(formula(AMT01x + customer.SCOREx)) as weighted
         `,
       );
 

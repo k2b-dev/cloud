@@ -201,9 +201,11 @@ export const enable = async (
 ): Promise<Result<RecordFinalizationStatus>> =>
   sql.begin(async (tx): Promise<Result<RecordFinalizationStatus>> => {
     const messages = getGridsCrudMessages(locale);
+    // Acquire the exclusive lock before the parent check takes a shared lock.
+    // Concurrent enables must not both try to upgrade their shared table lock.
+    await tx`SELECT id FROM grids.tables WHERE id = ${tableId}::uuid FOR UPDATE`;
     const writable = await requireStoredTableWritable(tableId, tx, locale);
     if (!writable.ok) return writable;
-    await tx`SELECT id FROM grids.tables WHERE id = ${tableId}::uuid FOR UPDATE`;
     const [history] = await tx<Array<{ status: string }>>`
       SELECT status FROM grids.durable_history_activations WHERE table_id = ${tableId}::uuid FOR SHARE
     `;

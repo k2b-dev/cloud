@@ -36,7 +36,7 @@ const tableFieldReferences = (
   ...(displayConfig.cards?.imageFieldId ? [displayConfig.cards.imageFieldId] : []),
   ...(displayConfig.cards?.fieldIds ?? []),
   ...(displayConfig.calendar?.dateFieldId ? [displayConfig.calendar.dateFieldId] : []),
-  ...(auditPolicy.update?.fieldIds ?? []),
+  ...(auditPolicy.update?.enabled ? (auditPolicy.update.fieldIds ?? []) : []),
 ];
 
 const mapRow = (row: DbRow): Table => ({

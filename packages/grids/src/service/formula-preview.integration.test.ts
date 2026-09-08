@@ -22,11 +22,11 @@ describe("formula preview integration", () => {
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${nameFieldId}::uuid, 'NAME1', ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+        VALUES (${nameFieldId}::uuid, 'NAME01', ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
       `;
       await sql`
-        INSERT INTO grids.records (id, table_id, data)
-        VALUES (${recordId}::uuid, ${tableId}::uuid, ${{ [nameFieldId]: "Ada" }}::jsonb)
+        INSERT INTO grids.records (short_id, id, table_id, data)
+        VALUES (${testShortId("R")}, ${recordId}::uuid, ${tableId}::uuid, ${{ [nameFieldId]: "Ada" }}::jsonb)
       `;
 
       const empty = await checkFormula({ tableId, expression: "   " });
@@ -76,7 +76,7 @@ describe("formula preview integration", () => {
         INSERT INTO grids.tables (id, short_id, base_id, name, position, deleted_at)
         VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Deleted', 0, now())
       `;
-      await sql`INSERT INTO grids.records (id, table_id, data) VALUES (${testUuid()}::uuid, ${tableId}::uuid, '{}'::jsonb)`;
+      await sql`INSERT INTO grids.records (short_id, id, table_id, data) VALUES (${testShortId("R")}, ${testUuid()}::uuid, ${tableId}::uuid, '{}'::jsonb)`;
       const result = await checkFormula({ tableId, expression: "1 + 1" });
       expect(result.ok && result.data.rows).toEqual([]);
     } finally {

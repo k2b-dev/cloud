@@ -537,10 +537,7 @@ describe("combined table integration", () => {
       expect(rawRows.map((row) => row.data[targetStatusFieldId])).toEqual([[canonicalOptionId], [canonicalOptionId]]);
       expect(rawRows.every((row) => !(targetOptionalFieldId in row.data))).toBe(true);
 
-      const preview = await previewCombined(
-        fixture,
-        `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}, {${targetStatusFieldId}}, {${targetOptionalFieldId}}\nsort {${fixture.targetTextFieldId}} asc`,
-      );
+      const preview = await previewCombined(fixture, `from table Combined\nselect Name, Status, "Optional note"\nsort Name asc`);
       expect(preview.mode).toBe("rows");
       expect(preview.rows.map((row) => row.values.q_col_0)).toEqual(["Mapped value", "Second value"]);
       expect(preview.rows.map((row) => row.values.q_col_1)).toEqual([[canonicalOptionId], [canonicalOptionId]]);
@@ -637,19 +634,13 @@ describe("combined table integration", () => {
         )
       `;
 
-      const live = await previewCombined(fixture, `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}`);
+      const live = await previewCombined(fixture, `from table Combined\nselect Name`);
       expect(live.rows.map((row) => row.values.q_col_0)).toEqual(["Mapped value"]);
 
-      const all = await previewCombined(
-        fixture,
-        `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}\ninclude deleted\nsort {${fixture.targetTextFieldId}} asc`,
-      );
+      const all = await previewCombined(fixture, `from table Combined\nselect Name\ninclude deleted\nsort Name asc`);
       expect(all.rows.map((row) => row.values.q_col_0)).toEqual(["Deleted value", "Mapped value"]);
 
-      const deleted = await previewCombined(
-        fixture,
-        `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}\ndeleted only`,
-      );
+      const deleted = await previewCombined(fixture, `from table Combined\nselect Name\ndeleted only`);
       expect(deleted.rows.map((row) => row.recordId)).toEqual([deletedRecordId]);
     } finally {
       await cleanupFixture(fixture);
@@ -720,7 +711,7 @@ describe("combined table integration", () => {
 
       const joined = await previewCombined(
         fixture,
-        `from table {${fixture.targetTableId}}\njoin table {${relationTableId}} as category on {${targetRelationFieldId}} = category.id\nselect {${fixture.targetTextFieldId}}, category.{${relationNameFieldId}}`,
+        `from table Combined\njoin table Categories as category on Category = category.id\nselect Name, category.Category`,
         undefined,
         {
           tables: [{ kind: "table", id: relationTableId, shortId: "categories", name: "Categories" }],
@@ -732,7 +723,7 @@ describe("combined table integration", () => {
 
       const reverseJoined = await previewCombined(
         fixture,
-        `from table {${relationTableId}} as category\njoin table {${fixture.targetTableId}} as item on item.{${targetRelationFieldId}} = category.id\nselect category.{${relationNameFieldId}}, item.{${fixture.targetTextFieldId}}`,
+        `from table Categories as category\njoin table Combined as item on item.Category = category.id\nselect category.Category, item.Name`,
         undefined,
         {
           tables: [{ kind: "table", id: relationTableId, shortId: "categories", name: "Categories" }],
@@ -848,7 +839,7 @@ describe("combined table integration", () => {
       const scope = await captureRevisionScope([fixture.targetTableId]);
       expect(scope).toHaveLength(1);
       expect((await verifyRevisionScope(scope)).ok).toBe(true);
-      const first = await previewCombined(fixture, `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}`, scope);
+      const first = await previewCombined(fixture, `from table Combined\nselect Name`, scope);
       expect(first.mode).toBe("rows");
 
       await sql.begin(async (tx) => {
@@ -878,9 +869,7 @@ describe("combined table integration", () => {
       const verified = await verifyRevisionScope(scope);
       expect(verified.ok).toBe(false);
       if (!verified.ok) expect(verified.error.message).toContain("publication changed");
-      await expect(
-        previewCombined(fixture, `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}`, scope),
-      ).rejects.toThrow("publication changed");
+      await expect(previewCombined(fixture, `from table Combined\nselect Name`, scope)).rejects.toThrow("publication changed");
       await expect(
         listFirstImagePreviews({
           tableId: fixture.targetTableId,
@@ -907,9 +896,7 @@ describe("combined table integration", () => {
       const verified = await verifyRevisionScope(scope);
       expect(verified.ok).toBe(false);
       if (!verified.ok) expect(verified.error.message).toContain("publication changed");
-      await expect(
-        previewCombined(fixture, `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}`, scope),
-      ).rejects.toThrow("publication changed");
+      await expect(previewCombined(fixture, `from table Combined\nselect Name`, scope)).rejects.toThrow("publication changed");
     } finally {
       await cleanupFixture(fixture);
     }

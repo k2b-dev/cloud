@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')",
     "test": "bun test",
     "test:db": "GRIDS_DB_TEST=1 bun test --max-concurrency 1",
+    "test:all": "bun --env-file=../../.env scripts/verify.ts",
     "test:coverage": "GRIDS_DB_TEST=1 bun test --max-concurrency 1 --coverage --coverage-reporter=lcov --coverage-dir=coverage && bun run scripts/check-backend-coverage.ts coverage/lcov.info",
     "browser-smoke": "bun run scripts/browser-smoke.ts",
     "sql-boundary-smoke": "bun run scripts/sql-boundary-smoke.ts",

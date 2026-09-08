@@ -43,16 +43,16 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
     VALUES (${fixture.fieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
   `;
   await sql`
-    INSERT INTO grids.records (id, table_id, data, created_by, updated_by) VALUES
+    INSERT INTO grids.records (short_id, id, table_id, data, created_by, updated_by) VALUES
       (
-        ${fixture.ownerRecordId}::uuid,
+        ${shortId("R")}, ${fixture.ownerRecordId}::uuid,
         ${fixture.tableId}::uuid,
         ${{ [fixture.fieldId]: "Owner request" }}::jsonb,
         ${fixture.ownerId}::uuid,
         ${fixture.ownerId}::uuid
       ),
       (
-        ${fixture.otherRecordId}::uuid,
+        ${shortId("R")}, ${fixture.otherRecordId}::uuid,
         ${fixture.tableId}::uuid,
         ${{ [fixture.fieldId]: "Other request" }}::jsonb,
         ${fixture.otherUserId}::uuid,

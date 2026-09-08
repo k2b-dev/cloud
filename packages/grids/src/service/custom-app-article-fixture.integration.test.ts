@@ -3,13 +3,12 @@ import { sql } from "bun";
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { customAppFormFieldHash, customAppFormSecurityHash } from "../custom-apps/form-capability";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
-import { postgresTest, testShortId } from "../integration-test-utils";
+import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess, listCustomAppAccess } from "./access";
 import { apply, compile, get, plan, publish } from "./custom-apps";
 
 const ARTICLE = {
-  appId: "20000000-0000-4000-8000-000000000101",
   appPublicId: "a00101",
   baseId: "20000000-0000-4000-8000-000000000001",
   basePublicId: "a00001",
@@ -50,44 +49,44 @@ const insertArticleResources = async (): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${ARTICLE.baseId}::uuid, ${testShortId("B")}, 'Article descriptions')
+    VALUES (${ARTICLE.baseId}::uuid, 'a00001', 'Article descriptions')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
-      (${ARTICLE.listTableId}::uuid, ${testShortId("T")}, ${ARTICLE.baseId}::uuid, 'Lists', 0),
-      (${ARTICLE.articleTableId}::uuid, ${testShortId("T")}, ${ARTICLE.baseId}::uuid, 'Articles', 1)
+      (${ARTICLE.listTableId}::uuid, 'a00201', ${ARTICLE.baseId}::uuid, 'Lists', 0),
+      (${ARTICLE.articleTableId}::uuid, 'a00202', ${ARTICLE.baseId}::uuid, 'Articles', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
-      (${ARTICLE.listNameFieldId}::uuid, ${testShortId("F")}, ${ARTICLE.listTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
+      (${ARTICLE.listNameFieldId}::uuid, 'a00301', ${ARTICLE.listTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
       (
         ${ARTICLE.articleListFieldId}::uuid,
-        ${testShortId("F")},
+        'a00302',
         ${ARTICLE.articleTableId}::uuid,
         'List',
         'relation',
         ${{ targetTableId: ARTICLE.listTableId, cardinality: "single" }}::jsonb,
         0
       ),
-      (${ARTICLE.articleNameFieldId}::uuid, ${testShortId("F")}, ${ARTICLE.articleTableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
-      (${ARTICLE.articleWeightFieldId}::uuid, ${testShortId("F")}, ${ARTICLE.articleTableId}::uuid, 'Weight', 'number', '{}'::jsonb, 2),
-      (${ARTICLE.articleDescriptionFieldId}::uuid, ${testShortId("F")}, ${ARTICLE.articleTableId}::uuid, 'Description', 'longtext', '{}'::jsonb, 3)
+      (${ARTICLE.articleNameFieldId}::uuid, 'a00303', ${ARTICLE.articleTableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
+      (${ARTICLE.articleWeightFieldId}::uuid, 'a00304', ${ARTICLE.articleTableId}::uuid, 'Weight', 'number', '{}'::jsonb, 2),
+      (${ARTICLE.articleDescriptionFieldId}::uuid, 'a00305', ${ARTICLE.articleTableId}::uuid, 'Description', 'longtext', '{}'::jsonb, 3)
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source)
     VALUES (
       ${ARTICLE.listViewId}::uuid,
-      ${testShortId("V")},
+      'a00401',
       ${ARTICLE.listTableId}::uuid,
       'Description lists',
-      ${`from table {${ARTICLE.listTableId}}`}
+      ${`from table {a00201}`}
     )
   `;
   await sql`
     INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
     VALUES (
       ${ARTICLE.articleFormId}::uuid,
-      ${testShortId("M")},
+      'a00501',
       ${ARTICLE.articleTableId}::uuid,
       'Add article',
       ${JSON.stringify({
@@ -132,7 +131,7 @@ describe("Article Grids App Golden fixture", () => {
           {
             viewId: ARTICLE.listViewId,
             tableId: ARTICLE.listTableId,
-            sourceHash: customAppViewSourceHash(ARTICLE.listTableId, `from table {${ARTICLE.listTableId}}`),
+            sourceHash: customAppViewSourceHash(ARTICLE.listTableId, `from table {a00201}`),
             planHash: expect.any(String),
             tableIds: [ARTICLE.listTableId],
           },
@@ -247,7 +246,7 @@ describe("Article Grids App Golden fixture", () => {
       const created = await apply(definition);
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.error.message);
-      expect(created.data.shortId).toHaveLength(5);
+      expect(created.data.shortId).toHaveLength(6);
 
       const exportedYaml = Bun.YAML.stringify(created.data.draftDefinition);
       const exported = CustomAppDefinitionSchema.parse(Bun.YAML.parse(exportedYaml));
@@ -262,13 +261,13 @@ describe("Article Grids App Golden fixture", () => {
       const grants = [
         {
           resourceType: "customApp",
-          resourceId: ARTICLE.appId,
+          resourceId: created.data.id,
           principal: { type: "group", groupId: ARTICLE.contributorGroupId },
           permission: "read",
         },
         {
           resourceType: "customApp",
-          resourceId: ARTICLE.appId,
+          resourceId: created.data.id,
           principal: { type: "group", groupId: ARTICLE.responsibleGroupId },
           permission: "read",
         },
@@ -279,14 +278,14 @@ describe("Article Grids App Golden fixture", () => {
         if (!result.ok) throw new Error(result.error.message);
       }
 
-      expect(await listCustomAppAccess(ARTICLE.appId)).toHaveLength(2);
+      expect(await listCustomAppAccess(created.data.id)).toHaveLength(2);
 
-      const published = await publish(ARTICLE.appId);
+      const published = await publish(created.data.id);
       expect(published.ok).toBe(true);
       if (!published.ok) throw new Error(published.error.message);
       expect(published.data.publishedDefinition).toEqual(exported);
       expect(published.data.publishedCapabilities).toEqual(validation.compiled.capabilities);
-      expect((await get(ARTICLE.appId))?.publishedCapabilities).toEqual(validation.compiled.capabilities);
+      expect((await get(created.data.id))?.publishedCapabilities).toEqual(validation.compiled.capabilities);
     } finally {
       await cleanupArticleFixture();
     }

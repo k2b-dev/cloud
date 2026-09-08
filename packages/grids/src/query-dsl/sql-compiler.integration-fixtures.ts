@@ -108,15 +108,15 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
   };
 
   const orderFields = [
-    field({ id: amountId, shortId: "AMT01", tableId: orders.id, name: "Amount", type: "number", position: 0 }),
-    field({ id: costId, shortId: "COST1", tableId: orders.id, name: "Cost", type: "number", position: 1 }),
-    field({ id: statusId, shortId: "STAT1", tableId: orders.id, name: "Status", type: "text", position: 2 }),
-    field({ id: stageId, shortId: "STAGE", tableId: orders.id, name: "Stage", type: "select", config: stageOptions, position: 3 }),
-    field({ id: tagsId, shortId: "TAGS1", tableId: orders.id, name: "Tags", type: "select", config: tagOptions, position: 4 }),
-    field({ id: orderedAtId, shortId: "DATE1", tableId: orders.id, name: "Ordered at", type: "date", position: 5 }),
+    field({ id: amountId, shortId: "AMT01x", tableId: orders.id, name: "Amount", type: "number", position: 0 }),
+    field({ id: costId, shortId: "COST1x", tableId: orders.id, name: "Cost", type: "number", position: 1 }),
+    field({ id: statusId, shortId: "STAT1x", tableId: orders.id, name: "Status", type: "text", position: 2 }),
+    field({ id: stageId, shortId: "STAGEx", tableId: orders.id, name: "Stage", type: "select", config: stageOptions, position: 3 }),
+    field({ id: tagsId, shortId: "TAGS1x", tableId: orders.id, name: "Tags", type: "select", config: tagOptions, position: 4 }),
+    field({ id: orderedAtId, shortId: "DATE1x", tableId: orders.id, name: "Ordered at", type: "date", position: 5 }),
     field({
       id: customerLinkId,
-      shortId: "CUSTL",
+      shortId: "CUSTLx",
       tableId: orders.id,
       name: "Customer",
       type: "relation",
@@ -125,7 +125,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
     }),
     field({
       id: parentOrderLinkId,
-      shortId: "PARNT",
+      shortId: "PARNTx",
       tableId: orders.id,
       name: "Parent order",
       type: "relation",
@@ -134,7 +134,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
     }),
     field({
       id: customerScoreRollupId,
-      shortId: "CSCOR",
+      shortId: "CSCORx",
       tableId: orders.id,
       name: "Customer score",
       type: "rollup",
@@ -143,20 +143,20 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
     }),
   ];
   const customerFields = [
-    field({ id: customerNameId, shortId: "NAME1", tableId: customers.id, name: "Name", type: "text", position: 0 }),
-    field({ id: customerScoreId, shortId: "SCORE", tableId: customers.id, name: "Score", type: "number", position: 1 }),
+    field({ id: customerNameId, shortId: "NAME1x", tableId: customers.id, name: "Name", type: "text", position: 0 }),
+    field({ id: customerScoreId, shortId: "SCOREx", tableId: customers.id, name: "Score", type: "number", position: 1 }),
     field({
       id: customerScoreFormulaId,
-      shortId: "SCOR2",
+      shortId: "SCOR2x",
       tableId: customers.id,
       name: "Score x2",
       type: "formula",
-      config: { expression: "SCORE * 2" },
+      config: { expression: "SCOREx * 2" },
       position: 2,
     }),
     field({
       id: customerFavoriteOrderLinkId,
-      shortId: "FAVOR",
+      shortId: "FAVORx",
       tableId: customers.id,
       name: "Favorite order",
       type: "relation",
@@ -165,7 +165,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
     }),
     field({
       id: customerFavoriteOrderAmountLookupId,
-      shortId: "FAMT1",
+      shortId: "FAMT1x",
       tableId: customers.id,
       name: "Favorite amount",
       type: "lookup",
@@ -174,7 +174,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
     }),
     field({
       id: customerFavoriteOrderAmountRollupId,
-      shortId: "FSUM1",
+      shortId: "FSUM1x",
       tableId: customers.id,
       name: "Favorite sum",
       type: "rollup",
@@ -196,41 +196,41 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${amountId}::uuid, 'AMT01', ${orders.id}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
-      (${costId}::uuid, 'COST1', ${orders.id}::uuid, 'Cost', 'number', '{}'::jsonb, 1),
-      (${statusId}::uuid, 'STAT1', ${orders.id}::uuid, 'Status', 'text', '{}'::jsonb, 2),
-      (${stageId}::uuid, 'STAGE', ${orders.id}::uuid, 'Stage', 'select', ${stageOptions}::jsonb, 3),
-      (${tagsId}::uuid, 'TAGS1', ${orders.id}::uuid, 'Tags', 'select', ${tagOptions}::jsonb, 4),
-      (${orderedAtId}::uuid, 'DATE1', ${orders.id}::uuid, 'Ordered at', 'date', '{}'::jsonb, 5),
-      (${customerLinkId}::uuid, 'CUSTL', ${orders.id}::uuid, 'Customer', 'relation', ${{ targetTableId: customers.id }}::jsonb, 6),
-      (${parentOrderLinkId}::uuid, 'PARNT', ${orders.id}::uuid, 'Parent order', 'relation', ${{ targetTableId: orders.id }}::jsonb, 7),
-      (${customerScoreRollupId}::uuid, 'CSCOR', ${orders.id}::uuid, 'Customer score', 'rollup', ${{
+      (${amountId}::uuid, 'AMT01x', ${orders.id}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
+      (${costId}::uuid, 'COST1x', ${orders.id}::uuid, 'Cost', 'number', '{}'::jsonb, 1),
+      (${statusId}::uuid, 'STAT1x', ${orders.id}::uuid, 'Status', 'text', '{}'::jsonb, 2),
+      (${stageId}::uuid, 'STAGEx', ${orders.id}::uuid, 'Stage', 'select', ${stageOptions}::jsonb, 3),
+      (${tagsId}::uuid, 'TAGS1x', ${orders.id}::uuid, 'Tags', 'select', ${tagOptions}::jsonb, 4),
+      (${orderedAtId}::uuid, 'DATE1x', ${orders.id}::uuid, 'Ordered at', 'date', '{}'::jsonb, 5),
+      (${customerLinkId}::uuid, 'CUSTLx', ${orders.id}::uuid, 'Customer', 'relation', ${{ targetTableId: customers.id }}::jsonb, 6),
+      (${parentOrderLinkId}::uuid, 'PARNTx', ${orders.id}::uuid, 'Parent order', 'relation', ${{ targetTableId: orders.id }}::jsonb, 7),
+      (${customerScoreRollupId}::uuid, 'CSCORx', ${orders.id}::uuid, 'Customer score', 'rollup', ${{
         relationFieldId: customerLinkId,
         targetFieldId: customerScoreId,
         agg: "sum",
       }}::jsonb, 8),
-      (${customerNameId}::uuid, 'NAME1', ${customers.id}::uuid, 'Name', 'text', '{}'::jsonb, 0),
-      (${customerScoreId}::uuid, 'SCORE', ${customers.id}::uuid, 'Score', 'number', '{}'::jsonb, 1),
-      (${customerScoreFormulaId}::uuid, 'SCOR2', ${customers.id}::uuid, 'Score x2', 'formula', ${{ expression: "SCORE * 2" }}::jsonb, 2),
-      (${customerFavoriteOrderLinkId}::uuid, 'FAVOR', ${customers.id}::uuid, 'Favorite order', 'relation', ${{
+      (${customerNameId}::uuid, 'NAME1x', ${customers.id}::uuid, 'Name', 'text', '{}'::jsonb, 0),
+      (${customerScoreId}::uuid, 'SCOREx', ${customers.id}::uuid, 'Score', 'number', '{}'::jsonb, 1),
+      (${customerScoreFormulaId}::uuid, 'SCOR2x', ${customers.id}::uuid, 'Score x2', 'formula', ${{ expression: "SCOREx * 2" }}::jsonb, 2),
+      (${customerFavoriteOrderLinkId}::uuid, 'FAVORx', ${customers.id}::uuid, 'Favorite order', 'relation', ${{
         targetTableId: orders.id,
       }}::jsonb, 3),
-      (${customerFavoriteOrderAmountLookupId}::uuid, 'FAMT1', ${customers.id}::uuid, 'Favorite amount', 'lookup', ${{
+      (${customerFavoriteOrderAmountLookupId}::uuid, 'FAMT1x', ${customers.id}::uuid, 'Favorite amount', 'lookup', ${{
         relationFieldId: customerFavoriteOrderLinkId,
         targetFieldId: amountId,
       }}::jsonb, 4),
-      (${customerFavoriteOrderAmountRollupId}::uuid, 'FSUM1', ${customers.id}::uuid, 'Favorite sum', 'rollup', ${{
+      (${customerFavoriteOrderAmountRollupId}::uuid, 'FSUM1x', ${customers.id}::uuid, 'Favorite sum', 'rollup', ${{
         relationFieldId: customerFavoriteOrderLinkId,
         targetFieldId: amountId,
         agg: "sum",
       }}::jsonb, 5)
   `;
   await sql`
-    INSERT INTO grids.records (id, table_id, data, version, deleted_at)
+    INSERT INTO grids.records (short_id, id, table_id, data, version, deleted_at)
     VALUES
-      (${customerAId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Alice", [customerScoreId]: "8" }}::jsonb, 1, NULL),
-      (${customerBId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Bob", [customerScoreId]: "3" }}::jsonb, 1, NULL),
-      (${orderAId}::uuid, ${orders.id}::uuid, ${{
+      (${shortId("R")}, ${customerAId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Alice", [customerScoreId]: "8" }}::jsonb, 1, NULL),
+      (${shortId("R")}, ${customerBId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Bob", [customerScoreId]: "3" }}::jsonb, 1, NULL),
+      (${shortId("R")}, ${orderAId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "12.50",
         [costId]: "5.00",
         [statusId]: "Open",
@@ -238,7 +238,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
         [tagsId]: ["priority", "remote"],
         [orderedAtId]: "2026-01-15",
       }}::jsonb, 1, NULL),
-      (${orderBId}::uuid, ${orders.id}::uuid, ${{
+      (${shortId("R")}, ${orderBId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "4.00",
         [costId]: "6.00",
         [statusId]: "Closed",
@@ -246,14 +246,14 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
         [tagsId]: ["remote"],
         [orderedAtId]: "2026-02-03",
       }}::jsonb, 1, NULL),
-      (${orderCId}::uuid, ${orders.id}::uuid, ${{
+      (${shortId("R")}, ${orderCId}::uuid, ${orders.id}::uuid, ${{
         [costId]: "0",
         [statusId]: "Backlog",
         [stageId]: ["hold"],
         [tagsId]: ["priority"],
         [orderedAtId]: "2026-02-20",
       }}::jsonb, 1, NULL),
-      (${orderDeletedId}::uuid, ${orders.id}::uuid, ${{
+      (${shortId("R")}, ${orderDeletedId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "99.00",
         [costId]: "1.00",
         [statusId]: "Deleted",

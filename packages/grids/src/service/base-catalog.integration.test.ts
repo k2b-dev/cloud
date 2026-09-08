@@ -54,9 +54,9 @@ describe("base catalog integration", () => {
         VALUES (${formId}::uuid, ${testShortId("F")}, ${formOnlyTableId}::uuid, 'Submit', '{}'::jsonb, TRUE)
       `;
       await sql`
-        INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, deleted_at) VALUES
-          (${templateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Invoice', 'from table "Document only"', '<p>Invoice</p>', NULL),
-          (${deletedTemplateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Old invoice', 'from table "Document only"', '<p>Old</p>', now())
+        INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, renderer_kind, number_template, filename_template, deleted_at) VALUES
+          (${templateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Invoice', 'from table "Document only"', '<p>Invoice</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', NULL),
+          (${deletedTemplateId}::uuid, ${testShortId("D")}, ${documentOnlyTableId}::uuid, 'Old invoice', 'from table "Document only"', '<p>Old</p>', 'html', '{{ series.value }}', '{{ document.number }}.pdf', now())
       `;
 
       const baseAccess = await grant(userId, "write");

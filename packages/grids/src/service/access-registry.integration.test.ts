@@ -67,7 +67,7 @@ describe("access resource registry integration", () => {
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) {
         expect(rejected.error.message).toBe(
-          "Grids App access does not support service accounts; grant access to the delegated user instead.",
+          "Grids App access does not support service accounts. Grant access to the delegated user instead.",
         );
       }
       expect(await listCustomAppAccess(item.customAppId)).toEqual([

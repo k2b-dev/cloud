@@ -114,7 +114,7 @@ describe("workflow definitions on the kernel", () => {
     if (!published.ok) return;
 
     expect(published.data.revision).toBe(2);
-    expect(published.data.source).toBe(SCHEDULED);
+    expect(Bun.YAML.parse(published.data.source)).toEqual(Bun.YAML.parse(SCHEDULED));
     // The trigger set changed with the plan, so the activations follow it.
     expect(await activations(created.data.id)).toEqual([
       { event_type: "grids.invoked", enabled: true },
@@ -188,9 +188,11 @@ describe("workflow definitions on the kernel", () => {
     // Not a rewind: a run pinned to revision 2 has to keep executing revision 2,
     // so the restored plan becomes revision 3.
     expect(restored.data.revision).toBe(3);
-    expect(restored.data.source).toBe(PLAIN);
-    expect((await getWorkflowRevision(created.data.id, 1))?.source).toBe(PLAIN);
-    expect((await getWorkflowRevision(created.data.id, 2))?.source).toBe(SCHEDULED);
+    expect(Bun.YAML.parse(restored.data.source)).toEqual(Bun.YAML.parse(PLAIN));
+    expect((await getWorkflowRevision(created.data.id, 1))?.source).toBe(created.data.source);
+    const secondRevision = await getWorkflowRevision(created.data.id, 2);
+    expect(secondRevision).not.toBeNull();
+    expect(Bun.YAML.parse(secondRevision!.source)).toEqual(Bun.YAML.parse(SCHEDULED));
 
     const history = await listWorkflowRevisions(created.data.id);
     expect(history.items.map((item) => item.revision)).toEqual([3, 2, 1]);

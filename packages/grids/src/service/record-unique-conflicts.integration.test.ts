@@ -11,7 +11,7 @@ const expectUniqueConflict = (result: { ok: boolean; error?: { code?: string; me
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.error?.code).toBe("CONFLICT");
-    expect(result.error?.message).toContain('Value for field "External id"');
+    expect(result.error?.message).toContain("The value for field “External id” must be unique.");
   }
 };
 

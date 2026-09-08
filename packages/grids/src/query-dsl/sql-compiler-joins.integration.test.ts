@@ -10,20 +10,20 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
   postgresTest("executes select labels, membership, null ordering, and trash clauses", async () => {
     const fixture = await insertDslDbFixture();
     try {
-      const open = await preview(fixture, `where STAGE = 'Open'`);
+      const open = await preview(fixture, `where STAGEx = 'Open'`);
       expect(open.mode).toBe("rows");
       expect(open.rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
 
-      const membership = await preview(fixture, `where oneof(STAGE, 'Open', 'Closed')\nsort AMT01 asc`);
+      const membership = await preview(fixture, `where oneof(STAGEx, 'Open', 'Closed')\nsort AMT01x asc`);
       expect(membership.rows.map((row) => row.recordId)).toEqual([fixture.orderBId, fixture.orderAId]);
 
-      const nullsLast = await preview(fixture, `select AMT01\nsort AMT01 asc`);
+      const nullsLast = await preview(fixture, `select AMT01x\nsort AMT01x asc`);
       expect(nullsLast.rows.map((row) => row.recordId)).toEqual([fixture.orderBId, fixture.orderAId, fixture.orderCId]);
 
-      const nullsFirst = await preview(fixture, `select AMT01\nsort AMT01 asc nulls first`);
+      const nullsFirst = await preview(fixture, `select AMT01x\nsort AMT01x asc nulls first`);
       expect(nullsFirst.rows.map((row) => row.recordId)).toEqual([fixture.orderCId, fixture.orderBId, fixture.orderAId]);
 
-      const deletedOnly = await preview(fixture, `select STAT1\ndeleted only`);
+      const deletedOnly = await preview(fixture, `select STAT1x\ndeleted only`);
       expect(deletedOnly.rows.map((row) => row.recordId)).toEqual([fixture.orderDeletedId]);
     } finally {
       await cleanupFixture(fixture.baseId);
@@ -62,9 +62,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId} as o
-          join table ${fixture.orders.shortId} as parent on o.PARNT = parent.id
-          select o.AMT01 as order_amount, parent.AMT01 as parent_amount
-          sort o.AMT01 asc
+          join table ${fixture.orders.shortId} as parent on o.PARNTx = parent.id
+          select o.AMT01x as order_amount, parent.AMT01x as parent_amount
+          sort o.AMT01x asc
           limit 10
         `,
       );
@@ -86,9 +86,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId} as c
-          join table ${fixture.orders.shortId} as order on order.CUSTL = c.id
-          select c.NAME1 as customer_name, order.AMT01 as order_amount
-          sort order.AMT01 asc
+          join table ${fixture.orders.shortId} as order on order.CUSTLx = c.id
+          select c.NAME1x as customer_name, order.AMT01x as order_amount
+          sort order.AMT01x asc
         `,
       );
 
@@ -110,9 +110,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId} as c
-          join table ${fixture.orders.shortId} as order on order.CUSTL = c.id
-          group by c.NAME1
-          aggregate sum(order.AMT01) as revenue
+          join table ${fixture.orders.shortId} as order on order.CUSTLx = c.id
+          group by c.NAME1x
+          aggregate sum(order.AMT01x) as revenue
           sort revenue desc
         `,
       );
@@ -134,8 +134,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId} as c
-          join table ${fixture.orders.shortId} as order on order.CUSTL = c.id
-          group by order.TAGS1
+          join table ${fixture.orders.shortId} as order on order.CUSTLx = c.id
+          group by order.TAGS1x
           aggregate count(*) as rows
           sort rows desc
         `,
@@ -154,8 +154,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId} as c
-          join table ${fixture.orders.shortId} as order on order.CUSTL = c.id
-          group by order.TAGS1
+          join table ${fixture.orders.shortId} as order on order.CUSTLx = c.id
+          group by order.TAGS1x
         `,
       );
       expect(implicitCount.mode).toBe("groups");
@@ -172,8 +172,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId} as c
-          join table ${fixture.orders.shortId} as order on order.CUSTL = c.id
-          group by order.PARNT
+          join table ${fixture.orders.shortId} as order on order.CUSTLx = c.id
+          group by order.PARNTx
           aggregate count(*) as rows
         `,
       );
@@ -193,9 +193,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.NAME1
-          aggregate sum(formula(AMT01 - COST1)) as margin
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.NAME1x
+          aggregate sum(formula(AMT01x - COST1x)) as margin
           having margin > 0
           sort margin desc
         `,
@@ -217,8 +217,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.SCOR2
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.SCOR2x
           aggregate count(*) as rows
         `,
       );
@@ -232,8 +232,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.FAMT1
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.FAMT1x
           aggregate count(*) as rows
         `,
       );
@@ -247,8 +247,8 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.FSUM1
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.FSUM1x
           aggregate count(*) as rows
         `,
       );
@@ -262,9 +262,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.NAME1
-          aggregate sum(customer.FSUM1) as favorite_total
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.NAME1x
+          aggregate sum(customer.FSUM1x) as favorite_total
           sort favorite_total desc
         `,
       );
@@ -281,9 +281,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.orders.shortId}
-          join table ${fixture.customers.shortId} as customer on CUSTL = customer.id
-          group by customer.NAME1
-          aggregate sum(customer.FAMT1) as favorite_lookup_total, avg(customer.FAMT1) as favorite_lookup_avg
+          join table ${fixture.customers.shortId} as customer on CUSTLx = customer.id
+          group by customer.NAME1x
+          aggregate sum(customer.FAMT1x) as favorite_lookup_total, avg(customer.FAMT1x) as favorite_lookup_avg
           sort favorite_lookup_total desc
         `,
       );
@@ -315,9 +315,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId}
-          group by SCOR2
+          group by SCOR2x
           aggregate count(*) as rows
-          sort SCOR2 asc
+          sort SCOR2x asc
         `,
       );
       expect(formula.mode).toBe("groups");
@@ -330,9 +330,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId}
-          group by FAMT1
+          group by FAMT1x
           aggregate count(*) as rows
-          sort FAMT1 asc
+          sort FAMT1x asc
         `,
       );
       expect(lookup.mode).toBe("groups");
@@ -345,9 +345,9 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
         fixture,
         `
           from table ${fixture.customers.shortId}
-          group by FSUM1
+          group by FSUM1x
           aggregate count(*) as rows
-          sort FSUM1 asc
+          sort FSUM1x asc
         `,
       );
       expect(rollup.mode).toBe("groups");

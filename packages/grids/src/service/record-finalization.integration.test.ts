@@ -105,12 +105,14 @@ describe("record finalization Postgres integration", () => {
 
       const history = await durableHistory.enable(tableId, null);
       if (!history.ok) throw history.error;
-      const competingEnables = await Promise.all([
+      const competingEnables = await Promise.allSettled([
         finalization.enable(tableId, { mode: "direct" }, null),
         finalization.enable(tableId, { mode: "fourEyes", approverGroupId: groupId }, null),
       ]);
-      expect(competingEnables.filter((result) => result.ok)).toHaveLength(1);
-      expect(competingEnables.filter((result) => !result.ok)).toHaveLength(1);
+      // Wait for both transactions before cleanup, even when a lock regression rejects one.
+      expect(competingEnables.filter((result) => result.status === "rejected")).toEqual([]);
+      expect(competingEnables.filter((result) => result.status === "fulfilled" && result.value.ok)).toHaveLength(1);
+      expect(competingEnables.filter((result) => result.status === "fulfilled" && !result.value.ok)).toHaveLength(1);
       const status = await finalization.getStatus(tableId);
       if (!status.ok || !status.data.enabled) throw new Error("Finalization activation failed");
       const winningPolicy =
@@ -257,7 +259,7 @@ describe("record finalization Postgres integration", () => {
       expect(readiness.ok && readiness.data.missing).toContainEqual({
         fieldId: item.relation.id,
         fieldName: "Related case",
-        message: "A linked record is no longer available.",
+        message: "A linked Record is no longer available.",
       });
       const finalized = await finalization.finalize({ tableId: item.tableId, recordId: source.data.id, actorId: null, origin: "direct" });
       expect(finalized.ok).toBe(false);

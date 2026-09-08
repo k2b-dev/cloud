@@ -5,11 +5,14 @@ import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { stopControlledDestructionJobs } from "../service/controlled-destruction";
+import { startControlledDestructionJobs, stopControlledDestructionJobs } from "../service/controlled-destruction";
 import { createBasesApi } from "./bases";
 
 beforeAll(async () => {
-  if (process.env.GRIDS_DB_TEST === "1") await migrate();
+  if (process.env.GRIDS_DB_TEST === "1") {
+    await migrate();
+    await startControlledDestructionJobs();
+  }
 });
 afterAll(() => stopControlledDestructionJobs());
 

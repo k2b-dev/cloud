@@ -19,7 +19,7 @@ describe("recursive Grids permission loading", () => {
     const suffix = crypto.randomUUID().slice(0, 8);
 
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'PR001', 'Recursive permission test')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'PR0001', 'Recursive permission test')`;
       await sql`
         INSERT INTO auth.groups (id, cn, provider, name)
         VALUES
@@ -60,10 +60,10 @@ describe("recursive Grids permission loading", () => {
     const accessId = Bun.randomUUIDv7();
 
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'PP001', 'Public permission boundary')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'PP0001', 'Public permission boundary')`;
       await sql`
         INSERT INTO grids.custom_apps (id, short_id, base_id, name, draft_definition)
-        VALUES (${customAppId}::uuid, 'PA001', ${baseId}::uuid, 'Public app', '{}'::jsonb)
+        VALUES (${customAppId}::uuid, 'PA0001', ${baseId}::uuid, 'Public app', '{}'::jsonb)
       `;
       await sql`INSERT INTO auth.access (id, permission) VALUES (${accessId}::uuid, 'read'::auth.permission_level)`;
       await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${accessId}::uuid)`;

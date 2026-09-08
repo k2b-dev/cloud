@@ -50,9 +50,9 @@ const cleanupFixture = async (fixture: Fixture): Promise<void> => {
 const insertRecordAndEvent = async (client: SqlClient, fixture: Fixture, name: string): Promise<{ recordId: string; outboxId: string }> => {
   const recordId = uuid();
   await client`
-    INSERT INTO grids.records (id, table_id, data, version, created_by, updated_by)
+    INSERT INTO grids.records (short_id, id, table_id, data, version, created_by, updated_by)
     VALUES (
-      ${recordId}::uuid,
+      ${shortId("R")}, ${recordId}::uuid,
       ${fixture.tableId}::uuid,
       ${{ [fixture.fieldId]: name }}::jsonb,
       1,

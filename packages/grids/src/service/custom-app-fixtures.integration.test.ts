@@ -3,16 +3,14 @@ import { sql } from "bun";
 import { CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { customAppFormFieldHash } from "../custom-apps/form-capability";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
-import { postgresTest, testShortId } from "../integration-test-utils";
+import { postgresTest } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess, listBaseAccess, listCustomAppAccess } from "./access";
 import { apply, compile, get, plan, publish } from "./custom-apps";
 import { deleteTestWorkflowScope, insertTestWorkflow } from "./workflow-test-fixture";
 
 const CERTIFICATE = {
-  appId: "10000000-0000-4000-8000-000000000101",
   appPublicId: "c00101",
-  reviewAppId: "10000000-0000-4000-8000-000000000102",
   reviewAppPublicId: "c00102",
   baseId: "10000000-0000-4000-8000-000000000001",
   basePublicId: "c00001",
@@ -62,18 +60,18 @@ const insertCertificateResources = async (): Promise<void> => {
   `;
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${CERTIFICATE.baseId}::uuid, ${testShortId("B")}, 'Certificate requests')
+    VALUES (${CERTIFICATE.baseId}::uuid, 'c00001', 'Certificate requests')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${CERTIFICATE.tableId}::uuid, ${testShortId("T")}, ${CERTIFICATE.baseId}::uuid, 'Requests', 0)
+    VALUES (${CERTIFICATE.tableId}::uuid, 'c00201', ${CERTIFICATE.baseId}::uuid, 'Requests', 0)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
-      (${titleFieldId}::uuid, ${testShortId("F")}, ${CERTIFICATE.tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0),
-      (${descriptionFieldId}::uuid, ${testShortId("F")}, ${CERTIFICATE.tableId}::uuid, 'Description', 'longtext', '{}'::jsonb, 1),
-      (${periodFieldId}::uuid, ${testShortId("F")}, ${CERTIFICATE.tableId}::uuid, 'Contribution period', 'text', '{}'::jsonb, 2),
-      (${statusFieldId}::uuid, ${testShortId("F")}, ${CERTIFICATE.tableId}::uuid, 'Status', 'select', ${{
+      (${titleFieldId}::uuid, 'c00301', ${CERTIFICATE.tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0),
+      (${descriptionFieldId}::uuid, 'c00302', ${CERTIFICATE.tableId}::uuid, 'Description', 'longtext', '{}'::jsonb, 1),
+      (${periodFieldId}::uuid, 'c00303', ${CERTIFICATE.tableId}::uuid, 'Contribution period', 'text', '{}'::jsonb, 2),
+      (${statusFieldId}::uuid, 'c00304', ${CERTIFICATE.tableId}::uuid, 'Status', 'select', ${{
         options: [
           { id: "pending", label: "Pending", color: "orange" },
           { id: "approved", label: "Approved", color: "green" },
@@ -88,17 +86,17 @@ const insertCertificateResources = async (): Promise<void> => {
     INSERT INTO grids.views (id, short_id, table_id, name, source)
     VALUES (
       ${CERTIFICATE.viewId}::uuid,
-      ${testShortId("V")},
+      'c00401',
       ${CERTIFICATE.tableId}::uuid,
       'My requests',
-      ${`from table {${CERTIFICATE.tableId}}\nwhere record.createdBy = @auth.id`}
+      ${`from table {c00201}\nwhere record.createdBy = @auth.id`}
     )
   `;
   await sql`
     INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
     VALUES (
       ${CERTIFICATE.formId}::uuid,
-      ${testShortId("M")},
+      'c00501',
       ${CERTIFICATE.tableId}::uuid,
       'Certificate request',
       ${JSON.stringify({
@@ -113,14 +111,14 @@ const insertCertificateResources = async (): Promise<void> => {
     )
   `;
   await sql`
-    INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html)
+    INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, renderer_kind, number_template, filename_template)
     VALUES (
       ${CERTIFICATE.documentTemplateId}::uuid,
-      ${testShortId("D")},
+      'c00601',
       ${CERTIFICATE.tableId}::uuid,
       'Certificate',
-      ${`from table {${CERTIFICATE.tableId}}`},
-      '<h1>Certificate</h1>'
+      ${`from table {c00201}`},
+      '<h1>Certificate</h1>', 'html', '{{ series.value }}', '{{ document.number }}.pdf'
     )
   `;
   await insertTestWorkflow({
@@ -147,7 +145,7 @@ const insertCertificateResources = async (): Promise<void> => {
       id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision, diagnostics
     ) VALUES (
       ${CERTIFICATE.launcherId}::uuid,
-      ${testShortId("L")},
+      'c00802',
       ${CERTIFICATE.baseId}::uuid,
       ${CERTIFICATE.workflowId}::uuid,
       'Approve certificate request',
@@ -190,10 +188,7 @@ describe("Grids App Golden fixtures", () => {
           {
             viewId: CERTIFICATE.viewId,
             tableId: CERTIFICATE.tableId,
-            sourceHash: customAppViewSourceHash(
-              CERTIFICATE.tableId,
-              `from table {${CERTIFICATE.tableId}}\nwhere record.createdBy = @auth.id`,
-            ),
+            sourceHash: customAppViewSourceHash(CERTIFICATE.tableId, `from table {c00201}\nwhere record.createdBy = @auth.id`),
             planHash: expect.any(String),
             tableIds: [CERTIFICATE.tableId],
           },
@@ -249,7 +244,7 @@ describe("Grids App Golden fixtures", () => {
       const created = await apply(definition);
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.error.message);
-      expect(created.data.shortId).toHaveLength(5);
+      expect(created.data.shortId).toHaveLength(6);
 
       const exportedYaml = Bun.YAML.stringify(created.data.draftDefinition);
       const exported = CustomAppDefinitionSchema.parse(Bun.YAML.parse(exportedYaml));
@@ -261,20 +256,20 @@ describe("Grids App Golden fixtures", () => {
       if (!reapplied.ok) throw new Error(reapplied.error.message);
       expect(reapplied.data.updatedAt).toBe(created.data.updatedAt);
       const [stored] = await sql<Array<{ count: number }>>`
-        SELECT count(*)::int AS count FROM grids.custom_apps WHERE id = ${CERTIFICATE.appId}::uuid
+        SELECT count(*)::int AS count FROM grids.custom_apps WHERE id = ${created.data.id}::uuid
       `;
       expect(stored?.count).toBe(1);
 
       const grants = [
         {
           resourceType: "customApp",
-          resourceId: CERTIFICATE.appId,
+          resourceId: created.data.id,
           principal: { type: "group", groupId: CERTIFICATE.requesterGroupId },
           permission: "read",
         },
         {
           resourceType: "customApp",
-          resourceId: CERTIFICATE.appId,
+          resourceId: created.data.id,
           principal: { type: "group", groupId: CERTIFICATE.responsibleGroupId },
           permission: "read",
         },
@@ -285,14 +280,14 @@ describe("Grids App Golden fixtures", () => {
         if (!result.ok) throw new Error(result.error.message);
       }
 
-      expect(await listCustomAppAccess(CERTIFICATE.appId)).toHaveLength(2);
+      expect(await listCustomAppAccess(created.data.id)).toHaveLength(2);
 
-      const published = await publish(CERTIFICATE.appId);
+      const published = await publish(created.data.id);
       expect(published.ok).toBe(true);
       if (!published.ok) throw new Error(published.error.message);
       expect(published.data.publishedDefinition).toEqual(exported);
       expect(published.data.publishedCapabilities).toEqual(validation.compiled.capabilities);
-      expect((await get(CERTIFICATE.appId))?.publishedCapabilities).toEqual(validation.compiled.capabilities);
+      expect((await get(created.data.id))?.publishedCapabilities).toEqual(validation.compiled.capabilities);
 
       const reviewValidation = await compile(reviewDefinition);
       expect(reviewValidation.ok).toBe(true);
@@ -311,7 +306,7 @@ describe("Grids App Golden fixtures", () => {
       const reviewCreated = await apply(reviewDefinition);
       expect(reviewCreated.ok).toBe(true);
       if (!reviewCreated.ok) throw new Error(reviewCreated.error.message);
-      const reviewPublished = await publish(CERTIFICATE.reviewAppId);
+      const reviewPublished = await publish(reviewCreated.data.id);
       expect(reviewPublished.ok).toBe(true);
 
       const baseGrant = await grantAccess({
@@ -323,13 +318,13 @@ describe("Grids App Golden fixtures", () => {
       expect(baseGrant.ok).toBe(true);
       const reviewGrant = await grantAccess({
         resourceType: "customApp",
-        resourceId: CERTIFICATE.reviewAppId,
+        resourceId: reviewCreated.data.id,
         principal: { type: "group", groupId: CERTIFICATE.responsibleGroupId },
         permission: "read",
       });
       expect(reviewGrant.ok).toBe(true);
       expect(await listBaseAccess(CERTIFICATE.baseId)).toHaveLength(1);
-      expect(await listCustomAppAccess(CERTIFICATE.reviewAppId)).toHaveLength(1);
+      expect(await listCustomAppAccess(reviewCreated.data.id)).toHaveLength(1);
     } finally {
       await cleanupCertificateFixture();
     }

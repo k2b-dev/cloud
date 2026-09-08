@@ -54,18 +54,18 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
         fixture,
         `
           from view TOP1
-          select AMT01 as order_amount
-          where STAT1 = 'Closed'
+          select AMT01x as order_amount
+          where STAT1x = 'Closed'
         `,
         context,
       );
       expect(scopedBeforeWhere.mode).toBe("rows");
       expect(scopedBeforeWhere.rows).toHaveLength(0);
 
-      const filtered = await preview(fixture, `from view CLOS1\nselect AMT01 as order_amount`, context);
+      const filtered = await preview(fixture, `from view CLOS1\nselect AMT01x as order_amount`, context);
       expect(filtered.rows.map((row) => row.recordId)).toEqual([fixture.orderBId]);
 
-      const searched = await preview(fixture, `from view OPENS\nsearch 'Closed' in STAT1`, context);
+      const searched = await preview(fixture, `from view OPENS\nsearch 'Closed' in STAT1x`, context);
       expect(searched.rows).toHaveLength(0);
     } finally {
       await cleanupFixture(fixture.baseId);
@@ -89,7 +89,7 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
         fixture,
         `
           from view TOP2
-          group by STAT1
+          group by STAT1x
           aggregate count(*) as rows
         `,
         context,
@@ -98,7 +98,7 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
       const groupedStatuses = new Set(grouped.rows.map((row) => row.values.gk_0));
       expect(groupedStatuses).toEqual(new Set(["Closed", "Open"]));
 
-      const aggregate = await preview(fixture, `from view TOP2\naggregate count(*) as rows, sum(AMT01) as revenue`, context);
+      const aggregate = await preview(fixture, `from view TOP2\naggregate count(*) as rows, sum(AMT01x) as revenue`, context);
       expect(aggregate.mode).toBe("groups");
       expect(Number(aggregate.rows[0]?.values["*__count"])).toBe(2);
       expect(Number(aggregate.rows[0]?.values[`${fixture.amountId}__sum`])).toBe(16.5);
@@ -205,8 +205,8 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
         `
           from view BYCUS
           join table ${fixture.customers.shortId} as customer on Customer = customer.id
-          select Customer, revenue, customer.NAME1 as customer_name, customer.FAMT1 as favorite_amount
-          sort customer.FSUM1 desc
+          select Customer, revenue, customer.NAME1x as customer_name, customer.FAMT1x as favorite_amount
+          sort customer.FSUM1x desc
         `,
         context,
       );
@@ -298,10 +298,10 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
         `
           from view BYCUS
           join table ${fixture.customers.shortId} as customer on Customer = customer.id
-          search 'Alice' in customer.NAME1
-          where customer.SCORE > 5 and revenue > 1
-          group by customer.NAME1
-          aggregate sum(revenue) as total_revenue, avg(customer.SCORE) as avg_score, sum(formula(revenue + customer.SCORE)) as weighted
+          search 'Alice' in customer.NAME1x
+          where customer.SCOREx > 5 and revenue > 1
+          group by customer.NAME1x
+          aggregate sum(revenue) as total_revenue, avg(customer.SCOREx) as avg_score, sum(formula(revenue + customer.SCOREx)) as weighted
           having total_revenue > 10
           sort total_revenue desc
         `,
@@ -341,11 +341,11 @@ describe("Query DSL Postgres smoke — derived saved-view sources", () => {
         `
           from view BYCUS
           join table ${fixture.customers.shortId} as Customer on Customer = customer.id
-          join table ${fixture.orders.shortId} as favorite on customer.FAVOR = favorite.id
-          search 'Open' in favorite.STAT1
-          where favorite.AMT01 > 10 and revenue > 1
-          group by favorite.STAT1
-          aggregate sum(revenue) as total_revenue, sum(formula(revenue + favorite.AMT01)) as weighted
+          join table ${fixture.orders.shortId} as favorite on customer.FAVORx = favorite.id
+          search 'Open' in favorite.STAT1x
+          where favorite.AMT01x > 10 and revenue > 1
+          group by favorite.STAT1x
+          aggregate sum(revenue) as total_revenue, sum(formula(revenue + favorite.AMT01x)) as weighted
           sort total_revenue desc
         `,
         context,

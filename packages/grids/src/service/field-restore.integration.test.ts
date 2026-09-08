@@ -31,10 +31,10 @@ describe("field restore Postgres integration", () => {
         const firstRecordId = Bun.randomUUIDv7();
         const secondRecordId = Bun.randomUUIDv7();
         await sql`
-          INSERT INTO grids.records (id, table_id, data)
+          INSERT INTO grids.records (short_id, id, table_id, data)
           VALUES
-            (${firstRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'A'::text)),
-            (${secondRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'B'::text))
+            (${shortId("R")}, ${firstRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'A'::text)),
+            (${shortId("R")}, ${secondRecordId}::uuid, ${tableId}::uuid, jsonb_build_object(${fieldId}::text, 'B'::text))
         `;
 
         expect((await fields.softDelete(fieldId, null)).ok).toBe(true);

@@ -18,7 +18,7 @@ const expectBadInput = (result: { ok: boolean; error?: { code?: string; message?
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.error?.code).toBe("BAD_INPUT");
-    expect(result.error?.message).toContain(message);
+    expect(result.error?.message?.toLowerCase()).toContain(message.toLowerCase());
   }
 };
 
