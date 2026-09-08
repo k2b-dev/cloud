@@ -14,6 +14,16 @@ import { gridsHelp } from ".";
 
 const cliSkillReference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 
+test("documents issuer responsibility without an external E-Invoice approval gate", () => {
+  const english = gridsHelp.getMarkdown("grids-documents-pdfs", "en")!;
+  const german = gridsHelp.getMarkdown("grids-documents-pdfs", "de")!;
+  expect(english).toContain("invoice issuer is responsible");
+  expect(english).not.toContain("Production use still requires");
+  expect(german).toContain("Rechnungsaussteller verantwortet den Inhalt");
+  expect(german).not.toContain("Produktiveinsatz erfordert");
+  expect(cliSkillReference).toContain("Do not interpret a valid report as a compliance certificate");
+});
+
 const expectedTopics = [
   "grids-overview",
   "grids-core-model",

@@ -26,6 +26,11 @@ const snapshot = {
 const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00:00Z") };
 
 describe("German E-Invoice profile", () => {
+  test("describes technical validation without promising tax or legal approval", () => {
+    const profile = createGermanEInvoiceProfile();
+    expect(profile.description).toContain("Technical validation is not tax or legal approval");
+    expect(profile.description).toContain("issuer is responsible");
+  });
   test("generates exact-decimal EN 16931 XML accepted by the pinned input rules and XSD", async () => {
     expect(germanEInvoiceSnapshotSchema.safeParse(snapshot).success).toBe(true);
     const xml = buildGermanEInvoiceXml(snapshot, context);

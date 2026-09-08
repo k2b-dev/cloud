@@ -202,7 +202,8 @@ export const createGermanEInvoiceProfile = (
   id: "de.zugferd.en16931",
   version: 1,
   title: "German E-Invoice (ZUGFeRD EN 16931)",
-  description: "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval.",
+  description:
+    "Outgoing EUR invoices using ZUGFeRD 2.5 / Factur-X 1.09 EN 16931. Technical validation is not tax or legal approval. The issuer is responsible for invoice content and suitability for the intended use.",
   rendererVersion: "gotenberg-8.36.0-factur-x",
   validatorVersion: "stackforge-factur-x-1.2.0-xsd-en16931",
   input: germanEInvoiceSnapshotSchema,

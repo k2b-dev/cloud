@@ -97,7 +97,8 @@ documents, and workflows without splitting the domain across unrelated tools.
   artifact. Generate it from the Record detail or template workspace; the same
   Document also appears in All documents. Its number, validation evidence,
   exact bytes, and hashes are immutable. Renderer validation names technical
-  checks; it is not a universal compliance decision.
+  checks; it is not a universal compliance decision. The invoice issuer is
+  responsible for the content and suitability for the intended use.
 - Use automatically provisioned durable number series for sequential ID fields
   and numbered Documents. Allocations are atomic and never reused; technical
   gaps are possible, and formatting changes affect future values only.
