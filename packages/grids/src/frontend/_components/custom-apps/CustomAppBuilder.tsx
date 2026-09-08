@@ -1,3 +1,4 @@
+import { documentNavigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dnd, mutation as mutations } from "@k2b/stdlib/solid";
 import {
@@ -68,6 +69,7 @@ import {
 } from "./custom-app-builder-model";
 import { createCustomAppBuilderState, customAppDiagnosticSelection } from "./custom-app-builder-state";
 import type { CustomAppCatalog } from "./custom-app-catalog";
+import { createCustomAppNavigationGuard } from "./custom-app-navigation";
 
 type PublicCustomAppDraftSave = { app: PublicCustomApp; valid: boolean; diagnostics: CustomAppDiagnostic[] };
 
@@ -296,6 +298,7 @@ export function CustomAppLifecycleActions(props: {
   app: PublicCustomApp;
   baseId: string;
   beforeDelete?: () => Promise<void>;
+  onDeleted?: () => void;
   onUnpublished: (app: PublicCustomApp) => void;
 }) {
   const messages = useCustomAppBuilderMessages();
@@ -340,6 +343,7 @@ export function CustomAppLifecycleActions(props: {
     },
     onSuccess: (deleted) => {
       if (!deleted) return;
+      props.onDeleted?.();
       window.location.assign(`/app/grids/${encodeURIComponent(props.baseId)}?edit=true`);
     },
     onError: (error) => prompts.error(error.message),
@@ -1454,6 +1458,27 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     return persistQueuedDrafts();
   };
 
+  let appDeleted = false;
+  onMount(() => {
+    const guard = createCustomAppNavigationGuard({
+      currentUrl: () => window.location.href,
+      dirty: () => !appDeleted && (draft.dirty() || activeSave !== null),
+      flush: flushAutosave,
+      navigate: documentNavigate,
+    });
+    const onClick = (event: MouseEvent) => {
+      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      void guard.click(event, anchor);
+    };
+    document.addEventListener("click", onClick);
+    window.addEventListener("beforeunload", guard.beforeUnload);
+    onCleanup(() => {
+      guard.dispose();
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("beforeunload", guard.beforeUnload);
+    });
+  });
+
   const openWorkflowConfiguration = async (workflowId?: string) => {
     if (!(await flushAutosave())) {
       await prompts.error(text("Save the current App draft before leaving the builder."));
@@ -1937,7 +1962,17 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                   ? text("Saving changes automatically…")
                   : (saveError() ?? text("Changes are saved automatically. Publish the draft when it is ready for everyone."))
               }
-              lifecycle={<CustomAppLifecycleActions app={app()} baseId={props.baseId} beforeDelete={stopAutosave} onUnpublished={setApp} />}
+              lifecycle={
+                <CustomAppLifecycleActions
+                  app={app()}
+                  baseId={props.baseId}
+                  beforeDelete={stopAutosave}
+                  onDeleted={() => {
+                    appDeleted = true;
+                  }}
+                  onUnpublished={setApp}
+                />
+              }
             />
           );
         },
@@ -2087,6 +2122,11 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                 }
               >
                 <div class="mt-3 flex flex-wrap gap-2">
+                  <Show when={saveState() === "error"}>
+                    <Button size="xs" variant="secondary" onClick={() => void flushAutosave()}>
+                      {text("Retry save")}
+                    </Button>
+                  </Show>
                   <Show when={saveState() === "invalid"}>
                     <Button size="xs" variant="secondary" onClick={() => void reviewDraft()}>
                       {text("Review draft")}

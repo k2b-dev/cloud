@@ -15,6 +15,7 @@ import { createSignal, Show } from "solid-js";
 import type { PublicTable as Table } from "../../../api/public-dto";
 import RecordPicker from "../records/RecordPicker";
 import { downloadPdfResponse } from "./document-download";
+import { createDocumentGenerationAttempt } from "./document-generation-attempt";
 import { isPdfResponse, requestDocumentTemplateGeneration, requestDocumentTemplatePreview } from "./document-transfer-client";
 import { documentMessages } from "./messages";
 import type { PublicDocumentTemplateSummary } from "./public-document-types";
@@ -36,13 +37,15 @@ export const openDocumentGenerateDialog = (args: DocumentGenerateDialogArgs) =>
 function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close: () => void }) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
-  const idempotencyKey = crypto.randomUUID();
+  const attempt = createDocumentGenerationAttempt();
+  const defaultDownloadFilename = `${props.args.template.name}.pdf`;
   const [recordId, setRecordId] = createSignal(props.args.initialRecordId ?? "");
   const [filename, setFilename] = createSignal("");
   const [tags, setTags] = createSignal<string[]>([]);
   const [previewedRecordId, setPreviewedRecordId] = createSignal<string | null>(null);
 
   const setSelectedRecord = (next: string) => {
+    if (attempt.request()) return;
     setRecordId(next);
     setPreviewedRecordId(null);
   };
@@ -51,6 +54,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
     return selected.length > 0 && previewedRecordId() === selected;
   };
   const previewPdf = async () => {
+    if (attempt.request()) throw new Error(t().retryGenerationDetail);
     const selected = recordId().trim();
     if (!selected) throw new Error(t().chooseRecordFirst);
     setPreviewedRecordId(null);
@@ -61,18 +65,23 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
 
   const generateMut = mutations.create<void, void>({
     mutation: async (_, { abortSignal }) => {
-      const selected = recordId().trim();
-      if (!selected) throw new Error(t().chooseRecordFirst);
-      if (!hasCurrentPreview()) throw new Error(t().previewBeforeGenerate);
+      if (!attempt.request()) {
+        if (!recordId().trim()) throw new Error(t().chooseRecordFirst);
+        if (!hasCurrentPreview()) throw new Error(t().previewBeforeGenerate);
+      }
+      const request =
+        attempt.request() ??
+        attempt.start({
+          templateId: props.args.template.id,
+          recordId: recordId().trim(),
+          filename: filename().trim() || undefined,
+          tags: tags(),
+        });
       const res = await requestDocumentTemplateGeneration({
-        templateId: props.args.template.id,
-        recordId: selected,
-        filename: filename().trim() || undefined,
-        tags: tags(),
-        idempotencyKey,
+        ...request,
         signal: abortSignal,
       });
-      await downloadPdfResponse(res, filename().trim() || `${props.args.template.name}.pdf`, locale());
+      await downloadPdfResponse(res, request.filename || defaultDownloadFilename, locale());
     },
     onSuccess: async () => {
       await props.args.onGenerated();
@@ -80,6 +89,13 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
     },
     onError: (error) => prompts.error(error.message),
   });
+
+  const startNewAttempt = async () => {
+    if (generateMut.loading()) return;
+    if (!(await prompts.confirm(t().newGenerationAttemptDetail, { title: t().newGenerationAttempt }))) return;
+    attempt.reset();
+    setPreviewedRecordId(null);
+  };
 
   return (
     <PanelDialog>
@@ -102,6 +118,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             label={t().record}
             description={t().recordDescription}
             placeholder={t().searchRecords}
+            disabled={() => attempt.request() !== null}
           />
           <Show when={props.args.template.renderer.kind === "html"}>
             <TextInput
@@ -111,6 +128,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
               onValueChange={setFilename}
               icon="ti ti-file-text"
               placeholder={t().useTemplateDefault}
+              disabled={attempt.request() !== null}
             />
           </Show>
           <TagsInput
@@ -119,20 +137,30 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             placeholder={t().tagsPlaceholder}
             value={tags}
             onValueChange={setTags}
+            disabled={attempt.request() !== null}
           />
           <NoticeCard tone="info" title={t().immutableGeneratedDocument} detail={t().immutableGeneratedDocumentDetail} />
         </section>
-        <PdfPreview
-          title={t().pdfPreview}
-          class="h-[min(56rem,62dvh)] min-h-[36rem] shrink-0"
-          buttonLabel={t().renderPreview}
-          emptyText={t().chooseRecordAndPreview}
-          disabled={() => !recordId().trim()}
-          request={previewPdf}
-        />
+        <Show
+          when={!attempt.request()}
+          fallback={<NoticeCard tone="info" title={t().retryGeneration} detail={t().retryGenerationDetail} />}
+        >
+          <PdfPreview
+            title={t().pdfPreview}
+            class="h-[min(56rem,62dvh)] min-h-[36rem] shrink-0"
+            buttonLabel={t().renderPreview}
+            emptyText={t().chooseRecordAndPreview}
+            disabled={() => !recordId().trim()}
+            request={previewPdf}
+          />
+        </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <span />
+        <Show when={attempt.request()} fallback={<span />}>
+          <Button variant="secondary" size="sm" type="button" onClick={startNewAttempt} disabled={generateMut.loading()}>
+            {t().newGenerationAttempt}
+          </Button>
+        </Show>
         <div class="flex items-center justify-end gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={props.close} disabled={generateMut.loading()}>
             {t().cancel}
@@ -142,10 +170,10 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             size="sm"
             type="button"
             onClick={() => generateMut.mutate(undefined)}
-            disabled={generateMut.loading() || !hasCurrentPreview()}
+            disabled={generateMut.loading() || (!attempt.request() && !hasCurrentPreview())}
           >
             {generateMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
-            {props.args.mode === "generate-again" ? t().generateAgain : t().generateDocument}
+            {attempt.request() ? t().retryGeneration : props.args.mode === "generate-again" ? t().generateAgain : t().generateDocument}
           </Button>
         </div>
       </PanelDialog.Footer>

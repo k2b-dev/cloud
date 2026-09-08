@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
+import type { AuthContext } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
+import { Hono } from "hono";
+import { snapshotTableReadAuthorizer } from "../api/documents-api-shared";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createDocumentForRecord } from "./document-core";
@@ -58,6 +61,80 @@ const fixture = async () => {
 };
 
 describe("public Document capture and replay", () => {
+  postgresTest("captures authorized lookup and HTML fields with only one available pool connection", async () => {
+    const item = await fixture();
+    const relation = await fields.create(
+      { tableId: item.table.id, name: "Related", type: "relation", config: { targetTableId: item.table.id, cardinality: "single" } },
+      null,
+    );
+    if (!relation.ok) throw relation.error;
+    const lookup = await fields.create(
+      {
+        tableId: item.table.id,
+        name: "Related name",
+        type: "lookup",
+        config: { relationFieldId: relation.data.id, targetFieldId: item.name.id },
+      },
+      null,
+    );
+    if (!lookup.ok) throw lookup.error;
+    const linked = await records.update(item.table.id, item.record.id, { [relation.data.id]: [item.record.id] }, null, "direct");
+    if (!linked.ok) throw linked.error;
+    const html = await fields.create(
+      { tableId: item.table.id, name: "HTML", type: "html_template", config: { template: "<p>{{ app.name }}</p>", css: "" } },
+      null,
+    );
+    if (!html.ok) throw html.error;
+    const selectedTemplate = await updateTemplate(
+      item.template.id,
+      { source: `from table {${item.table.shortId}}\nselect {${html.data.shortId}} as rendered_html\nlimit 1` },
+      null,
+    );
+    if (!selectedTemplate.ok) throw selectedTemplate.error;
+    const userId = testUuid();
+    await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+      VALUES (${userId}::uuid, ${`capture-${userId}`}, 'local', 'user', 'Capture User', 'Capture', 'User')`;
+    const accessId = testUuid();
+    await sql`INSERT INTO auth.access (id, user_id, permission) VALUES (${accessId}::uuid, ${userId}::uuid, 'read')`;
+    await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${item.baseId}::uuid, ${accessId}::uuid)`;
+    // Use the real HTTP authorization adapter, not an always-true fixture.
+    const app = new Hono<AuthContext>().get("/capture", async (c) => {
+      c.set("accessSubject", { type: "user", userId });
+      const result = await createDocumentForRecord({
+        ...item.input,
+        template: selectedTemplate.data,
+        viewer: { userId, userGroups: [] },
+        canReadTable: snapshotTableReadAuthorizer(c),
+      });
+      if (!result.ok) throw result.error;
+      return c.json(result.data);
+    });
+    const poolSize = sql.options.max;
+    if (poolSize === undefined || poolSize < 1) throw new Error("Missing SQL pool size");
+    const reserved: Awaited<ReturnType<typeof sql.reserve>>[] = [];
+    let pending: Promise<Response> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      for (let index = 1; index < poolSize; index++) reserved.push(await sql.reserve());
+      pending = Promise.resolve(app.request("/capture"));
+      const response = await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Document capture exhausted the connection pool")), 2_000);
+        }),
+      ]);
+      expect(response.status).toBe(200);
+      const document = await response.json();
+      expect(document.renderData.record.data[lookup.data.shortId]).toBe("Original root");
+      expect(document.renderData.record.data[html.data.shortId]).toContain("<p>");
+      expect(document.renderData.rows[0].rendered_html).toContain("<p>");
+    } finally {
+      clearTimeout(timeout);
+      for (const connection of reserved) connection.release();
+      await pending?.catch(() => undefined);
+    }
+  });
+
   postgresTest("concurrent first captures either replay or return a retryable conflict without duplicate issuance", async () => {
     const item = await fixture();
     const ready = Promise.withResolvers<void>();

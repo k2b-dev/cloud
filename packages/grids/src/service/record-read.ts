@@ -18,6 +18,7 @@ import { liveRecordParentJoinSql } from "./parent-checks";
 import { mapRecordRow } from "./record-persistence";
 import { attachRelationExpansion, type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import { get as getTable } from "./tables";
+import type { DocumentTemplateAppData } from "./template-context";
 import type { Field, GridRecord } from "./types";
 
 type DbRow = Record<string, unknown>;
@@ -67,7 +68,7 @@ const prepareFormulaLookupPlan = async (
   authorizeComputedTable?: (tableId: string) => Promise<boolean>,
   client?: SqlClient,
 ): Promise<FormulaLookupPlan> => {
-  const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, viewer, authorizeComputedTable);
+  const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, viewer, authorizeComputedTable, client);
   const specs = fields
     .filter((field) => field.type === "lookup" && !field.deletedAt && lookupTargetMeta(field)?.type === "formula")
     .map((lookupField) => {
@@ -88,7 +89,7 @@ const prepareFormulaLookupPlan = async (
   for (const { targetTableId } of specs) {
     if (targets.has(targetTableId)) continue;
     const targetFields = await listFields(targetTableId, false, client);
-    const authorizedNestedTableIds = await readableComputedTargetTableIds(targetFields, viewer, authorizeComputedTable);
+    const authorizedNestedTableIds = await readableComputedTargetTableIds(targetFields, viewer, authorizeComputedTable, client);
     const targetComputed = await buildComputedProjections(targetFields, {
       client,
       authorizedTableIds: authorizedNestedTableIds,
@@ -178,6 +179,7 @@ export const enrichFormulaLookups = async (
 
 type RecordReadOptions = {
   client?: SqlClient;
+  templateApp?: DocumentTemplateAppData;
   includeRelations?: boolean;
   viewer?: ExpansionViewer;
   authorizeComputedTable?: (tableId: string) => Promise<boolean>;
@@ -255,7 +257,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
   const table = await getTable(tableId, { client });
   if (table?.kind === "federated") return createFederatedReader(tableId, fields, opts);
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, client);
-  const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable);
+  const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable, client);
   const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds, client });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
   const projections = [...computed, ...formulaSql];
@@ -310,6 +312,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     });
     await enrichRecordsWithHtmlTemplates(records, fieldsWithLookupMeta, {
       client,
+      app: opts.templateApp,
       dateConfig: opts.dateConfig,
       ...(opts.htmlTemplateFieldIds ? { fieldIds: new Set(opts.htmlTemplateFieldIds) } : {}),
       signal: opts.signal,

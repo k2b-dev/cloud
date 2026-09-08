@@ -13,7 +13,7 @@ import { datePatternContext, renderLiquidText, utf8ByteLength } from "./document
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 import { projectPublicIds } from "./public-resources";
 import { get as getTable } from "./tables";
-import { buildTemplateAppData, buildTemplateBusinessData } from "./template-context";
+import { buildTemplateAppData, buildTemplateBusinessData, type DocumentTemplateAppData } from "./template-context";
 import type { Field, GridRecord } from "./types";
 
 const log = logger("grids:html-template-fields");
@@ -105,6 +105,7 @@ export const enrichRecordsWithHtmlTemplates = async (
   fields: Field[],
   options: {
     client?: SqlClient;
+    app?: DocumentTemplateAppData;
     dateConfig?: DateContext;
     now?: Date;
     fieldIds?: ReadonlySet<string>;
@@ -157,7 +158,10 @@ export const enrichRecordsWithHtmlTemplates = async (
 
     const relationFields = fields.filter((field) => !field.deletedAt && field.type === "relation");
     const relatedIds = records.flatMap((record) => relationFields.flatMap((field) => relationIds(record.data[field.id])));
-    [app, publicRecordIds] = await Promise.all([buildTemplateAppData(), projectPublicIds("record", relatedIds, options.client)]);
+    [app, publicRecordIds] = await Promise.all([
+      options.app ?? buildTemplateAppData(),
+      projectPublicIds("record", relatedIds, options.client),
+    ]);
     business = await buildTemplateBusinessData(table.baseId, app, options.client);
   } catch (error) {
     setAll(renderFields, HTML_TEMPLATE_ERROR);

@@ -151,6 +151,7 @@ const fieldsWithPlanExtras = async (
 
 const executeDocumentGqlSource = async (params: {
   client?: SqlClient;
+  templateApp: DocumentTemplateAppData;
   baseId: string;
   tableId: string;
   source: string;
@@ -173,6 +174,7 @@ const executeDocumentGqlSource = async (params: {
   const fieldsByTableId = await fieldsWithPlanExtras(ctx.fieldsByTableId, params.tableId, resolved.plan, params.client);
   const preview = await previewDslQuery(resolved.plan, {
     client: params.client,
+    templateApp: params.templateApp,
     fieldsByTableId,
     timeZone: params.dateConfig?.timeZone,
     maxRows: DOCUMENT_QUERY_MAX_ROWS,
@@ -377,6 +379,7 @@ export const buildLiveRenderData = async (params: {
 
   const executed = await executeDocumentGqlSource({
     client: params.client,
+    templateApp: appData,
     baseId: params.table.baseId,
     tableId: params.table.id,
     source: source.data,

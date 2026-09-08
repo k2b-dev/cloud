@@ -62,6 +62,7 @@ if (process.argv.includes("--bootstrap")) {
       "src/frontend/_components/records/RecordReferencedBy.behavior.test.ts",
       "src/service/record-event-outbox.integration.test.ts",
     ];
+    const dom = [special[5]!, "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx"];
     const packageRoot = join(root, "packages/grids");
     const all = [...new Bun.Glob("{src,scripts}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
     const phases = [
@@ -69,12 +70,12 @@ if (process.argv.includes("--bootstrap")) {
       { name: "outbox", files: special.slice(6), flags: ["--preload", "./packages/grids/scripts/verify-sync-preload.ts"] },
       {
         name: "database-and-standard",
-        files: all.filter((file) => !special.includes(file)),
+        files: all.filter((file) => !special.includes(file) && !dom.includes(file)),
         flags: ["--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
       },
       { name: "sync", files: special.slice(0, 3), flags: [] },
       { name: "recovery-and-cleanup", files: special.slice(3, 5), flags: [] },
-      { name: "dom", files: special.slice(5, 6), flags: ["--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
+      { name: "dom", files: dom, flags: ["--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
     ];
     for (const phase of phases) {
       const report = join(reports, `${phase.name}.xml`);

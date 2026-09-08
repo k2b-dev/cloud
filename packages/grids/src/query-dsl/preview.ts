@@ -13,6 +13,7 @@ import { buildPrincipalLabelCache, principalReferencesFromValue } from "../servi
 import { createReader } from "../service/record-read";
 import { buildRelationLabelCacheForIds, type ExpansionViewer } from "../service/relations";
 import { compileSearchClause } from "../service/search";
+import type { DocumentTemplateAppData } from "../service/template-context";
 import type { Field } from "../service/types";
 import { type DslResolvedSqlQueryPlan, isDslAggregateOnlyPlan } from "./resolver";
 import { type DslResultCursor, encodeDslResultCursor } from "./result-cursor";
@@ -34,6 +35,7 @@ type DslQueryPreviewRow = DslQueryPreviewSuccess["rows"][number];
 
 type DslQueryPreviewOptions = {
   client?: SqlClient;
+  templateApp?: DocumentTemplateAppData;
   fieldsByTableId: Record<string, Field[]>;
   timeZone?: string;
   limit?: number;
@@ -470,6 +472,7 @@ const hydrateHtmlTemplatePreviewValues = async (
   if (ids.length === 0) return rows;
   const reader = await createReader(plan.tableId, {
     client: options.client,
+    templateApp: options.templateApp,
     fields: options.fieldsByTableId[plan.tableId] ?? [],
     dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
     viewer: options.viewer,

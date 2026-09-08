@@ -41,6 +41,7 @@ export default function RecordDocumentsSection(props: {
   tableName: string;
   recordId: string;
   live: boolean;
+  canWrite: boolean;
   templates: PublicDocumentTemplateSummary[];
   initialDocuments: { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   initialSnapshots: PublicRecordSnapshotSummary[];
@@ -220,12 +221,12 @@ export default function RecordDocumentsSection(props: {
   const generatedDocuments = documents;
   const manualSnapshots = snapshots;
   const inspectDocument = (document: PublicDocument) => {
-    const template = props.templates.find((candidate) => candidate.id === document.templateId);
+    const template = availableTemplates().find((candidate) => candidate.id === document.templateId);
     void openDocumentDetailsDialog({
       document,
-      canWrite: props.live && availableTemplates().length > 0,
+      canWrite: props.canWrite,
       onDownload: (item) => redownloadMut.mutate(item),
-      ...(template ? { onGenerateAgain: () => generate(template) } : {}),
+      ...(props.live && props.canWrite && template ? { onGenerateAgain: () => generate(template) } : {}),
     });
   };
   const generationActions = () =>
@@ -283,14 +284,14 @@ export default function RecordDocumentsSection(props: {
         </DetailPanel.Group>
       </Show>
 
-      <Show when={generatedDocuments().length > 0 || (props.live && availableTemplates().length > 0)}>
+      <Show when={generatedDocuments().length > 0 || (props.live && props.canWrite && availableTemplates().length > 0)}>
         <DetailPanel.Group label={t().generatedDocuments}>
           <DetailPanel.Section
             title={t().documents}
             icon="ti ti-file-type-pdf"
             meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : generatedDocuments().length}
             actions={
-              <Show when={props.live && availableTemplates().length > 0}>
+              <Show when={props.live && props.canWrite && availableTemplates().length > 0}>
                 <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>
                   <Dropdown.Trigger variant="secondary" size="sm" type="button" disabled={refreshDocumentsMut.loading()}>
                     <i class="ti ti-file-plus" />

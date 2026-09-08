@@ -8,6 +8,7 @@ import {
   ShortIdSchema,
 } from "../contracts";
 import { gridsService } from "../service";
+import type { SnapshotTableReadAuthorizer } from "../service/document-snapshots";
 import { decodeDocumentCursor } from "../service/document-values";
 import { loadDocumentNumberSeries } from "../service/number-series";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
@@ -741,10 +742,12 @@ export const gateTemplate = async (
   required: "read" | "write" | "admin",
 ) => gateAt(c, { baseId: loaded.table.baseId }, required);
 
-export const snapshotTableReadAuthorizer = (c: Context<AuthContext>) => async (target: { baseId: string; tableId: string }) => {
-  const resolved = await gateAt(c, { baseId: target.baseId }, "read");
-  return resolved.ok;
-};
+export const snapshotTableReadAuthorizer =
+  (c: Context<AuthContext>): SnapshotTableReadAuthorizer =>
+  async (target, client) => {
+    const resolved = await gateAt(c, { baseId: target.baseId }, "read", client);
+    return resolved.ok;
+  };
 
 export const gateDocument = async (
   c: Context<AuthContext>,

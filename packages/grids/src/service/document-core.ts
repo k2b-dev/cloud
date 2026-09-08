@@ -12,6 +12,7 @@ import { getStoredTemplate } from "./document-templates";
 import { get as getRecord } from "./records";
 import type { ExpansionViewer } from "./relation-access";
 import { get as getTable } from "./tables";
+import { buildTemplateAppData } from "./template-context";
 import type { Table } from "./types";
 
 const WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS = 1_000;
@@ -45,8 +46,11 @@ export const createDocumentForRecord = async (params: {
       tableId: params.table.id,
       templateId: params.template.id,
     },
-    () =>
-      sql
+    async () => {
+      // Settings use their own cache/pool. Read them before reserving the
+      // capture connection, then share this context with every HTML field.
+      const templateApp = await buildTemplateAppData();
+      return sql
         .begin(async (client) => {
           await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
           const template = await getStoredTemplate(params.template.id, client);
@@ -56,6 +60,7 @@ export const createDocumentForRecord = async (params: {
 
           const record = await getRecord(params.table.id, params.recordId, {
             client,
+            templateApp,
             dateConfig: params.dateConfig,
             viewer: params.viewer,
           });
@@ -63,6 +68,7 @@ export const createDocumentForRecord = async (params: {
 
           const rendered = await buildLiveRenderData({
             client,
+            app: templateApp,
             template,
             table,
             record,
@@ -73,6 +79,7 @@ export const createDocumentForRecord = async (params: {
 
           const snapshot = await createRecordSnapshotDraft({
             client,
+            templateApp,
             baseId: params.table.baseId,
             tableId: params.table.id,
             recordId: params.recordId,
@@ -97,7 +104,8 @@ export const createDocumentForRecord = async (params: {
             return fail(err.conflict(t.recordChanged));
           }
           throw error;
-        }),
+        });
+    },
   );
 };
 

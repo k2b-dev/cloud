@@ -3,6 +3,7 @@ import type { AccessSubject, AuthContext, PermissionLevel, RequestActor } from "
 import type { Context } from "hono";
 import type { Grant } from "../service";
 import { gridsService } from "../service";
+import type { SqlClient } from "../service/audit";
 import { hasAtLeast, minPermission, permissionFromCredentialScopes } from "../service/permission-resolver";
 import { workflowCredentialBinding } from "../service/workflow-authorization";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
@@ -123,18 +124,23 @@ export const gateBaseAtAccess = async (
   access: GridsAccessContext,
   baseId: string,
   required: PermissionLevel,
+  client?: SqlClient,
 ): Promise<Result<PermissionLevel>> => {
   const boundBaseId = resourceBoundBaseIdFor(access);
   if (boundBaseId !== undefined && boundBaseId !== baseId) return deny();
   const credentialLevel = credentialPermissionFor(access);
   if (!gridsService.permission.hasAtLeast(credentialLevel, required)) return deny();
-  const grants = await gridsService.permission.loadBaseGrantsForSubject({ baseId, subject: accessSubjectFor(access) });
+  const grants = await gridsService.permission.loadBaseGrantsForSubject({ baseId, subject: accessSubjectFor(access) }, client);
   const level = minPermission(gridsService.permission.resolve(grants, { baseId }), credentialLevel);
   return gridsService.permission.hasAtLeast(level, required) ? ok(level) : deny();
 };
 
-export const gateAt = (c: Context<AuthContext>, target: { baseId: string }, required: PermissionLevel): Promise<Result<PermissionLevel>> =>
-  gateBaseAtAccess(gridsAccessContext(c), target.baseId, required);
+export const gateAt = (
+  c: Context<AuthContext>,
+  target: { baseId: string },
+  required: PermissionLevel,
+  client?: SqlClient,
+): Promise<Result<PermissionLevel>> => gateBaseAtAccess(gridsAccessContext(c), target.baseId, required, client);
 
 export const resolveBaseWithGrantsForAccess = async (
   access: GridsAccessContext,

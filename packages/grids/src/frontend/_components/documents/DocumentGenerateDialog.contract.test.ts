@@ -2,6 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { documentMessages } from "./messages";
 
 describe("document generation dialog", () => {
+  test("frozen retries hide the live preview and require confirmation before starting over", async () => {
+    const source = await Bun.file(new URL("./DocumentGenerateDialog.tsx", import.meta.url)).text();
+    expect(source).toContain("when={!attempt.request()}");
+    expect(source).toContain("disabled={() => attempt.request() !== null}");
+    expect(source).toContain("prompts.confirm(t().newGenerationAttemptDetail");
+    expect(source).toContain("request.filename ||");
+    expect(source).toContain("(!attempt.request() && !hasCurrentPreview())");
+    for (const locale of ["en", "de"]) {
+      const copy = documentMessages.resolve([locale]).t;
+      expect(copy.retryGenerationDetail.length).toBeGreaterThan(0);
+      expect(copy.newGenerationAttemptDetail.length).toBeGreaterThan(0);
+    }
+  });
+
   test("uses editable tags, clear guidance, and a tall fixed preview workspace", async () => {
     const source = await Bun.file(new URL("./DocumentGenerateDialog.tsx", import.meta.url)).text();
     const copy = documentMessages.resolve(["en"]).t;

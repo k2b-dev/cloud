@@ -782,6 +782,7 @@ export default function RecordDetailPanel(props: Props) {
             tableName={props.tableName}
             recordId={rec.id}
             live={mode() === "live"}
+            canWrite={props.canWrite}
             templates={props.documentTemplates}
             initialDocuments={props.detail()?.documents ?? { items: [], cursor: null, hasMore: false }}
             initialSnapshots={props.detail()?.snapshots ?? []}

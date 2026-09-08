@@ -3,6 +3,7 @@ import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
 const deCopy = {
+  "Retry save": "Speichern erneut versuchen",
   General: "Allgemein",
   Lifecycle: "Lebenszyklus",
   "Who can open the published app": "Wer die veröffentlichte App öffnen darf",
@@ -62,6 +63,7 @@ const deCopy = {
   "Running this block's data source.": "Die Datenquelle dieses Blocks wird ausgeführt.",
   "Records unavailable": "Datensätze nicht verfügbar",
   "The preview could not be loaded.": "Die Vorschau konnte nicht geladen werden.",
+  "Reload preview": "Vorschau neu laden",
   "Data unavailable": "Daten nicht verfügbar",
   "The data source could not be previewed.": "Für diese Datenquelle konnte keine Vorschau erstellt werden.",
   "No records found.": "Keine Datensätze gefunden.",

@@ -127,13 +127,14 @@ export const readableComputedTargetTableIds = async (
   fields: Field[],
   viewer?: ExpansionViewer,
   authorizeTable?: (tableId: string) => Promise<boolean>,
+  client?: SqlClient,
 ): Promise<ReadonlySet<string> | undefined> => {
   const targetTableIds = [...new Set(computedTargetTableIds(fields))];
   if (authorizeTable) {
     const verdicts = await Promise.all(targetTableIds.map(async (tableId) => ((await authorizeTable(tableId)) ? tableId : null)));
     return new Set(verdicts.filter((tableId): tableId is string => tableId !== null));
   }
-  return viewer ? resolveReadableTableIds(targetTableIds, viewer) : undefined;
+  return viewer ? resolveReadableTableIds(targetTableIds, viewer, client) : undefined;
 };
 
 type TargetFieldResolver = (id: string) => Promise<Field | null>;

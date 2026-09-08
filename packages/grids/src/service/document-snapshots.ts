@@ -9,6 +9,7 @@ import { createReader, type RecordReader } from "./record-read";
 import type { ExpansionViewer } from "./relation-access";
 import { insertWithShortIdForDb } from "./short-id";
 import { get as getTable } from "./tables";
+import { buildTemplateAppData, type DocumentTemplateAppData } from "./template-context";
 import type { Field, GridRecord, Table } from "./types";
 
 const SNAPSHOT_MAX_DEPTH = 4;
@@ -19,7 +20,7 @@ type SnapshotRelatedTableTarget = {
   tableId: string;
 };
 
-export type SnapshotTableReadAuthorizer = (target: SnapshotRelatedTableTarget) => Promise<boolean>;
+export type SnapshotTableReadAuthorizer = (target: SnapshotRelatedTableTarget, client?: SqlClient) => Promise<boolean>;
 
 export type SnapshotRecord = {
   id: string;
@@ -92,6 +93,7 @@ const buildRecordSnapshotGraph = async (
   recordId: string,
   options: {
     client?: SqlClient;
+    templateApp?: DocumentTemplateAppData;
     baseId: string;
     canReadTable: SnapshotTableReadAuthorizer;
     viewer?: ExpansionViewer;
@@ -119,7 +121,7 @@ const buildRecordSnapshotGraph = async (
 
   const canReadSnapshotTable = async (table: Table): Promise<boolean> => {
     if (tableReadAccess.has(table.id)) return tableReadAccess.get(table.id) ?? false;
-    const access = await options.canReadTable({ baseId: table.baseId, tableId: table.id });
+    const access = await options.canReadTable({ baseId: table.baseId, tableId: table.id }, options.client);
     tableReadAccess.set(table.id, access);
     if (options.viewer) {
       options.viewer.tableReadAccess ??= new Map();
@@ -135,6 +137,7 @@ const buildRecordSnapshotGraph = async (
     if (!(await canReadSnapshotTable(table))) return null;
     const reader = await createReader(tableId, {
       client: options.client,
+      templateApp: options.templateApp,
       dateConfig: options.dateConfig,
       viewer: options.viewer,
     });
@@ -212,6 +215,7 @@ const buildRecordSnapshotGraph = async (
 
 type CreateRecordSnapshotParams = {
   client?: SqlClient;
+  templateApp?: DocumentTemplateAppData;
   baseId: string;
   tableId: string;
   recordId: string;
@@ -226,6 +230,7 @@ export type RecordSnapshotDraft = Omit<RecordSnapshot, "shortId">;
 export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshotDraft>> => {
   const graph = await buildRecordSnapshotGraph(params.tableId, params.recordId, {
     client: params.client,
+    templateApp: params.templateApp,
     baseId: params.baseId,
     canReadTable: params.canReadTable,
     viewer: params.viewer,
@@ -280,9 +285,10 @@ export const persistRecordSnapshot = async (
 };
 
 export const createRecordSnapshot = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshot>> => {
+  const templateApp = params.templateApp ?? (await buildTemplateAppData());
   return sql.begin(async (client) => {
     await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
-    const draft = await createRecordSnapshotDraft({ ...params, client });
+    const draft = await createRecordSnapshotDraft({ ...params, client, templateApp });
     if (!draft.ok) return draft;
     return persistRecordSnapshot(draft.data, client, params.dateConfig?.locale);
   });

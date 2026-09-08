@@ -17,6 +17,8 @@ Agents can use `document.templates` to find templates, `document.list` and `docu
 
 Every completed Document is immutable. It belongs to one template and one selected record, and the same Document appears in the record detail, the template workspace, and **All documents**. Retrying generation with the same idempotency key returns the same Document; reusing that key with different input fails.
 
+If generation fails, **Retry generation** resends the original inputs. Once generation has saved its source data, retries use that data even if the record or template changes. The dialog locks the inputs and hides the live preview during retries. To correct inputs or use current data, choose **Start a new attempt** and preview again. Check **All documents** first: the previous attempt may already have created a Document, and a new attempt can create another one. Writers can still manage existing Document links when its template is disabled or no longer available.
+
 A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates and validates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
 
 Validation proves only the technical checks named by the selected renderer and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids documents renderers --json` to inspect the renderers available on this installation.

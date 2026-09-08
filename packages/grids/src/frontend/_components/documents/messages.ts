@@ -74,6 +74,12 @@ export const documentMessages = i18n.define({
       couldNotRevokeDocumentLink: "Could not revoke document link",
       chooseRecordFirst: "Choose a record first.",
       previewBeforeGenerate: "Render a PDF preview before generating this document.",
+      retryGeneration: "Retry generation",
+      retryGenerationDetail:
+        "Retry sends the original record, filename, and tags. If generation already started, it uses the saved record and template data. A new live preview would not show that saved content.",
+      newGenerationAttempt: "Start a new attempt",
+      newGenerationAttemptDetail:
+        "The previous attempt may already have created a Document. Check All documents first. A new attempt lets you change the inputs and preview current data, but can create an additional Document. Start a new attempt?",
       generate: "Generate",
       generateTitle: ({ action, template }: { action: string; template: string }) => `${action} — ${template}`,
       record: "Record",
@@ -276,6 +282,12 @@ export const documentMessages = i18n.define({
       couldNotRevokeDocumentLink: "Dokumentlink konnte nicht widerrufen werden",
       chooseRecordFirst: "Wähle zuerst einen Datensatz.",
       previewBeforeGenerate: "Erstelle vor dem Erzeugen des Dokuments eine PDF-Vorschau.",
+      retryGeneration: "Erzeugung wiederholen",
+      retryGenerationDetail:
+        "Die Wiederholung sendet den ursprünglichen Datensatz, Dateinamen und die ursprünglichen Tags. Hat die Erzeugung bereits begonnen, verwendet sie die gespeicherten Datensatz- und Vorlagendaten. Eine neue Live-Vorschau würde diesen gespeicherten Inhalt nicht zeigen.",
+      newGenerationAttempt: "Neuen Versuch starten",
+      newGenerationAttemptDetail:
+        "Der vorherige Versuch hat möglicherweise bereits ein Dokument erstellt. Prüfe zuerst Alle Dokumente. Ein neuer Versuch erlaubt geänderte Eingaben und eine Vorschau der aktuellen Daten, kann aber ein zusätzliches Dokument erstellen. Neuen Versuch starten?",
       generate: "Erzeugen",
       generateTitle: ({ action, template }) => `${action} — ${template}`,
       record: "Datensatz",

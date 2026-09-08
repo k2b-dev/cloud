@@ -277,7 +277,7 @@ export const dailyCapabilities = defineCapabilities({
           idempotencyKey: operationKey(context, "document.create"),
           viewer: actorViewerFor(context),
           dateConfig: await dateConfig(context),
-          canReadTable: async (target) => (await gateBaseAtAccess(context, target.baseId, "read")).ok,
+          canReadTable: async (target, client) => (await gateBaseAtAccess(context, target.baseId, "read", client)).ok,
         });
         return result.ok ? ok(await documentResult(result.data)) : result;
       },

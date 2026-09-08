@@ -60,13 +60,14 @@ function SourcePreview(props: {
   const text = messages().text;
   const initialSource = JSON.stringify([props.baseId, props.block.source]);
   const source = () => JSON.stringify([props.baseId, props.block.source]);
-  const [preview] = createResource(
+  const [preview, { refetch }] = createResource(
     () => (props.initialResult && source() === initialSource ? false : source()),
     () => loadSource(props.baseId, props.block),
     { initialValue: props.initialResult },
   );
+  const previewResult = () => (preview.error ? undefined : preview());
   const sourceFields = () => {
-    const result = preview();
+    const result = previewResult();
     const tableIds = new Set((result?.ok ? result.columns : []).flatMap((column) => (column.tableId ? [column.tableId] : [])));
     return [...tableIds].flatMap((tableId) => props.catalog.fieldsByTable[tableId] ?? []);
   };
@@ -79,7 +80,7 @@ function SourcePreview(props: {
     return view?.ui.displayConfig?.mode === "cards" ? view.ui.displayConfig : null;
   };
   createEffect(() => {
-    const result = preview();
+    const result = previewResult();
     if (result) props.onPreviewResult?.(props.block.id, result);
   });
   return (
@@ -95,12 +96,20 @@ function SourcePreview(props: {
       }
     >
       <Show
-        when={preview()}
+        when={previewResult()}
         fallback={
           <Placeholder
+            state={preview.error ? "error" : "empty"}
             align="left"
             title={text({ value: "Records unavailable" })}
             description={text({ value: "The preview could not be loaded." })}
+            action={
+              <Show when={preview.error}>
+                <Button type="button" size="sm" variant="secondary" onClick={() => refetch()}>
+                  {text({ value: "Reload preview" })}
+                </Button>
+              </Show>
+            }
           />
         }
       >
