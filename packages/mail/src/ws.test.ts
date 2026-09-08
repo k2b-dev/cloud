@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import { CursorMismatchError } from "@k2b/sync";
+import { getProcessSync } from "@valentinkolb/cloud";
 import { UserSchema } from "@valentinkolb/cloud/contracts";
 import { MAIL_LIVE_WS_TYPE, type MailInvalidation, type MailLiveServerMessage, parseMailLiveServerMessage } from "./live-events";
 import type { MailRequestContext } from "./service/auth";
@@ -247,19 +248,185 @@ describe("Mail live connection", () => {
     connection.message(
       JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.100" } }),
     );
-    await waitFor(() => messages.length === 1 && eventsCalls.length === 1);
+    await waitFor(() => messages.length === 2 && eventsCalls.length === 1);
     // Exactly at the bound the cursor is still replayed.
     connection.message(
       JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.101" } }),
     );
-    await waitFor(() => messages.length === 2 && eventsCalls.length === 2);
+    await waitFor(() => messages.length === 3 && eventsCalls.length === 2);
     await connection.close();
 
     const head = `s6t.mailtest.${MAIL_LIVE_MAX_REPLAY_EVENTS + 101}`;
     expect(eventsCalls).toEqual([head, "s6t.mailtest.101"]);
     expect(messages).toEqual([
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.100" } },
       { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: head } },
       { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.101" } },
     ]);
   });
+
+  test("warns about malformed subscribed-mailbox events without forwarding their payload", async () => {
+    const warning = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { socket, messages } = recordingSocket();
+    const connection = createMailLiveConnection(
+      socket,
+      { sessionToken: "session", requestId: null, locale: "en" },
+      {
+        resolveMailboxId: async () => "internal-box-1",
+        access: { resolveContext: async () => contextFor("Alice"), requireRead: async () => ok("read") },
+        latestCursor: async () => "s6t.mailtest.10",
+        cursorSequence: sequenceOf,
+        events: ({ signal }) =>
+          (async function* () {
+            yield { cursor: "s6t.mailtest.11", data: { mailboxId: MAILBOX_ID, secret: "never log this" } };
+            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+          })(),
+      },
+    );
+    try {
+      connection.message(JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: null } }));
+      await waitFor(() => warning.mock.calls.length > 0);
+      expect(warning.mock.calls).toEqual([
+        [
+          "[mail:websocket]",
+          "Mail live event skipped: payload does not match the protocol",
+          { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.11" },
+        ],
+      ]);
+      expect(messages.map((message) => message.type)).toEqual([MAIL_LIVE_WS_TYPE.ready]);
+    } finally {
+      await connection.close();
+      warning.mockRestore();
+    }
+  });
+
+  test("fails without opening replay when the broker head cannot be read", async () => {
+    const { socket, messages, closes } = recordingSocket();
+    let opened = false;
+    const connection = createMailLiveConnection(
+      socket,
+      { sessionToken: "session", requestId: null, locale: "en" },
+      {
+        resolveMailboxId: async () => "internal-box-1",
+        access: { resolveContext: async () => contextFor("Alice"), requireRead: async () => ok("read") },
+        latestCursor: async () => {
+          throw new Error("broker unavailable");
+        },
+        cursorSequence: sequenceOf,
+        events: () =>
+          (async function* () {
+            opened = true;
+          })(),
+      },
+    );
+    try {
+      connection.message(
+        JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.1" } }),
+      );
+      await waitFor(() => closes.length === 1);
+      expect(opened).toBe(false);
+      expect(messages).toEqual([
+        { type: MAIL_LIVE_WS_TYPE.error, payload: { mailboxId: MAILBOX_ID, code: "stream_failed", message: expect.any(String) } },
+      ]);
+    } finally {
+      await connection.close();
+    }
+  });
+
+  test("rechecks permission before a retention refresh and never exposes its new head after revocation", async () => {
+    const { socket, messages, closes } = recordingSocket();
+    let checks = 0;
+    const connection = createMailLiveConnection(
+      socket,
+      { sessionToken: "session", requestId: null, locale: "en" },
+      {
+        resolveMailboxId: async () => "internal-box-1",
+        access: {
+          resolveContext: async () => contextFor("Alice"),
+          requireRead: async () => (++checks === 1 ? ok("read") : fail(err.forbidden("revoked"))),
+        },
+        latestCursor: async () => "s6t.mailtest.100",
+        cursorSequence: sequenceOf,
+        events: () =>
+          (async function* () {
+            throw new CursorMismatchError("old stream");
+          })(),
+      },
+    );
+    try {
+      connection.message(
+        JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "1700000000000-1" } }),
+      );
+      await waitFor(() => closes.length === 1);
+      expect(messages.map((message) => message.type)).toEqual([MAIL_LIVE_WS_TYPE.ready, MAIL_LIVE_WS_TYPE.revoked]);
+      expect(messages[0]).toEqual({ type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "1700000000000-1" } });
+      expect(closes).toEqual([{ code: 1008, reason: "access_denied" }]);
+    } finally {
+      await connection.close();
+    }
+  });
+
+  (process.env.MAIL_INTEGRATION_TESTS === "1" ? test : test.skip)(
+    "bounds a real JetStream reconnect, refreshes coverage, and tails only authorized mailbox events",
+    async () => {
+      const topic = getProcessSync().topic<MailInvalidation>({
+        id: "mail-ws-replay-bound-test",
+        retention: { maxAgeMs: 300_000, maxBytes: 8 * 1024 * 1024 },
+      });
+      const initial = await topic.head();
+      for (let count = 0; count < MAIL_LIVE_MAX_REPLAY_EVENTS + 1; count += 100) {
+        await Promise.all(
+          Array.from({ length: Math.min(100, MAIL_LIVE_MAX_REPLAY_EVENTS + 1 - count) }, () =>
+            topic.publish({ data: invalidation("Box002") }),
+          ),
+        );
+      }
+      const head = await topic.head();
+      const { socket, messages } = recordingSocket();
+      const calls: string[] = [];
+      let permissionChecks = 0;
+      const connection = createMailLiveConnection(
+        socket,
+        { sessionToken: "session", requestId: null, locale: "en" },
+        {
+          resolveMailboxId: async () => "internal-box-1",
+          access: {
+            resolveContext: async () => contextFor("Alice"),
+            requireRead: async () => {
+              permissionChecks++;
+              return ok("read");
+            },
+          },
+          latestCursor: () => topic.head(),
+          cursorSequence: (cursor) => topic.cursorSequence(cursor),
+          events: ({ after, signal }) => {
+            calls.push(after);
+            return topic.hub().subscribe({ after, signal });
+          },
+        },
+      );
+      try {
+        connection.message(JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: initial } }));
+        await waitFor(() => calls.length === 1);
+        expect(calls).toEqual([head]);
+        expect(messages).toEqual([
+          { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: initial } },
+          { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: head } },
+        ]);
+        await topic.publish({ data: invalidation("Box002") });
+        const receipt = await topic.publish({ data: invalidation(MAILBOX_ID) });
+        await waitFor(() => messages.some((message) => message.type === MAIL_LIVE_WS_TYPE.event));
+        expect(messages.filter((message) => message.type === MAIL_LIVE_WS_TYPE.event)).toEqual([
+          {
+            type: MAIL_LIVE_WS_TYPE.event,
+            payload: { mailboxId: MAILBOX_ID, cursor: receipt.cursor, event: expect.objectContaining({ mailboxId: MAILBOX_ID }) },
+          },
+        ]);
+        expect(permissionChecks).toBe(2);
+      } finally {
+        await connection.close();
+      }
+    },
+    30_000,
+  );
 });

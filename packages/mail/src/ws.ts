@@ -132,14 +132,16 @@ export const parseMailLiveReplayEvent = (
 /** Replay from `cursor` unless it trails the head by more than the replay bound; then start at the head. */
 const boundedReplayCursor = async (deps: MailLiveConnectionDependencies, cursor: string, fromClient: boolean): Promise<string> => {
   if (!fromClient) return cursor;
+  const head = await resolveMailLiveCursor(null, deps.latestCursor);
   let behind: number;
   try {
-    behind = deps.cursorSequence(await deps.latestCursor()) - deps.cursorSequence(cursor);
-  } catch {
+    behind = deps.cursorSequence(head) - deps.cursorSequence(cursor);
+  } catch (error) {
+    if (!(error instanceof CursorMismatchError)) throw error;
     // A cursor from another stream is resolved by the stream's own resync path.
     return cursor;
   }
-  return behind > MAIL_LIVE_MAX_REPLAY_EVENTS ? await resolveMailLiveCursor(null, deps.latestCursor) : cursor;
+  return behind > MAIL_LIVE_MAX_REPLAY_EVENTS ? head : cursor;
 };
 
 const isClosing = (ctx: WsContext): boolean => ctx.phase === "closing";
@@ -329,6 +331,15 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
   ctx.phase = "subscribed";
   ctx.mailboxId = mailboxId;
   ctx.internalMailboxId = internalMailboxId;
+  // The first ready acknowledges the subscribed cursor. A second ready forces
+  // all clients (including an SSR-seeded workspace) to refresh before applying
+  // a head that skipped replay.
+  if (fromCursor !== null && fromCursor !== cursor) {
+    if (!send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId, cursor: fromCursor } })) {
+      closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
+      return;
+    }
+  }
   if (!send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId, cursor } })) {
     closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
     return;
