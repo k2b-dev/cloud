@@ -49,6 +49,18 @@ synchronized Cloud copy for search, collaboration, durable commands, and
 observable delivery. Credentials and refresh tokens are stored as write-only
 secrets.
 
+## Manage automation access
+
+An incoming automation that uses Spaces actions needs its creator's authorized
+background access. Disabling or deleting the automation pauses or revokes that
+access. Missing or revoked access stops its actions.
+
+Mailbox administrators can pause or delete another person's automation, remove
+its Spaces actions, or make cosmetic changes. Changing a definition that keeps
+Spaces actions, or enabling it again, requires the original author. If Cloud
+denies that change, ask the author to authorize it rather than bypassing the
+check. Cosmetic edits do not restore paused or revoked access.
+
 ## How Mail fits Cloud
 
 Mail owns mailbox synchronization, conversations, drafts, sending, and mailbox
@@ -114,7 +126,7 @@ mutation or delivery operation to read its current fields and safety checks.
 
 Use `mailbox.browse` to select a mailbox: it returns permissions and unread/needs-action
 conversation counts matching the overview, with a brief problem indicator when sync
-is unhealthy. `mailbox.list` remains compatible and exposes these counters.
+is unhealthy. `mailbox.list` also exposes these counters.
 For cross-mailbox work, start directly with `conversation.focus` or `search`.
 Conversation lists and focus rows include the collaboration `revision`; focus also
 provides `sourceFolderId` when exactly one active folder is authoritative. A null

@@ -4,6 +4,9 @@ export const authMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      useAppInstead: "Use the app instead",
+      useEmailInstead: "Use an email link instead",
+      usePasswordInstead: "Use your FreeIPA password instead",
       noLoginAvailable: "This sign-in option is unavailable. Contact your administrator or use your invitation link.",
       restoreLoginTitle: "Local Login accounts are disabled",
       restoreLoginConfirmation:
@@ -85,6 +88,9 @@ export const authMessages = i18n.define({
       resetRequestDescription: "We will send a short-lived reset link if this email belongs to an eligible organization account.",
     },
     de: {
+      useAppInstead: "Stattdessen die App nutzen",
+      useEmailInstead: "Stattdessen E-Mail-Link nutzen",
+      usePasswordInstead: "Stattdessen FreeIPA-Passwort nutzen",
       noLoginAvailable: "Diese Anmeldung ist nicht verfügbar. Wende dich an die Administration oder nutze deinen Einladungslink.",
       restoreLoginTitle: "Lokale Login-Accounts sind deaktiviert",
       restoreLoginConfirmation:

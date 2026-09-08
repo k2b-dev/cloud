@@ -9,6 +9,7 @@ import browserNotificationServiceWorker from "../browser-notifications/service-w
 import announcementsAdminPage from "./admin/announcements/page";
 import adminPage from "./admin/page";
 import settingsPage from "./admin/settings/page";
+import pairDevicePage from "./app-approval/pair.page";
 import { resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
 import newPasswordPage from "./auth/new-password/page";
 import loginPage from "./auth/page";
@@ -62,6 +63,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...profilePage)
     .get("/me/profile", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...personalProfilePage)
     .get("/me/security", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...securityPage)
+    .get("/me/security/pair", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...pairDevicePage)
     .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)
     .get("/me/notifications", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationsPage)
     .get("/me/notifications/history", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationHistoryPage)

@@ -41,5 +41,5 @@ container ownership.
 7. Use [Troubleshooting](/en/docs/operations/troubleshooting) when the registry,
    gateway, or dependencies disagree.
 
-FreeIPA is optional. See [FreeIPA](/en/docs/operations/freeipa) only when
-the deployment uses it.
+Configure people and their access through [Accounts & sign-in](/en/docs/accounts):
+account types, FreeIPA, app sign-in, Linux identities and lifecycle maintenance.

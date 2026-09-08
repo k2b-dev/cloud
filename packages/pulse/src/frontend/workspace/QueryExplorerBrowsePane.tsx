@@ -1,9 +1,9 @@
-import { TextInput } from "@k2b/ui";
-import { For, Show, type Accessor } from "solid-js";
+import { ScrollArea, TextInput } from "@k2b/ui";
+import { type Accessor, For, Show } from "solid-js";
 import type { PulseCurrentState, PulseMetricSummary, PulseRecordedEvent, PulseSource } from "../../contracts";
+import { usePulseMessages } from "../use-messages";
 import { formatSignalValue, sourceKindIcon, sourceStatus, suggestionTagClass } from "./helpers";
 import type { BrowseEntity } from "./types";
-import { usePulseMessages } from "../use-messages";
 
 type BrowseSourceRow = {
   source: PulseSource;
@@ -105,7 +105,7 @@ export default function QueryExplorerBrowsePane(props: {
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-auto px-3 pb-3">
+      <ScrollArea class="min-h-0 flex-1 px-3 pb-3">
         <div class="grid gap-3 xl:grid-cols-2">
           <section class="rounded bg-zinc-50/80 p-2 dark:bg-zinc-900/45">
             <div class="mb-1 flex items-center justify-between gap-2 px-1">
@@ -263,7 +263,7 @@ export default function QueryExplorerBrowsePane(props: {
             </div>
           </Show>
         </section>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

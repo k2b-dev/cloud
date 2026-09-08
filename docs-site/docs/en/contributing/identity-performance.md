@@ -61,11 +61,9 @@ end-to-end search with 1, 8, and 30 providers, after 20 warm-ups per case.
 A shorter smoke test can use `IDENTITY_BENCH_SAMPLES=20`; it is marked
 ineligible for full I/O acceptance.
 
-The hard cut removed the legacy production branch. This runner now measures
-only the real JWT router, session family, current-actor query, guarded signing,
-and target-bound invocation tokens. Its `passes` field covers identity I/O,
-not a new legacy-versus-JWT latency comparison. `latencyGate` states that the
-latency gate is not evaluated.
+The runner measures JWT authentication, current-actor queries, guarded signing
+and target-bound invocation tokens. Its `passes` field covers identity I/O;
+`latencyGate` is not evaluated. Report latency separately from the I/O result.
 
 | Case | Included work |
 | --- | --- |
@@ -118,8 +116,8 @@ A zero exit status means the diagnostic run completed its applicable correctness
 checks, not that performance was accepted. Normal measurement remains the default
 (`IDENTITY_BENCH_MODE=measure`). No mode changes the JWT algorithm or deadlines.
 
-`shared` runs the identical provider handlers in Core's process, reproducing
-the earlier topology. For a topology counterexperiment, fix the order before
+`shared` runs the identical provider handlers in Core's process. To compare
+topologies, fix the order before
 running, for example shared/split, split/shared, shared/split. Keep all six
 reports and compare each topology's three complete runs. Do not choose a
 topology or discard a run just because it produces a passing number.
@@ -128,30 +126,9 @@ After the timed cases, the runner holds a conflicting lock on the active signing
 key. Search must return 503 without dispatching a provider. After releasing the
 lock and waiting for issuance to settle, another real JWT search must pass all
 normal result and I/O assertions. This probe is not a latency sample. It verifies
-fail-closed recovery, not the cause of an unrelated historical HTTP error.
+that signing failures prevent dispatch and that service resumes after recovery.
 
-## Preserve the historical latency gate
-
-The migration comparison at commit `1e6a71d29` used this bound for every
-provider count and both search cases:
-
-```text
-JWT p95 - legacy p95 <= max(legacy p95 × 0.10, 10 ms)
-```
-
-Historical comparison runs used nearest-rank percentiles without removing
-outliers and required three complete passing runs. Retain those reports,
-including failures. Reproduce that comparison on the archived revision;
-do not label two JWT runs as a legacy comparison or treat a current JWT-only
-run as fresh evidence for this latency gate.
-
-The bound concerns **additional latency compared with legacy**, not total search
-duration. A slow application alone does not explain a regression. A maintainer
-may approve a documented performance exception only when a controlled
-counterexperiment attributes the excess to something outside the JWT migration.
-Preserve the failed numerical result, the evidence, the approval, and a separate
-backlog item. An exception is not a benchmark pass and does not waive correctness,
-security, or the I/O requirements below. Uncertain attribution does not qualify.
+## Check identity I/O budgets
 
 PostgreSQL protocol instrumentation checks every measured request. Redis client
 observers are independently checked against Redis server command counters;

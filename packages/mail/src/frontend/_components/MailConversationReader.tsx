@@ -299,7 +299,7 @@ export default function MailConversationReader(props: {
         return (
           <div class="flex min-h-0 flex-col gap-3">
             <p class="text-sm text-secondary">{t().existingDrafts({ count: existingDrafts.length })}</p>
-            <div class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
+            <ScrollArea class="flex max-h-[55vh] flex-col gap-2">
               <For each={existingDrafts}>
                 {(existingDraft) => (
                   <button
@@ -334,7 +334,7 @@ export default function MailConversationReader(props: {
                   </button>
                 )}
               </For>
-            </div>
+            </ScrollArea>
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
                 {t().cancel}
@@ -976,7 +976,7 @@ export default function MailConversationReader(props: {
           </div>
         }
       >
-        <header class="detail-header flex shrink-0 flex-col gap-2">
+        <header class="flex shrink-0 flex-col gap-2 px-4 py-3">
           <div class="flex min-w-0 items-start gap-2">
             <IconButtonLink
               href={closeHref()}

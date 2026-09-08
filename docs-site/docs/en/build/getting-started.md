@@ -50,11 +50,11 @@ mkdir -p src
 Add the Cloud package and its public peer dependencies:
 
 ```bash
-bun add @valentinkolb/cloud hono solid-js zod
+bun add @k2b/cloud hono solid-js zod
 bun add --dev @types/bun typescript
 ```
 
-Pin `@valentinkolb/cloud` to the version used by the target Cloud deployment
+Pin `@k2b/cloud` to the version used by the target Cloud deployment
 before committing the lockfile. An application and its platform must agree on
 their public runtime contracts.
 
@@ -87,7 +87,7 @@ the Cloud source repository, workspace aliases, or another application package.
 Create `src/config.ts`:
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "inventory",
@@ -138,13 +138,13 @@ context, authentication, settings, logging, or rate limits.
 
 ## Verify the process directly
 
-Every application needs a Valkey connection for live registration and the same
-non-empty `APP_SECRET` as its Cloud deployment. For an isolated local smoke
-test, point both values at development-only infrastructure:
+Use an initialized Cloud development deployment. Configure `DATABASE_URL`,
+`REDIS_URL`, `NATS_SERVERS`, `SYNC_NAMESPACE` and `APP_SECRET` for that deployment,
+then start the application. Shared platform tables are required even when the
+application has no domain schema. See
+[Deployment requirements](/en/docs/operations/deployment-requirements).
 
 ```bash
-REDIS_URL=redis://127.0.0.1:6379 \
-APP_SECRET=local-development-only \
 bun src/index.ts
 ```
 
@@ -174,8 +174,9 @@ The deployment must provide:
 
 - a gateway and Core;
 - Valkey through `REDIS_URL`;
+- NATS JetStream through `NATS_SERVERS`, with the deployment's `SYNC_NAMESPACE`;
 - the deployment-wide `APP_SECRET`;
-- Postgres through `DATABASE_URL` once the application stores domain data;
+- initialized Postgres through `DATABASE_URL`;
 - any optional platform service the application uses.
 
 The hostname and port in `baseUrl` must resolve from the gateway. After the

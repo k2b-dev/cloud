@@ -1,5 +1,5 @@
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, TextInput, useLocale } from "@k2b/ui";
+import { Button, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
@@ -91,7 +91,7 @@ export default function ContactSearchPicker(props: Props) {
         value={query}
         onValueChange={setQuery}
       />
-      <div class="-mx-1 flex max-h-72 flex-col overflow-y-auto px-1">
+      <ScrollArea class="-mx-1 flex max-h-72 flex-col px-1">
         <Show when={visibleError()}>
           <div class="flex items-center justify-between gap-2 px-2 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
             <span>{t().searchContactsFailed}</span>
@@ -130,7 +130,7 @@ export default function ContactSearchPicker(props: Props) {
             )}
           </For>
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

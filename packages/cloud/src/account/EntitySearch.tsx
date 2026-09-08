@@ -1,5 +1,5 @@
 import { timed } from "@k2b/stdlib/solid";
-import { Button, TextInput } from "@k2b/ui";
+import { Button, ScrollArea, TextInput } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "./Avatar";
@@ -213,7 +213,7 @@ const EntitySearch = (props: EntitySearchProps) => {
     <div class="flex flex-col gap-3">
       <TextInput icon="ti ti-search" placeholder={props.placeholder ?? "Search..."} value={() => search()} onValueChange={handleInput} />
 
-      <div class={`${resultsHeightClass()} overflow-y-auto`}>
+      <ScrollArea class={`${resultsHeightClass()} `}>
         <Show when={loading()}>
           <div class="flex items-center justify-center py-8 text-dimmed">
             <i class="ti ti-loader-2 animate-spin text-xl" />
@@ -326,7 +326,7 @@ const EntitySearch = (props: EntitySearchProps) => {
             Type at least 2 characters
           </p>
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 };

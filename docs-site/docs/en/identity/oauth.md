@@ -236,47 +236,16 @@ already issued access token. That token can remain valid until its one-hour
 expiry. Current-client validation and domain authorization still apply on each
 request.
 
-The OAuth application still owns the public protocol, clients, consent,
-authorization codes, refresh families, discovery, and token response. It does
-not hold a platform signing private key. After it validates the grant, it asks
-Core's closed OAuth authority to construct and sign the permitted access and ID
-token shapes. Core reloads the current client and principal before signing.
-Core and OAuth share `CLOUD_OAUTH_BROKER_SECRET`, a deployment secret used only
-for the closed OAuth broker. It is not user authority and cannot submit an
-arbitrary JWT claim set. No workload credential provisioning is needed. See
-[Runtime configuration](/en/docs/operations/runtime-configuration) for generation,
-secret ownership, development defaults, and rotation.
+Core signs OAuth tokens. The OAuth application owns the public protocol,
+clients, consent, authorization codes, refresh grants and discovery. Core and
+OAuth require the configured broker secret; see
+[Runtime configuration](/en/docs/operations/runtime-configuration) for setup.
+If the signer or broker secret is unavailable, OAuth cannot start or issue tokens.
 
-Core is the only issuer. OAuth setup checks its broker secret
-and Core's OAuth signer through the closed readiness endpoint. A failed check
-prevents startup; failed issuance never falls back to a local signer. No
-issuance-mode setting remains. Before upgrading, stop all old OAuth replicas:
-the migration removes `oauth.keys`, `oauth.issuance_state`, and the old
-authorization-code audience trigger. Client and grant data remain in place.
-
-Existing client IDs, secrets, routes, claims, issuer, audiences, one-hour
-access-token lifetime, authorization codes, and refresh families remain
-unchanged. Authorization-code, refresh, and client-credentials exchanges use
-one-shot internal grant reservations; arbitrary claims or client assertions do
-not cross the authority boundary. A definitive Core grant rejection remains a
-public `invalid_grant` response. An unknown transport or server outcome remains
-`server_error` and is not retried automatically. Only Core's OAuth-purpose
-public keys are published. The upgraded Cloud rejects JWTs signed by the old
-OAuth signer. Existing refresh grants can obtain new tokens; clients without
-a usable refresh grant need a new authorization. External clients may retain
-old public keys in their own caches until a refresh or token expiry.
-
-After a Core authority error during refresh, OAuth atomically checks the exact
-reservation nonce, status, and issuance marker. Only a reservation proven not
-to have issued tokens is released for a later client retry. If Core already
-claimed issuance, or the database cannot prove a safe release, the refresh
-family stays fail-closed. A temporary Core outage therefore does not by itself
-destroy a provably unused refresh grant.
-
-The audience migration retains and backfills existing code snapshots in one
-locked transaction. All current writers supply the snapshot directly; old
-writers are unsupported after the coordinated hard cut. See
-[Runtime configuration](/en/docs/operations/runtime-configuration).
+A rejected grant returns `invalid_grant`. An uncertain issuance outcome returns
+`server_error` and is not retried automatically. A refresh grant is released
+for retry only when Cloud can establish that no tokens were issued; otherwise
+it stays blocked to prevent duplicate issuance.
 
 Continue with [Request identity](/en/docs/identity/authentication) and
 [Resource authorization](/en/docs/identity/authorization).

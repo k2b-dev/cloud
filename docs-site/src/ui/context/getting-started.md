@@ -1,6 +1,6 @@
 # Getting started
 
-`@k2b/ui` is a standalone, production-ready component library for SolidJS. It includes accessible interaction patterns, scoped styles, configurable design tokens, and separate browser and server builds. Use it inside Cloud or in another Solid application.
+`@k2b/ui` is a standalone component library for SolidJS. It includes accessible interaction patterns, scoped styles, configurable design tokens, and separate browser and server builds. Use it inside Cloud or in another Solid application.
 
 ## License
 
@@ -125,9 +125,9 @@ The provider controls the server pass. Browser islands are independent Solid roo
 
 Every component in the portable catalog comes from `@k2b/ui`. Product-specific integrations live in a separate section when they depend on authenticated APIs, permissions, sessions, or other host contracts.
 
-## Migrate by behavior
+## Choose a control
 
-Classify an existing control before replacing its markup:
+Choose a component from the interaction it needs to support:
 
 1. Use `Button`, `Dropdown`, or `ContextMenu` for actions and links.
 2. Use `Select` or `SelectChip` for one controlled value.

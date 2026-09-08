@@ -1,4 +1,4 @@
-import { prompts, useLocale } from "@k2b/ui";
+import { prompts, ScrollArea, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
 import { platformMessages } from "./platform-messages";
 
@@ -38,7 +38,7 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+      <ScrollArea class="min-h-0 flex-1 pr-1">
         <div class="flex flex-col gap-2">
           <For each={apps()}>
             {(app) => (
@@ -86,7 +86,7 @@ export default function GlobalSearchHelpDialog(props: GlobalSearchHelpDialogProp
             </div>
           </Show>
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

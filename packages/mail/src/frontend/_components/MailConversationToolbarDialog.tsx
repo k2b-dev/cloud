@@ -1,4 +1,4 @@
-import { Button, CheckboxCard, prompts, useLocale } from "@k2b/ui";
+import { Button, CheckboxCard, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For } from "solid-js";
 import {
   getMailConversationToolbarSections,
@@ -30,7 +30,7 @@ export const openMailConversationToolbarDialog = (
             <p class="text-sm text-secondary">{t().toolbarHint({ count: MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS })}</p>
             <p class="mt-1 text-xs text-dimmed">{t().toolbarOrderHint}</p>
           </div>
-          <div class="flex min-h-0 flex-col gap-4 overflow-y-auto">
+          <ScrollArea class="flex min-h-0 flex-col gap-4">
             <For each={getMailConversationToolbarSections(locale())}>
               {(section) => (
                 <section class="flex flex-col gap-2">
@@ -55,7 +55,7 @@ export const openMailConversationToolbarDialog = (
                 </section>
               )}
             </For>
-          </div>
+          </ScrollArea>
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs tabular-nums text-dimmed">
               {t().selectedCount({ selected: selected().length, total: MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS })}

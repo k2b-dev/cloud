@@ -37,7 +37,7 @@ const iso = (value: Date | string) => new Date(value).toISOString();
 const future = (seconds: number) => new Date(Date.now() + seconds * 1000);
 
 export type AppApprovalConfig = { issuer: string; appOrigin: string; enabled: boolean; adminPairing: boolean };
-export const readAppApprovalConfig = async (db: SQL = sql): Promise<AppApprovalConfig> => {
+export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = true): Promise<AppApprovalConfig> => {
   const rows = await db<
     { key: string; value: string }[]
   >`SELECT key, value FROM settings.entries WHERE key IN ('app.url','user.app_approval.enabled','user.app_approval.origin','user.app_approval.admin_pairing')`;
@@ -75,7 +75,15 @@ export const readAppApprovalConfig = async (db: SQL = sql): Promise<AppApprovalC
     return reject("UNAVAILABLE", 503);
   }
   if (!enabled) return { issuer, appOrigin: "", enabled: false, adminPairing };
-  return { issuer, appOrigin: origin(rawOrigin), enabled, adminPairing };
+  let appOrigin = "";
+  try {
+    appOrigin = origin(rawOrigin);
+  } catch (error) {
+    // Missing setup must not prevent same-origin device inspection/revocation.
+    // Pairing, discovery and sign-in still require a valid trusted origin.
+    if (requireAppOrigin) throw error;
+  }
+  return { issuer, appOrigin, enabled, adminPairing };
 };
 
 type AccountRow = {
@@ -150,10 +158,13 @@ const verify = async (key: AppDevicePublicKey, message: string, signature: strin
 
 /** One owner for production API and isolated HTTP consumers. Config is re-read
  * per operation; SQL transactions serialize device decisions and revocation. */
-export const createAppApprovalService = (db: SQL = sql, configuration = () => readAppApprovalConfig(db)) => {
+export const createAppApprovalService = (
+  db: SQL = sql,
+  configuration = (requireEnabled = true) => readAppApprovalConfig(db, requireEnabled),
+) => {
   const config = async (requireEnabled = true) => {
-    const value = await configuration();
-    if (requireEnabled && !value.enabled) return reject("UNAVAILABLE", 503);
+    const value = await configuration(requireEnabled);
+    if (requireEnabled && (!value.enabled || !value.appOrigin)) return reject("UNAVAILABLE", 503);
     return value;
   };
   const eligible = async (tx: SQL, id: string): Promise<AccountRow> => {

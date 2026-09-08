@@ -7,7 +7,7 @@
  * handler re-renders, no client-side filtering.
  */
 
-import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
+import { AppWorkspace, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { hasRole } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
@@ -178,7 +178,7 @@ export default ssr<AuthContext>(async (c) => {
             </span>
           </div>
 
-          <div class="mt-2 flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+          <ScrollArea class="mt-2 flex-1 min-h-0 flex flex-col gap-2">
             {paginatedResult.items.length > 0 ? (
               <ul class="flex flex-col gap-1">
                 {paginatedResult.items.map((n) => (
@@ -219,7 +219,7 @@ export default ssr<AuthContext>(async (c) => {
             )}
 
             <Pagination currentPage={page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-          </div>
+          </ScrollArea>
         </AppWorkspace.Main>
       </AppWorkspace.Content>
     </AppWorkspace>

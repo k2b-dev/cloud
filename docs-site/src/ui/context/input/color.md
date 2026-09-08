@@ -25,8 +25,8 @@ With a label, the default full control shows the swatch and uppercase color valu
 ## Transparent state
 
 On the full control, `transparent` enables a transparent toggle. The parent
-provides that state through the `isTransparent` accessor and updates it through
-`onTransparentChange`. Compact mode renders only the color swatch.
+provides that state through `transparentValue` and updates it through
+`onTransparentValueChange`. Compact mode renders only the color swatch.
 
 Transparency is separate from the color value. Enabling it disables the native color picker but keeps the last color available for switching back.
 

@@ -307,15 +307,6 @@
   box-shadow: none;
 }
 
-.app-workspace > .workspace-detail :is(.detail-section, .detail-section-compact),
-.app-workspace > :is(solid-island, solid-client) > .workspace-detail :is(.detail-section, .detail-section-compact),
-.app-workspace > .workspace-content > .workspace-detail :is(.detail-section, .detail-section-compact),
-.app-workspace > .workspace-content > :is(solid-island, solid-client) > .workspace-detail :is(.detail-section, .detail-section-compact),
-.app-workspace > .workspace-bottom-drawer :is(.detail-section, .detail-section-compact) {
-  border: 0;
-  box-shadow: none;
-}
-
 .app-overview {
   padding: var(--ui-space-section);
 }

@@ -79,9 +79,7 @@ status and action row. The modal keeps the footer outside the scrolling panel;
 the application still owns dirty state, saving, discarding, and navigation
 guards.
 
-`subtitle` and `icon` remain accepted on `SettingsModal` for source
-compatibility, but category titles, descriptions, and icons provide the visible
-context.
+Use category titles, descriptions, and icons to provide visible context.
 
 ## Compose flat groups and collections
 

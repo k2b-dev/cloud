@@ -20,7 +20,6 @@ documents, and workflows without splitting the domain across unrelated tools.
   relationships around its records.
 - Review Table structure, indexed and unique fields, write paths, Durable
   History, and Finalization together in the admin-only **Tables** Base setting.
-  Record totals stay out of this lightweight catalog.
 - Save filtered or grouped views for recurring work and reporting.
 - Publish Forms for guided record creation and Custom Apps for focused metrics,
   lists, instructions, and actions.
@@ -29,6 +28,8 @@ documents, and workflows without splitting the domain across unrelated tools.
   contract and recheck selected records server-side.
 - Let signed-in App readers manage explicitly editable File fields from Record details
   without granting access to the Base record API.
+### Manage files and retention
+
 - Replace or remove a record attachment without rewriting file history. Removal
   detaches it from the current record; protected revisions or artifacts can
   retain exact bytes, while unprotected files can be cleaned up.
@@ -50,6 +51,8 @@ documents, and workflows without splitting the domain across unrelated tools.
   before deletion. Records, Documents, evidence exports, and Durable History
   are excluded. Remaining work can be canceled, but destroyed bytes cannot be
   recovered.
+### Keep history and finalize records
+
 - Irreversibly enable Durable History for a stored table when every future
   Record, Relation, and File state must remain inspectable from an honest
   activation baseline. Existing tables stay unchanged until an admin opts in.
@@ -82,6 +85,8 @@ documents, and workflows without splitting the domain across unrelated tools.
   other Relations, calculated fields, and Documents are not copied. A
   cancellation is named clearly, but Grids does not calculate amounts, taxes,
   or counter-bookings or generate a Document for it.
+### Control record changes
+
 - Keep the default open mutation policy, or let a Base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
   and actions. Every client follows the same server-enforced policy.
@@ -90,6 +95,8 @@ documents, and workflows without splitting the domain across unrelated tools.
   block in a Custom App.
 - Keep relationships between compatible Form inputs, such as a start date that
   must not follow its due date, in server-enforced cross-field validation.
+### Generate documents and evidence
+
 - Generate documents or PDFs from reviewed templates and record data.
 - Download exact stored PDF bytes for completed Documents. **Generate again** creates a new immutable Document.
 - Select an installed E-Invoice renderer on a table's Document template when

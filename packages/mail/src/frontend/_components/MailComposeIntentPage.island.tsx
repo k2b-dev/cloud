@@ -1,5 +1,5 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Select, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, Placeholder, prompts, ScrollArea, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
@@ -168,7 +168,7 @@ export default function MailComposeIntentPage(props: {
   );
 
   return (
-    <div class="relative flex h-full min-h-0 items-start justify-center overflow-y-auto p-3 sm:p-6">
+    <ScrollArea class="relative flex h-full min-h-0 items-start justify-center p-3 sm:p-6">
       <Show when={autoStartPending()}>
         <Placeholder state="loading" variant="panel" class="absolute inset-0" title={t().preparingMessage} />
       </Show>
@@ -272,6 +272,6 @@ export default function MailComposeIntentPage(props: {
           </Show>
         </Show>
       </section>
-    </div>
+    </ScrollArea>
   );
 }

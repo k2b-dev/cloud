@@ -2,15 +2,17 @@ import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
 import { type AccountCategory, resolveAccountCategoryLogin } from "@valentinkolb/cloud/contracts";
 import { getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
+import { appApproval, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../config";
 import AccountCategorySwitch from "./AccountCategorySwitch.island";
 import AdminLoginForm from "./AdminLoginForm.island";
+import AppLoginForm from "./AppLoginForm.island";
 import GuestLoginForm from "./GuestLoginForm.island";
 import LoginForm from "./LoginForm.island";
 import { authMessages } from "./messages";
 import PasskeyLoginButton from "./PasskeyLoginButton.island";
+import { useAppSignIn } from "../app-approval/availability";
 
 /** Login page. */
 export default ssr(async (c) => {
@@ -25,6 +27,10 @@ export default ssr(async (c) => {
     readAccountCategoryPolicy(),
   ]);
   const appName = rawAppName || "My App";
+  const approvalEnabled = await appApproval
+    .config()
+    .then((config) => config.enabled)
+    .catch(() => false);
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
   const allowSelfRegistration = Boolean(allowSelfRegistrationRaw);
   const contactEmail = contactEmailRaw?.trim();
@@ -56,12 +62,15 @@ export default ssr(async (c) => {
   });
 
   const isEmailLogin = activeMethod === "email" || activeMethod === "guest" || activeMethod === "login";
+  const useApproval =
+    useAppSignIn(approvalEnabled, params.get("credential")) && !token && !isAdminLogin && activeMethod && activeMethod !== "email";
   const categoryLabel = (category: AccountCategory) =>
     category === "login" ? policy.login.label : category === "guest" ? "Guest" : "FreeIPA";
 
   const buildMethodUrl = (nextMethod: AccountCategory | "admin") => {
     const methodParams = new URLSearchParams();
     methodParams.set("method", nextMethod === "freeipa" ? "ipa" : nextMethod);
+    if (params.get("credential") === "app") methodParams.set("credential", "app");
     if (redirectTo) methodParams.set("redirectTo", redirectTo);
     if (hide && freeIpaEnabled && nextMethod === "freeipa") methodParams.set("hide", hide);
     if (hasBanner && nextMethod === "freeipa") methodParams.set("banner", hasBanner);
@@ -70,6 +79,10 @@ export default ssr(async (c) => {
   };
   const adminHref = buildMethodUrl("admin");
   const supportHref = contactEmail ? `mailto:${contactEmail}` : "/legal/imprint";
+  const credentialParams = new URLSearchParams(params);
+  credentialParams.delete("token");
+  credentialParams.set("credential", useApproval ? "legacy" : "app");
+  const credentialHref = `/auth/login?${credentialParams}`;
   const showPasskey = !isAdminLogin && !token && !!activeMethod;
   const formTitle = isAdminLogin
     ? t.adminToken
@@ -148,6 +161,12 @@ export default ssr(async (c) => {
                 <div class="flex flex-col gap-4">
                   {isAdminLogin ? (
                     <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
+                  ) : useApproval && activeMethod ? (
+                    <AppLoginForm
+                      category={activeMethod}
+                      redirectTo={redirectTo}
+                      fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
+                    />
                   ) : isEmailLogin ? (
                     <GuestLoginForm
                       redirectTo={redirectTo}
@@ -159,6 +178,11 @@ export default ssr(async (c) => {
                     <LoginForm redirectTo={redirectTo} showBanner={hasBanner === "true"} defaultUsername={ipaUid} appName={appName} />
                   ) : (
                     <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
+                  )}
+                  {approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email" && (
+                    <ButtonLink href={credentialHref} variant="ghost" size="sm">
+                      {t.useAppInstead}
+                    </ButtonLink>
                   )}
                 </div>
 

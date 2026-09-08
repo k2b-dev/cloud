@@ -18,7 +18,7 @@ instance should register the same schedule definitions and callbacks.
 ## Register a schedule
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const inventoryScheduler = lazySync((sync) => sync.scheduler({
   id: "inventory",
@@ -79,7 +79,7 @@ handlers must be restored from them after every start:
 import {
   createWorkflowScheduleRegistration,
   reconcileWorkflowSchedules,
-} from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/runtime";
 
 const desired = activations.map((activation) =>
   createWorkflowScheduleRegistration({
@@ -116,10 +116,10 @@ When a slot fires, emit the workflow event with a deterministic key:
 ```ts
 import {
   workflowScheduleSlotKey,
-} from "@valentinkolb/cloud/workflows/runtime";
+} from "@k2b/cloud/workflows/runtime";
 import {
   emitWorkflowEvent,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const slot = context.slot.toISOString();
 

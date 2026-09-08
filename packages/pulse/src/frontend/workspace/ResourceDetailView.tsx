@@ -12,6 +12,8 @@ import {
 } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, Show } from "solid-js";
 import type { PulseCurrentState, PulseRecordedEvent, PulseResourceMetric, PulseResourceSummary } from "../../contracts";
+import type { pulseMessages } from "../../messages";
+import { usePulseMessages } from "../use-messages";
 import {
   compactDateWithDelta,
   dimensionsSummary,
@@ -21,8 +23,6 @@ import {
   type PulseDateContext,
   signalSubject,
 } from "./helpers";
-import type { pulseMessages } from "../../messages";
-import { usePulseMessages } from "../use-messages";
 
 type Messages = ReturnType<typeof pulseMessages.resolve>["t"];
 
@@ -212,9 +212,9 @@ const ResourceHeader = (props: Pick<ResourceDetailProps, "resource" | "dateConte
 const ResourceDimensions = (props: Pick<ResourceDetailProps, "resource">) => {
   const t = usePulseMessages();
   return (
-  <section class="detail-section shrink-0">
-    <StructuredDataPreview title={t().dimensions} data={props.resource.dimensions} empty={t().noDimensions} />
-  </section>
+  <DetailPanel.Section title={t().dimensions} class="shrink-0">
+    <StructuredDataPreview data={props.resource.dimensions} empty={t().noDimensions} />
+  </DetailPanel.Section>
   );
 };
 

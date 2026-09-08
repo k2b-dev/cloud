@@ -18,13 +18,15 @@ import {
   aiUsage,
 } from "@valentinkolb/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { coreSettings, linuxIdentities, settingsService } from "@valentinkolb/cloud/services";
+import { appApproval, coreSettings, linuxIdentities, settingsService } from "@valentinkolb/cloud/services";
+import { approvalAvailability } from "../../app-approval/availability";
 import { AiUsageQuerySchema } from "@valentinkolb/cloud/shared";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../../config";
 import { adminMessages } from "../messages";
 import AccountOperations from "./_components/AccountOperations.island";
+import DocumentationLink from "./_components/DocumentationLink";
 import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
 import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
 import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
@@ -200,6 +202,8 @@ export default ssr<AuthContext>(async (c) => {
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
   const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";
   const tab = availableTabs.find((item) => item.id === tabId)!;
+  const documentationBase = await coreSettings.get<string>("app.documentation_url");
+  const approvalState = tab.id === "user" ? approvalAvailability(await appApproval.config(false).catch(() => null)) : undefined;
   const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 
@@ -276,18 +280,34 @@ export default ssr<AuthContext>(async (c) => {
         class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"}
         style="view-transition-name: admin-settings-content"
       >
-        {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} search={linuxSearch} scope={linuxScope} /> : null}
+        {linuxOverview ? (
+          <LinuxIdentityPanel
+            initial={linuxOverview}
+            after={linuxAfter}
+            search={linuxSearch}
+            scope={linuxScope}
+            documentationBase={documentationBase}
+          />
+        ) : null}
         {tab.id === "account-operations" ? (
-          <SettingsPage title={tab.title} subtitle={tab.description} icon={tab.icon}>
+          <SettingsPage
+            title={tab.title}
+            subtitle={tab.description}
+            icon={tab.icon}
+            actions={<DocumentationLink base={documentationBase} topic={tab.id} />}
+          >
             <AccountOperations freeIpaEnabled={operationsFreeIpaEnabled} />
           </SettingsPage>
         ) : null}
         {tab.group ? (
           <CoreSettingsForm
+            documentationBase={documentationBase}
+            documentationTopic={tab.id}
             title={tab.title}
             subtitle={tab.description}
             icon={tab.icon}
             entries={entries}
+            approvalState={approvalState}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
             showTestEmailAction={tab.id === "mail"}
             showTestPdfAction={tab.id === "pdf-rendering"}

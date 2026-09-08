@@ -47,9 +47,8 @@ Small collections may place Markdown files directly beside `index.ts`. A
 larger collection may group them under `documents/`. Both follow the same
 boundary: the declaration and its content stay in `src/help/`.
 
-Use `src/help.ts` only for a declaration that owns no Markdown files. A package
-cannot contain both a `help.ts` file and a `help/` directory with the same
-module name, so file-backed Help uses the directory form.
+Use one declaration module to avoid ambiguous imports. Use `src/help/index.ts`
+for file-backed Help, or `src/help.ts` when it owns no Markdown files.
 
 Cloud does not scan the filesystem. Import every article and list it explicitly
 so ownership, review order, and bundle contents remain visible.
@@ -180,7 +179,7 @@ Import the articles in `src/help/index.ts` and pass only the documents to
 `defineHelp()`:
 
 ```ts
-import { defineHelp } from "@valentinkolb/cloud";
+import { defineHelp } from "@k2b/cloud";
 import access from "./documents/inventory-access.help.md" with {
   type: "text",
 };
@@ -226,7 +225,7 @@ Pass the declaration to `app.start()` next to other executable app-owned
 surfaces such as capabilities:
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { Hono } from "hono";
 import { inventoryHelp } from "./help";
 
@@ -254,10 +253,8 @@ Do not mount a Help API router, render a `Layout.HelpDocuments` registrar, or
 add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
-Cloud stores all locales as one bounded corpus in one ephemeral Help registry
-entry and keeps a small manifest with the normal app registration. The heartbeat repairs lost registry
-entries. Help is coordination state, not durable application data, so it does
-not use PostgreSQL or an application migration.
+Help is registered when the application starts and restored automatically if
+its registry entry is lost.
 
 ## Use the automatically derived surfaces
 
@@ -327,20 +324,7 @@ Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
 
-## Migrate a legacy provider
 
-A legacy provider moves through this sequence:
-
-1. Replace `defineHelpCollection()` with one `defineHelp()` declaration in
-   `src/help/index.ts`.
-2. Pass that declaration to `app.start({ help })`.
-3. Remove the app-owned Help API router, manual Layout registrar, and duplicate
-   full-page routes.
-4. Verify the application's Layout entry point and any specialized embedded
-   reader against the registered corpus.
-
-Do not register both contracts in one application. Remove its old API and page
-routes in the same slice so one declaration remains the only source.
 
 ## Verify Help
 

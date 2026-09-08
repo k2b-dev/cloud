@@ -41,7 +41,7 @@ the runner finishes, including after a failed check.
 
 Core and OAuth run as separate processes. Only current Core receives the
 identity key-encryption key. OAuth authenticates to the real internal Core
-authority with a credential created through the admin API. The reference
+authority with the isolated verification broker secret. The reference
 client imports no Cloud services, reads no database, and verifies JWTs using
 the public JWKS endpoint. No authentication or signing function is mocked.
 

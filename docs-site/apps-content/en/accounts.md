@@ -17,8 +17,7 @@ and change the records they are allowed to manage.
 
 ## Use Accounts
 
-Account types are **Guest**, configurable **Login** and **FreeIPA**. These are
-derived from the existing provider and profile; they are not new providers.
+Account types are **Guest**, **Login** (with a configurable label) and **FreeIPA**.
 Configure which types are allowed and visible in Core's **Accounts & sign-in**
 settings, not in Accounts. See [Account types](/en/docs/operations/account-categories).
 
@@ -32,9 +31,9 @@ settings, not in Accounts. See [Account types](/en/docs/operations/account-categ
   active key when its access should end.
 - Trace account and access changes through the audit log, reminder history,
   and notification batches.
-- Inspect Linux attributes, prepare eligible local full accounts, and maintain
-  their home and shell. Global setup remains in Administration; FreeIPA values
-  remain managed by FreeIPA. See [Linux identities](/en/docs/operations/linux-identities).
+- Inspect and maintain Linux identity attributes. Configure defaults and
+  backfill existing accounts in Administration. FreeIPA manages its own values.
+  See [Linux identities](/en/docs/operations/linux-identities).
 
 ## Understand the Accounts model
 
@@ -74,9 +73,9 @@ the close control to leave; edited forms ask before discarding entries.
 Successful changes can show optional follow-up instructions configured in
 **Administration → Accounts & sign-in → Registration & requests**. An empty
 template adds no notice. User creation, maintenance, group changes and membership
-changes use the same action-dependent template; no NFS instructions are built in.
+changes use the same action-dependent template.
 These are instructions for the administrator or group manager, not messages
-sent to the affected user. See [Account types](/en/docs/operations/account-categories)
+sent to the affected user. See [Follow-up notices](/en/docs/accounts/change-notices)
 for supported actions and template variables.
 
 Global account settings and lifecycle backfill controls live in Administration.

@@ -1,10 +1,11 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Dropdown, ProgressBar, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, Dropdown, ProgressBar, prompts, ScrollArea, TextInput, toast, useLocale } from "@k2b/ui";
 import { formatBytes } from "@valentinkolb/cloud/shared";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo } from "@/contracts";
+import { filesMessages } from "../messages";
 import {
   buildItemPath,
   buildSelectionKey,
@@ -21,7 +22,6 @@ import {
 } from "./context";
 import MoveTargetSearch from "./MoveTargetSearch";
 import { createUploadManager, type FileUploadState } from "./upload";
-import { filesMessages } from "../messages";
 
 type FileToolbarProps = {
   baseType: FileBaseInfo["type"];
@@ -402,11 +402,11 @@ export default function FileToolbar({
             {formatBytes(uploadedBytes())} / {formatBytes(totalBytes())}
           </div>
           <Show when={visibleUploads().length > 0}>
-            <div class="max-h-40 overflow-y-auto">
+            <ScrollArea class="max-h-40">
               <div class="flex flex-col gap-1">
                 <For each={visibleUploads()}>{(file) => <UploadProgressItem {...file} />}</For>
               </div>
-            </div>
+            </ScrollArea>
           </Show>
         </div>
       </Show>

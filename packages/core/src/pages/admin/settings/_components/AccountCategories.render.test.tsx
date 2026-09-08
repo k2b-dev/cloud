@@ -21,6 +21,40 @@ const { default: AccountOperations } = await import("./AccountOperations.island.
 
 import { accountOperationsMessages } from "./account-operations-messages";
 import { accountSettingsSection } from "./account-settings";
+const { default: ApprovalStatus } = await import("../../../app-approval/ApprovalStatus");
+const { default: DocumentationLink } = await import("./DocumentationLink");
+
+test("documentation links are localized, external and safe for unsaved forms", () => {
+  for (const locale of ["en", "de"]) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(DocumentationLink, { base: "http://localhost:4187", topic: "freeipa" });
+        },
+      }),
+    );
+    expect(html).toContain('href="http://localhost:4187/en/docs/operations/freeipa"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain(locale === "de" ? "Dokumentation" : "Documentation");
+  }
+});
+
+test("configuration status never presents a configured Cloud as a tested PWA", () => {
+  for (const locale of ["en", "de"]) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(ApprovalStatus, { state: "configured", admin: true });
+        },
+      }),
+    );
+    expect(html).toContain(locale === "en" ? "Enabled — Cloud configured" : "Aktiviert — Cloud konfiguriert");
+    expect(html).toContain(locale === "en" ? "does not check" : "nicht geprüft");
+  }
+});
 
 test("login categories use the shared segmented radio control", () => {
   const html = renderToString(() =>
@@ -61,7 +95,14 @@ const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "r
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(Form, { title: "Accounts", subtitle: "", icon: "ti ti-users", entries, accountSection });
+        return createComponent(Form, {
+          title: "Accounts",
+          subtitle: "",
+          icon: "ti ti-users",
+          entries,
+          accountSection,
+          approvalState: enabled ? "setup-required" : "disabled",
+        });
       },
     }),
   );
@@ -78,7 +119,7 @@ describe("account category administration", () => {
     expect(registration).toContain("No notice will be shown for these sample values.");
     expect(registration).toContain("user.account_requests.enabled");
     expect(registration).not.toContain("Guest accounts allowed");
-    expect(registration).not.toContain("Authenticator website origin");
+    expect(registration).not.toContain("App website address (origin)");
     expect(accountSettingsSection("user.session.max_age")).toBe("sign-in");
     expect(accountSettingsSection("user.local_guest.expiry_days")).toBe("registration");
     expect(render(false, "de", "registration")).not.toContain('name="user.allow_self_registration"');
@@ -99,10 +140,14 @@ describe("account category administration", () => {
     expect(accountOperationsMessages.check()).toEqual([]);
   });
   test("app approval reveals integration settings only when enabled", () => {
-    expect(render(false)).toContain("Allow app approval");
-    expect(render(false)).not.toContain("Authenticator website origin");
-    expect(render(true)).toContain("Authenticator website origin");
-    expect(render(true, "de")).toContain("API für App-Freigaben");
+    expect(render(false)).toContain("Enable app sign-in");
+    expect(render(false)).not.toContain("App website address (origin)");
+    expect(render(true)).toContain("App website address (origin)");
+    expect(render(true, "de")).toContain("App-Anmeldung");
+    expect(render(true)).toContain("Status of saved settings");
+    expect(render(true)).toContain("Enabled — setup required");
+    expect(render(false)).toContain("App sign-in disabled");
+    expect(render(true, "en", "registration")).not.toContain("Status of saved settings");
   });
   test("enabled categories reveal their visibility and name controls", () => {
     const html = render(true);

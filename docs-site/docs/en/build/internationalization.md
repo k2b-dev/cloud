@@ -84,7 +84,7 @@ instead of omitting the check.
 Resolve messages from the request locale:
 
 ```ts
-import { getLocale } from "@valentinkolb/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 
 router.get("/api/inventory", (c) => {
   const { locale, t } = messages.resolve([getLocale(c)]);
@@ -263,8 +263,8 @@ display strings. Codes remain stable for programmatic handling. See
 
 ### Dashboard widgets
 
-The Dashboard forwards its resolved request locale with the user's session to
-every widget endpoint. The application returns final display strings in
+Cloud forwards the Dashboard request's resolved locale to each widget handler.
+The application returns final display strings in
 `WidgetResponse`; it never returns message keys. Numeric `WidgetStat` and
 `WidgetPill` values format automatically in `@k2b/ui`, while string values are
 preserved. The application still owns currency, dates, relative time, plurals,
@@ -338,11 +338,7 @@ Use exact semantic assertions where possible. For `Intl` output, compare with
 the runtime formatter for the requested locale instead of hardcoding grouping
 characters that may be Unicode punctuation.
 
-Run `bun run check:localization` for repository-wide catalog structure. It
-requires every shipped `i18n.define()` catalog to declare inline English and
-German message objects with matching keys and rejects German catalogs that
-inherit English presentation through an object spread. Technical terms may
-remain identical when the owning catalog declares them explicitly.
+
 
 ## Review checklist
 

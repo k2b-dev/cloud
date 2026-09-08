@@ -52,7 +52,7 @@ Trusted Publishing:
 2. From a clean checkout of that commit, authenticate with `npm login` and
    publish with `npm publish --access public --tag next` from `packages/ui`.
 3. In npm package settings, configure the GitHub trusted publisher for
-   owner `ValentinKolb`, repository `cloud`, workflow `npm-ui.yml`.
+   owner `k2b-dev`, repository `cloud`, workflow `npm-ui.yml`.
 4. Verify the published version in a fresh Solid consumer before a stable
    release. Confirm package contents and all public CSS entry points.
 
@@ -71,7 +71,7 @@ verified and no preview still needs it.
 The Cloud website image workflow builds `docs-site/Dockerfile`, starts the
 production container, and checks its public routes. Pull requests and manual
 runs verify without publishing. A `website-v<version>` tag publishes
-`ghcr.io/valentinkolb/cloud-website:website-v<version>` for AMD64 and ARM64
+`ghcr.io/k2b-dev/cloud-website:website-v<version>` for AMD64 and ARM64
 after verification. The public origin is `https://cloud.k2b.dev`.
 
 Check the release workflow, inspect both image architectures, and record the

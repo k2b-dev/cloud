@@ -1,9 +1,8 @@
 # Paper
 
-`Paper` gives application-owned content one neutral work surface without
-borrowing Cloud's internal `paper` utility. It owns a deliberately quiet
-border, radius, background, optional elevation, and optional interactive focus
-treatment. Content spacing and layout stay with the application.
+`Paper` provides a neutral content surface with a border, radius, background,
+optional elevation and optional interactive focus treatment. The application
+owns spacing and layout.
 
 ## Use Paper
 

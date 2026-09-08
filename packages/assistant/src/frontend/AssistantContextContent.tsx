@@ -7,7 +7,7 @@ import {
   type FileTreeEntry,
   type FileViewContent,
   MarkdownView,
-  prompts,
+  prompts,ScrollArea,
 } from "@k2b/ui";
 import type { AiProjectFile } from "@valentinkolb/cloud/ai";
 import {
@@ -130,9 +130,9 @@ export const assistantMarkdownBody = (title: string, markdown: string): string =
 export const openAssistantMarkdown = (title: string, markdown: string, icon = "ti ti-file-description") =>
   prompts.dialog<void>(
     () => (
-      <div class="max-h-[70vh] overflow-auto">
+      <ScrollArea class="max-h-[70vh]">
         <MarkdownView markdown={assistantMarkdownBody(title, markdown)} headingScale="compact" />
-      </div>
+      </ScrollArea>
     ),
     { title, icon, size: "large" },
   );

@@ -7,7 +7,7 @@ import {
   IconButton,
   IconInput,
   Placeholder,
-  prompts,
+  prompts,ScrollArea,
   SegmentedControl,
   Select,
   TextInput,
@@ -357,7 +357,7 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
 
   return (
-    <div class="flex max-h-[70vh] flex-col gap-6 overflow-y-auto px-1 pb-1">
+    <ScrollArea class="flex max-h-[70vh] flex-col gap-6 px-1 pb-1">
       <section class="flex flex-col gap-2">
         <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().nameColor}</span>
         <div class="flex flex-wrap gap-2">
@@ -543,6 +543,6 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
           {t().save}
         </Button>
       </div>
-    </div>
+    </ScrollArea>
   );
 };

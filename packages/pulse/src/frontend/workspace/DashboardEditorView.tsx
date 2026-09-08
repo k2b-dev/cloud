@@ -1,5 +1,5 @@
-import { AutocompleteEditor, Button, Panes, type PanesLayout } from "@k2b/ui";
-import { createMemo, createSignal, For, Show, type Accessor, type Setter } from "solid-js";
+import { AutocompleteEditor, Button, Panes, type PanesLayout, ScrollArea } from "@k2b/ui";
+import { type Accessor, createMemo, createSignal, For, type Setter, Show } from "solid-js";
 import type {
   PulseDashboard,
   PulseDashboardConfig,
@@ -11,8 +11,8 @@ import type {
 } from "../../contracts";
 import { pulseDashboardDslHighlight } from "../query-authoring";
 import { usePulseMessages } from "../use-messages";
-import { dashboardToDsl, openQueryReferenceWindow, quoteDashboardDslString, quoteQueryPart } from "./helpers";
 import { DashboardContent, type DashboardRenderContext } from "./DashboardView";
+import { dashboardToDsl, openQueryReferenceWindow, quoteDashboardDslString, quoteQueryPart } from "./helpers";
 import {
   createDashboardEditorPanesLayout,
   DASHBOARD_EDITOR_ITEM_IDS,
@@ -78,7 +78,7 @@ const ReferenceList = (props: {
       <span>{props.title}</span>
     </div>
     <Show when={props.items.length} fallback={<p class="text-xs text-dimmed">{props.empty}</p>}>
-      <div class="max-h-40 overflow-auto">
+      <ScrollArea class="max-h-40">
         <For each={props.items.slice(0, 24)}>
           {(item) => (
             <Show
@@ -104,7 +104,7 @@ const ReferenceList = (props: {
             </Show>
           )}
         </For>
-      </div>
+      </ScrollArea>
     </Show>
   </section>
 );
@@ -249,7 +249,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
   );
 
   const renderInventoryPane = () => (
-    <div class="grid h-full content-start gap-2 overflow-auto p-1 md:grid-cols-2 2xl:grid-cols-3">
+    <ScrollArea class="grid h-full content-start gap-2 p-1 md:grid-cols-2 2xl:grid-cols-3">
       {renderReferenceList({
         title: t().sources,
         icon: "ti ti-database-share",
@@ -288,11 +288,11 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
         items: dashboardReferenceSavedQueries(),
         empty: t().noItemsYet({ items: t().savedQueries.toLowerCase() }),
       })}
-    </div>
+    </ScrollArea>
   );
 
   const renderDiagnosticsPane = () => (
-    <div class="h-full overflow-auto p-3">
+    <ScrollArea class="h-full p-3">
       <Show
         when={props.dashboardDslDiagnostics()}
         fallback={
@@ -325,7 +325,7 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
           </Show>
         )}
       </Show>
-    </div>
+    </ScrollArea>
   );
 
   return (
@@ -396,9 +396,9 @@ export default function DashboardEditorView(props: DashboardEditorViewProps) {
               title: t().preview,
               icon: "ti ti-eye",
               render: () => (
-                <div class="h-full overflow-auto bg-zinc-50 p-3 dark:bg-zinc-950">
+                <ScrollArea class="h-full bg-zinc-50 p-3 dark:bg-zinc-950">
                   <DashboardContent config={props.dashboardPreviewConfig} context={props.renderContext} />
-                </div>
+                </ScrollArea>
               ),
             },
             { id: "editor", title: "DSL", icon: "ti ti-code", render: renderEditorPane },

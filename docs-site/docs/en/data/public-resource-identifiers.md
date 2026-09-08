@@ -81,10 +81,5 @@ other view context separately. A composite view key may help a client reconcile
 rendered state, but it must not silently become a canonical resource ID or a
 `CloudResourceRef.id`.
 
-High-volume data applications should apply the same distinction deliberately.
-For example, Pulse gives its Bases, Sources, Dashboards, and Saved Queries short
-public IDs, while telemetry events, samples, series, state history, and scrape
-runs retain technical identities. Observed resources already have stable domain
-keys, so their cross-base reference composes the Base ID and resource key. This
-keeps public navigation readable without adding indexes or ID allocation to the
-ingest path.
+High-volume telemetry records can retain technical identifiers. Give
+independently addressable resources stable public IDs.

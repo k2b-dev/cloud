@@ -256,6 +256,17 @@ export const normalizeSettingValue = (def: SettingDef, raw: unknown): unknown =>
 export const validateSettingValue = (def: SettingDef, raw: unknown): SettingValidationResult => {
   const value = normalizeSettingValue(def, raw);
 
+  if (def.key === "app.documentation_url") {
+    try {
+      if (typeof value !== "string" || !/^https?:\/\//i.test(value)) throw new Error("Invalid URL");
+      const url = new URL(value);
+      if (url.username || url.password || url.search || url.hash) throw new Error("Invalid base URL");
+      return { ok: true, value: url.href.replace(/\/+$/, "") };
+    } catch {
+      return { ok: false, error: "Documentation website must be an absolute HTTP(S) base URL without credentials, query or fragment" };
+    }
+  }
+
   switch (def.kind) {
     case "boolean":
       return typeof value === "boolean" ? { ok: true, value } : { ok: false, error: `${getSettingLabel(def)} must be true or false` };

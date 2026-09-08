@@ -31,7 +31,7 @@ Do not store durable domain state in Valkey or container memory.
 Declare a fixed credential with `kind: "secret"`:
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   // ...
@@ -83,7 +83,7 @@ Keep searchable metadata in normal columns and encrypt only the secret value:
 
 ```ts
 import { sql } from "bun";
-import { secrets } from "@valentinkolb/cloud/services";
+import { secrets } from "@k2b/cloud/services";
 
 const encrypted = await secrets.encrypt({
   apiKey: input.apiKey,
@@ -132,7 +132,7 @@ Use `@k2b/sync` on NATS JetStream for:
 - topics and live events;
 - ephemeral service registration.
 
-Use `ratelimit` from `@valentinkolb/cloud/server` for rate limits.
+Use `ratelimit` from `@k2b/cloud/server` for rate limits.
 Use a direct Valkey key only for a bounded cache or protocol that no shared API
 owns. Give cache keys a namespace and an expiry.
 
@@ -155,5 +155,5 @@ Deletion must cover both the stored object and its database reference, with a
 recoverable retry when one side fails.
 
 The complete
-[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
+[Inventory data example](https://github.com/k2b-dev/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 shows encrypted application credentials.

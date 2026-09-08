@@ -180,7 +180,7 @@ Use `ResourceApiKeys` in the resource's admin-only settings surface:
 ```tsx
 import {
   ResourceApiKeys,
-} from "@valentinkolb/cloud/access/ui";
+} from "@k2b/cloud/access/ui";
 
 <ResourceApiKeys
   title="API keys"

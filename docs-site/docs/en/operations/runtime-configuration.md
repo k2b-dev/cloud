@@ -70,7 +70,7 @@ Set `CLOUD_OAUTH_JWKS_ORIGIN` to the OAuth application's private service
 origin, for example `http://app-oauth:3000`. Access-token verification then
 loads `/.well-known/jwks.json` without public ingress while still requiring the
 public `app.url` issuer. The endpoint publishes only Core's OAuth-purpose public
-keys; legacy OAuth signing keys are no longer served. Applications cache that
+keys. Applications cache that
 public set locally for at most five minutes; the warm verification path uses no
 signing-key database query.
 
@@ -121,21 +121,13 @@ or cannot decrypt and validate the active private/public key pairs. Existing
 applications can continue verifying with public JWKS material and warm caches,
 but Core fails closed for new issuance.
 
-Deploy the purpose-specific session and invocation JWKS endpoints on Core
-before upgrading their consumers. Every replica behind the configured JWKS
-origin must serve both endpoints; a mixed pool with older Core replicas is not
-ready. Stage or drain old replicas before routing upgraded consumers, including
-Core itself, to that origin. Verify cold JWKS reads, not just warm-cache health.
-For rollback, restore compatible consumers before removing these endpoints.
-The combined identity JWKS endpoint has been removed; no fallback remains.
+Start Core before its consumers. Every replica behind the configured Core
+origin must serve the session and invocation JWKS endpoints. Verify cold JWKS
+reads as well as cached requests.
 
-Browser sessions and internal invocations are JWT-only. Deploy Core and every
-application together after draining old replicas; see the
-[coordinated hard cut](/en/docs/reference/deprecations-and-migrations).
-Old browser sessions are invalidated once. No session or invocation mode
-switch remains. Core signs a nominal 30-second token for each target and exact
-operation; invocation verification allows two additional seconds for clock skew.
-Scheduled work uses mandates, never a stored browser session.
+Browser sessions and internal invocations use signed JWTs. An invocation is
+valid for one target and operation for 30 seconds, with two seconds of clock
+tolerance. Scheduled work uses mandates, never a stored browser session.
 
 Synchronize every host's clock, for example with NTP, and monitor drift well
 within the invocation verifier's two-second tolerance.
@@ -157,20 +149,14 @@ and OAuth replicas, recreate those containers, and verify OAuth readiness before
 resuming traffic. There is no previous-secret overlap; mismatched replicas reject
 issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
 
-There is no mode switch or local signing fallback. Drain all old OAuth replicas
-before migration: it drops their signing keys and issuance-state table. Client
-IDs, secrets and refresh grants are retained. Old OAuth JWTs are rejected by
-the upgraded Cloud; external verifiers may still hold cached old public keys.
+
 
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
-Mail incoming automations use mandates exclusively. Provision Mail's
-`identity:invoke` app credential and keep Core's broker available. There is no
-legacy-token mode or authority backfill. Mail is unreleased alpha: this schema
-targets fresh installations, not conversion of old automation credentials.
-Existing alpha test installations must be recreated separately if needed;
-starting Mail does not reset their data.
+Mail incoming automations use mandates. Provision Mail's `identity:invoke`
+app credential and keep Core's broker available. For upgrades that change
+stored credentials, follow [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
 Do not enable `ADMIN_LOGIN_TOKEN` in production.
 

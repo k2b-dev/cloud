@@ -8,7 +8,7 @@ import {
   MarkdownView,
   openSpotlightSearch,
   Placeholder,
-  prompts,
+  prompts,ScrollArea,
   SegmentedControl,
   useLocale,
 } from "@k2b/ui";
@@ -370,7 +370,7 @@ export default function VersionHistory(props: Props) {
       <Show when={!versionPages.loading() && versions().length > 0}>
         <div class="flex-1 min-h-0 app-cols">
           {/* Left: version list */}
-          <div class="notebooks-version-history-list overflow-y-auto scrollbar">
+          <ScrollArea class="notebooks-version-history-list scrollbar">
             <div class="flex flex-col gap-0.5 p-2">
               <p class="px-2.5 pb-1 text-[10px] font-semibold uppercase text-dimmed">{t().savedVersions}</p>
               <For each={versions()}>
@@ -431,7 +431,7 @@ export default function VersionHistory(props: Props) {
                 </p>
               </Show>
             </div>
-          </div>
+          </ScrollArea>
 
           {/* Right: saved content and optional comparison */}
           <div class="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
@@ -468,7 +468,7 @@ export default function VersionHistory(props: Props) {
               </div>
             </Show>
 
-            <div class="flex-1 min-h-0 overflow-auto scrollbar">
+            <ScrollArea class="flex-1 min-h-0 scrollbar">
               <Show when={!selectedVersionId()}>
                 <div class="flex h-full items-center justify-center">
                   <Placeholder icon="ti ti-file-search" title={t().selectVersion} description={t().selectVersionDescription} />
@@ -563,7 +563,7 @@ export default function VersionHistory(props: Props) {
                   </div>
                 </Show>
               </Show>
-            </div>
+            </ScrollArea>
           </div>
         </div>
       </Show>

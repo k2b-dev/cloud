@@ -173,6 +173,8 @@ export const AppPairingClaimResultSchema = z.object({ deviceId: Id, comparison: 
 export const AppPairingResultSchema = z
   .object({ state: z.enum(["pending", "claimed", "confirmed", "cancelled"]), deviceId: Id.nullable(), comparison: Comparison.nullable() })
   .strict();
+/** Initiating Cloud session only; never returned to an unpaired device. */
+export const AppPairingInspectionSchema = AppPairingResultSchema.extend({ name: z.string().nullable(), userId: Id });
 export const AppDeviceResponseSchema = z.union([
   z
     .object({

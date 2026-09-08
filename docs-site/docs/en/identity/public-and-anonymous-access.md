@@ -23,7 +23,7 @@ import {
   type AuthContext,
   auth,
   respond,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 
 const routes = new Hono<AuthContext>()

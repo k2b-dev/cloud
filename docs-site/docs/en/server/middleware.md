@@ -18,7 +18,7 @@ needs.
 Most applications render Cloud UI and read declared settings:
 
 ```ts
-import { type AppContext, middleware } from "@valentinkolb/cloud/server";
+import { type AppContext, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { app } from "../config";
 
@@ -66,7 +66,7 @@ Keep this order:
 Authentication is separate:
 
 ```ts
-import { auth } from "@valentinkolb/cloud/server";
+import { auth } from "@k2b/cloud/server";
 ```
 
 See [Route policies](/en/docs/identity/route-policies).

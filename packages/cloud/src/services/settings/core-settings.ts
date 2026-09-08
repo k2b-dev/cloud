@@ -46,13 +46,14 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 export const CORE_SETTINGS = {
   "user.app_approval.enabled": {
     kind: "boolean",
-    label: "Allow app approval",
-    description: "Enable the device pairing and app approval API. Requires an explicit authenticator origin. Does not enable Linux login.",
+    label: "Enable app sign-in",
+    description:
+      "Show setup under Security. Pairing and sign-in also require a valid app origin. Does not enable Linux login or replace existing sign-in methods.",
     default: false,
   },
   "user.app_approval.origin": {
     kind: "string",
-    label: "Authenticator website origin",
+    label: "App website address (origin)",
     description:
       "Trusted HTTPS origin of the separately hosted authenticator. Changing this origin requires reviewing every existing device; never use a wildcard.",
     default: "",
@@ -113,6 +114,14 @@ export const CORE_SETTINGS = {
     default: '{"enabled":false,"rangeStart":0,"rangeEnd":0,"homeTemplate":"/home/{username}","loginShell":"/bin/bash"}',
   },
   // ── App ─────────────────────────────────────────────────────────────────
+  "app.documentation_url": {
+    kind: "url",
+    label: "Documentation website",
+    description:
+      "Base URL for administration help links. Use your own Cloud documentation mirror or a local Fibel server; this does not configure app sign-in.",
+    default: "https://cloud.k2b.dev",
+    placeholder: "https://cloud.k2b.dev",
+  },
   "app.url": {
     kind: "string",
     label: "URL",

@@ -25,7 +25,7 @@ reader and the owning application must authorize every read normally. Read
 Use the browser-only resource clipboard entry point:
 
 ```ts
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 
 await cloudResourceClipboard.write({
   cloudUrl,
@@ -71,7 +71,7 @@ error state without creating an application-local timer:
 
 ```tsx
 import { clipboard } from "@k2b/stdlib/solid";
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 
 const resourceCopy = clipboard.createWriter({
   write: cloudResourceClipboard.write,
@@ -119,7 +119,7 @@ read and accepted for the configured Cloud URL. Normal text keeps the browser's
 native cursor, selection, and undo behavior:
 
 ```ts
-import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 
 const onPaste = (event: ClipboardEvent) => {
   const clipboardData = event.clipboardData;

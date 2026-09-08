@@ -35,10 +35,10 @@ Lifecycle callbacks belong to the Cloud application contract.
 Jobs, queues, schedules, topics, mutexes, and ephemeral state come from
 `@k2b/sync` and use NATS JetStream. Local retries use `@k2b/sync/retry`. Cloud
 rate limits remain on Valkey and are exported from
-`@valentinkolb/cloud/server`. These primitives do not use the Cloud workflow
+`@k2b/cloud/server`. These primitives do not use the Cloud workflow
 tables.
 
-The workflow kernel comes from `@valentinkolb/cloud/workflows`. It owns
+The workflow kernel comes from `@k2b/cloud/workflows`. It owns
 versioned plans, runs, leases, outcomes, effects, and operator visibility.
 
 Do not combine several primitives merely to imitate a workflow journal, and do

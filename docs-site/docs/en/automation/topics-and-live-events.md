@@ -16,7 +16,7 @@ updates. Cloud owns the NATS connection; declare topics through `lazySync()`.
 ## Publish an event
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const inventoryEvents = lazySync((sync) => sync.topic<{ itemId: string }>({
   id: "inventory.events",
@@ -79,12 +79,6 @@ cursor and a persisted numeric stream sequence when the application needs it.
 `CursorMismatchError` means the cursor belongs to another topic. Reload an
 authorized snapshot; never save a partial replay as a complete document.
 
-Notebooks applies this rule to document synchronization: each note has a
-retained Yjs topic. It replays to a captured head before joining the live hub
-and explicitly reports when replay is ready. A history gap blocks snapshot
-persistence; the incomplete document is never saved as a replacement. Awareness
-uses a separate shared, short-lived topic and is not part of document recovery.
-
 ## Stream live updates
 
 Use `live({ tenantId, signal })` for best-effort broadcast. It has no cursor or
@@ -118,9 +112,9 @@ per tenant reads the full topic stream for each active tenant. Prefer
 server-filtered `live()` for transient high-volume fan-out, or separate topics
 when retained data is naturally isolated.
 
-Foreground Cloud notifications resume with these cursors. Stored Redis cursors
-are discarded at cutover; a retention gap or foreign cursor reconnects at the
-current head. Durable notification history remains available in Postgres.
+Foreground Cloud notifications resume with these cursors. After an invalid or
+expired cursor, notifications reconnect from the current head. Saved
+notification history remains available.
 
 Use [Realtime UI](/en/docs/frontend/realtime-ui) for browser integration. Validate
 untrusted payloads at the application boundary.

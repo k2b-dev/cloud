@@ -45,7 +45,7 @@ Its bounded policy lists every target application and canonical operation the
 workload may request.
 
 ```ts
-import { mandates } from "@valentinkolb/cloud/services";
+import { mandates } from "@k2b/cloud/services";
 
 const mandate = await mandates.create(
   {
@@ -105,43 +105,10 @@ Policy values are:
 wildcard mandate always requires approval. It cannot silently approve an
 operation that the product or capability contract says needs user attention.
 
-Core's scheduled chat tasks are the deliberately open-agent case. Each task
-owns one user-subject mandate with `ownerAppId: "core"`, workload type
-`ai.chat-task`, wildcard apps and operations, and `actions:
-"require_approval"`. Queries can run within that mandate. Every Action still
-passes through the normal Assistant review and approval request; Core marks an
-Action invocation as approved only after that request resolved positively.
-Pausing or completing the task pauses its mandate, resuming the task resumes
-it, and deleting the task revokes it.
-
-Background turns never inherit a conversation's interactive **Always Allow**
-preferences. They require approval for the current Action and do not offer
-**Always Allow**. Intentionally unattended automation should instead use an
-explicit, narrowly scoped `preapproved` mandate where the application supports it.
-
-New scheduled tasks create their mandate in the same transaction. Old tasks
-without a mandate are not automatically upgraded or authorized: admission
-stops and marks them `needs_attention`. Their owners must delete and recreate
-them. Prompt updates or resuming a task never regenerate missing authority.
-Existing tasks with valid mandates continue normally.
-
-Admission requires a confirmed mandate with the same user, Core owner,
-workload identity, and exact scheduled-task policy. An incompatible mandate
-moves the task to `needs_attention`. Scheduling and delivery recheck its state,
-revision, expiry, and sponsor. Paused authority stops new turns; revoked,
-expired, or invalid authority requires attention. Editing a prompt does not
-silently resume a separately paused mandate.
-
-Explicit task pause, resume, and deletion reload the mandate under a lock, so
-an independent mandate change does not leave the task stuck on an old revision.
-Resuming still requires confirmed, unexpired authority with the scheduled-task
-policy. A changed policy is never reset, and revoked authority is never restored.
-
-Terminal occurrence bookkeeping does not require live authority. Recovery
-handles each occurrence independently so one broken task cannot block others.
-
-Scheduled turns use invocation JWTs unconditionally. Core never substitutes
-a user's browser session for background mandate authority.
+Background work does not inherit remembered interactive approvals. Use a
+narrowly scoped `preapproved` mandate only for explicitly authorized unattended
+operations. Missing, paused, expired or revoked authority must not be replaced
+with a user's browser session or silently recreated by a worker.
 
 Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
@@ -189,7 +156,7 @@ HTTP 409.
 Use the server capability helper with the current mandate revision:
 
 ```ts
-import { invokeCapability } from "@valentinkolb/cloud/capabilities/server";
+import { invokeCapability } from "@k2b/cloud/capabilities/server";
 
 const result = await invokeCapability(
   {
@@ -225,10 +192,7 @@ Persist the mandate ID and revision with the workload. A policy update,
 pause, resume, or revocation increments the revision. Core rejects requests
 carrying an old revision; the worker must reload current workload state before
 trying again. This does not require freezing the revision when work is queued.
-Mail checks the automation's enabled state and active workflow version at
-execution time, then loads its current mandate binding and revision for Spaces
-actions. Its activation snapshot represents mailbox authority; `activatedBy`
-records provenance, not a delegated request actor.
+
 
 Pause the mandate when the workload pauses. Revoke it when the workload is
 deleted or permanently disabled. Revocation blocks new issuance immediately;
@@ -251,23 +215,7 @@ capability payload.
 A signing failure is recorded as a failed issuance before an internal error is
 returned, and no target request is sent.
 
-Mail creates and links its mandate in the same transaction as the incoming
-automation, pausing the mandate when the automation starts disabled. Mail never
-creates or stores a user API token for these actions. Missing or revoked mandate
-authority fails closed; there is no credential fallback or background conversion.
 
-Mail mailbox administrators may pause or delete another user's automation,
-remove all Spaces actions, or make cosmetic changes. Pause and revocation use
-Mail's workload authority after mailbox permission checks. Changing a definition
-that retains Spaces actions, or enabling it again, requires the mandate's
-original user; another mailbox administrator receives HTTP 403 and must obtain
-explicit reauthorization. Equal application/operation lists alone do not prove
-that a changed definition preserves the same authority. Cosmetic changes do not
-reactivate separately paused or revoked mandates.
-
-Mail is unreleased alpha and does not support migration of its former stored
-automation credentials. Use a fresh Mail schema for that alpha transition;
-no startup path deletes or converts existing test data automatically.
 
 ## What still authorizes the effect
 

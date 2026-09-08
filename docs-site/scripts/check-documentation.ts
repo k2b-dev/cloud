@@ -28,6 +28,7 @@ const allowedSections = new Set([
   "Frontend",
   "AI",
   "Operations",
+  "Accounts & sign-in",
   "Reference",
   "Contributing",
 ]);

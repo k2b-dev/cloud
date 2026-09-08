@@ -27,12 +27,12 @@ const de: Record<string, SettingCopy> = {
       "Optionale Liquid-Markdown-Vorlage für die ausführende Person, keine Benutzerbenachrichtigung. Nach action unterscheiden, etwa user.create oder group.delete. Leere Ausgabe zeigt keinen Hinweis. Nur der dokumentierte Kontext ohne Zugangsdaten ist verfügbar.",
   },
   "user.app_approval.enabled": {
-    label: "App-Freigabe erlauben",
+    label: "App-Anmeldung aktivieren",
     description:
-      "API für Gerätekopplung und App-Freigaben aktivieren. Benötigt eine ausdrücklich konfigurierte Authenticator-Origin. Aktiviert keinen Linux-Login.",
+      "Zeigt die Einrichtung unter Sicherheit. Kopplung und Anmeldung benötigen zusätzlich eine gültige App-Adresse. Aktiviert keinen Linux-Login und ersetzt keine bisherigen Anmeldemethoden.",
   },
   "user.app_approval.origin": {
-    label: "Origin der Authenticator-Website",
+    label: "Adresse der App-Website (Origin)",
     description:
       "Vertrauenswürdige HTTPS-Origin der separat gehosteten App, ohne Pfad. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
   },
@@ -74,6 +74,10 @@ const de: Record<string, SettingCopy> = {
   "app.url": {
     label: "Öffentliche URL",
     description: "Öffentliche App-URL für Links in E-Mails, OAuth-Weiterleitungen und WebSocket-Verbindungen.",
+  },
+  "app.documentation_url": {
+    label: "Dokumentationsadresse",
+    description: "Basisadresse für Doku-Links in der Administration. Eigener Cloud-Doku-Spiegel oder lokaler Fibel-Server; unabhängig von der App-Anmeldung.",
   },
   "app.home_path": {
     label: "Startpfad",

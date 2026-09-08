@@ -7,24 +7,24 @@
  * no client-side filter, results stay deterministic.
  */
 
-import { AppWorkspace, Pagination } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { AppWorkspace, Pagination, ScrollArea } from "@k2b/ui";
 import { hasRole } from "@valentinkolb/cloud/contracts";
-import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { toPublicAttachment } from "@/api/public-resources";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
+import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import { parseSettings } from "../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
-import { projectNotebook, projectTree } from "../page-data";
 import { notebookWorkspaceMessages } from "../messages";
+import { projectNotebook, projectTree } from "../page-data";
 
 const PER_PAGE = 200;
 
@@ -125,14 +125,14 @@ export default ssr<AuthContext>(async (c) => {
                 labels the page — no additional title above. */}
             <SearchBar value={search} action={searchHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
 
-            <div class="mt-2 flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+            <ScrollArea class="mt-2 flex-1 min-h-0 flex flex-col gap-2">
               <AttachmentsOverview
                 notebookId={notebook.shortId}
                 initial={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
                 searchQuery={search}
               />
               <Pagination currentPage={paginatedResult.page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-            </div>
+            </ScrollArea>
           </AppWorkspace.Main>
         </AppWorkspace.Content>
       </AppWorkspace>

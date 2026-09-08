@@ -34,7 +34,7 @@ Use `Tooltip.Anchor` as an explicit wrapper for non-button content. It accepts
 shared `Button` components. Neither contract searches or rewrites descendant
 DOM.
 
-Placement is a preference. The surface flips vertically when the requested side does not fit and clamps horizontally to the viewport. Positioning measures twice: it first fixes the available horizontal position, then remeasures wrapped content before calculating the final top and left coordinates.
+Placement is a preference. The surface flips vertically when the requested side does not fit and clamps horizontally to the viewport.
 
 ## Accessibility
 
@@ -50,7 +50,7 @@ The target and tooltip surface render on the server. Hydration attaches
 `aria-describedby` to the explicitly owned target, opens the Popover API
 surface, positions it, and handles dismissal.
 
-Long content wraps to the surface maximum width. Keep it concise even though the second measurement prevents wrapping from producing stale vertical placement.
+Long content wraps within the maximum tooltip width. Keep hints concise.
 
 ## Example
 

@@ -23,7 +23,7 @@ import {
   oneOf,
   page,
   text,
-} from "@valentinkolb/cloud/ssr";
+} from "@k2b/cloud/ssr";
 
 const inventoryFilter = createUrlFilter("/app/inventory", {
   search: text("search"),

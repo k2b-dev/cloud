@@ -18,7 +18,7 @@ settings, authentication, timeouts, and size limits.
 ## Render HTML
 
 ```ts
-import { renderHtmlToPdf } from "@valentinkolb/cloud/services";
+import { renderHtmlToPdf } from "@k2b/cloud/services";
 
 const result = await renderHtmlToPdf({
   html: "<!doctype html><html><body><h1>Stock report</h1></body></html>",
@@ -45,7 +45,7 @@ Use `renderMarkdownToPdf()` for a deterministic Markdown document with a
 code-owned print preset:
 
 ```ts
-import { renderMarkdownToPdf } from "@valentinkolb/cloud/services";
+import { renderMarkdownToPdf } from "@k2b/cloud/services";
 
 const result = await renderMarkdownToPdf({
   markdown: "# Stock report\n\n| Item | Remaining |\n| --- | ---: |\n| Cable | 4 |",

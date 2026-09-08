@@ -35,7 +35,7 @@ Pass `getRowId` when selection or stable row identity matters. Use `selectedRowI
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
 
-## Professional composition
+## Add a header and controls
 
 The basic `DataTable` stays valid on its own. The compound panel adds only
 presentation and accessible structure; it does not own query or pagination

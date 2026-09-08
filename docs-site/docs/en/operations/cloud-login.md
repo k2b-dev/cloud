@@ -1,15 +1,16 @@
 ---
 title: Run Cloud Login
-section: Operations
-order: 1177
+navTitle: Cloud Login PWA
+section: Accounts & sign-in
+order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-09-08
+updated: 2026-09-09
 ---
 
 # Run Cloud Login
 
-Cloud Login is the standalone authenticator in `pwas/pwa-auth`. It connects
+Cloud Login is a standalone authenticator for one or more Cloud accounts. It connects
 directly to each paired Cloud and uses a separate device key for each pairing.
 It does not require a central account or session server.
 
@@ -20,16 +21,16 @@ Run `bun run --cwd pwas/pwa-auth build` in the monorepo and serve the resulting
 `Cache-Control: no-store` for HTML and `sw.js` and `Referrer-Policy: no-referrer`. Host scripts
 and assets locally; do not add third-party scripts or analytics to this origin.
 
-The production build caches only its static app files for offline startup after
-one successful online load. Cloud APIs and credentials are never cached. Pairing
+The service worker caches static app files for offline startup after one
+successful online load, never Cloud API responses. Device credentials are stored
+encrypted in the browser. Pairing
 and approvals require a connection. A downloaded update waits until all open
 Cloud Login tabs/windows close, then applies on a subsequent launch. Reloading
 an open app does not force the update. Publish builds atomically and retain old
-hashed assets during rollout. The development server does not register a worker.
+hashed assets during rollout.
 
 In each Cloud, enable app approval and configure this exact authenticator origin
-as described in [App approval API](./app-approval.md). Cloud Login uses the
-public browser SDK to validate discovery and send device-authenticated requests.
+as described in [Set up app sign-in](/en/docs/accounts/app-sign-in).
 Changing either origin requires reviewing the existing pairings.
 
 ## Protect the app
@@ -46,9 +47,7 @@ all Clouds in this browser installation. This does not approve a sign-in.
 A passkey can use face recognition, a fingerprint, or the device code, as chosen
 by the operating system. The app checks the selected provider's encryption
 support during setup; browser support alone is not sufficient. If that check
-fails, choose a compatible provider or explicitly set a PIN. Local development
-of passkey unlock requires `http://localhost:4178`, because numeric IP addresses
-are not valid WebAuthn relying-party IDs. Production requires stable HTTPS.
+fails, choose a compatible provider or set a PIN.
 
 Enter a PIN twice, with exactly six digits; leading zeroes count. A PIN has at
 most one million combinations. Its slow Argon2id derivation makes guessing more
@@ -66,22 +65,20 @@ hide a page during authentication; they do not keep an unlocked vault alive.
 
 **App security** requires a fresh unlock before adding, replacing, or removing
 a method. A new method must successfully unlock before it is saved. The last
-method cannot be removed. Changing the PIN keeps your Cloud pairings. Changes
-replace the current unlock envelopes atomically, but cannot revoke access to
-previously copied envelopes or data: a previously recovered vault key remains
-sensitive. After suspected key compromise, revoke the affected Cloud devices
-and pair them again.
+method cannot be removed. Changing the PIN keeps your Cloud pairings.
+Changing app protection does not secure copies of browser data that an attacker
+already obtained. After suspected compromise, revoke the devices in Cloud and
+pair again.
 
 If no configured method works, **Reset Cloud Login** removes local pairings
 and protection after confirmation. It does not revoke devices in the Clouds.
 Use another Cloud sign-in method to revoke old devices and pair again.
-Older installations with unencrypted, non-exportable keys also require this
-explicit reset and new pairings; those keys cannot be wrapped retrospectively.
-No automatic deletion or conversion takes place.
+If the app asks you to reset unsupported stored data, review and revoke its old
+devices in Cloud before pairing again.
 
 ## Connect a Cloud
 
-On your own Cloud profile page, open **Security → Devices** and start pairing.
+On your own Cloud profile page, open **Security → Paired devices → Pair a device**.
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
 or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
 also open the link. All paths carry the same temporary link.
@@ -113,15 +110,15 @@ silently resend the decision.
 Local removal does not revoke the device in Cloud. Existing browser sessions
 must be revoked separately.
 
-IndexedDB stores encrypted Cloud keys and account records. Runtime signing keys
-are imported as non-exportable WebCrypto keys and discarded on lock. This is
-not a hardware-protection or biometric-only guarantee; malicious same-origin
-JavaScript or a compromised operating system can defeat the local lock. Deleted
+Cloud Login stores device credentials encrypted in this browser. The app lock
+does not protect against malicious code running on the authenticator website
+or a compromised device. Deleted
 browser data has no automatic recovery: sign in with another supported method,
 revoke the old device and pair again. Do not assume that browser tabs, installed
 apps and embedded browsers share storage; pair in the app you will actually use.
 
 The dots menu also offers language, appearance, and installation guidance.
-Offline approvals and push delivery are not implemented. Actual camera scanning,
-iOS/Safari installation and Android same-device handoff still require device
-acceptance before an operator promises those flows to users.
+Approvals need an internet connection. Open the app to see pending requests;
+there are no push notifications. Before making the app available to your
+organization, check camera access, installation and switching between Cloud
+and the app on the devices and browsers you support.

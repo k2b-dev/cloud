@@ -43,7 +43,7 @@ request.
 Check:
 
 1. the process is running;
-2. `APP_SECRET`, Postgres, and Valkey are available;
+2. `APP_SECRET`, Postgres, Valkey and NATS JetStream are configured and available;
 3. startup completed without a migration or lifecycle error;
 4. the application logged a successful registration;
 5. all containers use the same Compose network;

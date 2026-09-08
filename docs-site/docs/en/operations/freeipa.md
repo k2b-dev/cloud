@@ -1,23 +1,24 @@
 ---
 title: FreeIPA setup
 navTitle: FreeIPA
-section: Operations
-order: 1170
+section: Accounts & sign-in
+order: 1083
 description: Connect a Cloud deployment to FreeIPA identity infrastructure.
 tags: [freeipa, identity, directory]
-updated: 2026-07-30
+updated: 2026-09-09
 ---
 
 # FreeIPA setup
 
-FreeIPA is optional.
-
-Enable it when Cloud should authenticate and synchronize users from an existing
-FreeIPA directory. Local accounts and magic-link login work without it.
+Connect FreeIPA to let directory users sign in to Cloud and manage their
+accounts and groups. If your organization uses only local Cloud accounts,
+leave this integration disabled.
 
 ## Configure the connection
 
-Set the `freeipa.*` settings in Cloud administration.
+Open **Administration → Accounts & sign-in → FreeIPA**.
+Enable the connection and set the `freeipa.*` values there. Account access and
+login-page visibility are separate [Sign-in settings](/en/docs/operations/account-categories).
 
 The connection needs:
 
@@ -29,7 +30,8 @@ The connection needs:
 `FREEIPA_URL`, `FREEIPA_SVC_USER`, and `FREEIPA_SVC_PASSWORD` can bootstrap the
 first configuration.
 
-Cloud enables the bootstrap automatically only when all three values exist.
+All three bootstrap values must be present. For an already configured
+installation, edit the saved settings in Administration.
 
 ## Configure TLS
 
@@ -68,16 +70,16 @@ Cloud uses JSON-RPC for:
 
 Cloud does not create hosts.
 
-When using [local Linux identity preparation](/en/docs/operations/linux-identities)
+When using [local Linux identities](/en/docs/operations/linux-identities)
 alongside FreeIPA, also allow `idrange_find`. This extra read permission is
-needed for local range reservation, not existing FreeIPA sign-in. The normal
+needed to avoid overlapping numeric IDs, not for FreeIPA sign-in. The normal
 sync mirrors Linux attributes without changing their directory values.
 
 Grant only these operations. FreeIPA privilege and role names depend on the
 directory configuration, so verify them in the target instance.
 
-Cloud authorization still runs before a directory mutation. The FreeIPA
-service account is the downstream technical identity.
+Users still need the relevant Cloud permissions to make directory changes;
+the service account does not give them administrative access.
 
 ## Define group scope
 
@@ -93,11 +95,35 @@ service account is the downstream technical identity.
 Excluded groups remain available while Cloud evaluates sync scope. Cloud does
 not mirror those groups or their membership and hierarchy edges.
 
+## Account matching and transitions
+
+**User Match Mode** (`freeipa.user_match_mode`) defaults to **Ignore local match**.
+Set **Migrate matching local account** only when you intend a unique local
+account with the same email to become FreeIPA-managed. Migration keeps its
+Cloud ID but changes its username, provider, profile and directory-controlled
+data. Multiple local email matches are skipped. This is not an email-login fallback.
+
+**Account Transition Policy** (`freeipa.account_transition_policy`) controls
+what happens when an IPA-backed account expires or leaves synchronization scope:
+
+| Choice | Result |
+| --- | --- |
+| Make local guest (default) | Retain the account as a local Guest |
+| Make local (keep profile) | Retain the account and its guest/full profile |
+| Make local user | Retain the account as a local full account |
+| Delete account | Delete the Cloud account through its lifecycle policy |
+
+Review the destination category's allowed-access policy before changing this.
+Retaining an account does not guarantee it can sign in, and a provider transition
+is not a migration of workstation file ownership.
+
+**Sync Cron** (`freeipa.sync_cron`) defaults to `*/5 * * * *`: every five minutes
+in the Cloud timezone. Use Operations to inspect sync logs.
+
 ## Configure destructive-change guards
 
-Cloud validates the complete user and group snapshot before changing local
-state. A truncated response, invalid payload, or incomplete snapshot stops the
-run without destructive changes.
+Synchronization stops without destructive changes if FreeIPA returns an
+incomplete or invalid user or group list.
 
 The sync policy has two independent limits for users and two for groups:
 
@@ -129,82 +155,18 @@ Do not raise only one limit: the other continues to protect the directory.
 
 ## Backfill account expiry dates
 
-Use **Run FreeIPA backfill** in Accounts to fill missing or premature expiry
-dates. Each accepted run fixes its target to the configured IPA account
-lifetime, with a minimum of seven days, at 23:59:59 UTC. Retries keep that
-target even if the settings or current date change. A later expiry read from
-FreeIPA is preserved and mirrored to Cloud.
-
-The backfill uses a Sync pump with a finite PostgreSQL scan. Accounts created
-after the run's cutoff belong to a later run. The pump saves progress after
-each account job is durably accepted. Pump completion means all candidate
-jobs were submitted; directory changes may still be running.
-
-The account worker processes one account at a time and rechecks its current
-identity. A deleted account, changed provider, or changed username is skipped.
-A directory write that succeeded before a local failure is verified again
-before retrying, and PostgreSQL updates commit together.
-
-Inspect `auth:ipa:backfill` logs and the pump run in observability for failures.
-After two failed attempts, the affected account job enters the
-`auth:ipa:backfill:account` dead-letter store. Later accounts continue. Resolve
-the provider error and retry that dead letter to retain the original target.
-Disabling FreeIPA during a run fails unfinished account jobs rather than
-marking them complete. PostgreSQL continues to own account identity and the
-local expiry mirror; the pump stores the run target, cursor, and acceptance
-checkpoints.
-
-For the upgrade from the former backfill job, quiesce old submitters and
-workers before switching versions. The old `auth:ipa:backfill` job's work
-stream must contain zero messages, its consumer must have zero pending
-acknowledgments, and its dead-letter stream must be empty. Resolve any
-accepted work through the old runtime before the cutover. The new pump does
-not consume or delete old job state. Old jobs carried no saved target date,
-so a partially completed old attempt cannot be converted without recomputing
-that date.
+Open **Administration → Accounts & sign-in → Operations**.
+Read [Repair expiry dates](/en/docs/accounts/lifecycle#repair-expiry-dates)
+before starting: maintenance can restore access for expired accounts.
+It does not assign Linux identities.
 
 ## Failure and recovery behavior
 
-The scheduled sync has at-least-once delivery. Cloud holds a distributed
-single-run lock, refreshes both lock and job lease during long phases, and
-passes cancellation into FreeIPA requests. Loss of ownership aborts the run;
-an in-progress local mirror transaction rolls back.
-
-Expired user-backed actors are rejected from request authentication even while
-FreeIPA is unavailable. Session revocation happens before retryable remote
-account cleanup. A repeated FreeIPA delete that reports an already-missing
-account is treated as success.
-
-The primary sync intentionally remains a complete snapshot transaction.
-`user_find` and `group_find` do not expose a stable durable cursor suitable for
-a direct pump. Consider a staged pump only after measurements show sustained
-lease or transaction pressure and only with a persisted complete snapshot,
-stable item keys, idempotent apply, and atomic finalization.
-
-The primary snapshot sync remains outside a pump. Reevaluate it when the
-seven-day p95 transaction duration reaches 60 seconds or the p95 complete sync
-duration reaches 90 seconds (75 percent of the 120-second lease). A staged
-snapshot design would use a persisted run id plus entity/external id as the
-idempotency key, a stable staged-row cursor, and an atomic publish step; no
-partially applied run may become visible. A per-account lifecycle pump would
-use `(account_expires, user_id)` as its Postgres cursor and
-`user_id:account_expires` as its idempotency key. Its sink must preserve the
-existing request-time expiry check, audit uniqueness, and retry-safe
-already-missing delete behavior. Test either design with crashes before and
-after sink acceptance, cursor checkpoint, and final publication.
-
-When a run fails:
-
-1. classify the log as configuration, TLS, network/timeout, upstream,
-   snapshot-integrity, or guard failure;
-2. fix the underlying cause rather than disabling verification;
-3. use **Test connection** for transport and service-account checks;
-4. restore safe guard values after an intentional override;
-5. let the next scheduled retry reconcile the idempotent mirror.
-
-Successful sync logs include fetched and in-scope counts, transaction duration,
-user and group change counts, percentages, active guard limits, profile drift,
-and rebuilt membership counts.
+Use **Test connection** for saved connection settings and **Operations** for
+filtered sync logs. Resolve certificate, credentials or group-scope errors
+before retrying. Never lower TLS protection to fix a production certificate error.
+See [FreeIPA recovery](/en/docs/reference/freeipa-recovery) for interrupted
+jobs, dead letters and the older-job upgrade procedure.
 
 ## Verify the integration
 

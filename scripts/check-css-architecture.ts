@@ -8,14 +8,13 @@ const globalStylesheet = join(sharedStylesRoot, "global.css");
 const uiStylesRoot = join(packagesRoot, "ui", "src", "styles");
 const uiStylesheet = join(uiStylesRoot, "index.css");
 const uiFontPreset = join(packagesRoot, "ui", "src", "fonts", "plex.css");
-const forbiddenSharedStylesheets = new Set(["theme-modern.css"]);
+const forbiddenSharedStylesheets = new Set(["theme-modern.css", "utilities-detail.css"]);
 const canonicalSharedStylesheetImports: readonly string[] = [
   "tokens.css",
   "utilities-buttons.css",
   "utilities-layout.css",
   "utilities-navigation.css",
   "utilities-feedback.css",
-  "utilities-detail.css",
   "utilities-data.css",
   "utilities-markdown-table.css",
   "utilities-markdown-editor.css",

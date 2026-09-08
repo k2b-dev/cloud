@@ -113,12 +113,8 @@ credit usage. Workflow inference is counted once through structured accounting;
 workflow task status and retries remain available in the workflow views.
 Compaction appears as `chat-compaction` in **Background AI**.
 
-After upgrading, existing chat usage is recovered from messages still present.
-Usage from responses already removed by an earlier retry cannot be recovered.
-Compaction accounting starts with this update; older summaries, including copied
-summaries, cannot reliably identify their original inference. Conversation
-and user deletion still follow the existing data lifecycle. Historical reports
-are therefore an operational cost signal rather than an immutable billing ledger.
+Historical totals depend on retained source records and may omit unavailable
+usage. They are an operational cost signal, not an immutable billing ledger.
 
 The report uses durable AI facts and does not expose prompts or private message
 content. Background records contain task, application, model, usage, duration,

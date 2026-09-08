@@ -20,7 +20,7 @@ create Hono routes, add middleware, or start the service.
 ## Declare the required fields
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "inventory",
@@ -269,7 +269,7 @@ discovered.
 Use `AppContext<typeof app>` to expose declared settings on request context:
 
 ```ts
-import type { AppContext } from "@valentinkolb/cloud/server";
+import type { AppContext } from "@k2b/cloud/server";
 
 type InventoryContext = AppContext<typeof app>;
 ```

@@ -85,8 +85,7 @@ administrator.
 
 New interactive turns check access again when execution starts or resumes.
 Revoking a grant can therefore stop a queued or suspended turn. Already running
-provider calls are not canceled by a permission change. Turns queued before
-this feature was introduced keep their previous access behavior.
+provider calls are not canceled by a permission change.
 
 These grants apply only to interactive Assistant chat, including its chat API
 and CLI. Background jobs, scheduled chat tasks, workflows, enrichment,

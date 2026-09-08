@@ -57,8 +57,8 @@ performs these reads and mutations in its service layer.
 **`src/capabilities.ts`**
 
 ```ts
-import { defineCapabilities } from "@valentinkolb/cloud";
-import type { AccessSubject } from "@valentinkolb/cloud/contracts";
+import { defineCapabilities } from "@k2b/cloud";
+import type { AccessSubject } from "@k2b/cloud/contracts";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 
@@ -205,7 +205,7 @@ Import the declaration where the application starts:
 **`src/config.ts`**
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { Hono } from "hono";
 import { inventoryCapabilities } from "./capabilities";
 
@@ -710,7 +710,7 @@ Keep a previous manifest fixture and check it in provider tests:
 import {
   assertCapabilityManifestEvolution,
   compileCapabilityManifest,
-} from "@valentinkolb/cloud/capabilities/testing";
+} from "@k2b/cloud/capabilities/testing";
 
 const current = compileCapabilityManifest("inventory", inventoryCapabilities);
 assertCapabilityManifestEvolution(previousManifestFixture, current);
@@ -898,7 +898,7 @@ consumer API.
 The POST body contains one `input` field:
 
 ```json
-{ "input": { "id": "11111111-1111-4111-8111-111111111111" } }
+{ "input": { "id": "k3P9xQ" } }
 ```
 
 The optional review route accepts the same body and is available only when the
@@ -934,10 +934,10 @@ for the message and error boundary.
 Browser and client islands use the same-origin public client:
 
 ```ts
-import { invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
 import { z } from "zod";
 
-const itemSchema = z.object({ id: z.uuid(), name: z.string() }).passthrough();
+const itemSchema = z.object({ id: z.string().regex(/^[A-Za-z0-9]{6}$/), name: z.string() }).passthrough();
 const result = await invokeCapabilityWithDataSchema(
   {
     appId: "inventory",
@@ -957,7 +957,7 @@ invocation. Configure `CLOUD_CORE_INTERNAL_ORIGIN` to avoid a public
 Gateway/ingress round trip:
 
 ```ts
-import { invokeCapabilityWithDataSchema } from "@valentinkolb/cloud/capabilities/server";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 
 const result = await invokeCapabilityWithDataSchema(
   {
@@ -984,7 +984,7 @@ data schema at every typed consumer boundary. Use
 review. App tests may compile a declaration without importing Cloud internals:
 
 ```ts
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 ```
 
 A durable worker uses the same server helper with an app workload credential
@@ -999,11 +999,11 @@ The generic CLI uses the same dispatcher:
 
 ```bash
 cld capabilities catalog
-cld capabilities read inventory.item 11111111-1111-4111-8111-111111111111
+cld capabilities read inventory.item k3P9xQ
 cld capabilities query inventory item.read \
-  --input '{"id":"11111111-1111-4111-8111-111111111111"}'
+  --input '{"id":"k3P9xQ"}'
 cld capabilities action inventory item.rename \
-  --input '{"itemId":"11111111-1111-4111-8111-111111111111","name":"Dock"}'
+  --input '{"itemId":"k3P9xQ","name":"Dock"}'
 ```
 
 The Capabilities playground at `/app/capabilities` lists the live catalog,

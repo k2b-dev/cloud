@@ -24,7 +24,7 @@ Pass the exact clipboard value through `text`. With `label`, the component shows
 
 `class` replaces the default button classes when the surrounding surface needs a different action hierarchy.
 
-`onCopied` runs after a successful write. `onCopyError` reports the browser error, but the clipboard promise remains rejected to preserve the source behavior. Use the callback for visible recovery and keep the application's normal rejected-promise reporting in place. `resetAfter` changes the feedback duration.
+`onCopied` runs after a successful write. `onCopyError` reports the browser error, but clipboard failures still reject the promise. Use the callback for visible recovery and keep the application's normal rejected-promise reporting in place. `resetAfter` changes the feedback duration.
 
 ## RemoveBtn
 

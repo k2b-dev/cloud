@@ -6,6 +6,7 @@ export const accountsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      pairAppDevice: "Pair sign-in app",
       start: "Start",
       accounts: "Accounts",
       dashboard: "Dashboard",
@@ -761,6 +762,7 @@ export const accountsMessages = i18n.define({
       reasonManualDelete: "Manual deletion",
     },
     de: {
+      pairAppDevice: "Anmelde-App koppeln",
       start: "Start",
       accounts: "Konten",
       dashboard: "Übersicht",

@@ -26,7 +26,7 @@ import {
   fail,
   ok,
   type Result,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 export const createInventoryService = (repository: InventoryRepository) => ({
   read: async (input: {
@@ -127,9 +127,7 @@ A failed result becomes:
 
 The HTTP status comes from the `ServiceError`.
 
-`respond()` also accepts a function that returns a result. New services should
-use the structured `Result<T>` shape. A legacy `{ ok, data | error, status }`
-shape is accepted only for compatibility.
+`respond()` also accepts a function that returns `Result<T>`.
 
 ## Return a success message
 
@@ -162,7 +160,7 @@ Catch infrastructure failures in the service when the operation can map them
 to a safe domain error:
 
 ```ts
-import { err, tryCatch } from "@valentinkolb/cloud/server";
+import { err, tryCatch } from "@k2b/cloud/server";
 
 return tryCatch(
   () => repository.create(input),

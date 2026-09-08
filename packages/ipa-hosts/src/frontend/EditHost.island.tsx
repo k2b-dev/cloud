@@ -1,6 +1,6 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, timed as timing } from "@k2b/stdlib/solid";
-import { Button, Dropdown, IconButton, Placeholder, prompts, TextInput, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButton, Placeholder, prompts, ScrollArea, TextInput, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Index, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { normalizeMacAddress } from "@/contracts";
@@ -357,7 +357,7 @@ const HostgroupSearch = (props: { exclude: string[]; adding?: boolean; onSelect:
         clearLabel={t().clearSearch}
         onClear={() => handleInput("")}
       />
-      <div class="h-48 overflow-y-auto">
+      <ScrollArea class="h-48">
         <Show when={loading()}>
           <div class="flex items-center justify-center py-8 text-dimmed">
             <i class="ti ti-loader-2 animate-spin text-xl" />
@@ -406,7 +406,7 @@ const HostgroupSearch = (props: { exclude: string[]; adding?: boolean; onSelect:
             </For>
           </div>
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 };

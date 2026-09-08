@@ -23,10 +23,9 @@ available when the work continues later.
   beyond the message. Files and screenshots can also be pasted directly into
   the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
-  Up to 16 attachments remain in one horizontally scrollable row.
+  You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
-  attachments. Assistant converts them to bounded untrusted text behind the same
-  `read_file` tool; images remain a separate visual inspection.
+  attachments, or to inspect an image.
 - Give Assistant an exact public HTTPS file link to import that image, document,
   or raw repository file into the chat before inspecting it. Assistant cannot
   authenticate to private downloads or clone and browse a repository through
@@ -34,7 +33,7 @@ available when the work continues later.
 - Ask for a PDF when the result should be downloadable. Assistant first writes
   or edits a Markdown file in the chat, converts it with an optional A4 print
   preset and custom CSS, then presents the generated PDF.
-- Return to saved work through the 15 general chats in the sidebar, Project branches, search, or **See all** for the full chat list.
+- Find saved chats in the sidebar, Projects, search, or **See all**.
 - Fork a useful point when another direction should not replace the existing
   conversation.
 - Choose a model when the task needs a capability that the default model does
@@ -58,10 +57,9 @@ proposed actions before relying on them.
 | Remembered approvals | User-managed choices for bounded Actions that may run without asking each time |
 | Project | Shared instructions, knowledge, files, references, and defaults used by private chats |
 
-Project members with write access can manage shared instructions, knowledge,
-files, and Cloud references directly from the Project context panel. Reference
-search can be narrowed to one Cloud application. Project access remains an
-administrator responsibility.
+Project members with write access can manage knowledge, files and Cloud
+references. Project administrators manage instructions, the default model and
+access. Reference search can be narrowed to one Cloud application.
 
 Project chats present that shared context together with chat sources and files,
 but Project editing remains on the Project page. Instructions and knowledge
@@ -74,8 +72,8 @@ does not change the Skill's Cloud access or availability for other users.
 
 The empty chat keeps the composer in the center and offers editable starters
 for common mail, scheduling, Cloud search, and planning work. Choosing a starter
-fills the composer without sending it. Once the first request is sent, the
-Project association is fixed and the composer moves below the conversation.
+fills the composer without sending it. You can choose or change the Project
+between turns; the change applies to future turns.
 
 A model profile selects the provider model and available capabilities for a
 turn. Assistant lists streaming, tool-capable models so stored chat and Project
@@ -90,11 +88,8 @@ AI runtime for conversations, model selection, streaming turns, files, Projects,
 personalization, tool approvals, maintenance, and completion notifications. Cloud
 identity keeps each personal workspace bound to a user.
 
-Switching between chats, opening a Project chat, forking, and using browser
-back or forward keep the workspace's live connection in place. Assistant
-changes only which visible chat it follows. If the connection is interrupted,
-it reloads authorized state and continues the current turn without relying on
-missed live updates.
+After a connection interruption, Assistant reloads the current chat and resumes
+updates.
 
 ## Find detailed product help
 
@@ -159,13 +154,3 @@ messages, files, preferences, Projects, and turn actions. Run
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
-
-The context sidebar uses reference titles and previews supplied by each app.
-It hides a reference to the current chat and a task already shown under
-Scheduled; both remain in the conversation's reference index. AI reference
-labels and task status use the request language, with English as the fallback.
-Chat titles and task instructions retain their original language.
-
-The chat scrollbar sits at the outer edge, to the right of the context panel.
-Messages and the fixed composer retain their own column. On smaller screens,
-context remains available through its dialog.

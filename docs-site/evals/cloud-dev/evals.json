@@ -83,11 +83,11 @@
     {
       "id": 8,
       "prompt": "Create a generic Bun and Hono API that does not use Cloud.",
-      "expected_output": "Recognizes that Cloud contracts do not apply and does not introduce @valentinkolb/cloud, Cloud identity, or Cloud deployment assumptions.",
+      "expected_output": "Recognizes that Cloud contracts do not apply and does not introduce @k2b/cloud, Cloud identity, or Cloud deployment assumptions.",
       "files": [],
       "expectations": [
         "The response does not apply Cloud-specific contracts to a generic Hono service.",
-        "It does not introduce @valentinkolb/cloud or Cloud runtime assumptions."
+        "It does not introduce @k2b/cloud or Cloud runtime assumptions."
       ]
     },
     {

@@ -6,7 +6,7 @@
 
 Use a chip in cards and normal tables. Use `variant="dot"` in dense rows. Use `variant="text"` when the surrounding surface already provides enough structure.
 
-Choose the tone by meaning: `ok`, `warn`, `error`, `degraded`, `running`, or `neutral`.
+Choose the tone by meaning: `ok`, `warning`, `error`, `degraded`, `running`, or `neutral`.
 
 ## Import
 

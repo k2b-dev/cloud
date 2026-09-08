@@ -162,64 +162,67 @@ function MailMessageInspectorDialog(props: {
 
                 <Show when={tab() === "overview"}>
                   <div class="grid gap-2 lg:grid-cols-2">
-                    <section class="detail-section">
-                      <p class="detail-section-label">{messages().message}</p>
-                      <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                        <dt class="text-dimmed">{messages().messageId}</dt>
-                        <dd class="break-all font-mono text-secondary">{current().messageId ?? messages().unavailable}</dd>
-                        <dt class="text-dimmed">{messages().inReplyTo}</dt>
-                        <dd class="break-all font-mono text-secondary">{current().inReplyTo ?? messages().none}</dd>
-                        <dt class="text-dimmed">{messages().received}</dt>
-                        <dd class="text-primary">{new Date(current().internalDate).toLocaleString(locale())}</dd>
-                        <dt class="text-dimmed">{messages().sent}</dt>
-                        <dd class="text-primary">
-                          {current().sentAt ? new Date(current().sentAt ?? "").toLocaleString(locale()) : messages().unavailable}
-                        </dd>
-                        <dt class="text-dimmed">{messages().size}</dt>
-                        <dd class="text-primary">{formatFileViewSize(current().sizeBytes)}</dd>
-                        <dt class="text-dimmed">{messages().contentType}</dt>
-                        <dd class="break-all text-primary">{current().contentType ?? messages().unavailable}</dd>
-                        <dt class="text-dimmed">{messages().hydration}</dt>
-                        <dd class="text-primary">{current().hydrationStatus}</dd>
-                      </dl>
-                    </section>
+                    <div>
+                      <PanelDialog.Section title={messages().message}>
+                        <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+                          <dt class="text-dimmed">{messages().messageId}</dt>
+                          <dd class="break-all font-mono text-secondary">{current().messageId ?? messages().unavailable}</dd>
+                          <dt class="text-dimmed">{messages().inReplyTo}</dt>
+                          <dd class="break-all font-mono text-secondary">{current().inReplyTo ?? messages().none}</dd>
+                          <dt class="text-dimmed">{messages().received}</dt>
+                          <dd class="text-primary">{new Date(current().internalDate).toLocaleString(locale())}</dd>
+                          <dt class="text-dimmed">{messages().sent}</dt>
+                          <dd class="text-primary">
+                            {current().sentAt ? new Date(current().sentAt ?? "").toLocaleString(locale()) : messages().unavailable}
+                          </dd>
+                          <dt class="text-dimmed">{messages().size}</dt>
+                          <dd class="text-primary">{formatFileViewSize(current().sizeBytes)}</dd>
+                          <dt class="text-dimmed">{messages().contentType}</dt>
+                          <dd class="break-all text-primary">{current().contentType ?? messages().unavailable}</dd>
+                          <dt class="text-dimmed">{messages().hydration}</dt>
+                          <dd class="text-primary">{current().hydrationStatus}</dd>
+                        </dl>
+                      </PanelDialog.Section>
+                    </div>
 
-                    <section class="detail-section">
-                      <p class="detail-section-label">{messages().storedSource}</p>
-                      <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                        <dt class="text-dimmed">{messages().available}</dt>
-                        <dd class="text-primary">{current().source.available ? messages().exactOriginal : messages().no}</dd>
-                        <dt class="text-dimmed">{messages().size}</dt>
-                        <dd class="text-primary">
-                          {current().source.byteLength === null ? messages().unavailable : formatFileViewSize(current().source.byteLength!)}
-                        </dd>
-                        <dt class="text-dimmed">{messages().mimeParts}</dt>
-                        <dd class="text-primary">{current().parts.length}</dd>
-                        <dt class="text-dimmed">{messages().attachments}</dt>
-                        <dd class="text-primary">{current().attachments.length}</dd>
-                        <dt class="text-dimmed">{messages().placements}</dt>
-                        <dd class="text-primary">{current().placements.length}</dd>
-                      </dl>
-                      <Show when={current().source.available}>
-                        <ButtonLink
-                          variant="secondary"
-                          size="sm"
-                          class="mt-3 inline-flex"
-                          href={sourceHref(props.mailboxId, current().id)}
-                          download={downloadName()}
-                        >
-                          <i class="ti ti-download" aria-hidden="true" /> {messages().downloadEml}
-                        </ButtonLink>
-                      </Show>
-                    </section>
+                    <div>
+                      <PanelDialog.Section title={messages().storedSource}>
+                        <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
+                          <dt class="text-dimmed">{messages().available}</dt>
+                          <dd class="text-primary">{current().source.available ? messages().exactOriginal : messages().no}</dd>
+                          <dt class="text-dimmed">{messages().size}</dt>
+                          <dd class="text-primary">
+                            {current().source.byteLength === null
+                              ? messages().unavailable
+                              : formatFileViewSize(current().source.byteLength!)}
+                          </dd>
+                          <dt class="text-dimmed">{messages().mimeParts}</dt>
+                          <dd class="text-primary">{current().parts.length}</dd>
+                          <dt class="text-dimmed">{messages().attachments}</dt>
+                          <dd class="text-primary">{current().attachments.length}</dd>
+                          <dt class="text-dimmed">{messages().placements}</dt>
+                          <dd class="text-primary">{current().placements.length}</dd>
+                        </dl>
+                        <Show when={current().source.available}>
+                          <ButtonLink
+                            variant="secondary"
+                            size="sm"
+                            class="mt-3 inline-flex"
+                            href={sourceHref(props.mailboxId, current().id)}
+                            download={downloadName()}
+                          >
+                            <i class="ti ti-download" aria-hidden="true" /> {messages().downloadEml}
+                          </ButtonLink>
+                        </Show>
+                      </PanelDialog.Section>
+                    </div>
                   </div>
 
                   <Show when={current().mailingList}>
                     {(list) => (
-                      <section class="detail-section">
+                      <PanelDialog.Section title={messages().mailingList}>
                         <div class="flex flex-wrap items-start justify-between gap-3">
                           <div class="min-w-0">
-                            <p class="detail-section-label">{messages().mailingList}</p>
                             <p class="truncate text-sm font-medium text-primary">{list().name}</p>
                             <Show when={list().name.toLowerCase() !== list().address.toLowerCase()}>
                               <p class="truncate text-xs text-dimmed">{list().address}</p>
@@ -244,13 +247,12 @@ function MailMessageInspectorDialog(props: {
                             </ButtonLink>
                           </Show>
                         </div>
-                      </section>
+                      </PanelDialog.Section>
                     )}
                   </Show>
 
                   <Show when={current().spam.flag || current().spam.status || current().spam.score}>
-                    <section class="detail-section">
-                      <p class="detail-section-label">{messages().spamDiagnostics}</p>
+                    <PanelDialog.Section title={messages().spamDiagnostics}>
                       <p class="mb-3 text-xs text-dimmed">{messages().spamDiagnosticsDescription}</p>
                       <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                         <dt class="text-dimmed">{messages().flag}</dt>
@@ -260,12 +262,11 @@ function MailMessageInspectorDialog(props: {
                         <dt class="text-dimmed">{messages().score}</dt>
                         <dd class="break-all text-primary">{current().spam.score ?? messages().unavailable}</dd>
                       </dl>
-                    </section>
+                    </PanelDialog.Section>
                   </Show>
 
                   <Show when={current().placements.length > 0}>
-                    <section class="detail-section">
-                      <p class="detail-section-label">{messages().providerPlacements}</p>
+                    <PanelDialog.Section title={messages().providerPlacements}>
                       <div class="overflow-x-auto">
                         <table class="w-full min-w-[36rem] border-separate border-spacing-x-3 border-spacing-y-1 text-left text-xs">
                           <thead>
@@ -292,12 +293,11 @@ function MailMessageInspectorDialog(props: {
                           </tbody>
                         </table>
                       </div>
-                    </section>
+                    </PanelDialog.Section>
                   </Show>
 
                   <Show when={current().parts.length > 0}>
-                    <section class="detail-section">
-                      <p class="detail-section-label">{messages().mimeParts}</p>
+                    <PanelDialog.Section title={messages().mimeParts}>
                       <div class="overflow-x-auto">
                         <table class="w-full min-w-[42rem] border-separate border-spacing-x-3 border-spacing-y-1 text-left text-xs">
                           <thead>
@@ -324,16 +324,15 @@ function MailMessageInspectorDialog(props: {
                           </tbody>
                         </table>
                       </div>
-                    </section>
+                    </PanelDialog.Section>
                   </Show>
                 </Show>
 
                 <Show when={tab() === "headers"}>
-                  <section class="detail-section">
-                    <div class="mb-3 flex items-center justify-between gap-2">
-                      <p class="detail-section-label mb-0">{messages().allHeaders}</p>
-                      <span class="text-xs text-dimmed">{messages().headerFields({ count: current().headers.length })}</span>
-                    </div>
+                  <PanelDialog.Section
+                    title={messages().allHeaders}
+                    subtitle={messages().headerFields({ count: current().headers.length })}
+                  >
                     <Show
                       when={current().headers.length > 0}
                       fallback={<Placeholder state="empty" variant="compact" title={messages().noExactHeaders} />}
@@ -357,7 +356,7 @@ function MailMessageInspectorDialog(props: {
                         </pre>
                       </details>
                     </Show>
-                  </section>
+                  </PanelDialog.Section>
                 </Show>
 
                 <Show when={tab() === "source"}>
@@ -402,10 +401,9 @@ function MailMessageInspectorDialog(props: {
                       }
                     >
                       {(preview) => (
-                        <section class="detail-section">
+                        <PanelDialog.Section title={messages().exactMessageSource}>
                           <div class="mb-3 flex items-center justify-between gap-2">
                             <div>
-                              <p class="detail-section-label mb-0">{messages().exactMessageSource}</p>
                               <p class="text-xs text-dimmed">
                                 {messages().showingBytes({
                                   shown: formatFileViewSize(preview().previewByteLength),
@@ -430,7 +428,7 @@ function MailMessageInspectorDialog(props: {
                           <pre class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 font-mono text-xs text-secondary">
                             {preview().text}
                           </pre>
-                        </section>
+                        </PanelDialog.Section>
                       )}
                     </Show>
                   </Show>

@@ -241,8 +241,7 @@ register every interaction twice.
 
 ## Restore layout state
 
-Use `normalizeAppWorkspaceLayoutState` for an unknown decoded value. It accepts
-the legacy version 1 detail width and returns the current version 2 shape.
+Use `normalizeAppWorkspaceLayoutState` to normalize an unknown decoded value.
 `parseAppWorkspaceLayoutState` and `serializeAppWorkspaceLayoutState` handle the
 encoded string representation.
 

@@ -1,8 +1,8 @@
 ---
 title: Integrate an authenticator website
 navTitle: App approval API
-section: Operations
-order: 1176
+section: Reference
+order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
 updated: 2026-09-08
@@ -15,39 +15,53 @@ One website can connect directly to multiple Clouds, with a separate key pair
 for every Cloud/account pairing. There is no central credential server or
 Cloud-cookie sharing.
 
-This is the technical foundation, not a shipped PWA or login-screen flow.
-Existing email, FreeIPA and passkey sign-ins remain unchanged. The management
-API is ready for the later `/me` integration; it does not add a device panel.
+Cloud includes app sign-in, device management under **My account → Security**,
+and administrator-assisted pairing from a user's Accounts detail page.
+The [Cloud Login authenticator](./cloud-login.md) is deployed separately. Existing email, FreeIPA
+password and passkey sign-ins remain available; enabling app approval does not
+remove them or grant Linux access.
 
 ## Choose the trusted website
 
-Configure these Core settings through **Administration → Settings → Accounts &
-sign-in**, or the existing administrator settings API:
+Operators should follow [Set up app sign-in](/en/docs/accounts/app-sign-in)
+for configuration and deployment prerequisites.
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| `user.app_approval.enabled` | `false` | Enable pairing and app-login endpoints. |
-| `user.app_approval.origin` | empty | Exact authenticator HTTPS origin, without path, query, credentials or fragment. No wildcard. |
-| `user.app_approval.admin_pairing` | `false` | Permit a recently authenticated administrator to pair another account's device. |
-
-Additional settings appear after enabling the feature. An invalid origin fails
-closed. HTTP loopback origins work only outside production. The issuer is the
-canonical origin of `app.url`, never the incoming Host header. Moving the Cloud
-to another origin requires pairing again.
-
-The authenticator origin is a credential trust boundary: compromised JavaScript
-or a malicious service-worker update can use stored keys for all paired Clouds.
-Non-extractable WebCrypto keys prevent ordinary export, not malicious same-origin
-signing. This method is not automatically hardware-backed, phishing-resistant,
-or a second factor. Changing the allowed origin does **not** revoke device keys;
-review and revoke them when replacing an untrusted authenticator.
+The authenticator origin is a credential trust boundary. Compromised JavaScript
+or a malicious service-worker update can use stored keys for paired Clouds.
+Non-extractable keys prevent ordinary export, not malicious same-origin signing.
+Changing the allowed origin does not revoke device credentials.
+HTTP loopback origins work only outside production. The issuer is the canonical
+origin of `app.url`, never the incoming Host header.
 
 ## Pair a device
+
+In Cloud, open **My account → Security → Pair a device**. Scan the QR code,
+copy its pairing link into the authenticator, or choose **Open app on this
+device**. All three paths transfer the Cloud URL and the same short-lived
+pairing secret. Keep the Cloud page open, compare the six-digit codes shown
+in Cloud and the authenticator, then explicitly confirm that they match.
+Leave the authenticator open until it confirms completion.
+
+Administrators with assisted pairing enabled start from **Accounts → Users →
+the user → Pair sign-in app**. The pairing page names the target account and
+warns that the device will be able to sign in as that user. The service checks
+the administrator's current authority, session, and policy again on confirmation.
+
+Enrollment, rename, and revoke require a session created within the last ten
+minutes. When it is older, Cloud offers **Sign out and sign in again**, returning
+to the relevant page after authentication. Start unfinished pairings again
+after signing in: their original session cannot be replaced.
+
+Pairing reloads retain only the pairing ID and expiry in tab-scoped session
+storage, scoped to the initiating and target users. No pairing secret or
+transfer link is stored. A pairing already received by the app can be resumed;
+otherwise cancel it and start again. Closing the page does not cancel the
+server request; unconfirmed pairings expire after five minutes.
 
 Use the public browser SDK for an independent PWA:
 
 ```ts
-import { appApproval } from "@valentinkolb/cloud/browser/app-approval";
+import { appApproval } from "@k2b/cloud/browser/app-approval";
 
 const pairing = appApproval.parsePairingLink(pastedLink, location.origin);
 // Show pairing.issuer and obtain explicit consent before connecting.
@@ -81,8 +95,8 @@ require state inspection before a new action.
 
 ### Encrypted local vault
 
-Cloud Login uses the additive `appApproval.vault` API instead of persisting bare
-CryptoKeys. `create()` returns an in-memory session; `session.pin(sixDigits)` or
+Use `appApproval.vault` to encrypt stored device credentials.
+`create()` returns an in-memory session; `session.pin(sixDigits)` or
 `session.passkey(signal)` wraps its random 256-bit vault key. Persist a validated
 `{version: 1, id: session.id, methods}` config only after an actual
 `vault.unlock(config, method, pin?, signal?)` roundtrip succeeds. At least one
@@ -185,10 +199,32 @@ Keep the secret in the fragment, never the query or path. Clear the fragment
 with `history.replaceState` before requests and avoid logging parsing errors
 with their input. Copy only on explicit user action; do not read the clipboard
 automatically or persist pairing links. A clipboard manager may retain a copy.
-The PWA and Cloud UI tickets must implement this camera-free path; the helpers
-alone do not add a paste field or copy control to either website.
 
 ## Approve a browser sign-in
+
+When app approval is enabled and configured, each available **Guest**, **Login** or **FreeIPA**
+category offers an explicit app sign-in alternative by email or username.
+Existing email/password forms remain the default, so users without a paired
+device can still sign in and enroll one under Security. Cloud does not expose a
+public account/device lookup to choose a method. The category switch remains
+unchanged. Local accounts retain **Use an email link instead**; FreeIPA retains
+its password alternative. Passkeys and email-link verification still work.
+An unpaired or unknown account does not get a distinct error: use another
+existing sign-in method if no paired app receives the request.
+
+The waiting Cloud page displays the comparison code. Open the paired app and
+approve only a request you started whose code matches. Cloud checks in the
+foreground no faster than every five seconds, backs off on connection errors,
+and stops at a terminal state. Requests have a 30-second UI network timeout.
+The browser completes an approved login once and follows its validated return
+URL. A lost completion response requires checking the session by reloading or
+starting a new request, never retrying the old completion.
+
+The initiating tab stores its pending browser secret in session storage,
+scoped to the category and return URL, to survive reloads. It is never placed
+in a URL or transferred to the authenticator. Terminal states and **Stop
+waiting** discard it; the server request expires after five minutes. Stopping
+does not remove the request from the app immediately.
 
 The Cloud browser calls `POST /login/start` with `{identifier, category}`.
 Category is `guest`, `login` or `freeipa`; identifier is an exact username or
@@ -243,7 +279,7 @@ every call, including polls. Times are Unix seconds. Sign:
 ```
 
 For `decide`, append `requestId, challenge, comparison, decision` to the array.
-All operation parameters are covered. Public `@valentinkolb/cloud/contracts`
+All operation parameters are covered. Public `@k2b/cloud/contracts`
 exports include `appDeviceProofMessage`, `appPairingProofMessage`, request/response schemas
 and `APP_APPROVAL_PROTOCOL`, `APP_APPROVAL_PATH`, `APP_APPROVAL_LIMITS`. These
 helpers hold no credentials and make no network calls.
@@ -282,13 +318,19 @@ Other errors: 400 (invalid input), 401 (missing management session),
 409 (used/stale/conflicting operation), 413 (body too large), and 503 (disabled,
 invalid configuration or unavailable dependencies). Never log rejected bodies.
 
-Core migrates four additive authentication tables. Expired transient rows are
+Expired transient rows are
 removed in bounded batches on requests and by a minute-based schedule. The same
 schedule retries enrollment notices after restarts; delivery deduplicates by
 device ID. Device records remain until account deletion; revocation preserves
 their history.
 
 ## Revoke and recover
+
+**My account → Security → Paired devices** lists names, enrollment dates,
+last use and administrator-assisted provenance. Rename or explicitly revoke
+an active device here. Revoked devices remain visible, including their
+revocation time. Use **Load more** to page through older device records.
+Disabling app sign-in hides enrollment but leaves this management available.
 
 `GET /manage/devices?after=<UUID>` lists only the current user's devices,
 including revoked ones, as `{items,nextCursor}`. Items contain

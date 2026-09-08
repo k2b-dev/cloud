@@ -18,7 +18,7 @@ approval is required, and which actor reaches the implementation.
 ## Define a server tool
 
 ```ts
-import { defineAiTool } from "@valentinkolb/cloud/ai";
+import { defineAiTool } from "@k2b/cloud/ai";
 import { z } from "zod";
 
 export const archiveItem = defineAiTool({

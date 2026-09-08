@@ -14,7 +14,7 @@ Compose Cloud chat from two layers:
 
 - `@k2b/ui` owns the generic timeline, message shell, composer, attachments,
   model selection, commands, context usage, loading, and accessibility.
-- `@valentinkolb/cloud/ai` owns the controller, session protocol, persistence,
+- `@k2b/cloud/ai` owns the controller, session protocol, persistence,
   tools, approvals, files, retry, fork, and steering policy.
 
 Cloud adapters project protocol state and payloads across that boundary. There
@@ -23,14 +23,14 @@ is no second Cloud-specific chat component set.
 ## Compose a Cloud chat
 
 ```tsx
-import type { AiPublicModelProfile } from "@valentinkolb/cloud/ai";
-import { createAiChatController } from "@valentinkolb/cloud/ai/solid";
+import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AiChatActionsProvider,
   aiChatModelOptions,
   aiComposerSendInput,
   createAiChatTimeline,
-} from "@valentinkolb/cloud/ai/ui";
+} from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 import { createSignal } from "solid-js";
 
@@ -184,8 +184,8 @@ Compact capability rows use the saved capability title, app icon, and optional
 accent while running and on failure. A successful provider-authored `summary`
 replaces the title as one escaped plain-text result row without a disclosure or
 duplicate raw data. Semantic links remain direct row actions; raw resource refs
-remain structured result data rather than user-facing labels. Older results
-without a summary retain the complete generic input and response disclosure.
+remain structured result data rather than user-facing labels. Results without
+a summary expose their input and response details.
 Expanded generic disclosures show
 JSON-like payloads as structured data previews with at most eight visible rows
 and an optional raw view. Expanded data surfaces span the available message
@@ -206,13 +206,11 @@ tools keep the generic tool presentation.
 
 Discovery result disclosures use flat, single-line rows with a readable title,
 truncated description, and app label instead of enclosing the list in another
-surface. Loaded tools use titles from the catalog snapshot already available to
-the Assistant; resolving display text does not require another registry call.
+surface. Loaded tools use their catalog titles.
 While a loop is active, Assistant renders its blocks in their saved order. Once
 the loop completes, it moves tool calls, reasoning, compaction, and every text
 block except the final response into one collapsed **Worked for ...**
-disclosure. Presented files remain directly visible as standalone results;
-historical card calls keep their dedicated renderer. Failed work opens the
+disclosure. Presented files remain directly visible as standalone results. Failed work opens the
 disclosure immediately with danger treatment, and an explicit user disclosure
 choice remains stable across live timeline updates.
 

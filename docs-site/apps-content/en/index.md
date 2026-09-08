@@ -59,7 +59,7 @@ a running application for detailed usage instructions.
 | --- | --- |
 | [Gateway](/en/apps/gateway-ops) | Gateway status, registered applications, routes, and operational events |
 | [Hosts](/en/apps/ipa-hosts) | FreeIPA hosts, host groups, and mirrored membership data |
-| [Pulse](/en/apps/pulse) | Metrics, events, states, and realtime dashboards in development deployments |
+| [Pulse](/en/apps/pulse) | Metrics, events, states, and realtime dashboards |
 
 The [UI catalog](/en/ui) in Fibel documents the reusable component package.
 

@@ -16,9 +16,7 @@ The shared layout provides the header, breadcrumbs, app navigation, mobile
 navigation, global search, profile preferences, and footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
-owns the geometry inside it. Keeping those layers separate lets Cloud evolve
-global navigation without taking ownership of an independently deployed app's
-information architecture.
+owns the geometry inside it.
 
 ## Render the application layout
 
@@ -63,7 +61,7 @@ background, spacing, branding, and content geometry without Cloud header,
 rail, footer, or canvas styling:
 
 ```tsx
-import { MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { MinimalLayout } from "@k2b/cloud/ssr";
 
 return () => (
   <MinimalLayout c={c} preferences="bottom-right">
@@ -100,8 +98,7 @@ The shared layout chooses the placement with CSS:
 
 On pointer devices, clicking the avatar opens `/me`; hovering or focusing it
 opens the adjacent preference menu. Touch and coarse-pointer devices use the
-clickable dropdown. The responsive switch does not require client-side layout
-state, so the SSR markup and the first browser frame use the same shell.
+clickable dropdown.
 
 ## Register navigation
 

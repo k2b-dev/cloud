@@ -144,7 +144,7 @@ Use `sql.begin()` when several database writes form one operation:
 
 ```ts
 import { sql } from "bun";
-import { err, fail, ok } from "@valentinkolb/cloud/server";
+import { err, fail, ok } from "@k2b/cloud/server";
 
 const result = await sql.begin(async (tx) => {
   const [item] = await tx<{ quantity: number }[]>`

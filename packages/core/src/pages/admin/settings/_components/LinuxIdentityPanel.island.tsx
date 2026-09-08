@@ -27,13 +27,21 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { linuxErrorText, linuxMessages } from "./linux-messages";
 
 type Overview = Awaited<ReturnType<typeof linuxIdentities.overview>>;
+import DocumentationLink from "./DocumentationLink";
+
 const api = coreClient.admin.core["linux-identities"];
 const responseError = async (response: Response): Promise<Error> => {
   const body: unknown = await response.json().catch(() => null);
   return new Error(body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : "error");
 };
 
-export default function LinuxIdentityPanel(props: { initial: Overview; after?: string | null; search?: string; scope?: "ready" | "all" }) {
+export default function LinuxIdentityPanel(props: {
+  initial: Overview;
+  after?: string | null;
+  search?: string;
+  scope?: "ready" | "all";
+  documentationBase?: string;
+}) {
   const locale = useLocale();
   const t = () => linuxMessages.resolve([locale()]).t;
   const after = () => props.after ?? null;
@@ -144,7 +152,12 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
     { id: "home", header: t().homePreview },
   ];
   return (
-    <SettingsPage title={t().title} subtitle={t().subtitle} icon="ti ti-terminal-2">
+    <SettingsPage
+      title={t().title}
+      subtitle={t().subtitle}
+      icon="ti ti-terminal-2"
+      actions={<DocumentationLink base={props.documentationBase} topic="linux" />}
+    >
       <NoticeCard tone="info" title={t().scope} detail={t().scopeDescription} />
       <For each={errors()}>
         {(error) => (

@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { Button, CopyButton, Slider, useLocale } from "@k2b/ui";
+import { Button, CopyButton, ScrollArea, Slider, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For } from "solid-js";
 import { ToolCodeBlock } from "./ToolOutput";
 
@@ -65,7 +65,7 @@ export default function UuidGenerator() {
               <i class={`ti ${copiedAll() ? "ti-check" : "ti-copy"}`} /> {copiedAll() ? t().copied : t().copyAll}
             </Button>
           </div>
-          <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          <ScrollArea class="flex min-h-0 flex-1 flex-col gap-1">
             <For each={uuids()}>
               {(uuid) => (
                 <div class="flex items-center gap-2 group">
@@ -74,7 +74,7 @@ export default function UuidGenerator() {
                 </div>
               )}
             </For>
-          </div>
+          </ScrollArea>
         </div>
       )}
     </div>

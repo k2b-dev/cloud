@@ -10,7 +10,7 @@ import {
   PanelDialog,
   Placeholder,
   panelDialogOptions,
-  prompts,
+  prompts,ScrollArea,
   Select,
   TextInput,
   toast,
@@ -19,6 +19,7 @@ import {
 import { formatDateTime as fmtDateTime } from "@valentinkolb/cloud/shared";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { type GatewayOpsMessages, gatewayOpsMessages } from "../messages";
 import {
   createHealthWebhookQueries,
   type HealthApp,
@@ -28,7 +29,6 @@ import {
   responseErrorMessage,
   type SettingEntry,
 } from "./health-webhook-queries";
-import { gatewayOpsMessages, type GatewayOpsMessages } from "../messages";
 
 const defaultWebhook = (): HealthWebhookInput => ({
   name: "",
@@ -260,7 +260,7 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
               options={scopeOptions(t)}
             />
             <Show when={data().scopeKind !== "all"}>
-              <div class="grid max-h-48 gap-2 overflow-y-auto md:grid-cols-2">
+              <ScrollArea class="grid max-h-48 gap-2 md:grid-cols-2">
                 <For each={props.apps}>
                   {(app) => (
                     <CheckboxCard
@@ -272,7 +272,7 @@ export const WebhookEditor = (props: { webhook?: HealthWebhook; apps: HealthApp[
                     />
                   )}
                 </For>
-              </div>
+              </ScrollArea>
             </Show>
           </PanelDialog.Section>
           <Show when={reconcileError()}>

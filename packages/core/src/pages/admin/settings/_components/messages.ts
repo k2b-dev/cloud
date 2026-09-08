@@ -4,6 +4,8 @@ export const settingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      documentation: "Documentation",
+      documentationNewTab: "Documentation (English, opens in a new tab)",
       registration: "Registration & requests",
       registrationDescription: "Self-registration creates Guest accounts. Requests ask for FreeIPA access; these are separate choices.",
       actionNotice: "Follow-up notices",
@@ -147,9 +149,9 @@ export const settingsMessages = i18n.define({
       operationsDescription: "Timezone and schedules used by automatic platform jobs.",
       login: "Sign-in",
       loginDescription: "How long users remain signed in.",
-      appApproval: "App approval API",
+      appApproval: "App sign-in",
       appApprovalDescription:
-        "Technical integration for a separately hosted authenticator. The authenticator and login interface must be connected separately.",
+        "Connect a separately hosted app for Guest, Login, and FreeIPA accounts. Users pair devices under Security. Existing sign-in methods remain available.",
       accountExpiry: "Account expiry",
       accountExpiryDescription: "Default lifetimes for IPA, local user, and local guest accounts.",
       remindersRetention: "Reminders and retention",
@@ -201,6 +203,8 @@ export const settingsMessages = i18n.define({
       templatePreview: ({ label }: { label: string }) => `${label} preview`,
     },
     de: {
+      documentation: "Dokumentation",
+      documentationNewTab: "Dokumentation (Englisch, öffnet in einem neuen Tab)",
       registration: "Registrierung & Anfragen",
       registrationDescription:
         "Selbstregistrierung erstellt Guest-Accounts. Anfragen beantragen FreeIPA-Zugang; beides wird getrennt gesteuert.",
@@ -346,9 +350,9 @@ export const settingsMessages = i18n.define({
       operationsDescription: "Zeitzone und Zeitpläne automatischer Plattformaufgaben.",
       login: "Anmeldung",
       loginDescription: "Wie lange Nutzer angemeldet bleiben.",
-      appApproval: "API für App-Freigaben",
+      appApproval: "App-Anmeldung",
       appApprovalDescription:
-        "Technische Anbindung einer separat gehosteten Authenticator-App. App und Login-Oberfläche müssen separat angebunden werden.",
+        "Verbinde eine separat gehostete App für Guest, Login und FreeIPA. Nutzer koppeln Geräte unter Sicherheit. Bisherige Anmeldemethoden bleiben verfügbar.",
       accountExpiry: "Ablauf von Konten",
       accountExpiryDescription: "Standardlaufzeiten für IPA-Konten, lokale Konten und Gastkonten.",
       remindersRetention: "Erinnerungen und Aufbewahrung",

@@ -21,11 +21,10 @@ These features have separate ownership and lifetimes.
 
 ## Use readable resource IDs
 
-AI resources keep UUID primary keys for database relationships and use
-six-character, case-sensitive readable IDs at user and agent boundaries. Chat,
+AI resources use six-character, case-sensitive readable IDs. Chat,
 Project, and memory IDs are globally unique. Turn and message IDs are scoped to
 their chat; Project access, knowledge, file, and reference IDs are scoped to
-their Project. Cloud generates these IDs and retries the insert on a collision.
+their Project. Cloud generates these IDs.
 
 URLs, Assistant capabilities, streamed chat events, and `cld assistant`
 commands use the readable IDs. Database UUIDs are not a fallback input format.
@@ -226,10 +225,8 @@ capability and permission checks. Manually added facts and preferences start
 pinned.
 
 For up to 20 active records, Cloud adds the bounded set directly to the prompt.
-Above that threshold, pinned records come first and PostgreSQL full-text search
-selects relevant records within a 6,000-character budget. Native FTS is always
-available; Cloud optionally uses the exact `pg_textsearch` BM25 index and falls
-back for known extension-capability failures.
+Above that threshold, pinned and relevant records are selected within a
+6,000-character budget.
 
 The `memory` tool can list, search, add, correct, pin, and forget entries without
 an approval pause. Memory mutations are personal context maintenance, not domain

@@ -1,7 +1,9 @@
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { audit, coreSettings, readAccountCategoryPolicy, webauthn } from "@valentinkolb/cloud/services";
+import { type AuthContext, auth, getLocale } from "@valentinkolb/cloud/server";
+import { appApproval, audit, coreSettings, readAccountCategoryPolicy, webauthn } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import Devices from "../app-approval/Devices.island";
+import { approvalAvailability } from "../app-approval/availability";
 import AccountActivity from "./AccountActivity.island";
 import AccountHub, { AccountPageHeader } from "./AccountHub";
 import { accountMessages } from "./messages";
@@ -19,6 +21,16 @@ export default ssr<AuthContext>(async (c) => {
   const categoryPolicy = await readAccountCategoryPolicy();
   const { t } = accountMessages.resolve([getLocale(c)]);
   const activityDays = parseActivityDays(c.req.query("activityDays"));
+  const token = auth.session.getToken(c);
+  const session = token ? await auth.session.authenticateRequest(c, token) : null;
+  const [approvalConfig, devices] = await Promise.all([
+    appApproval.config(false).catch(() => null),
+    session
+      ? appApproval
+          .listDevices({ userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") })
+          .catch(() => null)
+      : Promise.resolve(null),
+  ]);
   const [freeIpaEnabledRaw, passkeys, activityPage] = await Promise.all([
     coreSettings.get<boolean>("freeipa.enable"),
     webauthn.listForUser({ userId: user.id }),
@@ -30,6 +42,9 @@ export default ssr<AuthContext>(async (c) => {
       <AccountHub user={user} active="security" loginLabel={categoryPolicy.login.label}>
         <div class="flex flex-col gap-2">
           <AccountPageHeader title={t.security} description={t.securityDescription} />
+          {(user.roles.includes("admin") || approvalConfig?.enabled || devices === null || devices.items.length > 0) && (
+            <Devices initial={devices} availability={approvalAvailability(approvalConfig)} admin={user.roles.includes("admin")} />
+          )}
           <PasskeysSettings initialPasskeys={passkeys} />
           <ProfileSettings provider={user.provider} profile={user.profile} freeIpaEnabled={Boolean(freeIpaEnabledRaw)} />
           <AccountActivity initialItems={activityPage.items} days={activityDays} />

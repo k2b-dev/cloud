@@ -123,12 +123,8 @@ See [Runtime configuration](/en/docs/operations/runtime-configuration) for
 the complete environment contract. If cluster diagnostics are not configured,
 the page distinguishes that state from an unavailable broker.
 
-In the monorepo, `bun run dev:infra` prepares a local system identity under
-`.local/nats` before starting the infrastructure. The seed stays outside Git
-and is mounted only in Gateway Ops. Existing application streams remain in
-the global `$G` account; the system account remains `$SYS`. When invoking
-infrastructure Compose directly, first run
-`bun packages/gateway-ops/scripts/dev-nats.ts`.
+For development credentials and Compose setup, see
+[Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-diagnostics).
 
 ## Inspect a failing deployment
 

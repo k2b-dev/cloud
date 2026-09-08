@@ -8,6 +8,11 @@ order: 120
 
 Core admin pages configure platform services and link to app-specific admin panels registered by each app.
 
+Account settings offer **Documentation** links to the relevant English guide in
+a new tab. Under **General**, **Documentation website** selects the public docs,
+a self-hosted mirror or your local Fibel server. This changes help links only;
+it does not configure app sign-in. The built-in Help reader stays independent.
+
 ## Admin pages {icon="user-cog"}
 
 :::reference

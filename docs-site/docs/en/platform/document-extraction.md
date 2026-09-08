@@ -19,7 +19,7 @@ paths, persist output, authorize access, or enqueue work.
 import {
   DocumentExtractionError,
   extractDocumentMarkdown,
-} from "@valentinkolb/cloud/services/document-extraction";
+} from "@k2b/cloud/services/document-extraction";
 
 const result = await extractDocumentMarkdown({
   bytes: attachmentBytes,

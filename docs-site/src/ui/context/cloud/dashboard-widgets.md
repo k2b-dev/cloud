@@ -11,12 +11,12 @@ Use the portable widget components directly when the host already owns its data 
 ## Import
 
 ```ts
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
 ```
 
 ## Endpoint contract
 
-The dashboard forwards the signed-in user's session cookie. The endpoint authenticates the request, applies every required permission, keeps its query bounded, and returns:
+Cloud invokes the widget on behalf of the signed-in user using a target-bound credential, not the user's session cookie. The handler applies every required permission, keeps its query bounded, and returns:
 
 - `200` with `WidgetResponse`;
 - `204` when there is no relevant content;

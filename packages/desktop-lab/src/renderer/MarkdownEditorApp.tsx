@@ -1,4 +1,4 @@
-import { AppWorkspace, Button, Chart, IconButton, MarkdownEditor, MarkdownView, SegmentedControl, StatCell, Tag, toast } from "@k2b/ui";
+import { AppWorkspace, Button, Chart, IconButton, MarkdownEditor, MarkdownView, ScrollArea, SegmentedControl, StatCell, Tag, toast } from "@k2b/ui";
 import { desktop } from "@valentinkolb/cloud/desktop";
 import { DesktopWorkspace, workspace as desktopWorkspace } from "@valentinkolb/cloud/desktop/solid";
 import { formatBytes } from "@valentinkolb/cloud/shared";
@@ -657,7 +657,7 @@ export function MarkdownEditorApp(props: Props) {
       </DesktopWorkspace.Main>
 
       <DesktopWorkspace.Right defaultSize={330} minSize={260} maxSize={540} resizable railAt={220} restoreSize={330}>
-        <div class="flex h-full min-h-0 flex-col gap-2 overflow-auto">
+        <ScrollArea class="flex h-full min-h-0 flex-col gap-2">
           <section class="desktop-surface p-3">
             <div class="flex items-center justify-between gap-2">
               <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Document</h2>
@@ -707,7 +707,7 @@ export function MarkdownEditorApp(props: Props) {
               <p>Folders and the last opened file are local SQLite data. Markdown content is read from and saved to the original files.</p>
             </div>
           </section>
-        </div>
+        </ScrollArea>
       </DesktopWorkspace.Right>
 
       <DesktopWorkspace.RightRail size={54}>

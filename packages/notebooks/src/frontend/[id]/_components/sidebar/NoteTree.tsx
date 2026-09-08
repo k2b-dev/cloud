@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
@@ -127,7 +127,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
           <div class="flex flex-col gap-2">
             <p class="text-sm text-secondary">{t().moveTo({ title: node.title })}</p>
 
-            <div class="flex flex-col gap-1 max-h-64 overflow-y-auto">
+            <ScrollArea class="flex flex-col gap-1 max-h-64">
               {/* Root level option */}
               <Button
                 variant={selected() === null ? "subtle" : "ghost"}
@@ -152,7 +152,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
                   </Button>
                 )}
               </For>
-            </div>
+            </ScrollArea>
 
             <div class="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => close(undefined)}>

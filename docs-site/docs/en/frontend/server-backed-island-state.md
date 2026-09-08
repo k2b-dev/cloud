@@ -195,7 +195,7 @@ event that does not contain a complete authoritative projection, invalidate
 the affected query and acknowledge the cursor only after coverage:
 
 ```tsx
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 
 subscribe: ({ invalidate }) => {
   const live = createLiveWebSocket<InventoryEvent>({

@@ -70,7 +70,7 @@ Search remains a slot because client islands must stay in the consuming applicat
 | Tone | Meaning |
 | --- | --- |
 | `ok` | Healthy or successfully completed. |
-| `warn` | Attention is required, but the operation can continue. |
+| `warning` | Attention is required, but the operation can continue. |
 | `error` | Failed, unavailable, or blocked. |
 | `degraded` | Running with an unavailable dependency or reduced capability. |
 | `running` | Work is in progress. |

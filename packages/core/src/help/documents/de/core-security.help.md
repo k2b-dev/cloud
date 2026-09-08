@@ -23,6 +23,35 @@ Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.
 - Verwende den Link aus der neuesten Wiederherstellungsnachricht. Ältere oder bereits verwendete Links können ungültig sein.
 - Wende dich an die Administration, wenn das erwartete Anmeldeverfahren fehlt oder der Kontodienst unklar ist.
 
+## Anmelde-App koppeln und verwalten {icon="device-mobile"}
+
+Wenn die Administration die App-Anmeldung aktiviert und eingerichtet hat, öffne **Mein Account
+→ Sicherheit → Gerät koppeln**. Scanne den QR-Code, kopiere den Kopplungslink
+in die App oder öffne die App auf demselben Gerät. Kehre zur Cloud zurück,
+vergleiche die sechsstelligen Codes und bestätige nur, wenn sie übereinstimmen.
+Lass die App geöffnet, bis sie die Kopplung bestätigt. Der Link gilt fünf
+Minuten; teile ihn nicht außerhalb dieser Einrichtung.
+
+Steht unter Sicherheit **Aktiviert — Einrichtung fehlt**, muss die Administration
+die App-Konfiguration noch abschließen. Nutze bis dahin deine bisherige Anmeldung.
+
+Wähle bei einer späteren Anmeldung deinen Accounttyp und die App-Anmeldung als Alternative, gib E-Mail oder
+Benutzernamen ein und wähle **Mit App anmelden**. Öffne die gekoppelte App und
+bestätige nur deine eigene Anfrage mit übereinstimmendem Code. Ohne App können
+lokale Accounts weiterhin einen E-Mail-Link nutzen, FreeIPA-Accounts ihr
+Passwort. Bestehende Passkeys bleiben verfügbar.
+
+**Gekoppelte Geräte** zeigt Namen, Kopplungsdatum, letzte Nutzung und eine
+mögliche Unterstützung durch die Administration. Benenne Geräte um oder
+widerrufe Geräte, die du nicht mehr kontrollierst. Der Widerruf verhindert neue
+Anmeldungen, beendet aber keine bestehenden Sitzungen. Die Verwaltung bleibt
+auch bei deaktivierter App-Anmeldung verfügbar.
+
+Koppeln, Umbenennen und Widerrufen können eine erneute Anmeldung verlangen.
+Du kehrst danach zur selben Seite zurück; starte unfertige Kopplungen neu.
+Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung
+zu prüfen, oder starte eine neue Anfrage.
+
 ## Konto schützen {icon="shield-lock"}
 
 - Registriere Passkeys nur auf Geräten, die du kontrollierst. Vergib erkennbare Namen und entferne Passkeys für verlorene oder nicht mehr verwendete Geräte.

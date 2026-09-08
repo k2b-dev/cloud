@@ -34,13 +34,12 @@ Command names, flags, argument names, examples, IDs, enum values, error codes,
 and technical product terms are stable CLI syntax and stay unchanged. JSON and
 JSONL payloads are machine contracts and are never translated. The bundled
 CLI localizes its shell help, authentication flow, profile status, and
-server-owned human messages. Existing application command descriptions and
-schema-shaped table headings remain English technical reference text until
-their owning module provides an explicit keyed catalog; do not translate them
-by inspecting or replacing the English output string.
+server-owned human messages. Application modules own their command descriptions
+and table headings. Localize them with explicit catalog keys, not by inspecting
+or replacing English output strings.
 
 ```ts
-import { cliText } from "@valentinkolb/cloud/cli";
+import { cliText } from "@k2b/cloud/cli";
 
 if (ctx.options.output === "text") {
   ctx.print(cliText(ctx, { en: "Saved.", de: "Gespeichert." }));
@@ -57,7 +56,7 @@ import {
   command,
   defineCliCommands,
   printStructured,
-} from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/cli";
 
 export default defineCliCommands({
   name: "inventory",

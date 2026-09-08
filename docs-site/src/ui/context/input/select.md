@@ -125,7 +125,7 @@ The switch changes presentation only. Search, groups, remote loading,
 disabled options, keyboard focus, and selection continue to use the same
 option list. The chosen view stays local to the mounted `Select`; remounting
 starts from `defaultView`. Without `viewToggle`, `Select` always keeps the
-existing list layout.
+list layout.
 
 ```tsx
 <Select

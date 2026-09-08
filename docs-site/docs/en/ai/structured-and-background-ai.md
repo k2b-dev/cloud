@@ -18,17 +18,14 @@ bounded tasks that do not need a conversation.
 `runAiStructured()` executes a model request. It does not receive an actor or
 an access subject. Optional usage attribution is metadata, not authorization.
 
-Cloud does not expose a generic `POST /api/ai/executions` endpoint. Application
-workflows authorize their domain input and use the durable shared AI workflow
-actions below; bounded server code calls `runAiStructured()` directly. This
-keeps arbitrary prompts and domain data out of a new public execution surface.
+
 
 Authorize the domain read first. Send only the fields required by the task.
 
 ## Run a structured task
 
 ```ts
-import { runAiStructured } from "@valentinkolb/cloud/ai";
+import { runAiStructured } from "@k2b/cloud/ai";
 import { z } from "zod";
 
 const item = await loadItemForAi({
@@ -117,9 +114,7 @@ Administrators can open **AI → Usage** for token and credit usage, model
 performance, user activity, quality feedback, and background failures over
 24-hour, 7-day, 30-day, or 90-day ranges.
 
-Core's admin UI obtains the built-in text from `AI_BACKGROUND_TASK_PROMPTS`
-in the server-only `@valentinkolb/cloud/ai/admin` entry point. These values use
-the same task constants as execution and are not editable prompt settings.
+
 
 Do not silently turn a failed AI result into application truth. Decide whether
 the caller should retry, skip the optional enrichment, or surface the error.
@@ -133,7 +128,7 @@ composing the shared actions into its workflow module:
 import {
   AI_WORKFLOW_ACTIONS,
   defineWorkflowModule,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 
 export const inventoryWorkflows = defineWorkflowModule({
   id: "inventory",
@@ -178,7 +173,7 @@ An opted-in server must also:
 4. expose a `maxAiCalls` run budget.
 
 The server-only lifecycle exports are available from
-`@valentinkolb/cloud/workflows/ai`.
+`@k2b/cloud/workflows/ai`.
 
 ### Choose the workflow model
 

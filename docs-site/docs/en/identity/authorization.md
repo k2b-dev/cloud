@@ -26,7 +26,7 @@ none < read < write < admin
 Use `hasPermission()` instead of comparing strings:
 
 ```ts
-import { hasPermission } from "@valentinkolb/cloud/server";
+import { hasPermission } from "@k2b/cloud/server";
 
 if (!hasPermission(permission, "write")) {
   return fail(err.forbidden("Access denied"));
@@ -111,7 +111,7 @@ import {
   type AccessSubject,
   type ResourceAccessAdapter,
   getEffectivePermission,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 const resolveItemPermission = async (
   itemId: string,
@@ -197,7 +197,7 @@ import {
   hasPermission,
   ok,
   type Result,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 const PERMISSION_RANK: Record<PermissionLevel, number> = {
   none: 0,

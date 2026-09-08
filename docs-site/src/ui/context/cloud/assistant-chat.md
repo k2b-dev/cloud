@@ -1,6 +1,6 @@
 # Cloud assistant chat
 
-Cloud does not ship a second chat component set. It adapts Cloud AI sessions, turns, tools, attachments, retries, forks, and usage snapshots to `Chat` from `@k2b/ui`.
+The Cloud adapter connects AI sessions, turns, tools, attachments, retries, forks, and usage snapshots to `Chat` from `@k2b/ui`.
 
 ## Use Cloud assistant chat
 
@@ -15,7 +15,7 @@ import {
   aiChatModelOptions,
   aiComposerSendInput,
   createAiChatTimeline,
-} from "@valentinkolb/cloud/ai/ui";
+} from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 ```
 
@@ -34,7 +34,7 @@ The application still owns the current controller and mutation callbacks. Cloud 
 
 ## Runtime
 
-The generic shell can render bounded fixtures without Cloud. Persisted messages, live turns, attachments, retries, tools, feedback, and mutations require the Cloud AI controller and authenticated platform routes. Message feedback belongs to the private conversation owner and never enters model context.
+Persisted messages, live turns, attachments, retries, tools, feedback, and mutations require the Cloud AI controller and authenticated platform routes. Message feedback belongs to the private conversation owner and never enters model context.
 
 ## Example
 

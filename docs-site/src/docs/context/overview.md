@@ -15,6 +15,8 @@ operations contracts. Your application keeps its domain logic and release cycle.
 
 ## Browse the documentation
 
+- **[Accounts & sign-in](/en/docs/accounts):** configure account types, FreeIPA,
+  app sign-in, Linux identities and account maintenance as an administrator.
 - **Build an application:** application declaration, lifecycle, routes, and
   discovery.
 - **Handle requests:** Hono routes, middleware, typed responses, identity,

@@ -54,6 +54,56 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  test("documentation configuration reads only its URL and writes only that setting", async () => {
+    const read = createContext(["documentation", "get"], { json: true }, [jsonResponse({ url: "http://localhost:4187" })]);
+    read.ctx.options.output = "json";
+    await adminCli.run(read.ctx);
+    expect(read.calls[0]?.path).toBe("/api/admin/core/settings/documentation");
+    expect(JSON.parse(read.lines[0]!)).toEqual({ url: "http://localhost:4187" });
+    const blocked = createContext(["documentation", "set"], { url: "http://localhost:4187" });
+    await expect(adminCli.run(blocked.ctx)).rejects.toThrow("--yes");
+    expect(blocked.calls).toHaveLength(0);
+    const write = createContext(["documentation", "set"], { url: "http://localhost:4187", yes: true }, [jsonResponse({})]);
+    await adminCli.run(write.ctx);
+    expect(write.calls).toHaveLength(1);
+    expect(write.calls[0]?.init?.method).toBe("PUT");
+    expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual({ updates: { "app.documentation_url": "http://localhost:4187" } });
+  });
+
+  test("documentation failures are not reported as saved", async () => {
+    const write = createContext(["documentation", "set"], { url: "javascript:alert(1)", yes: true }, [
+      jsonResponse({ message: "Invalid values" }, 400),
+    ]);
+    await expect(adminCli.run(write.ctx)).rejects.toThrow("Invalid values");
+    expect(write.lines).toHaveLength(0);
+  });
+  test("app sign-in configuration uses the same atomic settings path and requires confirmation", async () => {
+    const config = { enabled: true, origin: "", adminPairing: false };
+    const read = createContext(["app-sign-in", "config", "get"], {}, [jsonResponse(config)]);
+    read.ctx.options.output = "json";
+    await adminCli.run(read.ctx);
+    expect(read.calls[0]?.path).toBe("/api/admin/core/settings/app-sign-in");
+    expect(JSON.parse(read.lines[0]!)).toEqual(config);
+    const write = createContext(["app-sign-in", "config", "set"], { config: JSON.stringify(config), yes: true }, [
+      jsonResponse({ ok: true }),
+    ]);
+    await adminCli.run(write.ctx);
+    expect(write.calls).toHaveLength(1);
+    expect(write.calls[0]?.path).toBe("/api/admin/core/settings");
+    expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual({
+      updates: {
+        "user.app_approval.enabled": true,
+        "user.app_approval.origin": "",
+        "user.app_approval.admin_pairing": false,
+      },
+    });
+    const invalidFlags: CloudCliFlags[] = [{ config: JSON.stringify(config) }, { config: "{}", yes: true }];
+    for (const flags of invalidFlags) {
+      const denied = createContext(["app-sign-in", "config", "set"], flags);
+      await expect(adminCli.run(denied.ctx)).rejects.toThrow();
+      expect(denied.calls).toHaveLength(0);
+    }
+  });
   test("exports and saves the same request and notice options as Administration", async () => {
     const config = { requestsEnabled: false, actionNotice: '{% if action == "group.delete" %}Review shared folders.{% endif %}' };
     const read = createContext(["accounts", "administration", "get"], {}, [jsonResponse(config)]);

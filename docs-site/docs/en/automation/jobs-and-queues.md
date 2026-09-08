@@ -43,7 +43,7 @@ Cloud owns one Sync instance per application process. Declare handles with
 has connected NATS.
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const reindexItem = lazySync((sync) => sync.job<{ itemId: string }>({
   id: "inventory.reindex-item",
@@ -136,9 +136,7 @@ artifacts through a Sync object store instead of embedding them.
 ## Recover unfinished work
 
 Start consumers on every process startup. Database recovery scans should
-resubmit unfinished records with stable keys and coalescing. Cloud notification
-batches recover `ready` and `running` records in bounded pages at startup;
-notification delivery also scans pending database records periodically.
+resubmit unfinished records in bounded batches with stable keys and coalescing.
 
 Queue and job handles expose `deadLetters.list()`, `requeue()` and `delete()`.
 A requeue requires a new idempotency key. Cloud automatically discovers declared

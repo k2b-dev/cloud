@@ -13,7 +13,8 @@ updated: 2026-08-12
 Use the monorepo when you change the platform or a built-in application.
 
 Docker Compose runs infrastructure and application services. Source folders are
-mounted into the containers and Bun watches for changes.
+mounted into the containers. Restart the affected services after edits, as
+described below.
 
 ## Start the core stack
 
@@ -96,6 +97,41 @@ Do not use an installed `cld` for development verification because its release
 may lag behind the checkout. Use the installed CLI when operating a deployed
 Cloud installation.
 
+## Test app sign-in locally
+
+Use the development Cloud at `http://localhost:3000` and the authenticator at
+`http://localhost:4178`. Configure only your development instance:
+
+```bash
+bun run dev:cld -- admin app-sign-in config get --json
+bun run dev:cld -- admin app-sign-in config set --config '{"enabled":true,"origin":"http://localhost:4178","adminPairing":false}' --yes
+```
+
+Reuse the authenticator server if it is running, or start it with
+`bun run dev:pwa-auth`. Follow [Pair a device](/en/docs/accounts/devices#pair-a-device)
+and [Sign in with the app](/en/docs/accounts/app-sign-in#sign-in-with-the-app).
+Use a separate browser profile for the login being approved, and keep your
+working recovery method.
+
+Use `localhost`, not a numeric IP, for passkey development. A phone's
+`localhost` does not reach your laptop: phone testing needs reachable HTTPS
+addresses for both websites. The development PWA does not register a service
+worker; use a production build to check installation and offline startup.
+
+## Preview documentation links locally
+
+Start or refresh the local Fibel server and point your development Cloud at it:
+
+```bash
+bun run dev:fibel
+bun run dev:cld -- admin documentation set --url http://localhost:4187 --yes
+```
+
+Reload Administration and open a **Documentation** link. Use the actual Fibel
+port if it differs. This address works only for browsers on the development
+machine. See [local documentation MCP](/en/docs/contributing/document-cloud-core-changes#use-the-local-documentation-mcp)
+for server and agent setup.
+
 ## Manage dependencies
 
 Declare every dependency in the workspace that imports it. The isolated Bun
@@ -129,6 +165,14 @@ networks.
 
 Only the gateway publishes a host port. Do not publish each application.
 
+## Configure local NATS diagnostics
+
+`bun run dev:infra` prepares a local system identity under `.local/nats` before
+starting infrastructure. The seed stays outside Git and is mounted only in
+Gateway Ops. Application streams use the `$G` account; diagnostics use `$SYS`.
+Before invoking infrastructure Compose directly, run
+`bun packages/gateway-ops/scripts/dev-nats.ts`.
+
 ## Add a built-in application
 
 Add the package to the workspace and give it a development service in
@@ -141,7 +185,7 @@ The service needs:
 - the Cloud source and script mounts;
 - its own source mount;
 - the shared stylesheet;
-- the Cloud preload script and Bun watch command.
+- the Cloud preload script and Bun start command.
 
 Add the package manifest to `Dockerfile.dev` so dependency installation remains
 cacheable.
@@ -167,7 +211,7 @@ test script and root-owned tests still run in isolated Bun test processes.
 For a focused package:
 
 ```bash
-bun run --filter @valentinkolb/cloud-app-grids typecheck
+bun run --cwd packages/grids typecheck
 bun test packages/grids
 ```
 

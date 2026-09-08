@@ -1,10 +1,10 @@
 import { mutation as mutations, timed as timing } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, ScrollArea, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { FileBaseInfo } from "@/contracts";
-import { parseSelectionKey, type SelectionKey } from "./context";
 import { filesMessages } from "../messages";
+import { parseSelectionKey, type SelectionKey } from "./context";
 
 type MoveTargetSearchProps = {
   sourceBaseType: FileBaseInfo["type"];
@@ -233,7 +233,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
           <span>{t().folders}</span>
           <span>{t().resultsCount({ count: directories().length })}</span>
         </div>
-        <div class="max-h-[22rem] overflow-y-auto">
+        <ScrollArea class="max-h-[22rem]">
           <Show when={searchMutation.loading()}>
             <div class="flex items-center justify-center py-10 text-dimmed">
               <i class="ti ti-loader-2 animate-spin text-xl" />
@@ -277,7 +277,7 @@ export default function MoveTargetSearch(props: MoveTargetSearchProps) {
               </For>
             </div>
           </Show>
-        </div>
+        </ScrollArea>
       </div>
     </div>
   );

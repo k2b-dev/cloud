@@ -26,7 +26,7 @@ login visibility in **Accounts & sign-in**. See
   password recovery is available.
 - Review your profile, account provider, roles, groups, expiry, and recent
   account activity.
-- Manage personal API keys and passkeys, then revoke credentials you no longer
+- Manage personal API keys, passkeys and paired sign-in devices, then revoke credentials you no longer
   use.
 - Read notification history and choose the delivery preferences available to
   your account.
@@ -38,15 +38,16 @@ login visibility in **Accounts & sign-in**. See
 | Resource or surface | Responsibility |
 | --- | --- |
 | Account session | The signed-in browser session and its account identity |
-| Profile and credentials | Self-service profile fields, passkeys, and personal API keys |
+| Profile and credentials | Self-service profile fields, paired sign-in devices, passkeys and personal API keys |
 | Notification history | One place to review account and application events |
 | Announcement | A platform message or dismissible banner with publication timing |
 | Global setting and legal page | Platform-wide configuration and published legal content |
 | Admin overview | Links to Core and app-specific administration surfaces |
 
 Core's admin overview is a directory, not a second owner for every setting.
-For example, OAuth clients, account administration, and gateway operations stay
-in their respective apps even when Core links to them.
+For example, OAuth clients and individual account records stay in their
+respective apps. Installation-wide account and sign-in policies belong in
+Core Administration.
 
 ## How Core fits Cloud
 

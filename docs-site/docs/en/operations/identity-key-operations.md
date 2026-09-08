@@ -14,17 +14,14 @@ Core is the only private-key authority for platform session, invocation, and
 OAuth tokens. It stores RSA private JWKs encrypted in PostgreSQL with a Core-only
 key-encryption key (KEK). Applications verify sessions only from
 `/.well-known/cloud-session-jwks.json` and invocations only from
-`/.well-known/cloud-invocation-jwks.json`. The former combined identity JWKS
-endpoint is removed. The OAuth purpose is
-published through the existing, compatible `/.well-known/jwks.json` endpoint;
+`/.well-known/cloud-invocation-jwks.json`. OAuth keys are
+published through `/.well-known/jwks.json`;
 the validators and key purposes remain mutually exclusive.
 
-The current deployment gives every application the same PostgreSQL credential.
-The `APP_ID=core` and Core-only environment secret prevent another normal Cloud
-process from decrypting or issuing keys, but the database cannot enforce row
-ownership against a compromised application with that shared credential. Use
-separate database roles before treating PostgreSQL itself as a hard issuer
-boundary.
+If applications share a PostgreSQL credential, the database cannot isolate
+signing-key rows from a compromised application using that credential. Keep
+the key-encryption secret exclusive to Core, and use separate database roles
+when database-level isolation is required.
 
 ## Normal signing-key rotation
 
@@ -151,26 +148,13 @@ stale signer cache refreshes once and otherwise fails closed. This guarantee
 does not invalidate tokens that were already released, so their normal token
 and verifier-cache windows still apply.
 
-Core prepares the signer and issuer before reserving the issuance transaction.
-Key checks, mandate validation or OAuth grant consumption, and signing then
-share one connection. A cold cache or concurrent fan-out does not require a
-second connection while holding the first. Mandate signing failures return as
-results so their failure audit commits with that transaction before Core returns
-an error. Signing callbacks must not start another pool transaction or reload
-configuration through the pool.
-
-Each batch also sets a transaction-local PostgreSQL statement timeout using
-the remaining issuance budget. This adds one database round trip per batch,
-including one for an entire Universal Search fan-out, not one per provider.
-The database timeout bounds blocked statements and lock waits; it is not an
-instant cancellation of the whole transaction. Core checks the request deadline
-before using a queued connection and after commit, and never returns a token
-after that deadline. A database failure can roll back the transaction's audit;
-the failed-signing audit guarantee assumes the database can commit it.
+Database lock waits are bounded by the issuance deadline. Core does not return
+a token after that deadline. A database failure may also prevent an audit entry
+from being saved; inspect service logs when no audit record is available.
 
 Do not rotate `APP_SECRET` as a substitute. It encrypts settings and
 credentials and is deliberately not a signing-key or KEK fallback.
 
 Maintainers can measure this guard and the complete search authentication path
 with the [identity performance check](/en/docs/contributing/identity-performance).
-Its p95 gate includes the shared transaction, not just local JWT cryptography.
+The benchmark reports latency and checks identity I/O budgets.

@@ -1,4 +1,4 @@
-import { clipboard as browserClipboard, files as fileTools, images as imageTools, type ImgData } from "@k2b/stdlib/browser";
+import { clipboard as browserClipboard, files as fileTools, type ImgData, images as imageTools } from "@k2b/stdlib/browser";
 import { dropzone, mutation } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
@@ -11,12 +11,12 @@ import {
   NoticeCard,
   NumberInput,
   ProgressBar,
-  prompts,
+  prompts,ScrollArea,
   SegmentedControl,
   Slider,
   SplitButton,
-  toast,
   Tooltip,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
@@ -380,7 +380,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               </Show>
             </div>
 
-            <div class="min-h-0 flex-1 overflow-y-auto p-[var(--ui-space-shell)]">
+            <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-shell)]">
               <div
                 class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-[var(--ui-space-section)]"
                 role="list"
@@ -449,7 +449,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   }}
                 </For>
               </div>
-            </div>
+            </ScrollArea>
           </Show>
 
           <Show when={workspaceDropzone.isDragging()}>

@@ -48,7 +48,7 @@ const AssistantDemo = () => {
         id="ai-message-list"
         chip={[
           { kind: "component", name: "Chat.Timeline", from: "@k2b/ui" },
-          { kind: "component", name: "createAiChatTimeline", from: "@valentinkolb/cloud/ai/ui" },
+          { kind: "component", name: "createAiChatTimeline", from: "@k2b/cloud/ai/ui" },
         ]}
         description="The generic timeline owns chat presentation. Cloud projects its persisted messages and active turn into that contract."
         code={`const items = createAiChatTimeline({ messages: () => [], activeTurn: () => null });
@@ -68,7 +68,7 @@ const AssistantDemo = () => {
         id="ai-composer"
         chip={[
           { kind: "component", name: "Chat.Composer", from: "@k2b/ui" },
-          { kind: "component", name: "aiChatModelOptions", from: "@valentinkolb/cloud/ai/ui" },
+          { kind: "component", name: "aiChatModelOptions", from: "@k2b/cloud/ai/ui" },
         ]}
         description="The generic composer owns interaction and accessibility. Cloud only adapts model profiles and outgoing payloads."
         code={`<Chat.Composer
@@ -120,13 +120,13 @@ const PermissionsReference = () => (
   <DemoCard
     id="permission-editor"
     chip={[
-      { kind: "component", name: "PermissionEditor", from: "@valentinkolb/cloud/access/ui" },
-      { kind: "component", name: "EntitySearch", from: "@valentinkolb/cloud/account/ui" },
-      { kind: "component", name: "ResourceApiKeys", from: "@valentinkolb/cloud/access/ui" },
+      { kind: "component", name: "PermissionEditor", from: "@k2b/cloud/access/ui" },
+      { kind: "component", name: "EntitySearch", from: "@k2b/cloud/account/ui" },
+      { kind: "component", name: "ResourceApiKeys", from: "@k2b/cloud/access/ui" },
     ]}
     description="Backend-required access integration reference with no simulated grants, directory, or credentials."
-    code={`import { PermissionEditor, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
-import { EntitySearch } from "@valentinkolb/cloud/account/ui";
+    code={`import { PermissionEditor, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { EntitySearch } from "@k2b/cloud/account/ui";
 
 <PermissionEditor
   initialEntries={entries}
@@ -157,11 +157,11 @@ const ResourcePickerReference = () => (
       {
         kind: "component",
         name: "openCloudResourcePicker",
-        from: "@valentinkolb/cloud/browser/resource-picker",
+        from: "@k2b/cloud/browser/resource-picker",
       },
     ]}
     description="Backend-required resource selection through the authenticated Universal Search catalog."
-    code={`import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
+    code={`import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 
 const selected = await openCloudResourcePicker({
   title: "Add Cloud reference",

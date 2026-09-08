@@ -21,7 +21,7 @@ import {
 
 `SegmentedControl` is generic over a string union. `options` contain `value`, `label`, and an optional Tabler `icon`. The controlled `value` accessor must match one option, and `onValueChange` receives the selected value.
 
-Use `disabled` for the whole group. The additive per-option `disabled` property skips an unavailable option during keyboard navigation. `ariaLabel` names the group and defaults to `"Options"`.
+Use `disabled` for the whole group. Set an option's `disabled` property to skip it during keyboard navigation. `ariaLabel` names the group and defaults to `"Options"`.
 
 Keep the option set short. Each option should describe the same dimension, such as List, Board, or Calendar.
 

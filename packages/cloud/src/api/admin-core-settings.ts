@@ -184,6 +184,38 @@ const invalidateCommittedSettings = async (keys: readonly string[]): Promise<voi
 const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app.settingKeys ?? [])]);
 
 const app = new Hono<AuthContext>()
+  .get(
+    "/documentation",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Read the documentation website configuration",
+      ...requiresAdmin,
+      responses: { 200: jsonResponse(z.object({ url: z.string() }), "Documentation base URL") },
+    }),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      return c.json({ url: await settings.get<string>("app.documentation_url") });
+    },
+  )
+  .get(
+    "/app-sign-in",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Read app sign-in configuration",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(z.object({ enabled: z.boolean(), origin: z.string(), adminPairing: z.boolean() }), "App sign-in configuration"),
+      },
+    }),
+    async (c) =>
+      c.json({
+        enabled: await settings.get<boolean>("user.app_approval.enabled"),
+        origin: await settings.get<string>("user.app_approval.origin"),
+        adminPairing: await settings.get<boolean>("user.app_approval.admin_pairing"),
+      }),
+  )
   .get("/account-categories", auth.requireRole("admin"), async (c) => c.json(await readAccountCategoryPolicy()))
   .get(
     "/account-administration",

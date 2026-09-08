@@ -1,0 +1,171 @@
+import { i18n } from "@k2b/stdlib";
+
+export const appApprovalMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      title: "App sign-in",
+      statusDisabled: "App sign-in disabled",
+      statusSetup: "Enabled — setup required",
+      statusConfigured: "Enabled — Cloud configured",
+      statusUnavailable: "Configuration could not be checked",
+      configuredHint:
+        "Pairing and app sign-in are enabled. This does not check whether the separate app is reachable or has been tested. Existing sign-in methods remain available.",
+      setupAdmin:
+        "Enter the trusted app website origin in Administration → Sign-in. Use HTTPS without a path, query, or fragment; local HTTP loopback addresses are allowed only in development. Until then, pairing and app sign-in remain unavailable.",
+      setupUser:
+        "Your administrator still needs to finish app sign-in setup. Continue using your existing sign-in method. Previously paired devices remain manageable.",
+      unavailableAdmin:
+        "Refresh the page. If this continues, check the public Cloud URL in General settings and the Core service. App sign-in is not offered while configuration cannot be checked.",
+      unavailableUser:
+        "App sign-in is temporarily unavailable. Refresh the page or contact your administrator. Your other sign-in methods are unchanged.",
+      configure: "Configure app sign-in",
+      savedConfiguration: "Status of saved settings",
+      devices: "Paired devices",
+      pair: "Pair a device",
+      identifier: "Email or username",
+      signIn: "Sign in with app",
+      signInHint: "Use an app already paired with this Cloud account. Without a paired app, use the alternative sign-in below.",
+      waiting: "Open your paired app and approve this sign-in only if the comparison code matches.",
+      comparison: "Comparison code",
+      startOver: "Start again",
+      cancelled: "Cancelled",
+      expired: "This request has expired. Start again.",
+      denied: "Sign-in was declined. You can start again or use another sign-in method.",
+      uncertain:
+        "Sign-in could not be confirmed. Reload the page to check your session, or start a new request. Do not approve the old request again.",
+      unavailable: "App sign-in is unavailable. Try again later or use another sign-in method.",
+      retrying: "Connection interrupted. We will check again while this page is open.",
+      failure: "The action could not be completed. Try again.",
+      forbidden: "This action is no longer available for this account. Refresh the page or contact your administrator.",
+      conflict: "This request has changed or was already used. Refresh the page before continuing.",
+      limit: "Too many requests or paired devices. Wait a few minutes or revoke an unused device before trying again.",
+      recent: "For this change, sign in again. Unfinished pairings must then be restarted.",
+      reauthenticate: "Sign out and sign in again",
+      refresh: "Refresh",
+      more: "Load more",
+      cancel: "Cancel pairing",
+      description:
+        "These devices can approve sign-ins to your Cloud account. Revoking a device prevents new sign-ins; existing sessions stay signed in.",
+      empty: "No paired devices yet.",
+      disabled: "App sign-in is disabled. You can still manage previously paired devices.",
+      rename: "Rename",
+      name: "Device name",
+      save: "Save name",
+      revoke: "Revoke",
+      revoked: "Revoked",
+      revokeConfirm: ({ name }: { name: string }) =>
+        `Revoke “${name}”? This device will no longer be able to approve new sign-ins. Existing sessions remain signed in.`,
+      saved: "Device updated",
+      paired: "Device paired",
+      assisted: "Paired with administrator assistance",
+      self: "Paired by you",
+      created: ({ date }: { date: string }) => `Paired: ${date}`,
+      used: ({ date }: { date: string }) => `Last used: ${date}`,
+      never: "Not used yet",
+      revokedAt: ({ date }: { date: string }) => `Revoked: ${date}`,
+      pairingFor: ({ name }: { name: string }) => `Pair a device for ${name}`,
+      assistedWarning:
+        "This device will be able to sign in as this user. Pair only together with the user, on a device they control. The user will be notified.",
+      instructions:
+        "Scan this code with the app, copy the pairing link into it, or open the app on this device. Return here to compare and confirm. The link expires after five minutes; share it only with the intended device.",
+      resumed: "Pairing resumed. The transfer link is not stored. If the app has not received it, cancel and start again.",
+      copy: "Copy pairing link",
+      copied: "Pairing link copied",
+      open: "Open app on this device",
+      qr: "Device pairing QR code",
+      confirmHint: ({ name }: { name: string }) =>
+        `The app named “${name}” is ready. Compare the six-digit code with the app before confirming.`,
+      confirm: "The codes match — pair device",
+      done: "The device can now approve Cloud sign-ins. Keep the app open until it confirms the pairing.",
+      back: "Back to account",
+      instructionsStart: "Keep this Cloud page open until you have compared the codes and confirmed the pairing.",
+      cancelWait: "Stop waiting",
+      cancelWaitHint:
+        "Stopping here does not delete the request in your app. It expires after five minutes and cannot sign this browser in once discarded.",
+    },
+    de: {
+      title: "App-Anmeldung",
+      statusDisabled: "App-Anmeldung deaktiviert",
+      statusSetup: "Aktiviert — Einrichtung fehlt",
+      statusConfigured: "Aktiviert — Cloud konfiguriert",
+      statusUnavailable: "Konfiguration konnte nicht geprüft werden",
+      configuredHint:
+        "Kopplung und App-Anmeldung sind aktiviert. Ob die separate App erreichbar oder bereits getestet ist, wird hier nicht geprüft. Bisherige Anmeldemethoden bleiben verfügbar.",
+      setupAdmin:
+        "Trage unter Administration → Anmeldung die vertrauenswürdige Adresse der App-Website ein: HTTPS ohne Pfad, Suchparameter oder Fragment. Lokale HTTP-Loopback-Adressen sind nur in der Entwicklung erlaubt. Bis dahin bleiben Kopplung und App-Anmeldung gesperrt.",
+      setupUser:
+        "Die Administration muss die App-Anmeldung noch einrichten. Nutze bis dahin deine bisherige Anmeldung. Bereits gekoppelte Geräte kannst du weiterhin verwalten.",
+      unavailableAdmin:
+        "Lade die Seite neu. Prüfe bei anhaltendem Fehler die öffentliche Cloud-URL in den allgemeinen Einstellungen und den Core-Dienst. Solange die Konfiguration nicht geprüft werden kann, wird keine App-Anmeldung angeboten.",
+      unavailableUser:
+        "Die App-Anmeldung ist vorübergehend nicht verfügbar. Lade die Seite neu oder kontaktiere die Administration. Deine anderen Anmeldemethoden bleiben unverändert.",
+      configure: "App-Anmeldung konfigurieren",
+      savedConfiguration: "Status der gespeicherten Einstellungen",
+      devices: "Gekoppelte Geräte",
+      pair: "Gerät koppeln",
+      identifier: "E-Mail oder Benutzername",
+      signIn: "Mit App anmelden",
+      signInHint:
+        "Nutze eine bereits mit diesem Cloud-Account gekoppelte App. Ohne gekoppelte App nutze die alternative Anmeldung darunter.",
+      waiting: "Öffne deine gekoppelte App und bestätige diese Anmeldung nur, wenn der Vergleichscode übereinstimmt.",
+      comparison: "Vergleichscode",
+      startOver: "Neu starten",
+      cancelled: "Abgebrochen",
+      expired: "Diese Anfrage ist abgelaufen. Starte erneut.",
+      denied: "Die Anmeldung wurde abgelehnt. Starte erneut oder nutze eine andere Anmeldemethode.",
+      uncertain:
+        "Die Anmeldung konnte nicht bestätigt werden. Lade die Seite neu, um deine Sitzung zu prüfen, oder starte eine neue Anfrage. Bestätige die alte Anfrage nicht erneut.",
+      unavailable: "Die App-Anmeldung ist nicht verfügbar. Versuche es später oder nutze eine andere Anmeldemethode.",
+      retrying: "Verbindung unterbrochen. Wir prüfen erneut, solange diese Seite geöffnet ist.",
+      failure: "Die Aktion konnte nicht abgeschlossen werden. Versuche es erneut.",
+      forbidden: "Diese Aktion ist für diesen Account nicht mehr verfügbar. Lade die Seite neu oder kontaktiere die Administration.",
+      conflict: "Diese Anfrage wurde verändert oder bereits verwendet. Lade die Seite neu, bevor du fortfährst.",
+      limit: "Zu viele Anfragen oder gekoppelte Geräte. Warte einige Minuten oder widerrufe ein ungenutztes Gerät.",
+      recent: "Melde dich für diese Änderung erneut an. Unfertige Kopplungen müssen danach neu gestartet werden.",
+      reauthenticate: "Abmelden und erneut anmelden",
+      refresh: "Aktualisieren",
+      more: "Weitere laden",
+      cancel: "Kopplung abbrechen",
+      description:
+        "Diese Geräte können Anmeldungen an deinem Cloud-Account bestätigen. Ein Widerruf verhindert neue Anmeldungen; bestehende Sitzungen bleiben angemeldet.",
+      empty: "Noch keine Geräte gekoppelt.",
+      disabled: "Die App-Anmeldung ist deaktiviert. Bereits gekoppelte Geräte kannst du weiterhin verwalten.",
+      rename: "Umbenennen",
+      name: "Gerätename",
+      save: "Namen speichern",
+      revoke: "Widerrufen",
+      revoked: "Widerrufen",
+      revokeConfirm: ({ name }) =>
+        `„${name}“ widerrufen? Dieses Gerät kann danach keine neuen Anmeldungen mehr bestätigen. Bestehende Sitzungen bleiben angemeldet.`,
+      saved: "Gerät aktualisiert",
+      paired: "Gerät gekoppelt",
+      assisted: "Mit Unterstützung der Administration gekoppelt",
+      self: "Von dir gekoppelt",
+      created: ({ date }) => `Gekoppelt: ${date}`,
+      used: ({ date }) => `Zuletzt verwendet: ${date}`,
+      never: "Noch nicht verwendet",
+      revokedAt: ({ date }) => `Widerrufen: ${date}`,
+      pairingFor: ({ name }) => `Gerät für ${name} koppeln`,
+      assistedWarning:
+        "Dieses Gerät kann sich als dieser Nutzer anmelden. Kopple es nur gemeinsam mit dem Nutzer auf einem Gerät, das er selbst kontrolliert. Der Nutzer wird benachrichtigt.",
+      instructions:
+        "Scanne diesen Code mit der App, kopiere den Kopplungslink hinein oder öffne die App auf diesem Gerät. Kehre zum Vergleichen und Bestätigen hierher zurück. Der Link gilt fünf Minuten; teile ihn nur mit dem vorgesehenen Gerät.",
+      resumed:
+        "Kopplung fortgesetzt. Der Übertragungslink wird nicht gespeichert. Falls die App ihn noch nicht erhalten hat, brich ab und starte erneut.",
+      copy: "Kopplungslink kopieren",
+      copied: "Kopplungslink kopiert",
+      open: "App auf diesem Gerät öffnen",
+      qr: "QR-Code zur Gerätekopplung",
+      confirmHint: ({ name }) =>
+        `Die App mit dem Namen „${name}“ ist bereit. Vergleiche vor dem Bestätigen den sechsstelligen Code mit der App.`,
+      confirm: "Codes stimmen überein — Gerät koppeln",
+      done: "Das Gerät kann jetzt Cloud-Anmeldungen bestätigen. Lass die App geöffnet, bis sie die Kopplung bestätigt.",
+      back: "Zurück zum Account",
+      instructionsStart: "Lass diese Cloud-Seite geöffnet, bis du die Codes verglichen und die Kopplung bestätigt hast.",
+      cancelWait: "Nicht weiter warten",
+      cancelWaitHint:
+        "Die Anfrage bleibt in deiner App bis zu fünf Minuten sichtbar. Nach dem Verwerfen hier kann sie diesen Browser nicht mehr anmelden.",
+    },
+  },
+});

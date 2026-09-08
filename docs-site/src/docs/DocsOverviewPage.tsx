@@ -30,6 +30,16 @@ const startingPoints: DocsLink[] = [
 
 const documentationGroups = [
   {
+    title: "Accounts & sign-in",
+    description: "Configure people, login methods and account maintenance.",
+    links: [
+      { label: "Choose your setup", path: "/accounts" },
+      { label: "Account types", path: "/operations/account-categories" },
+      { label: "FreeIPA", path: "/operations/freeipa" },
+      { label: "App sign-in", path: "/accounts/app-sign-in" },
+    ],
+  },
+  {
     title: "Build",
     description: "Create and connect an application.",
     links: [

@@ -43,7 +43,7 @@ export const app = defineApp({
 ```
 
 The ID must be unique inside the application. The path must be an absolute
-public compatibility route served by that application.
+route served by that application.
 
 `defaultZone` is `focus`, `overview`, or `context`. `defaultSpan` is `standard`
 or `wide`. These are initial recommendations. A user's saved layout wins.
@@ -52,7 +52,7 @@ Export the Hono handler used by that route and register the same function with
 `app.start()`:
 
 ```ts
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
 
 export const stockWidgetHandler = async (c: Context<AuthContext>) => {
@@ -67,14 +67,13 @@ export default await app.start({
 
 The declaration is the discovery contract; the `app.start({ widgets })` map is
 the framework-owned internal invocation contract. Startup rejects an internal
-handler whose ID was not declared. Keep the public route during the rolling
-migration. Invocation JWTs are accepted only by the generated internal widget
+handler whose ID was not declared. Invocation JWTs are accepted only by the generated internal widget
 route, never by the public application route.
 
 ## Return widget data
 
 ```ts
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
 
 const body: WidgetResponse = {
   title: "Inventory",

@@ -43,7 +43,7 @@ These schemas validate HTTP data. Domain and database types may differ.
 Use `v()` before the handler:
 
 ```ts
-import { v } from "@valentinkolb/cloud/server";
+import { v } from "@k2b/cloud/server";
 
 const ItemParamSchema = z.object({
   id: z.string().uuid(),
@@ -84,7 +84,7 @@ import {
   type AccessSubject,
   ok,
   type Result,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 type CreateInventoryItem = z.infer<typeof CreateInventoryItemSchema>;
 type InventoryItem = z.infer<typeof InventoryItemSchema>;
@@ -109,14 +109,14 @@ See [Services and Result](/en/docs/server/services-and-results).
 The route applies transport concerns:
 
 ```ts
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
 import {
   type AuthContext,
   auth,
   jsonResponse,
   respond,
   v,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 
@@ -186,8 +186,8 @@ router.route("/api/inventory", apiRoutes);
 Describe each public route:
 
 ```ts
-import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { jsonResponse } from "@valentinkolb/cloud/server";
+import { ErrorResponseSchema } from "@k2b/cloud/contracts";
+import { jsonResponse } from "@k2b/cloud/server";
 import { describeRoute } from "hono-openapi";
 
 describeRoute({
@@ -243,7 +243,7 @@ schema.
 Use the exported router type:
 
 ```ts
-import { api } from "@valentinkolb/cloud/browser";
+import { api } from "@k2b/cloud/browser";
 import type { ApiType } from ".";
 
 export const inventoryApi = api.create<ApiType>({

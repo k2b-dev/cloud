@@ -124,7 +124,7 @@ Space lists may shorten descriptions to fit a full page; when
 each Space. It supports assignment, deadline, priority, blocker, and inactivity
 filters. Inactive means no task activity for 30 days. Deadline windows use the
 configured application timezone, matching the overview. `task.list` and
-`event.list` retain their existing fields and accept `activity` and
+`event.list` accept `activity` and
 `deadlineFilter`; lists include readable column names when available.
 
 For actual calendar occurrences, use `event.agenda` with offset-aware `from`
@@ -149,11 +149,8 @@ limit to stay within the response byte budget; continuation preserves every
 entry. Existing task and event lists instead shorten optional previews and
 relation snapshots with explicit truncation flags, preserving their page model.
 
-`calendar-destination.list` remains the writable destination selector for Mail
-invitations. It now exposes pagination (up to 100 destinations per page), so
-consumers must follow the returned cursor rather than assume the first page
-contains every Space. Existing creation and calendar integration result
-contracts are preserved.
+`calendar-destination.list` lists writable Mail invitation destinations in pages
+of up to 100. Follow the returned cursor to retrieve every destination.
 
 ## Implementation tasks and agent handoffs
 
@@ -178,7 +175,7 @@ record this work under their actual identity. Comments remain user-authored.
 blockers, plus explicit pages of comments and dependent tasks. Follow `hasNext`
 in those pages using `comments` and `blocks`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
-The `comments` and `blocks` CLI JSON outputs are now page objects, not arrays.
+The `comments` and `blocks` CLI JSON outputs are paginated objects.
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.set-completed` accepts optional `result`, `commit` and

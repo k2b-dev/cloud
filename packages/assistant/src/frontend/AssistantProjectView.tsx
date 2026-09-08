@@ -377,7 +377,7 @@ export default function AssistantProjectView(props: Props) {
   });
 
   return (
-    <div class="min-h-0 flex-1 overflow-auto p-[var(--ui-space-section)]">
+    <ScrollArea class="min-h-0 flex-1 p-[var(--ui-space-section)]">
       <div class="mx-auto grid min-h-full w-full max-w-[88rem] gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <main class="flex min-h-[36rem] min-w-0 flex-col">
           <header class="flex min-w-0 items-start gap-4">
@@ -640,6 +640,6 @@ export default function AssistantProjectView(props: Props) {
           <Lightbox images={state().images.map((entry) => entry.image)} initialIndex={state().index} onClose={() => setLightbox(null)} />
         )}
       </Show>
-    </div>
+    </ScrollArea>
   );
 }

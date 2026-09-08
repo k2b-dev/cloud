@@ -25,10 +25,7 @@ model.
 - Publish a focused dashboard when a read-only link should show results without
   exposing the rest of the base.
 
-Pulse exists in the development Compose extra profile. The current
-`compose.prod.yml` template does not include a Pulse service, so operators must
-add it explicitly to a production deployment before presenting it as an
-available built-in app.
+Pulse must be deployed and available to your account.
 
 ## Understand the Pulse model
 
@@ -71,8 +68,7 @@ cld pulse capabilities --json
 
 Run `cld pulse help` for bases, sources, signals, queries, dashboards, and
 access. Run `cld pulse <command> --help` before ingesting data or changing a
-base; `compose.prod.yml` still needs an explicit Pulse service for these
-commands to reach a production installation.
+base.
 
 ## Deployment requirements
 

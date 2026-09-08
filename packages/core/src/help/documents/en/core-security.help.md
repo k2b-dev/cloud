@@ -22,6 +22,32 @@ not the same as disabled access; ask your administrator if access is disabled.
 - Follow the link from the most recent recovery message; older or completed links may no longer work.
 - Ask an administrator to verify the account provider when the expected login method is missing.
 
+## Pair and manage a sign-in app {icon="device-mobile"}
+
+If your administrator enables and configures app sign-in, open **My account → Security →
+Pair a device**. Scan the QR code, copy the pairing link into the app, or open
+the app on the same device. Return to Cloud, compare the six-digit codes and
+confirm only if they match. Keep the app open until it confirms completion.
+The link expires after five minutes; do not share it outside this setup.
+
+If Security shows **Enabled — setup required**, the administrator must finish
+the app configuration first. Use your existing sign-in method meanwhile.
+
+To sign in later, select your account type and the app sign-in alternative,
+then enter your email or username and choose **Sign in with app**. Open the paired app and approve only the request
+you started, with the matching code. Without the app, local accounts can still
+use an email link; FreeIPA accounts can use their password. Existing passkeys
+remain available.
+
+**Paired devices** shows device names, when they were paired and last used,
+and whether an administrator helped with pairing. Rename devices or revoke
+ones you no longer control. Revocation prevents new sign-ins but does not end
+existing sessions. These controls remain available when app sign-in is disabled.
+
+Pairing, rename, and revoke may ask you to sign out and sign in again. You return
+to the same page afterward; start unfinished pairings again. If a login's final
+result is unclear, reload to check your session or start a new request.
+
 ## Protect your account {icon="shield-lock"}
 
 - Register passkeys only on devices you control, give them recognizable names, and remove ones you no longer possess.

@@ -11,7 +11,7 @@ import {
   isPanesItemVisible,
   NoticeCard,
   type PanesLayout,
-  prompts,
+  prompts,ScrollArea,
   Select,
   SplitButton,
   TextInput,
@@ -514,7 +514,7 @@ export default function MailComposer(props: {
     const choice = await prompts.dialog<"approve" | "attachment">(
       (close) => (
         <div class="flex flex-col gap-3">
-          <div class="flex max-h-[45vh] flex-col gap-2 overflow-y-auto">
+          <ScrollArea class="flex max-h-[45vh] flex-col gap-2">
             <For each={review.warnings}>
               {(warning) => (
                 <div class="flex items-start gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3">
@@ -526,7 +526,7 @@ export default function MailComposer(props: {
                 </div>
               )}
             </For>
-          </div>
+          </ScrollArea>
           <div class="flex flex-wrap items-center justify-end gap-2">
             <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
               {t().cancel}

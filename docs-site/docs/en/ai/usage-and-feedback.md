@@ -86,11 +86,8 @@ existing user from the run's actor snapshot when available. System-owned work
 may legitimately have no user. Prompt, input, and output content are not added
 to the ledger.
 
-Historical background records have no reliable user attribution and are not
-backfilled by guessing. The page shows the unassigned count, and selecting a
-specific user excludes these records. Choose **Unassigned** to inspect them.
-Background errors are limited to 2,000 stored characters; a detail view cannot
-recover text already truncated at storage time.
+Choose **Unassigned** for records without user attribution. Selecting a user
+excludes these records. Stored background errors are limited to 2,000 characters.
 
 ## Use the CLI
 
@@ -134,11 +131,11 @@ Invalid values are rejected before querying; unknown API parameters are rejected
 Facet search returns at most the requested page size; refine the search to find
 an identifier beyond the suggestion list.
 
-The server-only `@valentinkolb/cloud/ai/admin` export supplies
+The server-only `@k2b/cloud/ai/admin` export supplies
 `aiUsage.report(range, options)`, `aiUsage.detail(kind, id)`, and
 `aiUsage.facets(field, search, options)`. Applications using this internal admin
 surface must establish the administrator boundary before calling it. Report
 collections are paginated `{ items, page, perPage, total }` objects; aggregate
 rows share measurement coverage and feedback counts. The browser-safe
-`@valentinkolb/cloud/shared` export provides `AiUsageQuerySchema`,
+`@k2b/cloud/shared` export provides `AiUsageQuerySchema`,
 `aiUsageSearchParams`, and `aiUsageHref` for the same URL contract.

@@ -142,9 +142,41 @@ suite("isolated app approval protocol", () => {
     await settings.set("user.app_approval.enabled", true);
     await settings.set("user.app_approval.origin", "https://auth.example.test/path");
     await expect(readAppApprovalConfig()).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    expect(await readAppApprovalConfig(sql, false)).toMatchObject({ enabled: true, appOrigin: "" });
     await settings.set("user.app_approval.origin", "https://auth.example.test");
     expect((await readAppApprovalConfig()).issuer).toBe(cfg.issuer);
     await settings.remove("user.app_approval.enabled");
+  });
+
+  test("incomplete setup preserves owned device management but blocks login, pairing and foreign origins", async () => {
+    const owner = await account();
+    const device = await enroll(owner);
+    const stranger = await account();
+    await settings.set("user.app_approval.enabled", true);
+    await settings.set("user.app_approval.origin", "");
+    const live = createAppApprovalService(sql);
+    const api = createAppApprovalRoutes(live);
+    try {
+      expect((await live.listDevices(owner.actor)).items.map((item) => item.id)).toContain(device.id);
+      const read = await api.request("/manage/devices", { headers: { authorization: `Bearer ${owner.token}` } });
+      expect(read.status).toBe(200);
+      expect((await api.request("/info")).status).toBe(503);
+      await expect(live.startLogin(owner.uid, "login")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+      await expect(live.startPairing(owner.actor)).rejects.toMatchObject({ code: "UNAVAILABLE" });
+      await expect(live.mutateDevice(stranger.actor, device.id)).rejects.toMatchObject({ code: "UNAVAILABLE" });
+      const mutation = (origin: string) =>
+        api.request("/manage/devices/update", {
+          method: "POST",
+          headers: { authorization: `Bearer ${owner.token}`, origin, "content-type": "application/json" },
+          body: JSON.stringify({ operation: "revoke", deviceId: device.id }),
+        });
+      expect((await mutation("https://foreign.example.test")).status).toBe(403);
+      expect((await mutation(cfg.issuer)).status).toBe(204);
+      expect((await live.listDevices(owner.actor)).items.find((item) => item.id === device.id)?.revokedAt).not.toBeNull();
+    } finally {
+      await settings.remove("user.app_approval.enabled");
+      await settings.remove("user.app_approval.origin");
+    }
   });
 
   test("self enrollment needs possession and explicit recent-session confirmation", async () => {

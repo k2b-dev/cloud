@@ -17,6 +17,7 @@
     "@k2b/ui": "workspace:*",
     "hono": "catalog:",
     "jose": "catalog:",
+    "lean-qr": "catalog:",
     "solid-js": "catalog:",
     "zod": "catalog:"
   },

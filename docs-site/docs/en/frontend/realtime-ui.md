@@ -19,7 +19,7 @@ Cover each event with an authoritative state update, then advance the cursor.
 ## Connect a live WebSocket
 
 ```tsx
-import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { onCleanup, onMount } from "solid-js";
 
 const live = createLiveWebSocket<InventoryEvent>({

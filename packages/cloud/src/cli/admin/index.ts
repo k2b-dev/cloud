@@ -8,8 +8,10 @@
 import { defineCliCommands } from "../commands";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
+import { appSignInCommands } from "./app-sign-in";
 import { aiUsageCommands } from "./ai-usage";
 import { dataCommands } from "./data";
+import { documentationCommands } from "./documentation";
 import { gatewayCommands } from "./gateway";
 import { instanceCommands } from "./instance";
 import { jobCommands } from "./jobs";
@@ -28,6 +30,7 @@ export default defineCliCommands({
   name: "admin",
   summary: "Inspect and operate Cloud administration surfaces.",
   groupSummaries: {
+    "app-sign-in config": "Manage the trusted app website and pairing policy.",
     "accounts config": "Manage account types and sign-in visibility.",
     "accounts administration": "Manage account requests and account/group follow-up notices.",
     legal: "Manage Terms, Privacy, and Imprint.",
@@ -35,6 +38,8 @@ export default defineCliCommands({
     "linux config": "Manage Linux identity defaults and allocation range.",
   },
   commands: [
+    ...documentationCommands,
+    ...appSignInCommands,
     ...accountCategoryCommands,
     ...accountAdministrationCommands,
     ...aiUsageCommands,

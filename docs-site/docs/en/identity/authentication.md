@@ -10,18 +10,14 @@ updated: 2026-09-08
 
 # Request identity
 
-The optional [app approval API](/en/docs/operations/app-approval) supports
-per-account device pairing and signed, browser-bound Cloud login approval from
-a separate authenticator. It is disabled by default; the PWA and user-facing
-integration are separate work.
-
 Cloud turns a browser session or bearer token into a request actor.
 Applications select an auth policy. They do not parse or store credentials.
+The choice of [sign-in method](/en/docs/accounts) does not change this contract.
 
 Add the policy to the Hono router:
 
 ```ts
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 
 const routes = new Hono<AuthContext>()
@@ -57,7 +53,7 @@ Operators can disable Guest, local Login or FreeIPA account access separately
 from login-page visibility. Cloud rechecks the category on user-bound
 authentication, including existing credentials. See
 [Account types and sign-in](/en/docs/operations/account-categories) for the
-scope, recovery and upgrade defaults.
+scope and recovery options.
 
 For a framework-owned internal capability request, Core replaces the incoming
 credential with a short-lived `cloud-invocation+jwt`. Applications do not parse
@@ -125,7 +121,7 @@ Display names, avatars, and roles require a user:
 import {
   expectUserBackedActor,
   userFromActor,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 const optionalUser = userFromActor(c.get("actor"));
 const user = expectUserBackedActor(c);
@@ -149,12 +145,11 @@ for the response behavior.
 
 ## Browser sessions
 
-Core creates a short, signed JWT and stores it in the existing
-`session_token` cookie. The JWT contains only identity and lifecycle claims:
-`iss`, `aud=cloud`, `token_use=session`, `sub`, `sid`, `auth_epoch`, `iat`, and
-`exp`. It does not contain roles, groups, grants, profile data, or other PII.
+Core stores a signed session token in the `session_token` cookie. Cloud resolves
+current account status and permissions on authenticated requests rather than
+trusting roles or grants embedded in a token.
 
-The cookie remains:
+The cookie is:
 
 - HTTP-only;
 - `SameSite=Lax`;
@@ -164,25 +159,9 @@ The cookie remains:
 Signing out removes the current session. Revoking all sessions for a user
 invalidates every older session.
 
-An application verifies the JWT signature from Core's session-only public
-JWKS, then makes
-one PostgreSQL query that resolves the live session family, user, account
-expiry, epoch, roles, groups, and managed groups. Revoking a family or changing
-the user's authentication epoch therefore takes effect without waiting for the
-JWT to expire. A separate durable setting read checks the account category.
-Normal authenticated requests do not read a session or
-generation from Valkey.
-
-Cloud accepts only JWT browser sessions. Upgrading from the compatibility
-release invalidates existing browser sessions once; users must sign in again.
-A normal restart or repeated migration does not invalidate newly issued sessions.
-Revoke-all increments the user's PostgreSQL authentication epoch without
-accessing Valkey. Individual logout revokes only that session family.
-
-The browser hard cut does not revoke OAuth access tokens, refresh grants,
-API credentials, or background mandates. Deploy Core and every application
-together; mixed old and new session or invocation handlers are unsupported.
-See [the coordinated upgrade procedure](/en/docs/reference/deprecations-and-migrations).
+Revocation takes effect without waiting for the token to expire. OAuth grants,
+API credentials and background mandates have separate lifecycles; signing out
+of the browser does not revoke them.
 
 An application should not read the cookie value or use `sessionToken` as a
 domain identifier.

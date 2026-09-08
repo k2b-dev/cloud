@@ -52,12 +52,12 @@ a server callback as a prop.
 An island may import:
 
 - `@k2b/ui`;
-- focused browser-safe Cloud adapters such as `@valentinkolb/cloud/access/ui`;
-- `@valentinkolb/cloud/browser`;
+- focused browser-safe Cloud adapters such as `@k2b/cloud/access/ui`;
+- `@k2b/cloud/browser`;
 - browser-safe shared contracts;
 - SolidJS and browser utilities.
 
-Do not import `@valentinkolb/cloud/server`, `/services`, `/ssr`, or a domain
+Do not import `@k2b/cloud/server`, `/services`, `/ssr`, or a domain
 service that imports Bun SQL.
 
 ## Preserve the server result

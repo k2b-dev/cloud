@@ -13,7 +13,7 @@ import {
   type FilterChipSection,
   IconButton,
   NoticeCard,
-  prompts,
+  prompts,ScrollArea,
   Select,
   TextInput,
   toast,
@@ -887,7 +887,7 @@ const LogBlock = (props: { title: string; value: unknown }) => {
         when={!raw() && parsed().ok}
         fallback={<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed">{rawText()}</pre>}
       >
-        <div class="max-h-80 overflow-auto rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
+        <ScrollArea class="max-h-80 rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
           <div class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1.5 text-xs">
             <For each={prettyRows()}>
               {([key, value]) => {
@@ -905,7 +905,7 @@ const LogBlock = (props: { title: string; value: unknown }) => {
               }}
             </For>
           </div>
-        </div>
+        </ScrollArea>
       </Show>
     </DetailPanel.Section>
   );

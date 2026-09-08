@@ -51,7 +51,7 @@ A definition describes one notification event. Keep definitions in one small
 application module.
 
 ```ts
-import { notification } from "@valentinkolb/cloud";
+import { notification } from "@k2b/cloud";
 import { z } from "zod";
 
 export const NOTIFICATIONS = {
@@ -158,7 +158,7 @@ the plain-text content.
 ### Register the definition
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
@@ -232,7 +232,7 @@ the live event.
 Use the browser client to read and change the current browser's registration:
 
 ```ts
-import { browserNotificationClient } from "@valentinkolb/cloud/browser/notifications";
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
 
 const initial = await browserNotificationClient.refreshExisting();
 
@@ -280,9 +280,9 @@ startup:
 import {
   registerNotificationChannel,
   type NotificationChannelDriver,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 
-declare module "@valentinkolb/cloud/contracts/notifications" {
+declare module "@k2b/cloud/contracts/notifications" {
   interface NotificationChannelRegistry {
     sms: true;
   }
@@ -323,8 +323,8 @@ Send after the domain change commits. Use the bound definition from
 Build the idempotency key from the domain change.
 
 ```ts
-import { notifications } from "@valentinkolb/cloud/services";
-import { getLocale } from "@valentinkolb/cloud/server";
+import { notifications } from "@k2b/cloud/services";
+import { getLocale } from "@k2b/cloud/server";
 import { app } from "./config";
 
 const result = await notifications.send(app.notifications.stockLow, {
@@ -413,13 +413,7 @@ deliveries are queued.
 A route that requires a channel therefore includes its initial delivery attempt
 in request latency.
 
-### Use the typed API
 
-The email-only `notifications.send({ type: "email", ... })` overload and
-`notifications.sendToUser()` are deprecated. They bypass the typed definition
-catalog and preference-aware delivery.
-
-New application code calls `notifications.send()` with a bound definition.
 
 ## Read the result
 
@@ -517,13 +511,7 @@ PostgreSQL retains delivery state and retry times. Core checks for due work at
 startup and every 30 seconds. An interrupted `sending` attempt becomes eligible
 for recovery after five minutes.
 
-When upgrading from the queue-based delivery runtime to the job-based runtime,
-stop the old application instances before starting the new version. Preserve
-the notification tables: startup recovery resumes accepted pending deliveries,
-including work whose old queue message has not run. Future retries resume when
-their stored retry time arrives. The old queue is no longer consumed; removing
-its transport resources is separate operator cleanup, after delivery recovery
-has been verified.
+
 
 Calling `notifications.send()` again with the same idempotency key is safe, but
 it does not restart provider delivery. The existing event and current delivery

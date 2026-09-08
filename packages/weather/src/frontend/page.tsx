@@ -1,4 +1,4 @@
-import { AppOverview } from "@k2b/ui";
+import { AppOverview, ScrollArea } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { weatherService } from "@valentinkolb/cloud/services";
@@ -17,7 +17,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.appName }]}>
-      <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <ScrollArea class="min-h-0 min-w-0 flex-1">
         <AppOverview title={t.appName} subtitle={t.overviewSubtitle} icon="ti ti-temperature-celsius">
           <AppOverview.Main title={t.locations} description={t.noSavedLocations}>
             <AppOverview.EmptyState title={t.noLocationsTitle} description={t.noLocationsDescription} icon="ti ti-map-pin" />
@@ -29,7 +29,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </AppOverview.Aside>
         </AppOverview>
-      </div>
+      </ScrollArea>
     </Layout>
   );
 });

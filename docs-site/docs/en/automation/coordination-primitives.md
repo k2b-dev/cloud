@@ -17,7 +17,7 @@ Postgres. Cloud rate limits remain on Valkey.
 ## Use a distributed mutex
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const stockLock = lazySync((sync) => sync.mutex({
   id: "inventory.stock",
@@ -43,7 +43,7 @@ that process. Convert a fence to a string before JSON serialization.
 ## Apply a sliding rate limit
 
 ```ts
-import { ratelimit } from "@valentinkolb/cloud/server";
+import { ratelimit } from "@k2b/cloud/server";
 
 const exports = ratelimit({ id: "inventory.exports", limit: 10, windowSecs: 60 });
 const result = await exports.check(`user:${userId}`);

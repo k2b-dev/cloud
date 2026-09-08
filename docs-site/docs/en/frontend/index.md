@@ -61,5 +61,3 @@ when several applications need the same behavior and contract.
 
 If a recurring need is missing, improve the shared primitive and its catalog
 example instead of hiding a local lookalike or CSS override.
-
-Do not use `DockWorkspace` for new work. It remains only for compatibility.

@@ -120,7 +120,7 @@ its refresh grant, but an access token already issued to that client can remain
 valid until that expiry. The owning app continues to enforce current domain
 authorization on every tool call.
 
-Personal Cloud API keys remain an explicit compatibility path for clients that
+Personal Cloud API keys are an alternative for clients that
 cannot use browser OAuth. Send the key only in the bearer header:
 
 ```http

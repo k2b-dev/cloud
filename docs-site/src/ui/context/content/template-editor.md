@@ -52,10 +52,7 @@ output limits.
 
 `TemplatePreview` displays the caller's HTML in a sandboxed iframe. Keep preview rendering separate from the final delivery path and do not expose internal renderer errors to end users.
 
-The catalog uses a small token interpolation across its declared sample keys.
-It is an illustrative preview, not a Liquid renderer: it does not implement
-conditions, loops, filters, escaping, validation, or delivery behavior.
-Production rendering remains the application's responsibility.
+The interactive example illustrates editing, not a complete template renderer.
 
 Use `fill` inside a stable pane or workspace. Use `lines` for a content-sized form.
 

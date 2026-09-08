@@ -1,6 +1,6 @@
 # UI components
 
-`@k2b/ui` is a standalone, production-ready component library for SolidJS. It combines accessible interaction patterns, scoped precompiled styles, configurable design tokens, and separate browser and server builds. Use it inside Cloud or in another Solid application. Cloud-specific integrations are documented separately.
+`@k2b/ui` is a standalone component library for SolidJS. It combines accessible interaction patterns, scoped precompiled styles, configurable design tokens, and separate browser and server builds. Use it inside Cloud or in another Solid application. Cloud-specific integrations are documented separately.
 
 ```tsx
 import "@k2b/ui/global.css";
@@ -27,8 +27,6 @@ The AI, Inputs, Actions, Layout, Surfaces, Feedback, Content, and Widgets sectio
 
 The package owns presentation and reusable interaction behavior. Applications continue to own domain data, navigation, persistence, authorization, uploads, AI protocols, and service calls.
 
-The catalog follows **the task a consumer is trying to complete**, not the package's source tree. Related tools therefore stay together at the point of use, while internal source barrels remain an implementation detail.
-
 ## Cloud components
 
 Four integrations remain product-specific because their behavior depends on authenticated Cloud APIs or platform concepts:
@@ -39,5 +37,3 @@ Four integrations remain product-specific because their behavior depends on auth
 - **Cloud resource picker** — permission-filtered selection of stable Cloud resource references through Universal Search.
 
 They live in their own **Cloud components** section, keeping the portable package boundary explicit.
-
-Deprecated wrappers such as `DateTimeInput` and `DockWorkspace` are not promoted in this collection.

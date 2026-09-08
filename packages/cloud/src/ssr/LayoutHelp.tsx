@@ -1,5 +1,5 @@
 import { clipboard, hotkeys } from "@k2b/stdlib/solid";
-import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
 import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@valentinkolb/cloud/shared";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { appAccentStyle } from "./app-appearance";
@@ -619,9 +619,9 @@ const HelpShell = (props: {
         </header>
       </Show>
 
-      <div
+      <ScrollArea
         ref={scrollArea}
-        class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
+        class="min-h-0 flex-1 p-4 sm:p-5"
         onScroll={(event) => {
           if (view() === "article") {
             props.session.articleScrollTop = event.currentTarget.scrollTop;
@@ -806,7 +806,7 @@ const HelpShell = (props: {
         <span class="sr-only" aria-live="polite">
           {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : allHelpClipboard.wasCopied() ? t().allCopiedAnnouncement : ""}
         </span>
-      </div>
+      </ScrollArea>
     </div>
   );
 };

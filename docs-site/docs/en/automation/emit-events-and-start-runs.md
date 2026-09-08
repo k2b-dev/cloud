@@ -16,7 +16,7 @@ domain change use the same durable path.
 ## Emit an event
 
 ```ts
-import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
+import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
 
 const emission = await emitWorkflowEvent(
   {
@@ -78,7 +78,7 @@ run IDs.
 import {
   createWorkflowActionPort,
   tickWorkflows,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const actions = createWorkflowActionPort(inventoryWorkflows);
 
@@ -96,9 +96,8 @@ Call ticks from a bounded lifecycle loop. Do not start the next tick while the
 previous one is running.
 
 Every application worker must pass its `appId` and current module. The app ID
-keeps claims scoped to the app. The module prevents an alpha-era version bound
-against another language version or manifest from executing; publish that
-source again against the current module instead.
+keeps claims scoped to the app. Workers require a plan matching the current
+module version and manifest. Republish incompatible source before execution.
 
 The worker dispatches pending events, wakes expired waits, and executes ready
 runs. It renews run leases while actions execute.

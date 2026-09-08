@@ -69,8 +69,12 @@ import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
+import DocumentationLink from "./DocumentationLink";
 import { settingsMessages } from "./messages";
 import { localizeSettingField } from "./setting-copy";
+import ApprovalStatus from "../../../app-approval/ApprovalStatus";
+import type { ApprovalAvailability } from "../../../app-approval/availability";
+import { appApprovalMessages } from "../../../app-approval/messages";
 
 type SettingValueSource = "custom" | "env" | "default";
 
@@ -108,11 +112,14 @@ export type SettingFieldDef = {
 };
 
 type Props = {
+  documentationBase?: string;
+  documentationTopic?: string;
   title: string;
   subtitle: string;
   icon: string;
   entries: SettingFieldDef[];
   accountSection?: "sign-in" | "registration";
+  approvalState?: ApprovalAvailability;
   showTestEmailAction?: boolean;
   showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
@@ -523,7 +530,16 @@ export default function CoreSettingsForm(props: Props) {
 
   const renderFieldSections = (entries: SettingFieldDef[]) =>
     groupSettingEntries(entries, t()).map((section) => (
-      <SettingsSection title={section.title} subtitle={section.subtitle} icon={section.icon}>
+      <SettingsSection
+        title={section.title}
+        subtitle={section.subtitle}
+        icon={section.icon}
+        actions={<DocumentationLink base={props.documentationBase} topic={section.id} />}
+      >
+        <Show when={section.id === "user.appApproval" && props.approvalState}>
+          <p class="text-xs text-dimmed">{appApprovalMessages.resolve([locale()]).t.savedConfiguration}</p>
+          <ApprovalStatus state={props.approvalState!} admin />
+        </Show>
         {renderFieldRows(section.entries)}
       </SettingsSection>
     ));
@@ -533,7 +549,12 @@ export default function CoreSettingsForm(props: Props) {
       title={props.title}
       subtitle={props.subtitle}
       icon={props.icon}
-      actions={props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction ? headerActions() : undefined}
+      actions={
+        <>
+          <DocumentationLink base={props.documentationBase} topic={props.documentationTopic ?? ""} />
+          {props.showTestEmailAction || props.showTestPdfAction || props.showTestFreeIpaAction ? headerActions() : undefined}
+        </>
+      }
       footer={
         <SettingsPanelFooter
           changeCount={() => changedKeys().length}

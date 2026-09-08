@@ -23,7 +23,7 @@ selection returns HTTP 403 before a retry changes the conversation.
 ## Create a conversation draft
 
 ```ts
-import { launchAssistant } from "@valentinkolb/cloud/ai/browser";
+import { launchAssistant } from "@k2b/cloud/ai/browser";
 
 const launch = await launchAssistant({
   launchedByAppId: "mail",
@@ -154,12 +154,9 @@ continuations. Applications must not start a second AI conversation runtime.
 They publish domain Capabilities, launch a personal conversation through
 `launchAssistant()`, or use `runAiStructured()` for bounded server/workflow AI.
 
-The runtime leases queued turns, recovers interrupted work, and sweeps stale
-turns. User approvals and frontend-tool responses are durable continuation
-points, not failed execution attempts. If their queue message is lost, the
-sweep re-enqueues the exact action still waiting in the persisted turn
-snapshot. Actual repeated worker failures remain bounded and finish the turn
-as failed instead of leaving it active forever. Set concurrency for the
+Interrupted work resumes from saved state. User approvals and frontend-tool
+responses remain pending until answered; they are not failed attempts.
+Repeated execution failures end the turn as failed. Set concurrency for the
 deployment, not per request.
 
 ## Stream state
@@ -175,13 +172,13 @@ Each execution attempt starts with one atomic, server-ordered block baseline.
 Resuming after an approval or frontend-tool response therefore keeps every
 existing item in its persisted timeline position while new output is appended.
 The same event feed backs both browser WebSockets and SSE. Use `parseAiSse()`
-from `@valentinkolb/cloud/ai/browser` for a low-level or CLI client. This
+from `@k2b/cloud/ai/browser` for a low-level or CLI client. This
 client entry point also exports attachment limits, `guessAiMediaType()`,
 `isAiImageMediaType()`, the card, survey, text-editor, and local-bash input
 schemas, and `CLOUD_AI_TEXT_EDITOR_MAX_CHARS`. These helpers do not initialize
 Cloud server services. Import AI types with `import type` from
-`@valentinkolb/cloud/ai`. Solid applications should use
-`createAiChatController()` from `@valentinkolb/cloud/ai/solid`; it uses SSE by
+`@k2b/cloud/ai`. Solid applications should use
+`createAiChatController()` from `@k2b/cloud/ai/solid`; it uses SSE by
 default and accepts a supported conversation-stream transport when its host
 already owns a shared connection.
 
@@ -200,10 +197,8 @@ metadata, Sources, files, scheduled tasks, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
-Core mounts the server-only multiplexed route at `/api/ai/live`.
-`migrateCloudAi()` installs the transactional
-invalidation outbox and persistence triggers; `startAiRuntime()` dispatches the
-outbox. A committed AI write and its invalidation therefore cannot diverge.
+Core exposes live updates at `/api/ai/live`. Committed AI writes invalidate
+the affected views.
 The browser still reloads each affected projection through its authorized HTTP
 query before it advances the event cursor.
 

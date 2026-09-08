@@ -8,6 +8,12 @@ order: 120
 
 Die Core-Administrationsseiten konfigurieren Plattformdienste und verlinken die von Apps registrierten Administrationsbereiche.
 
+Die Account-Einstellungen verlinken über **Dokumentation** die passende englische
+Anleitung in einem neuen Tab. Unter **Allgemein** wählst du mit
+**Dokumentationsadresse** die öffentliche Doku, einen eigenen Spiegel oder den
+lokalen Fibel-Server. Das ändert nur Doku-Links, nicht die App-Anmeldung.
+Die integrierte Hilfe bleibt davon unabhängig.
+
 ## Administrationsseiten {icon="user-cog"}
 
 :::reference

@@ -1,13 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
+import { accountCategory, accountCategoryLabel } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accountsAppService as accountsService,
+  appApproval,
   coreSettings,
   linuxIdentities,
+  readAccountCategoryPolicy,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
 } from "@valentinkolb/cloud/services";
@@ -52,6 +53,7 @@ export default ssr<AuthContext>(async (c) => {
   const sessionUser = expectUserBackedActor(c);
   const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const approvalConfig = await appApproval.config().catch(() => null);
 
   const listState = parseUsersListState({
     search: c.req.query("search"),
@@ -275,6 +277,12 @@ export default ssr<AuthContext>(async (c) => {
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
               <UserActions user={user} listHref={buildUsersUrl(listState)} freeIpaEnabled={freeIpaEnabled} />
+              {approvalConfig?.enabled && approvalConfig.adminPairing && !isExpired && categoryPolicy[accountCategory(user)].enabled && (
+                <ButtonLink href={`/me/security/pair?userId=${user.id}`} variant="secondary" size="sm">
+                  <i class="ti ti-device-mobile" />
+                  {t.pairAppDevice}
+                </ButtonLink>
+              )}
             </div>
           </div>
 

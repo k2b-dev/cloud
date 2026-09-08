@@ -1,5 +1,5 @@
-import { Button, IconButton, Tooltip } from "@k2b/ui";
-import { For, Show, type Accessor } from "solid-js";
+import { Button, IconButton, ScrollArea, Tooltip } from "@k2b/ui";
+import { type Accessor, For, Show } from "solid-js";
 import type { PulseSavedQuery } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext } from "./helpers";
@@ -28,7 +28,7 @@ export function SavedQueriesPane(props: {
           <i class="ti ti-device-floppy" /> {t().saveCurrent}
         </Button>
       </div>
-      <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
+      <ScrollArea class="min-h-0 flex-1 px-2 pb-2">
         <Show when={props.queries().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noSavedQueries}</p>}>
           <For each={props.queries()}>
             {(item) => (
@@ -52,7 +52,7 @@ export function SavedQueriesPane(props: {
             )}
           </For>
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -64,7 +64,7 @@ export function QueryHistoryPane(props: {
 }) {
   const t = usePulseMessages();
   return (
-    <div class="h-full min-h-0 overflow-auto p-2">
+    <ScrollArea class="h-full min-h-0 p-2">
       <Show when={props.history().length > 0} fallback={<p class="px-1 py-2 text-xs text-dimmed">{t().noRunsYet}</p>}>
         <For each={props.history()}>
           {(item) => (
@@ -79,6 +79,6 @@ export function QueryHistoryPane(props: {
           )}
         </For>
       </Show>
-    </div>
+    </ScrollArea>
   );
 }

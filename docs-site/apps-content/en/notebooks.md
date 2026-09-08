@@ -186,10 +186,8 @@ settings to include levels 1–6. Book and rich editor previews use the same
 server-rendered results. Read-only keeps its saved note source until a reload;
 reload after the source changes to see the matching preview.
 
-Executable scripting is no longer supported. Existing script fences stay in
-the Markdown as readable code and do not run in any view. Replace page indexes
-with queries and heading lists with contents blocks. Script buttons, write
-actions, and hidden runtime state have no replacement.
+Code fences are displayed as text and never executed. Use `:::query` for page
+indexes and `:::toc` for heading lists.
 
 ## How Notebooks fits Cloud
 

@@ -230,6 +230,7 @@
         "@valentinkolb/cloud": "workspace:*",
         "hono": "catalog:",
         "jose": "catalog:",
+        "lean-qr": "catalog:",
         "solid-js": "catalog:",
         "zod": "catalog:",
       },

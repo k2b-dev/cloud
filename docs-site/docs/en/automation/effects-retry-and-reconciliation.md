@@ -92,7 +92,7 @@ expires. Lease loss fences the old worker from writing a result.
 import {
   WORKFLOW_RUN_LEASE_MS,
   WORKFLOW_RUN_MAX_CONSECUTIVE_FAILURES,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 ```
 
 ## Plan and charge effects

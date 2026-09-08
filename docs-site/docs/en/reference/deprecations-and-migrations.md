@@ -39,11 +39,7 @@ activation; recover that definition and retry rather than inserting the marker
 manually. A failed migration does not create the marker.
 
 Keep a verified backup and the bridge build available. Do not run older Grids
-binaries against the marked schema. The planned next update will remove old
-migration code and accept only fresh schemas or this baseline; an older
-installation will need this bridge update first. That removal and rejection
-gate are **not part of this update**. Removing migration code must not delete
-current Records, grants, number-series state, Documents, or retained history.
+binaries against the marked schema.
 
 ## Mail automation authority is mandate-only
 
@@ -227,6 +223,14 @@ authoritative platform tables.
 
 See [Authorization](/en/docs/identity/authorization).
 
+## Notification delivery upgrade
+
+When replacing the queue-based notification runtime, stop old application
+instances before starting the new version. Preserve notification tables:
+startup recovery resumes accepted pending deliveries and scheduled retries.
+The job-based runtime does not consume old queues. Remove their transport
+resources only after verifying delivery recovery.
+
 ## Notifications
 
 The email-only `notifications.send(params)` overload and
@@ -266,7 +270,7 @@ Use the [UI catalog](/ui) to inspect the current UI contract.
 
 Import generic utilities directly from `@k2b/stdlib`.
 
-`@valentinkolb/cloud/shared` continues to re-export `dates`, `calendar`,
+`@k2b/cloud/shared` continues to re-export `dates`, `calendar`,
 `encoding`, `fileIcons`, and `gradients` for older applications.
 
 Cloud-specific shared helpers remain on the Cloud path.

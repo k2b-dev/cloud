@@ -30,7 +30,7 @@ authorization and validation as a normal route.
 
 ```ts
 import { ok } from "@k2b/stdlib";
-import { defineCapabilities } from "@valentinkolb/cloud/contracts";
+import { defineCapabilities } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const inventoryCapabilities = defineCapabilities({

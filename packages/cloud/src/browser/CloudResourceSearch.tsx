@@ -1,5 +1,5 @@
 import { query, timed } from "@k2b/stdlib/solid";
-import { NoticeCard, Select, useLocale } from "@k2b/ui";
+import { NoticeCard, ScrollArea, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { SearchApp, SearchItem, SearchResponse } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
@@ -591,7 +591,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
 
             {/* Suggestions: empty input, show available tags as clickable chips. */}
             <Show when={bodyMode() === "suggestions"}>
-              <div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+              <ScrollArea class="flex h-full min-h-0 flex-col gap-3 pr-1">
                 <p class="text-xs text-dimmed">
                   {t().typeToSearchBeforeTag} <code class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] dark:bg-zinc-900">#tag</code>{" "}
                   {t().typeToSearchAfterTag}
@@ -622,7 +622,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     {t().seeAllTagDescriptions}
                   </button>
                 </Show>
-              </div>
+              </ScrollArea>
             </Show>
 
             {/* Unsupported tags: response told us no app handles them. */}

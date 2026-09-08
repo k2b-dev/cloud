@@ -32,7 +32,6 @@ then keep domain data and actions inside the application-owned content slots.
 | Tabular records | `DataPanel` and `DataTable` |
 | Metrics | `StatGrid` and `StatCell` |
 
-`DockWorkspace` is deprecated. Use `Panes` for new work.
 
 ## Build an overview
 

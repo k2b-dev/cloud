@@ -22,7 +22,7 @@ Use `<app-id>.<name>` for setting keys so ownership stays explicit. Cloud derive
 the TypeScript API from this declaration.
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "inventory",
@@ -62,7 +62,7 @@ Add `middleware.settings()` to the router. Then read settings from the request
 context:
 
 ```ts
-import { type AppContext, middleware } from "@valentinkolb/cloud/server";
+import { type AppContext, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { app } from "./config";
 
