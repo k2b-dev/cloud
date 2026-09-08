@@ -5,6 +5,9 @@ const messages = i18n.define({
   messages: {
     en: {
       assistantTurns: "Assistant turns",
+      workSteps: "Work steps",
+      surveyNoAnswer: "No answer",
+      surveyNoAnswers: "No answers submitted.",
       toolCalls: "Tool calls",
       toolIssues: "Tool issues",
       none: "None",
@@ -13,6 +16,9 @@ const messages = i18n.define({
     },
     de: {
       assistantTurns: "Antwortdurchläufe",
+      workSteps: "Arbeitsschritte",
+      surveyNoAnswer: "Keine Antwort",
+      surveyNoAnswers: "Keine Antworten abgegeben.",
       toolCalls: "Werkzeugaufrufe",
       toolIssues: "Werkzeugprobleme",
       none: "Keine",

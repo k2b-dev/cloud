@@ -3,6 +3,7 @@ import { Button, MarkdownEditor, prompts, Slider, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
+import { aiChatMessages } from "./messages";
 import { useAiToolDisclosure } from "./tool-disclosure";
 
 const toneClass = (tone: unknown) => {
@@ -258,20 +259,21 @@ export function CloudSurveyBlock(props: {
   );
 }
 
-const surveyAnswerLabel = (question: Record<string, unknown> | null, value: unknown) => {
+const surveyAnswerLabel = (question: Record<string, unknown> | null, value: unknown, noAnswer: string) => {
   const options = Array.isArray(question?.options) ? (question!.options as unknown[]).filter(isRecord) : [];
   const optionLabel = (entry: unknown) => {
     const match = options.find((option) => String(option.value ?? "") === String(entry));
     return String(match?.label ?? entry ?? "");
   };
-  if (Array.isArray(value)) return value.map(optionLabel).filter(Boolean).join(", ");
+  if (Array.isArray(value)) return value.map(optionLabel).filter(Boolean).join(", ") || noAnswer;
   if (typeof value === "object" && value !== null) return jsonPreview(value);
-  if (value === undefined || value === null || value === "") return "No answer";
+  if (value === undefined || value === null || value === "") return noAnswer;
   return optionLabel(value);
 };
 
-export function CloudSurveyResultBlock(props: { blockId?: string; args?: unknown; result: unknown; continuing?: boolean }) {
-  const disclosure = useAiToolDisclosure(() => props.blockId);
+export function CloudSurveyResultBlock(props: { args?: unknown; result: unknown }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const survey = () => (isRecord(props.args) ? props.args : null);
   const result = () => (isRecord(props.result) ? props.result : null);
   const answers = () => (isRecord(result()?.answers) ? (result()!.answers as Record<string, unknown>) : {});
@@ -282,48 +284,29 @@ export function CloudSurveyResultBlock(props: { blockId?: string; args?: unknown
       return {
         id,
         label: String(question.label ?? id),
-        value: surveyAnswerLabel(question, answers()[id]),
+        value: surveyAnswerLabel(question, answers()[id], t().surveyNoAnswer),
       };
     });
     const knownIds = new Set(knownQuestions.map((question) => question.id));
     const extraAnswers = Object.entries(answers())
       .filter(([id]) => !knownIds.has(id))
-      .map(([id, value]) => ({ id, label: id, value: surveyAnswerLabel(null, value) }));
+      .map(([id, value]) => ({ id, label: id, value: surveyAnswerLabel(null, value, t().surveyNoAnswer) }));
     return [...knownQuestions, ...extraAnswers].filter((row) => row.id);
   };
 
   return (
-    <details
-      class="group w-full min-w-0 text-xs"
-      open={disclosure.open()}
-      onToggle={(event) => disclosure.onOpenChange(event.currentTarget.open)}
-    >
-      <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
-        <i class="ti ti-forms shrink-0 text-base leading-none" aria-hidden="true" />
-        <span class="shrink-0 font-medium">survey</span>
-        <span class="min-w-0 truncate">
-          {String(survey()?.title ?? "Survey")} · {props.continuing ? "waiting" : "submitted"}
-        </span>
-        <i
-          class="ti ti-chevron-right shrink-0 text-base leading-none opacity-60 transition-transform group-open:rotate-90"
-          aria-hidden="true"
-        />
-      </summary>
-      <div class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-        <Show when={rows().length > 0} fallback={<p class="text-xs text-dimmed">No answers submitted.</p>}>
-          <dl class="grid grid-cols-[minmax(8rem,auto)_1fr] gap-x-4 gap-y-1.5">
-            <For each={rows()}>
-              {(row) => (
-                <>
-                  <dt class="text-xs text-dimmed">{row.label}</dt>
-                  <dd class="min-w-0 whitespace-pre-wrap text-xs text-primary">{row.value}</dd>
-                </>
-              )}
-            </For>
-          </dl>
-        </Show>
-      </div>
-    </details>
+    <Show when={rows().length > 0} fallback={<p>{t().surveyNoAnswers}</p>}>
+      <dl class="flex min-w-0 flex-col gap-3">
+        <For each={rows()}>
+          {(row) => (
+            <div class="min-w-0">
+              <dt class="mb-1 whitespace-pre-wrap break-words text-xs text-dimmed">{row.label}</dt>
+              <dd class="whitespace-pre-wrap break-words">{row.value}</dd>
+            </div>
+          )}
+        </For>
+      </dl>
+    </Show>
   );
 }
 

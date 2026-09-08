@@ -829,7 +829,7 @@ describe("survey presentation", () => {
     expect(html).toContain("Submit");
   });
 
-  test("collapses an accepted active survey while retaining its answers", () => {
+  test("renders accepted survey answers in the shared user bubble", () => {
     const completed: AiTurnBlock = {
       id: "survey-call",
       kind: "tool",
@@ -847,13 +847,151 @@ describe("survey presentation", () => {
     const activeHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1", active: true }));
     const historicalHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
 
-    expect(activeHtml).toContain("Invoice details · waiting");
-    expect(activeHtml).toContain('class="group w-full min-w-0 text-xs"');
-    expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
+    expect(activeHtml).toContain('data-role="user"');
+    expect(activeHtml).toContain("Amount");
     expect(activeHtml).toContain("150 EUR");
-    expect(activeHtml).not.toContain("Waiting for the assistant to continue");
+    expect(activeHtml).not.toContain("<details");
     expect(activeHtml).not.toContain("Submit</span>");
-    expect(historicalHtml).toContain("Invoice details · submitted");
+    expect(historicalHtml).toBe(activeHtml);
+  });
+});
+
+describe("survey answer timeline", () => {
+  const survey = {
+    id: "tool:survey-1",
+    kind: "tool",
+    callId: "survey-1",
+    name: "survey",
+    status: "completed",
+    frontendMode: "client_interaction",
+    args: {
+      title: "Preferences",
+      questions: [
+        {
+          id: "choice",
+          type: "multiple",
+          label: "Which days?",
+          options: [
+            { value: "mo", label: "Monday" },
+            { value: "tu", label: "Tuesday" },
+          ],
+        },
+        { id: "note", type: "text", label: "Anything else?" },
+      ],
+    },
+    result: { submitted: true, answers: { choice: ["mo", "tu"], note: "<script>hello</script>\nSecond line" } },
+  } satisfies Extract<AiTurnBlock, { kind: "tool" }>;
+
+  const turn = (blocks: AiTurnBlock[]): AiActiveTurn => ({
+    turnId: "survey-turn",
+    attempt: 1,
+    seq: 1,
+    status: "running",
+    blocks,
+    modelProfileId: null,
+  });
+  const snapshot = (messages: AiStoredMessage[], activeTurn: AiActiveTurn | null) =>
+    createRoot((dispose) => {
+      const items = createAiChatTimeline({ messages: () => messages, activeTurn: () => activeTurn })();
+      const result = items.map((item) => ({
+        ...item,
+        html: renderToString(() => item.content),
+      }));
+      dispose();
+      return result;
+    });
+  const stored = (message: AiStoredMessage["message"], seq: number): AiStoredMessage => ({
+    id: `stored-${seq}`,
+    shortId: `stored-${seq}`,
+    conversationId: "conversation-1",
+    seq,
+    kind: "message",
+    message,
+    loopId: "survey-turn",
+    modelProfileId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: null,
+    createdAt: "2026-09-08T12:00:00Z",
+  });
+
+  test("keeps accepted answers between assistant outputs in live and reloaded history", () => {
+    const active = snapshot(
+      [],
+      turn([{ id: "before", kind: "text", text: "Before answer" }, survey, { id: "after", kind: "text", text: "After answer" }]),
+    );
+    const history = snapshot(
+      [
+        stored(
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Before answer" },
+              { type: "tool_call", id: survey.callId, name: survey.name, args: survey.args },
+            ],
+          },
+          1,
+        ),
+        stored({ role: "tool_result", callId: survey.callId, name: survey.name, result: survey.result }, 2),
+        stored({ role: "assistant", content: [{ type: "text", text: "After answer" }], stopReason: "stop" }, 3),
+      ],
+      null,
+    );
+    for (const items of [active, history]) {
+      expect(items.map((item) => item.kind === "message" && item.role)).toEqual(["assistant", "user", "assistant"]);
+      expect(items[0]!.html).toContain("Before answer");
+      expect(items[2]!.html).toContain("After answer");
+      expect(items[1]!.html).toContain("Which days?");
+      expect(items[1]!.html).toContain("Monday, Tuesday");
+      expect(items[1]!.html).toContain("&lt;script>hello&lt;/script>");
+      expect(items[1]!.html).not.toContain("<details");
+      expect(items[0]!.html + items[2]!.html).not.toContain("Which days?");
+      expect(items[1]!.kind === "message" && items[1]!.actions).toBeUndefined();
+    }
+    expect(active[1]!.id).toBe(history[1]!.id);
+    expect(history.filter((item) => item.kind === "message" && item.actions?.length)).toHaveLength(1);
+  });
+
+  test("replaces only accepted results and keeps assistant progress after the answer", () => {
+    for (const pending of [
+      { ...survey, status: "awaiting_client" as const, result: undefined },
+      { ...survey, status: "failed" as const, isError: true },
+      { ...survey, result: { submitted: false } },
+    ]) {
+      const items = snapshot([], turn([pending]));
+      expect(items.map((item) => item.kind === "message" && item.role)).toEqual(["assistant"]);
+    }
+    const accepted = snapshot([], turn([survey]));
+    expect(accepted.map((item) => item.kind === "message" && item.role)).toEqual(["user", "assistant"]);
+    expect(accepted[1]).toMatchObject({ status: "streaming" });
+    expect(accepted[1]!.html).toBe("");
+  });
+
+  test("keeps empty answers and zero ratings readable and IDs scoped to their turn", () => {
+    const result = { submitted: true, answers: { choice: [], score: 0 } };
+    const first = snapshot([], turn([{ ...survey, result }]));
+    const second = snapshot([], { ...turn([{ ...survey, result }]), turnId: "another-turn" });
+    expect(first[0]!.html).toContain("No answer");
+    expect(first[0]!.html).toContain(">0</dd>");
+    expect(first[0]!.id).not.toBe(second[0]!.id);
+  });
+
+  test("preserves consecutive surveys and steering in their original order", () => {
+    const items = snapshot(
+      [],
+      turn([
+        survey,
+        { id: "steer-1", kind: "steer_message", steerId: "steer-1", text: "One more thing", status: "pending" },
+        { ...survey, id: "tool:survey-2", callId: "survey-2", name: "cloud_survey" },
+      ]),
+    );
+    expect(items.map((item) => item.kind === "message" && item.role)).toEqual(["user", "user", "user", "assistant"]);
+    expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
+    expect(items[1]!.html).toContain("One more thing");
   });
 });
 

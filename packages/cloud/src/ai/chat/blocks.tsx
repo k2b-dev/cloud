@@ -520,7 +520,9 @@ function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: bool
       </Match>
       <Match when={submittedResult()}>
         {(result) => (
-          <CloudSurveyResultBlock blockId={props.block.id} args={props.block.args} result={result()} continuing={props.active} />
+          <Chat.Message role="user">
+            <CloudSurveyResultBlock args={props.block.args} result={result()} />
+          </Chat.Message>
         )}
       </Match>
     </Switch>

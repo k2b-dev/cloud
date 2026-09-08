@@ -256,12 +256,20 @@ conversation transcript.
 
 The controller claims each call once, runs the handler, and sends the result
 back to the turn. Show interaction tools only when the relevant application
-view is present. After the server accepts an interaction result, collapse the
-form immediately into a waiting row. Keep the submitted answers in its details
-while the assistant continues; never flash the empty form again between
-acceptance and the next stream event. Accepted frontend-tool and approval
-actions must not regress when a stale live event still contains the pending
-block.
+view is present. After the server accepts a survey answer, replace the form
+with a normal user message: show each question as small context above its answer. Use option
+labels for choices and retain free-text line breaks. These messages stay in
+chronological order between the assistant's outputs, remain visible outside
+**Worked for ...**, and render the same way after reloading the conversation.
+The answer remains a tool result in storage and in the model protocol; the
+presentation does not create another user turn or expose message retry/edit
+controls for that answer.
+
+Keep the assistant's progress indicator after an accepted answer while it
+continues. Pending or failed submissions retain their interaction state; never
+flash the empty form again between acceptance and the next stream event.
+Accepted frontend-tool and approval actions must not regress when a stale live
+event still contains the pending block.
 
 The built-in long-form text interaction presents every draft in the existing
 `@k2b/ui` `MarkdownEditor`; plain text remains valid Markdown source. Its

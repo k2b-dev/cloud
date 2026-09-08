@@ -6,8 +6,10 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline, copyTextFromAssis
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
-import { formatWorkedDuration, isCardToolName, textFromMessage } from "./message-utils";
+import { formatWorkedDuration, isCardToolName, isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
+import { aiChatMessages } from "./messages";
+import { CloudSurveyResultBlock } from "./visual-tools";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import {
@@ -29,6 +31,38 @@ const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.
 
 type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
 
+type SurveyResultBlock = Extract<AssistantBlock, { kind: "tool" }>;
+type SurveySegment = { type: "assistant"; blocks: AssistantBlock[] } | { type: "survey"; block: SurveyResultBlock };
+
+// Presentation only: the accepted answer remains a tool result in the protocol.
+const splitSurveyResults = (blocks: AssistantBlock[]): SurveySegment[] => {
+  const segments: SurveySegment[] = [];
+  for (const block of blocks) {
+    if (
+      block.kind === "tool" &&
+      isSurveyToolName(block.name) &&
+      block.status === "completed" &&
+      !block.isError &&
+      isRecord(block.result) &&
+      block.result.submitted === true
+    ) {
+      segments.push({ type: "survey", block });
+    } else {
+      const previous = segments.at(-1);
+      if (previous?.type === "assistant") previous.blocks.push(block);
+      else segments.push({ type: "assistant", blocks: [block] });
+    }
+  }
+  return segments;
+};
+
+const surveyItem = (block: SurveyResultBlock, turnId: string): ChatTimelineItem => ({
+  kind: "message",
+  id: `survey-answer:${turnId}:${block.callId}`,
+  role: "user",
+  content: <CloudSurveyResultBlock args={block.args} result={block.result} />,
+});
+
 const isDirectCompletedResult = (block: AssistantBlock): boolean =>
   block.kind === "tool" && block.status === "completed" && !block.isError && (isCardToolName(block.name) || block.name === "present");
 
@@ -45,10 +79,15 @@ export const partitionCompletedAssistantBlocks = (blocks: AssistantBlock[]) => {
   };
 };
 
-export function AiAssistantContent(props: { item: AiAssistantTimelineItem; disclosureState?: AiToolDisclosureState }): JSX.Element {
+export function AiAssistantContent(props: {
+  item: AiAssistantTimelineItem;
+  disclosureState?: AiToolDisclosureState;
+  segmentId?: string;
+}): JSX.Element {
+  const locale = useLocale();
   const blocks = createMemo(() => partitionCompletedAssistantBlocks(props.item.blocks));
   const turnId = () => props.item.loopId ?? props.item.id;
-  const workedDisclosureId = () => `worked:${turnId()}`;
+  const workedDisclosureId = () => `worked:${props.segmentId ?? turnId()}`;
   const workedOpen = () => props.disclosureState?.get(workedDisclosureId());
   const setWorkedOpen = (open: boolean) => props.disclosureState?.set(workedDisclosureId(), open);
   const workedFailed = () => blocks().worked.some(isFailedBlock);
@@ -58,7 +97,7 @@ export function AiAssistantContent(props: { item: AiAssistantTimelineItem; discl
       <Show when={blocks().worked.length > 0}>
         <Chat.Activity
           icon="ti ti-route"
-          label={`Worked for ${formatWorkedDuration(props.item.workedMs)}`}
+          label={props.segmentId ? aiChatMessages(locale()).workSteps : `Worked for ${formatWorkedDuration(props.item.workedMs)}`}
           tone={workedFailed() ? "danger" : undefined}
           bodyInset={false}
           defaultOpen={workedFailed()}
@@ -79,7 +118,7 @@ const storedItems = (
   disclosureState: AiToolDisclosureState,
   locale: string,
 ): ChatTimelineItem[] =>
-  buildAiMessageTimeline([...messages]).map((item): ChatTimelineItem => {
+  buildAiMessageTimeline([...messages]).flatMap((item): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
       const agentMessage = item.entry.meta?.agentMessage;
@@ -155,28 +194,40 @@ const storedItems = (
 
     const actionEntry = item.actionEntry?.compactedAt ? null : item.actionEntry;
     const copyText = copyTextFromAssistantEntries(item.entries);
-    return {
-      kind: "message",
-      id: item.id,
-      role: "assistant",
-      createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
-      class: item.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
-      content: <AiAssistantContent item={item} disclosureState={disclosureState} />,
-      actions: actionEntry
-        ? createAssistantMessageActions({
-            entry: actionEntry,
-            entries: item.entries,
-            copyText,
-            actions,
-          })
-        : undefined,
-      actionDisplay: "inline",
-    };
+    const segments = splitSurveyResults(item.blocks);
+    if (segments.length === 0) segments.push({ type: "assistant", blocks: [] });
+    const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
+    return segments.map((segment, index): ChatTimelineItem => {
+      if (segment.type === "survey") return surveyItem(segment.block, item.loopId ?? item.id);
+      return {
+        kind: "message",
+        id: index === 0 ? item.id : `${item.id}:${segment.blocks[0]!.id}`,
+        role: "assistant",
+        createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
+        class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
+        content: (
+          <AiAssistantContent
+            item={{ ...item, blocks: segment.blocks }}
+            segmentId={segments.length > 1 ? `${item.id}:${index}` : undefined}
+            disclosureState={disclosureState}
+          />
+        ),
+        actions:
+          actionEntry && index === lastAssistant
+            ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText, actions })
+            : undefined,
+        actionDisplay: "inline",
+      };
+    });
   });
 
 const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosureState: AiToolDisclosureState): ChatTimelineItem[] => {
   if (!turn) return [];
-  const segments = splitActiveTurnBlocks(turn.blocks);
+  const segments = splitActiveTurnBlocks(turn.blocks).flatMap((segment): (AiActiveTurnSegment | SurveySegment)[] =>
+    segment.type === "steer" ? [segment] : splitSurveyResults(segment.blocks),
+  );
+  // Keep the shared assistant progress indicator after the accepted answer.
+  if (turn.status === "running" && segments.at(-1)?.type === "survey") segments.push({ type: "assistant", blocks: [] });
   if (segments.length === 0) {
     return [
       {
@@ -190,8 +241,9 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosu
   }
 
   return segments.map((segment, index): ChatTimelineItem => {
+    if (segment.type === "survey") return surveyItem(segment.block, turn.turnId);
     if (segment.type === "steer") {
-      const block = (segment as Extract<AiActiveTurnSegment, { type: "steer" }>).block;
+      const block = segment.block;
       return {
         kind: "message",
         id: `${turn.turnId}-steer-${block.id}`,
@@ -204,7 +256,7 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosu
       };
     }
 
-    const blocks = (segment as Extract<AiActiveTurnSegment, { type: "assistant" }>).blocks;
+    const blocks = segment.blocks;
     return {
       kind: "message",
       id: `${turn.turnId}-assistant-${index}`,
