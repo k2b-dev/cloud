@@ -2,6 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
 type RemoveFromGroupProps = {
@@ -26,6 +27,10 @@ export default function RemoveFromGroup(props: RemoveFromGroupProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().removeFromGroupFailed);
       }
+      await showAccountActionNotice(
+        { action: "group.member.remove", id: props.parentGroupId, name: props.parentGroupName, relatedId: props.groupId },
+        messages(),
+      );
     },
     onSuccess: () => {
       refreshCurrentPath();

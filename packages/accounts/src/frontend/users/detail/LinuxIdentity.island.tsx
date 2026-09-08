@@ -4,12 +4,15 @@ import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { PosixOverridesSchema } from "@valentinkolb/cloud/contracts";
 import type { linuxIdentities } from "@valentinkolb/cloud/services";
 import { createSignal, For, Show } from "solid-js";
+import { showAccountActionNotice } from "../../action-notice";
 import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";
+import { useAccountsMessages } from "../../messages";
 
 type Snapshot = Awaited<ReturnType<typeof linuxIdentities.get>>;
 const api = coreClient.admin.core["linux-identities"].users[":id"];
 
 export default function LinuxIdentity(props: { initial: Snapshot }) {
+  const messages = useAccountsMessages();
   const locale = useLocale();
   const t = () => linuxAccountMessages.resolve([locale()]).t;
   const [editing, setEditing] = createSignal(false);
@@ -36,6 +39,10 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
           : await api.$patch({ param, json: { homeDirectory: home(), loginShell: shell() } });
       if (!response.ok) throw await accountLinuxError(response, t());
       await snapshot.invalidate();
+      await showAccountActionNotice(
+        { action: "user.linux", id: user().id, provider: user().provider, profile: user().profile },
+        messages(),
+      );
       setEditing(false);
     },
   });

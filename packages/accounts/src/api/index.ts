@@ -1,6 +1,7 @@
 import { getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import accountRequestsRoutes from "./account-requests";
+import actionNoticeRoutes from "./action-notice";
 import auditRoutes from "./audit";
 import groupsRoutes from "./groups";
 import { accountsApiErrorMessage } from "./messages";
@@ -35,6 +36,7 @@ const app = new Hono()
   .use(localizeApiError)
   .route("/widget", widgetRoutes)
   .use(rateLimit())
+  .route("/action-notice", actionNoticeRoutes)
   .route("/users", usersRoutes)
   .route("/groups", groupsRoutes)
   .route("/account-requests", accountRequestsRoutes)

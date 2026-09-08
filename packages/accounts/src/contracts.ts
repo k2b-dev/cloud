@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { UserProfileSchema, UserProviderSchema } from "@valentinkolb/cloud/contracts";
+import { z } from "zod";
 
 export const CreateGroupSchema = z.object({
   provider: UserProviderSchema.default("ipa"),
@@ -38,6 +38,7 @@ export const CreateUserResponseSchema = z.object({
   uid: z.string(),
   accountExpires: z.string().nullable(),
   notificationSent: z.boolean(),
+  creationNotice: z.object({ markdown: z.string().nullable(), failed: z.boolean() }).optional(),
 });
 export type CreateUserResponse = z.infer<typeof CreateUserResponseSchema>;
 
@@ -69,22 +70,22 @@ export const CreateUserSchema = z.discriminatedUnion("provider", [
 ]);
 export type CreateUser = z.infer<typeof CreateUserSchema>;
 
-export {
-  BaseGroupSchema,
-  BaseUserSchema,
-  ErrorResponseSchema,
-  MessageResponseSchema,
-  PaginationQuerySchema,
-  PaginationResponseSchema,
-  SearchQuerySchema,
-  createPagination,
-  hasRole,
-  parsePagination,
-} from "@valentinkolb/cloud/contracts";
 export type {
   BaseGroup,
   BaseUser,
   EntityListItem,
   PaginationResponse,
   User,
+} from "@valentinkolb/cloud/contracts";
+export {
+  BaseGroupSchema,
+  BaseUserSchema,
+  createPagination,
+  ErrorResponseSchema,
+  hasRole,
+  MessageResponseSchema,
+  PaginationQuerySchema,
+  PaginationResponseSchema,
+  parsePagination,
+  SearchQuerySchema,
 } from "@valentinkolb/cloud/contracts";

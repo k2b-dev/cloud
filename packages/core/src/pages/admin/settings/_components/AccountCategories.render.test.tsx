@@ -17,6 +17,10 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Form } = await import("./CoreSettingsForm.island.tsx");
 const { default: AccountCategorySwitch } = await import("../../../auth/AccountCategorySwitch.island.tsx");
+const { default: AccountOperations } = await import("./AccountOperations.island.tsx");
+
+import { accountOperationsMessages } from "./account-operations-messages";
+import { accountSettingsSection } from "./account-settings";
 
 test("login categories use the shared segmented radio control", () => {
   const html = renderToString(() =>
@@ -36,9 +40,9 @@ test("login categories use the shared segmented radio control", () => {
   expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
   expect(html).toContain("Firmenaccount");
 });
-const render = (enabled: boolean, locale = "en") => {
+const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "registration") => {
   const entries: SettingFieldDef[] = Object.entries(CORE_SETTINGS)
-    .filter(([key]) => key.startsWith("user.category.") || key.startsWith("user.app_approval.") || key === "user.allow_self_registration")
+    .filter(([key]) => key.startsWith("user."))
     .map(([key, def]) => ({
       key,
       label: def.label,
@@ -51,18 +55,49 @@ const render = (enabled: boolean, locale = "en") => {
       valueSource: "default",
       resetValueSource: "default",
       group: "user",
+      templateVars: "templateVars" in def ? [...def.templateVars] : undefined,
     }));
   return renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(Form, { title: "Accounts", subtitle: "", icon: "ti ti-users", entries });
+        return createComponent(Form, { title: "Accounts", subtitle: "", icon: "ti ti-users", entries, accountSection });
       },
     }),
   );
 };
 
 describe("account category administration", () => {
+  test("sign-in and registration each render only their owned settings", () => {
+    const login = render(true, "en", "sign-in");
+    const registration = render(true, "en", "registration");
+    expect(login).toContain("Guest accounts allowed");
+    expect(login).not.toContain("user.action_notice");
+    expect(login).not.toContain("user.account_requests.enabled");
+    expect(registration).toContain("user.action_notice");
+    expect(registration).toContain("No notice will be shown for these sample values.");
+    expect(registration).toContain("user.account_requests.enabled");
+    expect(registration).not.toContain("Guest accounts allowed");
+    expect(registration).not.toContain("Authenticator website origin");
+    expect(accountSettingsSection("user.session.max_age")).toBe("sign-in");
+    expect(accountSettingsSection("user.local_guest.expiry_days")).toBe("registration");
+    expect(render(false, "de", "registration")).not.toContain('name="user.allow_self_registration"');
+  });
+  test("operations hide the FreeIPA job when the integration is disabled", () => {
+    const renderOperations = (freeIpaEnabled: boolean) => renderToString(() => createComponent(AccountOperations, { freeIpaEnabled }));
+    expect(renderOperations(false)).not.toContain("FreeIPA account expiry");
+    expect(renderOperations(true)).toContain("FreeIPA account expiry");
+    expect(renderOperations(false)).toContain("Local full account expiry");
+    expect(renderOperations(false)).toContain("/admin/observability/jobs?search=auth%3A");
+    expect(renderOperations(false)).toContain("Account lifecycle logs");
+    expect(renderOperations(false)).not.toContain("FreeIPA sync logs");
+    expect(renderOperations(true)).toContain("FreeIPA sync logs");
+    expect(renderOperations(false)).toContain("may restore their access");
+    expect(renderOperations(false)).toContain("They do not assign Linux identities");
+    expect(renderOperations(false)).toContain('href="/admin/observability/logs?source=auth:local-user:backfill"');
+    expect(renderOperations(false)).toContain('aria-label="Run: Local full account expiry"');
+    expect(accountOperationsMessages.check()).toEqual([]);
+  });
   test("app approval reveals integration settings only when enabled", () => {
     expect(render(false)).toContain("Allow app approval");
     expect(render(false)).not.toContain("Authenticator website origin");

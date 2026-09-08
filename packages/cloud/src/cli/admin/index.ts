@@ -6,6 +6,7 @@
  * shows the same data stay easy to find together.
  */
 import { defineCliCommands } from "../commands";
+import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
 import { aiUsageCommands } from "./ai-usage";
 import { dataCommands } from "./data";
@@ -28,12 +29,14 @@ export default defineCliCommands({
   summary: "Inspect and operate Cloud administration surfaces.",
   groupSummaries: {
     "accounts config": "Manage account types and sign-in visibility.",
+    "accounts administration": "Manage account requests and account/group follow-up notices.",
     legal: "Manage Terms, Privacy, and Imprint.",
     linux: "Prepare Linux identities.",
     "linux config": "Manage Linux identity defaults and allocation range.",
   },
   commands: [
     ...accountCategoryCommands,
+    ...accountAdministrationCommands,
     ...aiUsageCommands,
     ...instanceCommands,
     ...gatewayCommands,

@@ -4,10 +4,10 @@ import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
   Checkbox,
-  CodeDisplay,
   confirmDiscardIfDirty,
   DescriptionList,
   dialogCore,
+  MarkdownView,
   NoticeCard,
   PanelDialog,
   panelDialogOptions,
@@ -337,7 +337,6 @@ export function CreateUserDialog(props: {
 }
 
 const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse, t: AccountsCopy, locale: string, loginLabel: string) => {
-  const nfsCommands = `sudo nfsctl useradd ${data.uid}`;
   const isIpa = payload.provider === "ipa";
   const notificationMessage = data.notificationSent ? (isIpa ? t.ipaWelcomeSent : t.localWelcomeSent) : t.welcomeNotSent;
 
@@ -369,11 +368,13 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
           ]}
         />
 
-        <Show when={isIpa}>
+        <Show when={data.creationNotice?.markdown}>
           <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
-            <p class="text-sm">{t.nfsFollowUpDescription}</p>
-            <CodeDisplay title={t.nfsFollowUp} code={nfsCommands} lineNumbers={false} />
+            <MarkdownView markdown={data.creationNotice?.markdown ?? ""} />
           </NoticeCard>
+        </Show>
+        <Show when={data.creationNotice?.failed}>
+          <NoticeCard tone="warning">{t.creationNoticeFailed}</NoticeCard>
         </Show>
 
         <div class="flex justify-end gap-3">

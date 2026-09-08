@@ -4,6 +4,12 @@ export const settingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      registration: "Registration & requests",
+      registrationDescription: "Self-registration creates Guest accounts. Requests ask for FreeIPA access; these are separate choices.",
+      actionNotice: "Follow-up notices",
+      actionNoticeEmptyPreview: "No notice will be shown for these sample values.",
+      actionNoticeDescription:
+        "Optional Liquid-Markdown after account or group changes. Branch on action (for example user.create or group.delete). Empty output adds no notice. This is not an email and never performs the described work.",
       accountCategories: "Account types and sign-in",
       accountCategoriesDescription:
         "Allowed controls access, including existing sessions and user-bound API credentials. Disabling does not delete accounts or stop FreeIPA sync. Visibility only controls the general login page; hidden, allowed accounts can use direct links. Keep an administrator in an allowed category or an emergency admin token available before disabling your own category.",
@@ -140,9 +146,10 @@ export const settingsMessages = i18n.define({
       operations: "Operations",
       operationsDescription: "Timezone and schedules used by automatic platform jobs.",
       login: "Sign-in",
-      loginDescription: "Session and account creation behavior.",
+      loginDescription: "How long users remain signed in.",
       appApproval: "App approval API",
-      appApprovalDescription: "Technical integration for a separately hosted authenticator. The authenticator and login interface must be connected separately.",
+      appApprovalDescription:
+        "Technical integration for a separately hosted authenticator. The authenticator and login interface must be connected separately.",
       accountExpiry: "Account expiry",
       accountExpiryDescription: "Default lifetimes for IPA, local user, and local guest accounts.",
       remindersRetention: "Reminders and retention",
@@ -194,6 +201,13 @@ export const settingsMessages = i18n.define({
       templatePreview: ({ label }: { label: string }) => `${label} preview`,
     },
     de: {
+      registration: "Registrierung & Anfragen",
+      registrationDescription:
+        "Selbstregistrierung erstellt Guest-Accounts. Anfragen beantragen FreeIPA-Zugang; beides wird getrennt gesteuert.",
+      actionNotice: "Hinweise zur Nacharbeit",
+      actionNoticeEmptyPreview: "Für diese Beispieldaten wird kein Hinweis angezeigt.",
+      actionNoticeDescription:
+        "Optionales Liquid-Markdown nach Account- oder Gruppenänderungen. Mit action unterscheiden, etwa user.create oder group.delete. Leere Ausgabe zeigt keinen Hinweis. Dies ist keine E-Mail und führt die beschriebene Arbeit nicht aus.",
       accountCategories: "Accounttypen und Anmeldung",
       accountCategoriesDescription:
         "Erlaubt steuert den Zugriff, auch für bestehende Sitzungen und benutzergebundene API-Zugänge. Deaktivieren löscht keine Accounts und stoppt nicht den FreeIPA-Sync. Sichtbarkeit betrifft nur die allgemeine Login-Seite; verborgene, erlaubte Accounts können direkte Links nutzen. Halte vor dem Deaktivieren deines eigenen Accounttyps einen anderen erlaubten Admin-Zugang oder den Notfall-Admin-Token bereit.",
@@ -331,9 +345,10 @@ export const settingsMessages = i18n.define({
       operations: "Betrieb",
       operationsDescription: "Zeitzone und Zeitpläne automatischer Plattformaufgaben.",
       login: "Anmeldung",
-      loginDescription: "Sitzungen und Erstellung von Konten.",
+      loginDescription: "Wie lange Nutzer angemeldet bleiben.",
       appApproval: "API für App-Freigaben",
-      appApprovalDescription: "Technische Anbindung einer separat gehosteten Authenticator-App. App und Login-Oberfläche müssen separat angebunden werden.",
+      appApprovalDescription:
+        "Technische Anbindung einer separat gehosteten Authenticator-App. App und Login-Oberfläche müssen separat angebunden werden.",
       accountExpiry: "Ablauf von Konten",
       accountExpiryDescription: "Standardlaufzeiten für IPA-Konten, lokale Konten und Gastkonten.",
       remindersRetention: "Erinnerungen und Aufbewahrung",

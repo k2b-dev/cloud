@@ -8,7 +8,6 @@ import { Layout } from "@valentinkolb/cloud/ssr";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../config";
 import AccountsWorkspace from "./AccountsWorkspace";
-import AdminOperations from "./dashboard/AdminOperations.island";
 
 import { buildGroupsUrl } from "./lib/url-state";
 import { accountsMessages } from "./messages";
@@ -225,11 +224,13 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-2">
                   <span class="text-xs text-dimmed">{t.operations}</span>
-                  <a href="/admin/settings" class="text-xs text-dimmed transition-colors hover:text-primary">
+                  <a href="/admin/settings?tab=user" class="text-xs text-dimmed transition-colors hover:text-primary">
                     {t.settings}
                   </a>
                 </div>
-                <AdminOperations freeIpaEnabled={freeIpaEnabled} />
+                <ButtonLink href="/admin/settings?tab=account-operations" variant="secondary">
+                  {t.operations}
+                </ButtonLink>
               </div>
 
               {/* Activity */}

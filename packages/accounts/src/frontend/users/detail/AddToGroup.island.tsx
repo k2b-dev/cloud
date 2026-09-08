@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { EntitySearch } from "@valentinkolb/cloud/account/ui";
 import { apiClient } from "@/api/client";
+import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
 type AddToGroupProps = {
@@ -25,6 +26,7 @@ export default function AddToGroup(props: AddToGroupProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().addUserFailed);
       }
+      await showAccountActionNotice({ action: "group.member.add", id: groupId, relatedId: props.id }, messages());
     },
     onSuccess: () => refreshCurrentPath(),
     onError: (err) => prompts.error(err.message),

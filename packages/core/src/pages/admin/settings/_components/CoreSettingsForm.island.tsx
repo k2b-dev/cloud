@@ -30,6 +30,7 @@ import {
   panelDialogWideOptions,
   prompts,
   readSettingsError,
+  renderSafeMarkdown,
   Select,
   SettingsPage,
   SettingsPanelFooter,
@@ -55,8 +56,16 @@ import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
 import type { AiModelAccessDraft, AiModelAccessMap } from "@valentinkolb/cloud/ai/admin";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import type { AccessEntry } from "@valentinkolb/cloud/contracts/shared";
-import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "@valentinkolb/cloud/shared";
+import {
+  ACCOUNT_ACTION_NOTICE_SAMPLE,
+  AccountActionNoticeSchema,
+  AI_PLATFORM_PROMPT_TEMPLATE,
+  formatBytes,
+  renderAccountActionNotice,
+  renderLiquidTemplate,
+} from "@valentinkolb/cloud/shared";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
@@ -103,6 +112,7 @@ type Props = {
   subtitle: string;
   icon: string;
   entries: SettingFieldDef[];
+  accountSection?: "sign-in" | "registration";
   showTestEmailAction?: boolean;
   showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
@@ -337,6 +347,7 @@ export default function CoreSettingsForm(props: Props) {
     localizedEntries().filter(
       (entry) =>
         !entry.key.startsWith("user.category.") &&
+        (!props.accountSection || accountSettingsSection(entry.key) === props.accountSection) &&
         (!entry.key.startsWith("user.app_approval.") || entry.key.endsWith(".enabled") || valueOf("user.app_approval.enabled") === true) &&
         (entry.key !== "user.allow_self_registration" || valueOf("user.category.guest.enabled") !== false) &&
         (!isAiSettings() || !AI_SETTINGS_HANDLED_BY_PANEL.has(entry.key)),
@@ -541,7 +552,7 @@ export default function CoreSettingsForm(props: Props) {
         when={isAiSettings()}
         fallback={
           <>
-            <Show when={entryMap()["user.category.guest.enabled"]}>
+            <Show when={props.accountSection !== "registration" && entryMap()["user.category.guest.enabled"]}>
               <NoticeCard tone="info" title={t().accountCategories} detail={t().accountCategoriesDescription} />
               {(["guest", "login", "freeipa"] as const).map((category) => (
                 <SettingsSection
@@ -620,6 +631,8 @@ const sectionDefs = (
     subtitle: t.loginDescription,
     icon: "ti ti-login",
   },
+  "user.registration": { title: t.registration, subtitle: t.registrationDescription, icon: "ti ti-user-plus" },
+  "user.actionNotice": { title: t.actionNotice, subtitle: t.actionNoticeDescription, icon: "ti ti-note" },
   "user.appApproval": {
     title: t.appApproval,
     subtitle: t.appApprovalDescription,
@@ -693,7 +706,10 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
   if (entry.key.startsWith("app.")) return "app.identity";
 
   if (entry.key.startsWith("user.app_approval.")) return "user.appApproval";
-  if (entry.key === "user.allow_self_registration" || entry.key === "user.abbr_length" || entry.key === "user.session.expiry_hours") {
+  if (entry.key === "user.action_notice") return "user.actionNotice";
+  if (entry.key === "user.allow_self_registration" || entry.key === "user.account_requests.enabled" || entry.key === "user.abbr_length")
+    return "user.registration";
+  if (entry.key === "user.session.expiry_hours") {
     return "user.login";
   }
   if (entry.key.includes("_expires_days")) return "user.expiry";
@@ -2356,8 +2372,20 @@ function TemplateSettingInput(props: FieldInputProps) {
   const t = () => settingsMessages.resolve([locale()]).t;
   const currentValue = () => (typeof props.value() === "string" ? (props.value() as string) : "");
   const variables = () => props.entry.templateVars ?? [];
+  const isActionNotice = () => props.entry.key === "user.action_notice";
+  const initialSampleData = (): Record<string, string> =>
+    isActionNotice() ? { ...ACCOUNT_ACTION_NOTICE_SAMPLE } : createTemplateSampleData(variables());
+  const previewHtml = (template: string, data = initialSampleData()) => {
+    if (!isActionNotice()) return renderTemplatePreview(template, variables(), data);
+    try {
+      const markdown = renderAccountActionNotice(template, AccountActionNoticeSchema.parse(data));
+      return buildEmailPreviewHtml(markdown ? renderSafeMarkdown(markdown) : `<p>${escapePreviewText(t().actionNoticeEmptyPreview)}</p>`);
+    } catch (error) {
+      return buildEmailPreviewHtml(`<p>${escapePreviewText(error instanceof Error ? error.message : t().templateHelp)}</p>`);
+    }
+  };
   const templateVariables = (): TemplateVariable[] => variables().map((name) => ({ name, kind: inferTemplateVariableKind(name) }));
-  const preview = () => renderTemplatePreview(currentValue(), variables());
+  const preview = () => previewHtml(currentValue());
 
   const openEditor = async () => {
     const initialValue = currentValue();
@@ -2365,8 +2393,8 @@ function TemplateSettingInput(props: FieldInputProps) {
       (close) => {
         const [draft, setDraft] = createSignal(initialValue);
         const [layout, setLayout] = createSignal(createTemplateEditorPanesLayout());
-        const [sampleData, setSampleData] = createSignal<Record<string, string>>(createTemplateSampleData(variables()));
-        const renderedPreview = createMemo(() => renderTemplatePreview(draft(), variables(), sampleData()));
+        const [sampleData, setSampleData] = createSignal<Record<string, string>>(initialSampleData());
+        const renderedPreview = createMemo(() => previewHtml(draft(), sampleData()));
         const setSampleValue = (name: string, value: string) => {
           setSampleData((current) => ({ ...current, [name]: value }));
         };
@@ -2378,7 +2406,7 @@ function TemplateSettingInput(props: FieldInputProps) {
               <p class="mt-1 text-sm text-secondary">{props.entry.description}</p>
             </div>
 
-            <p class="text-xs text-dimmed">{t().templateHelp}</p>
+            <p class="text-xs text-dimmed">{isActionNotice() ? t().actionNoticeDescription : t().templateHelp}</p>
 
             <div class="h-[min(62vh,46rem)] min-h-[34rem] min-w-0 overflow-hidden rounded-lg bg-zinc-100 p-2 dark:bg-zinc-900">
               <Panes
@@ -2389,7 +2417,7 @@ function TemplateSettingInput(props: FieldInputProps) {
                 items={[
                   {
                     id: "html",
-                    title: "HTML",
+                    title: isActionNotice() ? "Markdown" : "HTML",
                     icon: "ti ti-code",
                     render: () => (
                       <div class="h-full min-h-0 overflow-auto">
@@ -2442,7 +2470,7 @@ function TemplateSettingInput(props: FieldInputProps) {
     <div class="flex flex-col gap-2">
       <div class="grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div class="min-w-0">
-          <p class="text-xs font-medium text-primary">{t().htmlBodyTemplate}</p>
+          <p class="text-xs font-medium text-primary">{isActionNotice() ? t().actionNotice : t().htmlBodyTemplate}</p>
           <p class="mt-1 truncate text-xs text-dimmed">{props.entry.description}</p>
         </div>
         <Button type="button" variant="secondary" size="sm" class="justify-center" onClick={() => void openEditor()}>

@@ -1,8 +1,9 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CodeDisplay, Dropdown, NoticeCard, prompts } from "@k2b/ui";
+import { Dropdown, prompts, toast } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
+import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
 type GroupActionsProps = {
@@ -26,46 +27,9 @@ export default function GroupActions(props: GroupActionsProps) {
       }
     },
     onSuccess: async () => {
-      const g = props.name;
-      const providerLabel = props.provider === "ipa" ? "FreeIPA" : messages().local;
-
-      if (!props.isPosix) {
-        await prompts.alert(messages().groupDeletedFrom({ name: g, provider: providerLabel }), {
-          title: messages().groupDeleted,
-          icon: "ti ti-check",
-        });
-        navigateTo(props.listHref);
-        return;
-      }
-
-      const deleteCmd = `sudo nfsctl groupdel ${g}`;
-
-      prompts.dialog(
-        (close) => (
-          <div class="flex flex-col gap-4">
-            <NoticeCard tone="success" icon={false}>
-              {messages().groupDeletedFrom({ name: g, provider: providerLabel })}
-            </NoticeCard>
-
-            <div class="flex flex-col gap-1">
-              <CodeDisplay title={messages().deleteOrArchiveFiles} code={deleteCmd} lineNumbers={false} />
-            </div>
-
-            <div class="flex justify-end">
-              <Button
-                size="sm"
-                onClick={() => {
-                  close();
-                  navigateTo(props.listHref);
-                }}
-              >
-                {messages().done}
-              </Button>
-            </div>
-          </div>
-        ),
-        { title: messages().groupDeleted, icon: "ti ti-check" },
-      );
+      toast.success(messages().groupDeletedFrom({ name: props.name, provider: props.provider === "ipa" ? "FreeIPA" : messages().local }));
+      await showAccountActionNotice({ action: "group.delete", id: props.id, name: props.name, provider: props.provider }, messages());
+      navigateTo(props.listHref);
     },
     onError: (err) => {
       prompts.error(err.message);
@@ -83,7 +47,10 @@ export default function GroupActions(props: GroupActionsProps) {
         throw new Error(data.success ? data.data.message : messages().updateGroupFailed);
       }
     },
-    onSuccess: () => refreshCurrentPath(),
+    onSuccess: async () => {
+      await showAccountActionNotice({ action: "group.update", id: props.id, name: props.name, provider: props.provider }, messages());
+      refreshCurrentPath();
+    },
     onError: (err) => prompts.error(err.message),
   });
 
@@ -118,8 +85,10 @@ export default function GroupActions(props: GroupActionsProps) {
       const res = await apiClient.groups[":id"].posix.$put({
         param: { id: props.id },
       });
-      if (res.ok) refreshCurrentPath();
-      else prompts.error(messages().posixFailed);
+      if (res.ok) {
+        await showAccountActionNotice({ action: "group.posix", id: props.id, name: props.name, provider: props.provider }, messages());
+        refreshCurrentPath();
+      } else prompts.error(messages().posixFailed);
     }
   };
 

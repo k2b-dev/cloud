@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { accountCategory } from "../../contracts/account-categories";
 import type {
   BaseGroup,
   BaseUser,
@@ -21,18 +22,21 @@ import {
   type Result,
   type ServiceError,
 } from "../../server/services";
+import { renderAccountActionNotice } from "../../shared/account-action-notice";
+import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accountLifecycle } from "../account-lifecycle";
 import { lifecycleJobs } from "../account-lifecycle/scheduler";
 import { type AuditActor, type AuditTarget, audit } from "../audit";
 import { getFreeIpaConfig } from "../freeipa-config";
-import { isAccountCategoryAllowed } from "../account-category-policy";
 import { type LogEntry, logger, logging } from "../logging";
 import { isUniqueViolation } from "../postgres";
 import { providers } from "../providers";
+import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
 import * as entities from "./entities";
 import * as groups from "./groups";
 import type { AccountsNotificationSender } from "./notification-sender";
+import { accountRequestsEnabled } from "./request-policy";
 import * as users from "./users";
 
 type CreateUserInput =
@@ -59,7 +63,13 @@ type CreateUserInput =
 
 type DbRow = Record<string, unknown>;
 type MutationErrorStatus = Extract<MutationResult, { ok: false }>["status"];
-type CreateUserResult = { id: string; uid: string; accountExpires: string | null; notificationSent: boolean };
+type CreateUserResult = {
+  id: string;
+  uid: string;
+  accountExpires: string | null;
+  notificationSent: boolean;
+  creationNotice?: { markdown: string | null; failed: boolean };
+};
 
 export type AccountRequestStatus = "pending" | "completed" | "denied";
 export type AccountRequestScope = "open" | "processed" | "all";
@@ -543,6 +553,24 @@ export const accountsAppService = {
         }
       }
 
+      let creationNotice: { markdown: string | null; failed: boolean } = { markdown: null, failed: false };
+      try {
+        creationNotice.markdown = renderAccountActionNotice(await getSetting<string>("user.action_notice"), {
+          action: "user.create",
+          id: created.user.id,
+          name: created.user.uid,
+          uid: created.user.uid,
+          email: created.user.mail ?? "",
+          firstName: config.data.givenname,
+          lastName: config.data.sn,
+          provider: created.user.provider,
+          profile: created.user.profile,
+          category: accountCategory(created.user),
+        });
+      } catch {
+        creationNotice.failed = true;
+        appLog.warn("Account created, but administrator notice could not be rendered", { userId: created.user.id });
+      }
       return audit.recordResultAfterSideEffect({
         action: "accounts.user.create",
         actor: auditActor(config.actor),
@@ -558,6 +586,7 @@ export const accountsAppService = {
           uid: created.user.uid,
           accountExpires: created.user.accountExpires,
           notificationSent,
+          creationNotice,
         }),
       });
     },
@@ -716,7 +745,12 @@ export const accountsAppService = {
         result,
       });
     },
-    sendLoginLink: async (config: { actor: AccountsActor; id: string; notificationSender: AccountsNotificationSender; locale?: string }) => {
+    sendLoginLink: async (config: {
+      actor: AccountsActor;
+      id: string;
+      notificationSender: AccountsNotificationSender;
+      locale?: string;
+    }) => {
       const target = await users.getMinimal({ id: config.id });
       const adminError = await requireAdminActor<void>({
         actor: config.actor,
@@ -1201,6 +1235,7 @@ export const accountsAppService = {
   },
 
   accountRequest: {
+    isEnabled: accountRequestsEnabled,
     list: async (config: {
       access: { userId: string; isAdmin: boolean };
       pagination?: PageParams;
@@ -1271,6 +1306,14 @@ export const accountsAppService = {
       data: { phone?: string; comment?: string; acceptedAgb: true };
     }) => {
       const actor = { userId: config.user.id, uid: config.user.uid, roles: config.user.roles, provider: config.user.provider };
+      if (!(await accountRequestsEnabled())) {
+        return audit.recordResult({
+          action: "accounts.request.create",
+          actor: auditActor(actor),
+          target: { type: "account_request" },
+          result: fail(err.forbidden("Account requests are disabled")),
+        });
+      }
       if (!(await getFreeIpaConfig()).enabled || !(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) {
         const result = fail(err.badInput("FreeIPA access is disabled"));
         return audit.recordResult({
@@ -1413,7 +1456,13 @@ export const accountsAppService = {
         result,
       });
     },
-    deny: async (config: { id: string; reason?: string; actor: AccountsActor; notificationSender: AccountsNotificationSender; locale?: string }) => {
+    deny: async (config: {
+      id: string;
+      reason?: string;
+      actor: AccountsActor;
+      notificationSender: AccountsNotificationSender;
+      locale?: string;
+    }) => {
       const adminError = await requireAdminActor<void>({
         actor: config.actor,
         action: "accounts.request.deny",

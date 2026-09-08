@@ -1,10 +1,12 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CodeDisplay, DatePicker, NoticeCard, prompts } from "@k2b/ui";
+import { Button, DatePicker, NoticeCard, prompts, toast } from "@k2b/ui";
 import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
+import type { AccountActionNoticeInput } from "@valentinkolb/cloud/shared";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
+import { showAccountActionNotice } from "../../../action-notice";
 import { useAccountsMessages } from "../../../messages";
 import { openCredentialDialog } from "./credential-dialog";
 
@@ -52,6 +54,23 @@ const confirmProviderSwitch = (config: {
 
 export function createUserActions(props: UserActionsProps) {
   const messages = useAccountsMessages();
+  const notice = (action: AccountActionNoticeInput["action"], extra: Partial<AccountActionNoticeInput> = {}) =>
+    showAccountActionNotice(
+      {
+        action,
+        id: props.user.id,
+        uid: props.user.uid,
+        name: props.user.uid,
+        email: props.user.mail ?? "",
+        firstName: props.user.givenname,
+        lastName: props.user.sn,
+        provider: props.user.provider,
+        profile: props.user.profile,
+        category: props.user.provider === "ipa" ? "freeipa" : props.user.profile === "guest" ? "guest" : "login",
+        ...extra,
+      },
+      messages(),
+    );
   const editMutation = mutations.create<
     void,
     {
@@ -73,6 +92,7 @@ export function createUserActions(props: UserActionsProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().updateUserFailed);
       }
+      await notice("user.update", { email: vars.mail ?? props.user.mail ?? "", firstName: vars.givenname, lastName: vars.sn });
     },
     onSuccess: () => refreshCurrentPath(),
     onError: (err) => prompts.error(err.message),
@@ -110,6 +130,7 @@ export function createUserActions(props: UserActionsProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().resetPasswordFailed);
       }
+      await notice("user.password_reset");
       return await res.json();
     },
     onSuccess: (data) =>
@@ -137,9 +158,13 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().deleteUserFailed);
       }
+      await notice("user.delete");
       return data;
     },
-    onSuccess: () => showDestroySuccessDialog(),
+    onSuccess: () => {
+      toast.success(messages().userDeleted);
+      navigateTo(props.listHref);
+    },
     onError: (err) => prompts.error(err.message),
   });
 
@@ -153,10 +178,11 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().setExpiryFailed);
       }
+      await notice("user.expiry");
       return data;
     },
-    onSuccess: (data) => {
-      prompts.alert(data.message);
+    onSuccess: () => {
+      toast.success(messages().updated);
       refreshCurrentPath();
     },
     onError: (err) => prompts.error(err.message),
@@ -172,6 +198,10 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().updateProfileFailed);
       }
+      await notice("user.profile", {
+        profile,
+        category: props.user.provider === "ipa" ? "freeipa" : profile === "guest" ? "guest" : "login",
+      });
       return data;
     },
     onSuccess: () => refreshCurrentPath(),
@@ -188,6 +218,7 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().updateAdminFailed);
       }
+      await notice("user.admin");
       return data;
     },
     onSuccess: () => refreshCurrentPath(),
@@ -204,6 +235,7 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().createIpaFailed);
       }
+      await notice("user.provider", { provider: "ipa", category: "freeipa" });
       return data;
     },
     onSuccess: () => refreshCurrentPath(),
@@ -220,6 +252,7 @@ export function createUserActions(props: UserActionsProps) {
       if (!res.ok) {
         throw new Error(data.message ?? messages().makeLocalFailed);
       }
+      await notice("user.provider", { provider: "local", category: props.user.profile === "guest" ? "guest" : "login" });
       return data;
     },
     onSuccess: () => refreshCurrentPath(),
@@ -235,6 +268,7 @@ export function createUserActions(props: UserActionsProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().createLoginTokenFailed);
       }
+      await notice("user.login_token");
       return await res.json();
     },
     onSuccess: (data) =>
@@ -549,40 +583,6 @@ export function createUserActions(props: UserActionsProps) {
     if (confirmed) {
       destroyMutation.mutate();
     }
-  };
-
-  const showDestroySuccessDialog = () => {
-    const isIpaUser = props.user.provider === "ipa";
-    const nfsCommand = `sudo nfsctl userdel ${props.user.uid}`;
-
-    prompts.dialog<void>(
-      (close) => (
-        <div class="flex flex-col gap-4">
-          <NoticeCard tone="success" icon={false}>
-            {messages().userDeletedBody}
-          </NoticeCard>
-
-          {isIpaUser && (
-            <div class="flex flex-col gap-1">
-              <CodeDisplay title={messages().nfsFollowUpDescription} code={nfsCommand} lineNumbers={false} />
-            </div>
-          )}
-
-          <div class="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => {
-                close();
-                navigateTo(props.listHref);
-              }}
-            >
-              {messages().backToUsers}
-            </Button>
-          </div>
-        </div>
-      ),
-      { title: messages().userDeleted, icon: "ti ti-check" },
-    );
   };
 
   const isIpaUser = props.user.provider === "ipa";

@@ -3,19 +3,19 @@ import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
   Checkbox,
-  CodeDisplay,
   confirmDiscardIfDirty,
   dialogCore,
   NoticeCard,
   PanelDialog,
   panelDialogOptions,
-  prompts,
   Select,
   TextInput,
+  toast,
 } from "@k2b/ui";
 import { createSignal, createUniqueId, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BaseGroup, BaseGroupSchema, ErrorResponseSchema } from "@/contracts";
+import { showAccountActionNotice } from "../action-notice";
 import { useAccountsMessages } from "../messages";
 
 type ProviderChoice = "ipa" | "local";
@@ -25,7 +25,7 @@ const normalizeName = (value: string) =>
     .replace(/[_ ]/g, "-")
     .replace(/[^a-z0-9-]/g, "");
 type CreateGroupPayload = { provider: ProviderChoice; name: string; description?: string; posix?: boolean };
-type CreateGroupResult = { group: BaseGroup; command?: string };
+type CreateGroupResult = { group: BaseGroup };
 
 export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (result?: CreateGroupResult) => void }) {
   const messages = useAccountsMessages();
@@ -45,7 +45,7 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; close: (resu
         throw new Error(data.success ? data.data.message : messages().createGroupFailed);
       }
       const group = BaseGroupSchema.parse(await res.json());
-      return { group, command: group.gidnumber ? `sudo nfsctl groupadd ${group.name}` : undefined };
+      return { group };
     },
     onSuccess: (result) => props.close(result),
   });
@@ -172,41 +172,10 @@ export default function NewGroup(props: { freeIpaEnabled?: boolean }) {
   const messages = useAccountsMessages();
   const [opening, setOpening] = createSignal(false);
   const showResult = async (result: CreateGroupResult) => {
-    if (!result) return;
-
-    if (!result.command) {
-      await prompts.success(messages().groupCreatedMessage({ name: result.group.name }), {
-        title: messages().groupCreated,
-        icon: "ti ti-check",
-      });
-      refreshCurrentPath();
-      return;
-    }
-
-    const command = result.command;
-    await prompts.dialog<void>(
-      (close) => (
-        <div class="flex flex-col gap-4">
-          <NoticeCard tone="success" icon={false}>
-            {messages().freeIpaGroupCreatedMessage({ name: result.group.name })}
-          </NoticeCard>
-          <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
-            <p class="text-sm">{messages().runOnNfsServer}</p>
-            <CodeDisplay title={messages().nfsFollowUp} code={command} lineNumbers={false} />
-          </NoticeCard>
-          <div class="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => {
-                close();
-              }}
-            >
-              {messages().done}
-            </Button>
-          </div>
-        </div>
-      ),
-      { title: messages().groupCreated, icon: "ti ti-check", size: "large" },
+    toast.success(messages().groupCreatedMessage({ name: result.group.name }));
+    await showAccountActionNotice(
+      { action: "group.create", id: result.group.id, name: result.group.name, provider: result.group.provider },
+      messages(),
     );
     refreshCurrentPath();
   };

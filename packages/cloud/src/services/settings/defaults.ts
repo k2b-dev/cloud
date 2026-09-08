@@ -9,8 +9,9 @@
  * keep a single source of truth (browser-safe types live there).
  */
 
-import type { SettingKind, SettingOption } from "../../contracts/shared";
 import type { AppSettingPresentationTranslation } from "../../contracts/settings-types";
+import type { SettingKind, SettingOption } from "../../contracts/shared";
+import { ACCOUNT_ACTION_NOTICE_SAMPLE, renderAccountActionNotice } from "../../shared/account-action-notice";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../../shared/locale";
 import { migrateLegacyMustacheTemplate, validateLiquidTemplate } from "../../shared/template-rendering";
 import { CORE_SETTINGS } from "./core-settings";
@@ -101,8 +102,7 @@ const compilePresentation = (value: unknown, baseLocale: string, key: string): S
 
 export const toLegacySettingDefs = (settings: Record<string, unknown>, requestedBaseLocale = "en"): SettingDef[] => {
   const baseLocale = normalizeLocale(requestedBaseLocale);
-  return (
-  Object.entries(settings).map(([key, def]) => {
+  return Object.entries(settings).map(([key, def]) => {
     const d = def as Record<string, unknown>;
     return {
       key,
@@ -122,8 +122,7 @@ export const toLegacySettingDefs = (settings: Record<string, unknown>, requested
       min: d.min as number | undefined,
       max: d.max as number | undefined,
     } as SettingDef;
-  })
-  );
+  });
 };
 
 export const resolveSettingPresentation = (
@@ -314,6 +313,13 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
       if (typeof value !== "string") return { ok: false, error: `${getSettingLabel(def)} must be text` };
       const migrated = migrateLegacyMustacheTemplate(value);
       const valid = validateLiquidTemplate(migrated);
+      if (valid.ok && def.key === "user.action_notice") {
+        try {
+          renderAccountActionNotice(migrated, ACCOUNT_ACTION_NOTICE_SAMPLE);
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : "Invalid account action notice" };
+        }
+      }
       return valid.ok ? { ok: true, value: migrated } : { ok: false, error: `${getSettingLabel(def)} ${valid.error}` };
     }
     default:

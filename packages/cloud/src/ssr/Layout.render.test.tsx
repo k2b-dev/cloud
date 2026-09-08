@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: Layout } = await import("./Layout");
 const { default: MinimalLayout } = await import("./MinimalLayout");
+const { default: AdminLayout } = await import("./AdminLayout");
 
 const app = defineApp({
   id: "layout-render-probe",
@@ -34,6 +35,18 @@ const server = new Hono()
     c.set("runtime" as never, { apps: [] } as never);
     await next();
   })
+  .get(
+    "/admin",
+    ...app.ssr(
+      (c) => () =>
+        createComponent(AdminLayout, {
+          c,
+          title: "Settings",
+          scroll: c.req.query("scroll") !== "false",
+          children: "Admin content",
+        }),
+    ),
+  )
   .get(
     "/layout",
     ...app.ssr(
@@ -61,6 +74,18 @@ const server = new Hono()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("admin shell is viewport-bound and delegates scrolling only when requested", async () => {
+    const ordinary = await (await server.request("/admin")).text();
+    const bounded = await (await server.request("/admin?scroll=false")).text();
+    for (const html of [ordinary, bounded]) {
+      expect(html).toContain("h-dvh overflow-hidden");
+      expect(html).toContain("Admin content");
+      expect(html).toContain('data-scroll-preserve="admin-sidebar"');
+    }
+    expect(ordinary).not.toMatch(/k2b-app-workspace__main[^>]+data-scroll="false"/);
+    expect(bounded).toMatch(/k2b-app-workspace__main[^>]+data-scroll="false"/);
+    expect(bounded).not.toContain("p-[var(--ui-space-shell)]");
+  });
   test("keeps anonymous login and preferences visible without rendering the application rail", async () => {
     const response = await server.request("/layout", {
       headers: { Cookie: "theme=dark", "Accept-Language": "de-CH" },

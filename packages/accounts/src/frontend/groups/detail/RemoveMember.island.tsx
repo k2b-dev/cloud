@@ -2,6 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, RemoveButton } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
 type RemoveMemberProps = {
@@ -31,6 +32,14 @@ export default function RemoveMember(props: RemoveMemberProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().removeFailed);
       }
+      await showAccountActionNotice(
+        {
+          action: props.membershipRole === "members" ? "group.member.remove" : "group.manager.remove",
+          id: props.groupId,
+          relatedId: props.id,
+        },
+        messages(),
+      );
     },
     onSuccess: () => {
       refreshCurrentPath();

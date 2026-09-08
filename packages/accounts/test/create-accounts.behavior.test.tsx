@@ -202,38 +202,44 @@ describe("Accounts creation forms", () => {
     expect(requests).toHaveLength(0);
   });
 
-  test("successful auto-open creation returns to the user list instead of reopening the form", async () => {
-    const dom = createDomTestHarness();
-    dom.window.location.href = "http://localhost/app/accounts/users/new";
-    const { default: CreateUserForm } = await import("../src/frontend/users/new/CreateUserForm.island");
-    const { dialogCore } = await import("@k2b/ui");
-    const dispose = render(
-      () => createComponent(CreateUserForm, { categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY, freeIpaEnabled: false, autoOpen: true }),
-      dom.root,
-    );
-    cleanup = () => {
-      dialogCore.close();
-      dispose();
-      dom.cleanup();
-    };
-    await flush();
-    input(dom.document, 'input[autocomplete="given-name"]', "Ada");
-    input(dom.document, 'input[autocomplete="family-name"]', "Lovelace");
-    input(dom.document, 'input[type="email"]', "ada@example.com");
-    expect(dom.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
-    button(dom.document, "Choose an account type").click();
-    await flush();
-    button(dom.document, "Login").click();
-    await flush();
-    submit(dom.document);
-    await flush();
-    requests[0]!.resolve(Response.json({ id: "user-1", uid: "ada", accountExpires: null, notificationSent: true }));
-    await flush();
-    button(dom.document, "Close").click();
-    await flush();
-    expect(dom.window.location.pathname).toBe("/app/accounts/users");
-    expect(dom.document.querySelector("form")).toBeNull();
-  });
+  for (const creationNotice of [undefined, { markdown: "Review workstation setup.", failed: false }, { markdown: null, failed: true }]) {
+    test(`successful creation keeps its result with notice ${creationNotice ? (creationNotice.failed ? "failure" : "content") : "disabled"}`, async () => {
+      const dom = createDomTestHarness();
+      dom.window.location.href = "http://localhost/app/accounts/users/new";
+      const { default: CreateUserForm } = await import("../src/frontend/users/new/CreateUserForm.island");
+      const { dialogCore } = await import("@k2b/ui");
+      const dispose = render(
+        () => createComponent(CreateUserForm, { categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY, freeIpaEnabled: false, autoOpen: true }),
+        dom.root,
+      );
+      cleanup = () => {
+        dialogCore.close();
+        dispose();
+        dom.cleanup();
+      };
+      await flush();
+      input(dom.document, 'input[autocomplete="given-name"]', "Ada");
+      input(dom.document, 'input[autocomplete="family-name"]', "Lovelace");
+      input(dom.document, 'input[type="email"]', "ada@example.com");
+      expect(dom.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+      button(dom.document, "Choose an account type").click();
+      await flush();
+      button(dom.document, "Login").click();
+      await flush();
+      submit(dom.document);
+      await flush();
+      requests[0]!.resolve(Response.json({ id: "user-1", uid: "ada", accountExpires: null, notificationSent: true, creationNotice }));
+      await flush();
+      expect(dom.document.body.textContent).not.toContain("nfsctl");
+      if (creationNotice?.markdown) expect(dom.document.body.textContent).toContain("Review workstation setup.");
+      else expect(dom.document.body.textContent).not.toContain("Review workstation setup.");
+      if (creationNotice?.failed) expect(dom.document.body.textContent).toContain("The change succeeded.");
+      button(dom.document, "Close").click();
+      await flush();
+      expect(dom.window.location.pathname).toBe("/app/accounts/users");
+      expect(dom.document.querySelector("form")).toBeNull();
+    });
+  }
 
   test("request prefill keeps FreeIPA ownership and its request ID", async () => {
     const dom = createDomTestHarness();

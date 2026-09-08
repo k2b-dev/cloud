@@ -14,6 +14,7 @@ import WithdrawAccountRequest from "./WithdrawAccountRequest.island";
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
   const categoryPolicy = await readAccountCategoryPolicy();
+  const requestsEnabled = await accountsAppService.accountRequest.isEnabled();
   const locale = getLocale(c);
   const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
@@ -68,7 +69,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </section>
 
-          {user.provider === "local" && ((freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest) && (
+          {user.provider === "local" && ((requestsEnabled && freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest) && (
             <section class="paper p-5 sm:p-6">
               <div class="mb-4">
                 <h3 class="text-sm font-semibold text-primary">{t.freeIpaAccount}</h3>

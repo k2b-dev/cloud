@@ -18,7 +18,7 @@ Die Core-Administrationsseiten konfigurieren Plattformdienste und verlinken die 
 
 ## Einstellungsgruppen {icon="settings"}
 
-Unter **Accounts & Anmeldung** konfigurierst du **Guest**, passwortlose lokale
+Unter **Accounts & Anmeldung → Anmeldung** konfigurierst du **Guest**, passwortlose lokale
 **Login**-Accounts und **FreeIPA** getrennt. Login lässt sich etwa in
 **Firmenaccount** umbenennen. **Erlauben** steuert den Zugriff; **Im Login
 anzeigen** nur die allgemeine Login-Seite. Verborgene, erlaubte Accounts können
@@ -34,8 +34,11 @@ bereit. Die Notfallwiederherstellung erlaubt nach ausdrücklicher Bestätigung
 wieder alle lokalen Login-Accounts; die Login-Sichtbarkeit bleibt unverändert.
 
 :::reference
-- **Allgemein und Accounts & Anmeldung:** Branding, öffentliche Links, Zeitpläne, Vorgaben, Anmeldeverhalten, Ablauf, Erinnerungen und Selbstverwaltung.
-- **Linux-Zugang:** Reserviere einen ID-Bereich und lege Home- und Shell-Standardwerte fest. Bei aktivierter Vergabe erhalten neue lokale Vollaccounts und hochgestufte Gäste ihre Linux-Attribute automatisch. Nutze **Backfill bestehender Accounts** für ältere Vollaccounts; das Aktivieren ändert sie nicht. Deaktivieren blendet die Backfill-Tabelle aus und erhält bestehende Identitäten in Accounts. Dies aktiviert weder Rechneranmeldung noch sudo.
+- **Allgemein:** Branding, öffentliche Links und globale Zeitpläne.
+- **Registrierung & Anfragen:** Gast-Selbstregistrierung, FreeIPA-Zugangsanfragen, Account-Vorgaben, Ablauf und Erinnerungen. Bei Neuinstallationen müssen Anfragen ausdrücklich aktiviert werden; Upgrades erhalten das bisherige Verhalten. Deaktivieren neuer Anfragen lässt bestehende Anfragen zur Bearbeitung verfügbar.
+- **Hinweise zur Nacharbeit:** Unter Registrierung & Anfragen kannst du eine optionale Liquid-Markdown-Vorlage für Hinweise nach erfolgreichen Benutzer- und Gruppenänderungen hinterlegen. Wähle passende Aktionen über `action` und prüfe die Vorschau mit Beispieldaten. Leere Ausgabe zeigt keinen Hinweis. Die Hinweise richten sich an die ausführende Person, nicht als Nachricht an den betroffenen Nutzer. NFS-Anweisungen sind nicht mehr fest eingebaut.
+- **Betrieb:** Öffne gefilterte Lifecycle- und FreeIPA-Sync-Protokolle oder geplante Aufträge. Die Nachpflege ändert Ablaufdaten, keine Linux-Identitäten, und kann den Zugang abgelaufener Accounts wiederherstellen. Ein Toast bestätigt die Beauftragung; den Abschluss prüfst du in den Protokollen. Einzelne Datensätze und Anfragen bleiben in Accounts.
+- **Linux-Identitäten:** Reserviere einen ID-Bereich und lege Home- und Shell-Standardwerte fest. Bei aktivierter Vergabe erhalten neue lokale Vollaccounts und hochgestufte Gäste ihre Linux-Attribute automatisch. Nutze **Backfill bestehender Accounts** für ältere Vollaccounts; das Aktivieren ändert sie nicht. Deaktivieren blendet die Backfill-Tabelle aus und erhält bestehende Identitäten in Accounts. Dies aktiviert weder Rechneranmeldung noch sudo.
 - **FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
 - **AI:** Konfiguriere Modellprofile und Anbieterzugangsdaten, prüfe Hintergrundarbeit und nutze **Skills** oder **Projects**, um den Zugriff wiederherzustellen, wenn eine gemeinsam genutzte Ressource keine Person mit Administratorrechten mehr hat. Diese Wiederherstellungsseiten können Berechtigungen vergeben oder nicht mehr benötigte Ressourcen dauerhaft löschen, einschließlich der ursprünglich von Cloud bereitgestellten Skills.
 - **Mail und PDF-Rendering:** Konfiguriere SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung, Zugangsdaten und Rendergrenzen.

@@ -7,6 +7,7 @@
  */
 import { sql } from "bun";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { listAiCredentialProfileIds, pruneAiCredentials, setAiCredential, splitAiProfileCredentials } from "../ai/credentials";
@@ -19,7 +20,7 @@ import {
   splitAiModelAccess,
 } from "../ai/model-access";
 import { parseAiModelProfiles, planAiProfileCredentials, validateAiSettingsConfiguration } from "../ai/settings";
-import { type AuthContext, auth, v } from "../server";
+import { type AuthContext, auth, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
@@ -184,6 +185,26 @@ const liveSettingKeys = async () => (await listApps()).flatMap((app) => [...(app
 
 const app = new Hono<AuthContext>()
   .get("/account-categories", auth.requireRole("admin"), async (c) => c.json(await readAccountCategoryPolicy()))
+  .get(
+    "/account-administration",
+    auth.requireRole("admin"),
+    describeRoute({
+      tags: ["Administration"],
+      summary: "Read account-request policy and follow-up notice configuration",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(z.object({ requestsEnabled: z.boolean(), actionNotice: z.string() }), "Current account administration options"),
+      },
+    }),
+    async (c) => {
+      const [requestsEnabled, actionNotice] = await Promise.all([
+        settings.get<boolean>("user.account_requests.enabled"),
+        settings.get<string>("user.action_notice"),
+      ]);
+      c.header("Cache-Control", "no-store");
+      return c.json({ requestsEnabled, actionNotice });
+    },
+  )
   .get("/legal", auth.requireRole("admin"), async (c) => {
     const items = await Promise.all(
       LEGAL_DOCUMENTS.map(async ({ kind, path }) => {

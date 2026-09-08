@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { EntitySearch } from "@valentinkolb/cloud/account/ui";
 import { apiClient } from "@/api/client";
+import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 
 type AddMemberProps = {
@@ -32,6 +33,15 @@ export default function AddMember(props: AddMemberProps) {
         const data = await res.json();
         throw new Error(data.message ?? (props.membershipRole === "members" ? messages().addMemberFailed : messages().addManagerFailed));
       }
+      await showAccountActionNotice(
+        {
+          action: props.membershipRole === "members" ? "group.member.add" : "group.manager.add",
+          id: props.groupId,
+          provider: props.groupProvider,
+          relatedId: vars.id,
+        },
+        messages(),
+      );
     },
     onSuccess: () => refreshCurrentPath(),
     onError: (err) => prompts.error(err.message),

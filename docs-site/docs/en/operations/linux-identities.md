@@ -11,7 +11,7 @@ updated: 2026-09-08
 # Assign Linux identities
 
 Administrators configure local Linux identity assignment in **Administration →
-Settings → Linux access**. Individual identities and group IDs appear in
+Accounts & sign-in → Linux identities**. Individual identities and group IDs appear in
 **Accounts**. FreeIPA remains the authority for its own identities.
 
 This feature assigns identity data only. It does not enable computer login,

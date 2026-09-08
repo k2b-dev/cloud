@@ -16,17 +16,30 @@ const deOptions: Partial<Record<string, Record<string, string>>> = {
 };
 
 const de: Record<string, SettingCopy> = {
+  "user.account_requests.enabled": {
+    label: "Account-Anfragen erlauben",
+    description:
+      "Lokale Accounts dürfen FreeIPA-Zugang beantragen. FreeIPA-Zugang muss erlaubt sein. Bestehende Anfragen bleiben nach dem Deaktivieren bearbeitbar.",
+  },
+  "user.action_notice": {
+    label: "Hinweis nach Account- oder Gruppenänderungen",
+    description:
+      "Optionale Liquid-Markdown-Vorlage für die ausführende Person, keine Benutzerbenachrichtigung. Nach action unterscheiden, etwa user.create oder group.delete. Leere Ausgabe zeigt keinen Hinweis. Nur der dokumentierte Kontext ohne Zugangsdaten ist verfügbar.",
+  },
   "user.app_approval.enabled": {
     label: "App-Freigabe erlauben",
-    description: "API für Gerätekopplung und App-Freigaben aktivieren. Benötigt eine ausdrücklich konfigurierte Authenticator-Origin. Aktiviert keinen Linux-Login.",
+    description:
+      "API für Gerätekopplung und App-Freigaben aktivieren. Benötigt eine ausdrücklich konfigurierte Authenticator-Origin. Aktiviert keinen Linux-Login.",
   },
   "user.app_approval.origin": {
     label: "Origin der Authenticator-Website",
-    description: "Vertrauenswürdige HTTPS-Origin der separat gehosteten App, ohne Pfad. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
+    description:
+      "Vertrauenswürdige HTTPS-Origin der separat gehosteten App, ohne Pfad. Bei einem Wechsel bestehende Geräte prüfen und bei Bedarf widerrufen. Keine Wildcards.",
   },
   "user.app_approval.admin_pairing": {
     label: "Administratoren dürfen bei der Kopplung helfen",
-    description: "Frisch angemeldete Administratoren dürfen Geräte für andere Accounts koppeln. Die Kopplung verlangt eine ausdrückliche Bestätigung und wird protokolliert.",
+    description:
+      "Frisch angemeldete Administratoren dürfen Geräte für andere Accounts koppeln. Die Kopplung verlangt eine ausdrückliche Bestätigung und wird protokolliert.",
   },
   "user.category.guest.enabled": {
     label: "Guest-Accounts erlauben",

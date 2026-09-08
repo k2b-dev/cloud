@@ -1,3 +1,4 @@
+import { SettingsPage } from "@k2b/ui";
 import {
   type AiEnrichmentOverview,
   type AiProjectAdminListItem,
@@ -11,24 +12,25 @@ import {
 } from "@valentinkolb/cloud/ai";
 import {
   AI_BACKGROUND_TASK_PROMPTS,
-  aiModelAccess,
   type AiModelAccessMap,
   type AiUsageReport,
+  aiModelAccess,
   aiUsage,
 } from "@valentinkolb/cloud/ai/admin";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
+import { coreSettings, linuxIdentities, settingsService } from "@valentinkolb/cloud/services";
 import { AiUsageQuerySchema } from "@valentinkolb/cloud/shared";
-import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
-import { settingsService, linuxIdentities } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
+import { z } from "zod";
 import { ssr } from "../../../config";
+import { adminMessages } from "../messages";
+import AccountOperations from "./_components/AccountOperations.island";
 import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
 import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
 import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
-import { adminMessages } from "../messages";
 import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
-import { z } from "zod";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
@@ -56,6 +58,14 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       group: "freeipa" as const,
     },
     { id: "linux", title: t.linuxAccess, description: t.linuxAccessDescription, icon: "ti ti-terminal-2", group: null },
+    {
+      id: "registration",
+      title: t.accountRegistration,
+      description: t.accountRegistrationDescription,
+      icon: "ti ti-user-plus",
+      group: "user" as const,
+    },
+    { id: "account-operations", title: t.accountOperations, description: t.accountOperationsDescription, icon: "ti ti-tool", group: null },
     {
       id: "ai-general",
       title: t.aiGeneral,
@@ -190,6 +200,7 @@ export default ssr<AuthContext>(async (c) => {
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
   const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";
   const tab = availableTabs.find((item) => item.id === tabId)!;
+  const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 
   const aiSection =
@@ -200,7 +211,8 @@ export default ssr<AuthContext>(async (c) => {
   const linuxAfter = linuxCursor.success ? linuxCursor.data : null;
   const linuxSearch = (c.req.query("search") ?? "").trim();
   const linuxScope = c.req.query("scope") === "all" ? "all" : "ready";
-  const linuxOverview = tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter, { search: linuxSearch, scope: linuxScope }) : null;
+  const linuxOverview =
+    tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter, { search: linuxSearch, scope: linuxScope }) : null;
   let legalInitial: LegalInitial | null = null;
   let aiEnrichmentOverview: AiEnrichmentOverview | null = null;
   // Which profiles have a stored provider key. The keys themselves never leave
@@ -259,15 +271,24 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   return () => (
-    <AdminLayout c={c} title={tab.title}>
-      <div class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"} style="view-transition-name: admin-settings-content">
+    <AdminLayout c={c} title={tab.title} scroll={tab.id === "ai-usage"}>
+      <div
+        class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"}
+        style="view-transition-name: admin-settings-content"
+      >
         {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} search={linuxSearch} scope={linuxScope} /> : null}
+        {tab.id === "account-operations" ? (
+          <SettingsPage title={tab.title} subtitle={tab.description} icon={tab.icon}>
+            <AccountOperations freeIpaEnabled={operationsFreeIpaEnabled} />
+          </SettingsPage>
+        ) : null}
         {tab.group ? (
           <CoreSettingsForm
             title={tab.title}
             subtitle={tab.description}
             icon={tab.icon}
             entries={entries}
+            accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
             showTestEmailAction={tab.id === "mail"}
             showTestPdfAction={tab.id === "pdf-rendering"}
             showTestFreeIpaAction={tab.id === "freeipa"}

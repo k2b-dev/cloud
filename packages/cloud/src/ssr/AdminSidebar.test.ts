@@ -38,7 +38,7 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "Operations", "AI", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Operations", "Accounts & sign-in", "AI", "Settings"]);
     expect(groups[1]?.links).toEqual([{ href: "/admin/example/jobs", icon: "ti-activity", label: "Jobs" }]);
     expect(groups.find((group) => group.label === "AI")?.links).toContainEqual({
       href: "/admin/settings?tab=ai-projects",
@@ -51,7 +51,7 @@ describe("buildAdminGroups", () => {
     const groups = buildAdminGroups([app({ adminHref: "/admin/example" })]);
 
     expect(groups.at(-1)).toEqual({
-      label: "App Admin",
+      label: "App administration",
       links: [{ href: "/admin/example", icon: "ti-box", label: "Example" }],
     });
   });
@@ -72,7 +72,21 @@ describe("buildAdminGroups", () => {
       }),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["General", "AI", "Settings"]);
+    expect(groups.map((group) => group.label)).toEqual(["General", "Accounts & sign-in", "AI", "Settings"]);
+  });
+  it("groups global account controls once and preserves existing links", () => {
+    const groups = buildAdminGroups([]);
+    const accounts = groups.find((group) => group.label === "Accounts & sign-in")!;
+    expect(accounts.links.map((link) => link.href)).toEqual(
+      ["user", "registration", "linux", "account-operations", "freeipa"].map((tab) => `/admin/settings?tab=${tab}`),
+    );
+    const all = groups.flatMap((group) => group.links.map((link) => link.href));
+    expect(new Set(all).size).toBe(all.length);
+    expect(
+      buildAdminGroups([], "de")
+        .find((group) => group.label === "Accounts & Anmeldung")
+        ?.links.map((link) => link.label),
+    ).toEqual(["Anmeldung", "Registrierung & Anfragen", "Linux-Identitäten", "Betrieb", "FreeIPA"]);
   });
 });
 

@@ -13,7 +13,7 @@ The account area combines local Cloud data, optional FreeIPA data, and self-serv
 :::reference
 - **Identity:** Shows display name, uid, avatar, provider, profile type, supplemental roles, email, phone, address, account expiry, and password expiry when available.
 - **Groups:** Shows direct group membership by default. **Show inherited** includes memberships inherited through the group hierarchy.
-- **FreeIPA request:** Local users can request a FreeIPA account when FreeIPA is enabled. Pending requests can be withdrawn from the same page.
+- **FreeIPA request:** Local users can request FreeIPA access when account requests, the FreeIPA connection and FreeIPA account access are enabled. Pending requests can still be withdrawn when new requests are disabled.
 - **Activity:** Shows recent security-relevant account activity for the selected 7-, 30-, or 90-day period.
 :::
 

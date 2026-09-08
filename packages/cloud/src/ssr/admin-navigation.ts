@@ -14,9 +14,6 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
   const t = platformMessages.resolve([locale]).t;
   const settingsLinks: AdminLink[] = [
     { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
-    { href: "/admin/settings?tab=user", icon: "ti-users", label: t.userManagement },
-    { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
-    { href: "/admin/settings?tab=linux", icon: "ti-terminal-2", label: t.linuxAccess },
     { href: "/admin/settings?tab=mail", icon: "ti-mail", label: "Mail" },
     { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
@@ -64,6 +61,16 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
       ],
     },
     ...contributedApps.flatMap(({ groups }) => groups),
+    {
+      label: t.userManagement,
+      links: [
+        { href: "/admin/settings?tab=user", icon: "ti-login", label: t.accountSignIn },
+        { href: "/admin/settings?tab=registration", icon: "ti-user-plus", label: t.accountRegistration },
+        { href: "/admin/settings?tab=linux", icon: "ti-terminal-2", label: t.linuxAccess },
+        { href: "/admin/settings?tab=account-operations", icon: "ti-tool", label: t.accountOperations },
+        { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
+      ],
+    },
     { label: t.ai, links: aiLinks },
     { label: t.settings, links: settingsLinks },
     ...(appLinks.length > 0 ? [{ label: t.appAdmin, links: appLinks }] : []),

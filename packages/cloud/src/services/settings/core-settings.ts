@@ -45,13 +45,24 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 
 export const CORE_SETTINGS = {
   "user.app_approval.enabled": {
-    kind: "boolean", label: "Allow app approval", description: "Enable the device pairing and app approval API. Requires an explicit authenticator origin. Does not enable Linux login.", default: false,
+    kind: "boolean",
+    label: "Allow app approval",
+    description: "Enable the device pairing and app approval API. Requires an explicit authenticator origin. Does not enable Linux login.",
+    default: false,
   },
   "user.app_approval.origin": {
-    kind: "string", label: "Authenticator website origin", description: "Trusted HTTPS origin of the separately hosted authenticator. Changing this origin requires reviewing every existing device; never use a wildcard.", default: "",
+    kind: "string",
+    label: "Authenticator website origin",
+    description:
+      "Trusted HTTPS origin of the separately hosted authenticator. Changing this origin requires reviewing every existing device; never use a wildcard.",
+    default: "",
   },
   "user.app_approval.admin_pairing": {
-    kind: "boolean", label: "Allow administrator-assisted pairing", description: "Allow recently authenticated administrators to enroll a device for another account, with explicit confirmation and audit.", default: false,
+    kind: "boolean",
+    label: "Allow administrator-assisted pairing",
+    description:
+      "Allow recently authenticated administrators to enroll a device for another account, with explicit confirmation and audit.",
+    default: false,
   },
   "user.category.guest.enabled": {
     kind: "boolean",
@@ -470,6 +481,21 @@ export const CORE_SETTINGS = {
   },
 
   // ── User ────────────────────────────────────────────────────────────────
+  "user.account_requests.enabled": {
+    kind: "boolean",
+    label: "Allow account requests",
+    default: false,
+    description:
+      "Allow local accounts to request FreeIPA access. Requires enabled FreeIPA access. Existing requests remain available for processing when disabled.",
+  },
+  "user.action_notice": {
+    kind: "template",
+    label: "Notice after account or group changes",
+    default: "",
+    templateVars: ["action", "id", "uid", "name", "email", "provider", "profile", "category", "firstName", "lastName", "relatedId"],
+    description:
+      "Optional Liquid-Markdown follow-up for the person changing an account or group, not a user notification. Branch on action, for example user.create or group.delete. Empty output shows no notice. Only the documented non-secret context is available.",
+  },
   "user.allow_self_registration": {
     kind: "boolean",
     label: "Allow Self-Registration",

@@ -10,9 +10,26 @@ updated: 2026-09-08
 
 # Configure account types and sign-in
 
-Open **Administration → Settings → Accounts & sign-in** to choose which
+Open **Administration → Accounts & sign-in → Sign-in** to choose which
 account types are allowed and which appear on the general login page.
 Individual accounts and groups remain in **Accounts**.
+
+The other pages in this group have separate responsibilities:
+
+- **Registration & requests:** Guest self-registration, FreeIPA access requests,
+  account defaults, expiry, reminders and optional follow-up notices.
+- **Linux identities:** Local UID/GID assignment, home and shell defaults, and
+  backfill for existing accounts. This does not enable computer login.
+- **Operations:** Open filtered account-lifecycle logs, FreeIPA sync logs and
+  scheduled jobs. Explicit maintenance actions repair account expiry dates;
+  they do not assign Linux identities. They can extend expired accounts and
+  restore access. A toast confirms that a job was queued, not completed;
+  use its permanent log link to check the result. These actions no longer live
+  on the Accounts dashboard.
+- **FreeIPA:** Connection, synchronization and group mapping.
+
+Existing Sign-in, FreeIPA and Linux settings URLs remain valid. Settings keys,
+permission checks, job execution and lifecycle history are unchanged.
 
 | Account type | Accounts included | Sign-in today |
 | --- | --- | --- |
@@ -107,6 +124,93 @@ GUI and CLI use the same atomic settings save. The stored keys are
 The CLI requires `--yes` because a change can remove the caller's access.
 It reports a committed save without another authenticated request.
 In the development checkout, use `bun run dev:cld -- admin accounts config get --json`.
+
+## Allow FreeIPA account requests
+
+Under **Registration & requests**, turn on **Allow account requests** to let
+existing local users request FreeIPA access from **My account → Access**.
+The FreeIPA connection and FreeIPA account access must also be enabled.
+This is separate from Guest self-registration and login-page visibility.
+
+New installations default to off. A one-time upgrade migration preserves the
+previously enabled request feature on existing installations without replacing
+an explicit setting. After that migration, resetting the setting returns to
+the off default; restarting does not enable it again.
+
+Turning it off hides the new-request form and rejects new submissions at the
+service boundary. Users can still view and withdraw existing requests, and
+administrators can still process them. Account creation from a request requires
+the usual FreeIPA availability and permissions.
+
+## Show optional follow-up instructions
+
+Edit **Notice after account or group changes** under **Registration & requests**.
+The Liquid-Markdown template is empty by default. An empty template or empty
+result adds no notice. The editor offers sample data and a rendered preview;
+unknown variables and invalid Liquid are rejected on save through both GUI and CLI.
+
+Use `action` to show instructions only when they are relevant:
+
+```liquid
+{% if action == "user.create" and category == "freeipa" %}
+Confirm workstation setup with {{ uid }} before handing over access.
+{% elsif action == "group.delete" %}
+Review shared-folder permissions for {{ name }}.
+{% endif %}
+```
+
+Notices appear after successful changes in Accounts. They are for the person
+performing the action, not an email or notification to the affected user.
+Administrators can receive user and group notices; group managers receive group
+notices. A notice failure does not undo the change or report the change itself
+as failed. There is no automatic command execution or storage provisioning.
+
+Supported actions are:
+
+| Area | `action` values |
+| --- | --- |
+| Users | `user.create`, `user.update`, `user.delete`, `user.profile`, `user.admin`, `user.provider`, `user.expiry`, `user.password_reset`, `user.login_token`, `user.linux` |
+| Groups | `group.create`, `group.update`, `group.delete`, `group.posix` |
+| Membership and management | `group.member.add`, `group.member.remove`, `group.manager.add`, `group.manager.remove` |
+
+The bounded context contains only `action`, `id`, `uid`, `name`, `email`,
+`firstName`, `lastName`, `provider`, `profile`, `category` and `relatedId`.
+User actions provide person and category fields; group actions provide the name
+and provider. Existing records supply their current display data; deleted records
+use the action's snapshot. Fields that do not apply are empty strings.
+`id` identifies the changed account or group; membership actions put
+the added or removed principal's ID in `relatedId`. Provider values are `local`
+and `ipa`; profiles are `guest` and `user`; categories are `guest`, `login` and
+`freeipa`. Interpolated values are escaped as Markdown text, including when the
+template uses Liquid's `raw` filter. Do not treat the
+notice as an audit record or a shell-command generator. Passwords, tokens and
+other credentials are never included in this context.
+
+Avatar changes, notification sending, background jobs and changes made outside
+the Accounts UI do not open follow-up dialogs. The old built-in NFS instructions
+have been removed. If an installation needs them, configure its template before
+deploying this change; they are no longer a global default.
+
+### Configure requests and notices from the terminal
+
+```bash
+cld admin accounts administration get --json
+cld admin accounts administration set --config-file ./account-administration.json --yes
+```
+
+The file contains both options:
+
+```json
+{
+  "requestsEnabled": false,
+  "actionNotice": ""
+}
+```
+
+This uses the same atomic settings API as Administration and writes
+`user.account_requests.enabled` and `user.action_notice`. Account-category policy
+remains under `cld admin accounts config`; Linux defaults remain under
+`cld admin linux config`.
 
 ## Recover administrator access
 

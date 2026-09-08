@@ -54,6 +54,27 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  test("exports and saves the same request and notice options as Administration", async () => {
+    const config = { requestsEnabled: false, actionNotice: '{% if action == "group.delete" %}Review shared folders.{% endif %}' };
+    const read = createContext(["accounts", "administration", "get"], {}, [jsonResponse(config)]);
+    read.ctx.options.output = "json";
+    await adminCli.run(read.ctx);
+    expect(read.calls[0]?.path).toBe("/api/admin/core/settings/account-administration");
+    expect(JSON.parse(read.lines[0]!)).toEqual(config);
+    const write = createContext(["accounts", "administration", "set"], { config: JSON.stringify(config), yes: true }, [
+      jsonResponse({ ok: true }),
+    ]);
+    await adminCli.run(write.ctx);
+    expect(JSON.parse(String(write.calls[0]?.init?.body))).toEqual({
+      updates: { "user.account_requests.enabled": false, "user.action_notice": config.actionNotice },
+    });
+    const invalidCases: CloudCliFlags[] = [{ config: JSON.stringify(config) }, { config: "{}", yes: true }];
+    for (const flags of invalidCases) {
+      const denied = createContext(["accounts", "administration", "set"], flags);
+      await expect(adminCli.run(denied.ctx)).rejects.toThrow();
+      expect(denied.calls).toHaveLength(0);
+    }
+  });
   test("exports the complete account policy", async () => {
     const { ctx, calls, lines } = createContext(["accounts", "config", "get"], {}, [jsonResponse(DEFAULT_ACCOUNT_CATEGORY_POLICY)]);
     ctx.options.output = "json";

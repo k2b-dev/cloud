@@ -3,10 +3,27 @@
 // Re-export from stdlib for backward compatibility
 // Prefer importing directly from @k2b/stdlib
 export { dates, dates as calendar, encoding, fileIcons, gradients } from "@k2b/stdlib";
+export {
+  ACCOUNT_ACTION_NOTICE_SAMPLE,
+  type AccountActionNoticeInput,
+  AccountActionNoticeSchema,
+  renderAccountActionNotice,
+} from "./account-action-notice";
 export * from "./account-display";
 export * from "./account-session";
 export type { AiPromptContextInput, AiToolPromptHint } from "./ai-platform-prompt";
 export { AI_PLATFORM_PROMPT_TEMPLATE, aiPromptContext, renderAiPlatformPrompt } from "./ai-platform-prompt";
+export {
+  AI_USAGE_RANGES,
+  AI_USAGE_REASONS,
+  AI_USAGE_VIEWS,
+  type AiUsageQuery,
+  AiUsageQuerySchema,
+  type AiUsageRange,
+  type AiUsageView,
+  aiUsageHref,
+  aiUsageSearchParams,
+} from "./ai-usage";
 export * from "./app-presentation";
 export * from "./app-url";
 export * from "./branding";
@@ -35,4 +52,3 @@ export {
 } from "./template-rendering";
 export * from "./theme";
 export * from "./time";
-export { AI_USAGE_RANGES, AI_USAGE_VIEWS, AI_USAGE_REASONS, AiUsageQuerySchema, aiUsageSearchParams, aiUsageHref, type AiUsageQuery, type AiUsageRange, type AiUsageView } from "./ai-usage";

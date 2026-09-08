@@ -71,8 +71,18 @@ group. A normalized group name is shown when it differs from your input.
 **Create account** or **Create group** saves directly. If saving fails, the
 form keeps your entries so you can correct them and retry. Use **Cancel** or
 the close control to leave; edited forms ask before discarding entries.
-The success dialog includes any required follow-up instructions, and closing
-it updates the current list.
+Successful changes can show optional follow-up instructions configured in
+**Administration → Accounts & sign-in → Registration & requests**. An empty
+template adds no notice. User creation, maintenance, group changes and membership
+changes use the same action-dependent template; no NFS instructions are built in.
+These are instructions for the administrator or group manager, not messages
+sent to the affected user. See [Account types](/en/docs/operations/account-categories)
+for supported actions and template variables.
+
+Global account settings and lifecycle backfill controls live in Administration.
+The Accounts dashboard links to **Operations**; account records, request
+processing and lifecycle history stay in Accounts. Disabling new account
+requests does not remove existing requests from this workspace.
 
 ## How Accounts fits Cloud
 

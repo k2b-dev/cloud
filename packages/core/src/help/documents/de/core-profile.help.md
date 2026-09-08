@@ -13,7 +13,7 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Se
 :::reference
 - **Identität:** Zeigt Anzeigename, Benutzername, Profilbild, Kontodienst, Profiltyp, zusätzliche Rollen, E-Mail-Adresse, Telefonnummer, Adresse sowie verfügbare Ablaufdaten.
 - **Gruppen:** Zeigt zunächst direkte Gruppenmitgliedschaften. **Geerbte anzeigen** ergänzt Mitgliedschaften aus der Gruppenhierarchie.
-- **FreeIPA-Antrag:** Lokale Konten können bei aktiviertem FreeIPA ein zentral verwaltetes Konto beantragen. Ein ausstehender Antrag kann im selben Bereich zurückgezogen werden.
+- **FreeIPA-Antrag:** Lokale Konten können FreeIPA-Zugang beantragen, wenn Account-Anfragen, die FreeIPA-Verbindung und FreeIPA-Accounts erlaubt sind. Bestehende Anträge lassen sich auch zurückziehen, wenn neue Anfragen deaktiviert wurden.
 - **Aktivitäten:** Zeigt sicherheitsrelevante Kontoaktivitäten der letzten 7, 30 oder 90 Tage.
 :::
 
