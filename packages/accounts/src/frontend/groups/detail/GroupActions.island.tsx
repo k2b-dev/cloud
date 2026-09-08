@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, Dropdown, NoticeCard, prompts } from "@k2b/ui";
+import { Button, CodeDisplay, Dropdown, NoticeCard, prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import { ErrorResponseSchema } from "@/contracts";
 import { useAccountsMessages } from "../../messages";
@@ -48,13 +48,7 @@ export default function GroupActions(props: GroupActionsProps) {
             </NoticeCard>
 
             <div class="flex flex-col gap-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{messages().deleteOrArchiveFiles}</span>
-                <CopyButton text={deleteCmd} label={messages().copy} />
-              </div>
-              <pre class="rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-mono text-zinc-700 dark:text-zinc-300 overflow-x-auto whitespace-pre">
-                {deleteCmd}
-              </pre>
+              <CodeDisplay title={messages().deleteOrArchiveFiles} code={deleteCmd} lineNumbers={false} />
             </div>
 
             <div class="flex justify-end">
@@ -130,8 +124,8 @@ export default function GroupActions(props: GroupActionsProps) {
   };
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm(messages().deleteGroupConfirm({ name: props.name }), {
-      title: messages().deleteGroup,
+    const confirmed = await prompts.confirm(messages().deleteGroupExplanation({ freeIpa: props.provider === "ipa" }), {
+      title: messages().deleteGroupQuestion({ name: props.name }),
       icon: "ti ti-trash",
       confirmText: messages().delete,
       cancelText: messages().cancel,

@@ -1,30 +1,30 @@
 import { dates } from "@k2b/stdlib";
-import { z } from "zod";
-import { ButtonLink, DataTable, type DataTableColumn, Placeholder } from "@k2b/ui";
+import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accountsAppService as accountsService,
-  linuxIdentities,
   coreSettings,
+  linuxIdentities,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
 } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js/jsx-runtime";
+import { z } from "zod";
 import type { BaseGroup } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../../config";
 import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import RemoveMember from "../../groups/detail/RemoveMember.island";
-import { getManagementBadge, getPrimaryAccountBadge, getSupplementalRoleColor, getSupplementalRoles } from "../../lib/account-badges";
+import { getSupplementalRoles } from "../../lib/account-badges";
 import { buildUserDetailUrl, buildUsersUrl, parseUsersListState } from "../../lib/url-state";
 import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
 import AddToGroup from "./AddToGroup.island";
-import UserActions from "./UserActions.island";
 import LinuxIdentity from "./LinuxIdentity.island";
+import UserActions from "./UserActions.island";
 
 const formatAddress = (a: {
   street: string | null;
@@ -108,22 +108,21 @@ export default ssr<AuthContext>(async (c) => {
   const managedGroups = managedGroupsPage.items;
 
   const isExpired = user.accountExpires ? new Date(user.accountExpires) < new Date() : false;
-  const managementBadge = getManagementBadge(user);
 
   const displayTitle = user.displayName || user.mail || user.uid;
-  const primaryBadge = getPrimaryAccountBadge(user);
+
   const supplementalRoles = getSupplementalRoles(user);
   const ipa = user.provider === "ipa" ? user.ipa : null;
   const totalMemberGroups = recursive ? allGroups.length : directGroups.length;
 
   const facts: Array<{ label: string; value: JSX.Element }> = [
     { label: "UID", value: <span class="font-mono">{user.uid}</span> },
-    { label: t.databaseId, value: <span class="truncate font-mono text-[11px]">{user.id}</span> },
+    { label: t.databaseId, value: <span class="truncate font-mono text-xs">{user.id}</span> },
     { label: t.managedBy, value: <span>{user.provider === "ipa" ? "FreeIPA" : t.local}</span> },
     { label: t.access, value: <span>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span> },
     {
       label: t.email,
-      value: user.mail ? <span class="truncate">{user.mail}</span> : <span class="italic text-dimmed">{t.notSet}</span>,
+      value: user.mail ? <span>{user.mail}</span> : <span class="italic text-dimmed">{t.notSet}</span>,
     },
     {
       label: isIpaUser ? t.passwordExpires : t.accountExpires,
@@ -134,10 +133,17 @@ export default ssr<AuthContext>(async (c) => {
           <span class="italic text-dimmed">{t.never}</span>
         )
       ) : user.accountExpires ? (
-        <span class={isExpired ? "text-red-600 dark:text-red-400" : ""}>
-          {dates.formatDate(user.accountExpires, { locale })}
-          {isExpired ? t.expiredSuffix : ""}
-        </span>
+        <StatusBadge
+          tone={isExpired ? "error" : "neutral"}
+          variant="text"
+          icon={null}
+          label={
+            <>
+              {dates.formatDate(user.accountExpires, { locale })}
+              {isExpired ? t.expiredSuffix : ""}
+            </>
+          }
+        />
       ) : (
         <span class="italic text-dimmed">{t.never}</span>
       ),
@@ -146,10 +152,17 @@ export default ssr<AuthContext>(async (c) => {
       label: isIpaUser ? t.accountExpires : isGuestProfile ? t.guestExpires : t.lastWebLogin,
       value: isIpaUser ? (
         user.accountExpires ? (
-          <span class={isExpired ? "text-red-600 dark:text-red-400" : ""}>
-            {dates.formatDate(user.accountExpires, { locale })}
-            {isExpired ? t.expiredSuffix : ""}
-          </span>
+          <StatusBadge
+            tone={isExpired ? "error" : "neutral"}
+            variant="text"
+            icon={null}
+            label={
+              <>
+                {dates.formatDate(user.accountExpires, { locale })}
+                {isExpired ? t.expiredSuffix : ""}
+              </>
+            }
+          />
         ) : (
           <span class="italic text-dimmed">{t.never}</span>
         )
@@ -244,22 +257,12 @@ export default ssr<AuthContext>(async (c) => {
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h1 class="text-xl font-semibold tracking-tight text-primary">{displayTitle}</h1>
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>
-                    {user.profile === "user" ? t.fullAccount : t.guestAccount}
-                  </span>
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${managementBadge.className}`}>
-                    {user.provider === "ipa" ? "FreeIPA" : t.local}
-                  </span>
+                  <Tag>{user.profile === "user" ? t.fullAccount : t.guestAccount}</Tag>
+                  <Tag>{user.provider === "ipa" ? "FreeIPA" : t.local}</Tag>
                   {supplementalRoles.map((role) => (
-                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${getSupplementalRoleColor(role)}`}>
-                      {role === "group-manager" ? t.groupManager : t.admin}
-                    </span>
+                    <Tag>{role === "group-manager" ? t.groupManager : t.admin}</Tag>
                   ))}
-                  {isExpired && (
-                    <span class="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/50 dark:text-red-300">
-                      {t.expired}
-                    </span>
-                  )}
+                  {isExpired && <StatusBadge tone="error" label={t.expired} />}
                 </div>
                 <p class="mt-1 truncate text-xs text-dimmed">
                   {user.uid}
@@ -273,30 +276,17 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           </div>
 
-          <AccountsFactGrid facts={facts} columns={3} viewTransitionName="accounts-user-facts" />
+          <AccountsFactGrid facts={facts} viewTransitionName="accounts-user-facts" />
           {(linux.user.identity || linux.user.provider === "ipa" || (linux.config.enabled && linux.user.profile === "user")) && (
             <LinuxIdentity initial={linux} />
           )}
 
           {isIpaUser && (ipa?.sshFingerprints.length ?? 0) > 0 && (
-            <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]" style="view-transition-name: accounts-user-ssh">
-              <details class="group">
-                <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs text-dimmed">
-                  <span class="flex items-center gap-2">
-                    <i class="ti ti-key text-sm" />
-                    {t.sshKeyCount({ count: ipa?.sshPublicKeys.length ?? 0 })}
-                  </span>
-                  <i class="ti ti-chevron-right text-xs transition-transform group-open:rotate-90" />
-                </summary>
-                <div class="px-3 pb-3">
-                  <div class="flex flex-col gap-1">
-                    {ipa?.sshFingerprints.map((fp) => (
-                      <code class="rounded bg-zinc-100 px-2 py-1 text-[11px] font-mono text-secondary dark:bg-zinc-800">{fp}</code>
-                    ))}
-                  </div>
-                </div>
-              </details>
-            </div>
+            <Paper style="view-transition-name: accounts-user-ssh">
+              <Disclosure summary={t.sshKeyCount({ count: ipa?.sshPublicKeys.length ?? 0 })} icon="ti ti-key">
+                <CodeDisplay code={ipa?.sshFingerprints.join("\n") ?? ""} lineNumbers={false} />
+              </Disclosure>
+            </Paper>
           )}
 
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-api-keys">
@@ -316,7 +306,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
 
             {apiKeysPage.items.length > 0 ? (
-              <div class="paper overflow-hidden">
+              <Paper class="overflow-hidden">
                 <DataTable
                   rows={apiKeysPage.items}
                   columns={apiKeyColumns}
@@ -330,7 +320,7 @@ export default ssr<AuthContext>(async (c) => {
                       return (
                         <div class="flex min-w-0 flex-col gap-1">
                           <span class="truncate font-medium text-primary">{key.name}</span>
-                          <span class="truncate font-mono text-[11px] text-dimmed">cld_{key.tokenPrefix}_...</span>
+                          <span class="truncate font-mono text-xs text-dimmed">cld_{key.tokenPrefix}_...</span>
                         </div>
                       );
                     if (col.id === "expires") return <span class="text-dimmed">{formatNullableDate(key.expiresAt)}</span>;
@@ -340,7 +330,7 @@ export default ssr<AuthContext>(async (c) => {
                     return "";
                   }}
                 />
-              </div>
+              </Paper>
             ) : (
               <Placeholder surface="paper" description={<>{t.noActiveApiKeys}</>} />
             )}
@@ -372,7 +362,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
 
             {memberGroups.length > 0 ? (
-              <div class="paper overflow-hidden">
+              <Paper class="overflow-hidden">
                 <DataTable
                   rows={memberGroups}
                   columns={memberGroupColumns}
@@ -383,7 +373,7 @@ export default ssr<AuthContext>(async (c) => {
                   renderCell={({ row: group, col }) => {
                     const href = `/app/accounts/groups/${group.id}`;
                     const isDirect = directGroupSet.has(group.id);
-                    const providerBadge = getPrimaryAccountBadge({ ...user, provider: group.provider, profile: "user" });
+
                     if (col.id === "group")
                       return (
                         <a href={href} class="block truncate font-medium text-primary hover:underline">
@@ -397,20 +387,9 @@ export default ssr<AuthContext>(async (c) => {
                         </a>
                       );
                     }
-                    if (col.id === "provider")
-                      return (
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                          {group.provider === "ipa" ? "FreeIPA" : t.local}
-                        </span>
-                      );
+                    if (col.id === "provider") return <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>;
                     if (col.id === "membership") {
-                      return (
-                        <span
-                          class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${isDirect ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" : "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"}`}
-                        >
-                          {isDirect ? t.direct : t.inherited}
-                        </span>
-                      );
+                      return <Tag>{isDirect ? t.direct : t.inherited}</Tag>;
                     }
                     if (col.id === "actions")
                       return isDirect ? (
@@ -419,7 +398,7 @@ export default ssr<AuthContext>(async (c) => {
                     return "";
                   }}
                 />
-              </div>
+              </Paper>
             ) : (
               <Placeholder surface="paper" description={<>{t.noGroupMemberships}</>} />
             )}
@@ -432,7 +411,7 @@ export default ssr<AuthContext>(async (c) => {
                 <p class="mt-1 text-xs text-dimmed">{t.manageableGroups({ count: managedGroups.length })}</p>
               </div>
 
-              <div class="paper overflow-hidden">
+              <Paper class="overflow-hidden">
                 <DataTable
                   rows={managedGroups}
                   columns={managedGroupColumns}
@@ -456,18 +435,12 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     }
                     if (col.id === "provider") {
-                      return (
-                        <span
-                          class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${group.provider === "ipa" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"}`}
-                        >
-                          {group.provider === "ipa" ? "FreeIPA" : t.local}
-                        </span>
-                      );
+                      return <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>;
                     }
                     return "";
                   }}
                 />
-              </div>
+              </Paper>
             </div>
           )}
         </div>

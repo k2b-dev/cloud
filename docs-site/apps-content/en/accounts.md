@@ -47,6 +47,28 @@ Direct membership is stored on one relationship. Effective access can also
 come through nested groups. Removing one direct membership therefore does not
 prove that access is gone.
 
+## Create users and groups
+
+Choose **New user** or **New group** and complete one form. When FreeIPA is
+available, choose whether Cloud or FreeIPA manages the record. The account
+type starts empty, including when only one type is available.
+Account requests fill in the person's details and restrict the choice to FreeIPA.
+
+For local users, choose a full or guest account and review any administrator
+access. The form explains the selected type and what happens after creation.
+FreeIPA
+creates a temporary password, included in the welcome email; local accounts
+use email links instead. If email delivery is disabled, the form explains how
+to give the user access yourself. For FreeIPA groups, review the POSIX option
+before creating the
+group. A normalized group name is shown when it differs from your input.
+
+**Create account** or **Create group** saves directly. If saving fails, the
+form keeps your entries so you can correct them and retry. Use **Cancel** or
+the close control to leave; edited forms ask before discarding entries.
+The success dialog includes any required follow-up instructions, and closing
+it updates the current list.
+
 ## How Accounts fits Cloud
 
 Accounts operates the platform identity records and group relationships used

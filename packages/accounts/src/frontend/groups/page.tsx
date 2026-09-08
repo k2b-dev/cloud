@@ -1,4 +1,4 @@
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -7,7 +7,7 @@ import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
-import { getProviderBadge } from "../lib/account-badges";
+
 import { buildGroupDetailUrl, buildGroupsPageBaseUrl, buildGroupsUrl, parseGroupsListState } from "../lib/url-state";
 import { accountsMessages } from "../messages";
 import GroupsScopeFilter from "./GroupsScopeFilter.island";
@@ -64,7 +64,9 @@ export default ssr<AuthContext>(async (c) => {
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-groups-title">
             <h1 class="text-base font-semibold text-primary">{t.groups}</h1>
-            <p class="mt-1 text-xs text-dimmed">{listState.search ? t.resultCount({ count: groupsPage.total }) : t.groupCount({ count: groupsPage.total })}</p>
+            <p class="mt-1 text-xs text-dimmed">
+              {listState.search ? t.resultCount({ count: groupsPage.total }) : t.groupCount({ count: groupsPage.total })}
+            </p>
           </div>
 
           <div style="view-transition-name: accounts-groups-search">
@@ -94,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
               }
             />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-groups-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-groups-table">
               <DataTable
                 rows={groupsPage.items}
                 columns={columns}
@@ -121,12 +123,9 @@ export default ssr<AuthContext>(async (c) => {
                     );
                   }
                   if (col.id === "managedBy") {
-                    const providerBadge = getProviderBadge(group.provider);
                     return (
                       <a href={href} class="block" tabindex={-1}>
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                          {group.provider === "ipa" ? "FreeIPA" : t.local}
-                        </span>
+                        <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>
                       </a>
                     );
                   }
@@ -134,16 +133,8 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="block" tabindex={-1}>
                         <div class="flex flex-wrap gap-1">
-                          {isManaged ? (
-                            <span class="tag bg-[color-mix(in_srgb,var(--app-accent)_10%,var(--ui-surface))] app-accent-text">
-                              {t.managed}
-                            </span>
-                          ) : null}
-                          {group.gidnumber ? (
-                            <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                              POSIX
-                            </span>
-                          ) : null}
+                          {isManaged ? <Tag>{t.managed}</Tag> : null}
+                          {group.gidnumber ? <Tag>POSIX</Tag> : null}
                           {!isManaged && !group.gidnumber ? <span class="text-dimmed">-</span> : null}
                         </div>
                       </a>
@@ -152,7 +143,7 @@ export default ssr<AuthContext>(async (c) => {
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">

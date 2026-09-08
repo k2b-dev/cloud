@@ -137,6 +137,24 @@ export const accountsMessages = i18n.define({
       groupDetailSections: "Group detail sections",
       flags: "Flags",
       accountType: "Account type",
+      chooseAccountType: "Choose an account type",
+      creationOutcome: "What happens when you create the account",
+      ipaPasswordHelp: "FreeIPA generates a temporary password. The user must change it at their first password login.",
+      ipaDeliveryHelp: "The welcome email includes the username, temporary password and sign-in instructions.",
+      ipaNoDeliveryHelp:
+        "No welcome email will be sent. The generated password is not shown here. Open the new account, reset its password and share the new temporary password with the user yourself.",
+      localLoginHelp: ({ loginLabel }: { loginLabel: string }) =>
+        `No password is created. Both ${loginLabel} and Guest are local Cloud accounts; users sign in with an email link.`,
+      localDeliveryHelp: "The welcome email explains how to sign in. The user requests their sign-in link on the login page.",
+      localNoDeliveryHelp:
+        "No welcome email will be sent. Share the Cloud login page with the user so they can request a sign-in link using this email address.",
+      accountTypeHelp: "Choose how this account is managed and which access profile it uses.",
+      freeIpaTypeDescription: "Managed in FreeIPA. Directory groups determine the account’s access profile.",
+      loginTypeDescription:
+        "Local account managed in Cloud, with the full account profile. Access to individual resources still depends on permissions.",
+      guestTypeDescription:
+        "Local account managed in Cloud, with the restricted guest profile. The configured guest expiry policy applies.",
+      displayNameHelp: "Filled from first and last name. Change it if a different name should be shown in Cloud.",
       login: "Login",
       magicLink: "Magic link",
       freeIpaPassword: "FreeIPA password",
@@ -213,6 +231,15 @@ export const accountsMessages = i18n.define({
       posixConfirm: ({ name }: { name: string }) =>
         `Convert “${name}” to a POSIX group? This assigns a stable GID for filesystem integrations and cannot be undone.`,
       deleteGroup: "Delete group",
+      deleteGroupQuestion: ({ name }: { name: string }) => `Delete “${name}”?`,
+      deleteGroupExplanation: ({ freeIpa }: { freeIpa: boolean }): string =>
+        freeIpa
+          ? "This permanently deletes the group from FreeIPA and Cloud. This cannot be undone."
+          : "This permanently deletes the group from Cloud. This cannot be undone.",
+      deleteUserExplanation: ({ freeIpa }: { freeIpa: boolean }): string =>
+        freeIpa
+          ? "This permanently deletes the user from FreeIPA and Cloud. This cannot be undone."
+          : "This permanently deletes the user from Cloud. This cannot be undone.",
       deleteGroupConfirm: ({ name }: { name: string }) => `Delete the group “${name}”? This cannot be undone.`,
       groupActions: "Group actions",
       manageGroup: "Manage group",
@@ -528,7 +555,11 @@ export const accountsMessages = i18n.define({
       errors: "Errors",
       emailBatch: "Email batch",
       noNotificationBatches: "No notification batches found.",
-      noNotificationBatchesStatus: ({ status }: { status: "draft" | "ready" | "running" | "completed" | "completed_with_errors" | "failed" | "cancelled" }): string => {
+      noNotificationBatchesStatus: ({
+        status,
+      }: {
+        status: "draft" | "ready" | "running" | "completed" | "completed_with_errors" | "failed" | "cancelled";
+      }): string => {
         if (status === "draft") return "No draft notification batches found.";
         if (status === "ready") return "No ready notification batches found.";
         if (status === "running") return "No running notification batches found.";
@@ -858,6 +889,24 @@ export const accountsMessages = i18n.define({
       groupDetailSections: "Bereiche der Gruppendetails",
       flags: "Merkmale",
       accountType: "Kontotyp",
+      chooseAccountType: "Kontotyp auswählen",
+      creationOutcome: "Was beim Erstellen passiert",
+      ipaPasswordHelp: "FreeIPA erzeugt ein vorläufiges Passwort. Der Benutzer muss es bei der ersten Anmeldung mit Passwort ändern.",
+      ipaDeliveryHelp: "Die Willkommens-E-Mail enthält den Benutzernamen, das vorläufige Passwort und Hinweise zur Anmeldung.",
+      ipaNoDeliveryHelp:
+        "Es wird keine Willkommens-E-Mail gesendet. Das erzeugte Passwort wird hier nicht angezeigt. Öffne das neue Konto, setze sein Passwort zurück und teile dem Benutzer das neue vorläufige Passwort selbst mit.",
+      localLoginHelp: ({ loginLabel }) =>
+        `Es wird kein Passwort erstellt. ${loginLabel} und Guest sind beide lokale Cloud-Konten; die Anmeldung erfolgt über einen E-Mail-Link.`,
+      localDeliveryHelp: "Die Willkommens-E-Mail erklärt die Anmeldung. Den Anmeldelink fordert der Benutzer auf der Anmeldeseite an.",
+      localNoDeliveryHelp:
+        "Es wird keine Willkommens-E-Mail gesendet. Teile dem Benutzer die Cloud-Anmeldeseite mit, damit er dort mit dieser E-Mail-Adresse einen Anmeldelink anfordern kann.",
+      accountTypeHelp: "Wähle, wo das Konto verwaltet wird und welches Zugriffsprofil es erhält.",
+      freeIpaTypeDescription: "In FreeIPA verwaltet. Die Verzeichnisgruppen bestimmen das Zugriffsprofil.",
+      loginTypeDescription:
+        "Lokales, in Cloud verwaltetes Konto mit vollständigem Kontoprofil. Der Zugriff auf einzelne Ressourcen hängt weiterhin von Berechtigungen ab.",
+      guestTypeDescription:
+        "Lokales, in Cloud verwaltetes Konto mit eingeschränktem Gastprofil. Es gelten die konfigurierten Ablaufregeln für Gäste.",
+      displayNameHelp: "Wird aus Vor- und Nachname ausgefüllt. Ändere ihn, wenn in Cloud ein anderer Name erscheinen soll.",
       login: "Anmeldung",
       magicLink: "Anmeldelink",
       freeIpaPassword: "FreeIPA-Passwort",
@@ -934,6 +983,15 @@ export const accountsMessages = i18n.define({
       posixConfirm: ({ name }) =>
         `„${name}“ in eine POSIX-Gruppe umwandeln? Dadurch erhält sie eine feste GID für Dateisystemanbindungen. Dies kann nicht rückgängig gemacht werden.`,
       deleteGroup: "Gruppe löschen",
+      deleteGroupQuestion: ({ name }) => `„${name}“ löschen?`,
+      deleteGroupExplanation: ({ freeIpa }) =>
+        freeIpa
+          ? "Die Gruppe wird dauerhaft aus FreeIPA und Cloud gelöscht. Dies kann nicht rückgängig gemacht werden."
+          : "Die Gruppe wird dauerhaft aus Cloud gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      deleteUserExplanation: ({ freeIpa }) =>
+        freeIpa
+          ? "Der Benutzer wird dauerhaft aus FreeIPA und Cloud gelöscht. Dies kann nicht rückgängig gemacht werden."
+          : "Der Benutzer wird dauerhaft aus Cloud gelöscht. Dies kann nicht rückgängig gemacht werden.",
       deleteGroupConfirm: ({ name }) => `Die Gruppe „${name}“ löschen? Dies kann nicht rückgängig gemacht werden.`,
       groupActions: "Gruppenaktionen",
       manageGroup: "Gruppe verwalten",

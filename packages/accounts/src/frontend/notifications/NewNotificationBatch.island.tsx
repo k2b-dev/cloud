@@ -8,6 +8,7 @@ import {
   panelDialogOptions,
   panelDialogWideOptions,
   prompts,
+  Tag,
   TextInput,
   useLocale,
 } from "@k2b/ui";
@@ -316,7 +317,7 @@ function BatchDialog(props: { close: () => void }) {
                       >
                         <AccountAvatar name={user.label} userId={user.id} avatarHash={user.avatarHash} size="xs" />
                         <span class="min-w-0 flex-1 truncate text-left">{user.label}</span>
-                        <span class="text-[10px] uppercase text-dimmed">{user.provider}</span>
+                        <Tag>{user.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>
                         <i class="ti ti-x text-dimmed" />
                       </Button>
                     )}
@@ -346,7 +347,7 @@ function BatchDialog(props: { close: () => void }) {
                       >
                         <i class="ti ti-users-group" />
                         <span class="min-w-0 flex-1 truncate text-left">{group.label}</span>
-                        <span class="text-[10px] uppercase text-dimmed">{group.provider}</span>
+                        <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>
                         <i class="ti ti-x text-dimmed" />
                       </Button>
                     )}

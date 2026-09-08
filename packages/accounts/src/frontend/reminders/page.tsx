@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
@@ -98,7 +98,7 @@ export default ssr<AuthContext>(async (c) => {
           {remindersPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.noReminders}</>} />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-reminders-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-reminders-table">
               <DataTable
                 rows={remindersPage.items}
                 columns={columns}
@@ -115,9 +115,7 @@ export default ssr<AuthContext>(async (c) => {
                         <div class="min-w-0 flex-1">
                           <div class="truncate font-medium text-primary">{label}</div>
                           {entry.lastError ? (
-                            <div class="truncate text-[11px] text-red-500" title={entry.lastError}>
-                              {entry.lastError}
-                            </div>
+                            <StatusBadge tone="error" variant="text" label={entry.lastError} title={entry.lastError} />
                           ) : null}
                         </div>
                       </div>
@@ -142,7 +140,7 @@ export default ssr<AuthContext>(async (c) => {
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">

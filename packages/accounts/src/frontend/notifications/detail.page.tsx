@@ -1,6 +1,17 @@
 import { dates } from "@k2b/stdlib";
-import { z } from "zod";
-import { DataTable, type DataTableColumn, MarkdownView, NoticeCard, Pagination, Placeholder, StatCell, StatGrid } from "@k2b/ui";
+import {
+  DataTable,
+  type DataTableColumn,
+  MarkdownView,
+  NoticeCard,
+  Pagination,
+  Paper,
+  Placeholder,
+  StatCell,
+  StatGrid,
+  StatusBadge,
+  type StatusTone,
+} from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
@@ -13,6 +24,7 @@ import {
 } from "@valentinkolb/cloud/services";
 import { formatNumber } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
+import { z } from "zod";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
@@ -34,13 +46,11 @@ const validRecipientStatus = (value: string | undefined): NotificationBatchRecip
   return undefined;
 };
 
-const statusClass = (status: NotificationBatch["status"] | NotificationBatchRecipient["status"]) => {
-  if (status === "completed" || status === "sent") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
-  if (status === "completed_with_errors" || status === "failed" || status === "error")
-    return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
-  if (status === "running" || status === "ready" || status === "pending" || status === "sending")
-    return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
-  return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+const statusTone = (status: NotificationBatch["status"] | NotificationBatchRecipient["status"]): StatusTone => {
+  if (status === "completed" || status === "sent") return "ok";
+  if (status === "completed_with_errors" || status === "failed" || status === "error") return "error";
+  if (status === "running" || status === "ready" || status === "pending" || status === "sending") return "running";
+  return "neutral";
 };
 
 type LegacyAudienceSelection = {
@@ -197,14 +207,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <StatGrid columns={5}>
-            <StatCell
-              label={t.status}
-              value={
-                <span class={`inline-flex w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(batch.status)}`}>
-                  {statusLabel(batch.status)}
-                </span>
-              }
-            />
+            <StatCell label={t.status} value={<StatusBadge tone={statusTone(batch.status)} label={<> {statusLabel(batch.status)} </>} />} />
             <StatCell label={t.matched} value={formatNumber(batch.targetCount, { locale })} />
             <StatCell
               label={t.deliverable}
@@ -215,16 +218,13 @@ export default ssr<AuthContext>(async (c) => {
             <StatCell
               label={t.errors}
               value={formatNumber(batch.errorCount, { locale })}
-              valueClass={batch.errorCount > 0 ? "text-red-600 dark:text-red-400" : undefined}
               accent={batch.errorCount > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
             />
           </StatGrid>
 
-          <div class="paper p-4">
+          <Paper class="p-4">
             <div class="flex items-start gap-2">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-dimmed dark:bg-zinc-800">
-                <i class={isLegacyRuleAudience ? "ti ti-filter" : "ti ti-user-plus"} />
-              </span>
+              <i class={isLegacyRuleAudience ? "ti ti-filter" : "ti ti-user-plus"} />
               <div class="min-w-0 flex-1">
                 <h2 class="text-sm font-semibold text-primary">{t.audience}</h2>
                 <p class="mt-1 text-xs text-dimmed">{isLegacyRuleAudience ? t.legacyAudienceDescription : t.explicitAudienceDescription}</p>
@@ -238,9 +238,7 @@ export default ssr<AuthContext>(async (c) => {
 
             <div class="mt-2 grid gap-2 lg:grid-cols-2">
               <div>
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-                  {isLegacyRuleAudience ? t.legacyFilters : t.users}
-                </p>
+                <p class="text-xs font-semibold text-dimmed">{isLegacyRuleAudience ? t.legacyFilters : t.users}</p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   {!isLegacyRuleAudience ? (
                     selectionUsers.length > 0 ? (
@@ -296,7 +294,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
 
               <div>
-                <p class="text-[11px] font-semibold uppercase tracking-wide text-dimmed">{t.groups}</p>
+                <p class="text-xs font-semibold text-dimmed">{t.groups}</p>
                 <div class="mt-2 flex flex-wrap gap-2">
                   {selectionGroups.length > 0 ? (
                     <>
@@ -321,14 +319,14 @@ export default ssr<AuthContext>(async (c) => {
                 </div>
               </div>
             </div>
-          </div>
+          </Paper>
 
-          <div class="paper p-4">
+          <Paper class="p-4">
             <h2 class="text-sm font-semibold text-primary">{t.messagePreview}</h2>
-            <div class="mt-2 rounded-lg bg-muted/30 p-4">
+            <div class="mt-2">
               <MarkdownView trustedHtml={batch.bodyHtml} headingScale="compact" />
             </div>
-          </div>
+          </Paper>
 
           <div class="flex flex-col gap-2">
             <div class="flex items-end gap-2">
@@ -351,7 +349,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : recipientsPage.items.length === 0 ? (
               <Placeholder surface="paper" description={<>{t.noRecipients}</>} />
             ) : (
-              <div class="paper overflow-hidden">
+              <Paper class="overflow-hidden">
                 <DataTable
                   rows={recipientsPage.items}
                   columns={columns}
@@ -374,7 +372,7 @@ export default ssr<AuthContext>(async (c) => {
                           />
                           <span class="min-w-0 flex-1">
                             <span class="block truncate font-medium">{entry.displayName || entry.uid}</span>
-                            <span class="block truncate text-[11px] text-dimmed">{entry.uid}</span>
+                            <span class="block truncate text-xs text-dimmed">{entry.uid}</span>
                           </span>
                         </a>
                       );
@@ -383,11 +381,7 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "provider") return <span class="text-dimmed">{entry.provider}</span>;
                     if (col.id === "profile") return <span class="text-dimmed">{entry.profile}</span>;
                     if (col.id === "status")
-                      return (
-                        <span class={`w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(entry.status)}`}>
-                          {statusLabel(entry.status)}
-                        </span>
-                      );
+                      return <StatusBadge tone={statusTone(entry.status)} label={<> {statusLabel(entry.status)} </>} />;
                     if (col.id === "attempts") return <span class="text-dimmed">{formatNumber(entry.attemptCount, { locale })}</span>;
                     if (col.id === "sent")
                       return <span class="text-dimmed">{entry.sentAt ? dates.formatDateTime(entry.sentAt, { locale }) : "-"}</span>;
@@ -398,7 +392,7 @@ export default ssr<AuthContext>(async (c) => {
                     return "";
                   }}
                 />
-              </div>
+              </Paper>
             )}
 
             {batch.status !== "draft" ? (

@@ -1,8 +1,22 @@
-import { navigateTo } from "@k2b/ssr/nav";
+import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, Checkbox, CopyButton, NoticeCard, prompts, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, onMount, Show } from "solid-js";
+import {
+  Button,
+  Checkbox,
+  CodeDisplay,
+  confirmDiscardIfDirty,
+  DescriptionList,
+  dialogCore,
+  NoticeCard,
+  PanelDialog,
+  panelDialogOptions,
+  prompts,
+  Select,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
+import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type CreateUserResponse, CreateUserResponseSchema, ErrorResponseSchema } from "@/contracts";
 import { type accountsMessages, useAccountsMessages } from "../../messages";
@@ -15,6 +29,8 @@ type PrefillData = {
   displayName?: string;
   firstName: string;
 };
+
+type AccountType = "freeipa" | "login" | "guest";
 
 type ProviderChoice = "ipa" | "local";
 type LocalProfile = "user" | "guest";
@@ -58,99 +74,17 @@ type Props = {
 
 type AccountsCopy = ReturnType<typeof accountsMessages.resolve>["t"];
 
-const providerCards = (
-  t: AccountsCopy,
-): Array<{
-  value: ProviderChoice;
-  title: string;
-  eyebrow: string;
-  description: string;
-  icon: string;
-}> => [
-  {
-    value: "ipa",
-    title: t.managedByFreeIpa,
-    eyebrow: t.directory,
-    description: t.freeIpaProviderDescription,
-    icon: "ti ti-building-fortress",
-  },
-  {
-    value: "local",
-    title: t.managedLocally,
-    eyebrow: t.appManaged,
-    description: t.localProviderDescription,
-    icon: "ti ti-home-spark",
-  },
-];
-
-const PROVIDER_CARD_CLASS =
-  "group flex min-h-40 flex-col items-start gap-3 rounded-xl bg-zinc-50/85 px-4 py-4 text-left transition hover:bg-blue-50/45 dark:bg-zinc-900/70 dark:hover:bg-blue-950/20";
-const PROVIDER_CARD_ICON_CLASS =
-  "flex h-10 w-10 items-center justify-center rounded-lg bg-white text-zinc-600 shadow-sm shadow-zinc-950/[0.04] transition group-hover:text-blue-600 dark:bg-zinc-950/75 dark:text-zinc-300 dark:shadow-none dark:group-hover:text-blue-300";
-
-const profileOptions = (t: AccountsCopy) =>
-  [
-    { value: "user", label: t.fullAccount, icon: "ti ti-user-check" },
-    { value: "guest", label: t.guestAccount, icon: "ti ti-user-exclamation" },
-  ] as const;
-
-const buildPayloadSummary = (payload: CreateUserPayload, t: AccountsCopy) => {
-  const lines: Array<[string, string]> = [[t.managedBy, payload.provider === "ipa" ? "FreeIPA" : t.local]];
-
-  if (payload.provider === "local") {
-    lines.push([t.accessLevel, payload.profile === "user" ? t.fullAccount : t.guestAccount]);
-    if (payload.profile === "user") {
-      lines.push([t.privileges, payload.admin ? t.admin : t.standard]);
-    }
-  } else {
-    lines.push([t.accessLevel, t.derivedFromIpaGroups]);
-  }
-
-  lines.push([t.email, payload.email]);
-  lines.push([t.name, `${payload.givenname} ${payload.sn}`]);
-  lines.push([t.displayName, payload.displayName || `${payload.givenname} ${payload.sn}`]);
-  lines.push([t.onboarding, payload.provider === "ipa" ? t.ipaOnboarding : t.localOnboarding]);
-
-  return lines;
-};
-
-function ProviderSelectionDialog(props: { close: (provider?: ProviderChoice) => void; requestPrefill: boolean }) {
+export function CreateUserDialog(props: { freeIpaEnabled: boolean; prefill?: PrefillData; close: (result?: CreateFlowResult) => void }) {
   const messages = useAccountsMessages();
-  return (
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">{messages().chooseProviderQuestion}</p>
-        <p class="text-xs text-dimmed">{messages().chooseProviderDescription}</p>
-      </div>
-
-      <div class="grid gap-3 md:grid-cols-2">
-        {providerCards(messages()).map((provider) => (
-          <button type="button" class={PROVIDER_CARD_CLASS} onClick={() => props.close(provider.value)}>
-            <div class="flex items-center gap-3">
-              <div class={PROVIDER_CARD_ICON_CLASS}>
-                <i class={`${provider.icon} text-lg`} />
-              </div>
-              <div class="flex flex-col gap-0.5">
-                <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-dimmed">{provider.eyebrow}</span>
-                <span class="text-sm font-semibold text-primary">{provider.title}</span>
-              </div>
-            </div>
-            <p class="text-sm leading-6 text-secondary">{provider.description}</p>
-            <Show when={props.requestPrefill && provider.value === "ipa"}>
-              <NoticeCard tone="success" icon={false} class="mt-auto">
-                {messages().recommendedForRequest}
-              </NoticeCard>
-            </Show>
-          </button>
-        ))}
-      </div>
-    </div>
+  const categories = (["freeipa", "login", "guest"] as const).filter(
+    (category) => (category !== "freeipa" || props.freeIpaEnabled) && (!props.prefill || !props.freeIpaEnabled || category === "freeipa"),
   );
-}
-
-function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillData; close: (payload?: CreateUserPayload) => void }) {
-  const messages = useAccountsMessages();
-  const [profile, setProfile] = createSignal<LocalProfile>("user");
+  const [category, setCategory] = createSignal<AccountType | undefined>();
+  const provider = (): ProviderChoice => (category() === "freeipa" ? "ipa" : "local");
+  const formId = createUniqueId();
+  const [dirty, setDirty] = createSignal(false);
+  const [closing, setClosing] = createSignal(false);
+  const profile = (): LocalProfile => (category() === "guest" ? "guest" : "user");
   const [admin, setAdmin] = createSignal(false);
   const [email, setEmail] = createSignal(props.prefill?.email ?? "");
   const [givenname, setGivenname] = createSignal(props.prefill?.givenname ?? "");
@@ -167,13 +101,36 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
   });
 
   createEffect(() => {
-    if (props.provider !== "local" || profile() !== "user") {
+    if (provider() !== "local" || profile() !== "user") {
       setAdmin(false);
     }
   });
 
+  const createMutation = mutation.create<CreateFlowResult, CreateUserPayload>({
+    mutation: async (payload, { abortSignal }) => {
+      const res = await apiClient.users.$post({ json: payload }, { init: { signal: abortSignal } });
+      if (!res.ok) {
+        const data = ErrorResponseSchema.safeParse(await res.json());
+        throw new Error(data.success ? data.data.message : messages().createAccountFailed);
+      }
+      return { payload, data: CreateUserResponseSchema.parse(await res.json()) };
+    },
+    onSuccess: (result) => props.close(result),
+  });
+  onCleanup(() => createMutation.abort());
+  const requestClose = async () => {
+    if (createMutation.loading() || closing()) return;
+    setClosing(true);
+    try {
+      if (await confirmDiscardIfDirty(dirty)) props.close();
+    } finally {
+      setClosing(false);
+    }
+  };
+
   const validate = () => {
     const nextErrors: Record<string, string> = {};
+    if (!category()) nextErrors.category = messages().chooseAccountType;
     if (!email().trim()) nextErrors.email = messages().emailRequired;
     if (!givenname().trim()) nextErrors.givenname = messages().firstNameRequired;
     if (!sn().trim()) nextErrors.sn = messages().lastNameRequired;
@@ -182,10 +139,10 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
   };
 
   const handleSubmit = () => {
-    if (!validate()) return;
+    if (createMutation.loading() || !validate()) return;
 
-    if (props.provider === "ipa") {
-      props.close({
+    if (provider() === "ipa") {
+      void createMutation.mutate({
         provider: "ipa",
         email: email().trim(),
         givenname: givenname().trim(),
@@ -197,7 +154,7 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
       return;
     }
 
-    props.close({
+    void createMutation.mutate({
       provider: "local",
       profile: profile(),
       admin: profile() === "user" ? admin() : false,
@@ -211,120 +168,160 @@ function CreateUserDialog(props: { provider: ProviderChoice; prefill?: PrefillDa
   };
 
   return (
-    <div class="flex flex-col gap-5">
-      <div class="flex flex-col gap-1">
-        <p class="text-sm font-medium text-primary">
-          {props.provider === "ipa" ? messages().createFreeIpa : messages().createLocalAccount}
-        </p>
-        <p class="text-xs text-dimmed">{props.provider === "ipa" ? messages().ipaAccessAfterCreation : messages().localAccessCreation}</p>
-      </div>
-
-      <Show when={props.prefill}>
-        <NoticeCard tone="success" icon={false}>
-          <div class="flex items-center gap-2">
-            <i class="ti ti-sparkles text-base" />
-            <span class="font-medium">{messages().prefilledRequest}</span>
-          </div>
-        </NoticeCard>
-      </Show>
-
-      <Show when={props.provider === "ipa"}>
-        <NoticeCard tone="info" icon={false}>
-          <div class="flex items-start gap-3">
-            <i class="ti ti-info-circle mt-0.5 text-base" />
-            <div class="flex flex-col gap-1">
-              <span class="font-medium">{messages().ipaDecidesAccess}</span>
-              <span class="text-xs text-blue-700/90 dark:text-blue-200/80">{messages().ipaAccessExplanation}</span>
-            </div>
-          </div>
-        </NoticeCard>
-      </Show>
-
-      <Show when={props.provider === "local"}>
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-between gap-2">
-            <p class="text-xs font-semibold uppercase tracking-[0.16em] text-dimmed">{messages().accessLevel}</p>
-            <span class="text-[11px] text-dimmed">{messages().localAccessOnly}</span>
-          </div>
-          <SegmentedControl
-            ariaLabel={messages().localAccountProfile}
-            options={profileOptions(messages()).map((option) => ({ value: option.value, label: option.label, icon: option.icon }))}
-            value={profile}
-            onValueChange={(value) => setProfile(value as LocalProfile)}
-          />
-        </div>
-      </Show>
-
-      <Show when={props.provider === "local" && profile() === "user"}>
-        <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
-          <Checkbox
-            label={messages().grantAdminAccess}
-            description={messages().adminAccessDescription}
-            value={admin}
-            onValueChange={setAdmin}
-          />
-        </div>
-      </Show>
-
-      <div class="grid gap-4 md:grid-cols-2">
-        <TextInput
-          label={messages().email}
-          required
-          icon="ti ti-mail"
-          value={email}
-          onValueChange={setEmail}
-          error={() => errors().email}
-          placeholder="name@example.com"
-        />
-        <TextInput
-          label={messages().displayName}
-          icon="ti ti-id-badge-2"
-          value={displayName}
-          onValueChange={(value) => {
-            setDisplayNameTouched(true);
-            setDisplayName(value);
+    <PanelDialog>
+      <PanelDialog.Header
+        title={messages().createNewAccount}
+        close={() => void requestClose()}
+        closeDisabled={createMutation.loading() || closing()}
+      />
+      <PanelDialog.Body>
+        <form
+          id={formId}
+          class="flex flex-col gap-5"
+          onInput={() => setDirty(true)}
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSubmit();
           }}
-          placeholder={messages().visibleNamePlaceholder}
-        />
-        <TextInput
-          label={messages().firstName}
-          required
-          icon="ti ti-user"
-          value={givenname}
-          onValueChange={setGivenname}
-          error={() => errors().givenname}
-          placeholder={messages().firstName}
-        />
-        <TextInput
-          label={messages().lastName}
-          required
-          icon="ti ti-user"
-          value={sn}
-          onValueChange={setSn}
-          error={() => errors().sn}
-          placeholder={messages().lastName}
-        />
-      </div>
+        >
+          <Show when={props.prefill}>
+            <NoticeCard tone="info">{messages().prefilledRequest}</NoticeCard>
+          </Show>
+          <Show when={categories.length > 0}>
+            <Select
+              label={messages().accountType}
+              value={() => category() ?? null}
+              required
+              placeholder={messages().chooseAccountType}
+              error={() => errors().category}
+              options={categories.map((value) => ({
+                value,
+                label: value === "freeipa" ? "FreeIPA" : value === "guest" ? "Guest" : "Login",
+                description:
+                  value === "freeipa"
+                    ? messages().freeIpaTypeDescription
+                    : value === "guest"
+                      ? messages().guestTypeDescription
+                      : messages().loginTypeDescription,
+              }))}
+              onValueChange={(value) => {
+                if (value === "freeipa" || value === "guest" || value === "login") {
+                  setCategory(value);
+                  setErrors((previous) => ({ ...previous, category: "" }));
+                  setDirty(true);
+                }
+              }}
+              description={messages().accountTypeHelp}
+              disabled={createMutation.loading()}
+            />
+          </Show>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <TextInput
+              label={messages().firstName}
+              required
+              maxLength={120}
+              autocomplete="given-name"
+              value={givenname}
+              onValueChange={setGivenname}
+              error={() => errors().givenname}
+              disabled={createMutation.loading()}
+            />
+            <TextInput
+              label={messages().lastName}
+              required
+              maxLength={120}
+              autocomplete="family-name"
+              value={sn}
+              onValueChange={setSn}
+              error={() => errors().sn}
+              disabled={createMutation.loading()}
+            />
+          </div>
+          <TextInput
+            label={messages().email}
+            type="email"
+            autocomplete="email"
+            required
+            value={email}
+            onValueChange={setEmail}
+            error={() => errors().email}
+            placeholder="name@example.com"
+            disabled={createMutation.loading()}
+          />
+          <TextInput
+            label={messages().displayName}
+            description={messages().displayNameHelp}
+            maxLength={160}
+            value={displayName}
+            onValueChange={(value) => {
+              setDisplayNameTouched(true);
+              setDisplayName(value);
+            }}
+            disabled={createMutation.loading()}
+          />
+          <Show when={category() === "login"}>
+            <Show when={profile() === "user"}>
+              <Checkbox
+                label={messages().grantAdminAccess}
+                description={messages().adminAccessDescription}
+                value={admin}
+                onValueChange={(value) => {
+                  setAdmin(value);
+                  setDirty(true);
+                }}
+                disabled={createMutation.loading()}
+              />
+            </Show>
+          </Show>
 
-      <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3 text-xs text-dimmed">
-        {messages().generatedIdentity}
-      </div>
-
-      <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
-        <Checkbox
-          label={messages().sendWelcomeAutomatically}
-          description={props.provider === "ipa" ? messages().ipaWelcomeDescription : messages().localWelcomeDescription}
-          value={autoSendNotification}
-          onValueChange={setAutoSendNotification}
-        />
-      </div>
-
-      <div class="flex justify-end">
-        <Button size="sm" onClick={handleSubmit}>
-          {messages().continue}
+          <Checkbox
+            label={messages().sendWelcomeAutomatically}
+            description={
+              category() ? (provider() === "ipa" ? messages().ipaWelcomeDescription : messages().localWelcomeDescription) : undefined
+            }
+            value={autoSendNotification}
+            onValueChange={(value) => {
+              setAutoSendNotification(value);
+              setDirty(true);
+            }}
+            disabled={createMutation.loading()}
+          />
+          <Show when={category()}>
+            <NoticeCard tone="info" bodyClass="flex flex-col gap-2">
+              <p class="font-medium">{messages().creationOutcome}</p>
+              <Show
+                when={provider() === "ipa"}
+                fallback={
+                  <>
+                    <p>{messages().localLoginHelp({ loginLabel: "Login" })}</p>
+                    <p>{autoSendNotification() ? messages().localDeliveryHelp : messages().localNoDeliveryHelp}</p>
+                  </>
+                }
+              >
+                <p>{messages().ipaAccessAfterCreation}</p>
+                <p>{messages().ipaPasswordHelp}</p>
+                <p>{autoSendNotification() ? messages().ipaDeliveryHelp : messages().ipaNoDeliveryHelp}</p>
+              </Show>
+            </NoticeCard>
+          </Show>
+          <Show when={createMutation.error()}>
+            {(error) => (
+              <NoticeCard tone="danger" role="alert">
+                {error().message}
+              </NoticeCard>
+            )}
+          </Show>
+        </form>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <Button variant="secondary" onClick={() => void requestClose()} disabled={createMutation.loading() || closing()}>
+          {messages().cancel}
         </Button>
-      </div>
-    </div>
+        <Button type="submit" form={formId} disabled={!category()} loading={createMutation.loading()} loadingLabel={messages().working}>
+          {messages().createAccount}
+        </Button>
+      </PanelDialog.Footer>
+    </PanelDialog>
   );
 }
 
@@ -333,7 +330,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
   const isIpa = payload.provider === "ipa";
   const notificationMessage = data.notificationSent ? (isIpa ? t.ipaWelcomeSent : t.localWelcomeSent) : t.welcomeNotSent;
 
-  return prompts.dialog<void>(
+  return prompts.dialog<"view">(
     (close) => (
       <div class="flex flex-col gap-4">
         <NoticeCard tone="success" icon={false}>
@@ -346,40 +343,22 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
           </div>
         </NoticeCard>
 
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-          <dt class="text-dimmed">UID</dt>
-          <dd class="font-mono">{data.uid}</dd>
-          <dt class="text-dimmed">{t.managedBy}</dt>
-          <dd>{payload.provider === "ipa" ? "FreeIPA" : t.local}</dd>
-          <Show when={payload.provider === "local"}>
-            {(() => {
-              const localPayload = payload.provider === "local" ? payload : null;
-              return (
-                <>
-                  <dt class="text-dimmed">{t.accessLevel}</dt>
-                  <dd>{localPayload?.profile === "user" ? t.fullAccount : t.guestAccount}</dd>
-                </>
-              );
-            })()}
-          </Show>
-          <Show when={data.accountExpires}>
-            <dt class="text-dimmed">{t.accountExpires}</dt>
-            <dd>{dates.formatDate(data.accountExpires!, { locale })}</dd>
-          </Show>
-        </dl>
+        <DescriptionList
+          columns={2}
+          items={[
+            { term: "UID", description: data.uid },
+            {
+              term: t.accountType,
+              description: payload.provider === "ipa" ? "FreeIPA" : payload.profile === "guest" ? t.guestAccount : t.fullAccount,
+            },
+            ...(data.accountExpires ? [{ term: t.accountExpires, description: dates.formatDate(data.accountExpires, { locale }) }] : []),
+          ]}
+        />
 
         <Show when={isIpa}>
           <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex flex-col">
-                <span class="text-sm font-medium text-primary">{t.nfsFollowUp}</span>
-                <span class="text-xs text-dimmed">{t.nfsFollowUpDescription}</span>
-              </div>
-              <CopyButton text={nfsCommands} label={t.copy} />
-            </div>
-            <pre class="overflow-x-auto whitespace-pre rounded-xl bg-white/80 px-3 py-3 text-xs font-mono text-secondary dark:bg-zinc-950/80">
-              {nfsCommands}
-            </pre>
+            <p class="text-sm">{t.nfsFollowUpDescription}</p>
+            <CodeDisplay title={t.nfsFollowUp} code={nfsCommands} lineNumbers={false} />
           </NoticeCard>
         </Show>
 
@@ -390,8 +369,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
           <Button
             size="sm"
             onClick={() => {
-              close();
-              navigateTo(`/app/accounts/users/${data.id}`);
+              close("view");
             }}
           >
             {t.viewAccount}
@@ -409,91 +387,41 @@ export default function CreateUserForm(props: Props) {
   let opened = false;
   const freeIpaEnabled = props.freeIpaEnabled ?? true;
 
-  const openProviderDialog = async (): Promise<ProviderChoice | undefined> => {
-    if (!freeIpaEnabled) return "local";
-    if (props.prefill) return "ipa";
-    return prompts.dialog<ProviderChoice>((close) => <ProviderSelectionDialog close={close} requestPrefill={false} />, {
-      title: messages().chooseAccountProvider,
-      icon: "ti ti-user-plus",
-      size: "medium",
-    });
-  };
-
-  const openCreateDialog = async (provider: ProviderChoice): Promise<CreateUserPayload | undefined> =>
-    prompts.dialog<CreateUserPayload>((close) => <CreateUserDialog provider={provider} prefill={props.prefill} close={close} />, {
-      title: provider === "ipa" ? messages().createFreeIpa : messages().createLocalAccount,
-      icon: provider === "ipa" ? "ti ti-building-fortress" : "ti ti-home-spark",
-      size: "large",
-    });
-
-  const createMutation = mutation.create<CreateFlowResult | undefined, void>({
-    mutation: async () => {
-      const provider = await openProviderDialog();
-      if (!provider) return undefined;
-
-      const payload = await openCreateDialog(provider);
-      if (!payload) return undefined;
-
-      const confirmed = await prompts.confirm(
-        <div class="flex flex-col gap-4 text-sm">
-          <p>{messages().confirmNewAccount}</p>
-          <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-            {buildPayloadSummary(payload, messages()).map(([label, value]) => (
-              <>
-                <dt class="text-dimmed">{label}</dt>
-                <dd class={label === messages().email ? "font-mono" : ""}>{value}</dd>
-              </>
-            ))}
-          </dl>
-          <Show when={payload.provider === "ipa"}>
-            <NoticeCard tone="info" icon={false}>
-              {messages().ipaAccessDependsOnGroups}
-            </NoticeCard>
-          </Show>
-        </div>,
+  const [opening, setOpening] = createSignal(false);
+  const openCreate = async () => {
+    if (opening()) return;
+    setOpening(true);
+    try {
+      const result = await dialogCore.open<CreateFlowResult>(
+        (close) => <CreateUserDialog freeIpaEnabled={freeIpaEnabled} prefill={props.prefill} close={close} />,
         {
-          title: messages().confirmAccountCreation,
-          icon: "ti ti-user-check",
-          confirmText: messages().createAccount,
-          size: "large",
+          ...panelDialogOptions,
+          cancelBehavior: "ignore",
+          initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="combobox"]') ?? dialog.querySelector("input"),
         },
       );
-
-      if (!confirmed) return undefined;
-
-      const res = await apiClient.users.$post({ json: payload });
-      if (!res.ok) {
-        const data = ErrorResponseSchema.safeParse(await res.json());
-        throw new Error(data.success ? data.data.message : messages().createAccountFailed);
+      if (result) {
+        const action = await buildSuccessDialog(result.payload, result.data, messages(), locale());
+        if (action === "view") navigateTo(`/app/accounts/users/${result.data.id}`);
+        else if (props.autoOpen) navigateTo("/app/accounts/users");
+        else refreshCurrentPath();
       }
-
-      const data = CreateUserResponseSchema.parse(await res.json());
-      return { payload, data };
-    },
-    onSuccess: async (result) => {
-      if (!result) return;
-      await buildSuccessDialog(result.payload, result.data, messages(), locale());
-    },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : messages().createAccountFailed),
-  });
+    } finally {
+      setOpening(false);
+    }
+  };
 
   onMount(() => {
     if (!props.autoOpen || opened) return;
     opened = true;
-    void createMutation.mutate(undefined);
+    void openCreate();
   });
 
   return (
     <Show when={!props.hideButton}>
-      <Button
-        size="sm"
-        variant="subtle"
-        class={props.buttonClass}
-        onClick={() => void createMutation.mutate(undefined)}
-        disabled={createMutation.loading()}
-      >
-        <i class={createMutation.loading() ? "ti ti-loader-2 animate-spin" : (props.buttonIcon ?? "ti ti-plus")} />
-        <span>{createMutation.loading() ? messages().working : (props.buttonLabel ?? messages().newUser)}</span>
+      <Button size="sm" variant="primary" class={props.buttonClass} onClick={() => void openCreate()} disabled={opening()}>
+        <i class={opening() ? "ti ti-loader-2 animate-spin" : (props.buttonIcon ?? "ti ti-plus")} />
+        <span>{opening() ? messages().working : (props.buttonLabel ?? messages().newUser)}</span>
       </Button>
     </Show>
   );

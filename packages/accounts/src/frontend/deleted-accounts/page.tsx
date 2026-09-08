@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService } from "@valentinkolb/cloud/services";
@@ -102,7 +102,7 @@ export default ssr<AuthContext>(async (c) => {
           {deletedAccountsPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.noDeletedAccounts}</>} />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-deleted-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-deleted-table">
               <DataTable
                 rows={deletedAccountsPage.items}
                 columns={columns}
@@ -139,7 +139,7 @@ export default ssr<AuthContext>(async (c) => {
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">

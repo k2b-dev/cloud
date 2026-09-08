@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, LinkCard, LogEntriesTable, ProgressBar, StatCell } from "@k2b/ui";
+import { ButtonLink, DescriptionList, LinkCard, LogEntriesTable, Paper, ProgressBar, StatCell, StatusBadge, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -9,7 +9,7 @@ import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../config";
 import AccountsWorkspace from "./AccountsWorkspace";
 import AdminOperations from "./dashboard/AdminOperations.island";
-import { getManagementBadge, getPrimaryAccountBadge } from "./lib/account-badges";
+
 import { buildGroupsUrl } from "./lib/url-state";
 import { accountsMessages } from "./messages";
 
@@ -35,8 +35,7 @@ export default ssr<AuthContext>(async (c) => {
     accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { userId: user.id, mode: "member" } }),
     accountsService.group.list({ pagination: { page: 1, perPage: 1 }, scope: { mode: "all" } }),
   ]);
-  const primaryBadge = getPrimaryAccountBadge(user);
-  const managementBadge = getManagementBadge(user);
+
   const accountExpires = user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : null;
   const loginMethod = user.provider === "ipa" ? t.freeIpaPassword : t.magicLink;
   const isExpiredAccount = user.accountExpires ? new Date(user.accountExpires) < new Date() : false;
@@ -61,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
       >
         <div class="flex flex-col gap-4">
           {/* Identity */}
-          <section class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] p-5">
+          <Paper class="p-5">
             <div class="flex items-center gap-4">
               <AccountAvatar
                 name={user.displayName || user.uid}
@@ -73,37 +72,28 @@ export default ssr<AuthContext>(async (c) => {
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <h1 class="text-sm font-semibold text-primary">{user.displayName || user.uid}</h1>
-                  <span class={`tag ${primaryBadge.className}`}>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span>
-                  <span class={`tag ${managementBadge.className}`}>{user.provider === "ipa" ? "FreeIPA" : t.local}</span>
-                  {isExpiredAccount && <span class="tag bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">{t.expired}</span>}
+                  <Tag>{user.profile === "user" ? t.fullAccount : t.guestAccount}</Tag>
+                  <Tag>{user.provider === "ipa" ? "FreeIPA" : t.local}</Tag>
+                  {isExpiredAccount && <StatusBadge tone="error" label={t.expired} />}
                 </div>
                 <span class="text-xs text-dimmed">{user.uid}</span>
               </div>
               <ButtonLink href="/me" size="sm" variant="subtle" class="shrink-0">
                 <i class="ti ti-user" />
-                <span class="hidden sm:inline">{t.profilePage}</span>
+                <span>{t.profilePage}</span>
               </ButtonLink>
             </div>
-            <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-              {(
-                [
-                  [t.access, user.profile === "user" ? t.fullAccount : t.guestAccount],
-                  [t.managedBy, user.provider === "ipa" ? "FreeIPA" : t.local],
-                  [t.login, loginMethod],
-                  [t.expires, accountExpires ?? t.never],
-                ] as const
-              ).map(([label, value]) => (
-                <div class="flex items-baseline gap-2">
-                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{label}</span>
-                  <span
-                    class={`text-xs font-medium ${label === t.expires && isExpiredAccount ? "text-red-600 dark:text-red-400" : "text-primary"}`}
-                  >
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
+            <DescriptionList
+              class="mt-4"
+              columns={2}
+              items={[
+                { term: t.access, description: user.profile === "user" ? t.fullAccount : t.guestAccount },
+                { term: t.managedBy, description: user.provider === "ipa" ? "FreeIPA" : t.local },
+                { term: t.login, description: loginMethod },
+                { term: t.expires, description: accountExpires ?? t.never },
+              ]}
+            />
+          </Paper>
 
           {/* Groups */}
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -138,37 +128,33 @@ export default ssr<AuthContext>(async (c) => {
                 <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
               </div>
 
-              <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-3">
+              <Paper class="px-4 py-3">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                   <div class="min-w-0">
                     <p class="text-xs font-medium text-primary">{t.auditNotice}</p>
-                    <p class="mt-0.5 text-[11px] text-dimmed">{t.auditNoticeDescription}</p>
+                    <p class="mt-0.5 text-xs text-dimmed">{t.auditNoticeDescription}</p>
                   </div>
                   <ButtonLink href="/app/accounts/audit" size="sm" variant="subtle" class="shrink-0">
                     <i class="ti ti-clipboard-list" />
                     {t.auditLog}
                   </ButtonLink>
                 </div>
-              </div>
+              </Paper>
 
               {/* Run health and account metrics share one visual tier without decorative divider lines. */}
               <div class="grid grid-cols-1 gap-2 lg:grid-cols-[1.2fr_1.8fr]">
                 {/* Run Health — hero side */}
-                <div class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-5 py-5">
+                <Paper class="flex flex-col gap-3 px-5 py-5">
                   <div class="flex items-center justify-between gap-3">
-                    <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.runHealth}</span>
-                    <span
-                      class={`tag ${
+                    <span class="text-xs text-dimmed">{t.runHealth}</span>
+                    <StatusBadge
+                      tone={summary.lastSync ? "ok" : "neutral"}
+                      label={
                         summary.lastSync
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                          : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                      }`}
-                    >
-                      <i class={`ti ${summary.lastSync ? "ti-check" : "ti-alert-circle"}`} />
-                      {summary.lastSync
-                        ? t.synced({ value: dates.formatDateTimeRelative(summary.lastSync.createdAt, { locale }) })
-                        : t.noSyncYet}
-                    </span>
+                          ? t.synced({ value: dates.formatDateTimeRelative(summary.lastSync.createdAt, { locale }) })
+                          : t.noSyncYet
+                      }
+                    />
                   </div>
                   <div class="flex flex-col gap-2 flex-1 justify-center">
                     {healthRows.map(([label, runs, failedRuns]) => {
@@ -179,44 +165,39 @@ export default ssr<AuthContext>(async (c) => {
                           <span class="text-xs text-secondary w-28 shrink-0 truncate">{label}</span>
                           <ProgressBar
                             value={rate}
+                            showValue
                             size="xs"
                             tone={hasFails ? "danger" : "info"}
                             class="flex-1 min-w-0"
                             label={t.runHealthLabel({ label })}
                           />
-                          <span
-                            class={`text-[11px] tabular-nums shrink-0 ${hasFails ? "text-red-600 dark:text-red-400 font-medium" : "text-dimmed"}`}
-                          >
-                            {rate}%
-                          </span>
                         </div>
                       );
                     })}
                   </div>
-                  <span class="text-[10px] text-dimmed">{t.basedOnRuns({ count: summary.runHealthWindow })}</span>
-                </div>
+                  <span class="text-xs text-dimmed">{t.basedOnRuns({ count: summary.runHealthWindow })}</span>
+                </Paper>
                 <div class="grid grid-cols-2 gap-2">
-                  <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
+                  <Paper class="overflow-hidden">
                     <StatCell
                       label={t.accounts}
                       value={totalAccounts}
                       sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
                       accent={{ tone: "blue", icon: "ti ti-users" }}
                     />
-                  </div>
-                  <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
+                  </Paper>
+                  <Paper class="overflow-hidden">
                     <StatCell
                       label={t.groups}
                       value={summary.groupsTotal}
                       sub={t.sourceCounts({ freeIpa: summary.ipaGroupsTotal, local: summary.localGroupsTotal })}
                     />
-                  </div>
-                  <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
+                  </Paper>
+                  <Paper class="overflow-hidden">
                     <StatCell
                       label={t.requests}
                       value={summary.openRequests}
                       href={summary.openRequests > 0 ? "/app/accounts/requests" : undefined}
-                      valueClass={summary.openRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
                       sub={summary.openRequests > 0 ? t.pendingReview : t.nonePending}
                       accent={
                         summary.openRequests > 0
@@ -228,24 +209,23 @@ export default ssr<AuthContext>(async (c) => {
                           : undefined
                       }
                     />
-                  </div>
-                  <div class="overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]">
+                  </Paper>
+                  <Paper class="overflow-hidden">
                     <StatCell
                       label={t.expiring30d}
                       value={expiringTotal}
                       sub={expiringTotal > 0 ? t.accountCount({ count: expiringTotal }) : t.noneSoon}
-                      valueClass={expiringTotal > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
                       accent={expiringTotal > 0 ? { tone: "amber", icon: "ti ti-calendar-due" } : undefined}
                     />
-                  </div>
+                  </Paper>
                 </div>
               </div>
 
               {/* Operations */}
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t.operations}</span>
-                  <a href="/admin/settings" class="text-[11px] text-dimmed transition-colors hover:text-primary">
+                  <span class="text-xs text-dimmed">{t.operations}</span>
+                  <a href="/admin/settings" class="text-xs text-dimmed transition-colors hover:text-primary">
                     {t.settings}
                   </a>
                 </div>
@@ -255,12 +235,12 @@ export default ssr<AuthContext>(async (c) => {
               {/* Activity */}
               <div class="flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t.recentActivity}</span>
+                  <span class="text-xs text-dimmed">{t.recentActivity}</span>
                   <div class="flex items-center gap-1 flex-wrap">
                     {quickLinks.map((link) => (
-                      <a href={link.href} class="tag bg-zinc-100 dark:bg-zinc-800 text-dimmed transition-colors hover:text-primary">
+                      <ButtonLink href={link.href} variant="subtle" size="sm">
                         {link.label}
-                      </a>
+                      </ButtonLink>
                     ))}
                   </div>
                 </div>

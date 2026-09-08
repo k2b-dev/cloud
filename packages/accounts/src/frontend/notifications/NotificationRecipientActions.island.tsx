@@ -1,5 +1,5 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { Button, dialogCore, PanelDialog, panelDialogOptions, prompts } from "@k2b/ui";
+import { Button, CodeDisplay, dialogCore, PanelDialog, panelDialogOptions, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type AccountsMessages, useAccountsMessages } from "../messages";
@@ -31,9 +31,7 @@ const showError = (error: string | null, messages: AccountsMessages) => {
           close={close}
         />
         <PanelDialog.Body>
-          <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/30 p-3 text-xs leading-relaxed text-primary">
-            {error || messages.noDeliveryError}
-          </pre>
+          <CodeDisplay code={error || messages.noDeliveryError} lineNumbers={false} />
         </PanelDialog.Body>
         <PanelDialog.Footer>
           <Button size="sm" variant="secondary" onClick={() => close()}>

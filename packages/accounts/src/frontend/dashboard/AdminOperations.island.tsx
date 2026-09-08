@@ -1,3 +1,4 @@
+import { Paper } from "@k2b/ui";
 // Platform lifecycle backfill endpoints are owned by cloud-lib (not by an app),
 // so the typed client is a cloud-lib export and is identical regardless of
 // which container loads it.
@@ -116,11 +117,9 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
         .map((operation) => {
           const isLoading = () => runMutation.loading() && activeOperationKey === operation.key;
           return (
-            <section class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-4 md:flex-row md:items-center md:gap-4">
+            <Paper class="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:gap-4">
               <div class="flex min-w-0 flex-1 items-start gap-3">
-                <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-dimmed">
-                  <i class={isLoading() ? "ti ti-loader-2 animate-spin text-sm" : `${operation.icon} text-sm`} />
-                </div>
+                <i class={isLoading() ? "ti ti-loader-2 animate-spin text-sm" : `${operation.icon} text-sm`} />
                 <div class="min-w-0">
                   <h3 class="text-sm font-medium text-primary">{operation.label}</h3>
                   <p class="text-xs text-dimmed">{operation.description}</p>
@@ -135,14 +134,12 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
               >
                 {isLoading() ? operation.loadingText : operation.label}
               </Button>
-            </section>
+            </Paper>
           );
         })}
-      <section class="flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] px-4 py-4 md:flex-row md:items-center md:gap-4">
+      <Paper class="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:gap-4">
         <div class="flex min-w-0 flex-1 items-start gap-3">
-          <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-dimmed">
-            <i class="ti ti-calendar-time text-sm" />
-          </div>
+          <i class="ti ti-calendar-time text-sm" />
           <div class="min-w-0">
             <h3 class="text-sm font-medium text-primary">{messages().scheduledJobs}</h3>
             <p class="text-xs text-dimmed">{messages().scheduledJobsDescription}</p>
@@ -151,7 +148,7 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
         <ButtonLink href={SCHEDULED_JOBS_HREF} size="sm" variant="secondary" class="w-full justify-center md:w-auto md:min-w-48">
           {messages().openScheduledJobs}
         </ButtonLink>
-      </section>
+      </Paper>
     </div>
   );
 }

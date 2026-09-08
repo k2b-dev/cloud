@@ -1,6 +1,6 @@
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
-import { getProviderBadge } from "../../lib/account-badges";
+
 import { useAccountsMessages } from "../../messages";
 import AddGroupToGroup from "./AddGroupToGroup.island";
 import RemoveFromGroup from "./RemoveFromGroup.island";
@@ -50,7 +50,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
       {!hasGroups ? (
         <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noParentGroups}</>} />
       ) : (
-        <div class="paper overflow-hidden">
+        <Paper class="overflow-hidden">
           <DataTable
             rows={props.items}
             columns={columns}
@@ -63,7 +63,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
               if (item.kind !== "group") return "";
               const group = item.group;
               const href = props.groupHref(group.id);
-              const providerBadge = getProviderBadge(group.provider);
+
               if (col.id === "group")
                 return (
                   <a href={href} class="block truncate font-medium text-primary hover:underline">
@@ -77,12 +77,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
                   </a>
                 );
               }
-              if (col.id === "provider")
-                return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                    {group.provider === "ipa" ? "FreeIPA" : messages().local}
-                  </span>
-                );
+              if (col.id === "provider") return <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>;
               if (col.id === "actions")
                 return props.isAdmin ? (
                   <RemoveFromGroup groupId={props.groupId} parentGroupId={group.id} parentGroupName={group.name} />
@@ -90,7 +85,7 @@ export default function MemberOfTab(props: MemberOfTabProps) {
               return "";
             }}
           />
-        </div>
+        </Paper>
       )}
 
       <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.pageBaseUrl} />

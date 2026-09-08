@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, DatePicker, NoticeCard, prompts } from "@k2b/ui";
+import { Button, CodeDisplay, DatePicker, NoticeCard, prompts } from "@k2b/ui";
 import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -122,7 +122,7 @@ export function createUserActions(props: UserActionsProps) {
             <p>{messages().temporaryPasswordNextLogin}</p>
           </>
         ),
-        fields: [{ label: messages().temporaryPassword, value: data.password, copyLabel: messages().copyPassword, tone: "primary" }],
+        fields: [{ label: messages().temporaryPassword, value: data.password }],
         doneLabel: messages().done,
       }),
     onError: (err) => prompts.error(err.message),
@@ -248,8 +248,8 @@ export function createUserActions(props: UserActionsProps) {
           </>
         ),
         fields: [
-          { label: messages().loginToken, value: data.token, copyLabel: messages().copyToken, tone: "primary" },
-          { label: messages().directLoginLink, value: data.magicLink, copyLabel: messages().copyLink },
+          { label: messages().loginToken, value: data.token },
+          { label: messages().directLoginLink, value: data.magicLink },
         ],
         doneLabel: messages().done,
       }),
@@ -538,23 +538,13 @@ export function createUserActions(props: UserActionsProps) {
   const handleDestroy = async () => {
     const isIpaUser = props.user.provider === "ipa";
 
-    const confirmed = await prompts.confirm(
-      <div class="flex flex-col gap-2">
-        <p>{messages().permanentDeleteIntro}</p>
-        <ul class="list-disc list-inside text-sm text-dimmed">
-          {isIpaUser && <li>{messages().removeFromIpa}</li>}
-          <li>{messages().deleteFromDatabase}</li>
-          <li>{messages().cannotUndo}</li>
-        </ul>
-      </div>,
-      {
-        title: messages().deleteUserQuestion({ uid: props.user.uid }),
-        icon: "ti ti-trash",
-        confirmText: messages().delete,
-        cancelText: messages().cancel,
-        variant: "danger",
-      },
-    );
+    const confirmed = await prompts.confirm(messages().deleteUserExplanation({ freeIpa: isIpaUser }), {
+      title: messages().deleteUserQuestion({ uid: props.user.uid }),
+      icon: "ti ti-trash",
+      confirmText: messages().delete,
+      cancelText: messages().cancel,
+      variant: "danger",
+    });
 
     if (confirmed) {
       destroyMutation.mutate();
@@ -574,13 +564,7 @@ export function createUserActions(props: UserActionsProps) {
 
           {isIpaUser && (
             <div class="flex flex-col gap-1">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-medium">{messages().nfsFollowUpDescription}</span>
-                <CopyButton text={nfsCommand} label={messages().copy} />
-              </div>
-              <pre class="rounded bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-mono overflow-x-auto whitespace-pre">
-                {nfsCommand}
-              </pre>
+              <CodeDisplay title={messages().nfsFollowUpDescription} code={nfsCommand} lineNumbers={false} />
             </div>
           )}
 

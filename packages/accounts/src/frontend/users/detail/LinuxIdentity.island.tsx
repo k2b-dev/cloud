@@ -1,8 +1,8 @@
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, SettingsSection, TextInput, prompts, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
-import type { linuxIdentities } from "@valentinkolb/cloud/services";
 import { PosixOverridesSchema } from "@valentinkolb/cloud/contracts";
+import type { linuxIdentities } from "@valentinkolb/cloud/services";
 import { createSignal, For, Show } from "solid-js";
 import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";
 
@@ -52,7 +52,7 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
   return (
     <SettingsSection title={t().title} subtitle={t().description} icon="ti ti-terminal-2">
       <div class="flex flex-col gap-3">
-        <p class="text-sm text-dimmed">{(identity()?.managedBy ?? user().provider) === "ipa" ? t().managedIpa : t().managedLocal}</p>
+        <NoticeCard tone="info">{(identity()?.managedBy ?? user().provider) === "ipa" ? t().managedIpa : t().managedLocal}</NoticeCard>
         <Show when={!data().config.enabled && user().provider === "local"}>
           <p class="text-sm text-dimmed">{t().disabled}</p>
         </Show>
@@ -62,22 +62,22 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
           </p>
         </Show>
         <Show when={user().state === "provider_changed"}>
-          <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+          <NoticeCard tone="danger" role="alert">
             {t().sourceChanged}
-          </p>
+          </NoticeCard>
         </Show>
         <Show when={user().state === "identity_conflict"}>
-          <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+          <NoticeCard tone="danger" role="alert">
             {t().identity_conflict}
-          </p>
+          </NoticeCard>
         </Show>
         <Show when={user().profile === "guest" && user().provider === "local"}>
           <p class="text-sm text-dimmed">{t().guest}</p>
         </Show>
         <Show when={user().state === "invalid_name" || user().state === "group_conflict"}>
-          <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+          <NoticeCard tone="danger" role="alert">
             {user().state === "invalid_name" ? t().invalid_name : t().group_conflict}
-          </p>
+          </NoticeCard>
         </Show>
         <Show when={identity()}>
           {(value) => (
@@ -101,9 +101,9 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
           )}
         </Show>
         <Show when={change.error() || snapshot.error()}>
-          <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+          <NoticeCard tone="danger" role="alert">
             {change.error()?.message ?? snapshot.error()?.message}
-          </p>
+          </NoticeCard>
         </Show>
         <Show
           when={editing()}
@@ -138,9 +138,9 @@ export default function LinuxIdentity(props: { initial: Snapshot }) {
           <TextInput label={t().home} value={home()} onValueChange={setHome} disabled={busy()} />
           <TextInput label={t().shell} value={shell()} onValueChange={setShell} disabled={busy()} />
           <Show when={!PosixOverridesSchema.safeParse({ homeDirectory: home(), loginShell: shell() }).success}>
-            <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+            <NoticeCard tone="danger" role="alert">
               {t().invalid_paths}
-            </p>
+            </NoticeCard>
           </Show>
           <div class="flex gap-2">
             <Button

@@ -1,6 +1,6 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, SettingsSection, prompts, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, prompts, SettingsSection, useLocale } from "@k2b/ui";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { Show } from "solid-js";
 import { accountLinuxError, linuxAccountMessages } from "../../linux-messages";
@@ -18,9 +18,9 @@ export default function PrepareLinuxGroup(props: { id: string }) {
   return (
     <SettingsSection title={t().title} subtitle={t().groupDescription}>
       <Show when={action.error()}>
-        <p role="alert" class="mb-3 text-sm text-red-700 dark:text-red-300">
+        <NoticeCard tone="danger" role="alert">
           {action.error()?.message}
-        </p>
+        </NoticeCard>
       </Show>
       <Button
         size="sm"

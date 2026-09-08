@@ -1,7 +1,7 @@
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
-import { getPrimaryAccountBadge, getProviderBadge } from "../../lib/account-badges";
+
 import { useAccountsMessages } from "../../messages";
 import AddMember from "./AddMember.island";
 import RemoveMember from "./RemoveMember.island";
@@ -81,7 +81,7 @@ export default function ManagersTab(props: ManagersTabProps) {
       {isEmpty ? (
         <Placeholder surface="paper" icon="ti ti-users-group" description={<>{messages().noManagers}</>} />
       ) : (
-        <div class="paper overflow-hidden">
+        <Paper class="overflow-hidden">
           <DataTable
             rows={props.items}
             columns={columns}
@@ -93,7 +93,7 @@ export default function ManagersTab(props: ManagersTabProps) {
             renderCell={({ row: item, col }) => {
               if (item.kind === "user") {
                 const user = item.user;
-                const accessBadge = getPrimaryAccountBadge(user);
+
                 const href = props.isAdmin ? `/app/accounts/users/${user.id}` : undefined;
                 if (col.id === "type") return <span class="text-dimmed">{messages().user}</span>;
                 if (col.id === "name") {
@@ -129,12 +129,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                     </span>
                   );
                 }
-                if (col.id === "access")
-                  return (
-                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${accessBadge.className}`}>
-                      {user.profile === "user" ? messages().fullAccount : messages().guestAccount}
-                    </span>
-                  );
+                if (col.id === "access") return <Tag>{user.profile === "user" ? messages().fullAccount : messages().guestAccount}</Tag>;
                 if (col.id === "actions") {
                   return props.canManage ? (
                     <RemoveMember
@@ -157,9 +152,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                 if (col.id === "name") {
                   const content = (
                     <>
-                      <span class="flex size-6 shrink-0 items-center justify-center rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                        <i class="ti ti-user-key text-sm" aria-hidden="true" />
-                      </span>
+                      <Avatar name={serviceAccount.name} icon="ti ti-user-key" size="xs" />
                       <span class="truncate font-medium">{serviceAccount.name}</span>
                     </>
                   );
@@ -185,17 +178,12 @@ export default function ManagersTab(props: ManagersTabProps) {
                     <span class="text-dimmed">{content}</span>
                   );
                 }
-                if (col.id === "access")
-                  return (
-                    <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                      {kindLabel}
-                    </span>
-                  );
+                if (col.id === "access") return <Tag>{kindLabel}</Tag>;
                 return null;
               }
 
               const group = item.group;
-              const providerBadge = getProviderBadge(group.provider);
+
               const href = props.groupHref(group.id);
               if (col.id === "type") return <span class="text-dimmed">{messages().group}</span>;
               if (col.id === "name")
@@ -211,12 +199,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                   </a>
                 );
               }
-              if (col.id === "access")
-                return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                    {group.provider === "ipa" ? "FreeIPA" : messages().local}
-                  </span>
-                );
+              if (col.id === "access") return <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>;
               if (col.id === "actions")
                 return props.canManage ? (
                   <RemoveMember groupId={props.groupId} membershipRole="managers" type="group" id={group.id} label={group.name} />
@@ -224,7 +207,7 @@ export default function ManagersTab(props: ManagersTabProps) {
               return "";
             }}
           />
-        </div>
+        </Paper>
       )}
 
       <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.pageBaseUrl} />

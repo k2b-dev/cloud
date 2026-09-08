@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -30,10 +30,10 @@ const buildRequestsUrl = (status: StatusFilter, page: number): string => {
   return query.length > 0 ? `/app/accounts/requests?${query}` : "/app/accounts/requests";
 };
 
-const STATUS_PILL: Record<Exclude<StatusFilter, "all">, string> = {
-  pending: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-  completed: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
-  denied: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+const STATUS_TONE: Record<Exclude<StatusFilter, "all">, StatusTone> = {
+  pending: "neutral",
+  completed: "ok",
+  denied: "error",
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -102,7 +102,7 @@ export default ssr<AuthContext>(async (c) => {
             <Placeholder surface="paper" description={<>{t.noRequests}</>} />
           ) : (
             <>
-              <div class="paper overflow-hidden" style="view-transition-name: accounts-requests-table">
+              <Paper class="overflow-hidden" style="view-transition-name: accounts-requests-table">
                 <DataTable
                   rows={requestsPage.items}
                   columns={columns}
@@ -117,11 +117,7 @@ export default ssr<AuthContext>(async (c) => {
                       );
                     if (col.id === "email") return <span class="text-dimmed">{request.email}</span>;
                     if (col.id === "status")
-                      return (
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_PILL[request.status]}`}>
-                          {statusLabel(request.status)}
-                        </span>
-                      );
+                      return <StatusBadge tone={STATUS_TONE[request.status]} label={<> {statusLabel(request.status)} </>} />;
                     if (col.id === "requested") return <span class="text-dimmed">{dates.formatDate(request.createdAt, { locale })}</span>;
                     if (col.id === "comment")
                       return (
@@ -156,7 +152,7 @@ export default ssr<AuthContext>(async (c) => {
                     return "";
                   }}
                 />
-              </div>
+              </Paper>
 
               <div class="pt-1">
                 <Pagination currentPage={requestsPage.page} totalPages={totalPages} baseUrl={paginationUrl} />

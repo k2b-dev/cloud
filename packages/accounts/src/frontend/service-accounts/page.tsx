@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
@@ -31,10 +31,7 @@ const buildUrl = (params: { search?: string; kind?: string; status?: string; pag
   return search ? `/app/accounts/service-accounts?${search}` : "/app/accounts/service-accounts";
 };
 
-const statusClass = (status: ServiceAccountCredentialOverview["status"]) =>
-  status === "active"
-    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-    : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
+const statusTone = (status: ServiceAccountCredentialOverview["status"]): StatusTone => (status === "active" ? "ok" : "error");
 
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
@@ -116,7 +113,7 @@ export default ssr<AuthContext>(async (c) => {
           {credentialsPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.noServiceAccounts}</>} />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-service-accounts-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-service-accounts-table">
               <DataTable
                 rows={credentialsPage.items}
                 columns={columns}
@@ -130,7 +127,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <div class="flex min-w-0 flex-col gap-1">
                         <span class="truncate font-medium text-primary">{entry.name}</span>
-                        <span class="truncate font-mono text-[11px] text-dimmed">cld_{entry.tokenPrefix}_...</span>
+                        <span class="truncate font-mono text-xs text-dimmed">cld_{entry.tokenPrefix}_...</span>
                       </div>
                     );
                   }
@@ -151,7 +148,7 @@ export default ssr<AuthContext>(async (c) => {
                             >
                               {entry.owner.displayName || entry.owner.uid}
                             </a>
-                            <span class="block truncate text-[11px] text-dimmed">{entry.owner.mail ?? entry.owner.uid}</span>
+                            <span class="block truncate text-xs text-dimmed">{entry.owner.mail ?? entry.owner.uid}</span>
                           </div>
                         </div>
                       );
@@ -159,7 +156,7 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <div class="flex min-w-0 flex-col gap-1">
                         <span class="truncate font-medium text-primary">{entry.owner.appId || t.resource}</span>
-                        <span class="truncate text-[11px] text-dimmed">
+                        <span class="truncate text-xs text-dimmed">
                           {entry.owner.resourceType || "resource"} · {entry.owner.resourceId || "-"}
                         </span>
                       </div>
@@ -168,9 +165,7 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "type") return <span class="text-dimmed">{serviceAccountKindLabel(entry.serviceAccount.kind)}</span>;
                   if (col.id === "status")
                     return (
-                      <span class={`w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(entry.status)}`}>
-                        {entry.status === "active" ? t.active : t.revoked}
-                      </span>
+                      <StatusBadge tone={statusTone(entry.status)} label={<> {entry.status === "active" ? t.active : t.revoked} </>} />
                     );
                   if (col.id === "expires") return <span class="text-dimmed">{formatNullableDate(entry.expiresAt)}</span>;
                   if (col.id === "lastUsed") return <span class="text-dimmed">{formatNullableDate(entry.lastUsedAt)}</span>;
@@ -182,7 +177,7 @@ export default ssr<AuthContext>(async (c) => {
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">

@@ -1,7 +1,7 @@
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
 import AccountAvatar from "@/frontend/AccountAvatar";
-import { getPrimaryAccountBadge, getProviderBadge } from "../../lib/account-badges";
+
 import { useAccountsMessages } from "../../messages";
 import AddMember from "./AddMember.island";
 import RemoveMember from "./RemoveMember.island";
@@ -93,7 +93,7 @@ export default function MembersTab(props: MembersTabProps) {
           description={<>{props.search ? messages().noMatchingMembers : messages().noMembers}</>}
         />
       ) : (
-        <div class="paper overflow-hidden">
+        <Paper class="overflow-hidden">
           <DataTable
             rows={props.items}
             columns={columns}
@@ -104,12 +104,10 @@ export default function MembersTab(props: MembersTabProps) {
             scrollPreserveKey="accounts-group-members-table"
             renderCell={({ row: item, col }) => {
               const isIndirect = item.relation?.direct === false;
-              const membershipClass = isIndirect
-                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
-                : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200";
+
               if (item.kind === "user") {
                 const user = item.user;
-                const accessBadge = getPrimaryAccountBadge(user);
+
                 const href = props.isAdmin ? `/app/accounts/users/${user.id}` : undefined;
                 if (col.id === "type") return <span class="text-dimmed">{messages().user}</span>;
                 if (col.id === "name") {
@@ -145,18 +143,8 @@ export default function MembersTab(props: MembersTabProps) {
                     </span>
                   );
                 }
-                if (col.id === "access")
-                  return (
-                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${accessBadge.className}`}>
-                      {user.profile === "user" ? messages().fullAccount : messages().guestAccount}
-                    </span>
-                  );
-                if (col.id === "membership")
-                  return (
-                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${membershipClass}`}>
-                      {isIndirect ? messages().indirect : messages().direct}
-                    </span>
-                  );
+                if (col.id === "access") return <Tag>{user.profile === "user" ? messages().fullAccount : messages().guestAccount}</Tag>;
+                if (col.id === "membership") return <Tag>{isIndirect ? messages().indirect : messages().direct}</Tag>;
                 if (col.id === "actions") {
                   return props.canManage && !isIndirect ? (
                     <RemoveMember
@@ -179,9 +167,7 @@ export default function MembersTab(props: MembersTabProps) {
                 if (col.id === "name") {
                   const content = (
                     <>
-                      <span class="flex size-6 shrink-0 items-center justify-center rounded bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                        <i class="ti ti-user-key text-sm" aria-hidden="true" />
-                      </span>
+                      <Avatar name={serviceAccount.name} icon="ti ti-user-key" size="xs" />
                       <span class="truncate font-medium">{serviceAccount.name}</span>
                     </>
                   );
@@ -207,23 +193,13 @@ export default function MembersTab(props: MembersTabProps) {
                     <span class="text-dimmed">{content}</span>
                   );
                 }
-                if (col.id === "access")
-                  return (
-                    <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                      {kindLabel}
-                    </span>
-                  );
-                if (col.id === "membership")
-                  return (
-                    <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${membershipClass}`}>
-                      {isIndirect ? messages().indirect : messages().direct}
-                    </span>
-                  );
+                if (col.id === "access") return <Tag>{kindLabel}</Tag>;
+                if (col.id === "membership") return <Tag>{isIndirect ? messages().indirect : messages().direct}</Tag>;
                 return null;
               }
 
               const group = item.group;
-              const providerBadge = getProviderBadge(group.provider);
+
               const href = props.groupHref(group.id);
               if (col.id === "type") return <span class="text-dimmed">{messages().group}</span>;
               if (col.id === "name")
@@ -239,18 +215,8 @@ export default function MembersTab(props: MembersTabProps) {
                   </a>
                 );
               }
-              if (col.id === "access")
-                return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                    {group.provider === "ipa" ? "FreeIPA" : messages().local}
-                  </span>
-                );
-              if (col.id === "membership")
-                return (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${membershipClass}`}>
-                    {isIndirect ? messages().indirect : messages().direct}
-                  </span>
-                );
+              if (col.id === "access") return <Tag>{group.provider === "ipa" ? "FreeIPA" : messages().local}</Tag>;
+              if (col.id === "membership") return <Tag>{isIndirect ? messages().indirect : messages().direct}</Tag>;
               if (col.id === "actions") {
                 return props.canManage && !isIndirect ? (
                   <RemoveMember groupId={props.groupId} membershipRole="members" type="group" id={group.id} label={group.name} />
@@ -259,7 +225,7 @@ export default function MembersTab(props: MembersTabProps) {
               return "";
             }}
           />
-        </div>
+        </Paper>
       )}
 
       <Pagination currentPage={props.pagination.page} totalPages={props.pagination.total_pages} baseUrl={props.pageBaseUrl} />

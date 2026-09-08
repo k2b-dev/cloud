@@ -1,17 +1,17 @@
-import { ButtonLink } from "@k2b/ui";
-import { z } from "zod";
+import { ButtonLink, NoticeCard, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@valentinkolb/cloud/services";
 import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js/jsx-runtime";
+import { z } from "zod";
 import { createPagination } from "@/contracts";
 import { ssr } from "../../../config";
 import { toAccountsActor } from "../../../shared/actor";
 import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
-import { getProviderBadge } from "../../lib/account-badges";
+
 import { buildGroupsUrl, GROUPS_CONTEXT_QUERY_KEYS, parseGroupsListState } from "../../lib/url-state";
 import { accountsMessages } from "../../messages";
 import GroupActions from "./GroupActions.island";
@@ -64,7 +64,7 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   const canManage = canManageGroup(user, groupId);
-  const providerBadge = group ? getProviderBadge(group.provider) : null;
+
   const tab = parseGroupDetailTab(c.req.query("tab"), isAdmin);
   const canMutateGroup = group.provider === "local" || freeIpaEnabled;
   const canManageMutations = canManage && canMutateGroup;
@@ -255,16 +255,8 @@ export default ssr<AuthContext>(async (c) => {
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
                 <h1 class="text-xl font-semibold tracking-tight text-primary">{group.name}</h1>
-                {providerBadge && (
-                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${providerBadge.className}`}>
-                    {group.provider === "ipa" ? "FreeIPA" : t.local}
-                  </span>
-                )}
-                {group.gidnumber && (
-                  <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
-                    POSIX
-                  </span>
-                )}
+                {group && <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>}
+                {group.gidnumber && <Tag>POSIX</Tag>}
               </div>
               <p class="mt-1 truncate text-xs text-dimmed">
                 {group.description || t.noDescription}
@@ -283,11 +275,11 @@ export default ssr<AuthContext>(async (c) => {
             )}
           </div>
 
-          <AccountsFactGrid facts={facts} columns={4} viewTransitionName="accounts-group-facts" />
+          <AccountsFactGrid facts={facts} viewTransitionName="accounts-group-facts" />
           {isAdmin && linuxEnabled && group.provider === "local" && group.gidnumber === null && <PrepareLinuxGroup id={group.id} />}
 
           {canManageMutations && !isAdmin && <p class="text-xs text-dimmed">{t.canManageHere}</p>}
-          {!canMutateGroup && <p class="text-xs text-amber-700 dark:text-amber-300">{t.ipaDisabledMutations}</p>}
+          {!canMutateGroup && <NoticeCard tone="warning">{t.ipaDisabledMutations}</NoticeCard>}
 
           <div class="flex flex-wrap items-start justify-between gap-2" style="view-transition-name: accounts-group-tabs">
             <nav class="flex flex-wrap items-center gap-1" aria-label={t.groupDetailSections}>

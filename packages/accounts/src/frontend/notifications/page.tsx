@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, type NotificationBatch, notificationBatches } from "@valentinkolb/cloud/services";
@@ -41,11 +41,11 @@ const buildUrl = (params: { status?: string; page?: number }) => {
   return search ? `/app/accounts/notifications?${search}` : "/app/accounts/notifications";
 };
 
-const statusClass = (status: NotificationBatch["status"]) => {
-  if (status === "completed") return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
-  if (status === "completed_with_errors" || status === "failed") return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
-  if (status === "running" || status === "ready") return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
-  return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+const statusTone = (status: NotificationBatch["status"]): StatusTone => {
+  if (status === "completed") return "ok";
+  if (status === "completed_with_errors" || status === "failed") return "error";
+  if (status === "running" || status === "ready") return "running";
+  return "neutral";
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -114,7 +114,7 @@ export default ssr<AuthContext>(async (c) => {
               description={<>{status ? t.noNotificationBatchesStatus({ status }) : t.noNotificationBatches}</>}
             />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-notifications-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-notifications-table">
               <DataTable
                 rows={batchesPage.items}
                 columns={columns}
@@ -128,16 +128,12 @@ export default ssr<AuthContext>(async (c) => {
                     return (
                       <a href={href} class="block min-w-0">
                         <span class="block truncate font-medium text-primary hover:underline">{entry.subject}</span>
-                        <span class="block truncate text-[11px] text-dimmed">{entry.lastError ?? t.emailBatch}</span>
+                        <span class="block truncate text-xs text-dimmed">{entry.lastError ?? t.emailBatch}</span>
                       </a>
                     );
                   }
                   if (col.id === "status") {
-                    return (
-                      <span class={`w-fit rounded px-1.5 py-0.5 text-[10px] font-medium ${statusClass(entry.status)}`}>
-                        {statusLabel(entry.status)}
-                      </span>
-                    );
+                    return <StatusBadge tone={statusTone(entry.status)} label={<> {statusLabel(entry.status)} </>} />;
                   }
                   if (col.id === "targets")
                     return (
@@ -151,15 +147,18 @@ export default ssr<AuthContext>(async (c) => {
                   if (col.id === "sent") return <span class="text-dimmed">{formatNumber(entry.sentCount, { locale })}</span>;
                   if (col.id === "errors")
                     return (
-                      <span class={entry.errorCount > 0 ? "text-red-600" : "text-dimmed"}>
-                        {formatNumber(entry.errorCount, { locale })}
-                      </span>
+                      <StatusBadge
+                        tone={entry.errorCount > 0 ? "error" : "neutral"}
+                        variant="text"
+                        icon={null}
+                        label={<>{formatNumber(entry.errorCount, { locale })}</>}
+                      />
                     );
                   if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt, { locale })}</span>;
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">

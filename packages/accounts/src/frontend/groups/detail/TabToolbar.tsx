@@ -32,7 +32,7 @@ export default function TabToolbar(props: Props) {
           href={props.indirectToggleUrl}
           size="sm"
           variant={props.indirect ? "secondary" : "subtle"}
-          class={`shrink-0 self-stretch ${props.indirect ? "!bg-violet-100 dark:!bg-violet-900/50 !text-violet-700 dark:!text-violet-300" : ""}`}
+          class="shrink-0 self-stretch"
           title={props.indirect ? messages().showDirectMembers : messages().showAllMembers}
           aria-current={props.indirect ? "true" : undefined}
         >

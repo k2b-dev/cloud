@@ -1,4 +1,4 @@
-import { NoticeCard } from "@k2b/ui";
+import { NoticeCard, Paper } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -66,10 +66,10 @@ export default ssr<AuthContext>(async (c) => {
       <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-new">
         <div class="max-w-2xl mx-auto w-full">
           {accountRequest && (
-            <div class="mb-4 flex flex-col gap-3 rounded-[var(--ui-radius-surface)] bg-amber-500/[0.08] p-4">
+            <NoticeCard tone="info" class="mb-4" bodyClass="flex flex-col gap-3">
               <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold text-primary flex items-center gap-2">
-                  <i class="ti ti-user-plus text-amber-500" />
+                  <i class="ti ti-user-plus" />
                   {t.freeIpaAccessRequest}
                 </h3>
                 <DenyRequest requestId={accountRequest.id} email={accountRequest.email} firstName={accountRequest.firstName} />
@@ -92,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
 
               {accountRequest.comment && (
                 <NoticeCard tone="warning" icon={false}>
-                  <p class="text-[10px] font-semibold mb-1 flex items-center gap-1">
+                  <p class="text-xs font-semibold mb-1 flex items-center gap-1">
                     <i class="ti ti-message text-xs" />
                     {t.requesterNote}
                   </p>
@@ -101,9 +101,9 @@ export default ssr<AuthContext>(async (c) => {
               )}
 
               <p class="text-xs text-dimmed">{t.requestCompletesOnCreate}</p>
-            </div>
+            </NoticeCard>
           )}
-          <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)] p-6">
+          <Paper class="p-6">
             <div class="mb-6 flex flex-col gap-2">
               <h1 class="text-xl font-bold text-primary">{t.createNewAccount}</h1>
               <p class="text-sm text-dimmed">{t.createPageDescription}</p>
@@ -124,25 +124,7 @@ export default ssr<AuthContext>(async (c) => {
                   : undefined
               }
             />
-            <div class="mt-6">
-              <CreateUserForm
-                buttonLabel={t.openAccountCreation}
-                freeIpaEnabled={freeIpaEnabled}
-                prefill={
-                  accountRequest
-                    ? {
-                        requestId: accountRequest.id,
-                        email: accountRequest.email,
-                        givenname: accountRequest.firstName,
-                        sn: accountRequest.lastName,
-                        displayName: accountRequest.displayName ?? undefined,
-                        firstName: accountRequest.firstName,
-                      }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
+          </Paper>
         </div>
       </AccountsWorkspace>
     </Layout>

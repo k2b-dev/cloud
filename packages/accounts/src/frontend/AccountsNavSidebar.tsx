@@ -34,7 +34,7 @@ const renderItem = (item: NavItem) => (
     icon={item.icon}
     active={item.active}
     navigation="document"
-    meta={item.badge ? <span class="text-[10px] text-dimmed">{item.badge}</span> : undefined}
+    meta={item.badge ? <span class="text-xs text-dimmed">{item.badge}</span> : undefined}
   >
     {item.label}
   </AppWorkspace.SidebarItem>

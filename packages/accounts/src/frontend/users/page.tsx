@@ -1,4 +1,4 @@
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
@@ -7,7 +7,7 @@ import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
-import { getManagementBadge, getPrimaryAccountBadge } from "../lib/account-badges";
+
 import { buildUserDetailUrl, buildUsersPageBaseUrl, buildUsersUrl, parseUsersListState } from "../lib/url-state";
 import { accountsMessages } from "../messages";
 import CreateUserForm from "./new/CreateUserForm.island";
@@ -56,7 +56,9 @@ export default ssr<AuthContext>(async (c) => {
         <div class="flex flex-col gap-2">
           <div class="min-w-0" style="view-transition-name: accounts-users-title">
             <h1 class="text-base font-semibold text-primary">{t.users}</h1>
-            <p class="mt-1 text-xs text-dimmed">{listState.search ? t.resultCount({ count: usersPage.total }) : t.userCount({ count: usersPage.total })}</p>
+            <p class="mt-1 text-xs text-dimmed">
+              {listState.search ? t.resultCount({ count: usersPage.total }) : t.userCount({ count: usersPage.total })}
+            </p>
           </div>
 
           <div style="view-transition-name: accounts-users-search">
@@ -80,7 +82,7 @@ export default ssr<AuthContext>(async (c) => {
           {usersPage.items.length === 0 ? (
             <Placeholder surface="paper" description={<>{t.usersEmpty}</>} />
           ) : (
-            <div class="paper overflow-hidden" style="view-transition-name: accounts-users-table">
+            <Paper class="overflow-hidden" style="view-transition-name: accounts-users-table">
               <DataTable
                 rows={usersPage.items}
                 columns={columns}
@@ -110,30 +112,25 @@ export default ssr<AuthContext>(async (c) => {
                       </a>
                     );
                   }
-                  if (col.id === "managedBy") {
-                    const managementBadge = getManagementBadge(entry);
+                  if (col.id === "managedBy" || col.id === "access") {
                     return (
                       <a href={href} class="block" tabindex={-1}>
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${managementBadge.className}`}>
-                          {entry.provider === "ipa" ? "FreeIPA" : t.local}
-                        </span>
-                      </a>
-                    );
-                  }
-                  if (col.id === "access") {
-                    const primaryBadge = getPrimaryAccountBadge(entry);
-                    return (
-                      <a href={href} class="block" tabindex={-1}>
-                        <span class={`rounded px-1.5 py-0.5 text-[10px] font-medium ${primaryBadge.className}`}>
-                          {entry.profile === "user" ? t.fullAccount : t.guestAccount}
-                        </span>
+                        <Tag>
+                          {col.id === "managedBy"
+                            ? entry.provider === "ipa"
+                              ? "FreeIPA"
+                              : t.local
+                            : entry.profile === "user"
+                              ? t.fullAccount
+                              : t.guestAccount}
+                        </Tag>
                       </a>
                     );
                   }
                   return "";
                 }}
               />
-            </div>
+            </Paper>
           )}
 
           <div class="pt-1">
