@@ -65,6 +65,7 @@
     "bun-plugin-tailwind": "0.1.2",
     "happy-dom": "20.11.1",
     "hono": "4.12.32",
+    "seroval": "1.6.0",
     "solid-js": "1.9.14",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3"

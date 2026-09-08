@@ -21,8 +21,21 @@ bun run --cwd docs-site verify:docs
 The UI test command installs registry dependencies in a temporary consumer
 and checks the extracted npm archive, SSR rendering, CSS assets, licenses,
 and browser tree-shaking. It does not use workspace dependency links.
-The UI certification workflow runs these package and documentation checks.
-Require it to pass on the exact release commit.
+The release gates are independent:
+
+| Release | Required checks | Not required |
+| --- | --- | --- |
+| UI npm package | `ui.yml`: package build, types, tests, packed consumer, and standalone fixture | Website certification and Cloud application CI |
+| Website image | `docs.yml`: documentation, examples, catalog, and website build; `website.yml`: production container smoke | UI package test suite and Cloud application release CI |
+
+Both workflows install only their target workspace and its dependencies.
+A failing unrelated Cloud application workflow does not block either release.
+The website still imports Cloud integrations and compiles Cloud API examples;
+errors in those imports must be fixed before publishing the website. It does
+not require a running Cloud installation or a new Cloud npm release.
+
+Require the checks for the intended artifact to pass on its exact release
+commit.
 
 ## Publish UI to npm
 

@@ -2,7 +2,7 @@ name: Cloud website image
 
 on:
   pull_request:
-    paths: ["docs-site/**", "packages/ui/**", "packages/cloud/**", "packages/*/package.json", "fixtures/*/package.json", "package.json", "bun.lock", "bunfig.toml", "patches/**", ".dockerignore", ".github/workflows/website.yml"]
+    paths: ["docs-site/**", "packages/ui/**", "packages/cloud/**", "packages/*/package.json", "fixtures/*/package.json", "package.json", "bun.lock", "bunfig.toml", "patches/**", ".dockerignore", ".github/workflows/website.yml", ".github/workflows/docs.yml"]
   push:
     tags: ["website-v*"]
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   verify:
-    uses: ./.github/workflows/ui.yml
+    uses: ./.github/workflows/docs.yml
 
   image:
     needs: verify
