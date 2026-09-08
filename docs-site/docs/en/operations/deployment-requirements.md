@@ -213,6 +213,9 @@ Redis alone does not prove that a notebook snapshot includes its last update.
 Use the Sync view in Gateway Ops to inspect each application's resources,
 schedules and dead letters. Requeue and manual schedule runs are administrator
 actions routed through Core with target-bound invocation credentials.
+Use the separate NATS view for infrastructure diagnostics. Configure its
+system-account credentials only on Gateway Ops and set up independent outage
+monitoring as described in [NATS operations](/en/docs/operations/nats-operations).
 
 ## Upgrade from Sync 6.2.0
 
@@ -240,5 +243,5 @@ through Core, plus normal domain reads and recovery.
 
 Application authors remove calls to `syncOps.registerDeadLetters()` and
 `syncOps.registerScheduler()`: Cloud discovers native handles automatically.
-Custom administration clients must include `queue` or `job` in dead-letter
+Custom administration clients must include `queue`, `job`, or `topic` in dead-letter
 mutation paths, between `/dead-letters/` and the resource name.

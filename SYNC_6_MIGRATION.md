@@ -5,6 +5,13 @@ NATS JetStream. This requires a coordinated maintenance deployment. A Sync 5
 process cannot see Sync 6 registrations or work, and the new workers do not
 consume the old Redis queues.
 
+This checkout carries a reviewed Bun patch on Sync 6.3.2 for consumer-specific
+topic dead-letter recovery and its shutdown cleanup. Frozen installs and
+Docker builds apply it. No new Sync version has been published for this slice.
+Before publishing the Cloud npm library, publish and adopt the corresponding
+Sync version; downstream npm consumers do not inherit workspace patches.
+See [the patch instructions](patches/README.md).
+
 Keep Redis for Cloud caches, authentication flows, and Cloud-owned rate
 limits; those live outside the `sync:*` prefix. Do not flush Redis or delete
 `sync:*` keys before acceptance: unreviewed durable v5 work (queues, jobs, pump
@@ -139,6 +146,13 @@ Resources this release changes, and how their work is recovered:
    resource in the NATS account. A handle created on first use (`lazySync`)
    stays invisible until that use, so a purely on-demand handle is not missing
    when it does not appear before its first request.
+5. Inspect **Gateway Ops → NATS** for broker nodes, storage, stream replicas,
+   and consumer backlog. Configure the separate Gateway Ops diagnostics
+   credential and independent broker monitoring using
+   [NATS operations](docs-site/docs/en/operations/nats-operations.md). Verify a
+   configured health webhook reaches its destination. Cloud's scheduled
+   checks and delivery depend on NATS and cannot cover a complete broker
+   outage without an external monitor.
 
 ## Verify behavior and recovery
 

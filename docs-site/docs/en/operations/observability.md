@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-08-23
+updated: 2026-09-08
 ---
 
 # Observability
@@ -71,9 +71,12 @@ highest traffic.
 
 For background work, inspect the latest run and then its history. A stuck run is
 an abandoned span, not proof that a worker is still active. The Sync page lists
-queue and job dead letters only; a topic consumer that gives up on a poison
-event (for example gateway telemetry) parks it in that consumer's own
-dead-letter stream, which is visible through the NATS CLI, not on the page.
+queue, job, and topic-consumer dead letters. Topic recovery targets the original
+consumer; historical entries without the original replay metadata remain
+inspectable but cannot be replayed. Use the separate NATS page for broker nodes,
+storage, stream replication, and consumer backlog. Follow
+[NATS operations](/en/docs/operations/nats-operations) for diagnostics access,
+recovery, health webhooks, and independent outage monitoring.
 
 Use the dedicated pages for:
 
