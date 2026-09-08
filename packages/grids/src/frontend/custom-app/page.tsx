@@ -1,9 +1,20 @@
 import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
+import { projectPublishedRecords } from "../../api/custom-app-public-dto";
 import { resolvePublishedCustomAppRuntime } from "../../api/custom-app-published-runtime";
 import { projectDocuments } from "../../api/documents-api-shared";
+import { toPublicForm } from "../../api/form-api-shared";
 import { accessActorUser, actorViewerFor, gridsAccessContext } from "../../api/permissions";
+import {
+  type PublicField,
+  type PublicGridFile,
+  type PublicGridRecord,
+  toPublicFields,
+  toPublicFiles,
+  toPublicRecord,
+  toPublicTable,
+} from "../../api/public-dto";
 import { ssr } from "../../config";
 import type { Field, GridRecord } from "../../contracts";
 import { customAppPageRecordFieldIds } from "../../custom-apps/conditions";
@@ -43,6 +54,7 @@ import {
 import { executePublishedCustomAppRecords } from "../../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../../service/custom-app-runtime-query";
 import type { PublicRenderableForm } from "../../service/forms";
+import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../../service/public-resources";
 import { scannerLauncherPromptInputSources } from "../../workflows/contracts";
 import type { PublicDocument } from "../_components/documents/public-document-types";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
@@ -75,31 +87,30 @@ type BlockResult = { ok: true; result: CustomAppRecordsSuccess } | { ok: false; 
 type MetricsBlockData = { ok: true; cells: CustomAppMetricCell[] } | { ok: false; message: string };
 type ChartBlockData = { ok: true; chart: CustomAppChartData } | { ok: false; message: string };
 type PageRecord = {
-  record: GridRecord;
-  fields: Field[];
+  record: PublicGridRecord;
+  fields: PublicField[];
   relationLabels: Record<string, string>;
   tableName: string;
   auditPolicy: NonNullable<Awaited<ReturnType<typeof gridsService.table.get>>>["auditPolicy"];
-  filesByField: Awaited<ReturnType<typeof gridsService.file.listForRecord>>;
+  filesByField: Record<string, PublicGridFile[]>;
   fileEndpoints: Record<string, string>;
 };
 type FormBlockData =
   | {
       ok: true;
       form: PublicRenderableForm;
-      fields: Field[];
-      inlineTargetFields: Record<string, Field[]>;
+      fields: PublicField[];
+      inlineTargetFields: Record<string, PublicField[]>;
       submitUrl: string;
     }
   | { ok: false; message: string };
 type CustomAppDocument = PublicDocument & { downloadUrl: string };
 type ResolvedPublishedForm = NonNullable<Awaited<ReturnType<typeof resolvePublishedCustomAppForm>>>;
 
-const preparePublishedForm = (
+const preparePublishedForm = async (
   resolved: ResolvedPublishedForm,
-  fixedFieldIds: readonly string[],
-): Omit<Extract<FormBlockData, { ok: true }>, "submitUrl"> | null => {
-  const fixed = new Set(fixedFieldIds);
+): Promise<Omit<Extract<FormBlockData, { ok: true }>, "submitUrl"> | null> => {
+  const fixed = new Set(Object.keys(resolved.fixedValues));
   const renderable = gridsService.form.toPublicRenderableForm(resolved.form);
   renderable.config = {
     ...renderable.config,
@@ -123,7 +134,22 @@ const preparePublishedForm = (
       (field) => field.tableId === targetTableId && !field.deletedAt && allowedIds.has(field.id),
     );
   }
-  return { ok: true, form: renderable, fields, inlineTargetFields };
+  const publicTargetTableIds = await projectPublicIds("table", Object.keys(inlineTargetFields));
+  if (publicTargetTableIds.size !== Object.keys(inlineTargetFields).length) return null;
+  const publicInlineTargetFields = Object.fromEntries(
+    await Promise.all(
+      Object.entries(inlineTargetFields).map(async ([tableId, targetFields]) => [
+        publicTargetTableIds.get(tableId)!,
+        await toPublicFields(targetFields),
+      ]),
+    ),
+  );
+  return {
+    ok: true,
+    form: await toPublicForm({ ...resolved.form, config: renderable.config }),
+    fields: await toPublicFields(fields),
+    inlineTargetFields: publicInlineTargetFields,
+  };
 };
 
 const availableIdsInBatches = async <T extends { id: string }>(
@@ -376,7 +402,8 @@ export default ssr<AuthContext>(async (c) => {
     signal: c.req.raw.signal,
   });
   if (!runtime) return ssr.error(c, 404, { layout: "minimal" });
-  const { app, definition, capabilities, base, page, pageParams, dateConfig, runtimeContext, authSubjectIds, viewer } = runtime;
+  const { app, definition, capabilities, base, page, pageParams, publicPageParams, dateConfig, runtimeContext, authSubjectIds, viewer } =
+    runtime;
   const availabilityCapability = (pageId: string, target: "page" | "block" | "action", blockId?: string, actionId?: string) =>
     capabilities.availability.find(
       (candidate) =>
@@ -451,8 +478,15 @@ export default ssr<AuthContext>(async (c) => {
     }),
   };
   const parameterRecords = new Map<string, GridRecord>();
+  const parameterTableIds = await resolvePublicIds(
+    "table",
+    Object.values(page.parameters).map((parameter) => parameter.tableId),
+  );
   for (const [parameterId, parameter] of Object.entries(page.parameters)) {
-    const record = await gridsService.record.get(parameter.tableId, pageParams[parameterId]!, {
+    const tableId = parameterTableIds.get(parameter.tableId);
+    const table = tableId ? await gridsService.table.get(tableId) : null;
+    if (!table || table.baseId !== app.baseId) return ssr.error(c, 404, { layout: "minimal" });
+    const record = await gridsService.record.get(table.id, pageParams[parameterId]!, {
       viewer,
       dateConfig,
     });
@@ -460,21 +494,27 @@ export default ssr<AuthContext>(async (c) => {
     parameterRecords.set(parameterId, record);
   }
 
-  let pageRecord: PageRecord | null = null;
+  let pageRecord: GridRecord | null = null;
   const pageRecords = new Map<string, PageRecord>();
   const renderedHtml = new Map<string, { html: unknown; fieldName: string }>();
   const recordUpdateEndpoints = new Map<string, string>();
   const documents = new Map<string, CustomAppDocument[]>();
   if (page.record) {
-    const capability = capabilities.records.find((candidate) => candidate.pageId === page.id && candidate.tableId === page.record!.tableId);
-    const expectedFieldIds = customAppPageRecordFieldIds(page);
-    const expectedEditableFieldIds = [
+    const tableId = parameterTableIds.get(page.record.tableId);
+    if (!tableId) return ssr.error(c, 404, { layout: "minimal" });
+    const capability = capabilities.records.find((candidate) => candidate.pageId === page.id && candidate.tableId === tableId);
+    const publicFieldIds = customAppPageRecordFieldIds(page);
+    const publicEditableFieldIds = [
       ...new Set(
         page.rows.flatMap((row) =>
           row.columns.flatMap((column) => column.blocks.flatMap((block) => (block.type === "record" ? block.editableFieldIds : []))),
         ),
       ),
     ].sort();
+    const fieldIds = await resolvePublicIds("field", [...publicFieldIds, ...publicEditableFieldIds]);
+    if (fieldIds.size !== new Set([...publicFieldIds, ...publicEditableFieldIds]).size) return ssr.error(c, 404, { layout: "minimal" });
+    const expectedFieldIds = publicFieldIds.map((id) => fieldIds.get(id)!).sort();
+    const expectedEditableFieldIds = publicEditableFieldIds.map((id) => fieldIds.get(id)!).sort();
     if (
       !capability ||
       capability.fieldIds.join("\0") !== expectedFieldIds.join("\0") ||
@@ -485,10 +525,11 @@ export default ssr<AuthContext>(async (c) => {
     const record = parameterRecords.get(page.record.id.path);
     if (!record) return ssr.error(c, 404, { layout: "minimal" });
     const allowed = new Set(capability.fieldIds);
-    const fields = (await gridsService.field.listByTable(page.record.tableId)).filter((field) => allowed.has(field.id));
+    const fields = (await gridsService.field.listByTable(tableId)).filter((field) => allowed.has(field.id));
     if (fields.length !== allowed.size) return ssr.error(c, 404, { layout: "minimal" });
-    const table = await gridsService.table.get(page.record.tableId);
-    if (!table) return ssr.error(c, 404, { layout: "minimal" });
+    const table = await gridsService.table.get(tableId);
+    if (!table || table.baseId !== app.baseId) return ssr.error(c, 404, { layout: "minimal" });
+    const publicTable = await toPublicTable(table);
     const relationTargetTableIds = [...new Set(capability.relationLabels.map((relation) => relation.targetTableId))];
     const relationTargetTables = await Promise.all(relationTargetTableIds.map((tableId) => gridsService.table.get(tableId)));
     if (relationTargetTables.some((target) => !target || target.baseId !== app.baseId)) return ssr.error(c, 404, { layout: "minimal" });
@@ -496,7 +537,7 @@ export default ssr<AuthContext>(async (c) => {
     const liveRelationLabels = customAppRecordRelationSnapshot(fields, targetFieldsByTableId);
     if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels))
       return ssr.error(c, 404, { layout: "minimal" });
-    const relationTableIds = [page.record.tableId, ...relationTargetTableIds];
+    const relationTableIds = [tableId, ...relationTargetTableIds];
     const relationViewer = {
       ...actorViewerFor(requestAccess),
       isAdmin: false,
@@ -505,23 +546,15 @@ export default ssr<AuthContext>(async (c) => {
     };
     const fileFieldIds = fields.filter((field) => field.type === "file").map((field) => field.id);
     const filesByField = await gridsService.file.listForRecord({
-      tableId: page.record.tableId,
+      tableId,
       recordId: record.id,
       fieldIds: fileFieldIds,
     });
-    pageRecord = {
-      record,
-      fields,
-      relationLabels: {},
-      tableName: table.name,
-      auditPolicy: table.auditPolicy,
-      filesByField,
-      fileEndpoints: {},
-    };
+    pageRecord = record;
     const visibleHtmlBlocks = runtimePage.rows.flatMap((row) =>
       row.columns.flatMap((column) => column.blocks.filter((candidate): candidate is HtmlBlock => candidate.type === "html")),
     );
-    const fieldsById = new Map(fields.map((field) => [field.id, field]));
+    const fieldsById = new Map(fields.map((field) => [field.shortId, field]));
     for (const block of visibleHtmlBlocks) {
       const field = fieldsById.get(block.fieldId);
       if (!field || field.type !== "html_template") return ssr.error(c, 404, { layout: "minimal" });
@@ -531,9 +564,9 @@ export default ssr<AuthContext>(async (c) => {
       row.columns.flatMap((column) => column.blocks.filter((candidate): candidate is RecordBlock => candidate.type === "record")),
     );
     for (const block of visibleRecordBlocks) {
-      const blockFieldIds = new Set(block.fieldIds);
+      const blockFieldIds = new Set(block.fieldIds.map((id) => fieldIds.get(id)!));
       const blockFields = fields.filter((field) => blockFieldIds.has(field.id));
-      const blockRecord = projectCustomAppRecord(record, block.fieldIds);
+      const blockRecord = projectCustomAppRecord(record, [...blockFieldIds]);
       const blockRelations = capability.relationLabels.filter((relation) => blockFieldIds.has(relation.fieldId));
       const relationLabels = await buildCustomAppRecordLabelCache({
         records: [blockRecord],
@@ -542,19 +575,34 @@ export default ssr<AuthContext>(async (c) => {
         viewer: relationViewer,
         actorUserId: accessActorUser(requestAccess)?.id ?? null,
       });
-      pageRecords.set(block.id, {
-        record: blockRecord,
-        fields: blockFields,
-        relationLabels,
-        tableName: table.name,
-        auditPolicy: table.auditPolicy,
-        filesByField: Object.fromEntries(
-          blockFields.filter((field) => field.type === "file").map((field) => [field.id, filesByField[field.id] ?? []]),
+      const [publicRecord, publicFields, publicRelationIds] = await Promise.all([
+        toPublicRecord(blockRecord, blockFields),
+        toPublicFields(blockFields),
+        projectPublicIds("record", Object.keys(relationLabels)),
+      ]);
+      const publicFilesByField = Object.fromEntries(
+        await Promise.all(
+          blockFields
+            .filter((field) => field.type === "file")
+            .map(async (field) => [field.shortId, await toPublicFiles(filesByField[field.id] ?? [])]),
         ),
+      );
+      pageRecords.set(block.id, {
+        record: publicRecord,
+        fields: publicFields,
+        relationLabels: Object.fromEntries(
+          Object.entries(relationLabels).flatMap(([id, label]) => {
+            const publicId = publicRelationIds.get(id);
+            return publicId ? [[publicId, label]] : [];
+          }),
+        ),
+        tableName: table.name,
+        auditPolicy: publicTable.auditPolicy,
+        filesByField: publicFilesByField,
         fileEndpoints: Object.fromEntries(
           blockFields
             .filter((field) => field.type === "file")
-            .map((field) => [field.id, customAppRecordFilesUrl(app.shortId, page.id, block.id, field.id, pageParams)]),
+            .map((field) => [field.shortId, customAppRecordFilesUrl(app.shortId, page.id, block.id, field.shortId, publicPageParams)]),
         ),
       });
     }
@@ -564,7 +612,7 @@ export default ssr<AuthContext>(async (c) => {
         row.columns.flatMap((column) => column.blocks.filter((candidate): candidate is RecordBlock => candidate.type === "record")),
       )) {
         if (block.editableFieldIds.length > 0) {
-          recordUpdateEndpoints.set(block.id, customAppRecordUpdateUrl(app.shortId, page.id, block.id, pageParams));
+          recordUpdateEndpoints.set(block.id, customAppRecordUpdateUrl(app.shortId, page.id, block.id, publicPageParams));
         }
       }
     }
@@ -575,10 +623,13 @@ export default ssr<AuthContext>(async (c) => {
       ),
     );
     const configuredTemplateIds = new Set<string>();
+    const publicTemplateIds = documentBlocks.flatMap((block) => block.documents?.templateIds ?? []);
+    const templateIds = await resolvePublicIds("documentTemplate", publicTemplateIds);
+    if (templateIds.size !== new Set(publicTemplateIds).size) return ssr.error(c, 404, { layout: "minimal" });
     for (const block of documentBlocks) {
-      const expectedTemplateIds = [...(block.documents?.templateIds ?? [])].sort();
+      const expectedTemplateIds = (block.documents?.templateIds ?? []).map((id) => templateIds.get(id)!).sort();
       const capability = capabilities.documents.find(
-        (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record!.tableId,
+        (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === tableId,
       );
       if (!capability || capability.templateIds.join("\0") !== expectedTemplateIds.join("\0"))
         return ssr.error(c, 404, { layout: "minimal" });
@@ -587,17 +638,17 @@ export default ssr<AuthContext>(async (c) => {
     const readableTemplateIds: string[] = [];
     for (const templateId of configuredTemplateIds) {
       const template = await gridsService.document.getTemplate(templateId);
-      if (!template || template.tableId !== page.record.tableId) continue;
+      if (!template || template.tableId !== tableId) continue;
       readableTemplateIds.push(templateId);
     }
     const documentSummaries = await gridsService.document.listDocumentSummariesForRecordByTemplates(
-      page.record.tableId,
+      tableId,
       record.id,
       readableTemplateIds,
     );
     const projectedDocuments = await projectDocuments(documentSummaries);
     for (const block of documentBlocks) {
-      const allowed = new Set(block.documents?.templateIds ?? []);
+      const allowed = new Set((block.documents?.templateIds ?? []).map((id) => templateIds.get(id)!));
       documents.set(
         block.id,
         documentSummaries.flatMap((documentSummary, index) => {
@@ -606,7 +657,7 @@ export default ssr<AuthContext>(async (c) => {
             ? [
                 {
                   ...document,
-                  downloadUrl: customAppDocumentDownloadUrl(app.shortId, page.id, block.id, documentSummary.id, pageParams),
+                  downloadUrl: customAppDocumentDownloadUrl(app.shortId, page.id, block.id, document.id, publicPageParams),
                 },
               ]
             : [];
@@ -642,16 +693,13 @@ export default ssr<AuthContext>(async (c) => {
         if (!published.response.ok) {
           return [block.id, { ok: false, message: published.response.diagnostics[0]?.message ?? t.dataSourceUnavailable }];
         }
+        const projected = await projectPublishedRecords(published);
+        if (!projected.ok) return [block.id, { ok: false, message: t.dataSourceUnavailable }];
         return [
           block.id,
           {
             ok: true,
-            result: {
-              ...published.response,
-              ...(published.presentation ? { presentation: published.presentation } : {}),
-              ...(published.cards ? { cards: published.cards } : {}),
-              ...(published.rowNavigationParams ? { rowNavigationParams: published.rowNavigationParams } : {}),
-            },
+            result: projected,
           },
         ];
       } catch {
@@ -668,18 +716,19 @@ export default ssr<AuthContext>(async (c) => {
   const insightEntries = await Promise.all(
     insightBlocks.map(async (block): Promise<[string, MetricsBlockData | ChartBlockData]> => {
       const source = block.source;
+      const viewId = source.kind === "view" ? await resolvePublicId("view", source.viewId) : null;
       const capability = capabilities.insights.find(
         (candidate) =>
           candidate.pageId === page.id &&
           candidate.blockId === block.id &&
           candidate.blockType === block.type &&
           candidate.source.kind === source.kind &&
-          (candidate.source.kind !== "view" || (source.kind === "view" && candidate.source.viewId === source.viewId)),
+          (candidate.source.kind !== "view" || (source.kind === "view" && candidate.source.viewId === viewId)),
       );
       if (!capability) return [block.id, { ok: false, message: t.dataSourceNotPublished }];
       const maxRows = block.type === "metrics" ? 1 : block.limit;
       try {
-        const view = source.kind === "view" ? await gridsService.view.get(source.viewId) : null;
+        const view = viewId ? await gridsService.view.get(viewId) : null;
         if (source.kind === "view" && (!view || capability.source.kind !== "view")) {
           return [block.id, { ok: false, message: t.savedViewChanged }];
         }
@@ -724,10 +773,10 @@ export default ssr<AuthContext>(async (c) => {
   const commentEndpoints = new Map<string, string>();
   for (const block of commentBlocks) {
     const capability = capabilities.comments.find(
-      (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record?.tableId,
+      (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === pageRecord?.tableId,
     );
     if (!capability || !page.record || !pageRecord) return ssr.error(c, 404, { layout: "minimal" });
-    commentEndpoints.set(block.id, customAppCommentsUrl(app.shortId, page.id, block.id, pageParams));
+    commentEndpoints.set(block.id, customAppCommentsUrl(app.shortId, page.id, block.id, publicPageParams));
   }
   const formBlocks = runtimePage.rows.flatMap((row) =>
     row.columns.flatMap((column) => column.blocks.filter((block): block is FormBlock => block.type === "form")),
@@ -738,7 +787,7 @@ export default ssr<AuthContext>(async (c) => {
       if (!resolvedForm) {
         return [block.id, { ok: false, message: t.thisFormUnavailable }];
       }
-      const prepared = preparePublishedForm(resolvedForm, Object.keys(block.fixedValues));
+      const prepared = await preparePublishedForm(resolvedForm);
       if (!prepared) {
         return [block.id, { ok: false, message: t.formChanged }];
       }
@@ -746,7 +795,7 @@ export default ssr<AuthContext>(async (c) => {
         block.id,
         {
           ...prepared,
-          submitUrl: customAppFormSubmitUrl(app.shortId, page.id, block.id, pageParams),
+          submitUrl: customAppFormSubmitUrl(app.shortId, page.id, block.id, publicPageParams),
         },
       ];
     }),
@@ -756,7 +805,7 @@ export default ssr<AuthContext>(async (c) => {
   for (const action of availableSidebarActions) {
     const resolvedForm = await resolvePublishedCustomAppForm({ surface: action, capabilities });
     if (!resolvedForm) continue;
-    const prepared = preparePublishedForm(resolvedForm, Object.keys(action.fixedValues));
+    const prepared = await preparePublishedForm(resolvedForm);
     if (!prepared) continue;
     sidebarActions.push({
       id: action.id,
@@ -780,18 +829,19 @@ export default ssr<AuthContext>(async (c) => {
     for (const action of block.actions) {
       if (!(await available("action", action.availableWhen?.query, block.id, action.id))) continue;
       if (action.kind === "navigate") {
-        const href = customAppActionHref(app.shortId, action, pageParams, pageRecord?.record.id);
+        const href = customAppActionHref(app.shortId, action, publicPageParams, pageRecord?.shortId);
         if (href) rendered.push({ id: action.id, kind: "navigate", label: action.label, icon: action.icon, href, history: action.history });
         continue;
       }
       if (!accessActorUser(requestAccess)) continue;
+      const launcherId = await resolvePublicId("workflowLauncher", action.launcherId);
       const capability = capabilities.workflowLaunchers.find(
         (candidate) =>
           "pageId" in candidate &&
           candidate.pageId === page.id &&
           candidate.blockId === block.id &&
           candidate.actionId === action.id &&
-          candidate.launcherId === action.launcherId,
+          candidate.launcherId === launcherId,
       );
       if (capability) {
         rendered.push({
@@ -799,7 +849,7 @@ export default ssr<AuthContext>(async (c) => {
           kind: "workflow",
           label: action.label,
           icon: action.icon,
-          endpoint: customAppActionUrl(app.shortId, page.id, block.id, action.id, pageParams),
+          endpoint: customAppActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
           confirm: action.confirm,
         });
       }
@@ -809,18 +859,19 @@ export default ssr<AuthContext>(async (c) => {
   const rowActions = new Map<string, CustomAppRenderedRowAction[]>();
   const recordEndpoints = new Map<string, string>();
   for (const block of blocks) {
-    recordEndpoints.set(block.id, customAppRecordsUrl(app.shortId, page.id, block.id, pageParams));
+    recordEndpoints.set(block.id, customAppRecordsUrl(app.shortId, page.id, block.id, publicPageParams));
     const rendered: CustomAppRenderedRowAction[] = [];
     if (accessActorUser(requestAccess)) {
       for (const action of block.rowActions ?? []) {
         if (!(await available("action", action.availableWhen?.query, block.id, action.id))) continue;
+        const launcherId = await resolvePublicId("workflowLauncher", action.launcherId);
         const capability = capabilities.workflowLaunchers.find(
           (candidate) =>
             "pageId" in candidate &&
             candidate.pageId === page.id &&
             candidate.blockId === block.id &&
             candidate.actionId === action.id &&
-            candidate.launcherId === action.launcherId,
+            candidate.launcherId === launcherId,
         );
         if (!capability) continue;
         rendered.push({
@@ -828,7 +879,7 @@ export default ssr<AuthContext>(async (c) => {
           label: action.label,
           icon: action.icon,
           showLabel: action.showLabel,
-          endpoint: customAppRowActionUrl(app.shortId, page.id, block.id, action.id, pageParams),
+          endpoint: customAppRowActionUrl(app.shortId, page.id, block.id, action.id, publicPageParams),
           confirm: action.confirm,
         });
       }
@@ -841,12 +892,13 @@ export default ssr<AuthContext>(async (c) => {
       row.columns.flatMap((column) => column.blocks.filter((block): block is ScannerBlock => block.type === "scanner")),
     );
     for (const block of scannerBlocks) {
+      const launcherId = await resolvePublicId("workflowLauncher", block.launcherId);
       const capability = capabilities.scannerLaunchers.find(
-        (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.launcherId === block.launcherId,
+        (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.launcherId === launcherId,
       );
       if (!capability) continue;
       const [launcher, workflow] = await Promise.all([
-        gridsService.workflow.launcher.get(block.launcherId),
+        gridsService.workflow.launcher.get(capability.launcherId),
         gridsService.workflow.get(capability.workflowId),
       ]);
       if (
@@ -864,7 +916,7 @@ export default ssr<AuthContext>(async (c) => {
         continue;
       }
       scanners.set(block.id, {
-        endpoint: customAppScannerUrl(app.shortId, page.id, block.id, pageParams),
+        endpoint: customAppScannerUrl(app.shortId, page.id, block.id, publicPageParams),
         state: {
           baseId: base.shortId,
           launcherId: launcher.shortId,

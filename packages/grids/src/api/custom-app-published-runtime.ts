@@ -91,7 +91,7 @@ export const resolvePublishedCustomAppRuntime = async (input: PublishedCustomApp
     publicPageParams[parameterId] = value;
   }
   const records = await resolvePublicIds("record", Object.values(publicPageParams));
-  if (records.size !== Object.keys(publicPageParams).length) return null;
+  if (records.size !== new Set(Object.values(publicPageParams)).size) return null;
   const pageParams = Object.fromEntries(
     Object.entries(publicPageParams).map(([parameterId, recordId]) => [parameterId, records.get(recordId!)!]),
   );
@@ -138,6 +138,7 @@ export const resolvePublishedCustomAppRuntime = async (input: PublishedCustomApp
   return {
     ...global,
     page,
+    publicPageParams,
     pageParams,
     runtimeContext,
     blocks,

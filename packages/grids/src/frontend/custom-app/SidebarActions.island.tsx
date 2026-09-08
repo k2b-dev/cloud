@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, dialogCore, PanelDialog, panelDialogOptions } from "@k2b/ui";
 import { For } from "solid-js";
-import type { Field } from "../../contracts";
+import type { PublicField as Field } from "../../api/public-dto";
 import type { PublicRenderableForm } from "../../service/forms";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
 

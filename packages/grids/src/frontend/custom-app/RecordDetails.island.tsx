@@ -1,10 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DescriptionList, IconButton, PanelHeader, Placeholder, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
+import type { PublicField as Field, PublicGridFile as GridFile, PublicGridRecord as GridRecord } from "../../api/public-dto";
 import type { RecordMutationAudit, TableAuditPolicy } from "../../contracts";
 import type { CustomAppBlock } from "../../custom-apps/contracts";
 import { recordAuditRequirementFor } from "../../record-audit-policy";
-import type { Field, GridFile, GridRecord } from "../../service";
 import { downloadPdfResponse } from "../_components/documents/document-download";
 import type { PublicDocument } from "../_components/documents/public-document-types";
 import { openRecordAuditDialog } from "../_components/records/RecordAuditDialog";

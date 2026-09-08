@@ -15,8 +15,9 @@
  */
 
 import { type AccessSubject, getEffectiveGroupIds } from "@valentinkolb/cloud/server";
-import { accounts } from "@valentinkolb/cloud/services";
+import { accounts, toPgUuidArray } from "@valentinkolb/cloud/services";
 import type { WorkflowActionContext } from "@valentinkolb/cloud/workflows";
+import { sql } from "bun";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { customAppPageHref, resolveCustomAppPageParams } from "../custom-apps/routing";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
@@ -173,14 +174,24 @@ const customAppAuthorizationIsAvailable = async (params: {
   const page = app.publishedDefinition.pages.find((candidate) => candidate.id === authorization.pageId);
   const pageParams = page ? resolveCustomAppPageParams(page, authorization.pageParams) : null;
   if (!page || !pageParams || !sameStringRecord(pageParams, authorization.pageParams)) return false;
+  const recordIds = [...new Set(Object.values(pageParams))];
+  const db = params.client ?? sql;
+  const records =
+    recordIds.length > 0
+      ? await db<Array<{ id: string; shortId: string }>>`SELECT id::text, short_id AS "shortId" FROM grids.records
+        WHERE id = ANY(${toPgUuidArray(recordIds)}) AND deleted_at IS NULL`
+      : [];
+  const publicRecordIds = new Map(records.map((record) => [record.id, record.shortId]));
+  if (publicRecordIds.size !== recordIds.length) return false;
+  const publicPageParams = Object.fromEntries(Object.entries(pageParams).map(([key, id]) => [key, publicRecordIds.get(id)!]));
   const context = buildCustomAppQueryContext({
     user,
     authSubjectIds,
     app,
     base,
     page,
-    pageUrl: customAppPageHref(app.shortId, page.id, pageParams),
-    pageParams,
+    pageUrl: customAppPageHref(app.shortId, page.id, publicPageParams),
+    pageParams: publicPageParams,
     dateConfig: { timeZone: authorization.timeZone },
     now: new Date(),
   });
@@ -299,7 +310,7 @@ export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, cli
         : block?.type === "records" || block?.type === "referenced_records"
           ? block.rowActions?.find((candidate) => candidate.id === authorization.actionId)
           : null;
-    if (!action || !("launcherId" in action) || action.launcherId !== claim.launcherId) return false;
+    if (!action || !("launcherId" in action) || action.launcherId !== launcher.shortId) return false;
     const capabilityMatches = app.publishedCapabilities.workflowLaunchers.some(
       (capability) =>
         "pageId" in capability &&
@@ -340,7 +351,7 @@ export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, cli
     const block = page?.rows
       .flatMap((row) => row.columns.flatMap((column) => column.blocks))
       .find((candidate) => candidate.id === authorization.blockId);
-    if (!block || block.type !== "scanner" || block.launcherId !== claim.launcherId) return false;
+    if (!block || block.type !== "scanner" || block.launcherId !== launcher.shortId) return false;
     const capabilityMatches = app.publishedCapabilities.scannerLaunchers.some(
       (capability) =>
         capability.pageId === page!.id &&

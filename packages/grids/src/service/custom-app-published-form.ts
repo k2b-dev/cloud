@@ -2,6 +2,7 @@ import { type Field, ShortIdSchema } from "../contracts";
 import type { CustomAppCapabilities, CustomAppFormBlock, CustomAppPage, CustomAppSidebarAction } from "../custom-apps/contracts";
 import { customAppFormInlineTargetTableIds } from "../custom-apps/form-capability";
 import { customAppFormMatchesPublishedCapability } from "../custom-apps/form-runtime";
+import { customAppBindingRecordTableId } from "../custom-apps/value-bindings";
 import { listByTable } from "./fields";
 import { get as getForm } from "./forms";
 import { resolvePublicId, resolvePublicIds } from "./public-resources";
@@ -34,10 +35,21 @@ export const resolvePublishedCustomAppForm = async (input: {
     resolvePublicIds("field", publicFixedFieldIds),
   ]);
   if (formId !== capability.formId || fixedFieldIds.size !== publicFixedFieldIds.length) return null;
-  const surface: PublishedFormSurface =
-    "type" in input.surface
-      ? { ...input.surface, formId, fixedValues: remapFixedValues(input.surface.fixedValues, fixedFieldIds) }
-      : { ...input.surface, formId, fixedValues: remapFixedValues(input.surface.fixedValues, fixedFieldIds) };
+  const fixedValues = remapFixedValues(input.surface.fixedValues, fixedFieldIds);
+  const bindingTableReferences = new Map<string, string>();
+  for (const [fieldId, binding] of Object.entries(fixedValues)) {
+    if (binding.source === "LITERAL" || binding.source === "AUTH") continue;
+    const tableId = input.page ? customAppBindingRecordTableId(binding, input.page) : null;
+    if (!tableId || !ShortIdSchema.safeParse(tableId).success) return null;
+    bindingTableReferences.set(fieldId, tableId);
+  }
+  const tableIds = await resolvePublicIds("table", [...new Set(bindingTableReferences.values())]);
+  const bindingTableIds = new Map<string, string>();
+  for (const [fieldId, reference] of bindingTableReferences) {
+    const tableId = tableIds.get(reference);
+    if (!tableId) return null;
+    bindingTableIds.set(fieldId, tableId);
+  }
   const form = await getForm(formId);
   if (!form) return null;
   const fields = await listByTable(form.tableId, true);
@@ -46,8 +58,8 @@ export const resolvePublishedCustomAppForm = async (input: {
   ).flat();
   if (
     !customAppFormMatchesPublishedCapability({
-      block: surface,
-      page: input.page,
+      fixedValues,
+      bindingTableIds,
       form,
       fields,
       inlineTargetFields,
@@ -56,5 +68,5 @@ export const resolvePublishedCustomAppForm = async (input: {
   ) {
     return null;
   }
-  return { form, fields, inlineTargetFields, surface } as const;
+  return { form, fields, inlineTargetFields, fixedValues } as const;
 };

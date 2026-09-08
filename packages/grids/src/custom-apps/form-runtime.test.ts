@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Field } from "../contracts";
 import type { Form } from "../service/forms";
-import type { CustomAppCapabilities, CustomAppFormBlock, CustomAppPage, CustomAppSidebarAction } from "./contracts";
+import type { CustomAppCapabilities, CustomAppFormValueBinding } from "./contracts";
 import { customAppFormFieldHash, customAppFormSecurityHash } from "./form-capability";
 import { customAppFormMatchesPublishedCapability } from "./form-runtime";
 
@@ -12,19 +12,10 @@ const textFieldId = uuid(3);
 const relationFieldId = uuid(4);
 const formId = uuid(5);
 
-const block: CustomAppFormBlock = {
-  id: "create",
-  type: "form",
-  formId,
-  fixedValues: { [relationFieldId]: { source: "PARAMS", path: "parent_id" } },
+const fixedValues: Record<string, CustomAppFormValueBinding> = {
+  [relationFieldId]: { source: "PARAMS", path: "parent_id" },
 };
-const page: CustomAppPage = {
-  id: "create",
-  title: "Create",
-  navigation: { visible: false },
-  parameters: { parent_id: { type: "record", tableId: parentTableId, required: true } },
-  rows: [{ id: "main", columns: [{ id: "content", span: 12, blocks: [block] }] }],
-};
+const bindingTableIds = new Map([[relationFieldId, parentTableId]]);
 const form = {
   id: formId,
   tableId,
@@ -37,8 +28,8 @@ const form = {
   },
 } as Form;
 const capability: CustomAppCapabilities["forms"][number] = {
-  pageId: page.id,
-  blockId: block.id,
+  pageId: "create",
+  blockId: "create",
   formId,
   tableId,
   userInputFieldIds: [relationFieldId, textFieldId].sort(),
@@ -63,19 +54,53 @@ capability.formSecurityHash = customAppFormSecurityHash({ tableId, config: form.
 
 describe("Grids App Form runtime capability", () => {
   test("accepts the exact published Form and relation binding", () => {
-    expect(customAppFormMatchesPublishedCapability({ block, page, form, fields, inlineTargetFields: [], capability })).toBe(true);
+    expect(
+      customAppFormMatchesPublishedCapability({ fixedValues, bindingTableIds, form, fields, inlineTargetFields: [], capability }),
+    ).toBe(true);
+  });
+
+  test("requires resolved binding table identities for both parameter and page-record relations", () => {
+    for (const binding of [
+      { source: "PARAMS", path: "parent_id" },
+      { source: "RECORD", path: "id" },
+    ] as const) {
+      for (const target of [undefined, "Parent", uuid(99), parentTableId]) {
+        expect(
+          customAppFormMatchesPublishedCapability({
+            fixedValues: { [relationFieldId]: binding },
+            bindingTableIds: target ? new Map([[relationFieldId, target]]) : new Map(),
+            form,
+            fields,
+            inlineTargetFields: [],
+            capability,
+          }),
+        ).toBe(target === parentTableId);
+      }
+    }
+  });
+
+  test("does not accept public fixed-field keys in the resolved capability comparison", () => {
+    expect(
+      customAppFormMatchesPublishedCapability({
+        fixedValues: { Parent: { source: "PARAMS", path: "parent_id" } },
+        bindingTableIds: new Map([["Parent", parentTableId]]),
+        form,
+        fields,
+        inlineTargetFields: [],
+        capability,
+      }),
+    ).toBe(false);
   });
 
   test("accepts typed literals and the compatible page record as trusted values", () => {
-    const literalBlock: CustomAppFormBlock = {
-      ...block,
-      fixedValues: { [textFieldId]: { source: "LITERAL", value: "Prepared" } },
+    const literalValues: Record<string, CustomAppFormValueBinding> = {
+      [textFieldId]: { source: "LITERAL", value: "Prepared" },
     };
     const literalCapability = { ...capability, fixedFieldIds: [textFieldId] };
     expect(
       customAppFormMatchesPublishedCapability({
-        block: literalBlock,
-        page,
+        fixedValues: literalValues,
+        bindingTableIds,
         form,
         fields,
         inlineTargetFields: [],
@@ -84,8 +109,8 @@ describe("Grids App Form runtime capability", () => {
     ).toBe(true);
     expect(
       customAppFormMatchesPublishedCapability({
-        block: { ...literalBlock, fixedValues: { [textFieldId]: { source: "LITERAL", value: { invalid: true } } } },
-        page,
+        fixedValues: { [textFieldId]: { source: "LITERAL", value: { invalid: true } } },
+        bindingTableIds,
         form,
         fields,
         inlineTargetFields: [],
@@ -93,18 +118,10 @@ describe("Grids App Form runtime capability", () => {
       }),
     ).toBe(false);
 
-    const recordPage: CustomAppPage = {
-      ...page,
-      record: { tableId: parentTableId, id: { source: "PARAMS", path: "parent_id" } },
-    };
-    const recordBlock: CustomAppFormBlock = {
-      ...block,
-      fixedValues: { [relationFieldId]: { source: "RECORD", path: "id" } },
-    };
     expect(
       customAppFormMatchesPublishedCapability({
-        block: recordBlock,
-        page: recordPage,
+        fixedValues: { [relationFieldId]: { source: "RECORD", path: "id" } },
+        bindingTableIds,
         form,
         fields,
         inlineTargetFields: [],
@@ -124,16 +141,11 @@ describe("Grids App Form runtime capability", () => {
       ...form,
       config: { fields: [{ kind: "user_input" as const, fieldId: principalField.id }] },
     };
-    const sidebarAction: Extract<CustomAppSidebarAction, { kind: "form" }> = {
-      id: "new-request",
-      kind: "form",
-      label: "New request",
-      tone: "success",
-      formId,
-      fixedValues: { [principalField.id]: { source: "AUTH", path: "currentUser" } },
+    const sidebarValues: Record<string, CustomAppFormValueBinding> = {
+      [principalField.id]: { source: "AUTH", path: "currentUser" },
     };
     const sidebarCapability: CustomAppCapabilities["forms"][number] = {
-      sidebarActionId: sidebarAction.id,
+      sidebarActionId: "new-request",
       formId,
       tableId,
       userInputFieldIds: [principalField.id],
@@ -144,7 +156,8 @@ describe("Grids App Form runtime capability", () => {
 
     expect(
       customAppFormMatchesPublishedCapability({
-        block: sidebarAction,
+        fixedValues: sidebarValues,
+        bindingTableIds: new Map(),
         form: sidebarForm,
         fields: [principalField],
         inlineTargetFields: [],
@@ -153,7 +166,8 @@ describe("Grids App Form runtime capability", () => {
     ).toBe(true);
     expect(
       customAppFormMatchesPublishedCapability({
-        block: sidebarAction,
+        fixedValues: sidebarValues,
+        bindingTableIds: new Map(),
         form: sidebarForm,
         fields: [{ ...principalField, type: "text" }],
         inlineTargetFields: [],
@@ -172,12 +186,19 @@ describe("Grids App Form runtime capability", () => {
 
   test("fails closed when fields or relation targets drift after publish", () => {
     expect(
-      customAppFormMatchesPublishedCapability({ block, page, form, fields: fields.slice(1), inlineTargetFields: [], capability }),
+      customAppFormMatchesPublishedCapability({
+        fixedValues,
+        bindingTableIds,
+        form,
+        fields: fields.slice(1),
+        inlineTargetFields: [],
+        capability,
+      }),
     ).toBe(false);
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form,
         fields: [fields[0]!, { ...fields[1]!, config: { targetTableId: uuid(99) } }],
         inlineTargetFields: [],
@@ -186,8 +207,8 @@ describe("Grids App Form runtime capability", () => {
     ).toBe(false);
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form,
         fields: [{ ...fields[0]!, type: "number" }, fields[1]!],
         inlineTargetFields: [],
@@ -196,8 +217,8 @@ describe("Grids App Form runtime capability", () => {
     ).toBe(false);
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form,
         fields: [fields[0]!, { ...fields[1]!, deletedAt: "2026-08-10T00:00:00.000Z" }],
         inlineTargetFields: [],
@@ -216,8 +237,8 @@ describe("Grids App Form runtime capability", () => {
     };
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form: driftedForm,
         fields,
         inlineTargetFields: [],
@@ -260,8 +281,8 @@ describe("Grids App Form runtime capability", () => {
     };
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form: inlineForm,
         fields: [fields[1]!],
         inlineTargetFields: [targetField],
@@ -270,8 +291,8 @@ describe("Grids App Form runtime capability", () => {
     ).toBe(true);
     expect(
       customAppFormMatchesPublishedCapability({
-        block,
-        page,
+        fixedValues,
+        bindingTableIds,
         form: inlineForm,
         fields: [fields[1]!],
         inlineTargetFields: [{ ...targetField, config: { maxLength: 500 } }],

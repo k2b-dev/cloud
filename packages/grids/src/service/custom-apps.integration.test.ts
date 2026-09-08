@@ -1,12 +1,15 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
+import { projectPublishedRecords } from "../api/custom-app-public-dto";
 import { type CustomAppDefinition, CustomAppDefinitionSchema } from "../custom-apps/contracts";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
+import { canonicalCustomAppQueryContext } from "../custom-apps/query-plan-hash";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess } from "./access";
+import { executePublishedCustomAppRecords } from "./custom-app-records-query";
 import {
   apply,
   compile,
@@ -111,12 +114,119 @@ describe("Grids App lifecycle", () => {
         ],
       };
 
+      const originalDefinition = structuredClone(definition);
       const compiled = await compile(definition);
       if (!compiled.ok) throw new Error(compiled.diagnostics[0]?.message ?? "Compilation failed");
       expect(compiled.ok).toBe(true);
+      expect(definition).toEqual(originalDefinition);
+      expect(compiled.compiled.definition).toEqual(CustomAppDefinitionSchema.parse(originalDefinition));
+      expect(compiled.compiled.bindings).toEqual({ appId: null, baseId });
+      expect(compiled.compiled.capabilities.records).toEqual([
+        expect.objectContaining({ pageId: "customer", tableId: customerTableId, fieldIds: [customerNameId] }),
+      ]);
       expect(compiled.compiled.capabilities.recordQueries).toEqual([
         expect.objectContaining({ pageId: "customer", blockId: "orders", primaryTableId: orderTableId, tableIds: [orderTableId] }),
       ]);
+
+      const customerRecordId = testUuid();
+      const customerRecordShortId = testShortId("R");
+      const orderRecordId = testUuid();
+      const orderRecordShortId = testShortId("R");
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES
+        (${customerRecordId}::uuid, ${customerRecordShortId}, ${customerTableId}::uuid, ${{ [customerNameId]: "Customer" }}::jsonb),
+        (${orderRecordId}::uuid, ${orderRecordShortId}, ${orderTableId}::uuid, ${{ [orderNumberId]: "Needle" }}::jsonb)`;
+      await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
+        VALUES (${orderRecordId}::uuid, ${customerRelationId}::uuid, ${customerRecordId}::uuid)`;
+      const page = definition.pages[1]!;
+      const referencedBlock = page.rows[0]!.columns[0]!.blocks[1]!;
+      if (referencedBlock.type !== "referenced_records") throw new Error("Expected referenced records fixture");
+      const runtime = {
+        baseId,
+        customAppId: testUuid(),
+        publishedAt: "2026-09-08T00:00:00.000Z",
+        page,
+        pageParams: { customer_id: customerRecordId },
+        block: referencedBlock,
+        capabilities: compiled.compiled.capabilities,
+        context: { ...canonicalCustomAppQueryContext({}), "params.customer_id": customerRecordShortId },
+        signal: new AbortController().signal,
+        timeZone: "UTC",
+        viewer: { userId: null, userGroups: [], isAdmin: true },
+        viewerUserId: null,
+        viewerServiceAccountId: null,
+      };
+      const searched = await executePublishedCustomAppRecords({ ...runtime, search: "Needle" });
+      expect(searched?.response.ok).toBe(true);
+      if (!searched?.response.ok) throw new Error("Referenced records search failed");
+      expect(searched.response.rows.map((row) => row.recordId)).toEqual([orderRecordId]);
+      const noMatch = await executePublishedCustomAppRecords({ ...runtime, search: "Absent" });
+      expect(noMatch?.response.ok && noMatch.response.rows).toEqual([]);
+
+      const navigable = structuredClone(definition);
+      navigable.pages[0]!.rows[0]!.columns[0]!.blocks = [
+        {
+          id: "orders",
+          type: "records",
+          searchable: true,
+          pageSize: 25,
+          source: { kind: "gql", query: `from table {${orderTableShortId}}\nselect {${orderNumberShortId}}, {${customerRelationShortId}}` },
+          display: { kind: "table", columnIds: [orderNumberShortId] },
+          rowNavigate: {
+            kind: "navigate",
+            pageId: "customer",
+            history: "push",
+            params: {
+              customer_id: { source: "ROW", path: "relation", fieldId: customerRelationShortId },
+            },
+          },
+        },
+      ];
+      const navigationCompiled = await compile(navigable);
+      if (!navigationCompiled.ok) throw new Error(navigationCompiled.diagnostics.map((item) => item.message).join("; "));
+      const navigationPage = navigable.pages[0]!;
+      const navigationBlock = navigationPage.rows[0]!.columns[0]!.blocks[0]!;
+      if (navigationBlock.type !== "records") throw new Error("Expected navigable records fixture");
+      const navigated = await executePublishedCustomAppRecords({
+        ...runtime,
+        page: navigationPage,
+        pageParams: {},
+        block: navigationBlock,
+        capabilities: navigationCompiled.compiled.capabilities,
+      });
+      expect(navigated?.rowNavigationParams).toEqual({ [orderRecordId]: { customer_id: customerRecordId } });
+      if (!navigated) throw new Error("Relation navigation failed");
+      const projected = await projectPublishedRecords(navigated);
+      expect(projected.rowNavigationParams).toEqual({ [orderRecordShortId]: { customer_id: customerRecordShortId } });
+      expect(projected.ok && projected.rows[0]?.recordId).toBe(orderRecordShortId);
+
+      // Public references must be resolved in the owning Base, never passed on
+      // to a UUID query or accepted merely because the ShortID exists globally.
+      const foreignBaseId = testUuid();
+      const foreignTableId = testUuid();
+      const foreignTableShortId = testShortId("T");
+      try {
+        await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${foreignBaseId}::uuid, ${testShortId("B")}, 'Foreign App base')`;
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${foreignTableId}::uuid, ${foreignTableShortId}, ${foreignBaseId}::uuid, 'Foreign customers')`;
+        for (const tableShortId of [testShortId("Z"), foreignTableShortId]) {
+          const invalid = structuredClone(definition);
+          invalid.pages[1]!.parameters.customer_id!.tableId = tableShortId;
+          const before = structuredClone(invalid);
+          const result = await compile(invalid);
+          expect(result.ok).toBe(false);
+          expect(invalid).toEqual(before);
+          if (!result.ok) {
+            expect(result.diagnostics.some((item) => item.path.includes("tableId"))).toBe(true);
+          }
+        }
+      } finally {
+        await sql`DELETE FROM grids.bases WHERE id = ${foreignBaseId}::uuid`;
+      }
+      await sql`UPDATE grids.fields SET deleted_at = NOW() WHERE id = ${customerNameId}::uuid`;
+      const deletedField = await compile(definition);
+      expect(deletedField.ok).toBe(false);
+      if (!deletedField.ok) expect(deletedField.diagnostics.some((item) => item.path.includes("fieldIds"))).toBe(true);
+      await sql`UPDATE grids.fields SET deleted_at = NULL WHERE id = ${customerNameId}::uuid`;
 
       await sql`
         UPDATE grids.fields
@@ -204,8 +314,9 @@ describe("Grids App lifecycle", () => {
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) {
         expect(rejected.diagnostics).toContainEqual({
+          code: "html_field.type",
           path: ["pages", 1, "rows", 0, "columns", 0, "blocks", 0, "fieldId"],
-          message: `Field ${textFieldId} is not an HTML template field`,
+          message: `Field ${textFieldShortId} is not an HTML template field.`,
         });
       }
     } finally {
@@ -245,8 +356,10 @@ describe("Grids App lifecycle", () => {
       expect(app?.publishedDefinition).toBeNull();
       expect(app?.draftValid).toBe(false);
       expect(app?.publishedValid).toBe(false);
-      expect(app?.draftDiagnostics[0]?.message).toContain("schemaVersion 1");
-      expect(app?.draftDiagnostics[0]?.message).toContain("replace");
+      expect(app?.draftDiagnostics[0]).toEqual({
+        path: ["draft", "schemaVersion"],
+        message: "Stored draft is not a valid Grids App schemaVersion 5 definition.",
+      });
       expect((await listSummariesByBase(baseId))[0]?.publishedValid).toBe(false);
       expect(await getPublishedByShortId(shortId)).toBeNull();
       expect((await publish(appId)).ok).toBe(false);
@@ -331,6 +444,7 @@ describe("Grids App lifecycle", () => {
     const otherFieldId = testUuid();
     let appId = testUuid();
     const requestRecordId = testUuid();
+    const requestRecordShortId = testShortId("R");
     const workflowId = testUuid();
     const bulkWorkflowId = testUuid();
     const accessIds: string[] = [];
@@ -399,10 +513,10 @@ describe("Grids App lifecycle", () => {
         VALUES (${otherFieldId}::uuid, ${testShortId("F")}, ${otherTableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
       `;
       await sql`
-        INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html)
+        INSERT INTO grids.document_templates (id, short_id, table_id, name, renderer_kind, source, html, number_template, filename_template)
         VALUES
-          (${documentTemplateId}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Certificate', 'from table Requests', '<p>Certificate</p>'),
-          (${otherDocumentTemplateId}::uuid, ${testShortId("D")}, ${otherTableId}::uuid, 'Other document', 'from table Other', '<p>Other</p>')
+          (${documentTemplateId}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Certificate', 'html', 'from table Requests', '<p>Certificate</p>', 'CERT-{{ document.id }}', '{{ document.number }}.pdf'),
+          (${otherDocumentTemplateId}::uuid, ${testShortId("D")}, ${otherTableId}::uuid, 'Other document', 'html', 'from table Other', '<p>Other</p>', 'OTHER-{{ document.id }}', '{{ document.number }}.pdf')
       `;
       await sql`
         INSERT INTO grids.views (id, short_id, table_id, name, source)
@@ -530,7 +644,7 @@ describe("Grids App lifecycle", () => {
             title: "My requests",
             navigation: { visible: true },
             parameters: {},
-            availableWhen: { query: `from table {${publicId(tableId)}}\nwhere record.id = 'REC001'\nlimit 1` },
+            availableWhen: { query: `from table {${publicId(tableId)}}\nwhere record.id = '${requestRecordShortId}'\nlimit 1` },
             rows: [
               {
                 id: "content",
@@ -655,6 +769,40 @@ describe("Grids App lifecycle", () => {
         ],
       };
 
+      const originalDefinition = structuredClone(definition);
+      const compiled = await compile(definition);
+      if (!compiled.ok) throw new Error(compiled.diagnostics.map((item) => item.message).join("; "));
+      expect(definition).toEqual(originalDefinition);
+      expect(compiled.compiled.definition).toEqual(CustomAppDefinitionSchema.parse(originalDefinition));
+      expect(compiled.compiled.bindings).toEqual({ appId: null, baseId });
+
+      const parameterAction = structuredClone(definition);
+      const actions = parameterAction.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "actions");
+      if (!actions || actions.type !== "actions") throw new Error("Missing action fixture");
+      const workflowAction = actions.actions.find((action) => action.kind === "workflow");
+      if (!workflowAction || workflowAction.kind !== "workflow") throw new Error("Missing workflow action fixture");
+      workflowAction.inputs.request = { source: "PARAMS", path: "request_id" };
+      const parameterCompiled = await compile(parameterAction);
+      if (!parameterCompiled.ok) throw new Error(parameterCompiled.diagnostics.map((item) => item.message).join("; "));
+      expect(parameterCompiled.compiled.capabilities.workflowLaunchers).toEqual(compiled.compiled.capabilities.workflowLaunchers);
+      const isolatedPage = structuredClone(parameterAction.pages[1]!);
+      isolatedPage.id = "parameter-binding";
+      isolatedPage.parameters.other_request = { type: "record", tableId: publicId(otherTableId), required: true };
+      const isolatedActions = isolatedPage.rows[0]!.columns[0]!.blocks.find((block) => block.type === "actions");
+      if (!isolatedActions || isolatedActions.type !== "actions") throw new Error("Missing isolated action fixture");
+      delete isolatedPage.record;
+      isolatedPage.rows[0]!.columns[0]!.blocks = [isolatedActions];
+      const isolatedWorkflowAction = isolatedActions.actions.find((action) => action.kind === "workflow");
+      if (!isolatedWorkflowAction || isolatedWorkflowAction.kind !== "workflow")
+        throw new Error("Missing isolated workflow action fixture");
+      isolatedWorkflowAction.inputs.request = { source: "PARAMS", path: "other_request" };
+      parameterAction.pages.push(isolatedPage);
+      const wrongParameterBinding = await compile(parameterAction);
+      expect(wrongParameterBinding.ok).toBe(false);
+      if (!wrongParameterBinding.ok) {
+        expect(wrongParameterBinding.diagnostics.some((item) => item.path.includes("inputs"))).toBe(true);
+      }
+
       const created = await apply(definition);
       expect(created.ok, created.ok ? undefined : created.error.message).toBe(true);
       if (!created.ok) throw new Error(created.error.message);
@@ -664,6 +812,9 @@ describe("Grids App lifecycle", () => {
       expect(created.data.publishedDefinition).toBeNull();
       const capabilities = created.data.draftCapabilities;
       if (!capabilities) throw new Error("Applied Grids App capabilities must be valid");
+      expect(definition).toEqual(originalDefinition);
+      expect(created.data.draftDefinition).toEqual(CustomAppDefinitionSchema.parse(originalDefinition));
+      expect(capabilities).toEqual(compiled.compiled.capabilities);
       const planHashes = [
         ...capabilities.availability.map((capability) => capability.planHash),
         ...capabilities.views.map((capability) => capability.planHash),
@@ -697,7 +848,10 @@ describe("Grids App lifecycle", () => {
           {
             target: "page",
             pageId: "home",
-            sourceHash: customAppViewSourceHash(baseId, `from table {${publicId(tableId)}}\nwhere record.id = 'REC001'\nlimit 1`),
+            sourceHash: customAppViewSourceHash(
+              baseId,
+              `from table {${publicId(tableId)}}\nwhere record.id = '${requestRecordShortId}'\nlimit 1`,
+            ),
             tableIds: [tableId],
           },
           {
@@ -831,7 +985,7 @@ describe("Grids App lifecycle", () => {
       if (!authUser) throw new Error("Grids App lifecycle test needs one auth user");
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${requestRecordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, ${JSON.stringify({ [fieldId]: authUser.id })}::jsonb)
+        VALUES (${requestRecordId}::uuid, ${requestRecordShortId}, ${tableId}::uuid, ${JSON.stringify({ [fieldId]: authUser.id })}::jsonb)
       `;
       const publishedAt = firstPublish.data.publishedAt!;
       const appGrant = await grantAccess({
@@ -945,7 +1099,7 @@ describe("Grids App lifecycle", () => {
 
       const invalid = await compile({
         ...definition,
-        id: testUuid(),
+        id: testShortId("A"),
         pages: [
           {
             ...definition.pages[0],
@@ -961,8 +1115,8 @@ describe("Grids App lifecycle", () => {
                         type: "records",
                         searchable: true,
                         pageSize: 25,
-                        source: { kind: "view", viewId },
-                        display: { kind: "table", columnIds: [testUuid()] },
+                        source: { kind: "view", viewId: publicId(viewId) },
+                        display: { kind: "table", columnIds: [testShortId("F")] },
                       },
                     ],
                   },
@@ -976,9 +1130,9 @@ describe("Grids App lifecycle", () => {
 
       const invalidGlobalContext = structuredClone(definition);
       invalidGlobalContext.sidebar!.actions[0]!.availableWhen = {
-        query: `from table {${tableId}}\nwhere {${fieldId}} = @page.id\nlimit 1`,
+        query: `from table {${publicId(tableId)}}\nwhere {${publicId(fieldId)}} = @page.id\nlimit 1`,
       };
-      const invalidGlobalContextResult = await compile({ ...invalidGlobalContext, id: testUuid() });
+      const invalidGlobalContextResult = await compile({ ...invalidGlobalContext, id: testShortId("A") });
       expect(invalidGlobalContextResult.ok).toBe(false);
       if (!invalidGlobalContextResult.ok) {
         expect(invalidGlobalContextResult.diagnostics.some((diagnostic) => diagnostic.message.includes("@page.id"))).toBe(true);
@@ -987,9 +1141,9 @@ describe("Grids App lifecycle", () => {
       const computedEdit = structuredClone(definition);
       const computedRecord = computedEdit.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "record")!;
       if (computedRecord.type !== "record") throw new Error("Expected Record block");
-      computedRecord.fieldIds.push(computedFieldId);
-      computedRecord.editableFieldIds = [computedFieldId];
-      const computedEditResult = await compile({ ...computedEdit, id: testUuid() });
+      computedRecord.fieldIds.push(publicId(computedFieldId));
+      computedRecord.editableFieldIds = [publicId(computedFieldId)];
+      const computedEditResult = await compile({ ...computedEdit, id: testShortId("A") });
       expect(computedEditResult.ok).toBe(false);
       if (!computedEditResult.ok) {
         expect(computedEditResult.diagnostics.some((diagnostic) => diagnostic.message.includes("not a writable record field"))).toBe(true);
@@ -998,8 +1152,8 @@ describe("Grids App lifecycle", () => {
       const rawMetric = structuredClone(definition);
       const metricBlock = rawMetric.pages[0]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "metrics")!;
       if (metricBlock.type !== "metrics") throw new Error("Expected Metrics block");
-      metricBlock.source = { kind: "gql", query: `from table {${tableId}}` };
-      const rawMetricResult = await compile({ ...rawMetric, id: testUuid() });
+      metricBlock.source = { kind: "gql", query: `from table {${publicId(tableId)}}` };
+      const rawMetricResult = await compile({ ...rawMetric, id: testShortId("A") });
       expect(rawMetricResult.ok).toBe(false);
       if (!rawMetricResult.ok) {
         expect(rawMetricResult.diagnostics.some((diagnostic) => diagnostic.message.includes("ungrouped scalar aggregations"))).toBe(true);
@@ -1010,9 +1164,9 @@ describe("Grids App lifecycle", () => {
       if (chartBlock.type !== "chart") throw new Error("Expected Chart block");
       chartBlock.source = {
         kind: "gql",
-        query: `from table {${tableId}}\naggregate count(*) as requests`,
+        query: `from table {${publicId(tableId)}}\naggregate count(*) as requests`,
       };
-      const ungroupedChartResult = await compile({ ...ungroupedChart, id: testUuid() });
+      const ungroupedChartResult = await compile({ ...ungroupedChart, id: testShortId("A") });
       expect(ungroupedChartResult.ok).toBe(false);
       if (!ungroupedChartResult.ok) {
         expect(ungroupedChartResult.diagnostics.some((diagnostic) => diagnostic.message.includes("must group rows"))).toBe(true);
@@ -1021,8 +1175,8 @@ describe("Grids App lifecycle", () => {
       const wrongDocumentTemplate = structuredClone(definition);
       const documentRecord = wrongDocumentTemplate.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "record")!;
       if (documentRecord.type !== "record") throw new Error("Expected Record block");
-      documentRecord.documents = { templateIds: [otherDocumentTemplateId] };
-      const wrongDocumentResult = await compile({ ...wrongDocumentTemplate, id: testUuid() });
+      documentRecord.documents = { templateIds: [publicId(otherDocumentTemplateId)] };
+      const wrongDocumentResult = await compile({ ...wrongDocumentTemplate, id: testShortId("A") });
       expect(wrongDocumentResult.ok).toBe(false);
       if (!wrongDocumentResult.ok) {
         expect(wrongDocumentResult.diagnostics.some((diagnostic) => diagnostic.message.includes("another table"))).toBe(true);
@@ -1035,11 +1189,11 @@ describe("Grids App lifecycle", () => {
       if (!relationRecords || relationRecords.type !== "records" || !relationRecords.rowNavigate) {
         throw new Error("Expected navigable Records block");
       }
-      relationRecords.rowNavigate.params.request_id = { source: "ROW", path: "relation", fieldId: relationFieldId };
-      expect((await compile({ ...relationRowTarget, id: testUuid() })).ok).toBe(true);
+      relationRecords.rowNavigate.params.request_id = { source: "ROW", path: "relation", fieldId: publicId(relationFieldId) };
+      expect((await compile({ ...relationRowTarget, id: testShortId("A") })).ok).toBe(true);
 
-      relationRecords.source = { kind: "gql", query: `from table {${tableId}}\nselect {${fieldId}}` };
-      const unselectedRelationTarget = await compile({ ...relationRowTarget, id: testUuid() });
+      relationRecords.source = { kind: "gql", query: `from table {${publicId(tableId)}}\nselect {${publicId(fieldId)}}` };
+      const unselectedRelationTarget = await compile({ ...relationRowTarget, id: testShortId("A") });
       expect(unselectedRelationTarget.ok).toBe(false);
       if (!unselectedRelationTarget.ok) {
         expect(unselectedRelationTarget.diagnostics.some((diagnostic) => diagnostic.message.includes("selected single relation"))).toBe(
@@ -1049,13 +1203,13 @@ describe("Grids App lifecycle", () => {
 
       const wrongRowTarget = await compile({
         ...definition,
-        id: testUuid(),
+        id: testShortId("A"),
         pages: [
           definition.pages[0],
           {
             ...definition.pages[1],
-            parameters: { request_id: { type: "record", tableId: otherTableId, required: true } },
-            record: { tableId: otherTableId, id: { source: "PARAMS", path: "request_id" } },
+            parameters: { request_id: { type: "record", tableId: publicId(otherTableId), required: true } },
+            record: { tableId: publicId(otherTableId), id: { source: "PARAMS", path: "request_id" } },
             rows: [
               {
                 id: "detail",
@@ -1063,7 +1217,7 @@ describe("Grids App lifecycle", () => {
                   {
                     id: "main",
                     span: 12,
-                    blocks: [{ id: "request-details", type: "record", fieldIds: [otherFieldId], editableFieldIds: [] }],
+                    blocks: [{ id: "request-details", type: "record", fieldIds: [publicId(otherFieldId)], editableFieldIds: [] }],
                   },
                 ],
               },
@@ -1078,7 +1232,7 @@ describe("Grids App lifecycle", () => {
 
       const wrongFixedTarget = await compile({
         ...definition,
-        id: testUuid(),
+        id: testShortId("A"),
         pages: [
           {
             ...definition.pages[0],
@@ -1091,8 +1245,8 @@ describe("Grids App lifecycle", () => {
           },
           {
             ...definition.pages[1],
-            parameters: { request_id: { type: "record", tableId: otherTableId, required: true } },
-            record: { tableId: otherTableId, id: { source: "PARAMS", path: "request_id" } },
+            parameters: { request_id: { type: "record", tableId: publicId(otherTableId), required: true } },
+            record: { tableId: publicId(otherTableId), id: { source: "PARAMS", path: "request_id" } },
             rows: [
               {
                 id: "detail",
@@ -1101,12 +1255,12 @@ describe("Grids App lifecycle", () => {
                     id: "main",
                     span: 12,
                     blocks: [
-                      { id: "request-details", type: "record", fieldIds: [otherFieldId], editableFieldIds: [] },
+                      { id: "request-details", type: "record", fieldIds: [publicId(otherFieldId)], editableFieldIds: [] },
                       {
                         id: "follow-up",
                         type: "form",
-                        formId,
-                        fixedValues: { [relationFieldId]: { source: "PARAMS", path: "request_id" } },
+                        formId: publicId(formId),
+                        fixedValues: { [publicId(relationFieldId)]: { source: "PARAMS", path: "request_id" } },
                       },
                     ],
                   },

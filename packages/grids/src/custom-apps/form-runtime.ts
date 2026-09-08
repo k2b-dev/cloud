@@ -1,9 +1,8 @@
 import type { Field } from "../contracts";
 import { getRecordWritableFieldType } from "../field-types";
 import type { Form } from "../service/forms";
-import type { CustomAppCapabilities, CustomAppFormBlock, CustomAppPage, CustomAppSidebarAction } from "./contracts";
+import type { CustomAppCapabilities, CustomAppFormValueBinding } from "./contracts";
 import { customAppFormFieldHash, customAppFormSecurityHash } from "./form-capability";
-import { customAppBindingRecordTableId } from "./value-bindings";
 
 type FormCapability = CustomAppCapabilities["forms"][number];
 
@@ -11,14 +10,14 @@ const sameStrings = (left: string[], right: string[]) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
 export const customAppFormMatchesPublishedCapability = (input: {
-  block: CustomAppFormBlock | Extract<CustomAppSidebarAction, { kind: "form" }>;
-  page?: CustomAppPage;
+  fixedValues: Record<string, CustomAppFormValueBinding>;
+  bindingTableIds: ReadonlyMap<string, string>;
   form: Form;
   fields: Field[];
   inlineTargetFields: Field[];
   capability: FormCapability;
 }): boolean => {
-  const { block, page, form, fields, inlineTargetFields, capability } = input;
+  const { fixedValues, bindingTableIds, form, fields, inlineTargetFields, capability } = input;
   if (!form.isActive || form.id !== capability.formId || form.tableId !== capability.tableId) return false;
 
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
@@ -26,7 +25,7 @@ export const customAppFormMatchesPublishedCapability = (input: {
     .filter((entry) => entry.kind === "user_input")
     .map((entry) => entry.fieldId)
     .sort();
-  const fixedFieldIds = Object.keys(block.fixedValues).sort();
+  const fixedFieldIds = Object.keys(fixedValues).sort();
   const fieldIds = [...new Set([...userInputFieldIds, ...fixedFieldIds])];
   if (
     !sameStrings(userInputFieldIds, capability.userInputFieldIds) ||
@@ -39,7 +38,7 @@ export const customAppFormMatchesPublishedCapability = (input: {
     return false;
   }
 
-  return Object.entries(block.fixedValues).every(([fieldId, value]) => {
+  return Object.entries(fixedValues).every(([fieldId, value]) => {
     const field = fieldsById.get(fieldId);
     if (!field) return false;
     if (value.source === "LITERAL") {
@@ -48,6 +47,6 @@ export const customAppFormMatchesPublishedCapability = (input: {
     }
     if (value.source === "AUTH") return field.type === "principal";
     const targetTableId = field?.type === "relation" ? (field.config as { targetTableId?: unknown }).targetTableId : null;
-    return Boolean(page) && typeof targetTableId === "string" && targetTableId === customAppBindingRecordTableId(value, page!);
+    return typeof targetTableId === "string" && targetTableId === bindingTableIds.get(fieldId);
   });
 };

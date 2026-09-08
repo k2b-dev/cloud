@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { CustomAppDefinition } from "./contracts";
-import { buildCustomAppRuntimeContext, customAppDefinitionWithAvailableNavigation } from "./runtime-context";
+import {
+  buildCustomAppGlobalRuntimeContext,
+  buildCustomAppRuntimeContext,
+  customAppDefinitionWithAvailableNavigation,
+} from "./runtime-context";
 
 const common = {
-  app: { id: "APP001", name: "Loans" },
-  base: { id: "BASE01", name: "Inventory" },
+  app: { id: "019fa000-0000-7000-8000-000000000001", shortId: "APP001", name: "Loans" },
+  base: { id: "019fa000-0000-7000-8000-000000000002", shortId: "BASE01", name: "Inventory" },
   page: { id: "mine", title: "My loans" },
   pageUrl: "/apps/APP1/mine?state=open",
   pageParams: { state: "open" },
@@ -78,6 +82,13 @@ describe("Grids App runtime context", () => {
     expect(query["auth.subjects"]).toEqual([]);
   });
 
+  test("uses public App and Base identities for global context and URLs", () => {
+    const context = buildCustomAppGlobalRuntimeContext({ ...common, access: { actor: undefined, accessSubject: null } });
+    expect(context.query["app.id"]).toBe(common.app.shortId);
+    expect(context.query["base.id"]).toBe(common.base.shortId);
+    expect(context.query["page.url"]).toBe("/apps/APP001");
+  });
+
   test("removes unavailable navigation pages but retains route-only targets", () => {
     const block = (id: string) => ({ id, type: "markdown" as const, markdown: id });
     const page = (id: string, visible: boolean) => ({
@@ -90,8 +101,8 @@ describe("Grids App runtime context", () => {
     const definition: CustomAppDefinition = {
       schemaVersion: 5,
       kind: "grids.custom-app",
-      id: common.app.id,
-      baseId: common.base.id,
+      id: common.app.shortId,
+      baseId: common.base.shortId,
       name: common.app.name,
       startPageId: "home",
       pages: [page("home", true), page("restricted", true), page("details", false)],

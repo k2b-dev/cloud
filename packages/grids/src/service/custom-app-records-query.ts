@@ -41,6 +41,7 @@ export const customAppRowNavigationParams = (
   navigation: CustomAppRowNavigation,
   recordIds: readonly string[],
   records: readonly GridRecord[],
+  relationFieldIds: ReadonlyMap<string, string>,
 ): Record<string, Record<string, string>> => {
   const recordsById = new Map(records.map((record) => [record.id, record]));
   return Object.fromEntries(
@@ -49,7 +50,8 @@ export const customAppRowNavigationParams = (
       const params = Object.fromEntries(
         Object.entries(navigation.params).flatMap(([parameterId, binding]) => {
           if (binding.path === "id") return [[parameterId, recordId]];
-          const value = record?.data[binding.fieldId];
+          const fieldId = relationFieldIds.get(binding.fieldId);
+          const value = fieldId ? record?.data[fieldId] : undefined;
           const targetId = Array.isArray(value) ? value.find((item): item is string => typeof item === "string") : value;
           return typeof targetId === "string" ? [[parameterId, targetId]] : [];
         }),
@@ -89,7 +91,8 @@ export const executePublishedCustomAppRecords = async (input: {
       ? input.capabilities.views.find((candidate) => candidate.viewId === viewId && candidate.tableId === view?.tableId)
       : input.capabilities.recordQueries.find((candidate) => candidate.pageId === input.page.id && candidate.blockId === block.id);
   if (!capability) return null;
-  const publicDisplayFieldIds = block.type === "records" && block.display.kind === "table" ? block.display.columnIds : [];
+  const publicDisplayFieldIds =
+    block.type === "referenced_records" ? block.fieldIds : block.display.kind === "table" ? block.display.columnIds : [];
   const displayFieldIds = await resolvePublicIds("field", publicDisplayFieldIds);
   if (displayFieldIds.size !== publicDisplayFieldIds.length) return null;
 
@@ -128,7 +131,7 @@ export const executePublishedCustomAppRecords = async (input: {
           search: {
             q: search,
             ...(block.type === "referenced_records"
-              ? { allowedFieldIds: block.fieldIds }
+              ? { allowedFieldIds: block.fieldIds.map((fieldId) => displayFieldIds.get(fieldId)!) }
               : source.kind === "view"
                 ? {
                     allowedFieldIds:
@@ -158,10 +161,10 @@ export const executePublishedCustomAppRecords = async (input: {
   const relationBindings = rowNavigation ? Object.entries(rowNavigation.params).filter(([, binding]) => binding.path === "relation") : [];
   if (response.ok && rowNavigation && relationBindings.length > 0) {
     const allFields = await listFields(primaryTableId);
-    const fieldsById = new Map(allFields.map((field) => [field.id, field]));
+    const fieldsByShortId = new Map(allFields.map((field) => [field.shortId, field]));
     const bindingsValid = relationBindings.every(([, binding]) => {
       if (binding.path !== "relation") return false;
-      const field = fieldsById.get(binding.fieldId);
+      const field = fieldsByShortId.get(binding.fieldId);
       const config = field?.config as { cardinality?: unknown; targetTableId?: unknown } | undefined;
       return (
         field?.type === "relation" &&
@@ -172,7 +175,12 @@ export const executePublishedCustomAppRecords = async (input: {
     if (!bindingsValid) return null;
     const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
     const records = await (await createReader(primaryTableId, { fields: allFields })).getMany(recordIds);
-    rowNavigationParams = customAppRowNavigationParams(rowNavigation, recordIds, records);
+    rowNavigationParams = customAppRowNavigationParams(
+      rowNavigation,
+      recordIds,
+      records,
+      new Map(allFields.map((field) => [field.shortId, field.id])),
+    );
   }
   if (!response.ok || block.display.kind !== "cards") {
     return { response, primaryTableId, presentation, ...(rowNavigationParams ? { rowNavigationParams } : {}) };

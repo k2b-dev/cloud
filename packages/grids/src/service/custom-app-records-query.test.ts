@@ -27,14 +27,20 @@ describe("Custom App row relation navigation", () => {
       history: "push",
       params: {
         line_id: { source: "ROW", path: "id" },
-        item_id: { source: "ROW", path: "relation", fieldId },
+        item_id: { source: "ROW", path: "relation", fieldId: "REL001" },
       },
     };
     const firstId = uuid(3);
     const secondId = uuid(4);
 
     expect(
-      customAppRowNavigationParams(navigation, [firstId, secondId], [record(firstId, { [fieldId]: [uuid(5)] }), record(secondId, {})]),
+      customAppRowNavigationParams(
+        navigation,
+        [firstId, secondId],
+        [record(firstId, { [fieldId]: [uuid(5)] }), record(secondId, {})],
+        new Map([["REL001", fieldId]]),
+      ),
     ).toEqual({ [firstId]: { line_id: firstId, item_id: uuid(5) } });
+    expect(customAppRowNavigationParams(navigation, [firstId], [record(firstId, { [fieldId]: [uuid(5)] })], new Map())).toEqual({});
   });
 });

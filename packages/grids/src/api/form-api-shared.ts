@@ -1,3 +1,4 @@
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { getDateConfig, getLocale, respond } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
@@ -124,6 +125,34 @@ export type SubmitFormDeps = {
   dateConfig?: typeof getDateConfig;
 };
 
+export const fromPublicFormSubmission = async (
+  context: Context<AuthContext>,
+  tableId: string,
+  submitted: Record<string, unknown>,
+): Promise<Result<FormSubmission>> => {
+  const submission = parseFormSubmission(submitted);
+  if (!submission) return fail(err.badInput(apiMessages(context).invalidFormSubmission));
+  const fields = await gridsService.field.listByTable(tableId);
+  const fieldsByPublicId = new Map(fields.map((field) => [field.shortId, field]));
+  const locale = getLocale(context);
+  const data = await fromPublicRecordValues(tableId, submission.data, { allowTemporaryRelationIds: true, locale });
+  if (!data.ok) return data;
+  const inlineCreates: FormSubmission["inlineCreates"] = {};
+  for (const [publicFieldId, drafts] of Object.entries(submission.inlineCreates)) {
+    const relationField = fieldsByPublicId.get(publicFieldId);
+    const targetTableId = relationField?.type === "relation" ? (relationField.config as { targetTableId?: unknown }).targetTableId : null;
+    if (!relationField || typeof targetTableId !== "string") return fail(err.badInput(apiMessages(context).invalidInlineRelationField));
+    const convertedDrafts: typeof drafts = [];
+    for (const draft of drafts) {
+      const converted = await fromPublicRecordValues(targetTableId, draft.data, { locale });
+      if (!converted.ok) return converted;
+      convertedDrafts.push({ ...draft, data: converted.data });
+    }
+    inlineCreates[relationField.id] = convertedDrafts;
+  }
+  return ok({ data: data.data, inlineCreates });
+};
+
 export const submitFormResponse = async (
   context: Context<AuthContext>,
   form: Form,
@@ -132,30 +161,11 @@ export const submitFormResponse = async (
   deps: SubmitFormDeps = {},
   viewer?: ExpansionViewer,
 ) => {
-  const submission = parseFormSubmission(submitted);
-  if (!submission) return context.json({ message: apiMessages(context).invalidFormSubmission }, 400);
-  const fields = await gridsService.field.listByTable(form.tableId);
-  const fieldsByPublicId = new Map(fields.map((field) => [field.shortId, field]));
-  const locale = getLocale(context);
-  const data = await fromPublicRecordValues(form.tableId, submission.data, { allowTemporaryRelationIds: true, locale });
-  if (!data.ok) return respond(context, () => Promise.resolve(data));
-  const inlineCreates: FormSubmission["inlineCreates"] = {};
-  for (const [publicFieldId, drafts] of Object.entries(submission.inlineCreates)) {
-    const relationField = fieldsByPublicId.get(publicFieldId);
-    const targetTableId = relationField?.type === "relation" ? (relationField.config as { targetTableId?: unknown }).targetTableId : null;
-    if (!relationField || typeof targetTableId !== "string")
-      return context.json({ message: apiMessages(context).invalidInlineRelationField }, 400);
-    const convertedDrafts: typeof drafts = [];
-    for (const draft of drafts) {
-      const converted = await fromPublicRecordValues(targetTableId, draft.data, { locale });
-      if (!converted.ok) return respond(context, () => Promise.resolve(converted));
-      convertedDrafts.push({ ...draft, data: converted.data });
-    }
-    inlineCreates[relationField.id] = convertedDrafts;
-  }
+  const submission = await fromPublicFormSubmission(context, form.tableId, submitted);
+  if (!submission.ok) return respond(context, () => Promise.resolve(submission));
   const dateConfig = await (deps.dateConfig ?? getDateConfig)(context);
   const submit = deps.submit ?? gridsService.form.submit;
-  const result = await submit({ form, submission: { data: data.data, inlineCreates }, actorId, dateConfig, viewer });
+  const result = await submit({ form, submission: submission.data, actorId, dateConfig, viewer });
   if (!result.ok) return respond(context, () => Promise.resolve(result), 201);
   const recordId = await projectPublicId("record", result.data.recordId);
   if (!recordId) return context.json({ message: apiMessages(context).createdRecordMissingPublicId }, 500);

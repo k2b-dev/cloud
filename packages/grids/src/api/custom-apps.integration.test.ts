@@ -82,6 +82,240 @@ beforeAll(async () => {
 });
 
 describe("Grids App Form runtime", () => {
+  postgresTest("accepts two page parameters for the same record and rejects unresolved parameters", async () => {
+    const baseId = testUuid();
+    const tableId = testUuid();
+    const fieldId = testUuid();
+    const recordId = testUuid();
+    const relationFieldId = testUuid();
+    const formId = testUuid();
+    const baseShortId = testShortId("B");
+    const tableShortId = testShortId("T");
+    const fieldShortId = testShortId("F");
+    const recordShortId = testShortId("R");
+    const relationFieldShortId = testShortId("F");
+    const formShortId = testShortId("M");
+    let accessId: string | undefined;
+    try {
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Repeated page parameters')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Records')`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+        VALUES (${fieldId}::uuid, ${fieldShortId}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, ${{ [fieldId]: "Same record" }}::jsonb)`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+        VALUES (${relationFieldId}::uuid, ${relationFieldShortId}, ${tableId}::uuid, 'Parent', 'relation',
+          ${{ targetTableId: tableId, cardinality: "single" }}::jsonb, 1)`;
+      await sql`INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
+        VALUES (${formId}::uuid, ${formShortId}, ${tableId}::uuid, 'Follow up',
+          ${{
+            fields: [
+              { kind: "user_input", fieldId },
+              { kind: "user_input", fieldId: relationFieldId },
+            ],
+          }}::jsonb, TRUE, 0)`;
+      const applied = await apply({
+        schemaVersion: 5,
+        kind: "grids.custom-app",
+        id: testShortId("A"),
+        baseId: baseShortId,
+        name: "Repeated parameters",
+        startPageId: "home",
+        pages: [
+          {
+            id: "home",
+            title: "Home",
+            navigation: { visible: true },
+            parameters: {},
+            rows: [{ id: "intro", columns: [{ id: "main", span: 12, blocks: [{ id: "intro", type: "markdown", markdown: "Home" }] }] }],
+          },
+          {
+            id: "detail",
+            title: "Detail",
+            navigation: { visible: false },
+            parameters: {
+              first: { type: "record", tableId: tableShortId, required: true },
+              second: { type: "record", tableId: tableShortId, required: true },
+            },
+            rows: [
+              {
+                id: "detail",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      {
+                        id: "records",
+                        type: "records",
+                        searchable: false,
+                        pageSize: 25,
+                        source: {
+                          kind: "gql",
+                          query: `from table {${tableShortId}}\nwhere record.id = @params.first and record.id = @params.second`,
+                        },
+                        display: { kind: "table", columnIds: [fieldShortId] },
+                      },
+                      {
+                        id: "follow-up",
+                        type: "form",
+                        formId: formShortId,
+                        fixedValues: { [relationFieldShortId]: { source: "PARAMS", path: "first" } },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            id: "record-detail",
+            title: "Record",
+            navigation: { visible: false },
+            parameters: { first: { type: "record", tableId: tableShortId, required: true } },
+            record: { tableId: tableShortId, id: { source: "PARAMS", path: "first" } },
+            rows: [
+              {
+                id: "record",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      {
+                        id: "record",
+                        type: "record",
+                        fieldIds: [fieldShortId, relationFieldShortId],
+                        editableFieldIds: [relationFieldShortId],
+                      },
+                      { id: "selected-relation", type: "form", formId: formShortId, fixedValues: {} },
+                      {
+                        id: "follow-up",
+                        type: "form",
+                        formId: formShortId,
+                        fixedValues: {
+                          [relationFieldShortId]: { source: "RECORD", path: "id" },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      if (!applied.ok) throw new Error(applied.error.message);
+      const published = await publish(applied.data.id);
+      if (!published.ok) throw new Error(published.error.message);
+      const grant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: applied.data.id,
+        permission: "read",
+        principal: { type: "public" },
+      });
+      if (!grant.ok) throw new Error(grant.error.message);
+      accessId = grant.data.accessId;
+      const api = new Hono<AuthContext>().route(
+        "/apps",
+        createCustomAppsApi({
+          requireAuthenticated: async (c) => c.json({ message: "Authentication required" }, 401),
+        }),
+      );
+      const route = `/apps/runtime/${applied.data.shortId}/detail/records/records`;
+      const sameRecord = await api.request(`${route}?first=${recordShortId}&second=${recordShortId}`);
+      expect(sameRecord.status).toBe(200);
+      const missingRecord = await api.request(`${route}?first=${recordShortId}&second=${testShortId("Z")}`);
+      expect(missingRecord.status).toBe(404);
+      for (const [pageId, query] of [
+        ["detail", `first=${recordShortId}&second=${recordShortId}`],
+        ["record-detail", `first=${recordShortId}`],
+      ]) {
+        const submitted = await api.request(`/apps/runtime/${applied.data.shortId}/${pageId}/follow-up/submit?${query}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ [fieldShortId]: "Bound follow up" }),
+        });
+        expect(submitted.status).toBe(201);
+        const body = (await submitted.json()) as { recordId: string };
+        const createdId = await resolvePublicId("record", body.recordId);
+        expect(createdId).not.toBeNull();
+        const links = await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
+          WHERE from_record_id = ${createdId}::uuid AND from_field_id = ${relationFieldId}::uuid`;
+        expect(links).toEqual([{ targetId: recordId }]);
+      }
+
+      const selectedFormUrl = `/apps/runtime/${applied.data.shortId}/record-detail/selected-relation/submit?first=${recordShortId}`;
+      const selectedRelation = await api.request(selectedFormUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [fieldShortId]: "Selected relation", [relationFieldShortId]: [recordShortId] }),
+      });
+      expect(selectedRelation.status).toBe(201);
+      const selectedBody = (await selectedRelation.json()) as { recordId: string };
+      const selectedId = await resolvePublicId("record", selectedBody.recordId);
+      expect(selectedId).not.toBeNull();
+      if (!selectedId) throw new Error("Created record must resolve from its public ID");
+      expect(
+        await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
+        WHERE from_record_id = ${selectedId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
+      ).toEqual([{ targetId: recordId }]);
+
+      const [authUser] = await sql<Array<{ id: string }>>`SELECT id::text FROM auth.users ORDER BY id LIMIT 1`;
+      if (!authUser) throw new Error("CustomApp integration tests require a local auth user");
+      const authenticatedApi = new Hono<AuthContext>().route(
+        "/apps",
+        createCustomAppsApi({
+          loadOptionalActor: authenticateAs(userFor(authUser.id)),
+          requireAuthenticated: authenticateAs(userFor(authUser.id)),
+        }),
+      );
+      const editUrl = `/apps/runtime/${applied.data.shortId}/record-detail/record/record?first=${recordShortId}`;
+      const editedRelation = await authenticatedApi.request(editUrl, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "If-Match": "1" },
+        body: JSON.stringify({ values: { [relationFieldShortId]: [selectedBody.recordId] } }),
+      });
+      expect(editedRelation.status).toBe(200);
+      expect(
+        await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
+        WHERE from_record_id = ${recordId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
+      ).toEqual([{ targetId: selectedId }]);
+
+      for (const invalidId of ["Unknown record", recordId]) {
+        const invalidForm = await api.request(selectedFormUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ [fieldShortId]: "Invalid relation", [relationFieldShortId]: [invalidId] }),
+        });
+        expect(invalidForm.status).toBe(400);
+        const invalidEdit = await authenticatedApi.request(editUrl, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", "If-Match": "2" },
+          body: JSON.stringify({ values: { [relationFieldShortId]: [invalidId] } }),
+        });
+        expect(invalidEdit.status).toBe(400);
+      }
+      expect(
+        await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
+        WHERE from_record_id = ${recordId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
+      ).toEqual([{ targetId: selectedId }]);
+      expect(
+        await sql<Array<{ count: number }>>`SELECT count(*)::int AS count FROM grids.records
+        WHERE table_id = ${tableId}::uuid AND deleted_at IS NULL`,
+      ).toEqual([{ count: 4 }]);
+      expect(
+        await sql<Array<{ version: number }>>`SELECT version FROM grids.records
+        WHERE id = ${recordId}::uuid`,
+      ).toEqual([{ version: 2 }]);
+    } finally {
+      await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+    }
+  });
+
   postgresTest(
     "submits through the published Form capability and replace-navigates to the created record",
     async () => {
@@ -819,8 +1053,8 @@ describe("Grids App Form runtime", () => {
         const authenticatedUser = userFor(authUser.id);
         const actionContext = buildCustomAppRuntimeContext({
           access: { actor: { kind: "user", user: authenticatedUser }, accessSubject: { type: "user", userId: authUser.id } },
-          app: { id: appPublicId, name: definition.name },
-          base: { id: basePublicId, name: "Grids App API" },
+          app: { shortId: appPublicId, name: definition.name },
+          base: { shortId: basePublicId, name: "Grids App API" },
           page: actionDefinition.pages[1]!,
           pageUrl: `/apps/${applied.data.shortId}/request?request_id=${body.recordId}`,
           pageParams: { request_id: body.recordId },
@@ -888,15 +1122,16 @@ describe("Grids App Form runtime", () => {
         INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
         SELECT
           gen_random_uuid(),
-          'X' || lpad(generated.index::text, 5, '0'),
+          generated.short_id,
           ${tableId}::uuid,
           jsonb_build_object(
             ${fieldId}::text,
-            CASE WHEN generated.index = 129 THEN 'Unique searchable needle' ELSE 'Generated request ' || generated.index::text END
+            CASE WHEN generated.index = 130 THEN 'Unique searchable needle' ELSE 'Generated request ' || generated.index::text END
           ),
           ${authUser.id}::uuid,
           ${authUser.id}::uuid
-        FROM generate_series(0, 129) AS generated(index)
+        FROM jsonb_array_elements_text((${{ ids: Array.from({ length: 130 }, () => testShortId("X")) }}::jsonb)->'ids')
+          WITH ORDINALITY AS generated(short_id, index)
         RETURNING id::text, short_id AS public_id, data->>${fieldId}::text AS subject
       `;
         const searchableRecord = searchableRecords.find((record) => record.subject === "Unique searchable needle");
