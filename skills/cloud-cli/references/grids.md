@@ -28,7 +28,7 @@ Grids stores structured operational data in bases made of tables, fields, record
 - A **view** is a saved GQL query plus display settings. Views can be shared or personal.
 - A **form** writes records through a configured set of fields. A table also has a virtual default form.
 - A **Grids App** is an independently shared, Base-owned published capability surface. Its readers do not need raw Base access, and it may be public.
-- A **document template** renders GQL data through Liquid HTML and Gotenberg. A generated document keeps a recursive record snapshot.
+- A **document template** selects GQL data and one renderer: HTML/PDF or an installed structured renderer such as E-Invoice. Every generated document is immutable and keeps its source snapshot and exact artifacts.
 - A **workflow** is validated YAML with inputs, optional triggers, and steps. Launchers adapt workflows to scanner, bulk, Record, and Grids App
   interactions. Grids contributes the actions and the events; the runs themselves live in Cloud's shared workflow kernel, so
   `cld grids workflow-runs` reads one base while `cld admin workflows` reads every app.
@@ -295,12 +295,25 @@ Record commands are `records changes|shape|list|query|get|create|upsert-external
 
 ### Files and snapshots
 
+Use exact Table and Record public IDs for discussion and incoming relations. No default Base is needed; the server checks the owning Base permissions. List responses retain `nextCursor` and comment permissions, including in `--jsonl` (one complete page per line).
+
+```bash
+cld grids records comments list <table-id> <record-id> --limit 20 --json
+cld grids records comments create <table-id> <record-id> --body-file comment.md --json
+cld grids records comments update <table-id> <record-id> <comment-id> --body-file comment.md --json
+cld grids records comments delete <table-id> <record-id> <comment-id> --yes
+cld grids records referenced-by <table-id> <record-id> --limit 5 --json
+```
+
+Use `--cursor` to continue either list. `referenced-by --relation-field <field-id>` narrows the incoming relation field. Comment writes retain the server's Base Write, author, and moderation requirements.
+
 File fields use dedicated blob commands:
 
 ```bash
 cld grids records files upload Assets <record-id> Photo --file image.png --json
 cld grids records files list Assets <record-id> Photo --json
 cld grids records files download Assets <record-id> Photo <file-id> --out image.png
+cld grids records files replace Assets <record-id> Photo <file-id> --file replacement.png --json
 cld grids records files delete Assets <record-id> Photo <file-id> --yes
 ```
 
@@ -733,7 +746,7 @@ cld grids documents generate Invoices Invoice \
   --record <record-id> \
   --idempotency-key invoice-<record-id>-v1 \
   --tag issued \
-  --out invoice.pdf \
+  --out invoice.pdf
 cld grids documents by-record Invoices <record-id> --json
 ```
 
@@ -766,6 +779,20 @@ cld grids documents links revoke <link-id> --json
 Supported lifetimes are `1d`, `7d`, `30d`, and `90d`; the default is `30d`.
 
 ## Verify evidence packages
+
+Base administrators can manage exports before downloading them. Preflight and create accept an optional `--body-file scope.json` containing `tableId`, `from`, `to`, and `sections`. Omitted scope selects the whole Base and all sections. Run preflight to inspect available history and limits first.
+
+```bash
+cld grids evidence preflight --base Bookshop --body-file scope.json --json
+cld grids evidence create --base Bookshop --body-file scope.json --yes --json
+cld grids evidence list --base Bookshop --json
+cld grids evidence get <export-id> --json
+cld grids evidence retry <export-id> --yes --json
+cld grids evidence cancel <export-id> --yes --json
+cld grids evidence download <export-id> --out package.tar
+```
+
+Creation queues work; cancellation may be a request rather than immediate completion. Read the returned status. Retry is available for failed or canceled exports; download requires a completed, retained package.
 
 `evidence verify` checks a downloaded Grids evidence TAR locally. It does not
 contact Cloud, require a profile, extract files, or upload package contents.
@@ -1129,6 +1156,45 @@ Email-template commands are `email-templates reference|list|get|create|update|de
 
 ## Command index
 
+Platform administrators can inspect and replay retained event delivery failures. This is not a Base-admin privilege:
+
+```bash
+cld grids record-events failures <base-id> --offset 0 --json
+cld grids record-events replay <base-id> <failure-id> --yes --json
+```
+
+Failure lists return 100 items and `nextOffset`, without retained payloads. Use the exact operational failure UUID from that list. Replay uses the original event and only accepts stopped entries; acceptance is not proof of successful processing.
+
+The app CLI covers terminal workflows; Cloud Capabilities remain a curated daily-task interface, not a mirror of administrative commands. App-only readers use `apps runtime`, not raw Base commands.
+
+### Use a published App
+
+Start with the App's public ID from `/apps/<id>`. No Base grant or default Base is needed:
+
+```bash
+cld grids apps runtime read APP001 --json
+cld grids apps runtime read APP001 --page request --params '{"request_id":"REC001"}' --json
+cld grids apps runtime records APP001 home requests --search "certificate" --json
+cld grids apps runtime submit APP001 home apply --body '{"FIELD1":"Certificate request"}' --yes --json
+cld grids apps runtime action APP001 request actions approve --params '{"request_id":"REC001"}' --body '{"operationId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}' --yes --json
+```
+
+`read` returns available navigation, visible block IDs, data, field schemas, editable fields, forms, document metadata and actions. Follow `rowNavigate` or returned navigation URLs to detail pages. Unavailable pages return 404; an individual data block can return its own error. Discovery does not expose drafts or compiled grants.
+
+Use the exact page parameters on later commands. `records` accepts the returned cursor; row actions take `{operationId,rowId,search?,cursor?}` and must replay the displayed selection's search/cursor. Actions take `{operationId}`; reuse that UUID for retries, not for a new operation. `run` needs the same page/block and `--action <id>` for action runs; omit it for scanners. Accepted/queued does not mean completed.
+
+Direct published-runtime HTTP reads use `_search`, `_cursor`, and `_limit` for list controls, separate from page parameters such as `q`, `cursor`, or `limit`. The CLI keeps its `--search`, `--cursor`, and `--limit` flags. Base record APIs are unchanged.
+
+`update` takes `{values,audit?}`; only the published editable fields can change. `scan` takes `{operationId,expectedRevision,scannedText,inputs?}` using the discovered revision and prompt inputs. `submit` and `sidebar-submit` take form values keyed by public Field IDs; do not supply fixed fields. Submissions are not retry-idempotent. Commands that submit, update, scan or run actions require `--yes`.
+
+`comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain the published runtime's authentication, current availability and permission checks; App grants never grant raw Base access. JSONL keeps the complete page envelope, including cursors.
+
+### Daily capabilities
+
+Agents can discover templates with `document.templates`, list stored results with `document.list`, follow `grids.document` references with `document.read`, and request `document.create` with an enabled template and a Record from its table. Issuance is permanent and always needs individual approval and an idempotency key. It neither sends the document nor guarantees legal compliance.
+
+`workflow.record-actions` lists existing correction/cancellation Draft actions, including their intent. Use its table ID to find a finalized original with GQL, then call `workflow.record-action` with the exact revision and explicit approval. This creates a linked Draft, leaves the original unchanged, and does not issue or send a document. Reuse the same idempotency key for a retry and follow the returned `grids.workflow-run` reference with `workflow.run.read`. Creation/editing of workflows, other workflow kinds, bulk operations and App-only actions stay in the CLI.
+
 Use `cld grids <command> --help` for every flag, positional form, constraint, and built-in example.
 
 ```text
@@ -1148,18 +1214,24 @@ tables combined get|candidates|publications|validate|draft|publish|revoke
 fields types|type|list|get|create|update|delete|restore|dependents|reorder
 records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions
 records versions download
-records files list|upload|download|delete
+records files list|upload|replace|download|delete
+records comments list|create|update|delete
+records referenced-by
+record-events failures|replay
 snapshots list|create|get
 gql reference|run|preview|compile-view|autocomplete|skill|context
 formulas reference|check
 views list|get|create|update|delete|restore
 forms list|default|get|create|update|delete|restore|submit
 apps reference|list|create|get|validate|plan|apply|export|publish|unpublish|restore|delete
+apps runtime read|records|submit|sidebar-submit|update|action|row-action|scan|run|document|image
+apps runtime comments list|create|update|delete
+apps runtime files list|upload|replace|download|delete
 document-templates reference|list|get|create|update|delete
 document-templates preview-data|preview-pdf|preview-draft-data|preview-draft-pdf
 documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact
 documents links list|create|revoke
-evidence verify
+evidence preflight|list|create|get|retry|cancel|download|verify
 email-templates reference|list|get|create|update|delete
 workflows reference|list|get|create|update|history|restore|delete|validate|autocomplete|invoke
 workflow-launchers list|create|update|delete|invoke

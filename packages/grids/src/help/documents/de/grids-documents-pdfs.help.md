@@ -13,6 +13,8 @@ Nutze eine Dokumentvorlage, wenn die Ausgabe für Personen formatiert, gedruckt,
 
 ## Ein unveränderliches Dokumentmodell {icon="shield-check"}
 
+Agents finden mit `document.templates` Vorlagen, lesen mit `document.list` und `document.read` gespeicherte Dokumente und stellen mit `document.create` ein Dokument für einen ausgewählten Record aus. Dafür sind Schreibzugriff, ein Idempotenzschlüssel und eine einzelne ausdrückliche Bestätigung nötig. Die Ausstellung ist nicht rückgängig zu machen und erlaubt keine dauerhafte Pauschalfreigabe. Der Download-Link benötigt weiterhin deine Berechtigungen; er erstellt keinen öffentlichen Freigabelink und versendet das Dokument nicht.
+
 Jedes abgeschlossene Dokument ist unveränderlich. Es gehört zu einer Vorlage und einem ausgewählten Datensatz. Dasselbe Dokument erscheint in Datensatzdetails, Vorlagenarbeitsbereich und **Alle Dokumente**. Eine wiederholte Generierung mit demselben Idempotenzschlüssel gibt dasselbe Dokument zurück; die Wiederverwendung dieses Schlüssels mit anderer Eingabe scheitert.
 
 Eine Vorlage wählt einen Renderer aus. Der HTML-Renderer wandelt Liquid-HTML und CSS in ein PDF um. Ein installierter E-Rechnungs-Renderer ordnet den ausgewählten Datensatz über Liquid-JSON zu und erstellt und validiert anschließend PDF und strukturiertes Artefakt gemeinsam. Der Renderer verändert die Artefakte eines Dokuments, nicht das Dokumentmodell oder die Art, wie es generiert, aufgelistet, geprüft oder heruntergeladen wird.

@@ -161,6 +161,29 @@ Grids adopts.
 
 ## Automate Grids from the terminal
 
+The CLI supports record comments and incoming references, the evidence export
+lifecycle, and platform-admin inspection and replay of retained delivery
+failures. These commands use the same permissions as their UI counterparts.
+Comment and reference lists return bounded pages with continuation cursors;
+evidence creation and event replay return request state rather than promising
+that background processing has completed.
+
+Published-App readers use `cld grids apps runtime read <app-id>` to discover
+available pages, data, forms and action IDs without Base access. The runtime
+commands support bounded record reads, form submission, editable record fields,
+comments, attachments, stored document downloads, actions, scanners and scoped
+run status. They retain the published App's permission and availability checks.
+
+Published-runtime HTTP list controls use `_search`, `_cursor`, and `_limit` so
+they cannot overwrite a page's Record parameters. CLI flags remain `--search`,
+`--cursor`, and `--limit`; Base APIs retain their existing query parameters.
+
+Capabilities remain a curated daily-task surface: discover templates, read or
+issue immutable documents, discover configured correction/cancellation Draft actions, execute
+one at its expected revision, and follow its run status. Issuance and workflow
+actions require an idempotency key and individual approval. They do not expose
+workflow authoring or arbitrary workflow source.
+
 For structured table queries, `sort` orders Records. Grouped results use
 `groupBy.direction` and `groupSort` instead, on both stored and federated tables.
 Aggregate labels are display text and do not need to be valid GQL aliases.

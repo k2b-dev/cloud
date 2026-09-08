@@ -1,14 +1,17 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { err, fail } from "@k2b/stdlib";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import { z } from "zod";
+import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import type { DocumentTemplate } from "../contracts";
 import type { DocumentProfile } from "../document-profiles";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { getDocumentPdf } from "./document-core";
 import { createDocumentIssuanceService, type IssueDocumentInput } from "./document-issuance";
+import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { createTemplate, getTemplate } from "./document-templates";
+import { provisionDocumentNumberSeries } from "./number-series";
 
 const pdf = (label: string) => new TextEncoder().encode(`%PDF-1.7\n${label}`);
 
@@ -16,14 +19,14 @@ beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
 });
 
-const createScope = async () => {
+const createScope = async (database: SQL = sql) => {
   const baseId = testUuid();
   const tableId = testUuid();
   const recordId = testUuid();
   const recordShortId = testShortId("R");
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Issuance')`;
-  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
-  await sql`
+  await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Issuance')`;
+  await database`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
+  await database`
     INSERT INTO grids.records (id, short_id, table_id, data, version, updated_at)
     VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb, 1, '2026-08-22T10:00:00.000Z')
   `;
@@ -87,6 +90,149 @@ const insertProfileTemplate = async (
 };
 
 describe("Document issuance", () => {
+  postgresTest(
+    "retries retained historical HTML and profile receipts without rewriting or reallocating",
+    async () => {
+      const sourceUrl = process.env.DATABASE_URL;
+      if (!sourceUrl) throw new Error("DATABASE_URL is required for issuance integration tests");
+      const databaseName = `grids_issuance_${testUuid().replaceAll("-", "")}`;
+      const databaseUrl = new URL(sourceUrl);
+      databaseUrl.pathname = `/${databaseName}`;
+      await sql.unsafe(`CREATE DATABASE "${databaseName}"`);
+      const database = new SQL(databaseUrl);
+      try {
+        await database`CREATE SCHEMA auth`.simple();
+        await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
+        await database`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
+        await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        // Simulate the historical writer only in this disposable database. Never
+        // disable the immutable receipt guard or mutate a previously frozen request.
+        await database`
+        CREATE FUNCTION grids.test_historical_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          NEW.frozen_request = NEW.frozen_request || jsonb_build_object(
+            'source', jsonb_build_object('appId', 'grids', 'resourceType', 'document_template',
+              'resourceId', NEW.frozen_request #>> '{template,shortId}'),
+            'sourceRevision', jsonb_build_object('id', 'record@1',
+              'observedAt', '2026-08-22T10:00:00.000Z', 'evidence', '{}'::jsonb)
+          );
+          IF NEW.frozen_request->'tags' ? 'malformed' THEN
+            NEW.frozen_request = NEW.frozen_request || '{"unexpected":true}'::jsonb;
+          END IF;
+          RETURN NEW;
+        END $$
+      `.simple();
+        await database`
+        CREATE TRIGGER test_historical_receipt BEFORE INSERT ON grids.document_issuances
+        FOR EACH ROW EXECUTE FUNCTION grids.test_historical_receipt()
+      `.simple();
+        for (const kind of ["html", "profile"] as const) {
+          const scope = await createScope(database);
+          let failRender = true;
+          let renderCalls = 0;
+          const profile: DocumentProfile<{ title: string }> = {
+            id: "test.historical",
+            version: 1,
+            title: "Historical",
+            description: "Historical receipt fixture",
+            rendererVersion: "test-v1",
+            validatorVersion: "test-v1",
+            input: z.object({ title: z.string() }).strict(),
+            formatNumber: ({ value }) => `HIST-${value}`,
+            issue: (_value, context) => {
+              renderCalls++;
+              if (failRender) throw err.internal("renderer unavailable");
+              return {
+                artifacts: [{ key: "pdf", filename: `${context.number}.pdf`, mediaType: "application/pdf", bytes: pdf(context.number) }],
+                validationStatus: "valid",
+                validationReport: { valid: true },
+              };
+            },
+          };
+          const [row] = await database<DocumentDbRow[]>`
+          INSERT INTO grids.document_templates (
+            id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template,
+            profile_id, profile_version, profile_input_template
+          ) VALUES (
+            ${testUuid()}::uuid, ${testShortId("D")}, ${scope.tableId}::uuid, 'Historical', 'from table Invoices',
+            ${kind}, ${kind === "html" ? "<p>{{ document.number }}</p>" : null},
+            ${kind === "html" ? "HIST-{{ series.value }}" : null},
+            ${kind === "html" ? "{{ document.number }}.pdf" : null},
+            ${kind === "profile" ? profile.id : null}, ${kind === "profile" ? 1 : null},
+            ${kind === "profile" ? '{"title":"Historical"}' : null}
+          ) RETURNING *
+        `;
+          if (!row) throw new Error("historical template missing");
+          const template = mapDocumentTemplate(row);
+          if (kind === "html") await provisionDocumentNumberSeries(database, template.id, "HIST-{{ series.value }}");
+          const service = createDocumentIssuanceService({ db: database, profiles: [profile] });
+          const input = inputFor(template, scope, {
+            renderPdf: async () => {
+              renderCalls++;
+              return failRender
+                ? fail(err.internal("renderer unavailable"))
+                : { ok: true, data: { pdf: pdf("historical"), contentType: "application/pdf" } };
+            },
+          });
+          expect((await service.issueDocument(input)).ok).toBe(false);
+          const readReceipts = () => database`SELECT * FROM grids.document_issuances WHERE base_id = ${scope.baseId}::uuid ORDER BY id`;
+          const before = await readReceipts();
+          expect(before).toHaveLength(1);
+          expect(before[0]?.frozen_request.source.appId).toBe("grids");
+          expect(before[0]?.frozen_request.documentNumber).toBe("HIST-1");
+          const readAllocations = () => database<Array<{ id: string; consumer_kind: string | null; consumer_id: string | null }>>`
+          SELECT allocation.* FROM grids.number_allocations allocation
+          JOIN grids.number_series series ON series.id = allocation.series_id
+          WHERE series.document_template_id = ${template.id}::uuid ORDER BY allocation.id
+        `;
+          const allocationsBefore = await readAllocations();
+          expect(allocationsBefore).toHaveLength(kind === "html" ? 1 : 0);
+          expect(before[0]?.frozen_request.allocationId).toBe(allocationsBefore[0]?.id ?? null);
+          const countersBefore = await database`SELECT * FROM grids.document_profile_counters WHERE base_id = ${scope.baseId}::uuid`;
+          await migrate(database);
+          expect(await readReceipts()).toEqual(before);
+          expect((await service.issueDocument(input)).ok).toBe(false);
+          expect(await readReceipts()).toEqual(before);
+          expect(renderCalls).toBe(2);
+          failRender = false;
+          const recovered = await service.issueDocument(input);
+          if (!recovered.ok) throw recovered.error;
+          expect(recovered.data.document.documentNumber).toBe("HIST-1");
+          expect(recovered.data.document.shortId).toBe(before[0]?.document_short_id);
+          const completed = await readReceipts();
+          expect(completed[0]?.id).toBe(before[0]?.id);
+          expect(completed[0]?.request_hash).toBe(before[0]?.request_hash);
+          expect(completed[0]?.operation_key_hash).toBe(before[0]?.operation_key_hash);
+          expect(completed[0]?.frozen_request).toBeNull();
+          const allocationsAfter = await readAllocations();
+          expect(allocationsAfter.map((allocation) => allocation.id)).toEqual(allocationsBefore.map((allocation) => allocation.id));
+          expect(allocationsAfter.map(({ consumer_kind: _kind, consumer_id: _id, ...allocation }) => allocation)).toEqual(
+            allocationsBefore.map(({ consumer_kind: _kind, consumer_id: _id, ...allocation }) => allocation),
+          );
+          if (kind === "html") expect(allocationsAfter[0]?.consumer_id).toBe(recovered.data.document.id);
+          expect(await database`SELECT * FROM grids.document_profile_counters WHERE base_id = ${scope.baseId}::uuid`).toEqual(
+            countersBefore,
+          );
+          const replay = await service.issueDocument(input);
+          if (!replay.ok) throw replay.error;
+          expect(replay.data.replayed).toBe(true);
+          expect(replay.data.document.id).toBe(recovered.data.document.id);
+          expect(renderCalls).toBe(3);
+          await expect(service.issueDocument({ ...input, idempotencyKey: `malformed-${testUuid()}`, tags: ["malformed"] })).rejects.toThrow(
+            "Document issuance receipt contains invalid JSON",
+          );
+          expect(renderCalls).toBe(3);
+        }
+      } finally {
+        await database.close({ timeout: 5 });
+        await sql.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+      }
+    },
+    30_000,
+  );
+
   postgresTest("replays delayed HTML issuance and freezes its real public ID", async () => {
     const scope = await createScope();
     const created = await createTemplate(

@@ -58,6 +58,8 @@ Dokumente aus nativen Anwendungssnapshots gehören zu ihrer Basis und nicht zu e
 
 ## Den Download prüfen {icon="shield-check"}
 
+Auch die CLI verwaltet Exporte: `cld grids evidence preflight`, `create`, `list`, `get`, `retry`, `cancel` und `download`. Preflight und Create akzeptieren `--base` sowie optional `--body-file` mit `tableId`, `from`, `to` und `sections`. Create, Retry und Cancel benötigen `--yes`. Es gilt dieselbe Base-Admin-Berechtigung. Prüfe vor dem Download den zurückgegebenen Status: Eine angenommene Anfrage bedeutet noch kein fertiges Paket.
+
 Öffne vor dem Herunterladen **Technische Details** und bewahre die angezeigten SHA-256-Werte für Paket und Manifest zusammen mit der Übergabe auf.
 
 Wähle nach dem Herunterladen **Prüfbefehl kopieren** und führe den kopierten Befehl am Speicherort der TAR-Datei aus:

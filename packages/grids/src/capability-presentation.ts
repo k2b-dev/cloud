@@ -5,6 +5,8 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       types: {
+        document: { title: "Grids-Dokument", description: "Ein gespeichertes unveränderliches Dokument mit Artefakt-Metadaten." },
+        "workflow-run": { title: "Grids-Workflow-Lauf", description: "Status einer angenommenen Workflow-Ausführung." },
         base: {
           title: "Grids Basis",
           description: "Ein Grids-Arbeitsbereich mit Berechtigungsbereich.",
@@ -23,6 +25,31 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "document.templates": {
+          title: "Dokumentvorlagen finden",
+          description:
+            "Vorlagen einer Tabelle aus gql.context finden. Aktivierte Vorlagen mit document.create verwenden oder gespeicherte Dokumente mit document.list lesen.",
+        },
+        "document.list": {
+          title: "Gespeicherte Dokumente finden",
+          description:
+            "Eine begrenzte Dokumentseite einer Vorlage aus document.templates lesen. Dokumentreferenzen mit document.read öffnen; es wird kein neues Dokument erzeugt.",
+        },
+        "document.read": {
+          title: "Gespeichertes Dokument lesen",
+          description:
+            "Metadaten und Prüfsummen einer Dokumentreferenz lesen. Der authentifizierte Download liefert gespeicherte PDF-Bytes, keine neue Darstellung.",
+        },
+        "workflow.record-actions": {
+          title: "Record-Aktionen finden",
+          description:
+            "Ausführbare Record-Aktionen einer Basis aus base.list finden. Auch bei leeren gefilterten Seiten nextOffset folgen. Tabelle und Revision anschließend mit workflow.record-action verwenden.",
+        },
+        "workflow.run.read": {
+          title: "Workflow-Status lesen",
+          description:
+            "Status einer Laufreferenz aus workflow.record-action lesen. Benötigt Lesezugriff auf die Basis; interne Eingaben, Ergebnisse und Ereignisse werden nicht ausgegeben.",
+        },
         "base.list": {
           title: "Liste der Grids-Basen",
           description:
@@ -133,6 +160,16 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "document.create": {
+          title: "Unveränderliches Dokument ausstellen",
+          description:
+            "Ein Dokument aus einer Vorlage und einem Record ausstellen. Eine vergebene Nummer bleibt dauerhaft. Jede Ausstellung einzeln bestätigen; denselben Idempotenzschlüssel nur für Wiederholungen desselben Auftrags verwenden. Keine Konformitätsgarantie oder externe Zustellung.",
+        },
+        "workflow.record-action": {
+          title: "Record-Workflow ausführen",
+          description:
+            "Mit der gefundenen Revision einen verknüpften Korrektur- oder Storno-Entwurf zu einem abgeschlossenen Original anlegen. Das Original bleibt unverändert; keine Ausstellung oder Zustellung. Immer ausdrücklich bestätigen; keine beliebigen Workflow-Quellen oder zusätzlichen Eingaben.",
+        },
         "record.create": {
           title: "Einen Grids-Datensatz erstellen",
           description:

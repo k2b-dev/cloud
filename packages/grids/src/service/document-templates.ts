@@ -21,14 +21,15 @@ const FILENAME_TEMPLATE_MAX_BYTES = 5_000;
 const TEMPLATE_PART_MAX_BYTES = 50_000;
 const profiles = profileRegistry(documentProfiles);
 
-export const listTemplatesForTable = async (tableId: string): Promise<DocumentTemplate[]> => {
+export const listTemplatesForTable = async (tableId: string, page?: { limit: number; offset: number }): Promise<DocumentTemplate[]> => {
   const rows = await sql<DocumentDbRow[]>`
     SELECT dt.*
     FROM grids.document_templates dt
     JOIN grids.tables t ON t.id = dt.table_id AND t.deleted_at IS NULL
     JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
     WHERE dt.table_id = ${tableId}::uuid AND dt.deleted_at IS NULL
-    ORDER BY dt.position, dt.created_at
+    ORDER BY dt.position, dt.created_at, dt.id
+    LIMIT ${page?.limit ?? null} OFFSET ${page?.offset ?? 0}
   `;
   return rows.map(mapDocumentTemplate);
 };

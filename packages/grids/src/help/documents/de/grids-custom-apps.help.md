@@ -9,7 +9,16 @@ Grids Apps stellen angemeldeten oder öffentlichen Zielgruppen unter `/apps/<id>
 
 Grids Apps kopieren keine Daten. Eine Veröffentlichung speichert eine unveränderliche Definition und einen kompilierten Capability-Snapshot mit den exakten Ressourcen, die sie verwenden darf. Jede Anfrage prüft App-Freigabe, veröffentlichte Capability und serverseitig durchgesetzte Verfügbarkeitsregeln. Lesende Personen der App benötigen keinen Basiszugriff; App-Zugriff gewährt niemals unmittelbaren Zugriff auf Grids oder beliebiges GQL.
 
+## Eine App im Terminal bedienen {icon="terminal-2"}
+
+Mit `cld grids apps runtime read <app-id> --json` und der ID aus der App-URL findest du sichtbare Seiten, Block-IDs, Daten, Formularfelder und verfügbare Aktionen. Basiszugriff ist nicht erforderlich. Eine Detailseite öffnest du mit `--page <page-id> --params '{"request_id":"REC001"}'`. Verwende den Parameternamen und die Record-ID aus der zurückgegebenen Navigation.
+
+Die Befehle unter `apps runtime` lesen begrenzte Datensatzseiten, senden Seiten- oder Seitenleistenformulare, ändern veröffentlichte bearbeitbare Felder, verwalten Kommentare und Anhänge, laden gespeicherte PDFs herunter, starten Aktionen oder Scanner und lesen den zugehörigen Laufstatus. `--help` erklärt die Eingaben. Seitenbezogene Befehle benötigen dieselben Parameter wie die Discovery. Senden, Ändern, Scannen und Aktionen erfordern `--yes`; Formularübermittlungen sind nicht wiederholungssicher. Verwende dieselbe Operations-ID nur für die Wiederholung derselben Aktion. „Queued“ bedeutet angenommen, nicht abgeschlossen.
+
+Es gelten dieselben veröffentlichten App-Berechtigungen wie im Browser. Die Befehle öffnen keine rohe Basis, umgehen keine ausgeblendeten Blöcke und erlauben kein beliebiges GQL.
+
 ## Seiten und Blöcke {icon="layout"}
+
 
 Eine App darf bis zu 12 responsive Seiten enthalten. `startPageId` legt die Seite fest, die unter `/apps/<id>` erscheint. Seiten mit `navigation.visible: true` erscheinen in Array-Reihenfolge in der Seitenleiste des AppWorkspace und können ein Tabler-`icon` besitzen. Wenn die aktuelle Seite keine weitere verfügbare Seite und die App keine verfügbare globale Aktion besitzt, wird die Seitenleiste ausgelassen.
 

@@ -4,6 +4,15 @@ export const gridsCapabilityMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      documentTemplateDisabled: "Document template is disabled.",
+      invalidDocumentCursor: "Invalid document cursor.",
+      fewerDocuments: "Request fewer documents per page.",
+      issueDocumentReview: "Issue a permanent document; its number and contents cannot be edited afterward.",
+      recordActionReview:
+        "Create one linked correction or cancellation Draft. The finalized original remains unchanged; no document is issued or sent.",
+      template: "Template",
+      action: "Action",
+      revision: "Revision",
       invalidCursor: "The cursor is invalid.",
       credentialNotBound: "This credential is not bound to a Grids Base.",
       baseNotFound: "Base not found",
@@ -66,7 +75,8 @@ export const gridsCapabilityMessages = i18n.define({
       valuesRequired: "values must contain at least one Field.",
       updatedRecord: ({ count, id, table, version }: { count: number; id: string; table: string; version: number }) =>
         `Updated ${count} ${i18n.plural(count, "en", { one: "Field", other: "Fields" })} on Record ${id} in “${table}”; the Record is now version ${version}.`,
-      reviewExternalRecord: ({ table }: { table: string }) => `Create or conditionally update one externally identified Record in ${table}.`,
+      reviewExternalRecord: ({ table }: { table: string }) =>
+        `Create or conditionally update one externally identified Record in ${table}.`,
       reviewUpdateRecord: ({ table }: { table: string }) => `Update one Record in ${table}.`,
       provider: "Provider",
       providerAccount: "Provider account",
@@ -77,6 +87,15 @@ export const gridsCapabilityMessages = i18n.define({
       currentVersion: "Current version",
     },
     de: {
+      documentTemplateDisabled: "Die Dokumentvorlage ist deaktiviert.",
+      invalidDocumentCursor: "Ungültiger Dokument-Cursor.",
+      fewerDocuments: "Bitte weniger Dokumente pro Seite anfordern.",
+      issueDocumentReview: "Ein dauerhaftes Dokument ausstellen; Nummer und Inhalt können danach nicht bearbeitet werden.",
+      recordActionReview:
+        "Einen verknüpften Korrektur- oder Storno-Entwurf anlegen. Das abgeschlossene Original bleibt unverändert; kein Dokument wird ausgestellt oder versendet.",
+      template: "Vorlage",
+      action: "Aktion",
+      revision: "Revision",
       invalidCursor: "Der Cursor ist ungültig.",
       credentialNotBound: "Diese Anmeldedaten sind nicht an eine Grids-Base gebunden.",
       baseNotFound: "Base nicht gefunden",

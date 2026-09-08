@@ -179,6 +179,33 @@ describe("Grids admin API", () => {
     expect(baseGetCalls).toBe(0);
   });
 
+  test("lists bounded event failure pages without retained payloads or internal Base IDs", async () => {
+    const list = spyOn(gridsService.workflow.runtime, "listRecordEventFailures").mockResolvedValue(
+      Array.from({ length: 101 }, () => ({
+        id: failureId,
+        baseId,
+        consumerGroup: "workflow",
+        eventId: "event",
+        payload: "private payload",
+        error: "Delivery failed",
+        attempts: 3,
+        status: "dead" as const,
+        deadAt: null,
+      })),
+    );
+    const response = await app().request(`/bases/${basePublicId}/record-event-failures?offset=100`);
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith(baseId, 101, 100);
+    expect(body.items).toHaveLength(100);
+    expect(body.nextOffset).toBe(200);
+    expect(body.items[0]).not.toHaveProperty("payload");
+    expect(body.items[0]).not.toHaveProperty("baseId");
+    isPlatformAdmin = false;
+    expect((await app().request(`/bases/${basePublicId}/record-event-failures`)).status).toBe(403);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   test("lists base and Grids App ACL entries for platform admins", async () => {
     const response = await app().request(`/bases/${basePublicId}/access`);
     const body = await response.json();

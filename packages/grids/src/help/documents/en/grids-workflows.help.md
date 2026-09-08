@@ -11,6 +11,8 @@ A workflow is more than a hidden automation. It has typed inputs, a reviewed YAM
 
 ## Decide whether to use a workflow {icon="route"}
 
+For agents, `workflow.record-actions` discovers configured correction/cancellation Draft actions and their expected revisions. `workflow.record-action` creates a linked Draft for one finalized original with explicit approval and an idempotency key. The original remains unchanged; no document is issued or sent. Reuse the key only for retries of the same request. Follow the returned run reference with `workflow.run.read`; acceptance is not completion. These capabilities do not author workflows, supply arbitrary extra inputs or run bulk selections. Use the CLI for those tasks, other workflow kinds and App-only runtime actions.
+
 Use a normal field or formula when you only need to store or calculate one value. Use a form when you only need guided record creation. Use a workflow when the operation has several steps, must be run consistently, needs a scanner or bulk action, contacts another system, or needs an observable success or failure.
 
 A small workflow is preferable to a large one with unrelated branches. Give it one outcome-oriented name, such as **Return item** or **Send approved invoice**.

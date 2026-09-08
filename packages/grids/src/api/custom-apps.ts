@@ -36,7 +36,9 @@ import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
 import { getWorkflowRunScope } from "../service/workflow-runs";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
+import { loadPublishedCustomAppPage } from "./custom-app-published-page";
 import { resolvePublishedCustomAppGlobalRuntime, resolvePublishedCustomAppRuntime } from "./custom-app-published-runtime";
+import { projectCustomAppRuntimePage } from "./custom-app-runtime-dto";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
 import { FormSubmitSchema, fromPublicFormSubmission } from "./form-api-shared";
 import { apiMessages } from "./messages";
@@ -70,12 +72,12 @@ const CustomAppRowActionInvocationSchema = z
   })
   .strict();
 const CustomAppRecordsQuerySchema = z
-  .object({ q: z.string().max(200).optional(), cursor: z.string().max(16_384).optional() })
+  .object({ _search: z.string().max(200).optional(), _cursor: z.string().max(16_384).optional() })
   .passthrough();
 const RecordCommentListQuerySchema = z
   .object({
-    cursor: z.string().max(2_000).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    _cursor: z.string().max(2_000).optional(),
+    _limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .passthrough();
 
@@ -580,6 +582,14 @@ export const createCustomAppsApi = (
   const loadWorkflowRunScope = deps.getWorkflowRunScope ?? getWorkflowRunScope;
   const getWorkflowRun = deps.getWorkflowRun ?? gridsService.workflow.getRun;
   return new Hono<AuthContext>()
+    .get("/runtime/:shortId", loadOptionalActor, async (c) => {
+      const page = await loadPublishedCustomAppPage(c);
+      return page ? c.json(projectCustomAppRuntimePage(page)) : c.json({ message: apiMessages(c).recordsNotFound }, 404);
+    })
+    .get("/runtime/:shortId/:pageId", loadOptionalActor, async (c) => {
+      const page = await loadPublishedCustomAppPage(c);
+      return page ? c.json(projectCustomAppRuntimePage(page)) : c.json({ message: apiMessages(c).recordsNotFound }, 404);
+    })
     .get("/runtime/:shortId/:pageId/:blockId/records", loadOptionalActor, v("query", CustomAppRecordsQuerySchema), async (c) => {
       const runtime = await resolvePublishedRuntime(c);
       if (!runtime) return c.json({ message: apiMessages(c).recordsNotFound }, 404);
@@ -606,8 +616,8 @@ export const createCustomAppsApi = (
         viewer: runtime.viewer,
         viewerUserId: runtime.viewer.userId,
         viewerServiceAccountId: runtime.viewer.serviceAccountId ?? null,
-        search: query.q,
-        cursor: query.cursor,
+        search: query._search,
+        cursor: query._cursor,
       }).catch(() => null);
       if (!published) return c.json({ message: apiMessages(c).recordsNotFound }, 404);
       const payload = await projectPublishedRecords(published);
@@ -836,13 +846,13 @@ export const createCustomAppsApi = (
       const resolved = await resolveRuntimeComments(c);
       if (!resolved) return c.json({ message: apiMessages(c).commentsNotFound }, 404);
       const query = c.req.valid("query");
-      const cursor = await rewriteCommentCursor(query.cursor, "resolve");
-      if (query.cursor && !cursor) return c.json({ message: apiMessages(c).invalidCommentCursor }, 400);
+      const cursor = await rewriteCommentCursor(query._cursor, "resolve");
+      if (query._cursor && !cursor) return c.json({ message: apiMessages(c).invalidCommentCursor }, 400);
       const result = await gridsService.record.comments.list({
         baseId: resolved.app.baseId,
         tableId: resolved.tableId,
         recordId: resolved.recordId,
-        ...query,
+        limit: query._limit,
         cursor,
         locale: getLocale(c),
       });

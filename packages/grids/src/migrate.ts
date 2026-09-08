@@ -1501,6 +1501,32 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
         CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$')
     )
   `.simple();
+  // Older renderers allocated per profile version. Continue above every old
+  // allocation, including failed/reserved numbers, without parsing document labels.
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'grids' AND table_name = 'document_profile_counters'
+          AND column_name = 'profile_version'
+      ) THEN
+        LOCK TABLE grids.document_profile_counters IN ACCESS EXCLUSIVE MODE;
+        UPDATE grids.document_profile_counters counter
+        SET next_value = high_water.next_value
+        FROM (
+          SELECT base_id, profile_id, MAX(next_value) AS next_value
+          FROM grids.document_profile_counters GROUP BY base_id, profile_id
+        ) high_water
+        WHERE counter.base_id = high_water.base_id AND counter.profile_id = high_water.profile_id;
+        DELETE FROM grids.document_profile_counters older
+        USING grids.document_profile_counters newer
+        WHERE older.base_id = newer.base_id AND older.profile_id = newer.profile_id
+          AND older.profile_version < newer.profile_version;
+        ALTER TABLE grids.document_profile_counters DROP COLUMN profile_version;
+        ALTER TABLE grids.document_profile_counters ADD PRIMARY KEY (base_id, profile_id);
+      END IF;
+    END $$
+  `.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.document_issuances (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1636,29 +1662,6 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       CONSTRAINT documents_render_data_object_chk CHECK (jsonb_typeof(render_data) = 'object'),
       CONSTRAINT documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
       CONSTRAINT documents_workflow_pair_chk CHECK ((workflow_run_id IS NULL) = (workflow_step_key IS NULL)),
-      CONSTRAINT documents_renderer_chk CHECK (
-        (
-          renderer_kind = 'html'
-          AND profile_id IS NULL
-          AND profile_version IS NULL
-          AND profile_snapshot IS NULL
-          AND snapshot_sha256 IS NULL
-          AND validator_version IS NULL
-          AND validation_status IS NULL
-          AND validation_report IS NULL
-        )
-        OR
-        (
-          renderer_kind = 'profile'
-          AND profile_id IS NOT NULL
-          AND profile_version > 0
-          AND jsonb_typeof(profile_snapshot) = 'object'
-          AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
-          AND validator_version IS NOT NULL
-          AND validation_status IN ('valid', 'warning')
-          AND jsonb_typeof(validation_report) = 'object'
-        )
-      ),
       CONSTRAINT documents_template_table_fkey
         FOREIGN KEY (template_id, table_id)
         REFERENCES grids.document_templates(id, table_id) ON DELETE RESTRICT,
@@ -1670,6 +1673,44 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       UNIQUE (id, base_id, table_id, record_id),
       UNIQUE (base_id, document_number)
     )
+  `.simple();
+  await sql`
+    DO $$ BEGIN
+      -- Keep immutable legacy data; replace only the obsolete validation.
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
+          AND pg_get_constraintdef(oid) LIKE '%relationship_kind%'
+      ) THEN
+        ALTER TABLE grids.documents DROP CONSTRAINT documents_renderer_chk;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
+      ) THEN
+        ALTER TABLE grids.documents ADD CONSTRAINT documents_renderer_chk CHECK (
+          (
+            renderer_kind = 'html'
+            AND profile_id IS NULL
+            AND profile_version IS NULL
+            AND profile_snapshot IS NULL
+            AND snapshot_sha256 IS NULL
+            AND validator_version IS NULL
+            AND validation_status IS NULL
+            AND validation_report IS NULL
+          ) OR (
+            renderer_kind = 'profile'
+            AND profile_id IS NOT NULL
+            AND profile_version > 0
+            AND jsonb_typeof(profile_snapshot) = 'object'
+            AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
+            AND validator_version IS NOT NULL
+            AND validation_status IN ('valid', 'warning')
+            AND jsonb_typeof(validation_report) = 'object'
+          )
+        );
+      END IF;
+    END $$
   `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_short_id

@@ -62,6 +62,16 @@ describe("grids schema migration", () => {
           VALUES (${appId}::uuid, 'APP001', ${baseId}::uuid, 'Archived draft', ${definition}::jsonb, NULL, now())
         `;
         await database`ALTER TABLE grids.views ADD COLUMN query JSONB`.simple();
+        await database`
+          ALTER TABLE grids.document_profile_counters
+            DROP CONSTRAINT document_profile_counters_pkey,
+            ADD COLUMN profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+            ADD PRIMARY KEY (base_id, profile_id, profile_version)
+        `.simple();
+        await database`
+          INSERT INTO grids.document_profile_counters (base_id, profile_id, profile_version, next_value)
+          VALUES (${baseId}::uuid, 'test.invoice', 1, 51), (${baseId}::uuid, 'test.invoice', 2, 7)
+        `;
 
         await expect(migrate(database)).rejects.toThrow("App APP001 still has a legacy definition");
         expect(await database`SELECT name FROM grids.storage_contracts WHERE name = ${GRIDS_SCHEMA_BASELINE}`).toHaveLength(0);
@@ -76,6 +86,14 @@ describe("grids schema migration", () => {
           SELECT draft_definition AS definition FROM grids.custom_apps WHERE id = ${appId}::uuid
         `;
         expect(preserved?.definition).toEqual(definition);
+        expect(
+          await database<Array<{ profile_version: number; next_value: string }>>`
+          SELECT profile_version, next_value::text AS next_value FROM grids.document_profile_counters ORDER BY profile_version
+        `,
+        ).toEqual([
+          { profile_version: 1, next_value: "51" },
+          { profile_version: 2, next_value: "7" },
+        ]);
 
         await database`
           UPDATE grids.custom_apps SET draft_definition = ${{ ...definition, schemaVersion: 5 }}::jsonb
@@ -87,6 +105,62 @@ describe("grids schema migration", () => {
           SELECT draft_capabilities AS capabilities FROM grids.custom_apps WHERE id = ${appId}::uuid
         `;
         expect(recovered?.capabilities).toBeNull();
+        expect(
+          await database<Array<{ next_value: string }>>`SELECT next_value::text AS next_value FROM grids.document_profile_counters`,
+        ).toEqual([{ next_value: "51" }]);
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "upgrades versioned document counters without resetting allocations across repeated starts",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const baseA = uuid();
+        const baseB = uuid();
+        await database`INSERT INTO grids.bases (id, short_id, name)
+          VALUES (${baseA}::uuid, 'COUNT1', 'A'), (${baseB}::uuid, 'COUNT2', 'B')`;
+        await database`
+          ALTER TABLE grids.document_profile_counters
+            DROP CONSTRAINT document_profile_counters_pkey,
+            ADD COLUMN profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+            ADD PRIMARY KEY (base_id, profile_id, profile_version)
+        `.simple();
+        await database`
+          INSERT INTO grids.document_profile_counters (base_id, profile_id, profile_version, next_value) VALUES
+            (${baseA}::uuid, 'test.invoice', 1, 9007199254740993),
+            (${baseA}::uuid, 'test.invoice', 2, 8),
+            (${baseA}::uuid, 'test.invoice', 3, 12),
+            (${baseA}::uuid, 'test.receipt', 1, 42),
+            (${baseB}::uuid, 'test.invoice', 1, 3)
+        `;
+        await migrate(database);
+        const readCounters = () => database`
+          SELECT base_id, profile_id, next_value::text AS next_value
+          FROM grids.document_profile_counters ORDER BY (base_id = ${baseA}::uuid) DESC, profile_id
+        `;
+        expect(await readCounters()).toEqual([
+          { base_id: baseA, profile_id: "test.invoice", next_value: "9007199254740993" },
+          { base_id: baseA, profile_id: "test.receipt", next_value: "42" },
+          { base_id: baseB, profile_id: "test.invoice", next_value: "3" },
+        ]);
+        await database`
+          INSERT INTO grids.document_profile_counters (base_id, profile_id) VALUES (${baseA}::uuid, 'test.invoice')
+          ON CONFLICT (base_id, profile_id) DO UPDATE SET next_value = grids.document_profile_counters.next_value + 1
+        `;
+        const allocated = await readCounters();
+        await migrate(database);
+        expect(await readCounters()).toEqual(allocated);
+        expect(allocated[0]?.next_value).toBe("9007199254740994");
+        expect(
+          await database`
+          SELECT column_name FROM information_schema.columns WHERE table_schema = 'grids'
+            AND table_name = 'document_profile_counters' AND column_name = 'profile_version'
+        `,
+        ).toHaveLength(0);
       });
     },
     30_000,
@@ -885,6 +959,61 @@ describe("grids schema migration", () => {
           WHERE id = ${documentA}::uuid
         `;
         expect(unchangedDocument).toEqual({ rendererKind: "html", templateSnapshot: {} });
+        const [currentConstraint] = await database`
+          SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+          WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
+        `;
+        await database`
+          ALTER TABLE grids.documents
+            ADD COLUMN source JSONB,
+            ADD COLUMN source_revision JSONB,
+            ADD COLUMN relationship_kind TEXT,
+            ADD COLUMN predecessor_id UUID,
+            DROP CONSTRAINT documents_renderer_chk,
+            ADD CONSTRAINT documents_renderer_chk CHECK (
+              (renderer_kind = 'html' AND profile_id IS NULL AND profile_version IS NULL
+                AND source IS NULL AND source_revision IS NULL AND profile_snapshot IS NULL
+                AND snapshot_sha256 IS NULL AND relationship_kind IS NULL AND predecessor_id IS NULL
+                AND validator_version IS NULL AND validation_status IS NULL AND validation_report IS NULL)
+              OR (renderer_kind = 'profile' AND profile_id IS NOT NULL AND profile_version > 0
+                AND jsonb_typeof(source) = 'object' AND jsonb_typeof(source_revision) = 'object'
+                AND jsonb_typeof(profile_snapshot) = 'object' AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
+                AND relationship_kind IS NOT NULL AND validator_version IS NOT NULL
+                AND validation_status IN ('valid', 'warning') AND jsonb_typeof(validation_report) = 'object')
+            )
+        `.simple();
+        await database`
+          INSERT INTO grids.documents (
+            id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
+            template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor,
+            profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
+            validation_report, source, source_revision, relationship_kind
+          ) VALUES (
+            ${uuid()}::uuid, ${shortId("Z")}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
+            ${tableA}::uuid, ${recordA}::uuid, 'LEGACY-1', 'legacy.pdf', '{}'::jsonb, '{}'::jsonb,
+            'profile', 'v1', ${"a".repeat(64)}, '{"kind":"system"}'::jsonb,
+            'test.invoice', 1, '{}'::jsonb, ${"b".repeat(64)}, 'v1', 'valid', '{}'::jsonb,
+            '{"retained":true}'::jsonb, '{"version":1}'::jsonb, 'original'
+          )
+        `;
+        const documentsBefore = await database`SELECT * FROM grids.documents ORDER BY id`;
+        const artifactsBefore = await database`SELECT * FROM grids.document_artifacts ORDER BY document_id, artifact_key`;
+        const filesBefore = await database`SELECT * FROM grids.files ORDER BY id`;
+        await migrate(database);
+        await migrate(database);
+        expect(await database`SELECT * FROM grids.documents ORDER BY id`).toEqual(documentsBefore);
+        expect(await database`SELECT * FROM grids.document_artifacts ORDER BY document_id, artifact_key`).toEqual(artifactsBefore);
+        expect(await database`SELECT * FROM grids.files ORDER BY id`).toEqual(filesBefore);
+        const [upgradedConstraint] = await database`
+          SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+          WHERE conrelid = 'grids.documents'::regclass AND conname = 'documents_renderer_chk'
+        `;
+        expect(upgradedConstraint).toEqual(currentConstraint);
+        await expect(
+          (async () => {
+            await database`UPDATE grids.documents SET filename = 'changed.pdf' WHERE id = ${documentA}::uuid`;
+          })(),
+        ).rejects.toThrow("immutable");
       });
     },
     30_000,

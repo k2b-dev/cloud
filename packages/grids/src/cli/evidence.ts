@@ -1,6 +1,8 @@
-import { arg, command, flag } from "@valentinkolb/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
+import { EvidenceExportRequestSchema } from "../evidence-export-contracts";
 import { verifyEvidencePackage } from "../evidence-package-verifier";
-import { printCliStructured } from "./runtime";
+import { baseArgs, baseFlag, requirePublicId, resolveBaseFromCommand } from "./resources";
+import { JSON_BODY_INPUT, jsonRequest, printCliStructured, queryString, readApi, readJsonInput, writeApiFile } from "./runtime";
 
 const countText = (counts: Record<string, number> | null): string =>
   counts
@@ -10,6 +12,77 @@ const countText = (counts: Record<string, number> | null): string =>
     : "unavailable";
 
 export const evidenceCommands = [
+  command("evidence preflight", {
+    summary: "Inspect available evidence and estimate an export without creating it",
+    args: baseArgs,
+    flags: { ...baseFlag, body: JSON_BODY_INPUT },
+    async run({ ctx, args, flags }) {
+      const scope = EvidenceExportRequestSchema.parse((await readJsonInput(flags.body, "evidence scope", false)) ?? {});
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const result = await readApi<unknown>(
+        ctx,
+        `/evidence-exports/by-base/${base.id}/preflight${queryString({
+          ...scope,
+          sections: scope.sections.join(","),
+        })}`,
+      );
+      if (!printCliStructured(ctx, result)) ctx.json(result);
+    },
+  }),
+  command("evidence list", {
+    summary: "List retained evidence export requests in a Base",
+    args: baseArgs,
+    flags: baseFlag,
+    async run({ ctx, args }) {
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const result = await readApi<unknown>(ctx, `/evidence-exports/by-base/${base.id}`);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
+    },
+  }),
+  command("evidence create", {
+    summary: "Request an evidence export using the Base administrator permission",
+    args: baseArgs,
+    flags: { ...baseFlag, body: JSON_BODY_INPUT, yes: confirmFlag("Create an evidence package") },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Pass --yes to request an evidence export.");
+      const scope = EvidenceExportRequestSchema.parse((await readJsonInput(flags.body, "evidence scope", false)) ?? {});
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const result = await readApi<unknown>(ctx, `/evidence-exports/by-base/${base.id}`, jsonRequest("POST", scope));
+      if (!printCliStructured(ctx, result)) ctx.json(result);
+    },
+  }),
+  command("evidence get", {
+    summary: "Read an evidence export status, hashes and coverage",
+    args: { id: arg.required({ description: "Evidence export public ID" }) },
+    async run({ ctx, args }) {
+      const result = await readApi<unknown>(ctx, `/evidence-exports/${requirePublicId(args.id, "Export")}`);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
+    },
+  }),
+  ...(["retry", "cancel"] as const).map((action) =>
+    command(`evidence ${action}`, {
+      summary: action === "retry" ? "Retry a failed evidence export" : "Request cancellation of an evidence export",
+      args: { id: arg.required({ description: "Evidence export public ID" }) },
+      flags: { yes: confirmFlag(`${action} the evidence export`) },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes) throw new Error(`Pass --yes to ${action} the evidence export.`);
+        const result = await readApi<unknown>(
+          ctx,
+          `/evidence-exports/${requirePublicId(args.id, "Export")}/${action}`,
+          jsonRequest("POST"),
+        );
+        if (!printCliStructured(ctx, result)) ctx.json(result);
+      },
+    }),
+  ),
+  command("evidence download", {
+    summary: "Download the exact completed evidence TAR without rendering again",
+    args: { id: arg.required({ description: "Evidence export public ID" }) },
+    flags: { out: flag.string({ required: true, description: "Destination TAR path" }) },
+    async run({ ctx, args, flags }) {
+      await writeApiFile(ctx, `/evidence-exports/${requirePublicId(args.id, "Export")}/download`, undefined, flags.out);
+    },
+  }),
   command("evidence verify", {
     summary: "Verify a downloaded Grids evidence package offline",
     requiresCloud: false,

@@ -3,6 +3,7 @@ import { Avatar, Button, DetailPanel, Discussion, IconButton, MarkdownView, prom
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicRecordComment as RecordComment } from "../../../api/public-dto";
 import { recordMessages } from "./messages";
+import { recordCommentsCursorUrl, recordCommentUrl } from "./record-comment-url";
 
 type CommentPermissions = { actorUserId: string | null; canWrite: boolean; canModerate: boolean };
 type CommentsResponse = { items: RecordComment[]; nextCursor: string | null; permissions: CommentPermissions };
@@ -11,17 +12,12 @@ type Props = {
   endpoint: string;
   title?: string;
   dateConfig?: DateContext;
+  cursorParameter?: "cursor" | "_cursor";
 };
 
 const responseError = async (response: Response, fallback: string): Promise<string> => {
   const payload = await response.json().catch(() => null);
   return payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string" ? payload.message : fallback;
-};
-
-const withCursor = (endpoint: string, cursor: string): string => {
-  const url = new URL(endpoint, window.location.origin);
-  url.searchParams.set("cursor", cursor);
-  return `${url.pathname}${url.search}`;
 };
 
 const relativeTime = (value: string, dateConfig?: DateContext): string => {
@@ -55,9 +51,12 @@ export default function RecordComments(props: Props) {
     append ? setLoadingOlder(true) : setLoading(true);
     if (!append) setError(null);
     try {
-      const response = await fetch(cursor ? withCursor(props.endpoint, cursor) : props.endpoint, {
-        headers: { Accept: "application/json" },
-      });
+      const response = await fetch(
+        cursor ? recordCommentsCursorUrl(props.endpoint, cursor, props.cursorParameter ?? "cursor") : props.endpoint,
+        {
+          headers: { Accept: "application/json" },
+        },
+      );
       if (!response.ok) throw new Error(await responseError(response, t().commentLoadFailed));
       const page = (await response.json()) as CommentsResponse;
       if (sequence !== requestSequence) return false;
@@ -134,7 +133,7 @@ export default function RecordComments(props: Props) {
     if (!normalized || savingId()) return;
     setSavingId(comment.id);
     try {
-      const response = await fetch(`${props.endpoint}/${encodeURIComponent(comment.id)}`, {
+      const response = await fetch(recordCommentUrl(props.endpoint, comment.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ body: normalized }),
@@ -162,7 +161,7 @@ export default function RecordComments(props: Props) {
       return;
     setSavingId(comment.id);
     try {
-      const response = await fetch(`${props.endpoint}/${encodeURIComponent(comment.id)}`, { method: "DELETE" });
+      const response = await fetch(recordCommentUrl(props.endpoint, comment.id), { method: "DELETE" });
       if (!response.ok) throw new Error(await responseError(response, t().commentDeleteFailed));
       const now = new Date().toISOString();
       setComments((current) =>

@@ -48,6 +48,8 @@ Choose a relation when the target has its own details or lifecycle. A customer n
 
 The live record detail shows up to five **Referenced by** results beside its outgoing Relations. Results are grouped by source table and Relation field; **Load more** fetches the next bounded page. The list follows current read permissions and never adds incoming links to the record's field data.
 
+In the CLI, use `cld grids records referenced-by <table-id> <record-id> --limit 5 --json`. Record comments are available through `records comments list|create|update|delete`; use `--body-file` for Markdown and `--yes` to delete. Both lists accept `--cursor` and return `nextCursor`. These commands use public IDs and preserve the same Base, author, and moderation permissions as the record detail.
+
 Principal values use the Cloud identity directory without becoming Cloud permissions. Full accounts can select from the directory. Guest accounts can select themselves and their direct or nested groups, but cannot discover other users or group members. The server applies the same visibility check again when saving, so a hidden UUID cannot be guessed through the API.
 
 HTML template fields are read-only output columns, not Documents. Use them when each record needs an email body, article description, product snippet, or export value. Use Documents when the output needs an immutable snapshot, download, or PDF. Tables can show escaped source text; the record detail shows only a **Preview** action so long markup does not obscure the other fields. Previews open in a sandboxed frame, and Grids never inserts the value directly into the record page.

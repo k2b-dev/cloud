@@ -58,6 +58,58 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
 
   return new Hono<AuthContext>()
     .use(requireAdmin)
+    .get(
+      "/bases/:baseId/record-event-failures",
+      describeRoute({
+        tags: ["Grids:Admin"],
+        summary: "List retained record event failures as platform admin",
+        responses: {
+          200: jsonResponse(
+            z.object({
+              items: z.array(
+                z.object({
+                  id: z.string().uuid(),
+                  consumerGroup: z.string(),
+                  eventId: z.string(),
+                  error: z.string(),
+                  attempts: z.number().int(),
+                  status: z.enum(["retrying", "dead"]),
+                  deadAt: z.string().nullable(),
+                }),
+              ),
+              nextOffset: z.number().int().nullable(),
+            }),
+            "Bounded failure page without retained event payloads",
+          ),
+          403: jsonResponse(ErrorResponseSchema, "Platform admin required"),
+          404: jsonResponse(ErrorResponseSchema, "Base not found"),
+        },
+      }),
+      v("param", z.object({ baseId: ShortIdSchema })),
+      v(
+        "query",
+        z
+          .object({
+            offset: z.coerce
+              .number()
+              .int()
+              .min(0)
+              .max(Number.MAX_SAFE_INTEGER - 101)
+              .default(0),
+          })
+          .strict(),
+      ),
+      async (c) => {
+        const baseId = await resolveBase(c.req.valid("param").baseId);
+        if (!baseId || !(await gridsService.base.get(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
+        const { offset } = c.req.valid("query");
+        const failures = await gridsService.workflow.runtime.listRecordEventFailures(baseId, 101, offset);
+        return c.json({
+          items: failures.slice(0, 100).map(({ baseId: _baseId, payload: _payload, ...failure }) => failure),
+          nextOffset: failures.length > 100 ? offset + 100 : null,
+        });
+      },
+    )
     .post(
       "/bases/:baseId/record-event-failures/:failureId/replay",
       describeRoute({

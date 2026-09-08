@@ -25,6 +25,8 @@ describe("App Records table actions", () => {
     expect(source).toContain("props.preview || Boolean(pendingKey())");
     expect(source).toContain("if (props.preview || !props.endpoint) return");
     expect(source).toContain("prompts.confirm");
+    expect(source).toContain('url.searchParams.set("_search", nextQuery)');
+    expect(source).toContain('url.searchParams.set("_cursor", nextCursor)');
     expect(source).not.toContain("window.confirm");
   });
 

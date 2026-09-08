@@ -5,6 +5,9 @@ import { customAppCommands } from "./cli/custom-apps";
 import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
 import { formCommands } from "./cli/forms";
+import { publishedAppCommands } from "./cli/published-apps";
+import { recordDiscussionCommands } from "./cli/record-discussion";
+import { recordEventCommands } from "./cli/record-events";
 import { recordCommands, snapshotCommands } from "./cli/records";
 import { fieldCommands, tableCommands } from "./cli/schema";
 import { baseTemplateCommands } from "./cli/templates";
@@ -17,6 +20,9 @@ export default defineCliCommands({
   groupSummaries: {
     access: "Manage direct access to Grids resources",
     apps: "Create, validate, and publish Grids Apps",
+    "apps runtime": "Read and interact with published Grids Apps",
+    "apps runtime comments": "Read and manage comments in published Apps",
+    "apps runtime files": "Upload, download, and manage files in published Apps",
     bases: "Create, inspect, and manage Grids bases",
     "bases destruction": "Preview, run, and control bounded controlled File destruction",
     "bases preservation-holds": "List, create, and release preservation holds",
@@ -32,6 +38,8 @@ export default defineCliCommands({
     formulas: "Validate formulas and inspect the formula reference",
     gql: "Compile, preview, and run Grids queries",
     records: "Create, query, import, and manage records",
+    "records comments": "Read and manage record discussion",
+    "record-events": "Inspect and replay delivery failures as platform administrator",
     snapshots: "Create and inspect recursive record snapshots",
     tables: "Create, inspect, and manage tables",
     templates: "Inspect and instantiate built-in base templates",
@@ -49,11 +57,14 @@ export default defineCliCommands({
     ...baseTemplateCommands,
     ...accessCommands,
     ...customAppCommands,
+    ...publishedAppCommands,
     ...gqlCommands,
     ...formulaCommands,
     ...tableCommands,
     ...fieldCommands,
     ...recordCommands,
+    ...recordDiscussionCommands,
+    ...recordEventCommands,
     ...viewCommands,
     ...formCommands,
     ...documentTemplateCommands,

@@ -85,9 +85,9 @@ export const actorViewerFor = (access: GridsAccessContext) => {
 
 export const currentActorViewer = <T extends AuthContext>(c: Context<T>) => actorViewerFor(gridsAccessContext(c));
 
-export const currentWorkflowPrincipal = <T extends AuthContext>(c: Context<T>): GridsWorkflowPrincipal => {
-  const actor = gridsAccessContext(c).actor;
-  const viewer = currentActorViewer(c);
+export const workflowPrincipalFor = (access: GridsAccessContext): GridsWorkflowPrincipal => {
+  const actor = access.actor;
+  const viewer = actorViewerFor(access);
   if (!actor || actor.kind === "user") {
     return {
       userId: viewer.userId,
@@ -113,6 +113,9 @@ export const currentWorkflowPrincipal = <T extends AuthContext>(c: Context<T>): 
     },
   };
 };
+
+export const currentWorkflowPrincipal = <T extends AuthContext>(c: Context<T>): GridsWorkflowPrincipal =>
+  workflowPrincipalFor(gridsAccessContext(c));
 
 const deny = () => fail(err.forbidden("You do not have permission to access this resource."));
 

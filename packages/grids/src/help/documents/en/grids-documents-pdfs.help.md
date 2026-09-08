@@ -13,6 +13,8 @@ Use a document template when output must be formatted for people, printed, share
 
 ## One immutable Document model {icon="shield-check"}
 
+Agents can use `document.templates` to find templates, `document.list` and `document.read` to inspect stored documents, and `document.create` to issue one document for a selected Record. Issuance requires write access, an idempotency key and individual approval. It cannot be undone or remembered as blanket approval. The returned download link requires your existing permissions; it does not create a public share link or send the document.
+
 Every completed Document is immutable. It belongs to one template and one selected record, and the same Document appears in the record detail, the template workspace, and **All documents**. Retrying generation with the same idempotency key returns the same Document; reusing that key with different input fails.
 
 A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates and validates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.

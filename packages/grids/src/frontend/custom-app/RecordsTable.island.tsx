@@ -89,8 +89,8 @@ export default function RecordsTable(props: {
     setLoading(true);
     try {
       const url = new URL(props.endpoint, window.location.origin);
-      if (nextQuery) url.searchParams.set("q", nextQuery);
-      if (nextCursor) url.searchParams.set("cursor", nextCursor);
+      if (nextQuery) url.searchParams.set("_search", nextQuery);
+      if (nextCursor) url.searchParams.set("_cursor", nextCursor);
       const response = await fetch(`${url.pathname}${url.search}`, {
         headers: { Accept: "application/json" },
         signal: controller.signal,

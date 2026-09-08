@@ -58,6 +58,8 @@ Documents created from native application snapshots belong to their Base rather 
 
 ## Verify the download {icon="shield-check"}
 
+The CLI also manages exports: `cld grids evidence preflight`, `create`, `list`, `get`, `retry`, `cancel`, and `download`. Preflight and create accept `--base` and an optional `--body-file` with `tableId`, `from`, `to`, and `sections`. Create, retry, and cancel require `--yes`. The same Base Admin permission applies. Check the returned status before downloading: accepting a request does not mean the package is complete.
+
 Open **Technical details** before downloading and retain the displayed package and manifest SHA-256 values with the handoff.
 
 After downloading, select **Copy verification command** and run the copied command where the TAR is stored:

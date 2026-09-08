@@ -9,6 +9,14 @@ Grids Apps give authenticated or public audiences a focused app at `/apps/<id>` 
 
 Grids Apps do not copy data. A publication stores an immutable definition and a compiled capability snapshot containing the exact resources it may use. Every request checks the app grant, published capability, and server-enforced availability rules. App readers do not need Base access, and app access never grants raw Grids or arbitrary GQL access.
 
+## Use an App from the terminal {icon="terminal-2"}
+
+Run `cld grids apps runtime read <app-id> --json` with the ID from the App's URL. This discovers visible pages, block IDs, data, form fields and available actions. You do not need Base access. Open a detail page with `--page <page-id> --params '{"request_id":"REC001"}'`, using the parameter name and Record ID from the returned navigation.
+
+The `apps runtime` commands read bounded record pages, submit page or sidebar forms, update published editable fields, manage comments and attachments, download stored PDFs, invoke actions or scanners, and read scoped run status. Use `--help` on a command for its input. Page-scoped commands need the same parameters as discovery. Submissions, updates, scans and actions require `--yes`; form submissions are not retry-idempotent. Reuse an action's operation ID only when retrying the same operation. A queued result means accepted, not finished.
+
+These commands use the same published App permissions as the browser. They cannot open the raw Base, bypass unavailable blocks or execute arbitrary GQL.
+
 ## Pages and blocks {icon="layout"}
 
 An app may contain up to 12 responsive pages. Set `startPageId` to the page shown at `/apps/<id>`. Pages with `navigation.visible: true` appear in array order in the AppWorkspace sidebar, with an optional Tabler `icon`. If the current page has no other available page and the app has no available global action, the sidebar is omitted.

@@ -83,6 +83,16 @@ const FrozenDocumentRequestSchema = z
     filename: z.string().min(1).max(255).nullable(),
     allocationId: z.uuid().nullable(),
     profileInput: JsonObjectSchema.nullable(),
+    // Bridge support for retained pending receipts: read their historical provenance
+    // without rewriting frozen evidence or reallocating a number. New receipts omit it.
+    source: z
+      .object({ appId: z.string().min(1), resourceType: z.string().min(1), resourceId: z.string().min(1) })
+      .strict()
+      .optional(),
+    sourceRevision: z
+      .object({ id: z.string().min(1), observedAt: z.iso.datetime(), evidence: JsonObjectSchema })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((value) => (value.workflowRunId === null) === (value.workflowStepKey === null), "workflow binding must be complete");

@@ -135,8 +135,8 @@ describe("Grids App Form runtime", () => {
             title: "Detail",
             navigation: { visible: false },
             parameters: {
-              first: { type: "record", tableId: tableShortId, required: true },
-              second: { type: "record", tableId: tableShortId, required: true },
+              cursor: { type: "record", tableId: tableShortId, required: true },
+              limit: { type: "record", tableId: tableShortId, required: true },
             },
             rows: [
               {
@@ -153,7 +153,7 @@ describe("Grids App Form runtime", () => {
                         pageSize: 25,
                         source: {
                           kind: "gql",
-                          query: `from table {${tableShortId}}\nwhere record.id = @params.first and record.id = @params.second`,
+                          query: `from table {${tableShortId}}\nwhere record.id = @params.cursor and record.id = @params.limit`,
                         },
                         display: { kind: "table", columnIds: [fieldShortId] },
                       },
@@ -161,7 +161,7 @@ describe("Grids App Form runtime", () => {
                         id: "follow-up",
                         type: "form",
                         formId: formShortId,
-                        fixedValues: { [relationFieldShortId]: { source: "PARAMS", path: "first" } },
+                        fixedValues: { [relationFieldShortId]: { source: "PARAMS", path: "cursor" } },
                       },
                     ],
                   },
@@ -173,8 +173,8 @@ describe("Grids App Form runtime", () => {
             id: "record-detail",
             title: "Record",
             navigation: { visible: false },
-            parameters: { first: { type: "record", tableId: tableShortId, required: true } },
-            record: { tableId: tableShortId, id: { source: "PARAMS", path: "first" } },
+            parameters: { cursor: { type: "record", tableId: tableShortId, required: true } },
+            record: { tableId: tableShortId, id: { source: "PARAMS", path: "cursor" } },
             rows: [
               {
                 id: "record",
@@ -190,6 +190,7 @@ describe("Grids App Form runtime", () => {
                         editableFieldIds: [relationFieldShortId],
                       },
                       { id: "selected-relation", type: "form", formId: formShortId, fixedValues: {} },
+                      { id: "comments", type: "comments" },
                       {
                         id: "follow-up",
                         type: "form",
@@ -224,13 +225,14 @@ describe("Grids App Form runtime", () => {
         }),
       );
       const route = `/apps/runtime/${applied.data.shortId}/detail/records/records`;
-      const sameRecord = await api.request(`${route}?first=${recordShortId}&second=${recordShortId}`);
+      const sameRecord = await api.request(`${route}?cursor=${recordShortId}&limit=${recordShortId}`);
       expect(sameRecord.status).toBe(200);
-      const missingRecord = await api.request(`${route}?first=${recordShortId}&second=${testShortId("Z")}`);
+      expect((await api.request(`${route}?cursor=${recordShortId}&limit=${recordShortId}&_cursor=invalid`)).status).toBe(400);
+      const missingRecord = await api.request(`${route}?cursor=${recordShortId}&limit=${testShortId("Z")}`);
       expect(missingRecord.status).toBe(404);
       for (const [pageId, query] of [
-        ["detail", `first=${recordShortId}&second=${recordShortId}`],
-        ["record-detail", `first=${recordShortId}`],
+        ["detail", `cursor=${recordShortId}&limit=${recordShortId}`],
+        ["record-detail", `cursor=${recordShortId}`],
       ]) {
         const submitted = await api.request(`/apps/runtime/${applied.data.shortId}/${pageId}/follow-up/submit?${query}`, {
           method: "POST",
@@ -246,7 +248,7 @@ describe("Grids App Form runtime", () => {
         expect(links).toEqual([{ targetId: recordId }]);
       }
 
-      const selectedFormUrl = `/apps/runtime/${applied.data.shortId}/record-detail/selected-relation/submit?first=${recordShortId}`;
+      const selectedFormUrl = `/apps/runtime/${applied.data.shortId}/record-detail/selected-relation/submit?cursor=${recordShortId}`;
       const selectedRelation = await api.request(selectedFormUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -271,7 +273,12 @@ describe("Grids App Form runtime", () => {
           requireAuthenticated: authenticateAs(userFor(authUser.id)),
         }),
       );
-      const editUrl = `/apps/runtime/${applied.data.shortId}/record-detail/record/record?first=${recordShortId}`;
+      const editUrl = `/apps/runtime/${applied.data.shortId}/record-detail/record/record?cursor=${recordShortId}`;
+      const commentUrl = `/apps/runtime/${applied.data.shortId}/record-detail/comments/comments?cursor=${recordShortId}`;
+      const comments = await authenticatedApi.request(`${commentUrl}&_limit=1`);
+      expect(comments.status).toBe(200);
+      expect((await comments.json()).items).toEqual([]);
+      expect((await authenticatedApi.request(`${commentUrl}&_cursor=invalid`)).status).toBe(400);
       const editedRelation = await authenticatedApi.request(editUrl, {
         method: "PATCH",
         headers: { "content-type": "application/json", "If-Match": "1" },
@@ -495,6 +502,16 @@ describe("Grids App Form runtime", () => {
                             params: { request_id: { source: "ROW", path: "id" } },
                           },
                         },
+                        {
+                          id: "request-chart",
+                          type: "chart",
+                          chartType: "bar",
+                          limit: 20,
+                          source: {
+                            kind: "gql",
+                            query: `from table {${tablePublicId}}\ngroup by {${fieldPublicId}}\naggregate count({${fieldPublicId}}) as requests`,
+                          },
+                        },
                       ],
                     },
                   ],
@@ -655,6 +672,18 @@ describe("Grids App Form runtime", () => {
             WHERE id = ${appId}::uuid
           `;
         }
+        const discovery = await publicApi.request(`/apps/runtime/${applied.data.shortId}`);
+        expect(discovery.status).toBe(200);
+        const discovered = await discovery.json();
+        expect(discovered.page.id).toBe("home");
+        expect(discovered.blocks.find((block: { id: string }) => block.id === "apply").form.ok).toBe(true);
+        expect(discovered.blocks.find((block: { id: string }) => block.id === "requests").records.ok).toBe(true);
+        expect(discovered).not.toHaveProperty("draftDefinition");
+        expect(discovered).not.toHaveProperty("capabilities");
+        expect(JSON.stringify(discovered)).not.toContain(tableId);
+        expect(JSON.stringify(discovered)).not.toContain(suppliedFieldId);
+        expect((await publicApi.request(`/apps/runtime/${applied.data.shortId}/missing`)).status).toBe(404);
+        expect((await publicApi.request(`/apps/runtime/${applied.data.shortId}/request?request_id=invalid`)).status).toBe(404);
         const response = await publicApi.request(`/apps/runtime/${applied.data.shortId}/home/apply/submit`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-forwarded-for": `custom-app-${baseId}` },
@@ -680,6 +709,30 @@ describe("Grids App Form runtime", () => {
       `;
         expect(record?.value).toBe("Certificate request");
         expect(record?.supplied).toBe("App portal");
+        const detailDiscovery = await publicApi.request(`/apps/runtime/${applied.data.shortId}/request?request_id=${body.recordId}`);
+        expect(detailDiscovery.status).toBe(200);
+        const detailData = await detailDiscovery.json();
+        const detailBlock = detailData.blocks.find((block: { id: string }) => block.id === "record");
+        expect(detailBlock.record.record.id).toBe(body.recordId);
+        expect(detailBlock.record.record.data).not.toHaveProperty(suppliedFieldPublicId);
+        expect(detailBlock.recordUpdateEndpoint).toBeUndefined();
+        expect(detailData.blocks.some((block: { type: string }) => block.type === "comments")).toBe(false);
+        const chartDiscovery = await publicApi.request(`/apps/runtime/${applied.data.shortId}`);
+        expect(chartDiscovery.status).toBe(200);
+        const chartPage = await chartDiscovery.json();
+        const chartBlock = chartPage.blocks.find((block: { id: string }) => block.id === "request-chart");
+        expect(chartBlock.chart.ok).toBe(true);
+        expect(chartBlock.chart.chart.fields.map((field: { id: string }) => field.id)).toEqual([fieldPublicId]);
+        expect(chartBlock.chart.chart.viewQuery.groupBy[0].fieldId).toBe(fieldPublicId);
+        expect(chartBlock.chart.chart.buckets).toEqual([
+          { keys: ["Certificate request"], values: { [`${fieldPublicId}__count__count`]: "1" } },
+        ]);
+        for (const privateId of [tableId, fieldId, hiddenFieldId, suppliedFieldId, imageFieldId]) {
+          expect(JSON.stringify(chartBlock)).not.toContain(privateId);
+        }
+        for (const unselectedId of [suppliedFieldPublicId, imageFieldPublicId]) {
+          expect(JSON.stringify(chartBlock)).not.toContain(unselectedId);
+        }
         const fileId = testUuid();
         const filePublicId = testShortId("P");
         const imageBytes = new Uint8Array([137, 80, 78, 71]);
@@ -707,7 +760,7 @@ describe("Grids App Form runtime", () => {
         expect(cardsBody.cards?.records.find((item) => item.id === body.recordId)?.data).toEqual({ [suppliedFieldPublicId]: "App portal" });
 
         const searchedCardsResponse = await publicApi.request(
-          `/apps/runtime/${applied.data.shortId}/home/requests/records?q=App%20portal`,
+          `/apps/runtime/${applied.data.shortId}/home/requests/records?_search=App%20portal`,
           { headers: { "x-forwarded-for": `custom-app-card-search-${baseId}` } },
         );
         expect(searchedCardsResponse.status).toBe(200);
@@ -719,7 +772,7 @@ describe("Grids App Form runtime", () => {
         const contentToken = searchedCardsBody.cards?.filePreviews[body.recordId]?.[imageFieldPublicId]?.contentToken;
         expect(contentToken).toBeString();
         const filePath = `/apps/runtime/${applied.data.shortId}/home/requests/files/${encodeURIComponent(contentToken!)}`;
-        const fileResponse = await publicApi.request(`${filePath}?q=App%20portal`);
+        const fileResponse = await publicApi.request(`${filePath}?_search=App%20portal`);
         expect(fileResponse.status).toBe(200);
         expect(fileResponse.headers.get("content-type")).toBe("image/png");
         await sql`
@@ -727,7 +780,7 @@ describe("Grids App Form runtime", () => {
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('No longer searchable'::text))
           WHERE id = ${recordId}::uuid
         `;
-        expect((await publicApi.request(`${filePath}?q=App%20portal`)).status).toBe(404);
+        expect((await publicApi.request(`${filePath}?_search=App%20portal`)).status).toBe(404);
         await sql`
           UPDATE grids.records
           SET data = jsonb_set(data, ARRAY[${suppliedFieldId}], to_jsonb('App portal'::text))
@@ -1183,26 +1236,26 @@ describe("Grids App Form runtime", () => {
         expect(firstRecords.rows).toHaveLength(25);
         expect(firstRecords.presentation?.fields).toContainEqual(expect.objectContaining({ id: fieldPublicId, type: "text" }));
         expect(firstRecords.page?.nextCursor).toBeString();
-        const secondRecordsResponse = await api.request(`${recordsUrl}&cursor=${encodeURIComponent(firstRecords.page?.nextCursor ?? "")}`);
+        const secondRecordsResponse = await api.request(`${recordsUrl}&_cursor=${encodeURIComponent(firstRecords.page?.nextCursor ?? "")}`);
         expect(secondRecordsResponse.status).toBe(200);
         const secondRecords = (await secondRecordsResponse.json()) as Extract<DslQueryPreviewResponse, { ok: true }>;
         expect(secondRecords.rows).toHaveLength(25);
         expect(new Set([...firstRecords.rows, ...secondRecords.rows].map((row) => row.recordId)).size).toBe(50);
 
-        const searchedRecordsResponse = await api.request(`${recordsUrl}&q=${encodeURIComponent("Unique searchable needle")}`);
+        const searchedRecordsResponse = await api.request(`${recordsUrl}&_search=${encodeURIComponent("Unique searchable needle")}`);
         expect(searchedRecordsResponse.status).toBe(200);
         const searchedRecords = (await searchedRecordsResponse.json()) as Extract<DslQueryPreviewResponse, { ok: true }>;
         expect(searchedRecords.rows.map((row) => row.recordId)).toEqual([searchableRecordId]);
-        const injectionResponse = await api.request(`${recordsUrl}&q=${encodeURIComponent("%' OR TRUE --")}`);
+        const injectionResponse = await api.request(`${recordsUrl}&_search=${encodeURIComponent("%' OR TRUE --")}`);
         expect(injectionResponse.status).toBe(200);
         const injectionResult = (await injectionResponse.json()) as Extract<DslQueryPreviewResponse, { ok: true }>;
         expect(injectionResult.rows).toHaveLength(0);
         const viewRecordsUrl = `/apps/runtime/${applied.data.shortId}/request/request-view/records?request_id=${body.recordId}`;
-        const searchedViewResponse = await api.request(`${viewRecordsUrl}&q=${encodeURIComponent("Unique searchable needle")}`);
+        const searchedViewResponse = await api.request(`${viewRecordsUrl}&_search=${encodeURIComponent("Unique searchable needle")}`);
         expect(searchedViewResponse.status).toBe(200);
         const searchedView = (await searchedViewResponse.json()) as Extract<DslQueryPreviewResponse, { ok: true }>;
         expect(searchedView.rows.map((row) => row.recordId)).toEqual([searchableRecordId]);
-        expect((await api.request(`${recordsUrl}&cursor=not-a-signed-cursor`)).status).toBe(400);
+        expect((await api.request(`${recordsUrl}&_cursor=not-a-signed-cursor`)).status).toBe(400);
 
         const anonymousAction = await publicApi.request(
           `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`,
@@ -1542,6 +1595,7 @@ describe("Grids App Form runtime", () => {
           WHERE custom_app_id = ${appId}::uuid AND access_id = ${appGrant.data.accessId}::uuid
         `;
         expect((await firstServiceAccountApi.request(statusPath)).status).toBe(404);
+        expect((await firstServiceAccountApi.request(`/apps/runtime/${applied.data.shortId}`)).status).toBe(404);
         await sql`
           INSERT INTO grids.custom_app_access (custom_app_id, access_id)
           VALUES (${appId}::uuid, ${appGrant.data.accessId}::uuid)

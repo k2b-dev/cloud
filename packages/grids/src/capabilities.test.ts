@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -9,6 +10,7 @@ import {
   type User,
 } from "@valentinkolb/cloud/contracts";
 import { sql } from "bun";
+import { PublicDocumentSchema } from "./api/document-public-contracts";
 import { gridsCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -18,6 +20,11 @@ import {
   RecordExternalUpsertInputSchema,
 } from "./capability-contracts";
 import { migrate } from "./migrate";
+import { gridsService } from "./service";
+import { enable as enableDurableHistory } from "./service/durable-history";
+import { enable as enableFinalization, finalize as finalizeRecord } from "./service/record-finalization";
+
+const zDocument = (value: unknown) => PublicDocumentSchema.omit({ tags: true, createdBy: true }).parse(value);
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
@@ -85,6 +92,7 @@ const review = (localId: string, input: unknown, context: CapabilityExecutionCon
     if (result.ok) {
       const validated = CapabilityActionReviewSchema.safeParse(result.data);
       if (!validated.success) throw new Error(`Invalid test review for ${localId}: ${validated.error.message}`);
+      expect(validated.data.approvalScope !== undefined).toBe(operation.approval === "rememberable");
     }
     return result;
   });
@@ -101,13 +109,172 @@ beforeAll(async () => {
 });
 
 describe("Grids capabilities", () => {
+  test("compiles the full additive capability manifest", () => {
+    expect(() => compileCapabilityManifest("grids", gridsCapabilities)).not.toThrow();
+  });
+  test("daily actions require idempotency and individual approval without running reviews", async () => {
+    const context = userContext(testUser(uuid()));
+    for (const [name, input] of [
+      ["document.create", { templateId: "TMPL01", recordId: "REC001" }],
+      ["workflow.record-action", { launcherId: "LAUNCH", recordId: "REC001", expectedRevision: 1 }],
+    ] as const) {
+      expect((await invoke("action", name, input, context)).ok).toBe(false);
+      const action = gridsCapabilities.actions[name];
+      expect(action.idempotency).toBe("required");
+      expect("approval" in action).toBe(false);
+      expect(action.review).toBeFunction();
+    }
+  });
+  postgresTest("daily documents retain permissions, bounded discovery, public IDs and durable issuance replay", async () => {
+    const user = testUser(await existingAuthUserId());
+    const context = userContext(user);
+    const outsider = userContext(testUser(uuid()));
+    const baseId = uuid();
+    const tableId = uuid();
+    const recordId = uuid();
+    const otherRecordId = uuid();
+    const basePublicId = shortId("B");
+    const tablePublicId = shortId("T");
+    const recordPublicId = shortId("R");
+    const otherPublicId = shortId("R");
+    let accessId: string | undefined;
+    const issue = gridsService.document.createDocumentForRecord;
+    const renderer = spyOn(gridsService.document, "createDocumentForRecord").mockImplementation((input) =>
+      issue({
+        ...input,
+        renderPdf: async () => ({
+          ok: true,
+          data: { pdf: new TextEncoder().encode("%PDF-1.7\ntest artifact"), contentType: "application/pdf" },
+        }),
+      }),
+    );
+    try {
+      await sql`INSERT INTO grids.bases (id,short_id,name) VALUES (${baseId}::uuid,${basePublicId},'Daily capability')`;
+      await sql`INSERT INTO grids.tables (id,short_id,base_id,name) VALUES (${tableId}::uuid,${tablePublicId},${baseId}::uuid,'TestDocs')`;
+      await sql`INSERT INTO grids.records (id,short_id,table_id,data,version) VALUES (${recordId}::uuid,${recordPublicId},${tableId}::uuid,'{}'::jsonb,1),(${otherRecordId}::uuid,${otherPublicId},${tableId}::uuid,'{}'::jsonb,1)`;
+      const [access] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access (user_id,permission) VALUES (${user.id}::uuid,'write'::auth.permission_level) RETURNING id`;
+      accessId = access!.id;
+      await sql`INSERT INTO grids.base_access (base_id,access_id) VALUES (${baseId}::uuid,${accessId}::uuid)`;
+      const created = await gridsService.document.createTemplate(
+        tableId,
+        {
+          name: "Receipt",
+          source: "from table TestDocs",
+          renderer: {
+            kind: "html",
+            body: "<p>{{ document.number }}</p>",
+            numberTemplate: "DOC-{{ series.value }}",
+            filenameTemplate: "{{ document.number }}.pdf",
+          },
+        },
+        user.id,
+      );
+      if (!created.ok) throw created.error;
+      const templateId = created.data.shortId;
+      const input = { templateId, recordId: recordPublicId };
+      expect((await invoke("query", "document.templates", { tableId: tablePublicId }, outsider)).ok).toBe(false);
+      expect((await review("document.create", input, outsider)).ok).toBe(false);
+      const found = await invoke("query", "document.templates", { tableId: tablePublicId, limit: 1 }, context);
+      expect(found.ok && found.data.data).toEqual({
+        items: [{ id: templateId, tableId: tablePublicId, name: "Receipt", enabled: true }],
+        nextOffset: null,
+      });
+      const reviewed = await review("document.create", input, { ...context, locale: "de" });
+      expect(reviewed.ok && reviewed.data.message).toContain("dauerhaftes Dokument");
+      expect(renderer).not.toHaveBeenCalled();
+      const keyed = { ...context, idempotencyKey: "same-request" };
+      const first = await invoke("action", "document.create", input, keyed);
+      if (!first.ok) throw first.error;
+      const again = await invoke("action", "document.create", input, keyed);
+      expect(again).toEqual(first);
+      const document = zDocument(first.data.data);
+      const read = await invoke("query", "document.read", { id: document.id }, context);
+      expect(read).toEqual(first);
+      expect((await invoke("query", "document.read", { id: document.id }, outsider)).ok).toBe(false);
+      expect(JSON.stringify(first)).not.toContain(tableId);
+      expect(JSON.stringify(first)).not.toContain(recordId);
+      const page = await invoke("query", "document.list", { templateId, limit: 1 }, context);
+      expect(page.ok && page.data.data).toEqual([document]);
+      expect((await invoke("query", "document.list", { templateId, cursor: "garbage" }, context)).ok).toBe(false);
+      expect((await invoke("action", "document.create", { ...input, recordId: otherPublicId }, keyed)).ok).toBe(false);
+      expect((await invoke("query", "workflow.record-actions", { baseId: basePublicId }, outsider)).ok).toBe(false);
+      const actions = await invoke("query", "workflow.record-actions", { baseId: basePublicId, limit: 1 }, context);
+      expect(actions.ok && actions.data.data).toEqual({ items: [], nextOffset: null });
+      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${shortId("F")},${tableId}::uuid,'Name','text','{}'::jsonb)`;
+      await sql`INSERT INTO grids.fields (id,short_id,table_id,name,type,config) VALUES (${uuid()}::uuid,${shortId("F")},${tableId}::uuid,'Corrects','relation',${{ targetTableId: tableId, cardinality: "single" }}::jsonb)`;
+      expect((await enableDurableHistory(tableId, user.id)).ok).toBe(true);
+      expect((await enableFinalization(tableId, { mode: "direct" }, user.id)).ok).toBe(true);
+      expect((await finalizeRecord({ tableId, recordId, actorId: user.id, origin: "direct" })).ok).toBe(true);
+      const workflow = await gridsService.workflow.create(
+        baseId,
+        {
+          name: "Review record",
+          enabled: true,
+          source:
+            "inputs:\n  item:\n    type: record\n    table: TestDocs\n    required: true\nsteps:\n  - createCorrectionDraft:\n      original: inputs.item\n      intent: correction\n      typeField: Name\n      typeValue: correction\n      originalField: Corrects",
+        },
+        user.id,
+      );
+      if (!workflow.ok) throw workflow.error;
+      const launcher = await gridsService.workflow.launcher.create(
+        workflow.data,
+        { name: "Review record", enabled: true, config: { kind: "record", input: "item", profile: "correctionDraft" } },
+        user.id,
+      );
+      if (!launcher.ok) throw launcher.error;
+      const discoveredActions = await invoke("query", "workflow.record-actions", { baseId: basePublicId, limit: 1 }, context);
+      expect(discoveredActions.ok && discoveredActions.data.data).toEqual({
+        items: [
+          {
+            id: launcher.data.shortId,
+            name: "Review record",
+            tableId: tablePublicId,
+            expectedRevision: workflow.data.revision,
+            intent: "correction",
+          },
+        ],
+        nextOffset: null,
+      });
+      const actionInput = { launcherId: launcher.data.shortId, recordId: recordPublicId, expectedRevision: workflow.data.revision };
+      expect((await review("workflow.record-action", actionInput, outsider)).ok).toBe(false);
+      const actionReview = await review("workflow.record-action", actionInput, context);
+      expect(actionReview.ok).toBe(true);
+      expect((await review("workflow.record-action", { ...actionInput, expectedRevision: workflow.data.revision + 1 }, context)).ok).toBe(
+        false,
+      );
+      const executed = await invoke("action", "workflow.record-action", actionInput, keyed);
+      if (!executed.ok) throw executed.error;
+      const runId = executed.data.refs?.[0]?.id;
+      expect(runId).toMatch(/^[A-Za-z0-9]{6}$/);
+      const repeated = await invoke("action", "workflow.record-action", actionInput, keyed);
+      expect(repeated.ok && repeated.data.refs?.[0]?.id).toBe(runId);
+      const runStatus = await invoke("query", "workflow.run.read", { id: runId }, context);
+      expect(runStatus.ok).toBe(true);
+      expect((await invoke("query", "workflow.run.read", { id: runId }, outsider)).ok).toBe(false);
+      expect(JSON.stringify(runStatus)).not.toContain(recordId);
+      expect((await invoke("action", "workflow.record-action", { ...actionInput, recordId: otherPublicId }, keyed)).ok).toBe(false);
+      await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
+      expect((await invoke("action", "document.create", input, keyed)).ok).toBe(false);
+      expect((await invoke("query", "document.read", { id: document.id }, context)).ok).toBe(false);
+    } finally {
+      renderer.mockRestore();
+      // Issuance fixtures are immutable too; hide their Base instead of bypassing its retention constraints.
+      await sql`UPDATE grids.bases SET deleted_at=now() WHERE id=${baseId}::uuid`;
+      if (accessId) await sql`DELETE FROM auth.access WHERE id=${accessId}::uuid`;
+    }
+  });
   test("declares the curated v1 surface", () => {
     expect(gridsCapabilities.protocolVersion).toBe(1);
-    expect(Object.keys(gridsCapabilities.types ?? {}).sort()).toEqual(["base", "record", "table", "view"]);
+    expect(Object.keys(gridsCapabilities.types ?? {}).sort()).toEqual(["base", "document", "record", "table", "view", "workflow-run"]);
     expect(Object.keys(gridsCapabilities.queries ?? {}).sort()).toEqual([
       "base.list",
       "base.read",
       "base.search",
+      "document.list",
+      "document.read",
+      "document.templates",
       "gql.context",
       "gql.execute",
       "gql.preview",
@@ -115,13 +282,21 @@ describe("Grids capabilities", () => {
       "record.read",
       "table.read",
       "view.read",
+      "workflow.record-actions",
+      "workflow.run.read",
     ]);
-    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual(["record.create", "record.update", "record.upsert-external"]);
+    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual([
+      "document.create",
+      "record.create",
+      "record.update",
+      "record.upsert-external",
+      "workflow.record-action",
+    ]);
     expect(
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["record.upsert-external", "record.update"]);
+    ).toEqual(["document.create", "workflow.record-action", "record.upsert-external", "record.update"]);
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
@@ -742,6 +917,7 @@ describe("Grids capabilities", () => {
       const externalReview = await review("record.upsert-external", externalInput, context);
       expect(externalReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
       expect(updateReview.ok).toBe(true);
+      expect(updateReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
       if (updateReview.ok) {
         expect(updateReview.data.details).toContainEqual({
           label: "Name",
@@ -758,10 +934,12 @@ describe("Grids capabilities", () => {
     const boundBaseId = uuid();
     const otherBaseId = uuid();
     const tableId = uuid();
+    const otherTableId = uuid();
     const fieldId = uuid();
     const boundBasePublicId = shortId("A");
     const otherBasePublicId = shortId("B");
     const tablePublicId = shortId("T");
+    const otherTablePublicId = shortId("T");
     const fieldPublicId = shortId("F");
     const accessIds: string[] = [];
     const [serviceAccount] = await sql<{ id: string; createdAt: string }[]>`
@@ -779,7 +957,8 @@ describe("Grids capabilities", () => {
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
-        VALUES (${tableId}::uuid, ${tablePublicId}, ${boundBaseId}::uuid, 'Bound items', 0)
+        VALUES (${tableId}::uuid, ${tablePublicId}, ${boundBaseId}::uuid, 'Bound items', 0),
+          (${otherTableId}::uuid, ${otherTablePublicId}, ${otherBaseId}::uuid, 'Other items', 0)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
@@ -851,6 +1030,45 @@ describe("Grids capabilities", () => {
         { ...context, idempotencyKey: "denied-external-write" },
       );
       expect(externalWrite).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+
+      for (const [templateTableId, publicTableId, publicBaseId, allowed] of [
+        [tableId, tablePublicId, boundBasePublicId, true],
+        [otherTableId, otherTablePublicId, otherBasePublicId, false],
+      ] as const) {
+        const template = await gridsService.document.createTemplate(
+          templateTableId,
+          {
+            name: "Credential-scoped receipt",
+            source: `from table {${publicTableId}}`,
+            renderer: {
+              kind: "html",
+              body: "<p>Receipt</p>",
+              numberTemplate: "DOC-{{ series.value }}",
+              filenameTemplate: "{{ document.number }}.pdf",
+            },
+          },
+          null,
+        );
+        if (!template.ok) throw template.error;
+        const templates = await invoke("query", "document.templates", { tableId: publicTableId }, context);
+        const documents = await invoke("query", "document.list", { templateId: template.data.shortId }, context);
+        const actions = await invoke("query", "workflow.record-actions", { baseId: publicBaseId }, context);
+        if (allowed) {
+          expect(templates.ok && templates.data.data).toMatchObject({ items: [{ id: template.data.shortId }], nextOffset: null });
+          expect(documents.ok && documents.data.data).toEqual([]);
+          expect(actions.ok && actions.data.data).toEqual({ items: [], nextOffset: null });
+        } else {
+          for (const result of [templates, documents, actions])
+            expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+        }
+        // The scope gate must run before resolving a record or issuing anything.
+        const input = { templateId: template.data.shortId, recordId: "REC001" };
+        expect(await review("document.create", input, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+        expect(await invoke("action", "document.create", input, { ...context, idempotencyKey: "denied-daily-issuance" })).toMatchObject({
+          ok: false,
+          error: { code: "FORBIDDEN", status: 403 },
+        });
+      }
     } finally {
       await sql`DELETE FROM grids.bases WHERE id IN (${boundBaseId}::uuid, ${otherBaseId}::uuid)`;
       for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;

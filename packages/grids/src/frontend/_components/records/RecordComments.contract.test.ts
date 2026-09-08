@@ -13,5 +13,9 @@ describe("App record comments", () => {
     expect(source).not.toContain('class="detail-section');
     expect(source).not.toContain("detail-section-label");
     expect(source).not.toContain("PanelHeader");
+    expect(source).toContain('recordCommentsCursorUrl(props.endpoint, cursor, props.cursorParameter ?? "cursor")');
+    expect(source.match(/recordCommentUrl\(props.endpoint, comment.id\)/g)).toHaveLength(2);
+    const appPage = await Bun.file(new URL("../../custom-app/page.tsx", import.meta.url)).text();
+    expect(appPage).toContain('cursorParameter="_cursor"');
   });
 });

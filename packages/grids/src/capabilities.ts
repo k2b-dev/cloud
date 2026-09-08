@@ -57,6 +57,7 @@ import {
 import { capabilityMessagesFor } from "./capability-messages";
 import { gridsCapabilityPresentation } from "./capability-presentation";
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
+import { dailyCapabilities } from "./daily-capabilities";
 import { isRecordWritableFieldType } from "./field-types";
 import { gridsService } from "./service";
 import { resolvePublicIds } from "./service/public-resources";
@@ -907,6 +908,7 @@ export const gridsCapabilities = defineCapabilities({
   protocolVersion: 1,
   presentation: gridsCapabilityPresentation,
   types: {
+    ...dailyCapabilities.types,
     base: { title: "Grids Base", description: "A permission-scoped Grids workspace.", icon: "ti ti-table", reader: "base.read" },
     table: {
       title: "Grids Table",
@@ -923,6 +925,7 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...dailyCapabilities.queries,
     "base.search": {
       title: "Search Grids Bases",
       description:
@@ -1013,6 +1016,7 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...dailyCapabilities.actions,
     "record.create": {
       title: "Create Grids Record",
       description:
@@ -1087,6 +1091,7 @@ export const gridsCapabilities = defineCapabilities({
         const base = await gridsService.base.get(table.data.baseId);
         return ok({
           message: t.reviewUpdateRecord({ table: table.data.name }),
+          approvalScope: `table:${input.tableId}`,
           details: [
             { label: t.table, value: table.data.name },
             { label: t.record, value: record.shortId },

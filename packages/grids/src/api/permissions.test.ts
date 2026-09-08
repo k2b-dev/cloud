@@ -6,9 +6,10 @@ import {
   currentResourceBoundBaseId,
   gateAt,
   gateCredentialScope,
+  gridsAccessContext,
   resolveBaseWithGrantsForAccess,
   resolveCustomAppWithGrantsForAccess,
-  gridsAccessContext,
+  workflowPrincipalFor,
 } from "./permissions";
 
 let resolvedLevel: "none" | "read" | "write" | "admin" = "none";
@@ -101,6 +102,63 @@ describe("Grids API permissions", () => {
       userId: null,
       userGroups: [],
       serviceAccountId: resourceServiceAccount.id,
+    });
+  });
+
+  test("workflow principals preserve credential caps and resource bindings", () => {
+    const access = gridsAccessContext(serviceAccountContext as never);
+    expect(workflowPrincipalFor(access)).toEqual({
+      userId: null,
+      groupIds: [],
+      serviceAccountId: resourceServiceAccount.id,
+      actorServiceAccountId: resourceServiceAccount.id,
+      credential: {
+        kind: "oauth",
+        id: null,
+        scopes: ["grids:read"],
+        permissionCap: "read",
+        expiresAt: null,
+        resourceBinding: { appId: "grids", resourceType: "base", resourceId: baseId },
+      },
+    });
+    if (access.actor?.kind !== "service_account") throw new Error("Expected service-account fixture");
+    const credentialId = "55555555-5555-4555-8555-555555555555";
+    expect(
+      workflowPrincipalFor({
+        ...access,
+        actor: { ...access.actor, credentialId, credentialExpiresAt: "2027-01-01T00:00:00.000Z" },
+      }).credential,
+    ).toMatchObject({ kind: "api_token", id: credentialId, expiresAt: "2027-01-01T00:00:00.000Z", permissionCap: "read" });
+    expect(workflowPrincipalFor(gridsAccessContext(userContext as never))).toEqual({
+      userId: user.id,
+      groupIds: [],
+      serviceAccountId: null,
+      actorServiceAccountId: null,
+      credential: null,
+    });
+    const userAccess = gridsAccessContext(userContext as never);
+    if (userAccess.actor?.kind !== "user") throw new Error("Expected user fixture");
+    expect(
+      workflowPrincipalFor({
+        accessSubject: userAccess.accessSubject,
+        actor: {
+          ...access.actor,
+          serviceAccount: {
+            ...access.actor.serviceAccount,
+            kind: "user_delegated",
+            delegatedUserId: user.id,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+          },
+          delegatedUser: userAccess.actor.user,
+        },
+      }),
+    ).toMatchObject({
+      userId: user.id,
+      serviceAccountId: null,
+      actorServiceAccountId: resourceServiceAccount.id,
+      credential: { permissionCap: "read", resourceBinding: null, scopes: ["grids:read"] },
     });
   });
 });

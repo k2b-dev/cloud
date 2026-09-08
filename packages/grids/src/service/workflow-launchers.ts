@@ -178,7 +178,11 @@ export const listLaunchers = async (workflowId: string, enabledOnly = false): Pr
   return rows.map(mapLauncher);
 };
 
-export const listLaunchersForBase = async (baseId: string, enabledOnly = false): Promise<GridsWorkflowLauncher[]> => {
+export const listLaunchersForBase = async (
+  baseId: string,
+  enabledOnly = false,
+  page?: { limit: number; offset: number },
+): Promise<GridsWorkflowLauncher[]> => {
   const rows = await sql<DbRow[]>`
     SELECT ${selectColumns}
     FROM grids.workflow_launchers
@@ -186,6 +190,7 @@ export const listLaunchersForBase = async (baseId: string, enabledOnly = false):
       AND deleted_at IS NULL
       AND (${enabledOnly} = FALSE OR enabled = TRUE)
     ORDER BY created_at, id
+    LIMIT ${page?.limit ?? null} OFFSET ${page?.offset ?? 0}
   `;
   return rows.map(mapLauncher);
 };

@@ -11,6 +11,8 @@ Ein Workflow ist mehr als eine verborgene Automatisierung. Er besitzt typisierte
 
 ## Entscheiden, ob ein Workflow passt {icon="route"}
 
+Für Agents findet `workflow.record-actions` konfigurierte Korrektur- und Storno-Entwürfe samt erwarteter Revision. `workflow.record-action` legt einen verknüpften Entwurf zu einem abgeschlossenen Original an, mit ausdrücklicher Bestätigung und Idempotenzschlüssel. Das Original bleibt unverändert; kein Dokument wird ausgestellt oder versendet. Verwende denselben Schlüssel nur für Wiederholungen desselben Auftrags. Den Status der zurückgegebenen Laufreferenz liest `workflow.run.read`; angenommen bedeutet nicht abgeschlossen. Diese Capabilities bearbeiten keine Workflows, erlauben keine beliebigen zusätzlichen Eingaben und starten keine Bulk-Auswahl. Dafür, für andere Workflow-Arten und für reine App-Freigaben dient die CLI.
+
 Nutze ein gewöhnliches Feld oder eine Formel, wenn du nur einen Wert speichern oder berechnen musst. Nutze ein Formular, wenn du nur eine geführte Datensatzerstellung benötigst. Nutze einen Workflow, wenn die Operation mehrere Schritte besitzt, konsistent ausgeführt werden muss, einen Scanner oder eine Bulk-Aktion benötigt, ein anderes System kontaktiert oder einen beobachtbaren Erfolg oder Fehler braucht.
 
 Ein kleiner Workflow ist besser als ein großer mit voneinander unabhängigen Zweigen. Gib ihm einen ergebnisorientierten Namen wie **Artikel zurückgeben** oder **Genehmigte Rechnung senden**.
