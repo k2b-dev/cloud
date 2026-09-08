@@ -3,18 +3,24 @@ import {
   Button,
   ButtonLink,
   CheckboxCard,
+  Checkbox,
+  FilterChip,
   DataPanel,
   DataTable,
   type DataTableColumn,
   Disclosure,
   NumberInput,
+  NoticeCard,
   SettingsPage,
   SettingsSection,
   TextInput,
   prompts,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
+import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
+import { navigateTo } from "@k2b/ssr/nav";
 import { LinuxIdentityConfigurationSchema, type LinuxIdentityConfiguration } from "@valentinkolb/cloud/contracts";
 import type { linuxIdentities, PosixCandidate } from "@valentinkolb/cloud/services";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
@@ -27,7 +33,7 @@ const responseError = async (response: Response): Promise<Error> => {
   return new Error(body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : "error");
 };
 
-export default function LinuxIdentityPanel(props: { initial: Overview; after?: string | null }) {
+export default function LinuxIdentityPanel(props: { initial: Overview; after?: string | null; search?: string; scope?: "ready" | "all" }) {
   const locale = useLocale();
   const t = () => linuxMessages.resolve([locale()]).t;
   const after = () => props.after ?? null;
@@ -35,6 +41,11 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
   const [editing, setEditing] = createSignal(props.initial.config.enabled);
   const [reserved, setReserved] = createSignal(false);
   const [selected, setSelected] = createSignal<string[]>([]);
+  const pageHref = (cursor?: string | null, nextScope = props.scope ?? "ready") => {
+    const params = new URLSearchParams({ tab: "linux", scope: nextScope, search: props.search ?? "" });
+    if (cursor) params.set("after", cursor);
+    return `/admin/settings?${params}`;
+  };
   const [notice, setNotice] = createSignal("");
   const [progress, setProgress] = createSignal({ done: 0, total: 0 });
   let stopRequested = false;
@@ -47,7 +58,10 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
     source: after,
     initial: { source: props.after ?? null, data: props.initial },
     load: async (cursor, { abortSignal }) => {
-      const response = await api.$get({ query: cursor ? { after: cursor } : {} }, { init: { signal: abortSignal } });
+      const response = await api.$get(
+        { query: { after: cursor ?? undefined, search: props.search ?? "", scope: props.scope ?? "ready" } },
+        { init: { signal: abortSignal } },
+      );
       if (!response.ok) throw await responseError(response);
       return response.json();
     },
@@ -70,7 +84,7 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
       setEditing(saved.enabled);
       setReserved(false);
       setSelected([]);
-      setNotice(t().saved);
+      toast.success(t().saved);
     },
   });
   const prepare = mutation.create({
@@ -93,6 +107,12 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
         await overview.invalidate();
       }
     },
+    onSuccess: () => {
+      if (progress().total > 0 && progress().done === progress().total) {
+        toast.success(t().preparedSuccess({ count: progress().done }));
+        setProgress({ done: 0, total: 0 });
+      }
+    },
   });
   const busy = () => save.loading() || prepare.loading() || overview.refreshing();
   const begin = async () => {
@@ -102,8 +122,21 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
       await prepare.mutate(ids);
   };
   const errors = () => [save.error(), prepare.error(), overview.error()].filter((error): error is Error => error instanceof Error);
+  const eligibleIds = () => (overview.data()?.items ?? []).filter((row) => row.state === "ready").map((row) => row.id);
   const columns = (): DataTableColumn<PosixCandidate>[] => [
-    { id: "select", header: t().select },
+    {
+      id: "select",
+      header: (
+        <Checkbox
+          label={<span class="sr-only">{t().selectPage}</span>}
+          value={eligibleIds().length > 0 && eligibleIds().every((id) => selected().includes(id))}
+          indeterminate={selected().length > 0 && !eligibleIds().every((id) => selected().includes(id))}
+          disabled={busy() || dirty() || !eligibleIds().length}
+          onValueChange={(value) => setSelected(value ? eligibleIds() : [])}
+        />
+      ),
+      class: "w-12",
+    },
     { id: "name", header: t().name },
     { id: "source", header: t().source },
     { id: "status", header: t().status },
@@ -112,20 +145,18 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
   ];
   return (
     <SettingsPage title={t().title} subtitle={t().subtitle} icon="ti ti-terminal-2">
-      <SettingsSection title={t().scope} subtitle={t().scopeDescription}>
-        <p class="text-sm text-dimmed">{!config().enabled ? t().disabled : t().enableDescription}</p>
-      </SettingsSection>
+      <NoticeCard tone="info" title={t().scope} detail={t().scopeDescription} />
       <For each={errors()}>
         {(error) => (
-          <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+          <NoticeCard tone="danger" role="alert">
             {linuxErrorText(error.message, t())}
-          </p>
+          </NoticeCard>
         )}
       </For>
       <Show when={notice()}>
-        <p role="status" class="text-sm text-dimmed">
+        <NoticeCard tone="neutral" role="status">
           {notice()}
-        </p>
+        </NoticeCard>
       </Show>
       <SettingsSection title={t().setup}>
         <Show
@@ -198,9 +229,9 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
                 />
               </Show>
               <Show when={!valid()}>
-                <p role="alert" class="text-sm text-red-700 dark:text-red-300">
+                <NoticeCard tone="danger" role="alert">
                   {t().invalid}
-                </p>
+                </NoticeCard>
               </Show>
             </Show>
             <Show when={dirty()}>
@@ -228,110 +259,151 @@ export default function LinuxIdentityPanel(props: { initial: Overview; after?: s
           </div>
         </Show>
       </SettingsSection>
-      <DataPanel
-        title={t().inventory}
-        subtitle={t().inventoryHint}
-        actions={
-          <Button variant="secondary" disabled={busy()} onClick={() => void overview.refresh()}>
-            {t().refresh}
-          </Button>
-        }
-      >
-        <Show when={config().enabled && !dirty()}>
-          <div class="flex flex-wrap gap-2 p-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy()}
-              onClick={() => setSelected((overview.data()?.items ?? []).filter((item) => item.state === "ready").map((item) => item.id))}
-            >
-              {t().selectPage}
-            </Button>
-            <Button variant="secondary" size="sm" disabled={busy() || !selected().length} onClick={() => setSelected([])}>
-              {t().clear}
-            </Button>
-            <Button size="sm" disabled={busy() || !selected().length} onClick={() => void begin()}>
-              {t().prepare({ count: selected().length })}
-            </Button>
+      <Show when={config().enabled}>
+        <DataPanel title={t().inventory} subtitle={t().visibleAccounts({ count: overview.data()?.items.length ?? 0 })}>
+          <div class="flex flex-col gap-2 px-3 pb-3">
+            <fieldset class="m-0 min-w-0 border-0 p-0" disabled={busy() || dirty()} onInput={() => setSelected([])}>
+              <SearchBar
+                action={pageHref()}
+                value={props.search ?? ""}
+                pageParam="after"
+                placeholder={t().searchUsername}
+                ariaLabel={t().searchUsername}
+              />
+            </fieldset>
+            <div class="flex flex-wrap items-center gap-2">
+              <fieldset class="m-0 min-w-0 border-0 p-0" disabled={busy() || dirty()}>
+                <FilterChip
+                  label={t().filter}
+                  icon="ti ti-filter"
+                  value={[props.scope ?? "ready"]}
+                  defaultValue={["ready"]}
+                  isActive={(props.scope ?? "ready") !== "ready"}
+                  options={[
+                    {
+                      options: [
+                        { value: "ready", label: t().eligible },
+                        { value: "all", label: t().allAccounts },
+                      ],
+                    },
+                  ]}
+                  onValueChange={(values) => {
+                    if (busy() || dirty()) return;
+                    setSelected([]);
+                    navigateTo(pageHref(null, values[0] === "all" ? "all" : "ready"));
+                  }}
+                />
+              </fieldset>
+              <div class="ml-auto flex flex-wrap items-center gap-2">
+                <Button variant="secondary" size="sm" disabled={busy()} onClick={() => void overview.refresh()}>
+                  <i class="ti ti-refresh" aria-hidden="true" />
+                  {t().refresh}
+                </Button>
+                <Show when={selected().length > 0}>
+                  <Button variant="secondary" size="sm" disabled={busy()} onClick={() => setSelected([])}>
+                    {t().clear}
+                  </Button>
+                  <Button size="sm" disabled={busy() || dirty()} onClick={() => void begin()}>
+                    {t().prepare({ count: selected().length })}
+                  </Button>
+                </Show>
+              </div>
+            </div>
           </div>
-        </Show>
-        <Show when={progress().total > 0}>
-          <div role="status" class="flex flex-wrap items-center gap-3 p-3 text-sm">
-            {t().progress(progress())}
-            <Show when={prepare.loading()}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  stopRequested = true;
-                }}
-              >
-                {t().stop}
-              </Button>
-            </Show>
-          </div>
-        </Show>
-        <DataTable
-          rows={overview.data()?.items ?? []}
-          columns={columns()}
-          getRowId={(row) => row.id}
-          class="overflow-x-auto"
-          empty={t().empty}
-          renderCell={({ row, col }) => {
-            if (col.id === "select")
-              return (
-                <Show when={row.state === "ready" && config().enabled && !dirty()}>
-                  <CheckboxCard
-                    variant="input"
-                    label={`${t().select}: ${row.uid}`}
+          <Show when={progress().total > 0}>
+            <div role="status" class="flex flex-wrap items-center gap-3 p-3 text-sm">
+              {t().progress(progress())}
+              <Show when={prepare.loading()}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    stopRequested = true;
+                  }}
+                >
+                  {t().stop}
+                </Button>
+              </Show>
+            </div>
+          </Show>
+          <DataTable
+            rows={overview.data()?.items ?? []}
+            columns={columns()}
+            getRowId={(row) => row.id}
+            class="overflow-x-auto"
+            empty={
+              <div class="flex flex-col items-start gap-2">
+                <span>{(props.scope ?? "ready") === "ready" ? t().emptyReady : t().empty}</span>
+                <Show when={(props.scope ?? "ready") === "ready"}>
+                  <ButtonLink variant="secondary" size="sm" href={pageHref(null, "all")}>
+                    {t().allAccounts}
+                  </ButtonLink>
+                </Show>
+              </div>
+            }
+            renderCell={({ row, col }) => {
+              if (col.id === "select")
+                return (
+                  <Checkbox
+                    label={<span class="sr-only">{`${t().select}: ${row.uid}`}</span>}
+                    aria-describedby={`linux-status-${row.id}`}
                     value={selected().includes(row.id)}
-                    disabled={busy()}
+                    disabled={busy() || dirty() || row.state !== "ready"}
                     onValueChange={(value) =>
                       setSelected((current) => (value ? [...current, row.id] : current.filter((id) => id !== row.id)))
                     }
                   />
-                </Show>
-              );
-            if (col.id === "name")
-              return (
-                <div>
-                  <span class="font-medium">{row.displayName || row.uid}</span>
-                  <div class="font-mono text-xs text-dimmed">{row.uid}</div>
-                </div>
-              );
-            if (col.id === "source") return (row.identity?.managedBy ?? row.provider) === "ipa" ? "FreeIPA" : t().local;
-            if (col.id === "status") return t()[row.state];
-            if (col.id === "identity")
-              return (
-                <span class="font-mono">
-                  {row.identity?.uidNumber ?? "—"} / {row.identity?.primaryGidNumber ?? "—"}
-                </span>
-              );
-            if (col.id === "home")
-              return (
-                <span class="font-mono text-xs">
-                  {row.identity?.homeDirectory ??
-                    (row.state === "ready" && config().enabled ? config().homeTemplate.replaceAll("{username}", row.uid) : "—")}
-                </span>
-              );
-            return "";
-          }}
-        />
-        <Show when={!busy() && !dirty() && (after() || overview.data()?.nextCursor)}>
-          <div class="flex gap-2 p-3">
-            <Show when={!busy() && !dirty() && after()}>
-              <ButtonLink variant="secondary" size="sm" href="/admin/settings?tab=linux">
-                {t().first}
-              </ButtonLink>
-            </Show>
-            <Show when={!busy() && !dirty() && overview.data()?.nextCursor}>
-              <ButtonLink variant="secondary" size="sm" href={`/admin/settings?tab=linux&after=${overview.data()?.nextCursor}`}>
-                {t().next}
-              </ButtonLink>
-            </Show>
-          </div>
-        </Show>
-      </DataPanel>
+                );
+              if (col.id === "name")
+                return (
+                  <div>
+                    <span class="font-medium">{row.displayName || row.uid}</span>
+                    <div class="font-mono text-xs text-dimmed">{row.uid}</div>
+                  </div>
+                );
+              if (col.id === "source") return (row.identity?.managedBy ?? row.provider) === "ipa" ? "FreeIPA" : t().local;
+              if (col.id === "status")
+                return (
+                  <span id={`linux-status-${row.id}`}>
+                    {row.state === "ready" && dirty()
+                      ? t().saveFirst
+                      : row.provider === "ipa" && row.state === "prepared"
+                        ? t().ipaManaged
+                        : t()[row.state]}
+                  </span>
+                );
+              if (col.id === "identity")
+                return (
+                  <span class="font-mono">
+                    {row.identity?.uidNumber ?? "—"} / {row.identity?.primaryGidNumber ?? "—"}
+                  </span>
+                );
+              if (col.id === "home")
+                return (
+                  <span class="font-mono text-xs">
+                    {row.identity?.homeDirectory ??
+                      (row.state === "ready" && config().enabled ? config().homeTemplate.replaceAll("{username}", row.uid) : "—")}
+                  </span>
+                );
+              return "";
+            }}
+          />
+          <Show when={!busy() && !dirty() && (after() || overview.data()?.nextCursor)}>
+            <div class="flex gap-2 p-3">
+              <Show when={!busy() && !dirty() && after()}>
+                <ButtonLink variant="secondary" size="sm" href={pageHref()}>
+                  {t().first}
+                </ButtonLink>
+              </Show>
+              <Show when={!busy() && !dirty() && overview.data()?.nextCursor}>
+                <ButtonLink variant="secondary" size="sm" href={pageHref(overview.data()?.nextCursor)}>
+                  {t().next}
+                </ButtonLink>
+              </Show>
+            </div>
+          </Show>
+        </DataPanel>
+      </Show>
     </SettingsPage>
   );
 }

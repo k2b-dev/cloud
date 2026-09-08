@@ -12,7 +12,8 @@ import { getFreeIpaConfig } from "../freeipa-config";
 import { readCompleteIpaList } from "../ipa/sync-planning";
 import { decryptValue } from "../settings/crypto";
 import * as settings from "../settings";
-import { audit } from "../audit";
+import { audit, type AuditActor } from "../audit";
+import type { MutationResult } from "../../contracts/shared";
 
 const CONFIG_KEY = "linux.identity_config";
 export const POSIX_PAGE_SIZE = 50;
@@ -126,7 +127,7 @@ const candidate = (row: IdentityRow): PosixCandidate => {
 };
 
 // Database injection is used by isolated integration tests; production uses the shared pool.
-export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdRanges) => {
+export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdRanges) => {
   const readConfig = async (connection = db): Promise<LinuxIdentityConfiguration> => {
     // Provisioning must not use a stale cache after an operator disables or changes the range.
     const [row] = await connection<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${CONFIG_KEY}`;
@@ -160,7 +161,13 @@ export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdR
     `;
     if (conflict) throw new PosixError("ipa_range_conflict");
   };
-  const rows = (connection: typeof sql, id: string | null, after: string | null) => connection<IdentityRow[]>`
+  const rows = (
+    connection: typeof sql,
+    id: string | null,
+    after: string | null,
+    filters: { search?: string; scope?: "ready" | "all" } = {},
+  ) => connection<IdentityRow[]>`
+    WITH candidates AS (
     SELECT u.id, u.uid, u.display_name, u.provider, u.profile,
       COALESCE(p.managed_by, CASE WHEN u.provider = 'ipa' AND i.user_id IS NOT NULL THEN 'ipa' END) AS managed_by,
       CASE WHEN p.user_id IS NOT NULL THEN p.uid_number WHEN u.provider = 'ipa' THEN i.uid_number END AS uid_number,
@@ -173,7 +180,14 @@ export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdR
     FROM auth.users u LEFT JOIN auth.user_posix p ON p.user_id = u.id
     LEFT JOIN auth.user_ipa_data i ON i.user_id = u.id
     WHERE (${id}::uuid IS NULL OR u.id = ${id}::uuid) AND (${after}::uuid IS NULL OR u.id > ${after}::uuid)
-    ORDER BY u.id LIMIT ${id ? 1 : POSIX_PAGE_SIZE + 1}
+      AND strpos(lower(u.uid), lower(${filters.search ?? ""})) > 0
+    )
+    SELECT * FROM candidates
+    WHERE (${filters.scope === "ready"} = false OR (
+      provider = 'local' AND profile = 'user' AND managed_by IS NULL
+      AND uid ~ '^[a-z_][a-z0-9_-]{0,31}$' AND NOT group_conflict AND NOT identity_conflict
+    ))
+    ORDER BY id LIMIT ${id ? 1 : POSIX_PAGE_SIZE + 1}
   `;
   const allocate = async (
     connection: typeof sql,
@@ -201,14 +215,73 @@ export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdR
     await connection`INSERT INTO auth.posix_allocations(kind, number, owner_id) VALUES (${kind}, ${number}, ${ownerId}::uuid)`;
     return number;
   };
-  return {
+  const assign = async (tx: typeof sql, id: string, config: LinuxIdentityConfiguration, actor?: AuditActor) => {
+    const [row] = await rows(tx, id, null);
+    if (!row) throw new PosixError("user_not_found", 404);
+    const current = candidate(row);
+    if (current.state === "prepared" && row.provider === "local" && row.profile === "user") return current;
+    if (current.state !== "ready") throw new PosixError(current.state);
+    await checkRange(tx, config, await readRanges());
+    const paths = PosixOverridesSchema.safeParse({
+      homeDirectory: config.homeTemplate.replaceAll("{username}", row.uid),
+      loginShell: config.loginShell,
+    });
+    if (!paths.success) throw new PosixError("invalid_paths", 400);
+    const uidNumber = await allocate(tx, "uid", id, config);
+    const groupId = crypto.randomUUID();
+    const gidNumber = await allocate(tx, "gid", groupId, config);
+    await tx`INSERT INTO auth.groups(id, cn, provider, name, gid_number) VALUES (${groupId}::uuid, ${`local:${row.uid}`}, 'local', ${row.uid}, ${gidNumber})`;
+    await tx`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES (${id}::uuid, ${groupId}::uuid)`;
+    await tx`INSERT INTO auth.user_posix(user_id, managed_by, uid_number, primary_gid_number, primary_group_id, home_directory, login_shell)
+      VALUES (${id}::uuid, 'local', ${uidNumber}, ${gidNumber}, ${groupId}::uuid, ${paths.data.homeDirectory}, ${paths.data.loginShell})`;
+    await audit.record(
+      {
+        action: "accounts.linux.provision",
+        outcome: "allowed",
+        actor,
+        target: { type: "user", id },
+        metadata: { uidNumber, gidNumber, primaryGroupId: groupId },
+      },
+      tx,
+    );
+    const [created] = await rows(tx, id, null);
+    return candidate(created!);
+  };
+
+  // Internal lifecycle boundary, not part of the public administrator service.
+  // Lock before the account write: upgrading a row-write lock afterwards can deadlock.
+  const writeLocalAccount = async (
+    write: (tx: typeof sql) => Promise<MutationResult<{ id: string; assignIdentity?: boolean }>>,
+    actor?: AuditActor,
+  ): Promise<MutationResult<{ id: string }>> => {
+    try {
+      return await db.begin(async (tx) => {
+        await lock(tx);
+        const result = await write(tx);
+        if (!result.ok) return result;
+        const [user] = await tx<
+          { provider: string; profile: string }[]
+        >`SELECT provider, profile FROM auth.users WHERE id = ${result.data.id}::uuid`;
+        if (result.data.assignIdentity !== false && user?.provider === "local" && user.profile === "user") {
+          const config = await readConfig(tx);
+          if (config.enabled) await assign(tx, result.data.id, config, actor);
+        }
+        return { ok: true, data: { id: result.data.id } };
+      });
+    } catch (error) {
+      if (error instanceof PosixError) return { ok: false, error: `Linux identity assignment failed: ${error.code}`, status: error.status };
+      throw error;
+    }
+  };
+
+  const service = {
     async configuration(actor: Actor) {
       requireAdmin(actor);
       return readConfig();
     },
-    async overview(actor: Actor, after: string | null = null) {
+    async overview(actor: Actor, after: string | null = null, filters: { search?: string; scope?: "ready" | "all" } = {}) {
       requireAdmin(actor);
-      const result = await rows(db, null, after);
+      const result = await rows(db, null, after, filters);
       const items = result.slice(0, POSIX_PAGE_SIZE).map(candidate);
       return { config: await readConfig(), items, nextCursor: result.length > POSIX_PAGE_SIZE ? items.at(-1)!.id : null };
     },
@@ -243,41 +316,11 @@ export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdR
     },
     async provision(actor: Actor, id: string) {
       requireAdmin(actor);
-      const ranges = await readRanges();
       return db.begin(async (tx) => {
         await lock(tx);
         const config = await readConfig(tx);
         if (!config.enabled) throw new PosixError("setup_disabled");
-        const [row] = await rows(tx, id, null);
-        if (!row) throw new PosixError("user_not_found", 404);
-        const current = candidate(row);
-        if (current.state === "prepared" && row.provider === "local" && row.profile === "user") return current;
-        if (current.state !== "ready") throw new PosixError(current.state);
-        await checkRange(tx, config, ranges);
-        const paths = PosixOverridesSchema.safeParse({
-          homeDirectory: config.homeTemplate.replaceAll("{username}", row.uid),
-          loginShell: config.loginShell,
-        });
-        if (!paths.success) throw new PosixError("invalid_paths", 400);
-        const uidNumber = await allocate(tx, "uid", id, config);
-        const groupId = crypto.randomUUID();
-        const gidNumber = await allocate(tx, "gid", groupId, config);
-        await tx`INSERT INTO auth.groups(id, cn, provider, name, gid_number) VALUES (${groupId}::uuid, ${`local:${row.uid}`}, 'local', ${row.uid}, ${gidNumber})`;
-        await tx`INSERT INTO auth.user_groups_v2(user_id, group_id) VALUES (${id}::uuid, ${groupId}::uuid)`;
-        await tx`INSERT INTO auth.user_posix(user_id, managed_by, uid_number, primary_gid_number, primary_group_id, home_directory, login_shell)
-          VALUES (${id}::uuid, 'local', ${uidNumber}, ${gidNumber}, ${groupId}::uuid, ${paths.data.homeDirectory}, ${paths.data.loginShell})`;
-        await audit.record(
-          {
-            action: "accounts.linux.provision",
-            outcome: "allowed",
-            actor: { userId: actor.id, roles: actor.roles },
-            target: { type: "user", id },
-            metadata: { uidNumber, gidNumber, primaryGroupId: groupId },
-          },
-          tx,
-        );
-        const [created] = await rows(tx, id, null);
-        return candidate(created!);
+        return assign(tx, id, config, { userId: actor.id, roles: actor.roles });
       });
     },
     async update(actor: Actor, id: string, input: { homeDirectory: string; loginShell: string }) {
@@ -337,5 +380,7 @@ export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdR
       });
     },
   };
+  return { service, writeLocalAccount };
 };
-export const posix = createPosixService();
+export const createPosixService = (db: typeof sql = sql, readRanges = readIpaIdRanges) => createPosixRuntime(db, readRanges).service;
+export const { service: posix, writeLocalAccount } = createPosixRuntime();

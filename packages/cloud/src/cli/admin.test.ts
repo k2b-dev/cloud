@@ -74,6 +74,14 @@ describe("admin CLI", () => {
     expect(lines).toEqual([JSON.stringify(page)]);
   });
 
+  test("passes Linux username and eligibility filters to the server", async () => {
+    const { ctx, calls } = createContext(["linux", "preview"], { search: "alice", scope: "ready", after: "cursor" }, [
+      jsonResponse({ items: [], nextCursor: null }),
+    ]);
+    await adminCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/admin/core/linux-identities?after=cursor&search=alice&scope=ready");
+  });
+
   test("requires explicit Linux configuration and range confirmation before writes", async () => {
     const cases: CloudCliFlags[] = [{ config: JSON.stringify(linuxConfig) }, { config: JSON.stringify(linuxConfig), yes: true }];
     for (const flags of cases) {

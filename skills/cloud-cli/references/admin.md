@@ -144,7 +144,7 @@ cld admin linux preview --json
 
 Edit the exported configuration's `enabled`, `rangeStart`, `rangeEnd`,
 `homeTemplate` and `loginShell` fields. Reserve the numeric range across all
-connected systems before enabling preparation. Apply the complete file with:
+connected systems before enabling identity assignment. Apply the complete file with:
 
 ```bash
 cld admin linux config set --config-file ./linux.json --range-reserved --yes
@@ -155,7 +155,14 @@ configuration always requires `--range-reserved`; disabling with `enabled:false`
 requires only `--yes` and retains existing identities. The server checks current
 FreeIPA ranges and known identities before accepting the configuration.
 
+While enabled, new local full accounts and local guests promoted to full accounts
+receive Linux attributes automatically. Failure rolls back the account change.
+Existing accounts require an explicit backfill; enabling does not modify them.
+Guests and FreeIPA-managed accounts do not receive local identities.
+
 Preview is read-only and returns up to 50 accounts plus `nextCursor`. Continue
+with the same `--search <username>` and `--scope ready|all` filters when used;
+the default scope is `all`. Filtering happens before pagination. Continue
 with `preview --after <nextCursor> --json` until the cursor is null. Individual
 preparation and home/shell changes live under `cld accounts users linux`;
 `cld accounts groups make-posix` also supports local groups. No command here

@@ -22,6 +22,7 @@ import {
 } from "./model";
 import type { AccountsNotificationSender } from "./notification-sender";
 import { transitionIpaUserToLocal } from "./switching";
+import type { AuditActor } from "../audit";
 
 export { clearAvatar, getAvatar, parseAvatarDataUrl, setAvatar } from "./avatar";
 
@@ -419,7 +420,10 @@ export const demoteToGuest = async (params: { id: string; actor: { userId: strin
   });
 };
 
-export const create = async (params: { data: CreateUserData }): Promise<MutationResult<{ user: User; temporaryPassword?: string }>> => {
+export const create = async (params: {
+  data: CreateUserData;
+  actor?: AuditActor;
+}): Promise<MutationResult<{ user: User; temporaryPassword?: string }>> => {
   if (params.data.provider === "local" && params.data.admin && !canPersistStoredAdmin("local", params.data.profile)) {
     return { ok: false, error: "Only local full accounts can be created as admins", status: 400 };
   }
@@ -432,6 +436,7 @@ export const create = async (params: { data: CreateUserData }): Promise<Mutation
 
   if (params.data.provider === "local") {
     const created = await providers.local.users.create({
+      actor: params.actor,
       data: {
         email: params.data.email,
         givenname: params.data.givenname,
@@ -500,7 +505,7 @@ export const update = async (params: { id: string; data: UpdateUserData }): Prom
   });
 };
 
-export const setProfile = async (params: { id: string; profile: UserProfile }): Promise<MutationResult<void>> => {
+export const setProfile = async (params: { id: string; profile: UserProfile; actor?: AuditActor }): Promise<MutationResult<void>> => {
   const user = await getMinimal({ id: params.id });
   if (!user) return { ok: false, error: "User not found", status: 404 };
   if (user.provider !== "local") {
@@ -509,6 +514,7 @@ export const setProfile = async (params: { id: string; profile: UserProfile }): 
 
   const accountExpires = user.accountExpires ? new Date(user.accountExpires) : await getDefaultAccountExpiry("local", params.profile);
   return providers.local.users.setProfile({
+    actor: params.actor,
     id: params.id,
     profile: params.profile,
     accountExpires,

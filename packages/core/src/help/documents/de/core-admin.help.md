@@ -20,7 +20,7 @@ Die Core-Administrationsseiten konfigurieren Plattformdienste und verlinken die 
 
 :::reference
 - **Allgemein und Accounts & Anmeldung:** Branding, öffentliche Links, Zeitpläne, Vorgaben, Anmeldeverhalten, Ablauf, Erinnerungen und Selbstverwaltung.
-- **Linux-Zugang:** Richte die Vorbereitung lokaler Identitäten ein, prüfe Home- und Shell-Vorgaben, reserviere einen ID-Bereich und bereite ausdrücklich ausgewählte Vollaccounts vor. Erweiterte Einstellungen erscheinen bei der Einrichtung; bestehende Identitäten bleiben auch bei deaktivierter Vorbereitung sichtbar. Dies aktiviert weder Rechneranmeldung noch sudo.
+- **Linux-Zugang:** Reserviere einen ID-Bereich und lege Home- und Shell-Standardwerte fest. Bei aktivierter Vergabe erhalten neue lokale Vollaccounts und hochgestufte Gäste ihre Linux-Attribute automatisch. Nutze **Backfill bestehender Accounts** für ältere Vollaccounts; das Aktivieren ändert sie nicht. Deaktivieren blendet die Backfill-Tabelle aus und erhält bestehende Identitäten in Accounts. Dies aktiviert weder Rechneranmeldung noch sudo.
 - **FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
 - **AI:** Konfiguriere Modellprofile und Anbieterzugangsdaten, prüfe Hintergrundarbeit und nutze **Skills** oder **Projects**, um den Zugriff wiederherzustellen, wenn eine gemeinsam genutzte Ressource keine Person mit Administratorrechten mehr hat. Diese Wiederherstellungsseiten können Berechtigungen vergeben oder nicht mehr benötigte Ressourcen dauerhaft löschen, einschließlich der ursprünglich von Cloud bereitgestellten Skills.
 - **Mail und PDF-Rendering:** Konfiguriere SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung, Zugangsdaten und Rendergrenzen.

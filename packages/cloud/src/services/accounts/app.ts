@@ -438,6 +438,7 @@ export const accountsAppService = {
 
           const result = fromMutationResult(
             await users.create({
+              actor: auditActor(config.actor) ?? undefined,
               data: {
                 ...config.data,
                 profile: config.data.provider === "ipa" ? "user" : config.data.profile,
@@ -482,6 +483,7 @@ export const accountsAppService = {
         ? await createFromRequest()
         : fromMutationResult(
             await users.create({
+              actor: auditActor(config.actor) ?? undefined,
               data: {
                 ...config.data,
                 profile: config.data.provider === "ipa" ? "user" : config.data.profile,
@@ -639,7 +641,7 @@ export const accountsAppService = {
             })
           : null;
       if (selfError) return selfError;
-      const result = fromMutationResult(await users.setProfile(config));
+      const result = fromMutationResult(await users.setProfile({ ...config, actor: auditActor(config.actor) ?? undefined }));
       return recordCompletedMutation({
         action: "accounts.user.set_profile",
         actor: auditActor(config.actor),

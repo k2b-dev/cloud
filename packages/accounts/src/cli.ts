@@ -546,7 +546,7 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
-    "users linux": "Inspect and prepare Linux identities",
+    "users linux": "Inspect Linux identities and assign missing attributes",
   },
   commands: [
     command("users linux get", {
@@ -559,13 +559,13 @@ export default defineCliCommands({
       },
     }),
     command("users linux prepare", {
-      summary: "Assign a stable Linux identity to one local full account",
+      summary: "Backfill missing Linux attributes for one existing local full account",
       args: { user: arg.required() },
-      flags: { yes: confirmFlag("Confirm preparing this Linux identity") },
+      flags: { yes: confirmFlag("Confirm assigning missing Linux attributes") },
       async run({ ctx, args, flags }) {
         if (!flags.yes)
           throw new Error(
-            cliText(ctx, { en: "Refusing to prepare an identity without --yes.", de: "Identität wird ohne --yes nicht vorbereitet." }),
+            cliText(ctx, { en: "Refusing to assign an identity without --yes.", de: "Identität wird ohne --yes nicht zugewiesen." }),
           );
         const user = await resolveUserRef(ctx, args.user);
         const result = await ctx.readJson(await ctx.fetch(`/api/admin/core/linux-identities/users/${encode(user.id)}`, { method: "POST" }));

@@ -7,9 +7,13 @@ const path = "/api/admin/core/linux-identities";
 export const linuxCommands = [
   command("linux preview", {
     summary: "Inspect one page of Linux identities without changing accounts",
-    flags: { after: flag.string({ description: "Continue after the previous page's nextCursor" }) },
+    flags: {
+      after: flag.string({ description: "Continue after the previous page's nextCursor" }),
+      search: flag.string({ description: "Filter by username substring" }),
+      scope: flag.enum(["ready", "all"] as const, { description: "Show eligible accounts missing Linux attributes or all accounts (default)" }),
+    },
     async run({ ctx, flags }) {
-      const result = await apiGet<unknown>(ctx, `${path}${queryString({ after: flags.after })}`);
+      const result = await apiGet<unknown>(ctx, `${path}${queryString({ after: flags.after, search: flags.search, scope: flags.scope })}`);
       if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
     },
   }),

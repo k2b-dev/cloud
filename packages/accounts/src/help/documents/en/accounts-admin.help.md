@@ -13,7 +13,7 @@ Admin pages are server-rendered lists with URL-backed search, filters, paginatio
 :::reference
 - **Users:** Search accounts by uid, name, or email. Filter by provider and profile, then open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
 - **Groups:** Open a group to review facts, members, managers, and parent groups. Managers can add or remove users and groups where mutations are available.
-- **Linux identities:** Administrators can inspect identity values on a person, prepare eligible local full accounts, and override their home and shell. FreeIPA values are read-only. Local groups can receive a GID after global setup in Administration → Settings → Linux access. These actions do not enable computer login or sudo.
+- **Linux identities:** While enabled in Administration → Settings → Linux access, new local full accounts and promoted guests receive Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can receive a GID after global setup. These actions do not enable computer login or sudo.
 - **Deleted accounts:** Review accounts removed by manual action, expiry cleanup, FreeIPA demotion, or sync scope changes. Metadata remains available from the row details.
 - **Reminder history:** Search account-expiry reminder attempts, including target expiry, threshold days, status, attempts, last attempt, and last error.
 :::

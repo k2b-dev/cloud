@@ -198,7 +198,9 @@ export default ssr<AuthContext>(async (c) => {
   let entries: SettingFieldDef[] = [];
   const linuxCursor = z.uuid().safeParse(c.req.query("after"));
   const linuxAfter = linuxCursor.success ? linuxCursor.data : null;
-  const linuxOverview = tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter) : null;
+  const linuxSearch = (c.req.query("search") ?? "").trim();
+  const linuxScope = c.req.query("scope") === "all" ? "all" : "ready";
+  const linuxOverview = tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter, { search: linuxSearch, scope: linuxScope }) : null;
   let legalInitial: LegalInitial | null = null;
   let aiEnrichmentOverview: AiEnrichmentOverview | null = null;
   // Which profiles have a stored provider key. The keys themselves never leave
@@ -259,7 +261,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AdminLayout c={c} title={tab.title}>
       <div class={tab.id === "ai-usage" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"} style="view-transition-name: admin-settings-content">
-        {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} /> : null}
+        {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} search={linuxSearch} scope={linuxScope} /> : null}
         {tab.group ? (
           <CoreSettingsForm
             title={tab.title}

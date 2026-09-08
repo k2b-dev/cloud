@@ -21,12 +21,15 @@ export const createAdminLinuxIdentityRoutes = (
     .get(
       "/",
       describeRoute({ tags: ["Linux identities"], summary: "Preview Linux identities without provisioning accounts" }),
-      v("query", z.object({ after: z.uuid().optional() })),
-      async (c) => c.json(await service.overview(c.get("user"), c.req.valid("query").after ?? null)),
+      v(
+        "query",
+        z.object({ after: z.uuid().optional(), search: z.string().trim().optional(), scope: z.enum(["ready", "all"]).optional() }),
+      ),
+      async (c) => c.json(await service.overview(c.get("user"), c.req.valid("query").after ?? null, c.req.valid("query"))),
     )
     .put(
       "/configuration",
-      describeRoute({ tags: ["Linux identities"], summary: "Configure local Linux identity preparation; does not enable computer login" }),
+      describeRoute({ tags: ["Linux identities"], summary: "Configure automatic local Linux identity assignment; does not enable computer login" }),
       v("json", Configure),
       async (c) => {
         const { config, rangeReserved } = c.req.valid("json");
@@ -42,7 +45,7 @@ export const createAdminLinuxIdentityRoutes = (
     )
     .post(
       "/users/:id",
-      describeRoute({ tags: ["Linux identities"], summary: "Prepare one local full account; safe to repeat after interruption" }),
+      describeRoute({ tags: ["Linux identities"], summary: "Backfill missing Linux attributes for one local full account; safe to repeat" }),
       v("param", Id),
       async (c) => c.json(await service.provision(c.get("user"), c.req.valid("param").id)),
     )

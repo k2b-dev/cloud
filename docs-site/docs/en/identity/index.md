@@ -36,7 +36,7 @@ on the same permission-aware application service.
 | Task | Page |
 | --- | --- |
 | Understand the actor and access subject | [Request identity](/en/docs/identity/authentication) |
-| Prepare local Linux attributes alongside FreeIPA | [Linux identities](/en/docs/operations/linux-identities) |
+| Assign local Linux attributes and backfill existing accounts alongside FreeIPA | [Linux identities](/en/docs/operations/linux-identities) |
 | Decide who may enter a route | [Route policies](/en/docs/identity/route-policies) |
 | Check access to one domain resource | [Resource authorization](/en/docs/identity/authorization) |
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |

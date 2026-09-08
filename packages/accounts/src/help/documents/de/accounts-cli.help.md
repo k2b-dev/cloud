@@ -25,8 +25,9 @@ Nutze für Automatisierung die JSON-Ausgabe. Die Tabellenausgabe dient der schne
 ## Linux-Identitäten
 
 Prüfe mit `cld accounts users linux get <user> --json` die Identität. Nach der
-globalen Einrichtung bereitet `users linux prepare <user> --yes` einen lokalen
-Vollaccount vor. Beide Pfade setzt du mit
+globalen Einrichtung ergänzt `users linux prepare <user> --yes` fehlende Attribute
+eines bestehenden lokalen Vollaccounts. Neue lokale Vollaccounts und hochgestufte
+Gäste erhalten diese Attribute bei aktivierter Vergabe automatisch. Beide Pfade setzt du mit
 `users linux update <user> --home /home/alice --shell /bin/bash --yes`.
 `cld accounts groups make-posix <group> --yes` unterstützt lokale und FreeIPA-Gruppen.
 

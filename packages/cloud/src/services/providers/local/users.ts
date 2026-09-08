@@ -2,6 +2,8 @@ import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../../contracts/shared";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { resolveStoredAdminState } from "../../accounts/model";
+import { writeLocalAccount } from "../../accounts/posix";
+import type { AuditActor } from "../../audit";
 import { generateUniqueAbbreviation } from "../../ipa/users";
 import { isUniqueViolation } from "../../postgres";
 import { session } from "../../session";
@@ -26,6 +28,7 @@ export const create = async (params: {
   profile: UserProfile;
   accountExpires: Date | null;
   admin?: boolean;
+  actor?: AuditActor;
 }): Promise<MutationResult<{ id: string }>> => {
   const uid = await createLocalUid();
   const admin = resolveStoredAdminState({
@@ -35,7 +38,8 @@ export const create = async (params: {
   });
 
   try {
-    const rows = await sql<DbRow[]>`
+    return await writeLocalAccount(async (tx) => {
+      const rows = await tx<{ id: string }[]>`
       INSERT INTO auth.users (
         uid,
         provider,
@@ -60,7 +64,8 @@ export const create = async (params: {
       )
       RETURNING id
     `;
-    return { ok: true, data: { id: rows[0]!.id as string } };
+      return { ok: true, data: { id: rows[0]!.id } };
+    }, params.actor);
   } catch (error) {
     // Map Postgres unique violations to a typed 409 instead of leaking raw DB
     // errors. Two possible collisions: generated uid (extremely rare, retry at
@@ -131,24 +136,26 @@ export const setProfile = async (params: {
   id: string;
   profile: UserProfile;
   accountExpires: Date | null;
+  actor?: AuditActor;
 }): Promise<MutationResult<void>> => {
-  const rows = await sql<DbRow[]>`
-    SELECT provider, admin
+  const result = await writeLocalAccount(async (tx) => {
+    const rows = await tx<{ provider: string; profile: UserProfile; admin: boolean }[]>`
+    SELECT provider, profile, admin
     FROM auth.users
     WHERE id = ${params.id}::uuid
   `;
-  if (rows.length === 0) return { ok: false, error: "User not found", status: 404 };
-  if ((rows[0]!.provider as string) !== "local") {
-    return { ok: false, error: "Only local accounts can change profile locally", status: 400 };
-  }
+    if (rows.length === 0) return { ok: false, error: "User not found", status: 404 };
+    if (rows[0]!.provider !== "local") {
+      return { ok: false, error: "Only local accounts can change profile locally", status: 400 };
+    }
 
-  const admin = resolveStoredAdminState({
-    provider: "local",
-    profile: params.profile,
-    currentAdmin: Boolean(rows[0]!.admin),
-  });
+    const admin = resolveStoredAdminState({
+      provider: "local",
+      profile: params.profile,
+      currentAdmin: Boolean(rows[0]!.admin),
+    });
 
-  await sql`
+    await tx`
     UPDATE auth.users
     SET provider = 'local',
         profile = ${params.profile},
@@ -157,7 +164,9 @@ export const setProfile = async (params: {
     WHERE id = ${params.id}::uuid
   `;
 
-  return { ok: true, data: undefined };
+    return { ok: true, data: { id: params.id, assignIdentity: rows[0]!.profile === "guest" && params.profile === "user" } };
+  }, params.actor);
+  return result.ok ? { ok: true, data: undefined } : result;
 };
 
 export const setExpiry = async (params: {

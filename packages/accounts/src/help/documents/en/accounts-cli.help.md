@@ -25,7 +25,8 @@ Use JSON output for automation. Table output is intended for quick terminal insp
 ## Linux identities
 
 Inspect with `cld accounts users linux get <user> --json`. After global setup,
-prepare a local full account with `users linux prepare <user> --yes`.
+backfill missing attributes for an existing local full account with `users linux prepare <user> --yes`.
+While enabled, new local full accounts and promoted guests receive these attributes automatically.
 Set both paths with `users linux update <user> --home /home/alice --shell /bin/bash --yes`.
 `cld accounts groups make-posix <group> --yes` supports local and FreeIPA groups.
 
