@@ -47,7 +47,7 @@ natsTest(
         current.attempts += 1;
         current.error = input.error;
         store.set(input.eventId, current);
-        return { attempts: current.attempts, dead: current.attempts >= budget };
+        return { attempts: current.attempts, dead: current.attempts >= budget, alreadyDead: current.attempts > budget };
       };
       const seen: Array<{
         recordId: string;
@@ -103,7 +103,7 @@ natsTest(
 natsTest(
   "workers reopen the existing queue and preserve accepted work without resource drift",
   async () => {
-    const connection = await connect({ servers: process.env.NATS_TEST_SERVERS ?? "nats://127.0.0.1:4222", ignoreClusterUpdates: true });
+    const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222", ignoreClusterUpdates: true });
     const namespace = `grids-cutover-${crypto.randomUUID()}`;
     const previous = createSync({ connection, namespace, application: "grids" });
     const current = createSync({ connection, namespace, application: "grids" });

@@ -1,8 +1,8 @@
-import { ssr } from "../config";
 import { type AuthContext, auth, getLocale, rateLimit } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { pdfResponse } from "../api/download-response";
+import { ssr } from "../config";
 import { gridsService } from "../service";
 import documentTemplatePage from "./[baseId]/document/[documentTableId]/[documentTemplateId]/page";
 import documentsPage from "./[baseId]/documents/page";
@@ -18,9 +18,12 @@ import { resolveGridsMessages } from "./messages";
 import indexPage from "./page";
 import publicDocumentPage from "./public/documents/[token]/page";
 import publicFormPage from "./public/forms/[token]/page";
+import recordEventFailuresPage from "./record-event-failures";
 
 /** Admin pages mounted at `/admin/grids` — platform-admin only. */
-export const adminRoutes = new Hono<AuthContext>().get("/", auth.requireRole("admin", ssr.access), ...adminPage);
+export const adminRoutes = new Hono<AuthContext>()
+  .get("/", auth.requireRole("admin", ssr.access), ...adminPage)
+  .get("/:baseId/record-event-failures", auth.requireRole("admin", ssr.access), ...recordEventFailuresPage);
 
 const auditRequestContext = (c: Context<AuthContext>) => ({
   ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || c.req.header("cf-connecting-ip") || null,

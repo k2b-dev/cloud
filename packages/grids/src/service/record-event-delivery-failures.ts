@@ -79,7 +79,7 @@ export const recordRecordEventDeliveryFailure = async (
   return { attempts: Number(row.attempts), dead: row.status === "dead", alreadyDead: row.already_dead };
 };
 
-export const listRecordEventDeliveryFailures = async (baseId: string, limit = 100): Promise<RecordEventDeliveryFailure[]> => {
+export const listRecordEventDeliveryFailures = async (baseId: string, limit = 100, offset = 0): Promise<RecordEventDeliveryFailure[]> => {
   const rows = await sql<
     Array<{
       id: string;
@@ -98,6 +98,7 @@ export const listRecordEventDeliveryFailures = async (baseId: string, limit = 10
     WHERE base_id = ${baseId}::uuid
     ORDER BY last_seen_at DESC, id DESC
     LIMIT ${Math.max(1, Math.min(limit, 500))}
+    OFFSET ${Number.isSafeInteger(offset) && offset > 0 ? offset : 0}
   `;
   return rows.map((row) => ({
     id: row.id,

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { projectPublicIds, resolvePublicId } from "../service/public-resources";
+import { getRecordEventDeliveryFailure } from "../service/record-event-delivery-failures";
 import { validateAccessLevelForResource } from "./access";
 import { apiMessages } from "./messages";
 import { currentActorUserId } from "./permissions";
@@ -25,6 +26,7 @@ type AdminApiDeps = {
   requireAdmin?: MiddlewareHandler<AuthContext>;
   resolvePublicId?: typeof resolvePublicId;
   projectPublicIds?: typeof projectPublicIds;
+  getRecordEventFailure?: typeof getRecordEventDeliveryFailure;
 };
 
 export const createAdminApi = (deps: AdminApiDeps = {}) => {
@@ -56,6 +58,33 @@ export const createAdminApi = (deps: AdminApiDeps = {}) => {
 
   return new Hono<AuthContext>()
     .use(requireAdmin)
+    .post(
+      "/bases/:baseId/record-event-failures/:failureId/replay",
+      describeRoute({
+        tags: ["Grids:Admin"],
+        summary: "Replay a retained stopped record event as platform admin",
+        responses: {
+          202: jsonResponse(z.object({ accepted: z.literal(true) }), "Replay accepted"),
+          400: jsonResponse(ErrorResponseSchema, "Invalid input"),
+          403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+          404: jsonResponse(ErrorResponseSchema, "Base or retained event not found"),
+          409: jsonResponse(ErrorResponseSchema, "Event is still retrying or cannot be replayed"),
+        },
+      }),
+      v("param", z.object({ baseId: ShortIdSchema, failureId: z.string().uuid() })),
+      v("json", z.object({}).strict()),
+      async (c) => {
+        const baseId = await resolveBase(c.req.valid("param").baseId);
+        if (!baseId || !(await gridsService.base.get(baseId))) return c.json({ message: apiMessages(c).baseNotFound }, 404);
+        const failureId = c.req.valid("param").failureId;
+        const failure = await (deps.getRecordEventFailure ?? getRecordEventDeliveryFailure)(baseId, failureId);
+        if (!failure) return c.json({ message: apiMessages(c).recordEventFailureNotFound }, 404);
+        if (failure.status !== "dead" || !(await gridsService.workflow.runtime.replayRecordEventFailure(baseId, failureId))) {
+          return c.json({ message: apiMessages(c).recordEventReplayUnavailable }, 409);
+        }
+        return c.json({ accepted: true as const }, 202);
+      },
+    )
 
     .get(
       "/bases/:baseId/access",

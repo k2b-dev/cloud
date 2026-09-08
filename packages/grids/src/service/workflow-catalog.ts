@@ -65,7 +65,7 @@ const addRefAliases = <T extends WorkflowCatalogEntry>(index: WorkflowCatalogInd
 };
 
 export const buildWorkflowCatalog = (input: WorkflowCatalogInput): WorkflowCatalog => {
-  const tables = createCatalogIndex<WorkflowCatalogEntry>();
+  const tables = createCatalogIndex<WorkflowTableCatalogEntry>();
   for (const table of input.tables) addRefAliases(tables, table);
   const fieldsByTable = new Map<string, WorkflowCatalogIndex<WorkflowFieldCatalogEntry>>();
   for (const [tableId, fields] of input.fieldsByTable ?? new Map()) {

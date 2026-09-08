@@ -15,8 +15,8 @@ error; unconfirmed rows remain recoverable.
 Combined-table targets receive the projected event on the `grids:records`
 topic only. The workflow queue does not carry them: the committed snapshot
 belongs to the source table, so a record-event trigger bound to a Combined
-table has nothing to evaluate. Such a trigger never fires; workflows read
-Combined data through queries instead.
+table has nothing to evaluate. The workflow binder rejects such a trigger, including inferred table targets.
+Workflows read Combined data through queries instead.
 
 ## Workflow delivery retries
 
@@ -50,10 +50,22 @@ failures, because that work has not yet been confirmed by both destinations.
 
 ## Inspecting and replaying failures
 
-Failure inspection and replay are service methods without an HTTP route or
-CLI command:
+Platform administrators open **Failed record events** beside a Base on
+`/admin/grids`. The page at `/admin/grids/:baseId/record-event-failures`
+shows retained PostgreSQL failures in pages of 100, including their status,
+attempt count, and error. Payloads are not sent to the browser. **Replay**
+accepts only stopped (`dead`) entries and calls
+`POST /api/grids/admin/bases/:baseId/record-event-failures/:failureId/replay`.
+Both the page and API require platform-admin access; the API resolves the
+public Base ID and scopes the failure lookup to that Base. Acceptance means
+the event was republished or its producer outbox reset, not that processing
+finished. Workflow failure history remains; producer outbox replay clears its
+failure row while keeping the original outbox event. The page reloads after
+acceptance.
 
-- `gridsService.workflow.runtime.listRecordEventFailures(baseId, limit)` and
+The underlying service methods remain available for targeted recovery:
+
+- `gridsService.workflow.runtime.listRecordEventFailures(baseId, limit, offset)` and
   `replayRecordEventFailure(baseId, id)` read and republish rows of
   `grids.record_event_delivery_failures`, including historical rows and
   producer dead letters (`record-event-outbox`).
@@ -119,7 +131,7 @@ retain their payload and explicit replay path.
 - `bun test packages/grids/src/service/workflow-record-events.test.ts packages/grids/src/service/record-event-outbox.test.ts`
 - `GRIDS_DB_TEST=1 bun test packages/grids/src/service/record-event-delivery-failures.integration.test.ts`
 - `GRIDS_RECORD_EVENTS_DB_TEST=1 bun test packages/grids/src/service/record-event-runtime.integration.test.ts`
-- `GRIDS_SYNC_TEST=1 NATS_TEST_SERVERS=nats://127.0.0.1:14222 bun test packages/grids/src/service/record-event-retry.integration.test.ts`
+- `GRIDS_SYNC_TEST=1 SYNC_TEST_SERVERS=nats://127.0.0.1:14222 bun test packages/grids/src/service/record-event-retry.integration.test.ts`
 
 The isolated PostgreSQL test creates and removes its own local database. The
 NATS tests use unique namespaces and remove only their own broker resources.

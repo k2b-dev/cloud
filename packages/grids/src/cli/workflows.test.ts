@@ -127,7 +127,7 @@ describe("Grids workflow CLI", () => {
     if (!compiled.ok) return;
 
     const catalog = buildWorkflowCatalog({
-      tables: [{ id: baseId, shortId: "items1", name: "Items" }],
+      tables: [{ id: baseId, shortId: "items1", name: "Items", kind: "stored" }],
       fieldsByTable: new Map([[baseId, [{ id: itemRecordId, shortId: "status", name: "Status" }]]]),
     });
     expect((await bindGridsWorkflow(compiled.ir, catalog)).ok).toBe(true);

@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
-import { buildWorkflowCatalog, type WorkflowCatalog } from "../service/workflow-catalog";
+import {
+  buildWorkflowCatalog,
+  restoreWorkflowCatalog,
+  snapshotWorkflowCatalog,
+  type WorkflowCatalog,
+  WorkflowCatalogSnapshotSchema,
+} from "../service/workflow-catalog";
 import { bindGridsWorkflow, canonicalizeGridsWorkflowSourceForMigration, compileAndBindGridsWorkflowSource } from "./binder";
 import { gridsWorkflows } from "./module";
 
@@ -254,7 +260,7 @@ steps:
     const inferred = await bindGridsWorkflow(
       await compile(`inputs:
   row:
-    type: grids.record
+    type: record
     table: Overview
 triggers:
   recordEvent:
@@ -804,4 +810,10 @@ steps:
       ]);
     }
   });
+});
+
+test("catalog snapshot roundtrip retains Combined table kind", async () => {
+  const restored = restoreWorkflowCatalog(WorkflowCatalogSnapshotSchema.parse(snapshotWorkflowCatalog(catalog())));
+  expect(restored.tables.refs.get("Overview")?.kind).toBe("federated");
+  expect(restored.tables.refs.get("TBL003")?.kind).toBe("federated");
 });

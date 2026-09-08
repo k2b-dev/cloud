@@ -5,6 +5,8 @@ export const gridsApiMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      recordEventFailureNotFound: "Record event failure not found",
+      recordEventReplayUnavailable: "Record event is not available for replay",
       accessEntryNotFound: "Access entry not found",
       actionNotFound: "Action not found",
       baseNotFound: "Base not found",
@@ -102,6 +104,8 @@ export const gridsApiMessages = i18n.define({
       resourceNotFound: ({ resource }: { resource: string }) => `${resource} not found`,
     },
     de: {
+      recordEventFailureNotFound: "Fehlgeschlagenes Datensatzereignis nicht gefunden",
+      recordEventReplayUnavailable: "Das Datensatzereignis kann nicht wiederholt werden",
       accessEntryNotFound: "Zugriffseintrag nicht gefunden",
       actionNotFound: "Aktion nicht gefunden",
       baseNotFound: "Basis nicht gefunden",

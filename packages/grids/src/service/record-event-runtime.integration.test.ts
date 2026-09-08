@@ -293,6 +293,21 @@ if (!databaseName) {
       } finally {
         replay.mockRestore();
       }
+
+      // Operator pagination reaches older failures without crossing the Base boundary.
+      await sql`
+        INSERT INTO grids.record_event_delivery_failures (base_id, consumer_group, event_id, payload, error, status, dead_at)
+        SELECT ${baseId}::uuid, 'workflow-kernel-queue-v1', 'page-' || n, 'retained private payload', 'page error', 'dead', now()
+        FROM generate_series(1, 105) AS n
+      `;
+      const firstPage = await listRecordEventDeliveryFailures(baseId, 100, 0);
+      const secondPage = await listRecordEventDeliveryFailures(baseId, 100, 100);
+      expect(firstPage).toHaveLength(100);
+      expect(secondPage).toHaveLength(8);
+      expect(new Set([...firstPage, ...secondPage].map((failure) => failure.id)).size).toBe(108);
+      expect([...firstPage, ...secondPage]).toContainEqual(legacyFailure);
+      expect(await listRecordEventDeliveryFailures(crypto.randomUUID(), 100, 100)).toEqual([]);
+      expect(await listRecordEventDeliveryFailures(baseId, 100, -1)).toEqual(firstPage);
     } finally {
       await stopRecordEventOutbox();
       await sql.close({ timeout: 5 });

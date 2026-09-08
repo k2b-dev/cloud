@@ -1167,7 +1167,12 @@ describe("built-in grid templates", () => {
       }
 
       const workflowCatalog = buildWorkflowCatalog({
-        tables: template.tables.map((table) => ({ id: ctx.tables.get(table.key) ?? "", shortId: table.key, name: table.name })),
+        tables: template.tables.map((table) => ({
+          id: ctx.tables.get(table.key) ?? "",
+          shortId: table.key,
+          name: table.name,
+          kind: "stored",
+        })),
         fieldsByTable: new Map(
           template.tables.map((table) => [
             ctx.tables.get(table.key) ?? "",

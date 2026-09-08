@@ -57,9 +57,9 @@ const ids = {
 
 const catalog = buildWorkflowCatalog({
   tables: [
-    { id: ids.items, shortId: "items", name: "Items" },
-    { id: ids.movements, shortId: "movements", name: "Movements" },
-    { id: ids.invoices, shortId: "invoices", name: "Invoices" },
+    { id: ids.items, shortId: "items", name: "Items", kind: "stored" },
+    { id: ids.movements, shortId: "movements", name: "Movements", kind: "stored" },
+    { id: ids.invoices, shortId: "invoices", name: "Invoices", kind: "stored" },
   ],
   fieldsByTable: new Map([
     [

@@ -6,7 +6,7 @@ import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
 /** Isolated broker resources; the returned stop removes only this namespace's streams. */
 export const startGridsTestSync = async () => {
   const connection = await connect({
-    servers: process.env.NATS_TEST_SERVERS ?? "nats://127.0.0.1:4222",
+    servers: process.env.SYNC_TEST_SERVERS ?? "nats://127.0.0.1:4222",
     ignoreClusterUpdates: true,
   });
   const namespace = `grids-test-${Bun.randomUUIDv7()}`;

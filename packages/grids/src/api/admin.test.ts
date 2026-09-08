@@ -92,9 +92,27 @@ const requireAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
   await next();
 };
 
+let failureStatus: "dead" | "retrying" = "dead";
+let failureConsumer = "workflow-kernel-queue-v1";
+const failureId = "99999999-9999-4999-8999-999999999999";
+
 const app = () =>
   createAdminApi({
     requireAdmin,
+    getRecordEventFailure: async (requestedBase, id) =>
+      requestedBase === baseId && id === failureId
+        ? {
+            id,
+            baseId,
+            consumerGroup: failureConsumer,
+            eventId: "original-event",
+            payload: "{}",
+            error: "Failure",
+            attempts: 20,
+            status: failureStatus,
+            deadAt: "2026-09-08T00:00:00Z",
+          }
+        : null,
     resolvePublicId: async (type, publicId) => (type === "base" && publicId === basePublicId ? baseId : null),
     projectPublicIds: async (type, ids) => {
       const projected = new Map<string, string>();
@@ -115,6 +133,7 @@ const jsonRequest = (method: "POST" | "PATCH", body: unknown): RequestInit => ({
 describe("Grids admin API", () => {
   beforeEach(() => {
     isPlatformAdmin = true;
+    failureStatus = "dead";
     baseGetCalls = 0;
     grantCalls = [];
     updateCalls = [];
@@ -236,4 +255,68 @@ describe("Grids admin API", () => {
     expect((await app().request("/bases/ABCDE/access")).status).toBe(404);
     expect(baseGetCalls).toBe(0);
   });
+});
+
+describe("record event operator replay", () => {
+  beforeEach(() => {
+    isPlatformAdmin = true;
+    failureStatus = "dead";
+    failureConsumer = "workflow-kernel-queue-v1";
+    spyOn(gridsService.base, "get").mockResolvedValue(base);
+  });
+  afterEach(() => mock.restore());
+
+  const replayRequest = (id = failureId, publicId = basePublicId) =>
+    app().request(`/bases/${publicId}/record-event-failures/${id}/replay`, jsonRequest("POST", {}));
+
+  test("accepts a stopped event in the resolved base without changing its identity", async () => {
+    const replay = spyOn(gridsService.workflow.runtime, "replayRecordEventFailure").mockResolvedValue(true);
+    const response = await replayRequest();
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ accepted: true });
+    expect(replay).toHaveBeenCalledWith(baseId, failureId);
+  });
+
+  test("denies non-admin requests before loading data or publishing", async () => {
+    isPlatformAdmin = false;
+    const replay = spyOn(gridsService.workflow.runtime, "replayRecordEventFailure").mockResolvedValue(true);
+    const baseRead = spyOn(gridsService.base, "get");
+    expect((await replayRequest()).status).toBe(403);
+    expect(baseRead).not.toHaveBeenCalled();
+    expect(replay).not.toHaveBeenCalled();
+  });
+
+  test("does not republish active retries or another base's event", async () => {
+    const replay = spyOn(gridsService.workflow.runtime, "replayRecordEventFailure").mockResolvedValue(true);
+    failureStatus = "retrying";
+    expect((await replayRequest()).status).toBe(409);
+    failureStatus = "dead";
+    expect((await replayRequest(otherBaseId)).status).toBe(404);
+    expect((await replayRequest(failureId, "BASE02")).status).toBe(404);
+    expect(replay).not.toHaveBeenCalled();
+  });
+
+  test("reports unavailable retained data and validates failure identifiers", async () => {
+    spyOn(gridsService.workflow.runtime, "replayRecordEventFailure").mockResolvedValue(false);
+    expect((await replayRequest()).status).toBe(409);
+    expect((await replayRequest("invalid")).status).toBe(400);
+  });
+});
+
+test("operator replay supports producer outbox failures through the same owning service", async () => {
+  isPlatformAdmin = true;
+  failureStatus = "dead";
+  failureConsumer = "record-event-outbox";
+  const baseRead = spyOn(gridsService.base, "get").mockResolvedValue(base);
+  const replay = spyOn(gridsService.workflow.runtime, "replayRecordEventFailure").mockResolvedValue(true);
+  try {
+    expect((await app().request(`/bases/${basePublicId}/record-event-failures/${failureId}/replay`, jsonRequest("POST", {}))).status).toBe(
+      202,
+    );
+    expect(replay).toHaveBeenCalledWith(baseId, failureId);
+  } finally {
+    baseRead.mockRestore();
+    replay.mockRestore();
+    failureConsumer = "workflow-kernel-queue-v1";
+  }
 });

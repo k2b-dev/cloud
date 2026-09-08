@@ -300,7 +300,15 @@ export default ssr<AuthContext>(async (c) => {
                   </span>
                 );
               }
-              if (col.id === "actions") return <AdminGridsActions baseId={base.id} baseName={base.name} />;
+              if (col.id === "actions")
+                return (
+                  <div class="flex items-center justify-end gap-2">
+                    <ButtonLink variant="secondary" size="sm" href={`/admin/grids/${base.shortId}/record-event-failures`}>
+                      {t.eventFailures}
+                    </ButtonLink>
+                    <AdminGridsActions baseId={base.id} baseName={base.name} />
+                  </div>
+                );
               return "";
             }}
           />
