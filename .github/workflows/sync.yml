@@ -2,10 +2,10 @@ name: Sync runtime integration
 
 on:
   pull_request:
-    paths: ["packages/**", "scripts/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
   push:
     branches: [main]
-    paths: ["packages/**", "scripts/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "patches/**", "package.json", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
   workflow_dispatch:
 
 permissions:
@@ -32,6 +32,10 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - name: Prepare local NATS system account
+        run: bun packages/gateway-ops/scripts/dev-nats.ts
+      - name: Validate generated NATS configuration and include paths
+        run: docker compose -f compose.yml run --rm --no-deps nats-1 --config /etc/nats/nats.conf -t
       - name: Start three-node JetStream cluster and isolated test database server
         run: docker compose -f compose.yml up -d --wait nats-1 nats-2 nats-3 postgres
       - name: Create core and gateway database schemas
@@ -54,11 +58,33 @@ jobs:
           bun test packages/notebooks/scripts/snapshot-cutover-preflight.integration.test.ts
           bun test packages/grids/src/service/evidence-cleanup.integration.test.ts
           bun test packages/cloud/src/services/runtime-lifecycle.test.ts packages/cloud/src/services/notifications/batches-retry.test.ts
+          bun test packages/cloud/src/services/sync-ops.integration.test.ts
           bun test packages/cloud/src/services/account-lifecycle/ipa-backfill.test.ts
           bun test packages/gateway/src/runtime.test.ts
           bun run --filter @valentinkolb/cloud-app-gateway-ops test:integration
+      - name: Verify Mail live replay and durable invalidation recovery
+        env:
+          MAIL_INTEGRATION_TESTS: "1"
+          NATS_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
+          APP_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: bun test --timeout 15000 --preload ./packages/mail/test/integration-preload.ts packages/mail/src/ws.test.ts packages/mail/src/service/events.integration.test.ts
+      - name: Verify Pulse coalesced deletion and scrape retry outcomes
+        env:
+          PULSE_SYNC_NATS_TEST: "1"
+          PULSE_METRICS_SCRAPER_DB_TEST: "1"
+          NATS_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
+          APP_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: |
+          bun test --timeout 15000 packages/pulse/src/service/base-lifecycle.sync.integration.test.ts
+          bun test --timeout 15000 packages/pulse/src/service/metrics-scraper.integration.test.ts
       - name: Verify operator scripts
-        run: bun test scripts
+        run: bun test scripts packages/gateway-ops/scripts/dev-nats.test.ts
+      - name: Verify NATS account diagnostics
+        env:
+          NATS_DIAGNOSTICS_TEST: "1"
+          NATS_ADMIN_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
+          NATS_ADMIN_NKEY_SEED_FILE: .local/nats/admin.seed
+        run: bun test packages/gateway-ops/src/observability/nats/service.integration.test.ts
       - name: Cluster diagnostics
         if: failure()
         run: docker compose -f compose.yml logs --tail 100 nats-1 nats-2 nats-3

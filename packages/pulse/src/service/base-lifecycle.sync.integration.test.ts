@@ -14,12 +14,15 @@ syncTest(
       "./base-lifecycle"
     );
     const { newShortId } = await import("../lib/short-id");
+    const { migrate } = await import("../migrate");
+    await migrate();
     const connection = await connect({
       servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
       ignoreClusterUpdates: true,
       name: "pulse-deletion-test",
     });
-    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "pulse", observe: observeSyncEvent });
+    const namespace = `pulse-test-${crypto.randomUUID()}`;
+    const sync = createSync({ connection, namespace, application: "pulse", observe: observeSyncEvent });
     const baseId = crypto.randomUUID();
     const publicBaseId = newShortId();
     bindProcessSync(sync);
@@ -53,8 +56,27 @@ syncTest(
       await stopPulseBaseDataClearJob();
       await sync.drain({ timeoutMs: 5_000 });
       unbindProcessSync();
-      await connection.drain();
-      await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+      try {
+        // JetStream is owned by Sync; resolve its client through that package.
+        const {
+          jetstreamManager,
+        }: {
+          jetstreamManager(client: typeof connection): Promise<{
+            streams: {
+              list(): AsyncIterable<{ config: { name: string; metadata?: Record<string, string> } }>;
+              delete(name: string): Promise<boolean>;
+            };
+          }>;
+        } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
+        const manager = await jetstreamManager(connection);
+        for await (const stream of manager.streams.list()) {
+          if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
+        }
+      } finally {
+        await connection.drain();
+        await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
+        await sql`DELETE FROM logging.trace_spans WHERE source = 'pulse:base-delete' AND attributes->>'cloud.pulse.base_id' = ${publicBaseId}`;
+      }
     }
   },
   30_000,
