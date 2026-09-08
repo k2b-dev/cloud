@@ -1,5 +1,6 @@
 import { CloudResourceRefSchema } from "@valentinkolb/cloud/contracts";
 import { z } from "zod";
+import { CompletionInputSchema } from "./work-contracts";
 
 // PostgreSQL uuid text format (accepts PostgreSQL's broader non-RFC version/variant values too).
 const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
@@ -455,9 +456,7 @@ export const WormholeTransferResultSchema = z.object({
 });
 export type WormholeTransferResult = z.infer<typeof WormholeTransferResultSchema>;
 
-export const SetCompletedSchema = z.object({
-  completed: z.boolean().describe("Completion status"),
-});
+export const SetCompletedSchema = CompletionInputSchema;
 export type SetCompleted = z.infer<typeof SetCompletedSchema>;
 
 export const CreateCommentSchema = z.object({
@@ -518,6 +517,7 @@ export type AssignedToFilter = z.infer<typeof AssignedToFilterSchema>;
 
 export const ItemFilterSchema = z.object({
   // Filter options
+  blocked: z.boolean().optional().describe("Whether unfinished blocker tasks exist"),
   type: ItemTypeSchema.default("all").describe("Filter by item type"),
   status: ItemStatusSchema.default("active").describe("Filter by completion status"),
   activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity"),

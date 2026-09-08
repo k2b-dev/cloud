@@ -142,6 +142,7 @@ mock.module("@/service", () => ({
       },
       getRecurringOverride: async () => loadedOverride,
       references: { list: async () => [] },
+      work: { read: async () => ({ claim: null, progress: null, result: null }) },
       attachments: { list: async () => [] },
       checklist: { list: async () => [] },
       dependencies: { list: async () => [], listBlocks: async () => [] },

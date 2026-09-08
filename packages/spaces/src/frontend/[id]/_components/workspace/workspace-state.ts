@@ -132,6 +132,7 @@ const projectItemDetail = async (
   const seriesItemId = item.recurringEventId ?? item.id;
   return {
     item,
+    work: detail.work,
     comments: { ...detail.comments, items: comments },
     commentTarget: { ...detail.commentTarget, itemId: seriesItemId },
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
@@ -490,7 +491,8 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const [references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
@@ -499,6 +501,7 @@ const loadSelectedItemState = async (params: {
   ]);
   return projectItemDetail({
     item: detailItem,
+    work,
     comments,
     commentTarget,
     recurringContext,
@@ -770,7 +773,8 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const [references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, attachments, checklist, blockedBy, blocks] = await Promise.all([
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
@@ -781,6 +785,7 @@ export const loadSpaceItemDetail = async (params: {
     kind: "ok",
     detail: await projectItemDetail({
       item: detailItem,
+      work,
       comments,
       commentTarget,
       recurringContext,

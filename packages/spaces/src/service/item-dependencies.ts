@@ -70,6 +70,28 @@ export const listBlocks = async (params: { blockerItemId: string }): Promise<Spa
   return rows.map(mapDependent);
 };
 
+/** Reverse dependencies can grow across many tasks; context reads use explicit pages. */
+export const listBlocksPage = async (params: { blockerItemId: string; page: number; perPage: number }) => {
+  const [count] = await sql<
+    { total: number }[]
+  >`SELECT COUNT(*)::int AS total FROM spaces.item_dependencies WHERE blocker_item_id = ${params.blockerItemId}::uuid`;
+  const rows = await sql<DependentRow[]>`
+    SELECT dependent.id AS dependent_id, dependent.space_id AS dependent_space_id,
+      dependent.title AS dependent_title, dependent.completed_at AS dependent_completed_at, dependency.created_at
+    FROM spaces.item_dependencies dependency JOIN spaces.items dependent ON dependent.id = dependency.item_id
+    WHERE dependency.blocker_item_id = ${params.blockerItemId}::uuid
+    ORDER BY dependent.completed_at NULLS FIRST, dependent.title, dependent.id
+    LIMIT ${params.perPage} OFFSET ${(params.page - 1) * params.perPage}
+  `;
+  return {
+    items: rows.map(mapDependent),
+    page: params.page,
+    perPage: params.perPage,
+    total: count?.total ?? 0,
+    hasNext: params.page * params.perPage < (count?.total ?? 0),
+  };
+};
+
 export const add = async (params: {
   itemId: string;
   blockerItemId: string;

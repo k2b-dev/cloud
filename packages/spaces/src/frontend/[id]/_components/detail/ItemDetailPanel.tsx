@@ -66,6 +66,7 @@ type Props = {
   commentTarget: SpaceItemDetail["commentTarget"];
   recurringContext: SpaceItemDetail["recurringContext"];
   references?: SpaceItemDetail["references"];
+  work?: SpaceItemDetail["work"];
   attachments?: SpaceItemDetail["attachments"];
   checklist?: SpaceItemDetail["checklist"];
   blockedBy?: SpaceTaskDependency[];
@@ -923,6 +924,38 @@ export default function ItemDetailPanel(props: Props) {
                   canWrite={canEditItem()}
                   onChanged={reconcileAfterWrite}
                 />
+              </Show>
+            </DetailPanel.Group>
+          </Show>
+
+          <Show when={!isEvent() && (props.work?.claim || props.work?.progress || props.work?.result)}>
+            <DetailPanel.Group label={t.workState}>
+              <Show when={props.work?.claim}>
+                {(claim) => (
+                  <DetailPanel.Section title={t.workClaimed} icon="ti ti-user-check" tone="neutral">
+                    <p class="text-sm">{t.workClaimHelp}</p>
+                    <time class="text-xs text-dimmed" datetime={claim().claimedAt}>
+                      {dates.formatDateTime(claim().claimedAt, props.dateConfig)}
+                    </time>
+                  </DetailPanel.Section>
+                )}
+              </Show>
+              <Show when={props.work?.progress}>
+                {(note) => (
+                  <DetailPanel.Section title={t.workProgress} icon="ti ti-notes" tone="neutral">
+                    <MarkdownView markdown={note().content} headingScale="compact" class="text-sm" />
+                  </DetailPanel.Section>
+                )}
+              </Show>
+              <Show when={props.work?.result}>
+                {(result) => (
+                  <DetailPanel.Section title={t.workResult} icon="ti ti-circle-check" tone="neutral">
+                    <MarkdownView markdown={result().content} headingScale="compact" class="text-sm" />
+                    <Show when={result().commit}>
+                      <code class="text-xs break-all">{result().commit}</code>
+                    </Show>
+                  </DetailPanel.Section>
+                )}
               </Show>
             </DetailPanel.Group>
           </Show>

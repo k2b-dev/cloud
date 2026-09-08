@@ -32,6 +32,78 @@ cld spaces done "Roadmap" "Publish release notes"
 
 Use `cld spaces get <space> --json` to see the available columns and tags before creating or moving an item. Repeat `--tag` or `--assignee` to select several values. Pass long descriptions through `--file` or `--stdin`.
 
+## Track implementation work and handoffs
+
+Use flat tasks and blockers to describe the work. Keep a stable Space ID in the
+repository's `AGENTS.md` and pass `--space <id>` explicitly when switching
+between repositories. `spaces use` changes the default for the whole CLI
+profile, not just the current checkout.
+
+```bash
+cld spaces items --space Space1 --ready --assigned-to unassigned --sort priority --ascending --json
+cld spaces item --space Space1 Item01 --context --json
+cld spaces claim --space Space1 Item01 --claim-id <worker-uuid> --json
+cld spaces progress --space Space1 Item01 --claim-id <worker-uuid> --file handoff.md
+cld spaces done --space Space1 Item01 --claim-id <worker-uuid> --file result.md --commit a1b2c3d
+cld spaces work --space Space1 Item01 --json
+```
+
+Generate a fresh UUID for each worker's claim, and retain it for progress,
+completion, and release. Retrying the same claim with the same identity and ID
+returns that claim. A different claim gets a conflict, even under the same
+user. Claims do not expire and do not prevent ordinary collaborative edits.
+Only open, unblocked tasks can be claimed. Release a claim before transferring
+the task or completing it from the web interface. Completion with the correct
+claim clears it automatically.
+
+Use `spaces release ... --claim-id <id>` when stopping work. An administrator
+can recover an abandoned claim with `--force`, using the exact ID returned by
+`spaces work`; a changed claim is rejected. Claims are coordination identifiers,
+not credentials. Authorization still requires current resource access.
+
+`progress` saves the latest full handoff note. `done --result`, `--file` or
+`--stdin` saves a completion result atomically with completion; an optional
+`--commit` records a 7–64 digit hexadecimal SHA and requires a result. Include
+what changed, decisions, remaining work and verification evidence. Notes are
+limited to 5,000 characters. A failed result write cannot leave the task done.
+Reopening preserves the last result. Previous progress and completion notes
+remain in `spaces activity ... --json`; follow `nextCursor` with `--cursor`.
+Service accounts can use progress, results, and claims under their own identity;
+comments continue to require a user-backed actor.
+
+`item --context` includes the full description, work state, attachments,
+checklist, resource references, blockers, and pages of comments and dependent
+tasks. Follow `comments.hasNext` and `blocks.hasNext`; read further pages through
+`spaces comments` and `spaces blocks` with `--page` and `--page-size`. These page
+commands return objects containing `items`, `page`, `perPage`, `total` and
+`hasNext`, including in JSON/JSONL. Each page is a fresh read, not a frozen
+snapshot; avoid replacing a description from an earlier read after another
+worker has edited it.
+
+`items --ready` means open tasks without active blockers; it is not a claim or
+promise that another worker has not taken the task. `--blocked` selects open
+blocked tasks. Additional filters are `--assigned-to`, `--assignee`, `--priority`,
+`--column`, `--tag`, `--deadline` and `--activity`. `--assigned-to me` requires a
+user-backed actor. Lists support `--sort`, `--ascending`, `--page` and
+`--page-size`. Use `update-item --clear-tags` or `--clear-assignees` to remove
+all selections; these cannot be combined with replacement values.
+
+```bash
+cld spaces checklist list --space Space1 Item01 --json
+cld spaces checklist add --space Space1 Item01 --label "Run focused tests"
+cld spaces checklist update --space Space1 Item01 Check1 --completed
+cld spaces checklist update --space Space1 Item01 Check1 --reopen
+cld spaces checklist delete --space Space1 Item01 Check1 --yes
+cld spaces references list --space Space1 Item01 --json
+cld spaces references add --space Space1 Item01 --type notebooks.note --id Note01 --label "Design"
+cld spaces references remove --space Space1 Item01 --type notebooks.note --id Note01 --yes
+```
+
+Capabilities expose the same work state through `task.work.read`, `task.claim`,
+`task.release`, `task.progress` and the extended `task.set-completed` input.
+Read the work result after completion when you need the persisted evidence;
+completion retains its existing task response. No hierarchy is introduced.
+
 ## Attach images to tasks
 
 ```bash
@@ -107,5 +179,8 @@ Run `cld spaces <command> --help` for flags and argument order.
 | Items | `items`, `item`, `add-item`, `update-item`, `blockers`, `blocks`, `block`, `unblock`, `done`, `reopen` |
 | Attachments | `attachments`, `add-attachment`, `download-attachment`, `delete-attachment` |
 | Comments | `comments`, `comment` |
+| Agent work | `work`, `claim`, `release`, `progress`, `activity`, `item --context` |
+| Checklists | `checklist list`, `checklist add`, `checklist update`, `checklist delete` |
+| References | `references list`, `references add`, `references remove` |
 | Calendar | `calendar`, `overlap`, `invitation context`, `invitation draft`, `mail event-source` |
 | Access | `access list`, `access grant`, `access set`, `access revoke`, `access search-principals` |

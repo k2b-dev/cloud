@@ -505,6 +505,7 @@ describe("spaces capabilities", () => {
       "task.checklist.list",
       "task.focus",
       "task.list",
+      "task.work.read",
     ]);
     expect(Object.keys(spacesCapabilities.actions).sort()).toEqual([
       "calendar-invitation.import",
@@ -526,7 +527,10 @@ describe("spaces capabilities", () => {
       "task.checklist.create",
       "task.checklist.delete",
       "task.checklist.update",
+      "task.claim",
       "task.create",
+      "task.progress",
+      "task.release",
       "task.set-completed",
       "task.update",
     ]);
@@ -1399,3 +1403,60 @@ describe("spaces capabilities", () => {
 });
 
 const encodePage = (page: number) => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
+
+test("work capabilities enforce grants and resource binding before touching work state", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  const change = spyOn(spacesService.item.work, "change").mockResolvedValue({
+    ok: true,
+    data: { claim: null, progress: null, result: null },
+  });
+  const input = { itemId, content: "Verified tests; next run should review docs." };
+  expect((await spacesCapabilities.actions["task.progress"].run(input, serviceAccountContext)).ok).toBe(false);
+  expect(change).not.toHaveBeenCalled();
+  const writable = { ...serviceAccountContext, actor: { ...serviceAccountContext.actor, scopes: ["write"] } };
+  expect((await spacesCapabilities.actions["task.progress"].run(input, writable)).ok).toBe(true);
+  expect(change).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      actor: { kind: "service_account", id: serviceAccountId },
+      subject: writable.accessSubject,
+      itemId: itemUuid,
+      spaceId: spaceUuid,
+      content: input.content,
+    }),
+  );
+  change.mockClear();
+  expect(
+    (
+      await spacesCapabilities.actions["task.progress"].run(input, {
+        ...writable,
+        actor: { ...writable.actor, serviceAccount: { ...writable.actor.serviceAccount, resourceId: otherSpaceUuid } },
+      })
+    ).ok,
+  ).toBe(false);
+  permission.mockResolvedValue("read");
+  expect((await spacesCapabilities.actions["task.progress"].run(input, userContext)).ok).toBe(false);
+  expect(change).not.toHaveBeenCalled();
+  permission.mockResolvedValue("write");
+  expect(
+    (await spacesCapabilities.actions["task.release"].run({ itemId, claimId: crypto.randomUUID(), force: true }, userContext)).ok,
+  ).toBe(false);
+  expect(change).not.toHaveBeenCalled();
+});
+
+test("work results preserve full escaped content within the capability envelope", async () => {
+  const { TaskWorkSchema } = await import("./work-contracts");
+  const text = "\u0001".repeat(4999) + "x";
+  const actor = { kind: "service_account" as const, id: serviceAccountId };
+  const work = {
+    claim: { id: crypto.randomUUID(), actor, claimedAt: createdAt },
+    progress: { content: text, actor, at: createdAt },
+    result: { content: text, actor, at: createdAt, commit: "a".repeat(64) },
+  };
+  const envelope = { data: work };
+  expect(capabilityResultSchema(TaskWorkSchema).safeParse(envelope).success).toBe(true);
+  expect(Buffer.byteLength(JSON.stringify(envelope))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+});

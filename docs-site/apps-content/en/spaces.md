@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Spaces
@@ -154,6 +154,37 @@ invitations. It now exposes pagination (up to 100 destinations per page), so
 consumers must follow the returned cursor rather than assume the first page
 contains every Space. Existing creation and calendar integration result
 contracts are preserved.
+
+## Implementation tasks and agent handoffs
+
+Spaces supports flat implementation tasks with blockers, shared progress notes,
+completion results and explicit worker claims. Progress and the latest result
+appear in the task details; reopening preserves the result. Earlier notes are
+recorded in task activity.
+
+Use `cld spaces items --space <id> --ready --json` to find open tasks without
+active blockers. Read `item --context` before starting, then claim the task
+with a caller-generated UUID. Competing claims fail, including separate workers
+using the same account. Claims do not expire or lock ordinary edits. Release
+the claim when stopping, before a transfer, or before completing from another
+session. An administrator can recover an abandoned claim by its exact ID.
+
+`progress` accepts a full handoff through text, file, or standard input. `done` can save
+an outcome with verification evidence and an optional commit SHA in the same
+transaction as completion. Both user and resource-bound service accounts can
+record this work under their actual identity. Comments remain user-authored.
+
+`item --context` includes work state, checklist, attachments, references, and
+blockers, plus explicit pages of comments and dependent tasks. Follow `hasNext`
+in those pages using `comments` and `blocks`; use `activity --cursor` to read
+older work notes. Pages are fresh reads and may change during collaboration.
+The `comments` and `blocks` CLI JSON outputs are now page objects, not arrays.
+
+For capabilities, use `task.work.read`, `task.claim`, `task.release` and
+`task.progress`; `task.set-completed` accepts optional `result`, `commit` and
+`claimId`. Results and progress notes each have the existing 5,000-character
+text budget. Keep the repository's Space ID in its agent instructions and
+pass it explicitly: the CLI default selected by `spaces use` is profile-wide.
 
 ## Deployment requirements
 

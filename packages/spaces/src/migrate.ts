@@ -139,6 +139,14 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE spaces.items DROP COLUMN IF EXISTS email_thread_id`.simple();
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.task_work (
+      item_id UUID PRIMARY KEY REFERENCES spaces.items(id) ON DELETE CASCADE,
+      claim JSONB,
+      progress JSONB,
+      result JSONB
+    )
+  `.simple();
+  await sql`
     CREATE TABLE IF NOT EXISTS spaces.activity_events (
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,

@@ -19,6 +19,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "task.work.read": {
+          title: "Arbeitsstand lesen",
+          description:
+            "Aktuelle Übernahme, vollständigen Fortschritt und letztes Abschlussergebnis lesen. Das Ergebnis bleibt beim Wiederöffnen erhalten.",
+        },
         "task.focus": {
           title: "Offene Aufgaben finden",
           description:
@@ -254,6 +259,21 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "task.claim": {
+          title: "Aufgabe übernehmen",
+          description:
+            "Offene, unblockierte Aufgabe mit einer selbst erzeugten UUID für eine Sitzung übernehmen. Konkurrierende Übernahmen werden abgewiesen.",
+        },
+        "task.release": {
+          title: "Aufgabe freigeben",
+          description:
+            "Aktuelle Übernahme anhand ihrer genauen Kennung freigeben. Mit Adminrechten kann eine verwaiste Übernahme ausdrücklich freigegeben werden.",
+        },
+        "task.progress": {
+          title: "Fortschritt festhalten",
+          description:
+            "Vollständige Fortschritts- und Übergabenotiz unter der tatsächlichen Benutzer- oder Service-Account-Identität speichern. Bei einer Übernahme deren Kennung angeben.",
+        },
         "task.checklist.create": {
           title: "Checklistenpunkt hinzufügen",
           description: "Einen einfachen Checklistenpunkt an eine beschreibbare Aufgabe anhängen.",

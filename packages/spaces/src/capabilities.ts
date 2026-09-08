@@ -106,6 +106,8 @@ import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, S
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
 import { CalendarReadLimitError } from "./service/recurrence";
+import * as taskWork from "./service/task-work";
+import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
@@ -1388,7 +1390,11 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
     return itemMutationResult(
       await spacesService.item.setCompleted({
         id: resolved.data.internalId,
+        expectedSpaceId: resolved.data.internalSpaceId,
         completed: input.completed,
+        result: input.result,
+        commit: input.commit,
+        claimId: input.claimId,
         actor: spaceActivityActor(context),
       }),
       (item) =>
@@ -1748,6 +1754,19 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "task.work.read": {
+      title: "Read task work state",
+      description:
+        "Read the current claim, full progress note and last completion result, including verification and commit. Reopening preserves the result. Use item.read and the existing checklist, comment and dependency queries for other context.",
+      input: ItemReadInputSchema,
+      data: TaskWorkSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const resolved = await requireItem(input.id, context);
+        if (!resolved.ok) return resolved;
+        return ok({ data: await taskWork.read(resolved.data.internalId) });
+      },
+    },
     "space.search": {
       title: "Search spaces",
       description:
@@ -1971,6 +1990,77 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "task.claim": {
+      title: "Claim task work",
+      description:
+        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict.",
+      input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
+      data: TaskWorkSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      run: async (input, context) =>
+        audited(actionAudit(context, "task.claim", "space_item", input.itemId), async () => {
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await taskWork.change({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            actor: spaceActivityActor(context),
+            subject: context.accessSubject,
+            operation: "claim",
+            ...{ claimId: input.claimId },
+          });
+          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+        }),
+    },
+    "task.release": {
+      title: "Release task work",
+      description: "Release your current claim using its exact claimId. Progress and completion results remain available.",
+      input: ReleaseTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
+      data: TaskWorkSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      run: async (input, context) =>
+        audited(actionAudit(context, "task.release", "space_item", input.itemId), async () => {
+          const resolved = await requireItem(input.itemId, context, input.force ? "admin" : "write");
+          if (!resolved.ok) return resolved;
+          const result = await taskWork.change({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            actor: spaceActivityActor(context),
+            subject: context.accessSubject,
+            operation: "release",
+            ...{ claimId: input.claimId, force: input.force },
+          });
+          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+        }),
+    },
+    "task.progress": {
+      title: "Progress task work",
+      description:
+        "Save a full progress and handoff note under the actual user or service account identity. Supply the current claimId when claimed; the previous note remains in task activity.",
+      input: ProgressTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
+      data: TaskWorkSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      run: async (input, context) =>
+        audited(actionAudit(context, "task.progress", "space_item", input.itemId), async () => {
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await taskWork.change({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            actor: spaceActivityActor(context),
+            subject: context.accessSubject,
+            operation: "progress",
+            ...{ claimId: input.claimId, content: input.content },
+          });
+          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+        }),
+    },
     "task.checklist.create": {
       title: "Add task checklist entry",
       description: "Append one simple checklist label to a writable task.",
@@ -2229,7 +2319,11 @@ export const spacesCapabilities = defineCapabilities({
           message: input.completed
             ? t.reviewCompleteTask({ title: resolved.data.item.title })
             : t.reviewReopenTask({ title: resolved.data.item.title }),
-          details: [{ label: t.task, value: resolved.data.item.title }],
+          details: [
+            { label: t.task, value: resolved.data.item.title },
+            ...(input.result !== undefined ? [{ label: t.workResult, value: input.result, display: "block" as const }] : []),
+            ...(input.commit ? [{ label: "Commit", value: input.commit }] : []),
+          ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
           approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
         });

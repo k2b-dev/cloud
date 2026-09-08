@@ -116,13 +116,19 @@ test("sends task estimates and blocker relationships through the public REST con
           createdAt: "2026-08-11T09:00:00.000Z",
         });
       }
-      if (url.pathname === "/api/spaces/Space1/items/Item01/blocks" && request.method === "GET") {
-        return Response.json([
-          {
-            dependent: { id: "Next01", spaceId: "Space1", title: "Publish release", completedAt: null },
-            createdAt: "2026-08-11T09:00:00.000Z",
-          },
-        ]);
+      if (url.pathname === "/api/spaces/Space1/items/Item01/blocks/page" && request.method === "GET") {
+        return Response.json({
+          items: [
+            {
+              dependent: { id: "Next01", spaceId: "Space1", title: "Publish release", completedAt: null },
+              createdAt: "2026-08-11T09:00:00.000Z",
+            },
+          ],
+          page: 1,
+          perPage: 50,
+          total: 1,
+          hasNext: false,
+        });
       }
       return Response.json({ message: "Not found" }, { status: 404 });
     },
@@ -282,3 +288,133 @@ test("lists, uploads, downloads, and deletes task attachments through the public
   expect(deleted.exitCode).toBe(0);
   expect(writes).toEqual([{ method: "POST", filename: "bug.png" }, { method: "DELETE" }]);
 }, 20_000);
+
+test("agent CLI preserves filters, complete context, paginated history and write payloads", async () => {
+  const requests: { path: string; method: string; body: unknown }[] = [];
+  const space = { id: "Space1", name: "Project", columns: [{ id: "Col001", name: "Open" }], tags: [{ id: "Tag001", name: "Backend" }] };
+  const item = {
+    id: "Item01",
+    spaceId: "Space1",
+    title: "Implement",
+    description: "Full requirements",
+    startsAt: null,
+    endsAt: null,
+    completedAt: null,
+    activeBlockerCount: 0,
+  };
+  const claimId = "11111111-1111-4111-8111-111111111111";
+  const actor = { kind: "service_account", id: "22222222-2222-4222-8222-222222222222" };
+  const work = { claim: { id: claimId, actor, claimedAt: "2026-09-08T12:00:00.000Z" }, progress: null, result: null };
+  const page = { items: [{ id: "Note01", content: "Older handoff" }], page: 2, perPage: 10, total: 63, hasNext: true };
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      const path = url.pathname;
+      const body = request.method === "GET" ? undefined : await request.json();
+      requests.push({ path: path + url.search, method: request.method, body });
+      if (path === "/api/spaces/Space1") return Response.json(space);
+      if (path === "/api/spaces/Space1/items/Item01") return Response.json(item);
+      if (path.endsWith("/items/filter")) return Response.json({ items: [item], page: 3, pageSize: 10, total: 31, totalPages: 4 });
+      if (path.endsWith("/comments/page")) return Response.json(page);
+      if (path.endsWith("/blocks/page")) return Response.json({ items: [], page: 2, perPage: 10, total: 0, hasNext: false });
+      if (path.endsWith("/work") || path.endsWith("/claim") || path.endsWith("/release") || path.endsWith("/progress"))
+        return Response.json(work);
+      if (path.endsWith("/completed")) return Response.json({ ...item, completedAt: "2026-09-08T12:00:00.000Z" });
+      if (path.endsWith("/activity"))
+        return Response.json({
+          data: [{ action: "task.progress", metadata: { content: "Previous progress" } }],
+          nextCursor: "next-cursor",
+        });
+      if (path.endsWith("/checklist") && request.method === "POST")
+        return Response.json({ id: "Check1", label: "Verify", completed: false });
+      if (path.endsWith("/checklist/Check1")) return Response.json({ id: "Check1", label: "Verify", completed: true });
+      if (path.endsWith("/references") && request.method !== "GET") return Response.json({ deleted: true });
+      if (path.endsWith("/attachments") || path.endsWith("/checklist") || path.endsWith("/blockers") || path.endsWith("/references"))
+        return Response.json([]);
+      return Response.json({ message: "Unexpected test request" }, { status: 404 });
+    },
+  });
+  servers.push(server);
+  const base = `http://127.0.0.1:${server.port}`;
+  const directory = await mkdtemp(join(tmpdir(), "spaces-agent-cli-"));
+  tempDirs.push(directory);
+  const notePath = join(directory, "result.md");
+  await Bun.write(notePath, "Implemented.\nVerified: concurrency and rollback.");
+  const commands = [
+    [
+      "items",
+      "Space1",
+      "--ready",
+      "--assigned-to",
+      "unassigned",
+      "--priority",
+      "high",
+      "--column",
+      "Open",
+      "--tag",
+      "Backend",
+      "--deadline",
+      "week",
+      "--page",
+      "3",
+      "--page-size",
+      "10",
+      "--sort",
+      "priority",
+      "--ascending",
+    ],
+    ["item", "Space1", "Item01", "--context", "--page", "2", "--page-size", "10"],
+    ["comments", "Space1", "Item01", "--page", "2", "--page-size", "10"],
+    ["claim", "Space1", "Item01", "--claim-id", claimId],
+    ["progress", "Space1", "Item01", "--claim-id", claimId, "--file", notePath],
+    ["done", "Space1", "Item01", "--claim-id", claimId, "--file", notePath, "--commit", "a1b2c3d"],
+    ["update-item", "Space1", "Item01", "--clear-tags", "--clear-assignees"],
+    ["checklist", "add", "Space1", "Item01", "--label", "Verify"],
+    ["checklist", "update", "Space1", "Item01", "Check1", "--completed"],
+    ["references", "add", "Space1", "Item01", "--type", "notebooks.note", "--id", "Note01", "--label", "Design"],
+    ["activity", "Space1", "Item01", "--cursor", "previous", "--limit", "10"],
+  ];
+  const results = await Promise.all(commands.map((args) => runCli(base, ["--json", "spaces", ...args])));
+  for (const result of results) expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+  expect(JSON.parse(results[1]!.stdout)).toMatchObject({
+    description: "Full requirements",
+    comments: page,
+    work,
+    checklist: [],
+    references: [],
+    blocks: { hasNext: false },
+  });
+  expect(JSON.parse(results[2]!.stdout)).toEqual(page);
+  expect(requests.find((r) => r.path.endsWith("/items/filter"))?.body).toMatchObject({
+    blocked: false,
+    type: "task",
+    status: "active",
+    assignedTo: "unassigned",
+    priority: ["high"],
+    columnIds: ["Col001"],
+    tagIds: ["Tag001"],
+    deadlineFilter: "week",
+    page: 3,
+    pageSize: 10,
+    sort: "priority",
+    sortDesc: false,
+  });
+  expect(requests.find((r) => r.path.endsWith("/progress"))?.body).toEqual({
+    claimId,
+    content: "Implemented.\nVerified: concurrency and rollback.",
+  });
+  expect(requests.find((r) => r.path.endsWith("/completed"))?.body).toEqual({
+    completed: true,
+    claimId,
+    result: "Implemented.\nVerified: concurrency and rollback.",
+    commit: "a1b2c3d",
+  });
+  expect(requests.find((r) => r.method === "PATCH" && r.path.endsWith("/Item01"))?.body).toEqual({ tagIds: [], assigneeIds: [] });
+  expect(requests.find((r) => r.path.endsWith("/checklist/Check1"))?.body).toEqual({ completed: true });
+  expect(requests.find((r) => r.method === "POST" && r.path.endsWith("/references"))?.body).toEqual({
+    ref: { type: "notebooks.note", id: "Note01" },
+    label: "Design",
+  });
+  expect(requests.some((r) => r.path.endsWith("/activity?limit=10&cursor=previous"))).toBe(true);
+}, 30_000);

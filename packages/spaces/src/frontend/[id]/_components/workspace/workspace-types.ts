@@ -16,6 +16,7 @@ import {
   SpaceWormholeSchema,
 } from "@/contracts";
 import { SpaceUserSettingsSchema } from "@/settings-context";
+import { TaskWorkSchema } from "../../../../work-contracts";
 import { type CalendarFilter, CalendarFilterSchema, writeCalendarFilter } from "../calendar/filter";
 import { buildFilterUrl, type parseFilterFromUrl, QueryParams } from "../filter/types";
 
@@ -64,6 +65,7 @@ export const SpaceItemRecurringContextSchema = z.object({
 });
 
 export const SpaceItemDetailSchema = z.object({
+  work: TaskWorkSchema.optional(),
   item: SpaceItemSchema,
   comments: SpaceCommentPageSchema,
   commentTarget: z.object({

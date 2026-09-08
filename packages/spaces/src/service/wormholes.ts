@@ -318,7 +318,7 @@ export const transfer = async (params: {
   if (!(await canAccess(wormhole.target_space_id, params.actor, "write"))) return denied();
 
   type TransferRow = { id: string; removed_tag_count: number; removed_assignee_count: number; removed_dependency_count: number };
-  const transferred = await sql.begin(async (tx): Promise<TransferRow | "recurring" | "changed" | "denied" | null> => {
+  const transferred = await sql.begin(async (tx): Promise<TransferRow | "recurring" | "changed" | "denied" | "claimed" | null> => {
     const [locked] = await tx<
       {
         id: string;
@@ -346,6 +346,9 @@ export const transfer = async (params: {
       FOR UPDATE OF i, w, c
     `;
     if (!locked) return null;
+    const [work] = await tx<{ claim: unknown }[]>`SELECT claim FROM spaces.task_work WHERE item_id = ${params.itemId}::uuid`;
+    if (work?.claim) return "claimed";
+
     if (locked.target_column_id !== wormhole.target_column_id || locked.target_space_id !== wormhole.target_space_id) return "changed";
 
     // Repeat authorization inside the transfer transaction so a stale page or
@@ -456,6 +459,7 @@ export const transfer = async (params: {
     };
   });
 
+  if (transferred === "claimed") return { ok: false, error: "Release the task claim before transferring it", status: 409 };
   if (transferred === "changed") return { ok: false, error: "Wormhole destination changed; try again", status: 409 };
   if (transferred === "denied") return denied();
   if (transferred === "recurring") {

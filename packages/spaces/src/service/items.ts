@@ -22,6 +22,7 @@ import type {
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
+import { CompletionInputSchema } from "../work-contracts";
 import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
@@ -41,6 +42,7 @@ import {
   shiftRecurrenceRule,
   splitRecurringEvent,
 } from "./recurrence";
+import * as taskWork from "./task-work";
 
 // ==========================
 // Items Service
@@ -871,6 +873,13 @@ export const listFiltered = async (params: {
     conditions = sql`${conditions} AND (i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL)`;
   }
 
+  if (filter.blocked !== undefined) {
+    conditions = sql`${conditions} AND EXISTS (
+      SELECT 1 FROM spaces.item_dependencies d JOIN spaces.items b ON b.id = d.blocker_item_id
+      WHERE d.item_id = i.id AND b.completed_at IS NULL
+    ) = ${filter.blocked}`;
+  }
+
   // Status filter
   if (status === "active") {
     conditions = sql`${conditions} AND i.completed_at IS NULL`;
@@ -1538,6 +1547,8 @@ export const update = async (params: {
         exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
       };
     }
+    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && (await taskWork.read(id, tx)).claim)
+      return { ok: false, error: "Release the task claim before converting it to an event", status: 409 };
     if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
       return { ok: false, error: "End time must be after start time", status: 400 };
     }
@@ -1894,10 +1905,23 @@ export const move = async (params: {
 
   const completedAt = typeof params.completed === "boolean" ? (params.completed ? new Date() : null) : undefined;
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
+    const [located] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.items WHERE id = ${id}::uuid`;
+    if (!located) return { ok: false, error: "Item not found", status: 404 };
+    await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${located.space_id}))`;
     const [existing] = await tx<{ id: string; space_id: string; title: string }[]>`
       SELECT id, space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
+    if (params.completed !== undefined) {
+      const claim = await taskWork.checkClaim(id, params.actor ?? systemActor, undefined, tx);
+      if (!claim.ok) return claim;
+      if (params.completed) {
+        const [blocked] = await tx<{ blocked: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM spaces.item_dependencies d JOIN spaces.items b ON b.id = d.blocker_item_id
+          WHERE d.item_id = ${id}::uuid AND b.completed_at IS NULL) AS blocked`;
+        if (blocked?.blocked) return { ok: false, error: "Complete all blocking tasks first", status: 409 };
+      }
+    }
     const [column] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.columns WHERE id = ${columnId}`;
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
@@ -1952,8 +1976,15 @@ export const move = async (params: {
 export const setCompleted = async (params: {
   id: string;
   completed: boolean;
+  expectedSpaceId?: string;
+  result?: string;
+  commit?: string;
+  claimId?: string;
   actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
+  const input = CompletionInputSchema.safeParse(params);
+  if (!input.success) return { ok: false, error: input.error.issues[0]!.message, status: 400 };
+  params = { ...params, ...input.data };
   const { id, completed } = params;
   const completedAt = completed ? new Date() : null;
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
@@ -1967,6 +1998,12 @@ export const setCompleted = async (params: {
       SELECT id, space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${id}::uuid FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
+    if (current.space_id !== located.space_id || (params.expectedSpaceId && current.space_id !== params.expectedSpaceId))
+      return { ok: false, error: "Task moved to another Space; read its current location", status: 409 };
+    const claimCheck = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx);
+    if (!claimCheck.ok) return claimCheck;
+    if (params.result !== undefined && (current.starts_at || current.ends_at))
+      return { ok: false, error: "Work results are only available for tasks", status: 400 };
     if (completed) {
       const [blockers] = await tx<{ count: number }[]>`
         SELECT COUNT(*)::int AS count
@@ -2019,6 +2056,8 @@ export const setCompleted = async (params: {
       RETURNING item.id
     `;
     if (!row) return { ok: false, error: "Item not found", status: 404 };
+    if (completed && !current.starts_at && !current.ends_at)
+      await taskWork.finish(id, params.result, params.commit, params.actor ?? systemActor, tx);
     const activityKind = current.starts_at && current.ends_at ? "event" : "task";
     await activity.record(
       {
@@ -2026,7 +2065,10 @@ export const setCompleted = async (params: {
         itemId: id,
         actor: params.actor ?? systemActor,
         action: `${activityKind}.${completed ? "completed" : "reopened"}`,
-        metadata: { itemTitle: current.title },
+        metadata: {
+          itemTitle: current.title,
+          ...(params.result !== undefined ? { result: params.result, commit: params.commit ?? null } : {}),
+        },
       },
       tx,
     );

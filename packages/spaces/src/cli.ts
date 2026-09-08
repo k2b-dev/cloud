@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
+import type { Paginated } from "@k2b/stdlib";
 import {
   arg,
   type CloudCliContext,
@@ -25,10 +26,13 @@ import type {
   SpaceDetail,
   SpaceItem,
   SpaceItemAttachment,
+  SpaceItemResourceReference,
+  SpaceTaskChecklistEntry,
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
+import type { TaskWork } from "./work-contracts";
 
 const SPACE_DEFAULT_KEY = "spaces.space";
 
@@ -43,9 +47,11 @@ const stringFlag = (flags: CloudCliFlags, ...names: string[]): string | undefine
 
 const stringFlags = (flags: CloudCliFlags, name: string): string[] => {
   const value = flags[name];
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value;
-  return [];
+  const values = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+  return values
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 };
 
 const booleanFlag = (flags: CloudCliFlags, ...names: string[]): boolean => names.some((name) => flags[name] === true);
@@ -402,6 +408,8 @@ export default defineCliCommands({
   summary: "Inspect and update Spaces through the Spaces REST API.",
   groupSummaries: {
     access: "Manage direct access to spaces",
+    checklist: "Manage task checklists",
+    references: "Link Cloud resources to items",
     invitation: "Prepare Mail invitations for Space events",
   },
   commands: [
@@ -491,21 +499,45 @@ export default defineCliCommands({
         q: flag.string({ aliases: ["query"], description: "Search query" }),
         status: flag.enum(["active", "completed", "all"], { default: "active", description: "Item status" }),
         type: flag.enum(["all", "task", "event"], { default: "all", description: "Item type" }),
+        ready: flag.boolean({ description: "Open tasks without active blockers" }),
+        blocked: flag.boolean({ description: "Open tasks with active blockers" }),
+        assignedTo: flag.enum(["all", "assigned", "me", "unassigned"], { name: "assigned-to", description: "Assignment filter" }),
+        assignee: flag.stringList({ description: "Assignee user IDs" }),
+        priority: flag.stringList({ description: "Priorities: low, medium, high, urgent" }),
+        column: flag.stringList({ description: "Workflow column IDs or names" }),
+        tag: flag.stringList({ description: "Tag IDs or names" }),
+        deadline: flag.enum(["all", "overdue", "today", "week", "none"], { description: "Deadline window" }),
+        activity: flag.enum(["all", "inactive"], { description: "Activity filter" }),
+        sort: flag.enum(["column", "priority", "deadline", "created", "updated", "title"], { default: "updated" }),
+        ascending: flag.boolean({ description: "Sort ascending" }),
         page: flag.int({ min: 1, description: "Page number" }),
         pageSize: flag.int({ name: "page-size", aliases: ["page_size"], min: 1, description: "Items per page" }),
       },
       run: async ({ ctx, args }) => {
         const { spaceRef } = await resolveSpaceArg(ctx, args.args, 0);
         const space = await resolveSpaceRef(ctx, spaceRef);
+        const ready = booleanFlag(ctx.flags, "ready");
+        const blocked = booleanFlag(ctx.flags, "blocked");
+        if (ready && blocked) throw new Error("Pass only one of --ready or --blocked.");
+        if ((ready || blocked) && (stringFlag(ctx.flags, "type") === "event" || stringFlag(ctx.flags, "status") === "completed"))
+          throw new Error("--ready and --blocked select open tasks.");
         const payload = await readApi<ItemListResult>(
           ctx,
           `/${space.id}/items/filter`,
           jsonRequest("POST", {
-            type: itemType(stringFlag(ctx.flags, "type")),
-            status: itemStatus(stringFlag(ctx.flags, "status")),
+            type: ready || blocked ? "task" : itemType(stringFlag(ctx.flags, "type")),
+            status: ready || blocked ? "active" : itemStatus(stringFlag(ctx.flags, "status")),
+            blocked: ready ? false : blocked ? true : undefined,
+            assignedTo: stringFlag(ctx.flags, "assigned-to"),
+            assigneeIds: stringFlags(ctx.flags, "assignee"),
+            priority: stringFlags(ctx.flags, "priority"),
+            columnIds: stringFlags(ctx.flags, "column").map((ref) => resolveColumnId(space, ref)),
+            tagIds: resolveTagIds(space, stringFlags(ctx.flags, "tag")),
+            deadlineFilter: stringFlag(ctx.flags, "deadline"),
+            activity: stringFlag(ctx.flags, "activity"),
             search: stringFlag(ctx.flags, "q", "query"),
-            sort: "updated",
-            sortDesc: true,
+            sort: stringFlag(ctx.flags, "sort") ?? "updated",
+            sortDesc: !booleanFlag(ctx.flags, "ascending"),
             groupBy: "none",
             page: parsePositiveInt(stringFlag(ctx.flags, "page"), 1, "--page"),
             pageSize: parsePositiveInt(stringFlag(ctx.flags, "page-size", "page_size"), 50, "--page-size"),
@@ -526,12 +558,35 @@ export default defineCliCommands({
     command("item", {
       summary: "Show one space item",
       args: optionalSpaceArgs,
-      flags: spaceFlag,
+      flags: {
+        ...spaceFlag,
+        context: flag.boolean({ description: "Include work state, checklist, dependencies, references and a comments page" }),
+        page: flag.int({ min: 1 }),
+        pageSize: flag.int({ name: "page-size", min: 1, max: 100 }),
+      },
       run: async ({ ctx, args }) => {
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
         const space = await resolveSpaceRef(ctx, spaceRef);
         const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "item"));
         const attachments = item.startsAt || item.endsAt ? undefined : await listAttachments(ctx, space.id, item.id);
+        if (booleanFlag(ctx.flags, "context")) {
+          const base = `/${space.id}/items/${item.id}`;
+          const page = numberFlag(ctx.flags, "page") ?? 1;
+          const perPage = numberFlag(ctx.flags, "page-size") ?? 50;
+          const [comments, references, work, checklist, blockers, blocks] = await Promise.all([
+            readApi<Paginated<SpaceComment>>(ctx, `${base}/comments/page?page=${page}&per_page=${perPage}`),
+            readApi<SpaceItemResourceReference[]>(ctx, `${base}/references`),
+            attachments ? readApi<TaskWork>(ctx, `${base}/work`) : Promise.resolve(null),
+            attachments ? readApi<SpaceTaskChecklistEntry[]>(ctx, `${base}/checklist`) : Promise.resolve([]),
+            attachments ? readApi<SpaceTaskDependency[]>(ctx, `${base}/blockers`) : Promise.resolve([]),
+            attachments
+              ? readApi<Paginated<SpaceTaskDependent>>(ctx, `${base}/blocks/page?page=${page}&per_page=${perPage}`)
+              : Promise.resolve(null),
+          ]);
+          const context = { ...item, attachments, work, checklist, blockers, blocks, references, comments };
+          if (!printStructured(ctx, context)) ctx.print(JSON.stringify(context, null, 2));
+          return;
+        }
         const detail = attachments ? { ...item, attachments } : item;
         if (!printStructured(ctx, detail)) {
           ctx.print(`${item.title} (${item.id})`);
@@ -726,6 +781,8 @@ export default defineCliCommands({
         ...itemMutationFlags,
         title: flag.string({ description: "Item title" }),
         clearEstimate: flag.boolean({ name: "clear-estimate", description: "Clear the estimated duration" }),
+        clearAssignees: flag.boolean({ name: "clear-assignees", description: "Remove all assignees" }),
+        clearTags: flag.boolean({ name: "clear-tags", description: "Remove all tags" }),
       },
       run: async ({ ctx, args }) => {
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
@@ -746,9 +803,12 @@ export default defineCliCommands({
         const column = stringFlag(ctx.flags, "column");
         if (column) payload.columnId = resolveColumnId(space, column);
         const assignees = stringFlags(ctx.flags, "assignee");
-        if (assignees.length > 0) payload.assigneeIds = assignees;
+        if (assignees.length && booleanFlag(ctx.flags, "clear-assignees"))
+          throw new Error("Pass --assignee or --clear-assignees, not both.");
+        if (assignees.length > 0 || booleanFlag(ctx.flags, "clear-assignees")) payload.assigneeIds = assignees;
         const tags = stringFlags(ctx.flags, "tag");
-        if (tags.length > 0) payload.tagIds = resolveTagIds(space, tags);
+        if (tags.length && booleanFlag(ctx.flags, "clear-tags")) throw new Error("Pass --tag or --clear-tags, not both.");
+        if (tags.length > 0 || booleanFlag(ctx.flags, "clear-tags")) payload.tagIds = resolveTagIds(space, tags);
 
         const json = Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
         if (Object.keys(json).length === 0) throw new Error("No item fields to update.");
@@ -785,16 +845,19 @@ export default defineCliCommands({
     command("blocks", {
       summary: "List tasks blocked by one task",
       args: optionalSpaceArgs,
-      flags: spaceFlag,
+      flags: { ...spaceFlag, page: flag.int({ min: 1 }), pageSize: flag.int({ name: "page-size", min: 1, max: 100 }) },
       run: async ({ ctx, args }) => {
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
         const space = await resolveSpaceRef(ctx, spaceRef);
         const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
-        const blockedTasks = await readApi<SpaceTaskDependent[]>(ctx, `/${space.id}/items/${item.id}/blocks`);
+        const blockedTasks = await readApi<Paginated<SpaceTaskDependent>>(
+          ctx,
+          `/${space.id}/items/${item.id}/blocks/page?page=${numberFlag(ctx.flags, "page") ?? 1}&per_page=${numberFlag(ctx.flags, "page-size") ?? 50}`,
+        );
         printJsonOrTable(
           ctx,
           blockedTasks,
-          blockedTasks.map((dependency) => ({
+          blockedTasks.items.map((dependency) => ({
             title: dependency.dependent.title,
             status: dependency.dependent.completedAt ? "completed" : "blocked",
             id: dependency.dependent.id,
@@ -805,6 +868,8 @@ export default defineCliCommands({
             { key: "id", label: "ID" },
           ],
         );
+        if (ctx.options.output === "text" && blockedTasks.hasNext)
+          ctx.print(`More dependent tasks: --page ${blockedTasks.page + 1} --page-size ${blockedTasks.perPage}`);
       },
     }),
     command("block", {
@@ -843,7 +908,14 @@ export default defineCliCommands({
       command(action, {
         summary: action === "done" ? "Mark an item completed" : "Reopen a completed item",
         args: optionalSpaceArgs,
-        flags: spaceFlag,
+        flags: {
+          ...spaceFlag,
+          result: flag.string({ description: "Completion result including verification" }),
+          file: flag.string({ description: "Read result from file" }),
+          stdin: flag.boolean({ description: "Read result from stdin" }),
+          commit: flag.string({ description: "Optional commit SHA; requires a result" }),
+          claimId: flag.string({ name: "claim-id", description: "Current worker claim ID" }),
+        },
         run: async ({ ctx, args }) => {
           const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
           const space = await resolveSpaceRef(ctx, spaceRef);
@@ -851,7 +923,12 @@ export default defineCliCommands({
           const updated = await readApi<SpaceItem>(
             ctx,
             `/${space.id}/items/${item.id}/completed`,
-            jsonRequest("POST", { completed: action === "done" }),
+            jsonRequest("POST", {
+              completed: action === "done",
+              result: await readInputContent(ctx, "result", false),
+              commit: stringFlag(ctx.flags, "commit"),
+              claimId: stringFlag(ctx.flags, "claim-id"),
+            }),
           );
           if (!printStructured(ctx, updated))
             ctx.print(`${action === "done" ? "Completed" : "Reopened"} ${updated.title} (${updated.id}).`);
@@ -861,19 +938,26 @@ export default defineCliCommands({
     command("comments", {
       summary: "List item comments",
       args: optionalSpaceArgs,
-      flags: spaceFlag,
+      flags: { ...spaceFlag, page: flag.int({ min: 1 }), pageSize: flag.int({ name: "page-size", min: 1, max: 100 }) },
       run: async ({ ctx, args }) => {
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
         const space = await resolveSpaceRef(ctx, spaceRef);
         const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "item"));
 
-        const comments = await readApi<SpaceComment[]>(ctx, `/${space.id}/items/${item.id}/comments`);
-        printJsonOrTable(ctx, comments, commentRows(comments), [
+        const page = numberFlag(ctx.flags, "page") ?? 1;
+        const perPage = numberFlag(ctx.flags, "page-size") ?? 50;
+        const comments = await readApi<Paginated<SpaceComment>>(
+          ctx,
+          `/${space.id}/items/${item.id}/comments/page?page=${page}&per_page=${perPage}`,
+        );
+        printJsonOrTable(ctx, comments, commentRows(comments.items), [
           { key: "author", label: "AUTHOR" },
           { key: "content", label: "CONTENT" },
           { key: "createdAt", label: "CREATED" },
           { key: "id", label: "ID" },
         ]);
+        if (ctx.options.output === "text" && comments.hasNext)
+          ctx.print(`More comments: --page ${comments.page + 1} --page-size ${comments.perPage}`);
       },
     }),
     command("comment", {
@@ -896,6 +980,143 @@ export default defineCliCommands({
         if (!printStructured(ctx, comment)) ctx.print(`Created comment ${comment.id}.`);
       },
     }),
+
+    command("work", {
+      summary: "Read current claim, progress and completion result",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const work = await readApi<TaskWork>(ctx, `/${space.id}/items/${item.id}/work`);
+        if (!printStructured(ctx, work)) ctx.print(JSON.stringify(work, null, 2));
+      },
+    }),
+    ...(["claim", "release", "progress"] as const).map((operation) =>
+      command(operation, {
+        summary:
+          operation === "claim"
+            ? "Claim one open unblocked task for a worker"
+            : operation === "release"
+              ? "Release your current task claim"
+              : "Save a progress and handoff note",
+        args: optionalSpaceArgs,
+        flags: {
+          ...spaceFlag,
+          ...(operation === "progress" ? contentFlags : {}),
+          ...(operation === "release" ? { force: flag.boolean({ description: "Admin recovery of the exact observed claim" }) } : {}),
+          claimId: flag.string({
+            name: "claim-id",
+            description: "Worker-generated UUID; required for claim/release, and progress when claimed",
+          }),
+        },
+        run: async ({ ctx, args }) => {
+          const claimId = stringFlag(ctx.flags, "claim-id");
+          if (operation !== "progress" && !claimId)
+            throw new Error("Pass --claim-id <worker-generated UUID>. Reuse it only for retries of this claim.");
+          const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+          const space = await resolveSpaceRef(ctx, spaceRef);
+          const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+          const work = await readApi<TaskWork>(
+            ctx,
+            `/${space.id}/items/${item.id}/${operation}`,
+            jsonRequest("POST", {
+              claimId,
+              ...(operation === "release" ? { force: booleanFlag(ctx.flags, "force") } : {}),
+              ...(operation === "progress" ? { content: await readInputContent(ctx) } : {}),
+            }),
+          );
+          if (!printStructured(ctx, work)) ctx.print(JSON.stringify(work, null, 2));
+        },
+      }),
+    ),
+    command("activity", {
+      summary: "Read a task activity page including previous progress and results",
+      args: optionalSpaceArgs,
+      flags: {
+        ...spaceFlag,
+        cursor: flag.string({ description: "Next cursor from the preceding page" }),
+        limit: flag.int({ min: 1, max: 100 }),
+      },
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const query = new URLSearchParams({ limit: String(numberFlag(ctx.flags, "limit") ?? 30) });
+        const cursor = stringFlag(ctx.flags, "cursor");
+        if (cursor) query.set("cursor", cursor);
+        const result = await readApi<unknown>(ctx, `/${space.id}/items/${item.id}/activity?${query}`);
+        if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+      },
+    }),
+    ...(["list", "add", "update", "delete"] as const).map((operation) =>
+      command(`checklist ${operation}`, {
+        summary: `${operation} task checklist entries`,
+        args: optionalSpaceArgs,
+        flags: {
+          ...spaceFlag,
+          label: flag.string({ description: "Entry label" }),
+          completed: flag.boolean({ description: "Mark the entry completed" }),
+          reopen: flag.boolean({ description: "Mark the entry incomplete" }),
+          ...confirmFlag,
+        },
+        run: async ({ ctx, args }) => {
+          if (operation === "delete" && !booleanFlag(ctx.flags, "yes")) throw new Error("Pass --yes to delete the checklist entry.");
+          const completed = booleanFlag(ctx.flags, "completed");
+          const reopen = booleanFlag(ctx.flags, "reopen");
+          if (completed && reopen) throw new Error("Pass only one of --completed or --reopen.");
+          const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, operation === "update" || operation === "delete" ? 2 : 1);
+          const space = await resolveSpaceRef(ctx, spaceRef);
+          const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+          const entry = operation === "update" || operation === "delete" ? `/${encodeURIComponent(requireArg(rest, 1, "entry ID"))}` : "";
+          const method = operation === "list" ? undefined : operation === "add" ? "POST" : operation === "update" ? "PATCH" : "DELETE";
+          const result = await readApi<unknown>(
+            ctx,
+            `/${space.id}/items/${item.id}/checklist${entry}`,
+            method
+              ? jsonRequest(method, {
+                  label: stringFlag(ctx.flags, "label"),
+                  ...(operation === "update" && (completed || reopen) ? { completed } : {}),
+                })
+              : undefined,
+          );
+          if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+        },
+      }),
+    ),
+    ...(["list", "add", "remove"] as const).map((operation) =>
+      command(`references ${operation}`, {
+        summary: `${operation} Cloud resource references on an item`,
+        args: optionalSpaceArgs,
+        flags: {
+          ...spaceFlag,
+          type: flag.string({ description: "Cloud resource type, e.g. notebooks.note" }),
+          id: flag.string({ description: "Resource ID" }),
+          label: flag.string({ description: "Display label" }),
+          ...confirmFlag,
+        },
+        run: async ({ ctx, args }) => {
+          if (operation === "remove" && !booleanFlag(ctx.flags, "yes")) throw new Error("Pass --yes to remove the reference.");
+          const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+          const space = await resolveSpaceRef(ctx, spaceRef);
+          const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "item"));
+          const ref = { type: stringFlag(ctx.flags, "type"), id: stringFlag(ctx.flags, "id") };
+          const result = await readApi<unknown>(
+            ctx,
+            `/${space.id}/items/${item.id}/references`,
+            operation === "list"
+              ? undefined
+              : jsonRequest(operation === "add" ? "POST" : "DELETE", {
+                  ref,
+                  ...(operation === "add" ? { label: stringFlag(ctx.flags, "label") } : {}),
+                }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+        },
+      }),
+    ),
+
     command("calendar", {
       summary: "List calendar items",
       flags: dateRangeFlags,

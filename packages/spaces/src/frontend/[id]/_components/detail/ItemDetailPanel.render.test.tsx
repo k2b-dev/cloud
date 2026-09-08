@@ -422,3 +422,24 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain(">Link Cloud resource</span>");
   });
 });
+
+test("renders work progress and preserved completion evidence in German", () => {
+  const html = renderPanel(
+    {
+      item: task,
+      canWrite: false,
+      work: {
+        claim: { id: "11111111-1111-4111-8111-111111111111", actor: { kind: "user", id: userId }, claimedAt: now },
+        progress: { content: "Nächster Schritt: Dokumentation prüfen.", actor: { kind: "user", id: userId }, at: now },
+        result: { content: "Verifikation: Tests erfolgreich.", commit: "a1b2c3d", actor: { kind: "user", id: userId }, at: now },
+      },
+    },
+    "de",
+  );
+  expect(html).toContain("Arbeit und Übergabe");
+  expect(html).toContain("Aufgabe übernommen");
+  expect(html).toContain("Nächster Schritt");
+  expect(html).toContain("Letztes Abschlussergebnis");
+  expect(html).toContain("Tests erfolgreich");
+  expect(html).toContain("a1b2c3d");
+});

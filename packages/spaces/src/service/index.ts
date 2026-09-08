@@ -15,6 +15,7 @@ import * as itemResourceReferences from "./item-resource-references";
 import * as items from "./items";
 import * as spaces from "./spaces";
 import * as tags from "./tags";
+import * as work from "./task-work";
 import * as wormholes from "./wormholes";
 
 const paginateItems = <T>(items: T[], pagination?: PageParams): Paginated<T> => {
@@ -135,6 +136,7 @@ export const spacesService = {
     transfer: wormholes.transfer,
   },
   item: {
+    work,
     list: async (config: {
       spaceId: string;
       includeCompleted?: boolean;

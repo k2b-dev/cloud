@@ -45,6 +45,7 @@ const catalog = i18n.define({
       calendarReadLimit:
         "A recurring series exceeded the calendar processing limit. Inspect its recurrence using event.list and item.read; this result is not an empty agenda.",
       smallerPageRequired: "The result is too large. Retry with a smaller limit.",
+      workResult: "Completion result",
       checklistEntry: "Checklist entry",
       checklistCompleted: "Completed",
       reviewChecklistChange: ({ title }: { title: string }) => `Change the checklist of task ${title}.`,
@@ -245,6 +246,7 @@ const catalog = i18n.define({
       calendarReadLimit:
         "Eine Terminserie überschreitet das Verarbeitungslimit. Bitte die Wiederholung mit event.list und item.read prüfen; das Ergebnis ist keine leere Agenda.",
       smallerPageRequired: "Das Ergebnis ist zu groß. Bitte mit einem kleineren Limit erneut versuchen.",
+      workResult: "Abschlussergebnis",
       checklistEntry: "Checklistenpunkt",
       checklistCompleted: "Erledigt",
       reviewChecklistChange: ({ title }) => `Checkliste der Aufgabe ${title} ändern.`,
@@ -410,6 +412,18 @@ export const checkSpacesMessages = () => catalog.check();
 export const spacesApiErrorMessage = (status: number, locale?: string | null, baseMessage?: string): string => {
   const resolved = catalog.resolve(locale ? [locale] : []);
   if (resolved.locale === "en" && baseMessage) return baseMessage;
+  const workErrors: Record<string, string> = {
+    "Task is claimed; release its current claim before changing ownership or completing it":
+      "Die Aufgabe ist übernommen. Gib die aktuelle Übernahme frei oder verwende die zugehörige Kennung und Identität.",
+    "Task claim is no longer active": "Diese Aufgabenübernahme ist nicht mehr aktiv.",
+    "Task claim changed; read its current state before releasing":
+      "Die Übernahme hat sich geändert. Lies den aktuellen Arbeitsstand vor dem Freigeben.",
+    "Release the task claim before transferring it": "Gib die Aufgabenübernahme vor dem Transfer frei.",
+    "Reopen the task before claiming it": "Öffne die Aufgabe vor dem Übernehmen wieder.",
+    "Work tracking is only available for tasks": "Arbeitsstände sind nur für Aufgaben verfügbar.",
+    "Complete all blocking tasks first": "Schließe zuerst alle blockierenden Aufgaben ab.",
+  };
+  if (resolved.locale === "de" && baseMessage && workErrors[baseMessage]) return workErrors[baseMessage];
   const { t } = resolved;
   if (status === 401) return t.loginRequired;
   if (status === 403) return t.accessDenied;

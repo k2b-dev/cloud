@@ -26,6 +26,7 @@ import {
   CalendarParticipationStatusSchema,
   SpacesMailDestinationSchema,
 } from "./integration";
+import { CompletionInputSchema } from "./work-contracts";
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTextSchema = z.string().nullable();
@@ -421,12 +422,7 @@ export const EventUpdateInputSchema = z
   })
   .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] });
 
-export const TaskSetCompletedInputSchema = z
-  .object({
-    itemId: ItemIdSchema,
-    completed: z.boolean().describe("True completes the task; false reopens it."),
-  })
-  .strict();
+export const TaskSetCompletedInputSchema = CompletionInputSchema.safeExtend({ itemId: ItemIdSchema }).strict();
 export const ItemDeleteInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const ItemDeleteDataSchema = z.object({ itemId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 

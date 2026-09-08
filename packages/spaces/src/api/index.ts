@@ -100,6 +100,8 @@ import {
   resolvePublicIds,
   resolveSpacePublicIds,
 } from "../service/public-resources";
+import * as taskWork from "../service/task-work";
+import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "../work-contracts";
 import wsRoutes from "../ws";
 
 // ==========================
@@ -1746,6 +1748,7 @@ const app = new Hono<AuthContext>()
       const user = getUserBackedActor(c);
       const spaceShortId = c.req.param("id") ?? "";
       const filter = c.req.valid("json");
+      if (filter.assignedTo === "me" && !user) return respond(c, fail(err.forbidden("The me filter requires a user-backed actor")));
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId);
       if (error) return error;
@@ -2054,6 +2057,187 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  .get(
+    "/:id/items/:itemId/blocks/page",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List a page of dependent tasks",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            items: z.array(SpaceTaskDependentSchema),
+            page: z.number(),
+            perPage: z.number(),
+            total: z.number(),
+            hasNext: z.boolean(),
+          }),
+          "Dependent tasks page",
+        ),
+      },
+    }),
+    v("query", CommentPageQuerySchema.pick({ page: true, per_page: true })),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const query = c.req.valid("query");
+      const page = await spacesService.item.dependencies.listBlocksPage({
+        blockerItemId: item.data.id,
+        page: query.page,
+        perPage: query.per_page,
+      });
+      return respond(c, ok({ ...page, items: await projectTaskDependents(page.items) }));
+    },
+  )
+  .get(
+    "/:id/items/:itemId/work",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Read task work state",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(TaskWorkSchema, "Current claim, progress and last completion result") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respond(c, ok(await taskWork.read(item.data.id)));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/claim",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Claim task work",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(TaskWorkSchema, "Updated task work"),
+        409: jsonResponse(ErrorResponseSchema, "Claim or task conflict"),
+      },
+    }),
+    v("json", ClaimTaskSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respond(
+        c,
+        taskWork.change({
+          itemId: item.data.id,
+          spaceId: access.internalId!,
+          actor: getSpaceActivityActor(c),
+          subject: c.get("accessSubject"),
+          operation: "claim",
+          ...c.req.valid("json"),
+        }),
+      );
+    },
+  )
+  .post(
+    "/:id/items/:itemId/release",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Release task work",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(TaskWorkSchema, "Updated task work"),
+        409: jsonResponse(ErrorResponseSchema, "Claim or task conflict"),
+      },
+    }),
+    v("json", ReleaseTaskSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", c.req.valid("json").force ? "admin" : "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respond(
+        c,
+        taskWork.change({
+          itemId: item.data.id,
+          spaceId: access.internalId!,
+          actor: getSpaceActivityActor(c),
+          subject: c.get("accessSubject"),
+          operation: "release",
+          ...c.req.valid("json"),
+        }),
+      );
+    },
+  )
+  .post(
+    "/:id/items/:itemId/progress",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Progress task work",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(TaskWorkSchema, "Updated task work"),
+        409: jsonResponse(ErrorResponseSchema, "Claim or task conflict"),
+      },
+    }),
+    v("json", ProgressTaskSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respond(
+        c,
+        taskWork.change({
+          itemId: item.data.id,
+          spaceId: access.internalId!,
+          actor: getSpaceActivityActor(c),
+          subject: c.get("accessSubject"),
+          operation: "progress",
+          ...c.req.valid("json"),
+        }),
+      );
+    },
+  )
+  .get(
+    "/:id/items/:itemId/activity",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Read task activity",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.object({ data: z.array(SpaceActivitySchema), nextCursor: z.string().nullable() }), "Activity page"),
+      },
+    }),
+    v("query", OverviewActivityQuerySchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      try {
+        const page = await spacesService.activity.list({
+          subject: c.get("accessSubject"),
+          spaceId: access.internalId!,
+          itemId: item.data.id,
+          ...c.req.valid("query"),
+        });
+        return respond(
+          c,
+          ok({
+            data: page.items.map((event) => ({
+              ...event,
+              space: { id: event.space.shortId, name: event.space.name, color: event.space.color },
+              item: event.item ? { id: event.item.shortId, title: event.item.title } : null,
+            })),
+            nextCursor: page.nextCursor,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof InvalidActivityCursorError) return respond(c, fail(err.badInput(error.message)));
+        throw error;
+      }
+    },
+  )
+
   // Set Completed
   .post(
     "/:id/items/:itemId/completed",
@@ -2073,7 +2257,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
-      const { completed } = c.req.valid("json");
+      const { completed, result, commit, claimId } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
@@ -2082,7 +2266,15 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         projectMutation(
-          spacesService.item.setCompleted({ id: itemCheck.data.id, completed, actor: getSpaceActivityActor(c) }),
+          spacesService.item.setCompleted({
+            id: itemCheck.data.id,
+            expectedSpaceId: spaceId!,
+            completed,
+            result,
+            commit,
+            claimId,
+            actor: getSpaceActivityActor(c),
+          }),
           projectItems,
         ),
       );

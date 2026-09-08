@@ -42,3 +42,12 @@ You can edit or delete your own comment for 10 minutes after posting. Other peop
 ## Work Quickly from the Keyboard {icon="keyboard"}
 
 Press **C** outside an input or dialog to create an item, and press **/** to open search. In Kanban, focus the board and use the arrow keys to move between cards. Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it. These single-key shortcuts stay inactive while you type in a field or editor.
+
+## Implementation work and handoffs {icon="notes"}
+
+Tasks can carry a progress note and a completion result, shown under **Work and
+handoff** in their details. Reopening keeps the last result. Workers using the
+CLI can claim an open task to coordinate who handles it. Claims do not expire;
+release the claim before completing the task from another session or moving it
+through a wormhole. An administrator can recover an abandoned claim through the
+CLI. Ordinary collaborative edits remain available while a task is claimed.
