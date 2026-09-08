@@ -1,4 +1,4 @@
-import { Button, CopyButton, IconButton, Placeholder, prompts, Tooltip, useLocale } from "@k2b/ui";
+import { Button, CopyButton, IconButton, Placeholder, prompts, ScrollArea, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm } from "../../../api/public-dto";
@@ -114,7 +114,7 @@ export default function FormsManager(props: Props) {
   };
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+    <ScrollArea class="flex min-h-0 flex-1 flex-col gap-2">
       <Show when={forms().length > 0} fallback={<Placeholder surface="paper" align="left" description={<>{t().noCustomForms}</>} />}>
         <ul class="flex flex-col gap-2">
           <For each={forms()}>
@@ -164,6 +164,6 @@ export default function FormsManager(props: Props) {
           <i class="ti ti-plus" /> {t().newForm}
         </Button>
       </Show>
-    </div>
+    </ScrollArea>
   );
 }

@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { Button, IconButton, Placeholder, ScrollArea, Tag, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { documentActionState } from "./document-browser-model";
 import { formatDocumentRelativeTime } from "./document-workspace-utils";
@@ -139,7 +139,7 @@ export default function DocumentBrowser(props: Props) {
                 </For>
               </div>
             </Show>
-            <div class="min-h-0 flex-1 overflow-auto p-1">
+            <ScrollArea class="min-h-0 flex-1 p-1">
               <Show
                 when={props.folders.length > 0 || props.documents.length > 0}
                 fallback={<Placeholder class="h-full" title={props.emptyText} />}
@@ -199,7 +199,7 @@ export default function DocumentBrowser(props: Props) {
                   </Show>
                 </Show>
               </Show>
-            </div>
+            </ScrollArea>
           </div>
         </Show>
       </Show>

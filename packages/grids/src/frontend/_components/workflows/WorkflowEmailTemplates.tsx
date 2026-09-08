@@ -11,6 +11,7 @@ import {
   Placeholder,
   panelDialogWorkspaceOptions,
   prompts,
+  ScrollArea,
   StatusBadge,
   TemplateEditor,
   TemplatePreview,
@@ -264,7 +265,7 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
                   title: t().sampleData,
                   icon: "ti ti-database",
                   render: () => (
-                    <div class="flex h-full min-h-0 flex-col gap-2 overflow-auto">
+                    <ScrollArea class="flex h-full min-h-0 flex-col gap-2">
                       <TextInput
                         label={t().workflowData}
                         description={t().workflowDataDescription}
@@ -286,7 +287,7 @@ function EmailTemplateEditor(props: { baseId: string; template?: PublicEmailTemp
                         values={systemSampleData()}
                         onValueChange={setSystemSampleValue}
                       />
-                    </div>
+                    </ScrollArea>
                   ),
                 },
               ]}

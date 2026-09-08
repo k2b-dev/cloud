@@ -1,5 +1,5 @@
 import { mutation as mutations, timed } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, Panes, type PanesLayout, prompts, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, Panes, type PanesLayout, prompts, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
@@ -161,7 +161,7 @@ function QueryPreview(props: {
                   </Show>
                 </div>
               </div>
-              <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3 text-sm">
+              <ScrollArea class="flex min-h-0 flex-1 flex-col gap-2 p-3 text-sm">
                 <For each={diagnostics()}>
                   {(diagnostic) => (
                     <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800 dark:border-red-900 dark:bg-red-950/45 dark:text-red-300">
@@ -179,7 +179,7 @@ function QueryPreview(props: {
                     </div>
                   )}
                 </For>
-              </div>
+              </ScrollArea>
             </div>
           }
         >
@@ -561,7 +561,7 @@ export default function QueryWorkspace(props: Props) {
                   clearable
                 />
 
-                <div class="min-h-0 flex-1 overflow-auto">
+                <ScrollArea class="min-h-0 flex-1">
                   <Show
                     when={filteredSourceRows().length > 0}
                     fallback={
@@ -648,7 +648,7 @@ export default function QueryWorkspace(props: Props) {
                       </For>
                     </div>
                   </Show>
-                </div>
+                </ScrollArea>
               </section>
             ),
           },

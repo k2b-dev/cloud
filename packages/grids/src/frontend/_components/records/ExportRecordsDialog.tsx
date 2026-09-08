@@ -1,4 +1,15 @@
-import { Button, Checkbox, dialogCore, MultiSelectInput, PanelDialog, panelDialogOptions, Select, TextInput, useLocale } from "@k2b/ui";
+import {
+  Button,
+  Checkbox,
+  dialogCore,
+  MultiSelectInput,
+  PanelDialog,
+  panelDialogOptions,
+  ScrollArea,
+  Select,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field } from "../../../api/public-dto";
@@ -169,7 +180,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
         </div>
 
         <PanelDialog.Section title={t().exportFields} subtitle={t().exportFieldsSubtitle} icon="ti ti-columns">
-          <div class="flex max-h-[46vh] flex-col gap-2 overflow-y-auto">
+          <ScrollArea class="flex max-h-[46vh] flex-col gap-2">
             <For each={rows()}>
               {(row, index) => {
                 const field = fieldsById.get(row.fieldId)!;
@@ -226,7 +237,7 @@ const ExportDialogBody = (props: OpenArgs & { close: () => void }) => {
                 );
               }}
             </For>
-          </div>
+          </ScrollArea>
           <Show when={error()}>
             <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>
           </Show>

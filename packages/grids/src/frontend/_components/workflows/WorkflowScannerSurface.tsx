@@ -1,4 +1,4 @@
-import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { Button, dialogCore, IconButtonLink, PanelDialog, panelDialogOptions, ScrollArea, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
@@ -847,7 +847,7 @@ export default function WorkflowScannerSurface(props: Props) {
               <i class="ti ti-scan" aria-hidden="true" /> {t().scan}
             </Button>
           </form>
-          <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+          <ScrollArea class="flex min-h-0 flex-1 flex-col gap-1 p-2">
             <Show when={counts().total > logs().length}>
               <p class="px-3 py-1 text-[11px] text-dimmed">{t().latestScans({ count: MAX_VISIBLE_SCAN_LOGS })}</p>
             </Show>
@@ -885,7 +885,7 @@ export default function WorkflowScannerSurface(props: Props) {
                 )}
               </For>
             </Show>
-          </div>
+          </ScrollArea>
         </section>
       </main>
     </div>

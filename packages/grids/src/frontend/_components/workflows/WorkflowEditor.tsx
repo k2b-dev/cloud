@@ -425,7 +425,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
           <section class="flex min-h-0 flex-1 flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
               <div>
-                <h3 class="detail-section-label mb-0">{t().yamlSource}</h3>
+                <h3 class="text-sm font-semibold text-primary">{t().yamlSource}</h3>
                 <p class="text-xs text-dimmed">{t().yamlDescription}</p>
               </div>
               <Button variant="secondary" size="sm" type="button" onClick={openWorkflowReferenceWindow}>
