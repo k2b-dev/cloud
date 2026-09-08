@@ -820,7 +820,7 @@ export const gatewayOpsMessages = i18n.define({
       syncDroppedEvents: "Dropped events",
       syncDeadLetters: "Dead letters",
       syncDeadLettersHint:
-        "Newest first. Queues and jobs are requeued with a fresh idempotency key. Topic retries only run the original consumer. All actions are audited by the owning app.",
+        "Queues and jobs are requeued with a fresh idempotency key. Topic retries only run the original consumer. All actions are audited by the owning app.",
       syncDeadLettersTruncated: ({ count }: { count: number }) => `${count} ${count === 1 ? "store" : "stores"} cut at the page limit`,
       syncNoDeadLetters: "No dead letters in any reachable app.",
       syncStore: "Store",
@@ -1676,7 +1676,7 @@ export const gatewayOpsMessages = i18n.define({
       syncDroppedEvents: "Verworfene Ereignisse",
       syncDeadLetters: "Dead Letters",
       syncDeadLettersHint:
-        "Neueste zuerst. Queues und Jobs werden mit einem neuen Idempotenzschlüssel eingereiht. Topic-Wiederholungen führen nur den ursprünglichen Consumer aus. Alle Aktionen werden von der zuständigen App protokolliert.",
+        "Queues und Jobs werden mit einem neuen Idempotenzschlüssel eingereiht. Topic-Wiederholungen führen nur den ursprünglichen Consumer aus. Alle Aktionen werden von der zuständigen App protokolliert.",
       syncDeadLettersTruncated: ({ count }) => `${count} ${count === 1 ? "Speicher" : "Speicher"} am Seitenlimit abgeschnitten`,
       syncNoDeadLetters: "Keine Dead Letters in einer erreichbaren App.",
       syncStore: "Speicher",

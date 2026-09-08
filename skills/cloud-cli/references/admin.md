@@ -12,7 +12,7 @@ Use `cld admin` when operating a Cloud instance as an administrator. Commands in
 cld admin status --json
 cld admin apps list --json
 cld admin routes list --range 24h --json
-cld admin diagnose --since 6h --include health,logs,telemetry,jobs,postgres,redis,metrics --json
+cld admin diagnose --since 6h --include health,logs,telemetry,jobs,postgres,redis,metrics,sync,nats --json
 ```
 
 Route hit and error counts are scoped to `--range` (1h, 6h, 24h, 7d, 30d). They used to be cumulative since the gateway router last restarted, which made a long-lived router look healthy while it was failing every request.
@@ -195,3 +195,36 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Linux identities | `linux preview`, `linux config get`, `linux config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
+
+
+## Sync and NATS
+
+`admin sync` inspects application-owned work; `admin nats` reads broker diagnostics.
+Both use administrator access; OAuth callers need the `admin` scope.
+
+```bash
+cld admin sync status --json
+cld admin sync resources list --app mail --problems --json
+cld admin sync dead-letters list <app> <queue|job|topic> <store> --limit 20 --json
+cld admin sync dead-letters get <app> <queue|job|topic> <store> <message> --sequence <streamSequence> --json
+cld admin sync schedules list --app mail --json
+cld admin nats status --json
+cld admin nats streams list --app mail --namespace dev --problems --limit 20 --json
+cld admin nats consumers list <stream> --json
+cld admin diagnose --include sync,nats --json
+```
+
+Follow `nextCursor` using `--cursor` for Sync stores, or `nextOffset` using
+`--offset` for NATS lists. Store pages show oldest retained failures first.
+Queue/job details need the list entry's `streamSequence`; topic details do not.
+JSON retains completeness and page metadata. JSONL lists start with a typed
+`snapshot` record, followed by typed entries. A partial scan is not proof that
+unlisted resources are healthy. `diagnose` excludes payload previews.
+
+After inspecting a failure, queue/job `sync dead-letters requeue`, topic
+`sync dead-letters replay` (with `--consumer` and `--tenant`), and
+`sync dead-letters delete` require `--yes`. Deletion is permanent.
+`sync schedules run <app> <scheduler> <schedule> --request-id <stable-id> --yes`
+accepts work; reuse the request ID after an uncertain response. Inspect the
+returned run with `sync schedules runs get <app> <scheduler> <schedule> <run-id>`;
+`--timeout-ms` permits a bounded wait, and `completed: false` means pending.

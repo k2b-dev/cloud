@@ -14,6 +14,8 @@ import { legalCommands } from "./legal";
 import { logCommands } from "./logs";
 import { linuxCommands } from "./linux";
 import { metricsCommands } from "./metrics";
+import { natsCommands } from "./nats";
+import { syncCommands } from "./sync";
 import { notificationCommands } from "./notifications";
 import { telemetryCommands } from "./telemetry";
 import { webhookCommands } from "./webhooks";
@@ -40,5 +42,7 @@ export default defineCliCommands({
     ...notificationCommands,
     ...webhookCommands,
     ...metricsCommands,
+    ...natsCommands,
+    ...syncCommands,
   ],
 });

@@ -51,7 +51,12 @@ export type SyncResourceRow = SyncResourceSummary & { appId: string; appName: st
 
 export type SyncScheduleRow = SyncScheduleView & { appId: string; appName: string };
 
+export type SyncDeadLetterPage = { store: SyncDeadLetterStoreView; nextCursor: string | null; sampledAt: string };
+export type SyncDeadLetterDetail = { entry: SyncDeadLetterEntry; sampledAt: string };
+export type SyncOverviewFilters = { app?: string; resource?: string; problems?: boolean };
+
 export type SyncOverview = {
+  sampledAt: string;
   apps: SyncAppRow[];
   deadLetters: SyncDeadLetterRow[];
   /** `appId/store` names whose dead-letter page was cut at the limit. */
@@ -88,30 +93,35 @@ const resourcesPayload: z.ZodType<ResourcesPayload> = z.object({
     }),
   ),
 });
-const deadLettersPayload: z.ZodType<DeadLettersPayload> = z.object({
-  stores: z.array(
-    z.object({
-      name: z.string(),
-      kind: z.enum(["queue", "job", "topic"]),
-      description: z.string().nullable(),
-      truncated: z.boolean(),
-      entries: z.array(
-        z.object({
-          messageId: z.string(),
-          tenantId: z.string(),
-          attempts: z.number(),
-          failedAt: z.string(),
-          reason: z.string(),
-          error: z.string().nullable(),
-          dataPreview: z.string(),
-          consumer: z.string().optional(),
-          eventId: z.string().optional(),
-          replayAvailable: z.boolean().optional(),
-        }),
-      ),
-    }),
-  ),
+const deadLetterEntrySchema: z.ZodType<SyncDeadLetterEntry> = z.object({
+  messageId: z.string(),
+  tenantId: z.string(),
+  attempts: z.number(),
+  failedAt: z.string(),
+  reason: z.string(),
+  error: z.string().nullable(),
+  dataPreview: z.string(),
+  streamSequence: z.number().optional(),
+  dataPreviewTruncated: z.boolean().optional(),
+  dataPreviewLimitBytes: z.number().optional(),
+  consumer: z.string().optional(),
+  eventId: z.string().optional(),
+  replayAvailable: z.boolean().optional(),
 });
+const deadLetterStoreSchema = z.object({
+  name: z.string(),
+  kind: z.enum(["queue", "job", "topic"]),
+  description: z.string().nullable(),
+  truncated: z.boolean(),
+  entries: z.array(deadLetterEntrySchema),
+});
+const deadLettersPayload: z.ZodType<DeadLettersPayload> = z.object({ stores: z.array(deadLetterStoreSchema) });
+const deadLetterPageSchema: z.ZodType<SyncDeadLetterPage> = z.object({
+  store: deadLetterStoreSchema,
+  nextCursor: z.string().nullable(),
+  sampledAt: z.string(),
+});
+const deadLetterDetailSchema: z.ZodType<SyncDeadLetterDetail> = z.object({ entry: deadLetterEntrySchema, sampledAt: z.string() });
 const schedulesPayload: z.ZodType<SchedulesPayload> = z.object({
   schedules: z.array(
     z.object({
@@ -182,11 +192,13 @@ const upstreamFailure = (status: number, body: unknown): Result<never> => {
   const base =
     status === 404
       ? err.notFound("")
-      : status === 400
-        ? err.badInput("")
-        : status === 401 || status === 403
-          ? err.forbidden()
-          : err.internal();
+      : status === 409
+        ? err.conflict("")
+        : status === 400
+          ? err.badInput("")
+          : status === 401 || status === 403
+            ? err.forbidden()
+            : err.internal();
   return fail({ ...base, message });
 };
 
@@ -245,9 +257,16 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
     return app ? ok(app) : fail(err.notFound("App"));
   };
 
-  const overview = async (credentials: SyncOpsCredentials): Promise<SyncOverview> => {
-    const apps = await loadApps();
-    const result: SyncOverview = { apps: [], deadLetters: [], truncatedStores: [], resources: [], schedules: [] };
+  const overview = async (credentials: SyncOpsCredentials, filters: SyncOverviewFilters = {}): Promise<SyncOverview> => {
+    const apps = (await loadApps()).filter((app) => !filters.app || app.id === filters.app);
+    const result: SyncOverview = {
+      sampledAt: new Date().toISOString(),
+      apps: [],
+      deadLetters: [],
+      truncatedStores: [],
+      resources: [],
+      schedules: [],
+    };
     const perApp = await Promise.all(
       apps.map(async (app) => {
         const [resources, deadLetters, schedules] = await Promise.all([
@@ -298,8 +317,23 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
         for (const schedule of schedules.data.schedules) result.schedules.push({ ...schedule, appId: app.id, appName: app.name });
       }
     }
-    result.deadLetters.sort((left, right) => right.failedAt.localeCompare(left.failedAt));
+    result.deadLetters.sort((left, right) => left.failedAt.localeCompare(right.failedAt));
     result.schedules.sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
+    if (filters.resource) {
+      result.resources = result.resources.filter((entry) => entry.id === filters.resource);
+      result.deadLetters = result.deadLetters.filter((entry) => entry.store === filters.resource);
+      result.schedules = result.schedules.filter((entry) => entry.schedulerId === filters.resource || entry.id === filters.resource);
+      result.truncatedStores = result.truncatedStores.filter((entry) => entry.split("/").slice(2).join("/") === filters.resource);
+    }
+    if (filters.problems) {
+      result.resources = result.resources.filter(needsAttention);
+      result.schedules = result.schedules.filter((entry) => entry.failureCount > 0 || entry.lastError !== null || !entry.handlerAvailable);
+      const affected = new Set([...result.resources, ...result.deadLetters, ...result.schedules].map((entry) => entry.appId));
+      result.apps = result.apps.filter(
+        (entry) =>
+          affected.has(entry.appId) || entry.status !== "ok" || entry.health?.state !== "ready" || entry.health.connection !== "connected",
+      );
+    }
     return result;
   };
 
@@ -310,6 +344,30 @@ export const createSyncOpsService = (dependencies: SyncOpsServiceDependencies) =
 
   return {
     overview,
+    listDeadLetters: (
+      input: { appId: string; kind: SyncDeadLetterKind; store: string; limit?: number; cursor?: string },
+      credentials: SyncOpsCredentials,
+    ) =>
+      withApp(input.appId, (app) => {
+        const query = new URLSearchParams();
+        if (input.limit !== undefined) query.set("limit", String(input.limit));
+        if (input.cursor !== undefined) query.set("cursor", input.cursor);
+        return call(app, `/dead-letters/${input.kind}/${encodeURIComponent(input.store)}?${query}`, credentials, {
+          schema: deadLetterPageSchema,
+        });
+      }),
+    getDeadLetter: (
+      input: { appId: string; kind: SyncDeadLetterKind; store: string; messageId: string; sequence?: number },
+      credentials: SyncOpsCredentials,
+    ) =>
+      withApp(input.appId, (app) =>
+        call(
+          app,
+          `/dead-letters/${input.kind}/${encodeURIComponent(input.store)}/${encodeURIComponent(input.messageId)}${input.sequence === undefined ? "" : `?sequence=${input.sequence}`}`,
+          credentials,
+          { schema: deadLetterDetailSchema },
+        ),
+      ),
     requeueDeadLetter: (
       input: { appId: string; kind: SyncDeadLetterKind; store: string; messageId: string },
       credentials: SyncOpsCredentials,

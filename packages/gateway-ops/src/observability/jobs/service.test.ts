@@ -160,6 +160,7 @@ describe("partial scheduler availability", () => {
     const { syncOpsService } = await import("../sync/runtime");
     const { jobsObservabilityService } = await import("./service");
     const overview = spyOn(syncOpsService, "overview").mockResolvedValue({
+      sampledAt: "2026-09-08T12:00:00Z",
       apps: [
         { appId: "grids", appName: "Grids", appIcon: "", status: "unavailable", error: "Connection refused", health: null },
         { appId: "gateway-ops", appName: "Gateway Ops", appIcon: "", status: "ok", error: null, health: null },

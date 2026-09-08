@@ -28,7 +28,9 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
       const method = c.req.method;
       const allowed =
         method === "GET"
-          ? /^\/(resources|dead-letters|schedules)$/.test(path) || /^\/schedules\/[^/]+\/[^/]+\/runs\/[^/]+$/.test(path)
+          ? /^\/(resources|dead-letters|schedules)$/.test(path) ||
+            /^\/dead-letters\/(queue|job|topic)\/[^/]+(?:\/[^/]+)?$/.test(path) ||
+            /^\/schedules\/[^/]+\/[^/]+\/runs\/[^/]+$/.test(path)
           : method === "POST"
             ? /^\/dead-letters\/(queue|job)\/[^/]+\/requeue$/.test(path) ||
               /^\/dead-letters\/topic\/[^/]+\/replay$/.test(path) ||

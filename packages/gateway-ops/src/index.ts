@@ -18,6 +18,7 @@ import loggingWidgetRoutes, { loggingErrorsWidgetHandler } from "./observability
 import { metricsEndpoint } from "./observability/metrics/endpoint";
 import metricsPage from "./observability/metrics/page";
 import natsPage from "./observability/nats/page";
+import natsApiRoutes from "./observability/nats/api";
 import notificationsApiRoutes from "./observability/notifications/api";
 import notificationsPage from "./observability/notifications/page";
 import observabilityOverviewPage from "./observability/page";
@@ -90,6 +91,7 @@ const router = new Hono<AuthContext>()
   .route("/api/gateway/telemetry", telemetryApiRoutes)
   .route("/api/gateway/jobs", jobsApiRoutes)
   .route("/api/gateway/sync", syncApiRoutes)
+  .route("/api/gateway/nats", natsApiRoutes)
   .route("/api/gateway/workflows", workflowsApiRoutes)
   .route("/api/gateway", apiRoutes);
 

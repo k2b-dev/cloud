@@ -7,12 +7,14 @@ import type { PostgresDiagnostics, RedisDiagnostics } from "./data";
 import type { GatewayHealth } from "./gateway";
 import type { BackgroundJobRow } from "./jobs";
 import { getLogs, type LogSummary, trimLogMessages } from "./logs";
+import type { NatsSnapshot } from "./nats";
+import type { SyncOverview } from "./sync";
 import type { MetricsCollector } from "./metrics";
 import { apiGet, formatBytes, parseLookbackHours, printJsonOrTable, queryString, safeCollect, skippedCollect, truncate } from "./shared";
 import type { TelemetryEvent, TelemetryRouteRow } from "./telemetry";
 import { diagnoseRange } from "./telemetry";
 
-export const DIAGNOSE_SECTIONS = ["health", "logs", "telemetry", "jobs", "postgres", "redis", "metrics"] as const;
+export const DIAGNOSE_SECTIONS = ["health", "logs", "telemetry", "jobs", "postgres", "redis", "metrics", "sync", "nats"] as const;
 export type DiagnoseSection = (typeof DIAGNOSE_SECTIONS)[number];
 
 export const parseDiagnoseSections = (value: string | undefined, label: string): Set<DiagnoseSection> | null => {
@@ -66,7 +68,7 @@ export const instanceCommands = [
     flags: {
       since: flag.string({ default: "24h", description: "Lookback window like 30m, 6h, or 7d" }),
       logLimit: flag.int({ name: "log-limit", default: 20, min: 1, max: 50, description: "Recent error/warn logs per level" }),
-      include: flag.string({ description: "Comma-separated sections: health,logs,telemetry,postgres,redis,metrics" }),
+      include: flag.string({ description: "Comma-separated sections: health,logs,telemetry,jobs,postgres,redis,metrics,sync,nats" }),
       skip: flag.string({ description: "Comma-separated sections to skip" }),
       messageLength: flag.int({
         name: "message-length",
@@ -83,61 +85,84 @@ export const instanceCommands = [
       const include = parseDiagnoseSections(flags.include, "--include");
       const skip = parseDiagnoseSections(flags.skip, "--skip");
       const shouldCollect = (section: DiagnoseSection) => (!include || include.has(section)) && !skip?.has(section);
-      const [health, logSummary, logErrors, logWarnings, telemetrySummary, telemetryErrors, failingRoutes, jobs, postgres, redis, metrics] =
-        await Promise.all([
-          shouldCollect("health")
-            ? safeCollect("gateway health", () => apiGet<GatewayHealth>(ctx, "/api/gateway/health"))
-            : skippedCollect("gateway health"),
-          shouldCollect("logs")
-            ? safeCollect("log summary", () => apiGet<LogSummary>(ctx, "/api/logging/summary"))
-            : skippedCollect("log summary"),
-          shouldCollect("logs")
-            ? safeCollect("error logs", () => getLogs(ctx, { level: "error", sinceHours: hours, perPage: logLimit }))
-            : skippedCollect("error logs"),
-          shouldCollect("logs")
-            ? safeCollect("warning logs", () => getLogs(ctx, { level: "warn", sinceHours: hours, perPage: logLimit }))
-            : skippedCollect("warning logs"),
-          shouldCollect("telemetry")
-            ? safeCollect("telemetry summary", () =>
-                apiGet<Record<string, number | null>>(ctx, `/api/gateway/telemetry/summary${queryString({ hours })}`),
-              )
-            : skippedCollect("telemetry summary"),
-          shouldCollect("telemetry")
-            ? safeCollect("telemetry errors", () =>
-                apiGet<{ items: TelemetryEvent[]; total: number }>(
-                  ctx,
-                  `/api/gateway/telemetry/events${queryString({ errors: "1", hours, page: 1, per_page: Math.min(logLimit, 50) })}`,
-                ),
-              )
-            : skippedCollect("telemetry errors"),
-          // The single most useful line in the bundle: a total request count
-          // says nothing when one route dominates traffic, whereas a ranked
-          // list names the endpoints actually failing.
-          shouldCollect("telemetry")
-            ? safeCollect("failing routes", () =>
-                apiGet<{ items: TelemetryRouteRow[] }>(
-                  ctx,
-                  `/api/gateway/telemetry/routes${queryString({ range: diagnoseRange(hours), sort: "errorRate", errors: "1", limit: 10 })}`,
-                ),
-              )
-            : skippedCollect("failing routes"),
-          shouldCollect("jobs")
-            ? safeCollect("background jobs", () =>
-                apiGet<{ items: BackgroundJobRow[] }>(ctx, `/api/gateway/jobs${queryString({ health: "failed" })}`),
-              )
-            : skippedCollect("background jobs"),
-          shouldCollect("postgres")
-            ? safeCollect("postgres", () => apiGet<PostgresDiagnostics>(ctx, "/api/gateway/data/postgres"))
-            : skippedCollect("postgres"),
-          shouldCollect("redis")
-            ? safeCollect("redis", () => apiGet<RedisDiagnostics>(ctx, "/api/gateway/data/redis"))
-            : skippedCollect("redis"),
-          shouldCollect("metrics")
-            ? safeCollect("metrics", () =>
-                apiGet<{ generatedAt: string; series: number; collectors: MetricsCollector[] }>(ctx, "/api/gateway/metrics/snapshot"),
-              )
-            : skippedCollect("metrics"),
-        ]);
+      const [
+        health,
+        logSummary,
+        logErrors,
+        logWarnings,
+        telemetrySummary,
+        telemetryErrors,
+        failingRoutes,
+        jobs,
+        postgres,
+        redis,
+        metrics,
+        sync,
+        nats,
+      ] = await Promise.all([
+        shouldCollect("health")
+          ? safeCollect("gateway health", () => apiGet<GatewayHealth>(ctx, "/api/gateway/health"))
+          : skippedCollect("gateway health"),
+        shouldCollect("logs")
+          ? safeCollect("log summary", () => apiGet<LogSummary>(ctx, "/api/logging/summary"))
+          : skippedCollect("log summary"),
+        shouldCollect("logs")
+          ? safeCollect("error logs", () => getLogs(ctx, { level: "error", sinceHours: hours, perPage: logLimit }))
+          : skippedCollect("error logs"),
+        shouldCollect("logs")
+          ? safeCollect("warning logs", () => getLogs(ctx, { level: "warn", sinceHours: hours, perPage: logLimit }))
+          : skippedCollect("warning logs"),
+        shouldCollect("telemetry")
+          ? safeCollect("telemetry summary", () =>
+              apiGet<Record<string, number | null>>(ctx, `/api/gateway/telemetry/summary${queryString({ hours })}`),
+            )
+          : skippedCollect("telemetry summary"),
+        shouldCollect("telemetry")
+          ? safeCollect("telemetry errors", () =>
+              apiGet<{ items: TelemetryEvent[]; total: number }>(
+                ctx,
+                `/api/gateway/telemetry/events${queryString({ errors: "1", hours, page: 1, per_page: Math.min(logLimit, 50) })}`,
+              ),
+            )
+          : skippedCollect("telemetry errors"),
+        // The single most useful line in the bundle: a total request count
+        // says nothing when one route dominates traffic, whereas a ranked
+        // list names the endpoints actually failing.
+        shouldCollect("telemetry")
+          ? safeCollect("failing routes", () =>
+              apiGet<{ items: TelemetryRouteRow[] }>(
+                ctx,
+                `/api/gateway/telemetry/routes${queryString({ range: diagnoseRange(hours), sort: "errorRate", errors: "1", limit: 10 })}`,
+              ),
+            )
+          : skippedCollect("failing routes"),
+        shouldCollect("jobs")
+          ? safeCollect("background jobs", () =>
+              apiGet<{ items: BackgroundJobRow[] }>(ctx, `/api/gateway/jobs${queryString({ health: "failed" })}`),
+            )
+          : skippedCollect("background jobs"),
+        shouldCollect("postgres")
+          ? safeCollect("postgres", () => apiGet<PostgresDiagnostics>(ctx, "/api/gateway/data/postgres"))
+          : skippedCollect("postgres"),
+        shouldCollect("redis")
+          ? safeCollect("redis", () => apiGet<RedisDiagnostics>(ctx, "/api/gateway/data/redis"))
+          : skippedCollect("redis"),
+        shouldCollect("metrics")
+          ? safeCollect("metrics", () =>
+              apiGet<{ generatedAt: string; series: number; collectors: MetricsCollector[] }>(ctx, "/api/gateway/metrics/snapshot"),
+            )
+          : skippedCollect("metrics"),
+        shouldCollect("sync")
+          ? safeCollect("sync", async () => {
+              const snapshot = await apiGet<SyncOverview>(ctx, "/api/gateway/sync?problems=true");
+              // Support bundles need failure context, not user payload previews.
+              return { ...snapshot, deadLetters: snapshot.deadLetters.map(({ dataPreview: _preview, ...entry }) => entry) };
+            })
+          : skippedCollect("sync"),
+        shouldCollect("nats")
+          ? safeCollect("nats", () => apiGet<NatsSnapshot>(ctx, "/api/gateway/nats?problems=true&limit=20"))
+          : skippedCollect("nats"),
+      ]);
       const bundle = {
         generatedAt: new Date().toISOString(),
         lookbackHours: hours,
@@ -158,6 +183,8 @@ export const instanceCommands = [
         postgres,
         redis,
         metrics,
+        sync,
+        nats,
       };
       if (ctx.options.output === "json") {
         ctx.json(bundle);
@@ -201,6 +228,16 @@ export const instanceCommands = [
         const failed = metrics.data.collectors.filter((collector) => collector.status !== "ok");
         lines.push(`metrics: ${metrics.data.series} series, ${failed.length} failed collectors`);
       } else lines.push(`metrics: unavailable (${metrics.error})`);
+      if (sync.ok)
+        lines.push(
+          `sync: ${sync.data.resources.length} resources needing attention; ${sync.data.deadLetters.length}${sync.data.truncatedStores.length ? "+" : ""} sampled dead letters; ${sync.data.apps.filter((app) => app.status !== "ok").length} unavailable apps`,
+        );
+      else if (!("skipped" in sync)) lines.push(`sync: unavailable (${sync.error})`);
+      if (nats.ok)
+        lines.push(
+          `nats: cluster ${nats.data.cluster.status}; inventory ${nats.data.inventory.status}; ${nats.data.inventory.matchedTotal ?? "unknown"} streams needing attention`,
+        );
+      else if (!("skipped" in nats)) lines.push(`nats: unavailable (${nats.error})`);
       if (logErrors.ok && logErrors.data.entries.length > 0) {
         lines.push("", "recent errors:");
         for (const entry of logErrors.data.entries.slice(0, 5)) {

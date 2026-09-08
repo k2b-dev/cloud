@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import {
   getNatsClusterDiagnostics,
   getNatsDiagnostics,
@@ -6,6 +7,7 @@ import {
   type NatsDiagnosticsConfig,
   type NatsDiagnosticsDependencies,
 } from "./service";
+
 const config: NatsDiagnosticsConfig = { admin: { servers: ["nats://system"] }, application: { servers: ["nats://account"] } };
 const empty: NatsDiagnosticsConfig = { admin: { servers: [] }, application: { servers: [] } };
 const resource = (name = "S6_QD_test") => ({
@@ -195,4 +197,24 @@ describe("read-only NATS diagnostics", () => {
     expect((await getNatsInventorySummary(config, f.dependencies)).status).toBe("partial");
     expect((await getNatsInventorySummary(config, fake([{ total: 2, offset: 0, limit: 256 }]).dependencies)).status).toBe("partial");
   });
+});
+
+test("shared page/API diagnostics scans beyond the first broker page before filtering", async () => {
+  const first = resource("first");
+  first.config.metadata["sync.owner"] = "core";
+  const second = resource("later");
+  const f = fake([
+    { total: 2, offset: 0, limit: 1, streams: [first] },
+    { total: 2, offset: 1, limit: 1, streams: [second] },
+  ]);
+  const result = await readNatsDiagnostics(NatsQuerySchema.parse({ app: "mail", limit: 1 }), config, f.dependencies);
+  expect(result.inventory).toMatchObject({ status: "available", total: 1, matchedTotal: 1, accountTotal: 2, scannedTotal: 2 });
+  expect(result.inventory.streams.map((stream) => stream.name)).toEqual(["later"]);
+  expect(f.closed.sort()).toEqual(["account-summary", "system"]);
+});
+test("shared diagnostics preserves incomplete scan and consumer failure evidence", async () => {
+  const f = fake([{ total: 2, offset: 0, limit: 1, streams: [resource()] }, new Error("secret")]);
+  const result = await readNatsDiagnostics(NatsQuerySchema.parse({ app: "absent" }), config, f.dependencies);
+  expect(result.inventory).toMatchObject({ status: "partial", matchedTotal: null, total: 0, scannedTotal: 1 });
+  expect(JSON.stringify(result)).not.toContain("secret");
 });

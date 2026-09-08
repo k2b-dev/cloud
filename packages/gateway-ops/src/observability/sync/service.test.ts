@@ -128,8 +128,8 @@ describe("sync ops aggregation", () => {
       ["grids", "ok", "ready"],
     ]);
     expect(overview.deadLetters.map((row) => [row.appId, row.store, row.messageId])).toEqual([
-      ["grids", "app-grids-queue", "app-grids-m1"],
       ["mail", "app-mail-queue", "app-mail-m1"],
+      ["grids", "app-grids-queue", "app-grids-m1"],
     ]);
     expect(overview.truncatedStores).toEqual(["mail/queue/app-mail-queue"]);
     expect(overview.resources.map((row) => [row.appId, row.kind, row.deadLetters])).toEqual([
@@ -385,4 +385,64 @@ test("aggregates topic recovery metadata and routes replay through Core without 
     method: "POST",
     body: JSON.stringify({ messageId: "42", consumer: "postgres-writer", tenantId: "ops" }),
   });
+});
+
+test("DLQ pages and details preserve encoded store identity, cursor and payload bounds", async () => {
+  const entry = {
+    messageId: "message:id",
+    tenantId: "tenant",
+    attempts: 3,
+    failedAt: "2026-09-08T12:00:00.000Z",
+    reason: "failed",
+    error: "complete error",
+    dataPreview: "{}",
+    streamSequence: 42,
+    dataPreviewTruncated: false,
+    dataPreviewLimitBytes: 16384,
+  };
+  const { calls, fetch } = fakeFetch((call) =>
+    new URL(call.url).pathname.endsWith("message%3Aid")
+      ? json({ entry, sampledAt: "2026-09-08T12:00:00.000Z" })
+      : json({
+          store: { name: "mail:hydrate", kind: "job", description: null, entries: [entry], truncated: true },
+          nextCursor: "42",
+          sampledAt: "2026-09-08T12:00:00.000Z",
+        }),
+  );
+  const service = createSyncOpsService({ listApps: async () => [app("mail")], fetch, coreOrigin: async () => "http://core:3000" });
+  const page = await service.listDeadLetters({ appId: "mail", kind: "job", store: "mail:hydrate", limit: 10, cursor: "30" }, credentials);
+  expect(page).toMatchObject({ ok: true, data: { nextCursor: "42", store: { entries: [entry] } } });
+  expect(calls[0]?.url).toBe("http://core:3000/api/admin/sync/mail/dead-letters/job/mail%3Ahydrate?limit=10&cursor=30");
+  const detail = await service.getDeadLetter(
+    { appId: "mail", kind: "job", store: "mail:hydrate", messageId: "message:id", sequence: 42 },
+    credentials,
+  );
+  expect(detail).toMatchObject({ ok: true, data: { entry } });
+  expect(calls[1]?.url).toContain("/mail%3Ahydrate/message%3Aid?sequence=42");
+  expect(calls.every((call) => call.method === "GET" && call.headers.get("cookie") === credentials.cookie)).toBe(true);
+});
+
+test("overview filters target apps before dispatch and retains only affected resources", async () => {
+  const { calls, fetch } = fakeFetch((call) => {
+    if (call.url.endsWith("/resources"))
+      return json({
+        health,
+        resources: [
+          { namespace: "dev", kind: "queue", id: "broken", owner: "mail", state: "failed", natsNames: [] },
+          { namespace: "dev", kind: "queue", id: "healthy", owner: "mail", state: "ready", natsNames: [] },
+        ],
+      });
+    return json(call.url.endsWith("/schedules") ? { schedules: [] } : { stores: [] });
+  });
+  const service = createSyncOpsService({
+    listApps: async () => [app("mail"), app("pulse")],
+    fetch,
+    coreOrigin: async () => "http://core:3000",
+  });
+  const result = await service.overview(credentials, { app: "mail", resource: "broken", problems: true });
+  expect(result.resources.map((entry) => entry.id)).toEqual(["broken"]);
+  expect(result.apps.map((entry) => entry.appId)).toEqual(["mail"]);
+  expect(Number.isFinite(Date.parse(result.sampledAt))).toBe(true);
+  expect(calls).toHaveLength(3);
+  expect(calls.every((call) => call.url.includes("/sync/mail/"))).toBe(true);
 });

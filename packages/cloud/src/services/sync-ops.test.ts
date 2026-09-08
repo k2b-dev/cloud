@@ -23,6 +23,20 @@ const fakeStore = (entries: DeadLetter<unknown>[]) => {
   const calls: Array<{ op: "requeue" | "delete"; messageId: string; idempotencyKey?: string }> = [];
   const store: DeadLetterStore<unknown> = {
     list: async ({ limit } = {}) => items.slice(0, limit ?? items.length),
+    page: async ({ limit = 100, cursor } = {}) => {
+      const start = cursor === undefined ? 0 : Number(cursor);
+      return {
+        entries: entries
+          .slice(start, start + limit)
+          .filter((entry) => items.includes(entry))
+          .map((entry) => ({ ...entry, streamSequence: entries.indexOf(entry) + 1 })),
+        nextCursor: start + limit < entries.length ? String(start + limit) : null,
+      };
+    },
+    get: async ({ messageId, streamSequence }) => {
+      const entry = entries[streamSequence - 1];
+      return entry && entry.messageId === messageId && items.includes(entry) ? { ...entry, streamSequence } : null;
+    },
     requeue: async ({ messageId, idempotencyKey }) => {
       calls.push({ op: "requeue", messageId, idempotencyKey });
       const index = items.findIndex((item) => item.messageId === messageId);
@@ -108,6 +122,37 @@ const harness = () => {
 };
 
 describe("sync ops routes", () => {
+  test("pages one store and reads bounded UTF-8 details without losing error or tenant", async () => {
+    const { controls, json } = harness();
+    const store = fakeStore([deadLetter("a"), deadLetter("b", { text: "ü".repeat(20_000) }), deadLetter("c")]);
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: store.store });
+    const first = await json("/dead-letters/queue/mail?limit=2");
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({
+      nextCursor: "2",
+      store: {
+        truncated: true,
+        entries: [
+          { messageId: "a", streamSequence: 1 },
+          { messageId: "b", streamSequence: 2 },
+        ],
+      },
+    });
+    const next = await json("/dead-letters/queue/mail?limit=2&cursor=2");
+    expect(next.body).toMatchObject({ nextCursor: null, store: { entries: [{ messageId: "c" }] } });
+    const detail = await json("/dead-letters/queue/mail/b?sequence=2");
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({
+      entry: { messageId: "b", error: "boom", tenantId: "default", dataPreviewTruncated: true, dataPreviewLimitBytes: 16_384 },
+    });
+    expect(new TextEncoder().encode((detail.body.entry as { dataPreview: string }).dataPreview).length).toBeLessThanOrEqual(16_384);
+    expect((await json("/dead-letters/queue/mail/b")).status).toBe(400);
+    expect((await json("/dead-letters/queue/mail/b?sequence=1")).status).toBe(404);
+    expect((await json("/dead-letters/queue/mail?cursor=bad")).status).toBe(400);
+    expect((await json("/dead-letters/queue/mail?limit=101")).status).toBe(400);
+    expect((await json("/dead-letters/queue/missing")).status).toBe(404);
+  });
+
   test("reports declared resources with local health", async () => {
     const { json } = harness();
     const { status, body } = await json("/resources");
@@ -140,6 +185,9 @@ describe("sync ops routes", () => {
             reason: "max attempts exhausted",
             error: "boom",
             dataPreview: '{"key":"a"}',
+            dataPreviewLimitBytes: 1024,
+            dataPreviewTruncated: false,
+            streamSequence: 1,
           },
           expect.objectContaining({ messageId: "b" }),
         ],
@@ -147,6 +195,20 @@ describe("sync ops routes", () => {
       { name: "reindex", kind: "job", description: null, truncated: false, entries: [] },
     ]);
     expect((await json("/dead-letters?limit=500")).status).toBe(400);
+  });
+
+  test("preserves the safe preview fallback for unserializable diagnostic values", async () => {
+    const { controls, json } = harness();
+    const value = {
+      toJSON() {
+        throw new Error("cannot serialize");
+      },
+    };
+    const store = fakeStore([deadLetter("a", value)]);
+    controls.push({ namespace: "test", owner: "test", id: "mail", kind: "queue", deadLetters: store.store });
+    expect((await json("/dead-letters/queue/mail/a?sequence=1")).body).toMatchObject({
+      entry: { dataPreview: "[unserializable]", dataPreviewTruncated: false },
+    });
   });
 
   test("bounds the payload preview", async () => {

@@ -80,3 +80,54 @@ integration(
   },
   15_000,
 );
+
+integration(
+  "installed Sync patch paginates queue failures after cursor deletion and reads exact details",
+  async () => {
+    const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS ?? "nats://localhost:4222", ignoreClusterUpdates: true });
+    const sync = createSync({ connection, namespace: `cloud-dlq-pages-${crypto.randomUUID()}`, application: "test" });
+    const queue = sync.queue<{ value: number }>({ id: "work" });
+    const app = createSyncOpsRoutes(() => sync);
+    try {
+      await sync.ready();
+      const reader = await queue.reader();
+      try {
+        for (let value = 1; value <= 3; value++) {
+          await queue.send({ data: { value } });
+          const delivery = await reader.receive({ waitMs: 2_000 });
+          expect(delivery).not.toBeNull();
+          await delivery!.deadLetter({ reason: "fixture", error: "original error" });
+        }
+      } finally {
+        await reader.close();
+      }
+      const firstResponse = await app.request("/dead-letters/queue/work?limit=2");
+      expect(firstResponse.status).toBe(200);
+      const first = (await firstResponse.json()) as {
+        nextCursor: string;
+        store: { entries: { messageId: string; streamSequence: number }[] };
+      };
+      expect(first.store.entries).toHaveLength(2);
+      const entry = first.store.entries[1]!;
+      const detail = await app.request(`/dead-letters/queue/work/${encodeURIComponent(entry.messageId)}?sequence=${entry.streamSequence}`);
+      expect(detail.status).toBe(200);
+      expect(await detail.json()).toMatchObject({ entry: { error: "original error", dataPreview: '{"value":2}' } });
+      await queue.deadLetters.delete({ messageId: entry.messageId });
+      const second = await app.request(`/dead-letters/queue/work?limit=2&cursor=${first.nextCursor}`);
+      expect(await second.json()).toMatchObject({ nextCursor: null, store: { entries: [{ dataPreview: '{"value":3}' }] } });
+      expect(
+        (await app.request(`/dead-letters/queue/work/${encodeURIComponent(entry.messageId)}?sequence=${entry.streamSequence}`)).status,
+      ).toBe(404);
+    } finally {
+      const resources = await sync.resources();
+      await sync.drain();
+      for (const name of new Set(resources.flatMap((resource) => resource.natsNames))) {
+        const result = await connection.request(`$JS.API.STREAM.DELETE.${name}`);
+        const data = result.json<{ success?: boolean; error?: { err_code?: number } }>();
+        if (!data.success && data.error?.err_code !== 10059) throw Error(`Fixture stream cleanup failed: ${name}`);
+      }
+      await connection.drain();
+    }
+  },
+  15_000,
+);

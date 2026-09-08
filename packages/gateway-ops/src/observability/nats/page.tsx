@@ -1,27 +1,22 @@
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
-import { formatBytes, formatNumber } from "@valentinkolb/cloud/shared";
+import { Button, ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatusBadge, TextInput } from "@k2b/ui";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { formatBytes, formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import { natsMessages } from "./messages";
 import { nodeReplicaStatus, replicaStatus, replicaTone } from "./replica-status";
-import { getNatsDiagnostics, type NatsConsumer, type NatsNode, type NatsStream } from "./service";
+import type { NatsConsumer, NatsNode, NatsStream } from "./service";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
   const { t } = natsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const offset = (key: string) => {
-    const value = Number(url.searchParams.get(key) ?? 0);
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
-  };
-  const selected = url.searchParams.get("stream") ?? "";
-  const consumerStream = /^[A-Za-z0-9_-]+$/.test(selected) ? selected : undefined;
-  const diagnostics = await getNatsDiagnostics({
-    streamOffset: offset("offset"),
-    consumerStream,
-    consumerOffset: offset("consumerOffset"),
-  });
+  const parsed = NatsQuerySchema.safeParse(Object.fromEntries(url.searchParams));
+  const query = parsed.success ? parsed.data : NatsQuerySchema.parse({});
+  const consumerStream = query.stream;
+  const diagnostics = await readNatsDiagnostics(query);
   const { cluster, inventory } = diagnostics;
   const bytes = (value: number | null) => (value === null ? t.unknown : formatBytes(value, { locale }));
   const count = (value: number | null) => (value === null ? t.unknown : formatNumber(value, { locale }));
@@ -50,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
     { id: "version", header: t.version, value: (row) => row.version },
     {
       id: "state",
-      header: t.jetstreamStatus,
+      header: t.metadataStatus,
       value: (row) => t[nodeReplicaStatus(row, cluster.nodes)],
     },
     { id: "leader", header: t.leader, value: (row) => row.meta?.leader ?? t.unknown },
@@ -97,12 +92,19 @@ export default ssr<AuthContext>(async (c) => {
         <div>
           <h1 class="text-base font-semibold text-primary">NATS</h1>
           <p class="mt-1 text-xs text-dimmed">{t.description}</p>
+          <p class="mt-1 text-xs text-dimmed">
+            {t.sampledAt}: <time datetime={diagnostics.sampledAt}>{formatDateTime(diagnostics.sampledAt, dateConfig)}</time>
+          </p>
         </div>
-        <div>
+        <div class="flex gap-2">
+          <ButtonLink href={href({})} variant="secondary" size="sm">
+            {t.refresh}
+          </ButtonLink>
           <ButtonLink href="/admin/observability/sync" variant="secondary" size="sm">
             {t.sync}
           </ButtonLink>
         </div>
+        {!parsed.success ? <NoticeCard tone="warning" title={t.invalidFilters} /> : null}
         {cluster.status === "not_configured" ? (
           <NoticeCard tone="info" title={t.cluster} detail={t.notConfigured} />
         ) : cluster.status !== "available" ? (
@@ -134,10 +136,36 @@ export default ssr<AuthContext>(async (c) => {
             detail={inventory.status === "not_configured" ? t.inventoryMissing : t.inventoryIssue}
           />
         ) : null}
+        <form method="get" action="/admin/observability/nats" class="paper p-3 flex flex-wrap items-end gap-3">
+          <TextInput name="app" label={t.appFilter} value={query.app ?? ""} />
+          <TextInput name="namespace" label={t.namespaceFilter} value={query.namespace ?? ""} />
+          <TextInput name="resource" label={t.resourceFilter} value={query.resource ?? ""} type="search" />
+          {query.problems === "true" ? <input type="hidden" name="problems" value="true" /> : null}
+          <Button type="submit" size="sm">
+            {t.applyFilters}
+          </Button>
+          <ButtonLink
+            href={href({ problems: query.problems === "true" ? null : "true", offset: null, consumerOffset: null })}
+            variant="secondary"
+            size="sm"
+          >
+            {query.problems === "true" ? t.showAll : t.showProblems}
+          </ButtonLink>
+          <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
+            {t.clearFilters}
+          </ButtonLink>
+        </form>
+        <p class="text-xs text-dimmed">
+          {t.problemStreams}: {count(inventory.accountTotal === null ? null : inventory.summary.problemStreams)} · {t.deadLetterStreams}:{" "}
+          {count(inventory.accountTotal === null ? null : inventory.summary.deadLetterStreams)} · {t.replicationProblems}:{" "}
+          {count(inventory.accountTotal === null ? null : inventory.summary.replicationProblems)}
+          {inventory.matchedTotal === null ? ` · ${t.partial}` : ""}
+        </p>
         <section class="paper overflow-hidden">
           <div class="px-3 py-2">
             <h2 class="text-xs font-semibold">
-              {t.streams} · {count(inventory.total)}
+              {t.streams} · {count(inventory.accountTotal === null ? null : inventory.total)}
+              {inventory.accountTotal !== null && inventory.matchedTotal === null ? "+" : ""}
             </h2>
             <p class="text-[10px] text-dimmed">{t.accountScope}</p>
           </div>
@@ -150,9 +178,15 @@ export default ssr<AuthContext>(async (c) => {
             empty={t.empty}
             renderCell={({ row, col, value, render }) =>
               col.id === "name" ? (
-                <a class="link font-mono text-xs" href={href({ stream: row.name, consumerOffset: null })}>
+                <a class="link font-mono text-xs" href={`${href({ stream: row.name, consumerOffset: null })}#nats-consumers`}>
                   {row.name}
                 </a>
+              ) : col.id === "messages" && row.deadLetter ? (
+                <StatusBadge
+                  tone={row.messages > 0 ? "warning" : "neutral"}
+                  label={`${count(row.messages)} ${t.deadLetters}`}
+                  variant="dot"
+                />
               ) : col.id === "replicas" ? (
                 <span class="inline-flex items-center gap-2">
                   {row.replicas} · {replicaState(row.cluster, row.replicas)}
@@ -168,8 +202,8 @@ export default ssr<AuthContext>(async (c) => {
           />
           <div class="flex gap-2 px-3 py-2">
             {inventory.offset > 0 ? (
-              <ButtonLink href={href({ offset: null })} variant="secondary" size="xs">
-                {t.first}
+              <ButtonLink href={href({ offset: Math.max(0, inventory.offset - inventory.limit) })} variant="secondary" size="xs">
+                {t.previous}
               </ButtonLink>
             ) : null}
             {inventory.nextOffset !== null ? (
@@ -179,7 +213,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : null}
           </div>
         </section>
-        <section class="paper overflow-hidden">
+        <section id="nats-consumers" class="paper overflow-hidden">
           <div class="px-3 py-2">
             <h2 class="text-xs font-semibold">
               {t.consumers}

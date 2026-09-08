@@ -27,6 +27,9 @@ export type SyncDeadLetterEntry = {
   error: string | null;
   /** Bounded JSON preview of the payload; the full message stays in the store. */
   dataPreview: string;
+  streamSequence?: number;
+  dataPreviewTruncated?: boolean;
+  dataPreviewLimitBytes?: number;
   consumer?: string;
   eventId?: string;
   replayAvailable?: boolean;
@@ -61,28 +64,35 @@ export type SyncScheduleView = {
 
 export const SYNC_OPS_DEAD_LETTER_LIMIT = { default: 20, max: 100 } as const;
 const DATA_PREVIEW_BYTES = 1_024;
+const DETAIL_PREVIEW_BYTES = 16_384;
 const RUN_AWAIT_TIMEOUT = { default: 5_000, max: 30_000 } as const;
 
 const iso = (value: Date): string => value.toISOString();
 
-const previewData = (data: unknown): string => {
+const previewData = (data: unknown, limit = DATA_PREVIEW_BYTES) => {
   let json: string;
   try {
     json = JSON.stringify(data) ?? "null";
   } catch {
-    return "[unserializable]";
+    return { dataPreview: "[unserializable]", dataPreviewTruncated: false, dataPreviewLimitBytes: limit };
   }
-  return json.length > DATA_PREVIEW_BYTES ? `${json.slice(0, DATA_PREVIEW_BYTES)}…` : json;
+  const bytes = new TextEncoder().encode(json);
+  return {
+    dataPreview: bytes.length > limit ? `${new TextDecoder().decode(bytes.slice(0, limit - 3), { stream: true })}…` : json,
+    dataPreviewTruncated: bytes.length > limit,
+    dataPreviewLimitBytes: limit,
+  };
 };
 
-const toEntry = (entry: DeadLetter<unknown>): SyncDeadLetterEntry => ({
+const toEntry = (entry: DeadLetter<unknown> & { streamSequence?: number }, limit = DATA_PREVIEW_BYTES): SyncDeadLetterEntry => ({
   messageId: entry.messageId,
   tenantId: entry.tenantId,
   attempts: entry.attempts,
   failedAt: iso(entry.failedAt),
   reason: entry.reason,
   error: entry.error ?? null,
-  dataPreview: previewData(entry.data),
+  ...previewData(entry.data, limit),
+  ...(entry.streamSequence !== undefined ? { streamSequence: entry.streamSequence } : {}),
 });
 
 const toScheduleView = (schedulerId: string, info: ScheduleInfo): SyncScheduleView => ({
@@ -120,6 +130,14 @@ const asFailure = <T>(error: unknown, notFoundLabel: string): Result<T> => {
 const DeadLettersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(SYNC_OPS_DEAD_LETTER_LIMIT.max).default(SYNC_OPS_DEAD_LETTER_LIMIT.default),
 });
+const DeadLetterPageQuerySchema = DeadLettersQuerySchema.extend({
+  cursor: z
+    .string()
+    .regex(/^[0-9]+$/)
+    .max(16)
+    .optional(),
+});
+const DeadLetterDetailQuerySchema = z.object({ sequence: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional() });
 const DeadLetterNameParamSchema = z.object({ kind: z.enum(["queue", "job", "topic"]), name: z.string().min(1).max(96) });
 const DeadLetterEntryParamSchema = DeadLetterNameParamSchema.extend({ messageId: z.string().min(1).max(256) });
 const ReplayBodySchema = z.object({
@@ -158,6 +176,23 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
   const findStore = (kind: SyncDeadLetterKind, name: string) => stores().find((entry) => entry.kind === kind && entry.id === name) ?? null;
   const findScheduler = (name: string) => schedulers().find((entry) => entry.id === name) ?? null;
 
+  const readPage = async (store: NonNullable<ReturnType<typeof findStore>>, limit: number, cursor?: string) => {
+    if (store.kind === "topic") {
+      const entries = await store.deadLetters.list({ limit: limit + 1, after: cursor });
+      return {
+        entries: entries.slice(0, limit).map((entry) => ({
+          ...toEntry(entry),
+          consumer: entry.consumer,
+          eventId: entry.eventId,
+          replayAvailable: entry.replayAvailable,
+        })),
+        nextCursor: entries.length > limit ? entries[limit - 1]!.messageId : null,
+      };
+    }
+    const page = await store.deadLetters.page({ limit, cursor });
+    return { entries: page.entries.map((entry) => toEntry(entry)), nextCursor: page.nextCursor };
+  };
+
   return (
     new Hono<AuthContext>()
       /** Declared resources with their provisioning state plus the local runtime health. */
@@ -172,26 +207,79 @@ export const createSyncOpsRoutes = (getSync: () => Sync, dependencies: SyncOpsRo
         const { limit } = c.req.valid("query");
         const entries = await Promise.all(
           stores().map(async (registration): Promise<SyncDeadLetterStoreView> => {
-            const page: SyncDeadLetterEntry[] =
-              registration.kind === "topic"
-                ? (await registration.deadLetters.list({ limit: limit + 1 })).map((entry) => ({
-                    ...toEntry(entry),
-                    consumer: entry.consumer,
-                    eventId: entry.eventId,
-                    replayAvailable: entry.replayAvailable,
-                  }))
-                : (await registration.deadLetters.list({ limit: limit + 1 })).map(toEntry);
+            const page = await readPage(registration, limit);
             return {
               name: registration.id,
               kind: registration.kind,
               description: null,
-              entries: page.slice(0, limit),
-              truncated: page.length > limit,
+              entries: page.entries,
+              truncated: page.nextCursor !== null,
             };
           }),
         );
         return respond(c, ok({ stores: entries }));
       })
+
+      /** One oldest-first broker page. Sequence cursors survive previous entry deletion. */
+      .get("/dead-letters/:kind/:name", v("param", DeadLetterNameParamSchema), v("query", DeadLetterPageQuerySchema), async (c) => {
+        const { kind, name } = c.req.valid("param");
+        const { limit, cursor } = c.req.valid("query");
+        const store = findStore(kind, name);
+        if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
+        try {
+          const page = await readPage(store, limit, cursor);
+          return respond(
+            c,
+            ok({
+              store: { name, kind, description: null, entries: page.entries, truncated: page.nextCursor !== null },
+              nextCursor: page.nextCursor,
+              sampledAt: new Date().toISOString(),
+            }),
+          );
+        } catch (error) {
+          return respond(c, asFailure(error, "Dead-letter store"));
+        }
+      })
+      .get(
+        "/dead-letters/:kind/:name/:messageId",
+        v("param", DeadLetterEntryParamSchema),
+        v("query", DeadLetterDetailQuerySchema),
+        async (c) => {
+          const { kind, name, messageId } = c.req.valid("param");
+          const { sequence } = c.req.valid("query");
+          const store = findStore(kind, name);
+          if (!store) return respond(c, fail(err.notFound("Dead-letter store")));
+          if (store.kind !== "topic" && sequence === undefined)
+            return respond(c, fail(err.badInput("sequence is required for queue and job details")));
+          try {
+            if (store.kind === "topic") {
+              const entry = await store.deadLetters.get({ messageId });
+              if (!entry) return respond(c, fail(err.notFound("Dead letter")));
+              return respond(
+                c,
+                ok({
+                  entry: {
+                    ...toEntry(entry, DETAIL_PREVIEW_BYTES),
+                    consumer: entry.consumer,
+                    eventId: entry.eventId,
+                    replayAvailable: entry.replayAvailable,
+                  },
+                  sampledAt: new Date().toISOString(),
+                }),
+              );
+            }
+            const entry = await store.deadLetters.get({ messageId, streamSequence: sequence! });
+            return respond(
+              c,
+              entry
+                ? ok({ entry: toEntry(entry, DETAIL_PREVIEW_BYTES), sampledAt: new Date().toISOString() })
+                : fail(err.notFound("Dead letter")),
+            );
+          } catch (error) {
+            return respond(c, asFailure(error, "Dead letter"));
+          }
+        },
+      )
 
       /** Re-enqueue one dead letter with a fresh idempotency key; removes the DLQ entry. */
       .post("/dead-letters/:kind/:name/requeue", v("param", DeadLetterNameParamSchema), v("json", RequeueBodySchema), async (c) => {

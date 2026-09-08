@@ -1,9 +1,23 @@
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
+import {
+  Button,
+  Checkbox,
+  TextInput,
+  ButtonLink,
+  DataTable,
+  type DataTableColumn,
+  NoticeCard,
+  StatCell,
+  StatGrid,
+  StatusBadge,
+  type StatusTone,
+} from "@k2b/ui";
 import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { formatDateTime, formatNumber } from "@valentinkolb/cloud/shared";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
+import DeadLetterDetail from "./_components/DeadLetterDetail";
+import { syncOpsMessages } from "./ops-messages";
 import DeadLetterActions from "./_components/DeadLetterActions.island";
 import RunScheduleNowButton from "./_components/RunScheduleNowButton.island";
 import { syncOpsService } from "./runtime";
@@ -40,16 +54,52 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
-  const overview = await syncOpsService.overview(syncOpsCredentials(c.req.raw));
-  const selectedResource = new URL(c.req.url).searchParams.get("resource");
+  const { t: o } = syncOpsMessages.resolve([locale]);
+  const url = new URL(c.req.url);
+  const selectedResource = url.searchParams.get("resource") || undefined;
+  const selectedApp = url.searchParams.get("app") || undefined;
+  const problems = ["true", "on"].includes(url.searchParams.get("problems") ?? "");
+  const credentials = syncOpsCredentials(c.req.raw);
+  const overview = await syncOpsService.overview(credentials, { app: selectedApp, resource: selectedResource, problems });
+  const href = (changes: Record<string, string | number | null | undefined>) => {
+    const params = new URLSearchParams(url.searchParams);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null || value === undefined) params.delete(key);
+      else params.set(key, String(value));
+    }
+    return `/admin/observability/sync?${params}`;
+  };
+  const storeApp = url.searchParams.get("storeApp");
+  const store = url.searchParams.get("store");
+  const kind = url.searchParams.get("kind");
+  const selector: Pick<SyncDeadLetterRow, "appId" | "store" | "kind"> | null =
+    storeApp && store && (kind === "queue" || kind === "job" || kind === "topic") ? { appId: storeApp, store, kind } : null;
+  const storePage = selector
+    ? await syncOpsService.listDeadLetters({ ...selector, limit: 20, cursor: url.searchParams.get("cursor") || undefined }, credentials)
+    : null;
+  const messageId = url.searchParams.get("message");
+  const sequenceValue = Number(url.searchParams.get("sequence"));
+  const sequence = Number.isSafeInteger(sequenceValue) && sequenceValue > 0 ? sequenceValue : undefined;
+  const detail = selector && messageId ? await syncOpsService.getDeadLetter({ ...selector, messageId, sequence }, credentials) : null;
+  const deadLetters =
+    storePage?.ok && selector
+      ? storePage.data.store.entries.map((entry) => ({
+          ...entry,
+          ...selector,
+          appName: selector.appId,
+          description: storePage.data.store.description,
+        }))
+      : selector
+        ? []
+        : overview.deadLetters;
+  const storeHref = (row: SyncDeadLetterRow) =>
+    href({ storeApp: row.appId, store: row.store, kind: row.kind, cursor: null, message: null, sequence: null });
   const number = (value: number) => formatNumber(value, { locale });
 
   const reachable = overview.apps.filter((app) => app.status === "ok");
   const unavailable = overview.apps.filter((app) => app.status !== "ok");
   const attention = overview.resources.filter(needsAttention);
-  const listedResources = overview.resources.filter((resource) =>
-    selectedResource ? resource.id === selectedResource : isListedResource(resource),
-  );
+  const listedResources = overview.resources.filter((resource) => selectedResource || isListedResource(resource));
   const failingSchedules = overview.schedules.filter((schedule) => schedule.failureCount > 0 || schedule.lastError);
 
   const appColumns: DataTableColumn<SyncAppRow>[] = [
@@ -88,6 +138,8 @@ export default ssr<AuthContext>(async (c) => {
     { id: "id", header: t.syncSchedule, value: (row) => row.id, cellClass: "font-mono text-[11px] max-w-[16rem] truncate" },
     { id: "cron", header: t.syncCron, value: (row) => `${row.cron} · ${row.timezone}`, cellClass: "font-mono text-[11px]" },
     { id: "nextRunAt", header: t.syncNextRun, value: (row) => row.nextRunAt },
+    { id: "handler", header: o.handler, value: (row) => (row.handlerAvailable ? o.available : o.unavailable) },
+    { id: "lastCompletedAt", header: o.lastCompleted, value: (row) => row.lastCompletedAt },
     { id: "runNumber", header: t.syncRuns, value: (row) => row.runNumber, align: "right" },
     { id: "failureCount", header: t.syncFailures, value: (row) => row.failureCount, align: "right" },
     { id: "lastError", header: t.syncLastError, value: (row) => row.lastError ?? "", cellClass: "max-w-[16rem] truncate" },
@@ -102,6 +154,25 @@ export default ssr<AuthContext>(async (c) => {
           <p class="mt-1 text-xs text-dimmed">{t.syncDescription}</p>
         </div>
 
+        <div class="flex flex-wrap items-end gap-3">
+          <p class="text-xs text-dimmed">
+            {o.sampledAt}: {formatDateTime(overview.sampledAt, dateConfig)}
+          </p>
+          <ButtonLink href={href({})} variant="secondary" size="sm">
+            {o.refresh}
+          </ButtonLink>
+        </div>
+        <form method="get" action="/admin/observability/sync" class="flex flex-wrap items-end gap-3">
+          <TextInput name="app" label={o.app} value={selectedApp ?? ""} />
+          <TextInput name="resource" label={o.resource} value={selectedResource ?? ""} />
+          <Checkbox name="problems" label={o.problems} value={problems} />
+          <Button type="submit" size="sm">
+            {o.filter}
+          </Button>
+          <ButtonLink href="/admin/observability/sync" variant="secondary" size="sm">
+            {o.clear}
+          </ButtonLink>
+        </form>
         <NoticeCard tone="info" icon="ti ti-layers-intersect" title={t.syncLayersTitle} detail={t.syncLayersNotice} />
         <div>
           <ButtonLink href="/admin/observability/nats" variant="secondary" size="sm">
@@ -169,25 +240,36 @@ export default ssr<AuthContext>(async (c) => {
                 return (
                   <StatusBadge
                     tone={healthTone(row)}
-                    label={row.status === "ok" ? (row.health?.state ?? t.unknown) : t.unavailable}
+                    label={row.status === "ok" ? (row.health ? o[row.health.state] : t.unknown) : t.unavailable}
                     variant="dot"
                     title={row.error ?? undefined}
                   />
                 );
               }
+              if (col.id === "connection" && row.health) return o[row.health.connection];
               if (typeof value === "number") return <span class="tabular-nums">{number(value)}</span>;
               return render(value ?? "—");
             }}
           />
         </section>
 
-        <section class="paper overflow-hidden">
+        <section id="sync-dead-letters" class="paper overflow-hidden">
           <div class="px-3 py-2">
             <h2 class="text-xs font-semibold text-primary">{t.syncDeadLetters}</h2>
-            <p class="text-[10px] text-dimmed">{t.syncDeadLettersHint}</p>
+            <p class="text-[10px] text-dimmed">{selector ? o.oldest : t.syncDeadLettersHint}</p>
+            <p class="text-xs text-dimmed">{selector ? `${selector.appId} / ${selector.store}` : o.overviewLimit}</p>
+            {selector ? (
+              <ButtonLink
+                href={href({ storeApp: null, store: null, kind: null, cursor: null, message: null, sequence: null })}
+                variant="secondary"
+                size="xs"
+              >
+                {o.clear}
+              </ButtonLink>
+            ) : null}
           </div>
           <DataTable
-            rows={overview.deadLetters}
+            rows={deadLetters}
             columns={deadLetterColumns}
             getRowId={(row) => `${row.appId}/${row.kind}/${row.store}/${row.messageId}`}
             density="compact"
@@ -197,18 +279,34 @@ export default ssr<AuthContext>(async (c) => {
             renderCell={({ row, col, value, render }) => {
               if (col.id === "actions")
                 return (
-                  <DeadLetterActions
-                    kind={row.kind}
-                    appId={row.appId}
-                    store={row.store}
-                    messageId={row.messageId}
-                    tenantId={row.tenantId}
-                    consumer={row.consumer}
-                    replayAvailable={row.replayAvailable}
-                  />
+                  <div class="flex flex-wrap items-center justify-end gap-2">
+                    <ButtonLink
+                      href={`${href({
+                        storeApp: row.appId,
+                        store: row.store,
+                        kind: row.kind,
+                        message: row.messageId,
+                        sequence: row.streamSequence,
+                      })}#sync-dead-letter-detail`}
+                      size="xs"
+                      variant="secondary"
+                    >
+                      {o.details}
+                    </ButtonLink>
+                    <DeadLetterActions
+                      kind={row.kind}
+                      appId={row.appId}
+                      store={row.store}
+                      messageId={row.messageId}
+                      tenantId={row.tenantId}
+                      consumer={row.consumer}
+                      replayAvailable={row.replayAvailable}
+                    />
+                  </div>
                 );
               if (col.id === "failedAt") return <span class="tabular-nums">{formatDateTime(row.failedAt, dateConfig)}</span>;
-              if (col.id === "store") return <span title={row.description ?? row.kind}>{`${row.store} · ${row.kind}`}</span>;
+              if (col.id === "store")
+                return <a class="link" href={`${storeHref(row)}#sync-dead-letters`} title={o.store}>{`${row.store} · ${row.kind}`}</a>;
               if (col.id === "reason")
                 return <span title={row.error ?? undefined}>{row.error ? `${row.reason} — ${row.error}` : row.reason}</span>;
               if (col.id === "payload") return <span title={row.dataPreview}>{row.dataPreview}</span>;
@@ -217,6 +315,27 @@ export default ssr<AuthContext>(async (c) => {
             }}
           />
         </section>
+
+        {storePage && !storePage.ok ? <NoticeCard tone="danger" title={o.pageError} detail={storePage.error.message} /> : null}
+        {storePage?.ok ? (
+          <div class="flex gap-2">
+            <ButtonLink href={href({ cursor: null, message: null, sequence: null })} variant="secondary" size="sm">
+              {o.first}
+            </ButtonLink>
+            {storePage.data.nextCursor ? (
+              <ButtonLink href={href({ cursor: storePage.data.nextCursor, message: null, sequence: null })} variant="secondary" size="sm">
+                {o.next}
+              </ButtonLink>
+            ) : null}
+          </div>
+        ) : null}
+        {detail ? (
+          detail.ok ? (
+            <DeadLetterDetail entry={detail.data.entry} closeHref={href({ message: null, sequence: null })} />
+          ) : (
+            <NoticeCard tone="danger" title={o.detailError} detail={detail.error.message} />
+          )
+        ) : null}
 
         <section class="paper overflow-hidden">
           <div class="px-3 py-2">
@@ -237,7 +356,14 @@ export default ssr<AuthContext>(async (c) => {
             class="max-h-[34rem] overflow-auto"
             empty={t.syncNoResources}
             renderCell={({ row, col, value, render }) => {
-              if (col.id === "state") return <StatusBadge tone={resourceTone(row.state)} label={row.state} variant="dot" />;
+              if (col.id === "state")
+                return (
+                  <StatusBadge
+                    tone={resourceTone(row.state)}
+                    label={row.state === "pending" ? o.provisioning : row.state === "failed" ? o.failed : o[row.state]}
+                    variant="dot"
+                  />
+                );
               if (col.id === "id" && row.natsNames[0])
                 return (
                   <a class="link" href={`/admin/observability/nats?stream=${encodeURIComponent(row.natsNames[0])}`}>
@@ -267,8 +393,20 @@ export default ssr<AuthContext>(async (c) => {
             class="max-h-[34rem] overflow-auto"
             empty={t.syncNoSchedules}
             renderCell={({ row, col, value, render }) => {
-              if (col.id === "actions") return <RunScheduleNowButton appId={row.appId} schedulerId={row.schedulerId} scheduleId={row.id} />;
-              if (col.id === "nextRunAt") return <span class="tabular-nums">{formatDateTime(row.nextRunAt, dateConfig)}</span>;
+              if (col.id === "actions")
+                return (
+                  <RunScheduleNowButton appId={row.appId} schedulerId={row.schedulerId} scheduleId={row.id} lastRunId={row.lastRunId} />
+                );
+              if (col.id === "nextRunAt" || col.id === "lastCompletedAt")
+                return <span class="tabular-nums">{typeof value === "string" ? formatDateTime(value, dateConfig) : "—"}</span>;
+              if (col.id === "handler")
+                return (
+                  <StatusBadge
+                    variant="dot"
+                    tone={row.handlerAvailable ? "ok" : "warning"}
+                    label={row.handlerAvailable ? o.available : o.unavailable}
+                  />
+                );
               if (col.id === "failureCount" && row.failureCount > 0) {
                 return <span class="tabular-nums font-semibold text-amber-600 dark:text-amber-400">{number(row.failureCount)}</span>;
               }

@@ -229,3 +229,18 @@ test("forwards topic replay as an operation-bound invocation", async () => {
     ).status,
   ).toBe(200);
 });
+
+test("forwards read-only DLQ page and detail queries through the invocation allowlist", async () => {
+  const forwarded: string[] = [];
+  const routes = mount({
+    fetch: async (input) => {
+      forwarded.push(String(input));
+      return Response.json({});
+    },
+  });
+  expect((await routes.request("/api/admin/sync/mail/dead-letters/queue/work?limit=20&cursor=42")).status).toBe(200);
+  expect((await routes.request("/api/admin/sync/mail/dead-letters/job/work/message?sequence=42")).status).toBe(200);
+  expect(forwarded[0]).toContain("/_internal/sync/dead-letters/queue/work?limit=20&cursor=42");
+  expect(forwarded[1]).toContain("/_internal/sync/dead-letters/job/work/message?sequence=42");
+  expect((await routes.request("/api/admin/sync/mail/dead-letters/other/work")).status).toBe(404);
+});

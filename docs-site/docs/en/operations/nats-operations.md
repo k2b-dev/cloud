@@ -20,6 +20,71 @@ upgrades, follow [Deployment requirements](/en/docs/operations/deployment-requir
 The NATS page is read-only: it does not change configuration, delete resources,
 or acknowledge work.
 
+## Find the affected work
+
+Both pages show the snapshot time and a **Refresh** action. They do not
+continuously monitor the installation. Reload after a recovery action or when
+comparing whether a backlog is shrinking.
+
+On NATS, filter by app owner, namespace, resource name, or problems. Filters
+apply to a bounded account scan before pagination. An incomplete scan is marked
+partial; its counts describe only the resources that were inspected. Metadata
+replication is the cluster's state, while RAM and storage usage belong to each
+node. Select a stream to inspect consumer backlog and acknowledgments.
+
+On Sync, filter by app ID, resource ID, or problems. The overview samples failures
+per store. Open a store to page through older retained failures without deleting
+newer entries. Store pages are ordered by broker sequence, oldest first. Each
+page is a new snapshot: concurrent processing or deletion can change the list.
+Open **Details** to read the message ID, tenant, original topic consumer and event,
+error, and a bounded payload preview. The stored message is unchanged.
+
+For schedules, check handler availability and the last completed run. **Run now**
+asks for confirmation, reports acceptance, and waits briefly for the outcome.
+If the run is still pending, use **Check result**; this does not start another
+run. An unavailable result is not reported as success. The UI reuses the request
+ID when retrying an unconfirmed submission within the current page.
+
+## Read diagnostics with the CLI
+
+Use the same administrator identity as the UI. OAuth callers also need the
+`admin` scope. JSON diagnostics use `/api/gateway/nats` and `/api/gateway/sync`;
+the CLI handles authentication and URL encoding.
+
+```bash
+cld admin nats status --json
+cld admin nats streams list --app mail --namespace dev --problems --limit 20 --json
+cld admin nats consumers list <stream> --json
+cld admin sync status --json
+cld admin sync resources list --app mail --problems --json
+cld admin sync dead-letters list <app> <queue|job|topic> <store> --limit 20 --json
+cld admin sync dead-letters get <app> <queue|job|topic> <store> <message> --sequence <streamSequence> --json
+cld admin sync schedules list --app mail --json
+cld admin diagnose --include sync,nats --json
+```
+
+Pass the returned `nextOffset` as `--offset` for NATS, or `nextCursor` as
+`--cursor` for a Sync store. Queue and job detail lookups require the entry's
+`streamSequence`; topic details use the message ID. `--json` retains snapshot,
+completeness, and pagination metadata. List commands also support `--jsonl`:
+a typed `snapshot` record precedes the selected records. Do not treat incomplete
+or unavailable results as an empty, healthy installation. Diagnostic bundles
+omit Sync payload previews.
+
+Recovery commands require `--yes`. Queue/job requeue creates a new idempotency
+key; topic replay targets its original consumer. Check the failure first.
+
+```bash
+cld admin sync dead-letters requeue <app> <queue|job> <store> <message> --yes
+cld admin sync dead-letters replay <app> <store> <message> --consumer <consumer> --tenant <tenant> --yes
+cld admin sync dead-letters delete <app> <queue|job|topic> <store> <message> --yes
+cld admin sync schedules run <app> <scheduler> <schedule> --request-id <stable-id> --yes
+cld admin sync schedules runs get <app> <scheduler> <schedule> <run-id> --timeout-ms 5000 --json
+```
+
+Reuse the same schedule request ID after an uncertain response. A returned run
+ID means accepted work; `completed: false` means it has not settled yet.
+
 ## Give Gateway Ops access to diagnostics
 
 Gateway Ops uses the installation's application-account connection to inspect
