@@ -2,10 +2,10 @@ name: Sync runtime integration
 
 on:
   pull_request:
-    paths: ["packages/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
   push:
     branches: [main]
-    paths: ["packages/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
+    paths: ["packages/**", "scripts/**", "compose.yml", "bun.lock", ".github/workflows/sync.yml"]
   workflow_dispatch:
 
 permissions:
@@ -17,11 +17,14 @@ jobs:
     timeout-minutes: 20
     env:
       SYNC_TEST_SERVERS: nats://127.0.0.1:4222
+      # ipa-backfill.test.ts still gates on SYNC_NATS_TEST_SERVERS; keep both names until it is aligned.
+      SYNC_NATS_TEST_SERVERS: nats://127.0.0.1:4222
       NOTEBOOKS_NATS_TEST: "1"
       CLOUD_SYNC_NATS_TEST: "1"
       GRIDS_SYNC_TEST: "1"
       NOTEBOOKS_SNAPSHOT_DB_TEST: "1"
       GRIDS_EVIDENCE_CLEANUP_DB_TEST: "1"
+      GRIDS_RECORD_EVENTS_DB_TEST: "1"
       DATABASE_URL: postgres://ipa:ipa@127.0.0.1:5432/ipa
       NATS_IGNORE_CLUSTER_UPDATES: "true"
     steps:
@@ -35,16 +38,23 @@ jobs:
       - name: Verify replay and cursor boundaries
         run: |
           bun test packages/cloud/src/services/notifications/live.integration.test.ts
-          bun test packages/notebooks/src/service/yjs-sync.integration.test.ts
+          bun test packages/notebooks/src/service/yjs-sync.integration.test.ts packages/notebooks/src/service/yjs-snapshot-ordering.integration.test.ts
+          bun test packages/notebooks/src/service/presence.test.ts
           bun test packages/contacts/src/service/events.integration.test.ts
           bun test packages/spaces/src/service/events.integration.test.ts
-          bun test packages/grids/src/service/record-events.integration.test.ts packages/grids/src/service/workflow-run-events.integration.test.ts
+          bun test packages/grids/src/service/workflow-run-events.integration.test.ts
+          # Path filter: runs every record-event* test (replay, outbox, native retry, PostgreSQL runtime).
+          bun test packages/grids/src/service/record-event
       - name: Verify restore, shutdown and cleanup regressions
         run: |
           bun test packages/notebooks/src/ws-lifecycle.test.ts packages/notebooks/src/service/yjs-snapshot.integration.test.ts
+          bun test packages/notebooks/scripts/snapshot-cutover-preflight.integration.test.ts
           bun test packages/grids/src/service/evidence-cleanup.integration.test.ts
           bun test packages/cloud/src/services/runtime-lifecycle.test.ts packages/cloud/src/services/notifications/batches-retry.test.ts
+          bun test packages/cloud/src/services/account-lifecycle/ipa-backfill.test.ts
           bun test packages/gateway/src/runtime.test.ts
+      - name: Verify operator scripts
+        run: bun test scripts
       - name: Cluster diagnostics
         if: failure()
         run: docker compose -f compose.yml logs --tail 100 nats-1 nats-2 nats-3

@@ -85,13 +85,15 @@ export const scanSyncKeys = async (redis: RedisClient, maxKeys = DEFAULT_MAX_SYN
   return [...keys];
 };
 
-export type LegacyYjsNote = { id: string; cursor: string; snapshotBytes: number };
+/** `cursor` is null when v5 saved a snapshot without a parseable stream cursor. */
+export type LegacyYjsNote = { id: string; cursor: string | null; snapshotBytes: number };
 export type LegacyYjsCoverage = {
   noteId: string;
   head: string;
   snapshotCursor: string | null;
-  status: "covered" | "snapshot_required" | "deleted_note";
+  status: "covered" | "snapshot_required" | "deleted_note" | "invalid_note_id";
 };
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const compareLegacyCursors = (left: string, right: string): number => {
   const parse = (value: string) => {
@@ -116,11 +118,19 @@ export const legacyYjsNoteId = (key: string): string | null => {
   }
 };
 
+const legacyYjsStatus = (noteId: string, head: string, note?: LegacyYjsNote): LegacyYjsCoverage["status"] => {
+  if (!UUID_PATTERN.test(noteId)) return "invalid_note_id";
+  if (!note) return "deleted_note";
+  // A snapshot without its cursor cannot prove that it covers the retained stream head.
+  if (note.snapshotBytes === 0 || note.cursor === null) return "snapshot_required";
+  return compareLegacyCursors(note.cursor, head) >= 0 ? "covered" : "snapshot_required";
+};
+
 export const assessLegacyYjsCoverage = (noteId: string, head: string, note?: LegacyYjsNote): LegacyYjsCoverage => ({
   noteId,
   head,
   snapshotCursor: note?.cursor ?? null,
-  status: !note ? "deleted_note" : note.snapshotBytes > 0 && compareLegacyCursors(note.cursor, head) >= 0 ? "covered" : "snapshot_required",
+  status: legacyYjsStatus(noteId, head, note),
 });
 
 export const legacyYjsHighWater = (raw: unknown): string => {
@@ -137,12 +147,18 @@ export const legacyYjsHighWater = (raw: unknown): string => {
 
 export const inspectLegacyYjs = async (redis: RedisClient, db: SQL, keys: readonly string[]): Promise<LegacyYjsCoverage[]> => {
   const noteIds = [...new Set(keys.map(legacyYjsNoteId).filter((id): id is string => id !== null))];
+  // Only UUID-shaped ids reach the `::uuid` cast; other ids are reported as `invalid_note_id` rows.
+  const uuidNoteIds = noteIds.filter((id) => UUID_PATTERN.test(id));
   if (noteIds.length === 0) return [];
-  const rows = await db<{ id: string; cursor: string; snapshot_bytes: number }[]>`
+  // The concatenation yields NULL when either cursor column is NULL.
+  const rows =
+    uuidNoteIds.length === 0
+      ? []
+      : await db<{ id: string; cursor: string | null; snapshot_bytes: number }[]>`
     SELECT id::text, yjs_stream_ms::text || '-' || yjs_stream_seq::text AS cursor,
            COALESCE(octet_length(yjs_snapshot), 0) AS snapshot_bytes
     FROM notebooks.notes
-    WHERE id IN (SELECT jsonb_array_elements_text(${JSON.stringify(noteIds)}::text::jsonb)::uuid)
+    WHERE id IN (SELECT jsonb_array_elements_text(${JSON.stringify(uuidNoteIds)}::text::jsonb)::uuid)
   `;
   const notes = new Map(rows.map((row) => [row.id, { id: row.id, cursor: row.cursor, snapshotBytes: row.snapshot_bytes }]));
   const result: LegacyYjsCoverage[] = [];
@@ -179,7 +195,7 @@ export const main = async (): Promise<number> => {
           nonDurable: inventory.nonDurable,
           unclassified: inventory.other,
           yjs,
-          note: "A covered retained Yjs head is snapshot evidence only. Review other durable keys individually; never bulk-delete this inventory. Recheck after stopping producers. Previously expired history cannot be reconstructed by this report.",
+          note: "A covered retained Yjs head is snapshot evidence only. Review other durable keys individually; do not bulk-delete this inventory before the v6 fleet is accepted. Recheck after stopping producers. Previously expired history cannot be reconstructed by this report.",
         },
         null,
         2,

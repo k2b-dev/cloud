@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import cloudPackage from "../packages/cloud/package.json";
 import { assessFleetState, type FleetResourceReport, findReleaseMismatches } from "./prod-upgrade-preflight";
 
 const scriptSource = await Bun.file(new URL("./prod-upgrade-preflight.ts", import.meta.url)).text();
+const syncVersion = cloudPackage.dependencies["@k2b/sync"];
 const app = {
   id: "core",
   name: "Core",
@@ -9,7 +11,7 @@ const app = {
   description: "Core",
   baseUrl: "http://core:3000",
   routes: ["/"],
-  runtime: { release: "sha-aabbccd", syncVersion: "6.2.0" },
+  runtime: { release: "sha-aabbccd", syncVersion },
 };
 const report: FleetResourceReport = {
   appId: "core",
@@ -45,7 +47,7 @@ describe("production v6 fleet preflight", () => {
   });
   test("blocks an old-only fleet and unavailable app diagnostics", () => {
     expect(assess({ apps: [{ ...app, runtime: { ...app.runtime, syncVersion: "5.9.1" } }] })).toContain(
-      "core does not report @k2b/sync 6.2.0.",
+      `core does not report @k2b/sync ${syncVersion}.`,
     );
     expect(assess({ reports: [{ appId: "core", result: null, error: "HTTP 503" }] })).toContain("core: HTTP 503");
   });

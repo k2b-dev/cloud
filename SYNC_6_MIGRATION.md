@@ -6,8 +6,9 @@ process cannot see Sync 6 registrations or work, and the new workers do not
 consume the old Redis queues.
 
 Keep Redis for Cloud caches, authentication flows, and Cloud-owned rate
-limits. Do not flush Redis or delete every `sync:*` key: existing rate-limit
-windows and unreviewed durable work can still matter.
+limits; those live outside the `sync:*` prefix. Do not flush Redis or delete
+`sync:*` keys before acceptance: unreviewed durable v5 work (queues, jobs, pump
+checkpoints, and scheduler definitions) can still matter for recovery.
 
 Already running Sync 6.2.0? Use the
 [coordinated 6.3.1 upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
@@ -51,10 +52,13 @@ bun scripts/legacy-sync-inventory.ts > sync-v5-inventory.before.json
 The report keeps v5 durable keys, older durable keys, scheduler keys, and
 non-durable keys separate. It compares each retained notebook document stream
 high-water cursor with the note's Postgres snapshot cursor and checks that the snapshot is
-nonempty. `snapshot_required` blocks the cutover. Finish that snapshot with the
-v5 worker and repeat the check; do not save a partial replay after a retention
-gap. `deleted_note` identifies a retained stream whose note row no longer
-exists and requires an explicit review before removing the stream.
+nonempty. `snapshot_required` blocks the cutover; a snapshot that v5 saved
+without a stream cursor reports the same status because it cannot prove
+coverage. Finish that snapshot with the v5 worker and repeat the check; do not
+save a partial replay after a retention gap. `deleted_note` identifies a
+retained stream whose note row no longer exists, and `invalid_note_id` a
+document stream whose identity is not a note UUID. Both require an explicit
+review before removing the stream.
 
 The inventory stops after 10,000 keys by default. For a larger, reviewed Redis
 database, set `SYNC_INVENTORY_MAX_KEYS` to the required bound. This changes only
@@ -103,8 +107,10 @@ replayed state.
 4. Inspect **Gateway Ops → Sync** and application logs. Investigate every
    dead-letter entry before requeueing it; application database failures and
    transport dead letters are different recovery paths. Resource summaries
-   cover handles declared by the running processes, not every historical
-   resource in the NATS account.
+   cover handles the running processes have declared, not every historical
+   resource in the NATS account. A handle created on first use (`lazySync`)
+   stays invisible until that use, so a purely on-demand handle is not missing
+   when it does not appear before its first request.
 
 ## Verify behavior and recovery
 
@@ -124,8 +130,11 @@ Use HTTP requests, focused integration tests, and container logs to verify:
   to ready. A broker health check alone does not prove these outcomes.
 
 Run `bun run prod:preflight` again after recovery. Only after acceptance may
-an operator remove exact v5 namespaces proven drained or superseded. Keep
-unexplained keys and data; neither preflight command performs cleanup.
+an operator remove v5 Redis state. From then on, every key the inventory
+enumerates is v5-only: Sync 6 neither reads nor writes Redis, so the whole
+`sync:*` prefix family and the legacy `cloud:*` Sync prefixes can be deleted
+in bulk. Keep the inventory report with the backups, and keep keys outside the
+enumerated prefixes; neither preflight command performs cleanup.
 
 ## Rollback
 

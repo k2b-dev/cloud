@@ -47,10 +47,22 @@ describe("read-only legacy Sync inventory", () => {
     expect(() => compareLegacyCursors("s6t.hash.42", "100-1")).toThrow();
   });
   test("requires a covering nonempty Postgres snapshot and reports deleted-note streams separately", () => {
-    const note = { id: "note", cursor: "100-2", snapshotBytes: 10 };
-    expect(assessLegacyYjsCoverage("note", "100-2", note).status).toBe("covered");
-    expect(assessLegacyYjsCoverage("note", "100-3", note).status).toBe("snapshot_required");
-    expect(assessLegacyYjsCoverage("note", "100-2", { ...note, snapshotBytes: 0 }).status).toBe("snapshot_required");
-    expect(assessLegacyYjsCoverage("deleted", "100-2").status).toBe("deleted_note");
+    const noteId = "0f8f1c2e-6c1a-4f6e-9b6c-2f1d3a4b5c6d";
+    const note = { id: noteId, cursor: "100-2", snapshotBytes: 10 };
+    expect(assessLegacyYjsCoverage(noteId, "100-2", note).status).toBe("covered");
+    expect(assessLegacyYjsCoverage(noteId, "100-3", note).status).toBe("snapshot_required");
+    expect(assessLegacyYjsCoverage(noteId, "100-2", { ...note, snapshotBytes: 0 }).status).toBe("snapshot_required");
+    expect(assessLegacyYjsCoverage("7d2a9e4c-3b1f-4c8d-a2e5-6f7b8c9d0e1f", "100-2").status).toBe("deleted_note");
+  });
+  test("blocks on a v5 snapshot saved without a stream cursor instead of crashing", () => {
+    const noteId = "0f8f1c2e-6c1a-4f6e-9b6c-2f1d3a4b5c6d";
+    const result = assessLegacyYjsCoverage(noteId, "100-2", { id: noteId, cursor: null, snapshotBytes: 10 });
+    expect(result).toEqual({ noteId, head: "100-2", snapshotCursor: null, status: "snapshot_required" });
+  });
+  test("reports a non-UUID note id as a row instead of aborting the Postgres lookup", () => {
+    expect(assessLegacyYjsCoverage("not-a-uuid", "100-2").status).toBe("invalid_note_id");
+    expect(assessLegacyYjsCoverage("not-a-uuid", "100-2", { id: "not-a-uuid", cursor: "100-2", snapshotBytes: 10 }).status).toBe(
+      "invalid_note_id",
+    );
   });
 });

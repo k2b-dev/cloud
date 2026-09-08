@@ -95,7 +95,7 @@ For resumable browser streams, use a memoized hub:
 
 ```ts
 const topic = inventoryEvents();
-const after = (await topic.latestCursor()) ?? topic.cursorAt(0);
+const after = await topic.head();
 const snapshot = await loadAuthorizedSnapshot();
 sendSnapshot(snapshot);
 for await (const event of topic.hub().subscribe({ after, signal })) {
@@ -104,14 +104,19 @@ for await (const event of topic.hub().subscribe({ after, signal })) {
 ```
 
 Capturing the cursor before the snapshot prevents writes during the snapshot
-read from disappearing. Deduplicate replayed changes against the snapshot.
+read from disappearing. `head()` returns the newest cursor of the whole topic
+in one lookup, or `cursorAt(0)` when it is empty; use
+`latestCursor({ tenantId })` when the stream is filtered to one tenant.
+Deduplicate replayed changes against the snapshot.
 `hub().subscribe()` without `after` is live-only. Slow subscribers can receive
 `RetentionGapError` and must resynchronize.
 
-A hub shares one follower among local subscribers. Replay, follow, and hubs
-filter tenants locally, so one hub per tenant reads the full topic stream for
-each active tenant. Prefer server-filtered `live()` for transient high-volume
-fan-out, or separate topics when retained data is naturally isolated.
+A hub shares one follower among local subscribers and retires it when the
+last subscriber leaves, so a connection ends its subscription rather than
+closing the hub. Replay, follow, and hubs filter tenants locally, so one hub
+per tenant reads the full topic stream for each active tenant. Prefer
+server-filtered `live()` for transient high-volume fan-out, or separate topics
+when retained data is naturally isolated.
 
 Foreground Cloud notifications resume with these cursors. Stored Redis cursors
 are discarded at cutover; a retention gap or foreign cursor reconnects at the
