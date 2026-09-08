@@ -346,10 +346,9 @@ export const pulseRuntime = {
             { summarize: (result) => result },
           )
           .catch((error: unknown) => {
-            // An unreachable or malformed target, or a batch the ingest writer rejects as
-            // input, is a routine outcome: the source row carries `last_error` and the next
-            // due slot scrapes again. Database failures are thrown by the scraper, retry,
-            // and reach the dead-letter store.
+            // Returned scrape failures, including rejected ingest input, are recorded on the
+            // source and retried by its next due slot. Only errors thrown out of the
+            // scraper or tracing reach the job's retry and dead-letter policy.
             if (!(error instanceof ScrapeOutcomeError)) throw error;
           });
       }),
