@@ -17,8 +17,6 @@ jobs:
     timeout-minutes: 20
     env:
       SYNC_TEST_SERVERS: nats://127.0.0.1:4222
-      # Same cluster; packages/grids/src/sync-test-utils.ts still reads this name.
-      NATS_TEST_SERVERS: nats://127.0.0.1:4222
       NOTEBOOKS_NATS_TEST: "1"
       CLOUD_SYNC_NATS_TEST: "1"
       GRIDS_SYNC_TEST: "1"
