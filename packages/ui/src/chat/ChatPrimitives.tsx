@@ -253,6 +253,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                     type="button"
                     aria-label={action.label}
                     aria-pressed={action.pressed}
+                    data-pressed-tone={action.pressedTone}
                     title={action.label}
                     data-danger={action.variant === "danger" ? "true" : undefined}
                     disabled={action.disabled || Boolean(busyActionId())}

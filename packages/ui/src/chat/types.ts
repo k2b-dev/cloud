@@ -12,6 +12,8 @@ type ChatActionBase = {
   disabled?: boolean;
   /** Toggle state for persistent message actions such as feedback. */
   pressed?: boolean;
+  /** Semantic foreground for selected feedback actions, without a persistent background. */
+  pressedTone?: "success" | "danger";
 };
 
 /** Exactly one executable behavior for every chat action. */

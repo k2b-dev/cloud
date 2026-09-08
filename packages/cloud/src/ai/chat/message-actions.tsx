@@ -322,6 +322,7 @@ export function createAssistantMessageActions(props: {
             label: props.entry.feedback?.rating === "up" ? "Remove positive feedback" : "Helpful",
             icon: "ti ti-thumb-up",
             pressed: props.entry.feedback?.rating === "up",
+            pressedTone: "success" as const,
             onSelect: () =>
               actions.onMessageFeedback!(
                 props.entry,
@@ -333,6 +334,7 @@ export function createAssistantMessageActions(props: {
             label: props.entry.feedback?.rating === "down" ? "Remove negative feedback" : "Needs improvement",
             icon: "ti ti-thumb-down",
             pressed: props.entry.feedback?.rating === "down",
+            pressedTone: "danger" as const,
             onSelect: async () => {
               if (props.entry.feedback?.rating === "down") return actions.onMessageFeedback!(props.entry, null);
               const feedback = await openNegativeFeedbackDialog();

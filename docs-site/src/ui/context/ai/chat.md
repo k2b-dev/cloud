@@ -101,3 +101,7 @@ The timeline starts at the latest message in server-rendered HTML, before
 JavaScript loads. Message DOM order stays chronological. Mount switches to
 normal scroll coordinates before following new messages; reading older messages
 and loading history retain the existing scroll behavior.
+
+Feedback actions can set `pressedTone="success"` or `pressedTone="danger"` to
+mark their selected state with the semantic icon color and no persistent
+background. `pressed` continues to expose the toggle state to assistive technology.

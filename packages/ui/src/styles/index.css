@@ -6251,6 +6251,18 @@
   background: var(--k2b-hover);
 }
 
+.k2b-ui .k2b-chat-message__actions button[aria-pressed="true"][data-pressed-tone="success"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-chat-message__actions button[aria-pressed="true"][data-pressed-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-message__actions button[aria-pressed="true"][data-pressed-tone]:not(:hover) {
+  background: transparent;
+}
+
 .k2b-ui .k2b-chat-context {
   display: inline-flex;
   min-height: 1.75rem;
