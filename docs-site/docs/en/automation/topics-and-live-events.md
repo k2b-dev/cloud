@@ -16,7 +16,7 @@ updates. Cloud owns the NATS connection; declare topics through `lazySync()`.
 ## Publish an event
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const inventoryEvents = lazySync((sync) => sync.topic<{ itemId: string }>({
   id: "inventory.events",

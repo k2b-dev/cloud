@@ -14,7 +14,7 @@ Compose Cloud chat from two layers:
 
 - `@k2b/ui` owns the generic timeline, message shell, composer, attachments,
   model selection, commands, context usage, loading, and accessibility.
-- `@valentinkolb/cloud/ai` owns the controller, session protocol, persistence,
+- `@k2b/cloud/ai` owns the controller, session protocol, persistence,
   tools, approvals, files, retry, fork, and steering policy.
 
 Cloud adapters project protocol state and payloads across that boundary. There
@@ -23,14 +23,14 @@ is no second Cloud-specific chat component set.
 ## Compose a Cloud chat
 
 ```tsx
-import type { AiPublicModelProfile } from "@valentinkolb/cloud/ai";
-import { createAiChatController } from "@valentinkolb/cloud/ai/solid";
+import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AiChatActionsProvider,
   aiChatModelOptions,
   aiComposerSendInput,
   createAiChatTimeline,
-} from "@valentinkolb/cloud/ai/ui";
+} from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 import { createSignal } from "solid-js";
 

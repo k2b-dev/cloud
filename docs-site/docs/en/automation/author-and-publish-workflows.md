@@ -16,7 +16,7 @@ source before publishing an immutable version.
 ## Define actions and runtime event names
 
 ```ts
-import { workflowAction } from "@valentinkolb/cloud/workflows";
+import { workflowAction } from "@k2b/cloud/workflows";
 
 export const INVENTORY_EVENT = {
   itemChanged: "inventory.itemChanged",
@@ -73,7 +73,7 @@ The module is the application's single workflow declaration. It combines the
 executable actions with the authoring language:
 
 ```ts
-import { defineWorkflowModule } from "@valentinkolb/cloud/workflows";
+import { defineWorkflowModule } from "@k2b/cloud/workflows";
 
 export const inventoryWorkflows = defineWorkflowModule({
   id: "inventory",
@@ -154,7 +154,7 @@ Compile before binding:
 import {
   bindWorkflow,
   compileWorkflow,
-} from "@valentinkolb/cloud/workflows/language";
+} from "@k2b/cloud/workflows/language";
 
 export const compileAndBindInventoryWorkflow = async (
   source: string,
@@ -194,7 +194,7 @@ plan.
 The worker uses the same module for application actions:
 
 ```ts
-import { createWorkflowActionPort } from "@valentinkolb/cloud/workflows/store";
+import { createWorkflowActionPort } from "@k2b/cloud/workflows/store";
 
 const actions = createWorkflowActionPort(inventoryWorkflows);
 ```
@@ -210,12 +210,12 @@ Create the workflow identity once. Then publish immutable versions:
 ```ts
 import type {
   WorkflowBoundPlan,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 import {
   createWorkflow,
   publishWorkflowVersion,
   type WorkflowActivationInput,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const activationsFor = (
   plan: WorkflowBoundPlan,

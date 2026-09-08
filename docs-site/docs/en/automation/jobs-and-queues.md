@@ -43,7 +43,7 @@ Cloud owns one Sync instance per application process. Declare handles with
 has connected NATS.
 
 ```ts
-import { lazySync } from "@valentinkolb/cloud";
+import { lazySync } from "@k2b/cloud";
 
 const reindexItem = lazySync((sync) => sync.job<{ itemId: string }>({
   id: "inventory.reindex-item",

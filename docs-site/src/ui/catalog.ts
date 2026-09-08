@@ -15,7 +15,7 @@ export type UiCatalogEntry = {
   sectionTitle: string;
   order: number;
   scope: UiCatalogScope;
-  packageName: "@k2b/ui" | "@valentinkolb/cloud";
+  packageName: "@k2b/ui" | "@k2b/cloud";
   page: UiCatalogPage;
   context: string;
 };
@@ -265,7 +265,7 @@ const entry = (
     sectionTitle,
     order,
     scope,
-    packageName: scope === "portable" ? "@k2b/ui" : "@valentinkolb/cloud",
+    packageName: scope === "portable" ? "@k2b/ui" : "@k2b/cloud",
     page,
     context,
   };

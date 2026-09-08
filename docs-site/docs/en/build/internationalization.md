@@ -84,7 +84,7 @@ instead of omitting the check.
 Resolve messages from the request locale:
 
 ```ts
-import { getLocale } from "@valentinkolb/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 
 router.get("/api/inventory", (c) => {
   const { locale, t } = messages.resolve([getLocale(c)]);

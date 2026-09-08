@@ -182,7 +182,7 @@ assignment. A provider migration remains a separate operation.
 ## Administration API
 
 The platform service `linuxIdentities`, exported from
-`@valentinkolb/cloud/services`, enforces administrator access on every method,
+`@k2b/cloud/services`, enforces administrator access on every method,
 including calls outside HTTP. It owns identity configuration, reads and
 mutations; application-owned access grants do not confer this authority.
 

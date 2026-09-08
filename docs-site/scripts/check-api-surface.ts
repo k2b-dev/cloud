@@ -30,7 +30,7 @@ if (import.meta.main) {
   const packageJson = await Bun.file(resolve(workspaceRoot, "packages/cloud/package.json")).json();
   const referenceRoot = resolve(workspaceRoot, "docs-site/docs/en/reference");
   const reference = await Bun.file(resolve(referenceRoot, "api-surface.md")).text();
-  const missing = undocumentedExports(packageJson.name, packageJson.exports, reference);
+  const missing = undocumentedExports("@k2b/cloud", packageJson.exports, reference);
   const unguided = unguidedSpecializedEntryPoints(reference);
 
   if (missing.length > 0) {

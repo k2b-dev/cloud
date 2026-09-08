@@ -15,7 +15,7 @@ import {
   aiChatModelOptions,
   aiComposerSendInput,
   createAiChatTimeline,
-} from "@valentinkolb/cloud/ai/ui";
+} from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
 ```
 

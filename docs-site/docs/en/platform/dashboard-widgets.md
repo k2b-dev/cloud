@@ -52,7 +52,7 @@ Export the Hono handler used by that route and register the same function with
 `app.start()`:
 
 ```ts
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import type { AuthContext } from "@k2b/cloud/server";
 import type { Context } from "hono";
 
 export const stockWidgetHandler = async (c: Context<AuthContext>) => {
@@ -74,7 +74,7 @@ route, never by the public application route.
 ## Return widget data
 
 ```ts
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
 
 const body: WidgetResponse = {
   title: "Inventory",

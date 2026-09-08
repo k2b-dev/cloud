@@ -11,7 +11,7 @@ Use the portable widget components directly when the host already owns its data 
 ## Import
 
 ```ts
-import type { WidgetResponse } from "@valentinkolb/cloud/contracts";
+import type { WidgetResponse } from "@k2b/cloud/contracts";
 ```
 
 ## Endpoint contract

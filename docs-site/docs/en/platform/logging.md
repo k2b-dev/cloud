@@ -18,7 +18,7 @@ copy for the operations interface.
 ## Create a logger
 
 ```ts
-import { logger } from "@valentinkolb/cloud/services";
+import { logger } from "@k2b/cloud/services";
 
 const log = logger("inventory:stock");
 

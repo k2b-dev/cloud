@@ -365,7 +365,7 @@ if (!isDirectory(publishedSkillsRoot)) {
         "@k2b/ssr",
         "@k2b/sync",
         "@k2b/ui",
-        "@valentinkolb/cloud/workflows",
+        "@k2b/cloud/workflows",
       ]) {
         if (!source.includes(required)) {
           violations.push({ file: skillMd, message: `Published skill is missing required guidance: '${required}'.` });

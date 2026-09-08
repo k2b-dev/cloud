@@ -11,7 +11,7 @@ Do not use it for application-local exhaustive browsing or as an authorization c
 ## Import
 
 ```ts
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 ```
 
 ## Selection ownership

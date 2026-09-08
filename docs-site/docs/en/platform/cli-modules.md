@@ -40,7 +40,7 @@ their owning module provides an explicit keyed catalog; do not translate them
 by inspecting or replacing the English output string.
 
 ```ts
-import { cliText } from "@valentinkolb/cloud/cli";
+import { cliText } from "@k2b/cloud/cli";
 
 if (ctx.options.output === "text") {
   ctx.print(cliText(ctx, { en: "Saved.", de: "Gespeichert." }));
@@ -57,7 +57,7 @@ import {
   command,
   defineCliCommands,
   printStructured,
-} from "@valentinkolb/cloud/cli";
+} from "@k2b/cloud/cli";
 
 export default defineCliCommands({
   name: "inventory",

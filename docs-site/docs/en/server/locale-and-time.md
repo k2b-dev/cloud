@@ -22,7 +22,7 @@ product copy. Applications opt in at the boundary that owns each message; see
 ## Resolve the request locale
 
 ```ts
-import { getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { getDateConfig, getLocale } from "@k2b/cloud/server";
 
 router.get("/api/inventory/report", (c) => {
   const locale = getLocale(c); // e.g. "de-CH"
@@ -49,7 +49,7 @@ resolver still returns a deterministic value.
 `resolveLocale(headers, operatorDefault?)` applies the same rules to plain
 `Headers` outside a request context, and `preferredLocale(headers)` returns
 only the caller's explicit preference (or `undefined`). `normalizeLocale` and
-`canonicalLocale` from `@valentinkolb/cloud/shared` canonicalize single tags.
+`canonicalLocale` from `@k2b/cloud/shared` canonicalize single tags.
 
 Authenticated users can choose English or German from the shared profile menu.
 Cloud writes the choice to the root-scoped `cloud.locale` cookie and reloads
@@ -105,8 +105,8 @@ context contract. Server-side callers with their own request context forward
 it through the `locale` field of the capability caller:
 
 ```ts
-import { invokeCapability } from "@valentinkolb/cloud/capabilities/server";
-import { getLocale } from "@valentinkolb/cloud/server";
+import { invokeCapability } from "@k2b/cloud/capabilities/server";
+import { getLocale } from "@k2b/cloud/server";
 
 await invokeCapability(invocation, {
   cookie: request.headers.get("cookie"),
@@ -124,7 +124,7 @@ the base locale); Cloud and capability callers never need to know an
 application's message keys:
 
 ```ts
-import { getLocale } from "@valentinkolb/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
 import { messages } from "../i18n"; // the app-owned @k2b/stdlib catalog
 
 router.get("/api/inventory", (c) => {

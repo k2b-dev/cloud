@@ -16,7 +16,7 @@ domain change use the same durable path.
 ## Emit an event
 
 ```ts
-import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
+import { emitWorkflowEvent } from "@k2b/cloud/workflows/store";
 
 const emission = await emitWorkflowEvent(
   {
@@ -78,7 +78,7 @@ run IDs.
 import {
   createWorkflowActionPort,
   tickWorkflows,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const actions = createWorkflowActionPort(inventoryWorkflows);
 

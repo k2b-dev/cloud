@@ -21,7 +21,7 @@ Use the shared store instead of creating another run history:
 import {
   getWorkflowRun,
   listWorkflowRuns,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const runs = await listWorkflowRuns({
   appId: "inventory",
@@ -66,7 +66,7 @@ text. `error` contains failure detail. Do not merge them into one field.
 ```ts
 import {
   requestWorkflowRunCancel,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const changed = await requestWorkflowRunCancel(runId);
 ```
@@ -89,7 +89,7 @@ Verify the provider state before resolving it:
 import {
   listStrandedWorkflowEffects,
   resolveWorkflowRunAttention,
-} from "@valentinkolb/cloud/workflows/store";
+} from "@k2b/cloud/workflows/store";
 
 const effects = await listStrandedWorkflowEffects({
   appId: "inventory",
@@ -152,7 +152,7 @@ Test each action class at its boundary:
 
 ## Test complete processes
 
-Use the exports from `@valentinkolb/cloud/workflows/testing` to run shared
+Use the exports from `@k2b/cloud/workflows/testing` to run shared
 process fixtures:
 
 ```ts
@@ -160,7 +160,7 @@ import { expect } from "bun:test";
 import {
   directOnlyProcessFixture,
   runWorkflowProcessFixture,
-} from "@valentinkolb/cloud/workflows/testing";
+} from "@k2b/cloud/workflows/testing";
 
 const result = await runWorkflowProcessFixture(
   directOnlyProcessFixture,

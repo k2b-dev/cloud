@@ -16,8 +16,8 @@ function.
 ## Render a page
 
 ```tsx
-import { Layout } from "@valentinkolb/cloud/ssr";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { Layout } from "@k2b/cloud/ssr";
+import type { AuthContext } from "@k2b/cloud/server";
 import { ssr } from "../config";
 
 export default ssr<AuthContext>(async (c) => {
@@ -73,7 +73,7 @@ See [Request identity](/en/docs/identity/authentication) and
 import {
   type AuthContext,
   auth,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 import { Hono } from "hono";
 import detailPage from "./detail/page";
 import listPage from "./page";

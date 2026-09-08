@@ -50,11 +50,11 @@ mkdir -p src
 Add the Cloud package and its public peer dependencies:
 
 ```bash
-bun add @valentinkolb/cloud hono solid-js zod
+bun add @k2b/cloud hono solid-js zod
 bun add --dev @types/bun typescript
 ```
 
-Pin `@valentinkolb/cloud` to the version used by the target Cloud deployment
+Pin `@k2b/cloud` to the version used by the target Cloud deployment
 before committing the lockfile. An application and its platform must agree on
 their public runtime contracts.
 
@@ -87,7 +87,7 @@ the Cloud source repository, workspace aliases, or another application package.
 Create `src/config.ts`:
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "inventory",

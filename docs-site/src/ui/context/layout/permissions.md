@@ -22,11 +22,11 @@ import {
   ResourceApiKeys,
   type ResourceApiKey,
   type ResourceApiKeyPermissionOption,
-} from "@valentinkolb/cloud/access/ui";
+} from "@k2b/cloud/access/ui";
 import {
   EntitySearch,
   type EntitySearchPrincipal,
-} from "@valentinkolb/cloud/account/ui";
+} from "@k2b/cloud/account/ui";
 ```
 
 ## Edit direct grants

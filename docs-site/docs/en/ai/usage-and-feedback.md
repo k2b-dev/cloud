@@ -134,11 +134,11 @@ Invalid values are rejected before querying; unknown API parameters are rejected
 Facet search returns at most the requested page size; refine the search to find
 an identifier beyond the suggestion list.
 
-The server-only `@valentinkolb/cloud/ai/admin` export supplies
+The server-only `@k2b/cloud/ai/admin` export supplies
 `aiUsage.report(range, options)`, `aiUsage.detail(kind, id)`, and
 `aiUsage.facets(field, search, options)`. Applications using this internal admin
 surface must establish the administrator boundary before calling it. Report
 collections are paginated `{ items, page, perPage, total }` objects; aggregate
 rows share measurement coverage and feedback counts. The browser-safe
-`@valentinkolb/cloud/shared` export provides `AiUsageQuerySchema`,
+`@k2b/cloud/shared` export provides `AiUsageQuerySchema`,
 `aiUsageSearchParams`, and `aiUsageHref` for the same URL contract.

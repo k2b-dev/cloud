@@ -20,7 +20,7 @@ optional application-specific build output.
 ```bash
 APP_ID=inventory \
 APP_DIR=. \
-bun run node_modules/@valentinkolb/cloud/scripts/build.ts
+bun run node_modules/@k2b/cloud/scripts/build.ts
 ```
 
 The output is written to `dist/`:
@@ -77,7 +77,7 @@ RUN bun install --frozen-lockfile
 FROM dependencies AS build
 COPY . .
 RUN APP_ID=inventory APP_DIR=/app \
-  bun run node_modules/@valentinkolb/cloud/scripts/build.ts
+  bun run node_modules/@k2b/cloud/scripts/build.ts
 
 FROM oven/bun:1-slim AS runtime
 WORKDIR /app

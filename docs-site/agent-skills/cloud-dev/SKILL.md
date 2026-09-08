@@ -3,7 +3,7 @@ name: cloud-dev
 description: >
   Build applications on Cloud, the open-source Bun, Hono, and SolidJS
   application platform that runs on your infrastructure. Use this skill
-  whenever work touches an application built with @valentinkolb/cloud:
+  whenever work touches an application built with @k2b/cloud:
   declarations, routes, middleware, services, data, identity and access,
   settings, notifications, jobs, workflows, UI, AI, observability, packaging,
   or deployment. This is the public contract for standalone and built-in
@@ -22,7 +22,7 @@ runtime contract.
 
 Use the configured Cloud documentation MCP when available: call
 `list_collections`, then `search_docs` and `read_doc`. Treat those docs and the
-public types of the exact `@valentinkolb/cloud` version as the contract.
+public types of the exact `@k2b/cloud` version as the contract.
 
 - Import only documented entry points, never package source paths, monorepo
   aliases, or another application package.
@@ -73,12 +73,12 @@ alternative:
 - `@k2b/stdlib` for portable TypeScript and browser utilities, and
   `@k2b/stdlib/solid` for owner-local queries, mutations, and interaction
   primitives;
-- `@k2b/ssr` together with `@valentinkolb/cloud/ssr` for SSR, islands, and
+- `@k2b/ssr` together with `@k2b/cloud/ssr` for SSR, islands, and
   navigation;
 - `@k2b/sync` for jobs, queues, schedulers, topics, mutexes, and bounded
   distributed coordination, `@k2b/sync/retry` for local retries, and
-  `@valentinkolb/cloud/server` for rate limits;
-- `@valentinkolb/cloud/workflows` only when work needs a durable, inspectable,
+  `@k2b/cloud/server` for rate limits;
+- `@k2b/cloud/workflows` only when work needs a durable, inspectable,
   recoverable process rather than one bounded job.
 
 Declare Sync handles with Cloud's public `lazySync()` and access them after

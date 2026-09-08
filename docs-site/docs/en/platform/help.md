@@ -180,7 +180,7 @@ Import the articles in `src/help/index.ts` and pass only the documents to
 `defineHelp()`:
 
 ```ts
-import { defineHelp } from "@valentinkolb/cloud";
+import { defineHelp } from "@k2b/cloud";
 import access from "./documents/inventory-access.help.md" with {
   type: "text",
 };
@@ -226,7 +226,7 @@ Pass the declaration to `app.start()` next to other executable app-owned
 surfaces such as capabilities:
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { Hono } from "hono";
 import { inventoryHelp } from "./help";
 

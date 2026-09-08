@@ -54,10 +54,10 @@ export const siteHeader = {
 export const siteFooterLinks = [
   {
     label: "Source",
-    value: "https://github.com/ValentinKolb/cloud",
+    value: "https://github.com/k2b-dev/cloud",
   },
   {
     label: "AGPL-3.0",
-    value: "https://github.com/ValentinKolb/cloud/blob/main/LICENSE",
+    value: "https://github.com/k2b-dev/cloud/blob/main/LICENSE",
   },
 ] satisfies NavLink[];

@@ -17,7 +17,7 @@ It does not decide whether that caller may read or change a resource.
 ## Choose a policy
 
 ```ts
-import { auth } from "@valentinkolb/cloud/server";
+import { auth } from "@k2b/cloud/server";
 ```
 
 | Policy | Allows |

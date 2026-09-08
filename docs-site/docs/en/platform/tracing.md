@@ -25,7 +25,7 @@ a start and an end.
 closing it on failure:
 
 ```ts
-import { trace } from "@valentinkolb/cloud/services";
+import { trace } from "@k2b/cloud/services";
 
 const item = await trace.withSpan(
   {

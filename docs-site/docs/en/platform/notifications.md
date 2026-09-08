@@ -51,7 +51,7 @@ A definition describes one notification event. Keep definitions in one small
 application module.
 
 ```ts
-import { notification } from "@valentinkolb/cloud";
+import { notification } from "@k2b/cloud";
 import { z } from "zod";
 
 export const NOTIFICATIONS = {
@@ -158,7 +158,7 @@ the plain-text content.
 ### Register the definition
 
 ```ts
-import { defineApp } from "@valentinkolb/cloud";
+import { defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
@@ -232,7 +232,7 @@ the live event.
 Use the browser client to read and change the current browser's registration:
 
 ```ts
-import { browserNotificationClient } from "@valentinkolb/cloud/browser/notifications";
+import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
 
 const initial = await browserNotificationClient.refreshExisting();
 
@@ -280,9 +280,9 @@ startup:
 import {
   registerNotificationChannel,
   type NotificationChannelDriver,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 
-declare module "@valentinkolb/cloud/contracts/notifications" {
+declare module "@k2b/cloud/contracts/notifications" {
   interface NotificationChannelRegistry {
     sms: true;
   }
@@ -323,8 +323,8 @@ Send after the domain change commits. Use the bound definition from
 Build the idempotency key from the domain change.
 
 ```ts
-import { notifications } from "@valentinkolb/cloud/services";
-import { getLocale } from "@valentinkolb/cloud/server";
+import { notifications } from "@k2b/cloud/services";
+import { getLocale } from "@k2b/cloud/server";
 import { app } from "./config";
 
 const result = await notifications.send(app.notifications.stockLow, {

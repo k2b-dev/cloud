@@ -266,7 +266,7 @@ Use the [UI catalog](/ui) to inspect the current UI contract.
 
 Import generic utilities directly from `@k2b/stdlib`.
 
-`@valentinkolb/cloud/shared` continues to re-export `dates`, `calendar`,
+`@k2b/cloud/shared` continues to re-export `dates`, `calendar`,
 `encoding`, `fileIcons`, and `gradients` for older applications.
 
 Cloud-specific shared helpers remain on the Cloud path.

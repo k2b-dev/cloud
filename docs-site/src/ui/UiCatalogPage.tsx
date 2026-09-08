@@ -96,7 +96,7 @@ export function UiCatalogOverview(props: DocumentationProps & { locale: string }
     },
     {
       scope: "cloud",
-      label: "@valentinkolb/cloud",
+      label: "@k2b/cloud",
       title: "Cloud components",
       description:
         "Product integrations that require authenticated Cloud APIs, identity, permissions, or application contracts.",

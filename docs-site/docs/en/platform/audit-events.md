@@ -20,8 +20,8 @@ diagnostics or product analytics.
 ## Record an outcome
 
 ```ts
-import { audit } from "@valentinkolb/cloud/services";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { audit } from "@k2b/cloud/services";
+import { expectUserBackedActor } from "@k2b/cloud/server";
 
 const user = expectUserBackedActor(c);
 await audit.record({

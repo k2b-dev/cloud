@@ -80,8 +80,8 @@ Check the returned row before mapping it.
 Turn expected constraint failures into a service result:
 
 ```ts
-import { isUniqueViolation } from "@valentinkolb/cloud/services";
-import { err, fail } from "@valentinkolb/cloud/server";
+import { isUniqueViolation } from "@k2b/cloud/services";
+import { err, fail } from "@k2b/cloud/server";
 
 try {
   // insert
@@ -100,7 +100,7 @@ Do not return raw database errors to the client.
 Escape user text before adding wildcard characters:
 
 ```ts
-import { escapeLikePattern } from "@valentinkolb/cloud/services";
+import { escapeLikePattern } from "@k2b/cloud/services";
 
 const search = input.search?.trim().toLowerCase();
 const pattern = search
@@ -130,7 +130,7 @@ import {
   toPgIntArray,
   toPgTextArray,
   toPgUuidArray,
-} from "@valentinkolb/cloud/services";
+} from "@k2b/cloud/services";
 
 const ids = toPgUuidArray(input.ids);
 const labels = toPgTextArray(input.labels);
@@ -217,5 +217,5 @@ Use [Pagination and filtering](/en/docs/server/pagination-and-filtering) for
 the HTTP pagination contract.
 
 The complete
-[Inventory data example](https://github.com/ValentinKolb/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
+[Inventory data example](https://github.com/k2b-dev/cloud/blob/main/docs-site/examples/cloud-docs/data.ts)
 is checked by TypeScript.

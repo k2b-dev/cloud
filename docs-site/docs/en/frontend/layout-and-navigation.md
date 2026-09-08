@@ -63,7 +63,7 @@ background, spacing, branding, and content geometry without Cloud header,
 rail, footer, or canvas styling:
 
 ```tsx
-import { MinimalLayout } from "@valentinkolb/cloud/ssr";
+import { MinimalLayout } from "@k2b/cloud/ssr";
 
 return () => (
   <MinimalLayout c={c} preferences="bottom-right">

@@ -16,7 +16,7 @@ Applications select an auth policy. They do not parse or store credentials.
 Add the policy to the Hono router:
 
 ```ts
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 
 const routes = new Hono<AuthContext>()
@@ -114,7 +114,7 @@ Display names, avatars, and roles require a user:
 import {
   expectUserBackedActor,
   userFromActor,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 const optionalUser = userFromActor(c.get("actor"));
 const user = expectUserBackedActor(c);

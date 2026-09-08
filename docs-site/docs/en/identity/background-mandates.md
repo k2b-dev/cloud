@@ -45,7 +45,7 @@ Its bounded policy lists every target application and canonical operation the
 workload may request.
 
 ```ts
-import { mandates } from "@valentinkolb/cloud/services";
+import { mandates } from "@k2b/cloud/services";
 
 const mandate = await mandates.create(
   {
@@ -189,7 +189,7 @@ HTTP 409.
 Use the server capability helper with the current mandate revision:
 
 ```ts
-import { invokeCapability } from "@valentinkolb/cloud/capabilities/server";
+import { invokeCapability } from "@k2b/cloud/capabilities/server";
 
 const result = await invokeCapability(
   {

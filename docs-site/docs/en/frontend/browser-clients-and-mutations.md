@@ -26,7 +26,7 @@ export type InventoryApi = typeof inventoryRoutes;
 Create the browser client in a browser-safe module:
 
 ```ts
-import { api } from "@valentinkolb/cloud/browser";
+import { api } from "@k2b/cloud/browser";
 import type { InventoryApi } from "../api";
 
 export const inventoryApi = api.create<InventoryApi>({

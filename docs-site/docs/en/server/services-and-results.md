@@ -26,7 +26,7 @@ import {
   fail,
   ok,
   type Result,
-} from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/server";
 
 export const createInventoryService = (repository: InventoryRepository) => ({
   read: async (input: {
@@ -162,7 +162,7 @@ Catch infrastructure failures in the service when the operation can map them
 to a safe domain error:
 
 ```ts
-import { err, tryCatch } from "@valentinkolb/cloud/server";
+import { err, tryCatch } from "@k2b/cloud/server";
 
 return tryCatch(
   () => repository.create(input),

@@ -167,7 +167,7 @@ test script and root-owned tests still run in isolated Bun test processes.
 For a focused package:
 
 ```bash
-bun run --filter @valentinkolb/cloud-app-grids typecheck
+bun run --cwd packages/grids typecheck
 bun test packages/grids
 ```
 

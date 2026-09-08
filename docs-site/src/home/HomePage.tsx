@@ -48,7 +48,7 @@ export default function HomePage(props: HomePageProps) {
                 <a class="cloud-btn cloud-btn-primary" href="/en/docs/overview">
                   Read the developer overview
                 </a>
-                <a class="cloud-btn" href="https://github.com/ValentinKolb/cloud">
+                <a class="cloud-btn" href="https://github.com/k2b-dev/cloud">
                   <GitHubIcon />
                   Browse the source
                 </a>
@@ -232,7 +232,7 @@ export default function HomePage(props: HomePageProps) {
               <pre>
                 <code>
                   <span class="hl-keyword">import</span> {`{ defineApp }`} <span class="hl-keyword">from</span>{" "}
-                  <span class="hl-string">"@valentinkolb/cloud"</span>;{`\n\n`}
+                  <span class="hl-string">"@k2b/cloud"</span>;{`\n\n`}
                   <span class="hl-keyword">export const</span> app <span class="hl-operator">=</span> defineApp({`{`}
                   {`\n  `}id: <span class="hl-string">"my-app"</span>,{`\n  `}name: <span class="hl-string">"My App"</span>,{`\n  `}
                   appearance: {`{`} accent: <span class="hl-string">"#1b5fd9"</span> {`}`},{`\n  `}basePath:{" "}
@@ -321,7 +321,7 @@ export default function HomePage(props: HomePageProps) {
                 <nav aria-label="Platform resources">
                   <a href="/en/docs/overview">Docs →</a>
                   <a href="/en/ui">UI components →</a>
-                  <a href="https://github.com/ValentinKolb/cloud">Source →</a>
+                  <a href="https://github.com/k2b-dev/cloud">Source →</a>
                 </nav>
               </footer>
             </div>
@@ -332,8 +332,8 @@ export default function HomePage(props: HomePageProps) {
         <div class="cloud-shell cloud-home-footer-inner">
           <span>Cloud</span>
           <nav aria-label="Footer navigation">
-            <a href="https://github.com/ValentinKolb/cloud">Source</a>
-            <a href="https://github.com/ValentinKolb/cloud/blob/main/LICENSE">AGPL-3.0</a>
+            <a href="https://github.com/k2b-dev/cloud">Source</a>
+            <a href="https://github.com/k2b-dev/cloud/blob/main/LICENSE">AGPL-3.0</a>
             <a href="https://impressum.k2b.dev">Imprint</a>
           </nav>
         </div>

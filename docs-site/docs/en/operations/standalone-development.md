@@ -10,7 +10,7 @@ updated: 2026-08-12
 
 # Standalone development
 
-A standalone application depends on `@valentinkolb/cloud` from npm.
+A standalone application depends on `@k2b/cloud` from npm.
 
 It owns its repository, version, image, and release cycle. It connects to a
 running Cloud deployment at runtime.
@@ -28,7 +28,7 @@ stylesheet:
 ```bash
 APP_ID=inventory \
 APP_DIR=. \
-bun run --preload=node_modules/@valentinkolb/cloud/scripts/preload.ts \
+bun run --preload=node_modules/@k2b/cloud/scripts/preload.ts \
 src/index.ts
 ```
 
@@ -54,7 +54,7 @@ styles, Settings, or another platform service.
 
 ## Use published dependencies only
 
-Import only paths exported by `@valentinkolb/cloud`.
+Import only paths exported by `@k2b/cloud`.
 
 Do not rely on monorepo aliases or import another application package. A
 standalone build cannot resolve them.
@@ -76,7 +76,7 @@ Build the same package version used in production. Test registration, login,
 one authenticated route, one mutation, and graceful shutdown against the target
 Cloud deployment.
 
-Treat the target Cloud release and the app's `@valentinkolb/cloud` dependency as
+Treat the target Cloud release and the app's `@k2b/cloud` dependency as
 one compatibility decision. Upgrade deliberately, rebuild the image, and repeat
 the boundary tests before changing production.
 

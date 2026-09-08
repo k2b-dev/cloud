@@ -26,11 +26,11 @@ exact shared input and data schemas. Add the Queries to the application's
 owns the resource Type; the excerpt below shows only the search-specific part.
 
 ```ts
-import { defineCapabilities } from "@valentinkolb/cloud";
+import { defineCapabilities } from "@k2b/cloud";
 import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
-} from "@valentinkolb/cloud/contracts";
+} from "@k2b/cloud/contracts";
 import { ok } from "@k2b/stdlib";
 
 export const inventoryCapabilities = defineCapabilities({
@@ -165,7 +165,7 @@ database remains the source of truth.
 ## Let a user choose a Cloud resource
 
 Use `openCloudResourcePicker` from
-`@valentinkolb/cloud/browser/resource-picker` when an application needs a
+`@k2b/cloud/browser/resource-picker` when an application needs a
 stable `CloudResourceRef` selected from any searchable Cloud application. The
 picker groups the existing Universal Search results by their owning app,
 supports an app filter, and returns the selected resource view. Store the
@@ -174,7 +174,7 @@ Set `requireReader` when the consumer must resolve the selected resource later,
 as AI Project references do.
 
 ```ts
-import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 
 const selected = await openCloudResourcePicker({
   title: "Add Cloud reference",

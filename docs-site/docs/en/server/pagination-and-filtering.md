@@ -24,8 +24,8 @@ import {
   createPagination,
   PaginationQuerySchema,
   parsePagination,
-} from "@valentinkolb/cloud/contracts";
-import { ok, v } from "@valentinkolb/cloud/server";
+} from "@k2b/cloud/contracts";
+import { ok, v } from "@k2b/cloud/server";
 import { z } from "zod";
 
 const ListItemsQuerySchema = PaginationQuerySchema.extend({
@@ -152,7 +152,7 @@ Without one, items with the same primary sort value can move between pages.
 Use `paginateItems()` when the complete collection is already loaded:
 
 ```ts
-import { paginateItems } from "@valentinkolb/cloud/server";
+import { paginateItems } from "@k2b/cloud/server";
 
 const page = paginateItems(externalItems, {
   page: 2,

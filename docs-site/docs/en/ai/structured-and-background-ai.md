@@ -28,7 +28,7 @@ Authorize the domain read first. Send only the fields required by the task.
 ## Run a structured task
 
 ```ts
-import { runAiStructured } from "@valentinkolb/cloud/ai";
+import { runAiStructured } from "@k2b/cloud/ai";
 import { z } from "zod";
 
 const item = await loadItemForAi({
@@ -118,7 +118,7 @@ performance, user activity, quality feedback, and background failures over
 24-hour, 7-day, 30-day, or 90-day ranges.
 
 Core's admin UI obtains the built-in text from `AI_BACKGROUND_TASK_PROMPTS`
-in the server-only `@valentinkolb/cloud/ai/admin` entry point. These values use
+in the server-only `@k2b/cloud/ai/admin` entry point. These values use
 the same task constants as execution and are not editable prompt settings.
 
 Do not silently turn a failed AI result into application truth. Decide whether
@@ -133,7 +133,7 @@ composing the shared actions into its workflow module:
 import {
   AI_WORKFLOW_ACTIONS,
   defineWorkflowModule,
-} from "@valentinkolb/cloud/workflows";
+} from "@k2b/cloud/workflows";
 
 export const inventoryWorkflows = defineWorkflowModule({
   id: "inventory",
@@ -178,7 +178,7 @@ An opted-in server must also:
 4. expose a `maxAiCalls` run budget.
 
 The server-only lifecycle exports are available from
-`@valentinkolb/cloud/workflows/ai`.
+`@k2b/cloud/workflows/ai`.
 
 ### Choose the workflow model
 
