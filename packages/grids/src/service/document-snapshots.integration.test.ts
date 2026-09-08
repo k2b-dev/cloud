@@ -2,7 +2,6 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrate } from "../migrate";
 import { createRecordSnapshot, filterSnapshotRelatedRecords } from "./document-snapshots";
-import { ALL_RECORD_ACCESS } from "./record-access";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 const uuid = () => Bun.randomUUIDv7();
@@ -39,18 +38,19 @@ describe("record snapshot relation access", () => {
         tableId,
         recordId,
         actorId: null,
-        resolveRecordAccess: async () => ALL_RECORD_ACCESS,
+        canReadTable: async () => true,
       });
 
       expect(snapshot.ok).toBe(false);
       if (snapshot.ok) throw new Error("Expected mismatched base rejection");
-      expect(snapshot.error.message).toBe("record does not belong to base");
+      expect(snapshot.error.message).toBe("The record does not belong to this base.");
       const [count] = await sql<{ count: number }[]>`
         SELECT COUNT(*)::int AS count FROM grids.record_snapshots WHERE record_id = ${recordId}::uuid
       `;
       expect(count?.count).toBe(0);
     } finally {
       await sql`DELETE FROM grids.audit_log WHERE base_id IN (${baseId}::uuid, ${wrongBaseId}::uuid)`;
+      await sql`DELETE FROM grids.record_snapshots WHERE base_id IN (${baseId}::uuid, ${wrongBaseId}::uuid)`;
       await sql`DELETE FROM grids.bases WHERE id IN (${baseId}::uuid, ${wrongBaseId}::uuid)`;
     }
   });
@@ -103,9 +103,9 @@ describe("record snapshot relation access", () => {
         tableId: rootTableId,
         recordId: rootRecordId,
         actorId: null,
-        resolveRecordAccess: async (target) => {
+        canReadTable: async (target) => {
           checkedTargets.push(target.tableId);
-          return target.tableId === rootTableId || target.tableId === readableTableId ? ALL_RECORD_ACCESS : null;
+          return target.tableId === rootTableId || target.tableId === readableTableId ? true : false;
         },
       });
 
@@ -123,7 +123,7 @@ describe("record snapshot relation access", () => {
         tableId: rootTableId,
         recordId: rootRecordId,
         actorId: null,
-        resolveRecordAccess: async () => ALL_RECORD_ACCESS,
+        canReadTable: async () => true,
       });
       if (!completeSnapshot.ok) throw new Error(completeSnapshot.error.message);
       const filtered = await filterSnapshotRelatedRecords(
@@ -131,7 +131,7 @@ describe("record snapshot relation access", () => {
           ...completeSnapshot.data,
           graph: { ...completeSnapshot.data.graph, documentData: { secret: "must not escape" } },
         },
-        async (target) => (target.tableId === readableTableId ? ALL_RECORD_ACCESS : null),
+        async (target) => (target.tableId === readableTableId ? true : false),
       );
       const filteredGraph = filtered.graph as { records: Record<string, unknown> };
       expect(Object.keys(filtered.graph).sort()).toEqual(["records", "rootId"]);
@@ -141,6 +141,7 @@ describe("record snapshot relation access", () => {
       expect(filteredGraph.records[`${deniedTableId}:${deniedRecordId}`]).toBeUndefined();
     } finally {
       await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.record_snapshots WHERE base_id = ${baseId}::uuid`;
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
@@ -197,9 +198,9 @@ describe("record snapshot relation access", () => {
           tableId,
           recordId: recordIds[0]!,
           actorId: null,
-          resolveRecordAccess: async () => {
+          canReadTable: async () => {
             permissionChecks += 1;
-            return ALL_RECORD_ACCESS;
+            return true;
           },
         });
 
@@ -211,6 +212,7 @@ describe("record snapshot relation access", () => {
         expect(permissionChecks).toBe(1);
       } finally {
         await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
+        await sql`DELETE FROM grids.record_snapshots WHERE base_id = ${baseId}::uuid`;
         await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
       }
     },

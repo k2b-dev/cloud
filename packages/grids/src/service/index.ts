@@ -140,7 +140,7 @@ export const gridsService = {
   },
   record: {
     list: records.list,
-    countAccessibleByTable: records.countAccessibleByTable,
+    countByTable: records.countByTable,
     get: records.get,
     getByShortId: records.getByShortId,
     findTableId: records.findTableId,

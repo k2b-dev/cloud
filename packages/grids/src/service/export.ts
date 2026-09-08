@@ -13,7 +13,6 @@ import { createHtmlTemplateRenderBudget, type HtmlTemplateRenderBudget } from ".
 import { serviceMessagesFor } from "./messages";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 import { projectPublicIds } from "./public-resources";
-import type { AuthorizedRecordAccess } from "./record-access";
 import { list as listRecords } from "./records";
 import { loadRelationTargets } from "./relation-targets";
 import type { ExpansionViewer } from "./relations";
@@ -44,7 +43,6 @@ const createStoredPageReader = (params: {
   query: RecordQuery;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
-  recordAccess?: AuthorizedRecordAccess;
   htmlTemplateFieldIds: string[];
   htmlTemplateRenderBudget: HtmlTemplateRenderBudget;
 }): ExportPageReader => {
@@ -66,7 +64,6 @@ const createStoredPageReader = (params: {
       includeRelations: false,
       viewer: params.viewer,
       dateConfig: params.dateConfig,
-      recordAccess: params.recordAccess,
       htmlTemplateFieldIds: params.htmlTemplateFieldIds,
       htmlTemplateRenderBudget: params.htmlTemplateRenderBudget,
     });
@@ -86,7 +83,6 @@ const createFederatedPageReader = async (params: {
   query: RecordQuery;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<ExportPageReader>> => {
   const converted = simpleQueryToGqlSource({ tableId: params.tableId, query: params.query });
@@ -121,7 +117,6 @@ const createFederatedPageReader = async (params: {
       cursorFingerprint,
       cursorSigningKey: EXPORT_CURSOR_SIGNING_KEY,
       viewer: params.viewer,
-      ...(params.recordAccess ? { primaryRecordAccess: params.recordAccess } : {}),
       labelRelationValues: false,
       expectedFederatedRevisionScope: expectedRevisionScope,
       onFederatedRevisionScope: (scope) => {
@@ -161,7 +156,6 @@ const createExportPageReader = async (params: {
   query: RecordQuery;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
-  recordAccess?: AuthorizedRecordAccess;
   htmlTemplateFieldIds: string[];
   htmlTemplateRenderBudget: HtmlTemplateRenderBudget;
   locale?: string;
@@ -262,7 +256,6 @@ const pickColumns = async (params: {
   specs?: ExportFieldSpec[];
   query: RecordQuery;
   viewer?: ExpansionViewer;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<{ columns: ExportColumn[]; selected: Array<{ field: Field; spec?: ExportFieldSpec }> }>> => {
   const byId = new Map(params.fields.map((f) => [f.id, f]));
@@ -470,7 +463,6 @@ export const exportRecords = async (params: {
   dateConfig?: DateContext;
   /** Optional viewer gates relation-field expansion across target tables. */
   viewer?: ExpansionViewer;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<ExportResult>> => {
   const fields = await listFields(params.tableId);
@@ -507,7 +499,6 @@ export const exportRecords = async (params: {
     query,
     viewer: params.viewer,
     dateConfig: params.dateConfig,
-    recordAccess: params.recordAccess,
     htmlTemplateFieldIds: picked.data.selected.filter(({ field }) => field.type === "html_template").map(({ field }) => field.id),
     htmlTemplateRenderBudget: createHtmlTemplateRenderBudget(),
     locale: params.locale,

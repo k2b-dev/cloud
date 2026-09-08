@@ -1,14 +1,13 @@
-import type { AuthorizedRecordAccess } from "./record-access";
-import { type ExpansionViewer, resolveRecordAccessByTableIds } from "./relation-access";
+import { type ExpansionViewer, resolveReadableTableIds } from "./relation-access";
 import { collectHydratedRelationTargetIds, loadRelationTargetsBatch } from "./relation-targets";
 import type { Field, GridRecord } from "./types";
 
 const resolveExpansionByTargetTable = async (
   idsByTargetTable: Map<string, Set<string>>,
-  recordAccessByTableId?: ReadonlyMap<string, AuthorizedRecordAccess>,
+  authorizedTableIds?: ReadonlySet<string>,
 ): Promise<Record<string, Record<string, unknown>>> => {
   const expansion: Record<string, Record<string, unknown>> = {};
-  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, recordAccessByTableId);
+  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds);
   for (const targets of targetsByTable.values()) {
     for (const record of targets.records) {
       const visibleFields: Record<string, unknown> = {};
@@ -29,9 +28,9 @@ export const buildRelationExpansionCache = async (
 ): Promise<Record<string, Record<string, unknown>>> => {
   const idsByTargetTable = collectHydratedRelationTargetIds(records, fields);
   if (!viewer) return resolveExpansionByTargetTable(idsByTargetTable);
-  const access = await resolveRecordAccessByTableIds(idsByTargetTable.keys(), viewer);
-  const visibleTargets = new Map([...idsByTargetTable].filter(([tableId]) => access.has(tableId)));
-  return resolveExpansionByTargetTable(visibleTargets, access);
+  const authorizedTableIds = await resolveReadableTableIds(idsByTargetTable.keys(), viewer);
+  const visibleTargets = new Map([...idsByTargetTable].filter(([tableId]) => authorizedTableIds.has(tableId)));
+  return resolveExpansionByTargetTable(visibleTargets, authorizedTableIds);
 };
 
 export const attachRelationExpansion = async (records: GridRecord[], fields: Field[], viewer?: ExpansionViewer): Promise<void> => {

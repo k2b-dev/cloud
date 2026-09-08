@@ -46,7 +46,7 @@ export const loadRecordDetailData = async (params: {
       params.locale,
     ),
     table?.kind === "federated"
-      ? gridsService.audit.combined.describeRecord(params.tableId, params.recordId, undefined, params.locale).then((result) => {
+      ? gridsService.audit.combined.describeRecord(params.tableId, params.recordId, params.locale).then((result) => {
           if (!result.ok) throw new Error(result.error.message);
           return result.data;
         })

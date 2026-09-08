@@ -4,7 +4,6 @@ import { evaluateFormValidations, formValidationFieldsCompatible } from "../form
 import { listByTable as listFields, materializeFieldDefault } from "./fields";
 import { formMessagesFor } from "./form-messages";
 import type { Form } from "./forms";
-import type { AuthorizedRecordAccess } from "./record-access";
 import { notifyRecordEventOutbox } from "./record-event-outbox";
 import { createInTransaction } from "./record-write";
 import type { ExpansionViewer } from "./relation-access";
@@ -44,7 +43,6 @@ export const submitForm = async (params: {
   dateConfig: DateContext;
   /** Request-scoped values resolved by a trusted server surface. */
   fixedValues?: Record<string, unknown>;
-  recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<{ recordId: string }>> => {
   const t = formMessagesFor(params.dateConfig.locale);
@@ -211,7 +209,6 @@ export const submitForm = async (params: {
       const created = await createInTransaction(tx, params.form.tableId, payload, params.actorId, "form", {
         dateConfig: params.dateConfig,
         locale: params.dateConfig.locale,
-        recordAccess: params.recordAccess,
         viewer: params.viewer,
       });
       if (!created.ok) throw created.error;

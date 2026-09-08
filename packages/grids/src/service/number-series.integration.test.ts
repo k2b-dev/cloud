@@ -9,7 +9,6 @@ import { migrate } from "../migrate";
 import * as documents from "./document-core";
 import * as documentTemplates from "./document-templates";
 import * as fields from "./fields";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import * as records from "./record-write";
 import { get as getTable } from "./tables";
 
@@ -179,8 +178,7 @@ describe("durable number series Postgres integration", () => {
           recordId: record.data.id,
           actor: { kind: "system" },
           idempotencyKey: `number-series-first-${testUuid()}`,
-          recordAccess: ALL_RECORD_ACCESS,
-          resolveRecordAccess: async () => ALL_RECORD_ACCESS,
+          canReadTable: async () => true,
           renderPdf,
         });
         expect(first.ok).toBe(true);
@@ -206,8 +204,7 @@ describe("durable number series Postgres integration", () => {
           recordId: record.data.id,
           actor: { kind: "system" },
           idempotencyKey: `number-series-second-${testUuid()}`,
-          recordAccess: ALL_RECORD_ACCESS,
-          resolveRecordAccess: async () => ALL_RECORD_ACCESS,
+          canReadTable: async () => true,
           renderPdf,
         });
         expect(second.ok).toBe(true);

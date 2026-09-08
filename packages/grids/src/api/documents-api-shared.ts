@@ -11,7 +11,6 @@ import { gridsService } from "../service";
 import { decodeDocumentCursor } from "../service/document-values";
 import { loadDocumentNumberSeries } from "../service/number-series";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT, PublicDocumentSchema } from "./document-public-contracts";
 import { pdfResponse } from "./download-response";
 import { apiMessages } from "./messages";
@@ -747,9 +746,9 @@ export const gateTemplate = async (
   required: "read" | "write" | "admin",
 ) => gateAt(c, { baseId: loaded.table.baseId }, required);
 
-export const snapshotRecordAccessResolver = (c: Context<AuthContext>) => async (target: { baseId: string; tableId: string }) => {
+export const snapshotTableReadAuthorizer = (c: Context<AuthContext>) => async (target: { baseId: string; tableId: string }) => {
   const resolved = await gateAt(c, { baseId: target.baseId }, "read");
-  return resolved.ok ? ALL_RECORD_ACCESS : null;
+  return resolved.ok;
 };
 
 export const gateDocument = async (
@@ -783,13 +782,12 @@ export const liveRenderData = async (
 ) => {
   const table = await gridsService.table.get(params.tableId);
   if (!table) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).tableNotFound };
-  const recordAccess = await gateAt(c, { baseId: table.baseId }, "read");
-  if (!recordAccess.ok) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).recordNotFound };
+  const recordAuthorization = await gateAt(c, { baseId: table.baseId }, "read");
+  if (!recordAuthorization.ok) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).recordNotFound };
   const dateConfig = params.dateConfig ?? (await getDateConfig(c));
   const record = await gridsService.record.get(params.tableId, params.recordId, {
     dateConfig,
     viewer: currentActorViewer(c),
-    recordAccess: ALL_RECORD_ACCESS,
   });
   if (!record) return { ok: false as const, status: 404, phase: "data" as const, message: apiMessages(c).recordNotFound };
 

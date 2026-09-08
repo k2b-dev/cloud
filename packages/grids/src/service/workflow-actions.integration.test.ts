@@ -20,7 +20,6 @@ import { gridsWorkflows } from "../workflows/module";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import {
   disable as disableFinalization,
   enable as enableFinalization,
@@ -123,10 +122,13 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
     )
   `;
   await sql`
-    INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, created_by, updated_by)
+    INSERT INTO grids.document_templates (
+      id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template, created_by, updated_by
+    )
     VALUES (
       ${fixture.documentTemplateId}::uuid, ${shortId("D")}, ${fixture.tableId}::uuid, 'Task sheet',
-      ${`from table {${fixture.tableId}} limit 1`}, '<p>Task</p>', ${fixture.actorId}::uuid, ${fixture.actorId}::uuid
+      ${`from table {${fixture.tableId}} limit 1`}, 'html', '<p>Task</p>', 'TASK-{{ document.id }}', '{{ document.number }}.pdf',
+      ${fixture.actorId}::uuid, ${fixture.actorId}::uuid
     )
   `;
   // Without this the actions are all correct to refuse, and every assertion
@@ -662,7 +664,6 @@ describe("declared Grids workflow actions", () => {
       const referencedBy = await listReferencedBy({
         targetTableId: fixture.tableId,
         targetRecordId: fixture.recordId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey: "workflow-actions-correction-test",
       });
       expect(referencedBy.ok).toBe(true);

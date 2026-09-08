@@ -16,7 +16,6 @@ import type { DslQueryAst } from "../../../query-dsl/types";
 import type { Field, GridRecord, Table, View } from "../../../service";
 import { gridsService } from "../../../service";
 import { buildPrincipalLabelCache, principalReferencesFromRecords } from "../../../service/principal-values";
-import type { AuthorizedRecordAccess } from "../../../service/record-access";
 import { calendarQueryFilter, cardImageFieldIds } from "../records-view/display-mode";
 import { resolveEffectiveQuery } from "../records-view/effective-query";
 import type { RecordsState } from "../records-view/query-url";
@@ -141,7 +140,6 @@ type InitialRecordsArgs = {
   trashMode: boolean;
   user: AuthUser;
   dateConfig?: DateContext;
-  recordAccess: AuthorizedRecordAccess;
 };
 
 const exactViewState = (state: RecordsState): RecordsState => ({
@@ -218,7 +216,6 @@ const loadGroupedInitialRecords = async (
     limit: query.effectiveLimit,
     viewer,
     dateConfig: args.dateConfig,
-    recordAccess: args.recordAccess,
   });
   if (!groupResult.ok) return data;
 
@@ -255,7 +252,6 @@ const loadListedInitialRecords = async (
     dateConfig: args.dateConfig,
     computedColumns: query.effective.columns?.filter(isComputedColumn),
     filePreviewFieldIds: cardImageFieldIds(args.displayConfig),
-    recordAccess: args.recordAccess,
   });
   if (listResult.ok) {
     data.records = {
@@ -280,7 +276,6 @@ const loadListedInitialRecords = async (
     requests: query.effectiveAggregations.map((aggregation) => ({ fieldId: aggregation.fieldId, agg: aggregation.agg })),
     viewer,
     dateConfig: args.dateConfig,
-    recordAccess: args.recordAccess,
   });
   if (aggregateResult.ok) data.aggregates = { ...data.aggregates, ...aggregateResult.data };
   return data;

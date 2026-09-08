@@ -11,7 +11,6 @@ import { listByTables } from "./field-read";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
 import { serviceMessagesFor } from "./messages";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { get as getTable } from "./tables";
 import type { AuditAction, AuditEntry, Field } from "./types";
 
@@ -92,7 +91,6 @@ type CombinedAuditListParams = {
   to?: string;
   limit?: number;
   cursor?: string | null;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 };
 
@@ -333,12 +331,7 @@ const loadProjection = async (tableId: string, fieldIds?: readonly string[], loc
   });
 };
 
-const resolveOrigin = async (
-  projection: Projection,
-  recordId: string,
-  recordAccess?: AuthorizedRecordAccess,
-  locale?: string,
-): Promise<Result<CombinedRecordOrigin>> => {
+const resolveOrigin = async (projection: Projection, recordId: string, locale?: string): Promise<Result<CombinedRecordOrigin>> => {
   const fields = await listFields(projection.targetTableId);
   const recordSource = await buildDslSqlRecordSource(
     projection.targetTableId,
@@ -351,7 +344,6 @@ const resolveOrigin = async (
     SELECT source_table_id::text, deleted_at
     FROM ${recordSource.relation} combined_record
     WHERE combined_record.id = ${recordId}::uuid
-      AND ${recordAccessPredicate(recordAccess, "combined_record")}
     LIMIT 2
   `;
   if (rows.length !== 1) return fail(err.notFound(serviceMessagesFor(locale).combinedRecord));
@@ -388,11 +380,11 @@ const mapAuditRow = (row: DbRow, projection: Projection): CombinedAuditEntry | n
 
 const scopeProjectionSources = async (
   projection: Projection,
-  params: Pick<CombinedAuditListParams, "recordId" | "sourceRef" | "recordAccess" | "locale">,
+  params: Pick<CombinedAuditListParams, "recordId" | "sourceRef" | "locale">,
 ): Promise<Result<ProjectionSource[]>> => {
   let sources = projection.sources;
   if (params.recordId) {
-    const origin = await resolveOrigin(projection, params.recordId, params.recordAccess, params.locale);
+    const origin = await resolveOrigin(projection, params.recordId, params.locale);
     if (!origin.ok) return origin;
     sources = sources.filter((source) => source.descriptor.ref === origin.data.source.ref);
   }
@@ -428,10 +420,6 @@ const loadAuditRows = (
   const to = params.to ?? null;
   const cursorCreatedAt = cursor?.createdAt ?? null;
   const cursorId = cursor?.id ?? null;
-  const recordVisibility =
-    !params.recordAccess || params.recordAccess.kind === "all"
-      ? sql`TRUE`
-      : sql`current_record.id IS NOT NULL AND ${recordAccessPredicate(params.recordAccess, "current_record")}`;
   return sql<AuditRow[]>`
     SELECT audit.id::text, audit.table_id::text, audit.record_id::text, audit.user_id::text,
            audit.action, audit.diff, audit.context, audit.created_at,
@@ -446,7 +434,6 @@ const loadAuditRows = (
      AND current_record.id = audit.record_id
     WHERE audit.table_id = ANY(${toPgUuidArray(tableIds)}::uuid[])
       AND audit.record_id IS NOT NULL
-      AND ${recordVisibility}
       AND audit.action = ANY(${`{${actions.join(",")}}`}::text[])
       AND (
         audit.action <> 'updated'
@@ -477,15 +464,10 @@ const mapAuditRows = (rows: readonly AuditRow[], projection: Projection, locale?
   }
 };
 
-export const describeRecord = async (
-  tableId: string,
-  recordId: string,
-  recordAccess?: AuthorizedRecordAccess,
-  locale?: string,
-): Promise<Result<CombinedRecordOrigin>> => {
+export const describeRecord = async (tableId: string, recordId: string, locale?: string): Promise<Result<CombinedRecordOrigin>> => {
   const projection = await loadProjection(tableId, undefined, locale);
   if (!projection.ok) return projection;
-  return resolveOrigin(projection.data, recordId, recordAccess, locale);
+  return resolveOrigin(projection.data, recordId, locale);
 };
 
 export const list = async (params: CombinedAuditListParams): Promise<Result<CombinedAuditPage>> => {

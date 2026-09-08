@@ -5,7 +5,6 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import {
   CreateFormSchema,
   FormListSchema,
@@ -98,10 +97,7 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
         if (!table) return context.json({ message: apiMessages(context).formNotFound }, 404);
         const gate = await gateAtTarget(context, { baseId: table.baseId }, "write");
         if (!gate.ok) return respond(context, () => Promise.resolve(gate));
-        return submitFormResponse(context, form, context.req.valid("json"), actorId(context), deps, {
-          recordAccess: ALL_RECORD_ACCESS,
-          viewer: currentActorViewer(context),
-        });
+        return submitFormResponse(context, form, context.req.valid("json"), actorId(context), deps, currentActorViewer(context));
       },
     )
     .get(

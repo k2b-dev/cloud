@@ -4,11 +4,9 @@ import { currentActorUser, gateBaseAtAccess, gridsAccessContext } from "../../..
 import { toPublicFields, toPublicTables, toPublicViews } from "../../../api/public-dto";
 import { ssr } from "../../../config";
 import { gridsService } from "../../../service";
-import { ALL_RECORD_ACCESS } from "../../../service/record-access";
 import QueryReferenceWindow, { normalizeQueryReferenceTab } from "../../_components/query/QueryReferenceWindow";
 import { serializeWorkspaceState } from "../../_components/workspace/workspace-state-serialization";
 import { resolveGridsMessages } from "../../messages";
-
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = resolveGridsMessages(getLocale(c));
@@ -36,9 +34,7 @@ export default ssr<AuthContext>(async (c) => {
         userId: user.id,
         userGroups: user.memberofGroupIds,
       });
-      const recordCountsByTable = await gridsService.record.countAccessibleByTable(
-        catalog.tables.map((table) => ({ tableId: table.id, recordAccess: ALL_RECORD_ACCESS })),
-      );
+      const recordCountsByTable = await gridsService.record.countByTable(catalog.tables.map((table) => table.id));
       const publicTables = await toPublicTables(catalog.tables);
       const publicTableIds = new Map<string, string>();
       for (const [index, table] of catalog.tables.entries()) {

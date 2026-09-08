@@ -7,7 +7,6 @@ import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { mapFieldRow } from "./field-read";
 import { parseJsonbRow } from "./jsonb";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { relationLabelFields } from "./relation-targets";
 import type { Field } from "./types";
 
@@ -150,12 +149,7 @@ const loadFieldsByTable = async (tableIds: readonly string[], client: SqlClient)
   return fieldsByTable;
 };
 
-const targetIsReadable = async (
-  targetTableId: string,
-  targetRecordId: string,
-  recordAccess: AuthorizedRecordAccess,
-  client: SqlClient,
-): Promise<boolean> => {
+const targetIsReadable = async (targetTableId: string, targetRecordId: string, client: SqlClient): Promise<boolean> => {
   const [target] = await client<Array<{ id: string }>>`
     SELECT target.id::text
     FROM grids.records target
@@ -169,7 +163,6 @@ const targetIsReadable = async (
     WHERE target.id = ${targetRecordId}::uuid
       AND target.table_id = ${targetTableId}::uuid
       AND target.deleted_at IS NULL
-      AND ${recordAccessPredicate(recordAccess, "target")}
   `;
   return Boolean(target);
 };
@@ -180,7 +173,6 @@ export const listReferencedBy = async (params: {
   relationFieldId?: string | null;
   cursor?: string | null;
   limit?: number;
-  recordAccess: AuthorizedRecordAccess;
   client?: SqlClient;
   cursorSigningKey?: string;
   locale?: string;
@@ -191,7 +183,7 @@ export const listReferencedBy = async (params: {
   if (relationFieldId && !ShortIdSchema.safeParse(relationFieldId).success) {
     return fail(err.badInput(messages.invalidReferencedByField));
   }
-  if (!(await targetIsReadable(params.targetTableId, params.targetRecordId, params.recordAccess, client))) {
+  if (!(await targetIsReadable(params.targetTableId, params.targetRecordId, client))) {
     return fail(err.notFound(messages.record));
   }
 
@@ -225,7 +217,6 @@ export const listReferencedBy = async (params: {
       WHERE target.id = ${params.targetRecordId}::uuid
         AND target.table_id = ${params.targetTableId}::uuid
         AND target.deleted_at IS NULL
-        AND ${recordAccessPredicate(params.recordAccess, "target")}
     ), requested_field AS (
       SELECT relation_field.id
       FROM target
@@ -266,7 +257,6 @@ export const listReferencedBy = async (params: {
       ON source_record.id = link.from_record_id
      AND source_record.table_id = relation_field.table_id
      AND source_record.deleted_at IS NULL
-     AND ${recordAccessPredicate(params.recordAccess, "source_record")}
     JOIN grids.tables source_table
       ON source_table.id = source_record.table_id
      AND source_table.base_id = target.base_id

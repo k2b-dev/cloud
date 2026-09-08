@@ -3,7 +3,6 @@ import { type AuthContext, getDateConfig, getLocale, jsonResponse, respond } fro
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import {
   addDraftDocumentMetadata,
   documentActor,
@@ -21,7 +20,7 @@ import {
   renderDraftDataResponse,
   renderDraftPdfResponse,
   resolveDocumentRecordId,
-  snapshotRecordAccessResolver,
+  snapshotTableReadAuthorizer,
 } from "./documents-api-shared";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
 import { apiMessages } from "./messages";
@@ -270,8 +269,7 @@ export const createDocumentRenderRoutes = () =>
           recordId,
           actor: documentActor(c.get("actor")),
           idempotencyKey: body.idempotencyKey,
-          recordAccess: ALL_RECORD_ACCESS,
-          resolveRecordAccess: snapshotRecordAccessResolver(c),
+          canReadTable: snapshotTableReadAuthorizer(c),
           viewer: currentActorViewer(c),
           dateConfig,
           filename: body.filename,

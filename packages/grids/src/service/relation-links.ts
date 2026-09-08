@@ -3,8 +3,6 @@ import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";
 import { liveRecordParentJoinSql } from "./parent-checks";
-import type { AuthorizedRecordAccess } from "./record-access";
-import { recordAccessPredicate } from "./record-access";
 import { accessibleRecordIdsByTable, type ExpansionViewer } from "./relation-access";
 import type { Field, GridRecord } from "./types";
 
@@ -14,7 +12,6 @@ export const validateRelationTargets = async (
   targetTableId: string,
   targetIds: string[],
   client: SqlClient = sql,
-  recordAccess?: AuthorizedRecordAccess,
 ): Promise<{ ok: true } | { ok: false; missing: string[] }> => {
   if (targetIds.length === 0) return { ok: true };
   const rows = await client<{ id: string }[]>`
@@ -24,7 +21,6 @@ export const validateRelationTargets = async (
     WHERE r.id = ANY(${client.array(targetIds, "UUID")})
       AND r.table_id = ${targetTableId}::uuid
       AND r.deleted_at IS NULL
-      AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   const found = new Set(rows.map((row) => row.id));
   const missing = targetIds.filter((id) => !found.has(id));

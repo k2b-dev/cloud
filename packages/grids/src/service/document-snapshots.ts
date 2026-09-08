@@ -4,8 +4,6 @@ import type { RecordSnapshot, RecordSnapshotSummary } from "../contracts";
 import { logAudit } from "./audit";
 import { type DocumentDbRow, mapRecordSnapshot, mapRecordSnapshotSummary } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
-import type { AuthorizedRecordAccess } from "./record-access";
-import { recordAccessPredicate } from "./record-access";
 import { createReader, type RecordReader } from "./record-read";
 import type { ExpansionViewer } from "./relation-access";
 import { insertWithShortIdForDb } from "./short-id";
@@ -20,7 +18,7 @@ type SnapshotRelatedTableTarget = {
   tableId: string;
 };
 
-export type SnapshotRecordAccessResolver = (target: SnapshotRelatedTableTarget) => Promise<AuthorizedRecordAccess | null>;
+export type SnapshotTableReadAuthorizer = (target: SnapshotRelatedTableTarget) => Promise<boolean>;
 
 export type SnapshotRecord = {
   id: string;
@@ -93,7 +91,7 @@ const buildRecordSnapshotGraph = async (
   recordId: string,
   options: {
     baseId: string;
-    resolveRecordAccess: SnapshotRecordAccessResolver;
+    canReadTable: SnapshotTableReadAuthorizer;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     maxDepth?: number;
@@ -107,7 +105,7 @@ const buildRecordSnapshotGraph = async (
   const seen = new Set<string>();
   const tables = new Map<string, Table>();
   const readers = new Map<string, RecordReader>();
-  const recordAccessByTableId = new Map<string, AuthorizedRecordAccess | null>();
+  const tableReadAccess = new Map<string, boolean>();
 
   const loadTable = async (tableId: string): Promise<Table | null> => {
     const cached = tables.get(tableId);
@@ -117,13 +115,13 @@ const buildRecordSnapshotGraph = async (
     return table;
   };
 
-  const loadRecordAccess = async (table: Table): Promise<AuthorizedRecordAccess | null> => {
-    if (recordAccessByTableId.has(table.id)) return recordAccessByTableId.get(table.id) ?? null;
-    const access = await options.resolveRecordAccess({ baseId: table.baseId, tableId: table.id });
-    recordAccessByTableId.set(table.id, access);
+  const canReadSnapshotTable = async (table: Table): Promise<boolean> => {
+    if (tableReadAccess.has(table.id)) return tableReadAccess.get(table.id) ?? false;
+    const access = await options.canReadTable({ baseId: table.baseId, tableId: table.id });
+    tableReadAccess.set(table.id, access);
     if (options.viewer) {
-      options.viewer.recordAccessByTableId ??= new Map();
-      options.viewer.recordAccessByTableId.set(table.id, access);
+      options.viewer.tableReadAccess ??= new Map();
+      options.viewer.tableReadAccess.set(table.id, access);
     }
     return access;
   };
@@ -132,11 +130,9 @@ const buildRecordSnapshotGraph = async (
     const tableId = table.id;
     const cached = readers.get(tableId);
     if (cached) return cached;
-    const recordAccess = await loadRecordAccess(table);
-    if (!recordAccess) return null;
+    if (!(await canReadSnapshotTable(table))) return null;
     const reader = await createReader(tableId, {
       dateConfig: options.dateConfig,
-      recordAccess,
       viewer: options.viewer,
     });
     readers.set(tableId, reader);
@@ -216,7 +212,7 @@ type CreateRecordSnapshotParams = {
   tableId: string;
   recordId: string;
   actorId: string | null;
-  resolveRecordAccess: SnapshotRecordAccessResolver;
+  canReadTable: SnapshotTableReadAuthorizer;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
 };
@@ -226,7 +222,7 @@ export type RecordSnapshotDraft = Omit<RecordSnapshot, "shortId">;
 export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshotDraft>> => {
   const graph = await buildRecordSnapshotGraph(params.tableId, params.recordId, {
     baseId: params.baseId,
-    resolveRecordAccess: params.resolveRecordAccess,
+    canReadTable: params.canReadTable,
     viewer: params.viewer,
     dateConfig: params.dateConfig,
   });
@@ -309,11 +305,11 @@ const snapshotGraphParts = (snapshot: RecordSnapshot): { rootId: string; records
 
 export const filterSnapshotRelatedRecords = async (
   snapshot: RecordSnapshot,
-  resolveRecordAccess: SnapshotRecordAccessResolver,
+  canReadTable: SnapshotTableReadAuthorizer,
 ): Promise<RecordSnapshot> => {
   const { rootId, records } = snapshotGraphParts(snapshot);
   const filteredRecords: Record<string, unknown> = { [rootId]: snapshot.root };
-  const accessByTableId = new Map<string, AuthorizedRecordAccess | null>();
+  const accessByTableId = new Map<string, boolean>();
   const idsByTableId = new Map<string, Set<string>>();
 
   for (const [key, value] of Object.entries(records)) {
@@ -332,14 +328,12 @@ export const filterSnapshotRelatedRecords = async (
 
   for (const tableId of idsByTableId.keys()) {
     const table = await getTable(tableId);
-    accessByTableId.set(tableId, table ? await resolveRecordAccess({ baseId: table.baseId, tableId }) : null);
+    accessByTableId.set(tableId, table ? await canReadTable({ baseId: table.baseId, tableId }) : false);
   }
   const clauses = [...idsByTableId].flatMap(([tableId, ids]) => {
     const access = accessByTableId.get(tableId);
     if (!access) return [];
-    return [
-      sql`(r.table_id = ${tableId}::uuid AND r.id = ANY(${sql.array([...ids], "UUID")}::uuid[]) AND ${recordAccessPredicate(access, "r")})`,
-    ];
+    return [sql`(r.table_id = ${tableId}::uuid AND r.id = ANY(${sql.array([...ids], "UUID")}::uuid[]))`];
   });
   if (clauses.length > 0) {
     const where = clauses.slice(1).reduce((combined, clause) => sql`${combined} OR ${clause}`, clauses[0]!);

@@ -89,7 +89,7 @@ describe("workflow principal revalidation", () => {
         INSERT INTO auth.users (id, uid, provider, profile, display_name)
         VALUES (${userId}::uuid, ${`workflow-auth-${suffix}`}, 'local', 'user', 'Workflow auth test')
       `;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'WA001', 'Workflow auth test')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'WA0001', 'Workflow auth test')`;
       await sql`
         INSERT INTO auth.access (id, user_id, permission)
         VALUES (${accessId}::uuid, ${userId}::uuid, 'write'::auth.permission_level)
@@ -167,7 +167,28 @@ describe("workflow principal revalidation", () => {
     if (result.ok) expect(result.permissionCap).toBe("read");
   });
 
-  test("rejects resource binding drift and cross-base execution", async () => {
+  test("never raises the accepted permission ceiling when current credential scopes are upgraded", async () => {
+    const result = await revalidateWorkflowPrincipal(
+      principal(),
+      BASE_ID,
+      deps({ findCredential: mock(async () => credential(["grids:admin"])) }),
+    );
+
+    expect(result).toMatchObject({ ok: true, permissionCap: "write", credential: { permissionCap: "write" } });
+  });
+
+  test("rejects resource binding drift even when the new binding matches the requested base", async () => {
+    const otherBase = "66666666-6666-4666-8666-666666666666";
+    const result = await revalidateWorkflowPrincipal(
+      principal(),
+      otherBase,
+      deps({ getServiceAccount: mock(async () => serviceAccount({ resourceId: otherBase })) }),
+    );
+
+    expect(result).toEqual({ ok: false, reason: "Workflow credential resource binding changed." });
+  });
+
+  test("rejects cross-base execution", async () => {
     const otherBase = "66666666-6666-4666-8666-666666666666";
     const result = await revalidateWorkflowPrincipal(principal(), otherBase, deps());
 

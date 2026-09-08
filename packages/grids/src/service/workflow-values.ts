@@ -6,11 +6,9 @@ import { sql } from "bun";
 import { z } from "zod";
 import type { GridRecord } from "../contracts";
 import type { GridsWorkflowChannel, GridsWorkflowPrincipal } from "../workflows/contracts";
-import type { AuthorizedRecordAccess } from "./record-access";
-import { recordAccessPredicate } from "./record-access";
 import { createReader } from "./record-read";
 import { SHORT_ID_REGEX } from "./short-id";
-import { resolveWorkflowBaseRecordAccess } from "./workflow-authorization";
+import { canAccessWorkflowBaseTable } from "./workflow-authorization";
 
 export type WorkflowRecordReference = {
   kind: "record";
@@ -27,7 +25,7 @@ type WorkflowInputPreparationDeps = {
 
 type WorkflowInputPreparationOptions = {
   trustedRecordIds?: ReadonlyMap<string, ReadonlySet<string>>;
-  resolveRecordAccess?: (tableId: string) => Promise<AuthorizedRecordAccess | null>;
+  canReadTable?: (tableId: string) => Promise<boolean>;
 };
 
 type WorkflowValueResolverDeps = {
@@ -231,6 +229,7 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
   }): Promise<WorkflowValueResolution> {
     const { value, remaining } = rootValue(input.invocation, input.variables, input.reference);
     if (isRecordReference(value) && remaining.length === 1 && remaining[0] === "recordId") {
+      if (!(await this.canReadTable(value.tableId))) throw new Error("workflow actor cannot read the referenced table");
       const shortId = await this.recordShortId(value.tableId, value.recordId);
       if (!shortId) throw new Error("referenced workflow record no longer exists");
       return { state: "resolved", value: shortId };
@@ -279,16 +278,12 @@ export class GridsWorkflowValueResolver implements WorkflowValueResolverPort {
   }
 }
 
-const recordAccessChecker = (
-  baseId: string,
-  principal: GridsWorkflowPrincipal,
-  override?: (tableId: string) => Promise<AuthorizedRecordAccess | null>,
-) => {
-  const cache = new Map<string, Promise<AuthorizedRecordAccess | null>>();
-  return (tableId: string): Promise<AuthorizedRecordAccess | null> => {
+const tableReadChecker = (baseId: string, principal: GridsWorkflowPrincipal, override?: (tableId: string) => Promise<boolean>) => {
+  const cache = new Map<string, Promise<boolean>>();
+  return (tableId: string): Promise<boolean> => {
     let access = cache.get(tableId);
     if (!access) {
-      access = override ? override(tableId) : resolveWorkflowBaseRecordAccess(principal, { baseId, tableId }, "read");
+      access = override ? override(tableId) : canAccessWorkflowBaseTable(principal, { baseId, tableId }, "read");
       cache.set(tableId, access);
     }
     return access;
@@ -300,13 +295,12 @@ export const createWorkflowInputPreparationDeps = (
   principal: GridsWorkflowPrincipal,
   options: WorkflowInputPreparationOptions = {},
 ): WorkflowInputPreparationDeps => {
-  const recordAccessFor = recordAccessChecker(baseId, principal, options.resolveRecordAccess);
+  const canReadTable = tableReadChecker(baseId, principal, options.canReadTable);
   return {
-    canReadTable: async (tableId) => (await recordAccessFor(tableId)) !== null,
+    canReadTable,
     resolveRecordIds: async (tableId, publicIds) => {
       if (publicIds.length === 0) return new Map();
-      const recordAccess = await recordAccessFor(tableId);
-      if (!recordAccess) return new Map();
+      if (!(await canReadTable(tableId))) return new Map();
       const shortIds = publicIds.filter((id) => SHORT_ID_REGEX.test(id));
       const rows = await sql<Array<{ id: string; short_id: string }>>`
         SELECT r.id::text AS id, r.short_id
@@ -316,7 +310,6 @@ export const createWorkflowInputPreparationDeps = (
         WHERE r.table_id = ${tableId}::uuid
           AND r.short_id = ANY(${sql.array(shortIds, "TEXT")}::text[])
           AND r.deleted_at IS NULL
-          AND ${recordAccessPredicate(recordAccess, "r")}
       `;
       const ids = new Map(rows.map((record) => [record.short_id, record.id]));
       const trusted = options.trustedRecordIds?.get(tableId);
@@ -329,11 +322,10 @@ export const createWorkflowInputPreparationDeps = (
 export const createGridsWorkflowValueResolver = (
   baseId: string,
   principal: GridsWorkflowPrincipal,
-  options: Pick<WorkflowInputPreparationOptions, "resolveRecordAccess"> = {},
+  options: Pick<WorkflowInputPreparationOptions, "canReadTable"> = {},
 ): GridsWorkflowValueResolver => {
   const readers = new Map<string, ReturnType<typeof createReader>>();
-  const recordAccessFor = recordAccessChecker(baseId, principal, options.resolveRecordAccess);
-  const canReadTable = async (tableId: string) => (await recordAccessFor(tableId)) !== null;
+  const canReadTable = tableReadChecker(baseId, principal, options.canReadTable);
   return new GridsWorkflowValueResolver({
     canReadTable,
     recordShortId: async (tableId, recordId) => {
@@ -347,10 +339,8 @@ export const createGridsWorkflowValueResolver = (
     readRecord: async (tableId, recordId) => {
       let reader = readers.get(tableId);
       if (!reader) {
-        const recordAccess = await recordAccessFor(tableId);
-        if (!recordAccess) return null;
+        if (!(await canReadTable(tableId))) return null;
         reader = createReader(tableId, {
-          recordAccess,
           viewer: {
             userId: principal.userId,
             userGroups: principal.groupIds,

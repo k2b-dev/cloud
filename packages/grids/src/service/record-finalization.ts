@@ -9,7 +9,6 @@ import { listByTable as listFields } from "./fields";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
 import { allocateNumberInTransaction, bindNumberAllocation } from "./number-series";
 import { requireStoredTableWritable } from "./parent-checks";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { captureRecordEventSnapshot, enqueueRecordEvent, notifyRecordEventOutbox } from "./record-event-outbox";
 import { mapRecordRow } from "./record-persistence";
 import { get as getRecord } from "./record-read";
@@ -282,13 +281,12 @@ const loadRecordValues = async (
   client: SqlClient,
   tableId: string,
   recordId: string,
-  recordAccess?: AuthorizedRecordAccess,
 ): Promise<{ row: Record<string, unknown>; data: Record<string, unknown> } | null> => {
   const [row] = await client<Array<Record<string, unknown>>>`
     SELECT record.*
     FROM grids.records record
     WHERE record.id = ${recordId}::uuid AND record.table_id = ${tableId}::uuid
-      AND record.deleted_at IS NULL AND ${recordAccessPredicate(recordAccess, "record")}
+      AND record.deleted_at IS NULL
   `;
   if (!row) return null;
   const data = { ...mapRecordRow(row).data };
@@ -425,7 +423,6 @@ export const inspect = async (params: {
   tableId: string;
   recordId: string;
   actorId?: string | null;
-  recordAccess?: AuthorizedRecordAccess;
   client?: SqlClient;
   locale?: string;
 }): Promise<Result<RecordFinalizationReadiness>> => {
@@ -433,7 +430,7 @@ export const inspect = async (params: {
   const client = params.client ?? sql;
   const status = await getStatus(params.tableId, client, params.locale);
   if (!status.ok) return status;
-  const record = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
+  const record = await loadRecordValues(client, params.tableId, params.recordId);
   if (!record) return fail(err.notFound(messages.record));
   const finalizedAt = record.row.finalized_at ? iso(record.row.finalized_at as Date | string) : null;
   const fields = await listFields(params.tableId, false, client);
@@ -476,7 +473,6 @@ export const requestFinalizationInTransaction = async (
     actorId: string | null;
     comment?: string | null;
     expectedPolicyRevision?: number;
-    recordAccess?: AuthorizedRecordAccess;
     locale?: string;
   },
 ): Promise<Result<RecordFinalizationRequest>> => {
@@ -497,7 +493,7 @@ export const requestFinalizationInTransaction = async (
       SELECT record.version, record.finalized_at
       FROM grids.records record
       WHERE record.id = ${params.recordId}::uuid AND record.table_id = ${params.tableId}::uuid
-        AND record.deleted_at IS NULL AND ${recordAccessPredicate(params.recordAccess, "record")}
+        AND record.deleted_at IS NULL
       FOR UPDATE
     `;
   if (!record) return fail(err.notFound(messages.record));
@@ -525,7 +521,7 @@ export const requestFinalizationInTransaction = async (
         WHERE id = ${pending.id}::uuid AND status = 'pending'
       `;
   }
-  const loaded = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
+  const loaded = await loadRecordValues(client, params.tableId, params.recordId);
   if (!loaded) return fail(err.notFound(messages.record));
   const fields = await listFields(params.tableId, false, client);
   const checked = await requirements(client, params.recordId, fields, loaded.data, params.locale);
@@ -562,7 +558,6 @@ export const requestFinalization = async (params: {
   actorId: string | null;
   comment?: string | null;
   expectedPolicyRevision?: number;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<RecordFinalizationRequest>> => sql.begin((tx) => requestFinalizationInTransaction(tx, params));
 
@@ -656,7 +651,6 @@ export const finalizeInTransaction = async (
     origin: MutationOrigin;
     approvalRequestId?: string;
     expectedPolicyRevision?: number;
-    recordAccess?: AuthorizedRecordAccess;
     dateConfig?: DateContext;
     locale?: string;
   },
@@ -670,7 +664,7 @@ export const finalizeInTransaction = async (
     SELECT record.id::text
     FROM grids.records record
     WHERE record.id = ${params.recordId}::uuid AND record.table_id = ${params.tableId}::uuid
-      AND record.deleted_at IS NULL AND ${recordAccessPredicate(params.recordAccess, "record")}
+      AND record.deleted_at IS NULL
   `;
   if (!target) return fail(err.notFound(messages.record));
   const [activation] = await client<Array<{ table_id: string; mode: "direct" | "four_eyes"; policy_revision: number }>>`
@@ -685,7 +679,7 @@ export const finalizeInTransaction = async (
     const admission = await validateResolver(client, { ...params, requestId: params.approvalRequestId }, "approve");
     if (!admission.ok) return admission;
     if (admission.data.replay) {
-      const replayed = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
+      const replayed = await loadRecordValues(client, params.tableId, params.recordId);
       if (!replayed?.row.finalized_at) return fail(err.conflict(messages.approvedRequestMismatch));
       return ok({
         record: mapRecordRow(replayed.row),
@@ -699,7 +693,7 @@ export const finalizeInTransaction = async (
     return fail(err.conflict(messages.fourEyesRequestRequired));
   }
   await prepareRecordMutation(client, params.tableId, params.recordId);
-  const record = await loadRecordValues(client, params.tableId, params.recordId, params.recordAccess);
+  const record = await loadRecordValues(client, params.tableId, params.recordId);
   if (!record) return fail(err.notFound(messages.record));
   if (record.row.finalized_at) return ok({ record: mapRecordRow(record.row), outboxId: null });
 
@@ -730,7 +724,6 @@ export const finalizeInTransaction = async (
     SET data = ${data}::jsonb, version = ${nextVersion}, updated_by = ${params.actorId}::uuid, updated_at = now()
     WHERE id = ${params.recordId}::uuid AND table_id = ${params.tableId}::uuid
       AND deleted_at IS NULL AND finalized_at IS NULL
-      AND ${recordAccessPredicate(params.recordAccess, "grids.records")}
     RETURNING *
   `;
   if (!updated) return fail(finalizedRecordConflict(params.locale));
@@ -781,7 +774,6 @@ export const finalize = async (params: {
   recordId: string;
   actorId: string | null;
   origin: MutationOrigin;
-  recordAccess?: AuthorizedRecordAccess;
   dateConfig?: DateContext;
   locale?: string;
 }): Promise<Result<GridRecord>> => {
@@ -789,7 +781,6 @@ export const finalize = async (params: {
   if (!result.ok) return result;
   if (result.data.outboxId) notifyRecordEventOutbox(result.data.outboxId);
   const record = await getRecord(params.tableId, params.recordId, {
-    recordAccess: params.recordAccess,
     dateConfig: params.dateConfig,
   });
   return record ? ok(record) : fail(err.notFound(getGridsCrudMessages(params.locale).record));
@@ -801,7 +792,6 @@ export const approveFinalization = async (params: {
   requestId: string;
   actorId: string | null;
   comment?: string | null;
-  recordAccess?: AuthorizedRecordAccess;
   dateConfig?: DateContext;
   locale?: string;
 }): Promise<Result<GridRecord>> => {
@@ -810,7 +800,7 @@ export const approveFinalization = async (params: {
     const replay = await resolvedReplay(tx, params, "approve");
     if (!replay.ok) return replay;
     if (replay.data) {
-      const record = await loadRecordValues(tx, params.tableId, params.recordId, params.recordAccess);
+      const record = await loadRecordValues(tx, params.tableId, params.recordId);
       if (!record?.row.finalized_at) return fail(err.conflict(messages.approvedRequestMismatch));
       return ok({ record: mapRecordRow(record.row), outboxId: null });
     }
@@ -820,7 +810,6 @@ export const approveFinalization = async (params: {
       actorId: params.actorId,
       origin: "direct",
       approvalRequestId: params.requestId,
-      recordAccess: params.recordAccess,
       dateConfig: params.dateConfig,
       locale: params.locale,
     });
@@ -847,7 +836,6 @@ export const approveFinalization = async (params: {
   if (!result.ok) return result;
   if (result.data.outboxId) notifyRecordEventOutbox(result.data.outboxId);
   const record = await getRecord(params.tableId, params.recordId, {
-    recordAccess: params.recordAccess,
     dateConfig: params.dateConfig,
   });
   return record ? ok(record) : fail(err.notFound(messages.record));

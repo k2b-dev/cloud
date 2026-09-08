@@ -238,8 +238,8 @@ describe("document template permission surfaces", () => {
       snapshotGetCalls += 1;
       return (id === snapshotId ? snapshot : null) as never;
     });
-    spyOn(gridsService.document, "filterSnapshotRelatedRecords").mockImplementation(async (input, resolveRecordAccess) => {
-      snapshotFilterInput = { input, resolveRecordAccess };
+    spyOn(gridsService.document, "filterSnapshotRelatedRecords").mockImplementation(async (input, canReadTable) => {
+      snapshotFilterInput = { input, canReadTable };
       return input as never;
     });
     spyOn(gridsService.document, "summarizeTemplate").mockImplementation(((row: typeof template) => ({
@@ -380,14 +380,14 @@ describe("document template permission surfaces", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ snapshot: publicSnapshot });
     expect(snapshotCreateCalls).toBe(1);
-    const { resolveRecordAccess, viewer, ...snapshotParams } = snapshotCreateInput as {
+    const { canReadTable, viewer, ...snapshotParams } = snapshotCreateInput as {
       baseId: string;
       tableId: string;
       recordId: string;
       actorId: string;
       dateConfig: { timeZone: string; locale: string; firstDayOfWeek: number };
       viewer: unknown;
-      resolveRecordAccess: (target: { baseId: string; tableId: string }) => Promise<{ kind: "all" } | null>;
+      canReadTable: (target: { baseId: string; tableId: string }) => Promise<boolean>;
     };
     expect(snapshotParams).toEqual({
       baseId,
@@ -397,9 +397,9 @@ describe("document template permission surfaces", () => {
       dateConfig: { timeZone: "UTC", locale: "en", firstDayOfWeek: 1 },
     });
     expect(viewer).toMatchObject({ userId: user.id });
-    expect(await resolveRecordAccess({ baseId, tableId })).toEqual({ kind: "all" });
+    expect(await canReadTable({ baseId, tableId })).toBe(true);
     baseLevel = "none";
-    expect(await resolveRecordAccess({ baseId, tableId })).toBeNull();
+    expect(await canReadTable({ baseId, tableId })).toBe(false);
   });
 
   test("requires base read access to open a standalone snapshot", async () => {
@@ -422,12 +422,12 @@ describe("document template permission surfaces", () => {
     expect(snapshotGetCalls).toBe(1);
     const filterInput = snapshotFilterInput as {
       input: typeof snapshot;
-      resolveRecordAccess: (target: { baseId: string; tableId: string }) => Promise<{ kind: "all" } | null>;
+      canReadTable: (target: { baseId: string; tableId: string }) => Promise<boolean>;
     };
     expect(filterInput.input).toBe(snapshot);
-    expect(await filterInput.resolveRecordAccess({ baseId, tableId })).toEqual({ kind: "all" });
+    expect(await filterInput.canReadTable({ baseId, tableId })).toBe(true);
     baseLevel = "none";
-    expect(await filterInput.resolveRecordAccess({ baseId, tableId })).toBeNull();
+    expect(await filterInput.canReadTable({ baseId, tableId })).toBe(false);
   });
 
   test("returns 404 for an unknown standalone snapshot", async () => {

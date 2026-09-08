@@ -424,7 +424,7 @@ describe("Grids capabilities", () => {
       const record = created.data.data as { id: string; version: number };
       expect(record.id).toMatch(/^[A-Za-z0-9]{6}$/);
       expect(record.version).toBe(1);
-      expect(created.data.summary).toBe(`Created record ${record.id} in “Items”.`);
+      expect(created.data.summary).toBe(`Created Record ${record.id} in “Items”.`);
       expect(record).not.toHaveProperty("data");
 
       const externalInput = {
@@ -478,7 +478,7 @@ describe("Grids capabilities", () => {
       expect(loadedRecord.ok && loadedRecord.data.data).toMatchObject({ id: record.id, version: 1 });
       if (loadedRecord.ok) {
         expect(loadedRecord.data.data).not.toHaveProperty("data");
-        expect(loadedRecord.data.summary).toBe("Read a record in “Items” at version 1.");
+        expect(loadedRecord.data.summary).toBe("Read a Record in “Items” at version 1.");
       }
       const relatedA = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
       const relatedB = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
@@ -518,7 +518,7 @@ describe("Grids capabilities", () => {
       expect(relationUpdated.ok && relationUpdated.data.data).toMatchObject({ version: 2 });
       if (relationUpdated.ok) {
         expect(relationUpdated.data.summary).toBe(
-          `Updated 2 fields on record ${relationCreated.data.data.id} in “Items”; the record is now version 2.`,
+          `Updated 2 Fields on Record ${relationCreated.data.data.id} in “Items”; the Record is now version 2.`,
         );
       }
 

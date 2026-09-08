@@ -5,7 +5,6 @@ import { loadRecordDetailData } from "../frontend/_components/workspace/workspac
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { listByTable as listFields } from "./fields";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import { get as getRecord } from "./record-read";
 
 beforeAll(async () => {
@@ -70,7 +69,7 @@ describe("record history storage boundary", () => {
         FROM generate_series(1, 60)
       `;
 
-      const record = await getRecord(tableId, recordId, { recordAccess: ALL_RECORD_ACCESS });
+      const record = await getRecord(tableId, recordId);
       if (!record) throw new Error("Audit history fixture record missing");
       const fields = await listFields(tableId);
       const detail = await loadRecordDetailData({

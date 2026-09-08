@@ -9,8 +9,13 @@ import {
 } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { GridsWorkflowCredential, GridsWorkflowCredentialBinding, GridsWorkflowPrincipal } from "../workflows/contracts";
-import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "./record-access";
+import {
+  hasAtLeast,
+  loadBaseGrantsForSubject,
+  minPermission,
+  permissionFromCredentialScopes,
+  resolveEffectivePermission,
+} from "./permission-resolver";
 
 type SqlClient = typeof sql;
 type WorkflowAuthorizationUser = Pick<User, "id" | "accountExpires">;
@@ -21,21 +26,6 @@ type WorkflowAuthorizationServiceAccount = Pick<
 type WorkflowAuthorizationCredential = Pick<ServiceAccountCredentialOverview, "id" | "status" | "scopes" | "expiresAt"> & {
   serviceAccount: Pick<ServiceAccountCredentialOverview["serviceAccount"], "id" | "status">;
 };
-
-const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
-
-export const workflowPermissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
-  if (scopes.includes("admin") || scopes.includes("grids:admin") || scopes.includes("grids:*")) return "admin";
-  if (scopes.includes("write") || scopes.includes("grids:write")) return "write";
-  if (scopes.includes("read") || scopes.includes("grids:read")) return "read";
-  return "none";
-};
-
-const minPermission = (left: PermissionLevel, right: PermissionLevel): PermissionLevel =>
-  PERMISSION_RANK[left] <= PERMISSION_RANK[right] ? left : right;
-
-export const workflowPermissionAllows = (actual: PermissionLevel, required: PermissionLevel): boolean =>
-  PERMISSION_RANK[actual] >= PERMISSION_RANK[required];
 
 export const workflowCredentialBinding = (
   serviceAccount: Pick<ServiceAccount, "kind" | "appId" | "resourceType" | "resourceId">,
@@ -227,7 +217,7 @@ export const revalidateWorkflowPrincipal = async (
     return {
       ok: true,
       subject,
-      permissionCap: minPermission(acceptedCredential.permissionCap, workflowPermissionFromScopes(acceptedCredential.scopes)),
+      permissionCap: minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(acceptedCredential.scopes)),
       credential: acceptedCredential,
     };
   }
@@ -247,7 +237,7 @@ export const revalidateWorkflowPrincipal = async (
     kind: "api_token",
     id: current.id,
     scopes: current.scopes,
-    permissionCap: minPermission(acceptedCredential.permissionCap, workflowPermissionFromScopes(current.scopes)),
+    permissionCap: minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(current.scopes)),
     expiresAt: current.expiresAt,
     resourceBinding: currentBinding,
   };
@@ -269,7 +259,7 @@ export const authorizeWorkflowBase = async (
   const revalidated = db
     ? await revalidateWorkflowPrincipalInTransaction(principal, baseId, db)
     : await revalidateWorkflowPrincipal(principal, baseId);
-  if (!revalidated.ok || !workflowPermissionAllows(revalidated.permissionCap, required)) return false;
+  if (!revalidated.ok || !hasAtLeast(revalidated.permissionCap, required)) return false;
   const grants = await loadBaseGrantsForSubject({ subject: revalidated.subject, baseId }, db);
   return hasAtLeast(resolveEffectivePermission(grants, { baseId }), required);
 };
@@ -286,14 +276,14 @@ const tableBelongsToBase = async (baseId: string, tableId: string, db: SqlClient
   return row?.found === true;
 };
 
-export const resolveWorkflowBaseRecordAccess = async (
+export const canAccessWorkflowBaseTable = async (
   principal: GridsWorkflowPrincipal,
   target: { baseId: string; tableId: string },
   required: PermissionLevel,
   db?: SqlClient,
-): Promise<AuthorizedRecordAccess | null> => {
-  if (!(await tableBelongsToBase(target.baseId, target.tableId, db))) return null;
-  return (await authorizeWorkflowBase(principal, target.baseId, required, db)) ? ALL_RECORD_ACCESS : null;
+): Promise<boolean> => {
+  if (!(await tableBelongsToBase(target.baseId, target.tableId, db))) return false;
+  return authorizeWorkflowBase(principal, target.baseId, required, db);
 };
 
 export const workflowTableBelongsToBase = tableBelongsToBase;

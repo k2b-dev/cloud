@@ -5,10 +5,9 @@ import { isFormulaError } from "../formula/functions";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
 import { authoringText } from "./authoring-messages";
-import { applyComputedProjections, buildComputedProjections, readableComputedTargetRecordAccess } from "./computed-projections";
+import { applyComputedProjections, buildComputedProjections, readableComputedTargetTableIds } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import type { Field, GridRecord } from "./types";
 
@@ -83,13 +82,9 @@ const resolveFormulaRefs = (refs: Set<string>, fields: Field[]) => {
   return { resolved, missing };
 };
 
-const loadLatestRows = async (
-  tableId: string,
-  fields: Field[],
-  options: { recordAccess?: AuthorizedRecordAccess; viewer?: ExpansionViewer },
-): Promise<GridRecord[]> => {
-  const targetRecordAccess = await readableComputedTargetRecordAccess(fields, options.viewer);
-  const computed = await buildComputedProjections(fields, { recordAccessByTableId: targetRecordAccess });
+const loadLatestRows = async (tableId: string, fields: Field[], options: { viewer?: ExpansionViewer }): Promise<GridRecord[]> => {
+  const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, options.viewer);
+  const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds });
   const projectionFragments =
     computed.length > 0 ? computed.map((p) => sql`, ${p.fragment}`).reduce((acc, cur) => sql`${acc}${cur}`) : sql``;
 
@@ -100,7 +95,6 @@ const loadLatestRows = async (
     JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
     WHERE r.table_id = ${tableId}::uuid
       AND r.deleted_at IS NULL
-      AND ${recordAccessPredicate(options.recordAccess, "r")}
     ORDER BY r.created_at DESC, r.id DESC
     LIMIT 5
   `;
@@ -117,7 +111,6 @@ export const checkFormula = async (params: {
   expression: string;
   currentFieldId?: string | null;
   dateConfig?: DateContext;
-  recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<FormulaPreviewResult>> => {
   const t = authoringText(params.dateConfig?.locale);
@@ -159,7 +152,6 @@ export const checkFormula = async (params: {
   }
 
   const rows = await loadLatestRows(params.tableId, usableFields, {
-    recordAccess: params.recordAccess,
     viewer: params.viewer,
   });
   const formulaFields = params.currentFieldId ? usableFields.filter((field) => field.id !== params.currentFieldId) : usableFields;

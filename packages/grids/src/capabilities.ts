@@ -60,7 +60,6 @@ import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { gridsService } from "./service";
 import { resolvePublicIds } from "./service/public-resources";
-import { ALL_RECORD_ACCESS } from "./service/record-access";
 import type { Base, Field, GridRecord, Table } from "./service/types";
 
 const GQL_CAPABILITY_RESULT_BUDGET_BYTES = CAPABILITY_MAX_RESULT_BYTES - 32 * 1024;
@@ -191,16 +190,6 @@ const requireTable = async (tableShortId: string, access: GridsAccessContext, re
   if (!table) return fail(notFoundError(t.tableNotFound));
   const gate = await gateBaseAtAccess(access, table.baseId, required);
   return gate.ok ? ok(table) : gate;
-};
-
-const gateTableRecordAccess = async (table: Table, access: GridsAccessContext, required: "read" | "write") => {
-  const authorization = await gateBaseAtAccess(access, table.baseId, required);
-  return authorization.ok ? ok({ table, recordAccess: ALL_RECORD_ACCESS }) : authorization;
-};
-
-const requireTableRecordAccess = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write", locale?: string) => {
-  const table = await gridsService.table.getByShortId(tableShortId);
-  return table ? gateTableRecordAccess(table, access, required) : fail(notFoundError(capabilityMessagesFor(locale).tableNotFound));
 };
 
 const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -753,16 +742,15 @@ const runRecordRead = async (input: z.infer<typeof RecordReadInputSchema>, conte
   if (!resolved) return fail(notFoundError(t.recordNotFound));
   const table = await gridsService.table.get(resolved.tableId);
   if (!table) return fail(notFoundError(t.recordNotFound));
-  const tableAccess = await gateTableRecordAccess(table, access, "read");
+  const tableAccess = await gateBaseAtAccess(access, table.baseId, "read");
   if (!tableAccess.ok) return tableAccess;
   const dateConfig = await capabilityDateConfig(context.locale);
   const record = await gridsService.record.get(table.id, resolved.id, {
     dateConfig,
     viewer: actorViewerFor(access),
-    recordAccess: tableAccess.data.recordAccess,
   });
   return record
-    ? recordResult(record, tableAccess.data.table, t.readRecord({ table: tableAccess.data.table.name, version: record.version }))
+    ? recordResult(record, table, t.readRecord({ table: table.name, version: record.version }))
     : fail(notFoundError(t.recordNotFound));
 };
 
@@ -802,26 +790,23 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
 const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
   const access = accessContext(context);
-  const table = await requireTableRecordAccess(input.tableId, access, "write", context.locale);
+  const table = await requireTable(input.tableId, access, "write", context.locale);
   if (!table.ok) return table;
-  const values = await resolveRecordValues(table.data.table.id, input.values, context.locale);
+  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
   if (!values.ok) return values;
   const dateConfig = await capabilityDateConfig(context.locale);
-  const result = await gridsService.record.create(table.data.table.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
+  const result = await gridsService.record.create(table.data.id, values.data.values, accessActorUser(access)?.id ?? null, "direct", {
     dateConfig,
     viewer: actorViewerFor(access),
-    recordAccess: table.data.recordAccess,
   });
-  return result.ok
-    ? recordResult(result.data, table.data.table, t.createdRecord({ id: result.data.shortId, table: table.data.table.name }))
-    : result;
+  return result.ok ? recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name })) : result;
 };
 
 const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
   const t = capabilityMessagesFor(context.locale);
   if (!context.idempotencyKey) return fail(err.badInput(t.idempotencyRequired));
   const access = accessContext(context);
-  const table = await requireTableRecordAccess(input.tableId, access, "write", context.locale);
+  const table = await requireTable(input.tableId, access, "write", context.locale);
   if (!table.ok) return table;
   const operationScope = `capability:record.upsert-external:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
   const requestHash = gridsService.record.external.externalRecordRequestHash(input);
@@ -834,25 +819,25 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
   if (!replay.ok) return replay;
   const receipt = replay.data;
   if (receipt) {
-    const base = await gridsService.base.get(table.data.table.baseId);
+    const base = await gridsService.base.get(table.data.baseId);
     return ok({
       data: {
         recordId: receipt.recordShortId,
-        tableId: table.data.table.shortId,
+        tableId: table.data.shortId,
         version: receipt.version,
         created: receipt.created,
         changed: receipt.changed,
         replayed: true,
       },
-      summary: t.replayedExternalRecord({ id: receipt.recordShortId, table: table.data.table.name, version: receipt.version }),
+      summary: t.replayedExternalRecord({ id: receipt.recordShortId, table: table.data.name, version: receipt.version }),
       refs: [{ type: "grids.record", id: receipt.recordShortId }],
-      ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, receipt.recordShortId) }] } : {}),
+      ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, receipt.recordShortId) }] } : {}),
     });
   }
-  const values = await resolveRecordValues(table.data.table.id, input.values, context.locale);
+  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
   if (!values.ok) return values;
   const result = await gridsService.record.external.put({
-    tableId: table.data.table.id,
+    tableId: table.data.id,
     identity: input.externalRef,
     operationScope,
     operationKey: context.idempotencyKey,
@@ -864,15 +849,14 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
     actorId: accessActorUser(access)?.id ?? null,
     dateConfig: await capabilityDateConfig(context.locale),
     viewer: actorViewerFor(access),
-    recordAccess: table.data.recordAccess,
   });
   if (!result.ok) return result;
-  const base = await gridsService.base.get(table.data.table.baseId);
+  const base = await gridsService.base.get(table.data.baseId);
   const outcome = result.data.replayed ? t.replayed : result.data.created ? t.created : result.data.changed ? t.updated : t.kept;
   return ok({
     data: {
       recordId: result.data.recordShortId,
-      tableId: table.data.table.shortId,
+      tableId: table.data.shortId,
       version: result.data.version,
       created: result.data.created,
       changed: result.data.changed,
@@ -881,11 +865,11 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
     summary: t.externalRecordOutcome({
       outcome,
       id: result.data.recordShortId,
-      table: table.data.table.name,
+      table: table.data.name,
       version: result.data.version,
     }),
     refs: [{ type: "grids.record", id: result.data.recordShortId }],
-    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, result.data.recordShortId) }] } : {}),
+    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, result.data.recordShortId) }] } : {}),
   });
 };
 
@@ -893,28 +877,28 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
   const t = capabilityMessagesFor(context.locale);
   if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
   const access = accessContext(context);
-  const table = await requireTableRecordAccess(input.tableId, access, "write", context.locale);
+  const table = await requireTable(input.tableId, access, "write", context.locale);
   if (!table.ok) return table;
   const record = await gridsService.record.getByShortId(input.recordId);
-  if (!record || record.tableId !== table.data.table.id) return fail(notFoundError(t.recordNotFound));
-  const values = await resolveRecordValues(table.data.table.id, input.values, context.locale);
+  if (!record || record.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
+  const values = await resolveRecordValues(table.data.id, input.values, context.locale);
   if (!values.ok) return values;
   const dateConfig = await capabilityDateConfig(context.locale);
   const result = await gridsService.record.update(
-    table.data.table.id,
+    table.data.id,
     record.id,
     values.data.values,
     accessActorUser(access)?.id ?? null,
     "direct",
     input.ifVersion,
-    { dateConfig, viewer: actorViewerFor(access), audit: input.audit, recordAccess: table.data.recordAccess },
+    { dateConfig, viewer: actorViewerFor(access), audit: input.audit },
   );
   const fieldCount = Object.keys(input.values).length;
   return result.ok
     ? recordResult(
         result.data,
-        table.data.table,
-        t.updatedRecord({ count: fieldCount, id: result.data.shortId, table: table.data.table.name, version: result.data.version }),
+        table.data,
+        t.updatedRecord({ count: fieldCount, id: result.data.shortId, table: table.data.name, version: result.data.version }),
       )
     : result;
 };
@@ -1054,15 +1038,15 @@ export const gridsCapabilities = defineCapabilities({
       review: async (input, context) => {
         const t = capabilityMessagesFor(context.locale);
         const access = accessContext(context);
-        const table = await requireTableRecordAccess(input.tableId, access, "write", context.locale);
+        const table = await requireTable(input.tableId, access, "write", context.locale);
         if (!table.ok) return table;
-        const values = await resolveRecordValues(table.data.table.id, input.values, context.locale);
+        const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
         return ok({
-          message: t.reviewExternalRecord({ table: table.data.table.name }),
+          message: t.reviewExternalRecord({ table: table.data.name }),
           approvalScope: `table:${input.tableId}`,
           details: [
-            { label: t.table, value: table.data.table.name },
+            { label: t.table, value: table.data.name },
             { label: t.provider, value: input.externalRef.provider },
             { label: t.providerAccount, value: input.externalRef.providerAccount },
             { label: t.resourceKind, value: input.externalRef.resourceKind },
@@ -1088,29 +1072,28 @@ export const gridsCapabilities = defineCapabilities({
         const t = capabilityMessagesFor(context.locale);
         if (Object.keys(input.values).length === 0) return fail(err.badInput(t.valuesRequired));
         const access = accessContext(context);
-        const table = await requireTableRecordAccess(input.tableId, access, "write", context.locale);
+        const table = await requireTable(input.tableId, access, "write", context.locale);
         if (!table.ok) return table;
         const resolvedRecord = await gridsService.record.getByShortId(input.recordId);
-        if (!resolvedRecord || resolvedRecord.tableId !== table.data.table.id) return fail(notFoundError(t.recordNotFound));
-        const values = await resolveRecordValues(table.data.table.id, input.values, context.locale);
+        if (!resolvedRecord || resolvedRecord.tableId !== table.data.id) return fail(notFoundError(t.recordNotFound));
+        const values = await resolveRecordValues(table.data.id, input.values, context.locale);
         if (!values.ok) return values;
         const dateConfig = await capabilityDateConfig(context.locale);
-        const record = await gridsService.record.get(table.data.table.id, resolvedRecord.id, {
+        const record = await gridsService.record.get(table.data.id, resolvedRecord.id, {
           dateConfig,
           viewer: actorViewerFor(access),
-          recordAccess: table.data.recordAccess,
         });
         if (!record) return fail(notFoundError(t.recordNotFound));
-        const base = await gridsService.base.get(table.data.table.baseId);
+        const base = await gridsService.base.get(table.data.baseId);
         return ok({
-          message: t.reviewUpdateRecord({ table: table.data.table.name }),
+          message: t.reviewUpdateRecord({ table: table.data.name }),
           details: [
-            { label: t.table, value: table.data.table.name },
+            { label: t.table, value: table.data.name },
             { label: t.record, value: record.shortId },
             { label: t.currentVersion, value: String(record.version) },
             ...recordValuesReview(input.values, values.data.fields, context.locale),
           ],
-          ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, record.shortId) }] } : {}),
+          ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data, record.shortId) }] } : {}),
         });
       },
       run: runRecordUpdate,

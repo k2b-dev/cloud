@@ -2,7 +2,6 @@ import { describe, expect, mock, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import type { WorkflowInvocationReceipt } from "@valentinkolb/cloud/workflows";
 import type { GridsWorkflow, GridsWorkflowLauncher, GridsWorkflowLauncherConfig } from "../workflows/contracts";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import {
   admitBulkLauncher,
   admitRecordLauncher,
@@ -135,7 +134,7 @@ const setup = (
   overrides: Partial<WorkflowLauncherInvocationDeps> = {},
 ) => {
   const invokeWorkflow = mock<WorkflowLauncherInvocationDeps["invokeWorkflow"]>(async () => ok(receipt));
-  const authorize = mock(async () => ok(ALL_RECORD_ACCESS));
+  const authorize = mock(async () => ok());
   const resolveScanCode = mock(async () => ok(recordId));
   const resolveUniqueField = mock(async () => ok(recordId));
   const resolveExplicitRecordIds = mock(async (_baseId: string, _tableId: string, ids: string[]) => ok(ids));
@@ -185,7 +184,7 @@ describe("workflow kernel scanner launchers", () => {
 
     expect(first.ok).toBe(true);
     expect(second.ok).toBe(true);
-    expect(item.resolveScanCode).toHaveBeenCalledWith(baseId, tableId, "gsc_opaque", ALL_RECORD_ACCESS, "de-ch");
+    expect(item.resolveScanCode).toHaveBeenCalledWith(baseId, tableId, "gsc_opaque", "de-ch");
     expect(item.invokeWorkflow).toHaveBeenCalledTimes(2);
     const calls = item.invokeWorkflow.mock.calls;
     expect(calls[0]![0]).toMatchObject({
@@ -207,7 +206,7 @@ describe("workflow kernel scanner launchers", () => {
     const result = await invokeScannerLauncher(scannerInput({ scannedText: "A-42" }), item.deps);
 
     expect(result.ok).toBe(true);
-    expect(item.resolveUniqueField).toHaveBeenCalledWith(baseId, tableId, "Asset code", "A-42", ALL_RECORD_ACCESS, undefined);
+    expect(item.resolveUniqueField).toHaveBeenCalledWith(baseId, tableId, "Asset code", "A-42", undefined);
     expect(item.resolveScanCode).not.toHaveBeenCalled();
   });
 
@@ -356,7 +355,7 @@ describe("workflow kernel bulk launchers", () => {
     const result = await invokeBulkLauncher(queryInput, item.deps);
 
     expect(result.ok).toBe(true);
-    expect(item.resolveQueryRecordIds).toHaveBeenCalledWith(tableId, { limit: 2 }, principal, ALL_RECORD_ACCESS, undefined);
+    expect(item.resolveQueryRecordIds).toHaveBeenCalledWith(tableId, { limit: 2 }, principal, undefined);
     expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
     expect(item.invokeWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -482,7 +481,7 @@ describe("workflow kernel Record launchers", () => {
 
     expect(admission.ok).toBe(true);
     expect(result.ok).toBe(true);
-    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId], ALL_RECORD_ACCESS, undefined);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId], undefined);
     expect(item.invokeWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "record",

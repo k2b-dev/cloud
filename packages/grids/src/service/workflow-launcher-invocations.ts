@@ -16,15 +16,10 @@ import {
   GridsWorkflowPrincipalSchema,
   scannerLauncherInputSources,
 } from "../workflows/contracts";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
+import { hasAtLeast } from "./permission-resolver";
 import { list as listRecords } from "./records";
-import { canExecuteWorkflow, resolveWorkflowExecutionRecordAccess } from "./workflow-action-scope";
-import {
-  authorizeWorkflowBase,
-  resolveWorkflowBaseRecordAccess,
-  revalidateWorkflowPrincipal,
-  workflowPermissionAllows,
-} from "./workflow-authorization";
+import { canExecuteWorkflow, canAccessWorkflowExecutionTable } from "./workflow-action-scope";
+import { authorizeWorkflowBase, canAccessWorkflowBaseTable, revalidateWorkflowPrincipal } from "./workflow-authorization";
 import { loadWorkflowCatalog, resolveWorkflowFieldRef } from "./workflow-catalog";
 import { getWorkflow } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
@@ -186,34 +181,14 @@ const formatZodError = (error: z.ZodError): string => {
 export type WorkflowLauncherInvocationDeps = {
   getLauncher: typeof getLauncher;
   getWorkflow: typeof getWorkflow;
-  authorize: (input: LauncherAuthorizationInput) => Promise<Result<AuthorizedRecordAccess | null>>;
-  resolveScanCode: (
-    baseId: string,
-    tableId: string,
-    scannedText: string,
-    recordAccess: AuthorizedRecordAccess,
-    locale?: string,
-  ) => Promise<Result<string>>;
-  resolveUniqueField: (
-    baseId: string,
-    tableId: string,
-    fieldRef: string,
-    scannedText: string,
-    recordAccess: AuthorizedRecordAccess,
-    locale?: string,
-  ) => Promise<Result<string>>;
-  resolveExplicitRecordIds: (
-    baseId: string,
-    tableId: string,
-    recordIds: string[],
-    recordAccess: AuthorizedRecordAccess,
-    locale?: string,
-  ) => Promise<Result<string[]>>;
+  authorize: (input: LauncherAuthorizationInput) => Promise<Result<void>>;
+  resolveScanCode: (baseId: string, tableId: string, scannedText: string, locale?: string) => Promise<Result<string>>;
+  resolveUniqueField: (baseId: string, tableId: string, fieldRef: string, scannedText: string, locale?: string) => Promise<Result<string>>;
+  resolveExplicitRecordIds: (baseId: string, tableId: string, recordIds: string[], locale?: string) => Promise<Result<string[]>>;
   resolveQueryRecordIds: (
     tableId: string,
     query: RecordQuery,
     principal: GridsWorkflowPrincipal,
-    recordAccess: AuthorizedRecordAccess,
     locale?: string,
   ) => Promise<Result<string[]>>;
   invokeWorkflow: typeof invokeGridsWorkflow;
@@ -247,7 +222,7 @@ const authorize: WorkflowLauncherInvocationDeps["authorize"] = async ({
 }) => {
   const t = workflowServiceText(locale);
   const principalState = await revalidateWorkflowPrincipal(principal, workflow.baseId);
-  if (!principalState.ok || !workflowPermissionAllows(principalState.permissionCap, "write")) {
+  if (!principalState.ok || !hasAtLeast(principalState.permissionCap, "write")) {
     return fail(err.forbidden(t.actorCannotRun));
   }
   if (!authorization || authorization.kind === "workflow") {
@@ -258,20 +233,19 @@ const authorize: WorkflowLauncherInvocationDeps["authorize"] = async ({
   if (authorization && authorization.kind !== "workflow") {
     const claim = { baseId: workflow.baseId, workflowId: workflow.id, principal, authorization, launcherId };
     if (tableId) {
-      const recordAccess = await resolveWorkflowExecutionRecordAccess(claim, tableId, "read");
-      return recordAccess ? ok(recordAccess) : fail(err.forbidden(t.actorCannotRun));
+      return (await canAccessWorkflowExecutionTable(claim, tableId, "read")) ? ok() : fail(err.forbidden(t.actorCannotRun));
     }
-    return (await canExecuteWorkflow(claim)) ? ok(null) : fail(err.forbidden(t.actorCannotRun));
+    return (await canExecuteWorkflow(claim)) ? ok() : fail(err.forbidden(t.actorCannotRun));
   }
   if (tableId) {
-    const recordAccess = await resolveWorkflowBaseRecordAccess(principal, { baseId: workflow.baseId, tableId }, "read");
-    if (!recordAccess) return fail(err.forbidden(t.actorCannotReadInput));
-    return ok(recordAccess);
+    if (!(await canAccessWorkflowBaseTable(principal, { baseId: workflow.baseId, tableId }, "read"))) {
+      return fail(err.forbidden(t.actorCannotReadInput));
+    }
   }
-  return ok(null);
+  return ok();
 };
 
-const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async (baseId, tableId, scannedText, recordAccess, locale) => {
+const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async (baseId, tableId, scannedText, locale) => {
   const [row] = await sql<Array<{ id: string }>>`
     SELECT r.id::text AS id
     FROM grids.record_scan_codes scan
@@ -283,19 +257,11 @@ const resolveScanCode: WorkflowLauncherInvocationDeps["resolveScanCode"] = async
       AND scan.base_id = ${baseId}::uuid
       AND scan.table_id = ${tableId}::uuid
       AND r.table_id = ${tableId}::uuid
-      AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   return row ? ok(row.id) : fail({ ...err.notFound("scan code"), message: workflowServiceText(locale).scanCodeNotFound });
 };
 
-const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] = async (
-  baseId,
-  tableId,
-  fieldRef,
-  scannedText,
-  recordAccess,
-  locale,
-) => {
+const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] = async (baseId, tableId, fieldRef, scannedText, locale) => {
   const t = workflowServiceText(locale);
   const field = resolveWorkflowFieldRef(await loadWorkflowCatalog(baseId), tableId, fieldRef);
   if (!field) return fail(err.badInput(t.scannerFieldUnknown({ field: fieldRef })));
@@ -320,7 +286,6 @@ const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] =
       AND r.table_id = ${tableId}::uuid
       AND r.deleted_at IS NULL
       AND r.data ->> ${field.id} = ${scannedText}
-      AND ${recordAccessPredicate(recordAccess, "r")}
     ORDER BY r.id
     LIMIT 2
   `;
@@ -329,13 +294,7 @@ const resolveUniqueField: WorkflowLauncherInvocationDeps["resolveUniqueField"] =
   return ok(rows[0]!.id);
 };
 
-const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitRecordIds"] = async (
-  baseId,
-  tableId,
-  recordIds,
-  recordAccess,
-  locale,
-) => {
+const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitRecordIds"] = async (baseId, tableId, recordIds, locale) => {
   const rows = await sql<Array<{ id: string }>>`
     SELECT r.id::text AS id
     FROM grids.records r
@@ -345,7 +304,6 @@ const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitR
       AND r.table_id = ${tableId}::uuid
       AND r.id = ANY(${sql.array(recordIds, "UUID")}::uuid[])
       AND r.deleted_at IS NULL
-      AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   const found = new Set(rows.map((row) => row.id));
   return found.size === recordIds.length
@@ -353,13 +311,7 @@ const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitR
     : fail({ ...err.notFound("Record"), message: workflowServiceText(locale).recordsNotFound });
 };
 
-const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordIds"] = async (
-  tableId,
-  query,
-  principal,
-  recordAccess,
-  locale,
-) => {
+const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordIds"] = async (tableId, query, principal, locale) => {
   const t = workflowServiceText(locale);
   if ((query.groupBy?.length ?? 0) > 0 || (query.aggregations?.length ?? 0) > 0 || (query.groupSort?.length ?? 0) > 0) {
     return fail(err.badInput(t.bulkRowsOnly));
@@ -384,7 +336,6 @@ const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordI
       recordMeta: query.recordMeta ?? null,
       sort: query.sort ?? [],
       viewer: { userId: principal.userId, userGroups: principal.groupIds, serviceAccountId: principal.serviceAccountId },
-      recordAccess,
       dateConfig,
     });
     if (!page.ok) return page;
@@ -576,18 +527,10 @@ export const invokeScannerLauncher = async (
     controlledInputs[scanInputName] = scannedText;
   } else {
     if (!ctx.tableId) return fail(err.internal(t.launcherContextInvalid));
-    if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
     const recordId =
       scanSource.resolve.by === "field"
-        ? await deps.resolveUniqueField(
-            ctx.workflow.baseId,
-            ctx.tableId,
-            scanSource.resolve.field!,
-            scannedText,
-            authorized.data,
-            input.data.locale,
-          )
-        : await deps.resolveScanCode(ctx.workflow.baseId, ctx.tableId, scannedText, authorized.data, input.data.locale);
+        ? await deps.resolveUniqueField(ctx.workflow.baseId, ctx.tableId, scanSource.resolve.field!, scannedText, input.data.locale)
+        : await deps.resolveScanCode(ctx.workflow.baseId, ctx.tableId, scannedText, input.data.locale);
     if (!recordId.ok) return recordId;
     controlledInputs[scanInputName] = recordId.data;
     trustedRecordIds = new Map([[ctx.tableId, new Set([recordId.data])]]);
@@ -642,11 +585,10 @@ export const invokeBulkLauncher = async (
     locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
-  if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
   const recordIds =
     "recordIds" in input.data
-      ? await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, input.data.recordIds, authorized.data, input.data.locale)
-      : await deps.resolveQueryRecordIds(ctx.tableId, input.data.query, input.data.principal, authorized.data, input.data.locale);
+      ? await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, input.data.recordIds, input.data.locale)
+      : await deps.resolveQueryRecordIds(ctx.tableId, input.data.query, input.data.principal, input.data.locale);
   if (!recordIds.ok) return recordIds;
   const inputs = mergeInputs({ [ctx.config.input]: recordIds.data }, input.data.inputs, input.data.locale);
   return inputs.ok
@@ -704,14 +646,7 @@ export const invokeRecordLauncher = async (
     locale: input.data.locale,
   });
   if (!authorized.ok) return authorized;
-  if (!authorized.data) return fail(err.internal(t.launcherContextInvalid));
-  const recordIds = await deps.resolveExplicitRecordIds(
-    ctx.workflow.baseId,
-    ctx.tableId,
-    [input.data.recordId],
-    authorized.data,
-    input.data.locale,
-  );
+  const recordIds = await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, [input.data.recordId], input.data.locale);
   if (!recordIds.ok) return recordIds;
   return invoke(
     ctx,

@@ -3,14 +3,13 @@ import { type AuthContext, getDateConfig, jsonResponse, respond } from "@valenti
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import {
   PublicCreateRecordSnapshotResponseSchema,
   PublicRecordSnapshotListResponseSchema,
   PublicRecordSnapshotSchema,
   projectRecordSnapshot,
   projectRecordSnapshotSummaries,
-  snapshotRecordAccessResolver,
+  snapshotTableReadAuthorizer,
 } from "./documents-api-shared";
 import { apiMessages } from "./messages";
 import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
@@ -37,7 +36,7 @@ export const createDocumentSnapshotRoutes = () =>
         if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
         const gate = await gateAt(c, { baseId: table.baseId }, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        if (!(await gridsService.record.get(tableId, recordId, { recordAccess: ALL_RECORD_ACCESS }))) {
+        if (!(await gridsService.record.get(tableId, recordId))) {
           return c.json({ message: apiMessages(c).recordNotFound }, 404);
         }
         const snapshots = await gridsService.document.listSnapshotsForRecord(tableId, recordId);
@@ -69,7 +68,7 @@ export const createDocumentSnapshotRoutes = () =>
           tableId,
           recordId,
           actorId: currentActorUserId(c),
-          resolveRecordAccess: snapshotRecordAccessResolver(c),
+          canReadTable: snapshotTableReadAuthorizer(c),
           viewer: currentActorViewer(c),
           dateConfig: await getDateConfig(c),
         });
@@ -97,14 +96,13 @@ export const createDocumentSnapshotRoutes = () =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         if (
           !(await gridsService.record.get(snapshot.tableId, snapshot.recordId, {
-            recordAccess: ALL_RECORD_ACCESS,
             deleted: "include",
           }))
         ) {
           return c.json({ message: apiMessages(c).recordSnapshotNotFound }, 404);
         }
         return c.json(
-          await projectRecordSnapshot(await gridsService.document.filterSnapshotRelatedRecords(snapshot, snapshotRecordAccessResolver(c))),
+          await projectRecordSnapshot(await gridsService.document.filterSnapshotRelatedRecords(snapshot, snapshotTableReadAuthorizer(c))),
         );
       },
     );

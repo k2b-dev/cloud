@@ -8,7 +8,6 @@ import type { RecordMutationAudit } from "../contracts";
 import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
 import { listByTable as listFields } from "./fields";
-import type { AuthorizedRecordAccess } from "./record-access";
 import { notifyRecordEventOutbox } from "./record-event-outbox";
 import { recordUniqueConflict } from "./record-unique-conflicts";
 import { createInTransaction, updateInTransaction } from "./record-write";
@@ -166,7 +165,6 @@ export const put = async (input: {
   actorId: string | null;
   dateConfig?: DateContext;
   viewer?: ExpansionViewer;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<ExternalRecordPutResult>> => {
   const messages = getGridsCrudMessages(input.locale);
@@ -215,7 +213,6 @@ export const put = async (input: {
             dateConfig: input.dateConfig,
             viewer: input.viewer,
             audit: input.audit,
-            recordAccess: input.recordAccess,
             locale: input.locale,
           },
         );
@@ -246,7 +243,6 @@ export const put = async (input: {
       const created = await createInTransaction(tx, input.tableId, input.values, input.actorId, "direct", {
         dateConfig: input.dateConfig,
         viewer: input.viewer,
-        recordAccess: input.recordAccess,
         locale: input.locale,
       });
       if (!created.ok) return created;

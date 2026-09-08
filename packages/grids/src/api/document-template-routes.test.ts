@@ -483,7 +483,6 @@ describe("document template routes", () => {
       q: "recipient",
       limit: 7,
       excludeIds: [excludedRecordId],
-      recordAccess: { kind: "all" },
     });
   });
 
@@ -503,7 +502,6 @@ describe("document template routes", () => {
       q: "",
       limit: 10,
       excludeIds: [],
-      recordAccess: { kind: "all" },
     });
   });
 });

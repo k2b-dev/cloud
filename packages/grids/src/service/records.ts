@@ -10,7 +10,7 @@ import {
   buildComputedColumnSqlProjections,
   buildComputedProjections,
   buildFormulaSqlProjections,
-  readableComputedTargetRecordAccess,
+  readableComputedTargetTableIds,
 } from "./computed-projections";
 import { getGridsCrudMessages } from "./crud-messages";
 import { isMultiSelectField, storageOf } from "./field-storage";
@@ -22,7 +22,6 @@ import { compileGroupQuery, type GroupAggregationSpec, type GroupBucket, type Gr
 import { enrichRecordsWithHtmlTemplates, type HtmlTemplateRenderBudget } from "./html-template-fields";
 import { parseJsonbRow } from "./jsonb";
 import { withLookupTargetMetadata } from "./lookup-display";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { cleanRecordMeta, compileRecordMetaFilter, listRecordActors, recordMetaRequiresDeletedRows } from "./record-metadata";
 import { mapRecordRow } from "./record-persistence";
 import { enrichFormulaLookups, findTableId, get, projectionFragmentsFor } from "./record-read";
@@ -52,19 +51,16 @@ export const getByShortId = async (shortId: string) => {
   return row ? get(row.table_id, row.id) : null;
 };
 
-export const countAccessibleByTable = async (
-  entries: readonly { tableId: string; recordAccess: AuthorizedRecordAccess }[],
-): Promise<Record<string, number>> => {
-  if (entries.length === 0) return {};
-  const queries = entries.map(
-    ({ tableId, recordAccess }) => sql`
+export const countByTable = async (tableIds: readonly string[]): Promise<Record<string, number>> => {
+  if (tableIds.length === 0) return {};
+  const queries = tableIds.map(
+    (tableId) => sql`
       SELECT ${tableId}::uuid AS table_id, COUNT(*)::int AS record_count
       FROM grids.records r
       JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
       JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
       WHERE r.table_id = ${tableId}::uuid
         AND r.deleted_at IS NULL
-        AND ${recordAccessPredicate(recordAccess, "r")}
     `,
   );
   const query = queries.slice(1).reduce((combined, current) => sql`${combined} UNION ALL ${current}`, queries[0]!);
@@ -113,7 +109,6 @@ export const list = async (params: {
   htmlTemplateRenderBudget?: HtmlTemplateRenderBudget;
   signal?: AbortSignal;
   dedupeKey?: string;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<RecordList>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -168,7 +163,7 @@ export const list = async (params: {
   if (formulaWhereCompiled?.ok) conditions.push(formulaWhereCompiled.expression.sql);
   conditions.push(searchClause);
   conditions.push(recordMetaClause);
-  conditions.push(recordAccessPredicate(params.recordAccess, "r"));
+
   if (cursorWhere) conditions.push(cursorWhere);
   const where = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
 
@@ -176,7 +171,7 @@ export const list = async (params: {
   // subqueries over record_links. Single source of truth, single
   // round-trip.
   const computed = await buildComputedProjections(fields, {
-    recordAccessByTableId: await readableComputedTargetRecordAccess(fields, params.viewer),
+    authorizedTableIds: await readableComputedTargetTableIds(fields, params.viewer),
   });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig });
   // View computed columns evaluate in SQL when projectable (one semantics with
@@ -274,7 +269,6 @@ export const list = async (params: {
         dateConfig: params.dateConfig,
         fields,
         dedupeKey: params.dedupeKey ? `${params.dedupeKey}:default-aggregates` : undefined,
-        recordAccess: params.recordAccess,
       })
     : ok<Record<string, unknown>>({});
   if (!aggregatesResult.ok) return aggregatesResult;
@@ -312,7 +306,6 @@ export const group = async (params: {
   fields?: Field[];
   signal?: AbortSignal;
   dedupeKey?: string;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<{ buckets: GroupBucket[]; nextCursor: string | null; explode: boolean }>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -349,7 +342,7 @@ export const group = async (params: {
     havingRefs: params.formulaHaving?.refs,
     filter: params.filter,
     searchClause,
-    extraWhere: sql`${recordMetaClause} AND ${recordAccessPredicate(params.recordAccess, "r")}`,
+    extraWhere: recordMetaClause,
     fields,
     cursor: cursorKeys,
     limit,
@@ -431,7 +424,6 @@ export const aggregate = async (params: {
   fields?: Field[];
   signal?: AbortSignal;
   dedupeKey?: string;
-  recordAccess?: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<Record<string, unknown>>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -486,7 +478,6 @@ export const aggregate = async (params: {
         AND ${formulaWhereCompiled?.ok ? formulaWhereCompiled.expression.sql : sql`TRUE`}
         AND ${searchClause}
         AND ${recordMetaClause}
-        AND ${recordAccessPredicate(params.recordAccess, "r")}
     `,
     RECORD_QUERY_TIMEOUT_MS,
     params.signal,

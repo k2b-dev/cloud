@@ -3,7 +3,6 @@ import { ok, type Result } from "@k2b/stdlib";
 import { HTML_TEMPLATE_ERROR, htmlTemplateConfigSchema } from "../field-types/html-template";
 import { documentServiceText } from "./document-messages";
 import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
-import type { AuthorizedRecordAccess } from "./record-access";
 import { list as listRecords } from "./records";
 import type { ExpansionViewer } from "./relations";
 
@@ -23,7 +22,6 @@ export const checkHtmlTemplate = async (params: {
   template: string;
   css: string;
   dateConfig?: DateContext;
-  recordAccess?: AuthorizedRecordAccess;
   viewer?: ExpansionViewer;
 }): Promise<Result<HtmlTemplatePreviewResult>> => {
   const t = documentServiceText(params.dateConfig?.locale);
@@ -53,7 +51,6 @@ export const checkHtmlTemplate = async (params: {
     sort: [{ source: "record", key: "createdAt", direction: "desc" }],
     viewer: params.viewer,
     dateConfig: params.dateConfig,
-    recordAccess: params.recordAccess,
     htmlTemplateFieldIds: [],
   });
   if (!listed.ok) return listed;

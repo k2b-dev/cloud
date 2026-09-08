@@ -7,8 +7,7 @@ import { type DocumentArtifactContent, type DocumentIssuanceActor, documentIssua
 import { type DocumentDbRow, hydrateDocuments, loadDocumentArtifacts } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
 import { buildLiveRenderData } from "./document-rendering";
-import { createRecordSnapshotDraft, type SnapshotRecordAccessResolver } from "./document-snapshots";
-import type { AuthorizedRecordAccess } from "./record-access";
+import { createRecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
 import { get as getRecord } from "./records";
 import type { ExpansionViewer } from "./relation-access";
 import type { Table } from "./types";
@@ -23,8 +22,7 @@ export const createDocumentForRecord = async (params: {
   recordId: string;
   actor: DocumentIssuanceActor;
   idempotencyKey: string;
-  recordAccess: AuthorizedRecordAccess;
-  resolveRecordAccess: SnapshotRecordAccessResolver;
+  canReadTable: SnapshotTableReadAuthorizer;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
   filename?: string | null;
@@ -39,7 +37,6 @@ export const createDocumentForRecord = async (params: {
 
   const record = await getRecord(params.table.id, params.recordId, {
     dateConfig: params.dateConfig,
-    recordAccess: params.recordAccess,
     viewer: params.viewer,
   });
   if (!record) return fail(err.notFound(t.recordNotFound));
@@ -58,7 +55,7 @@ export const createDocumentForRecord = async (params: {
     tableId: params.table.id,
     recordId: params.recordId,
     actorId: params.actor.kind === "user" ? params.actor.userId : null,
-    resolveRecordAccess: params.resolveRecordAccess,
+    canReadTable: params.canReadTable,
     viewer: params.viewer,
     dateConfig: params.dateConfig,
   });

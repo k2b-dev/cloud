@@ -15,7 +15,6 @@ import type { GroupAggregationSpec } from "../service/group-compiler";
 import { buildPrincipalLabelCache, principalReferencesFromRecords } from "../service/principal-values";
 import { projectPublicIds } from "../service/public-resources";
 import { validateRecordQueryForFields } from "../service/query-validation";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "../service/record-access";
 import { compileGqlToRecordQuery, executeGqlSource } from "./gql-runtime";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
@@ -44,7 +43,6 @@ type QueryView = {
 type QueryTarget = {
   table: { id: string; baseId: string; kind: "stored" | "federated" };
   view: QueryView | null;
-  recordAccess: AuthorizedRecordAccess;
 };
 
 type TableQueryRouteDeps = {
@@ -286,7 +284,7 @@ const loadQueryTarget = async (
 
   const gate = await deps.gate(c, { baseId: table.baseId }, "read");
   if (!gate.ok) return fail(403, gate.error.message);
-  return { ok: true, data: { table, view, recordAccess: ALL_RECORD_ACCESS } };
+  return { ok: true, data: { table, view } };
 };
 
 const resolveQuery = async (
@@ -357,7 +355,6 @@ const runGroupedQuery = async (
     fields: tableFields,
     signal: params.signal,
     dedupeKey: `${params.dedupeKey}:group`,
-    recordAccess: target.recordAccess,
   });
   if (!result.ok) return fail(result.error.status, result.error.message);
   const relationLabels = await deps.service.relations.buildLabelCacheForGroupedKeys(
@@ -409,7 +406,6 @@ const runListQuery = async (
     fields: params.tableFields,
     signal: params.signal,
     dedupeKey: params.dedupeKey,
-    recordAccess: target.recordAccess,
   });
   if (!listResult.ok) return fail(listResult.error.status, listResult.error.message);
 
@@ -428,7 +424,6 @@ const runListQuery = async (
       fields: params.tableFields,
       signal: params.signal,
       dedupeKey: `${params.dedupeKey}:aggregates`,
-      recordAccess: target.recordAccess,
     });
     if (aggregateResult.ok) aggregates = { ...aggregates, ...aggregateResult.data };
   }

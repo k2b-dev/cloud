@@ -2,10 +2,9 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import { createReader } from "./record-read";
 import { createInTransaction, updateInTransaction } from "./record-write";
-import { countAccessibleByTable, list } from "./records";
+import { countByTable, list } from "./records";
 
 type Fixture = {
   userId: string;
@@ -67,9 +66,10 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       )
   `;
   await sql`
-    INSERT INTO grids.records (id, table_id, data, created_by, updated_by) VALUES
+    INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by) VALUES
       (
         ${fixture.ownedParentId}::uuid,
+        ${shortId("R")},
         ${fixture.parentTableId}::uuid,
         ${{ [fixture.parentNameFieldId]: "Owned parent" }}::jsonb,
         ${fixture.userId}::uuid,
@@ -77,6 +77,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.otherParentId}::uuid,
+        ${shortId("R")},
         ${fixture.parentTableId}::uuid,
         ${{ [fixture.parentNameFieldId]: "Other parent" }}::jsonb,
         ${fixture.otherUserId}::uuid,
@@ -84,6 +85,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.linkedChildId}::uuid,
+        ${shortId("R")},
         ${fixture.childTableId}::uuid,
         ${{ [fixture.childNameFieldId]: "Linked child" }}::jsonb,
         ${fixture.otherUserId}::uuid,
@@ -91,6 +93,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ),
       (
         ${fixture.otherChildId}::uuid,
+        ${shortId("R")},
         ${fixture.childTableId}::uuid,
         ${{ [fixture.childNameFieldId]: "Other child" }}::jsonb,
         ${fixture.otherUserId}::uuid,
@@ -120,26 +123,24 @@ describe("record access integration", () => {
     const fixture = createFixture();
     try {
       await insertFixture(fixture);
-      const parents = await list({ tableId: fixture.parentTableId, recordAccess: ALL_RECORD_ACCESS });
+      const parents = await list({ tableId: fixture.parentTableId });
       expect(parents.ok).toBe(true);
       if (!parents.ok) throw new Error(parents.error.message);
       expect(parents.data.items.map((record) => record.id).sort()).toEqual([fixture.otherParentId, fixture.ownedParentId].sort());
 
-      const children = await list({ tableId: fixture.childTableId, recordAccess: ALL_RECORD_ACCESS });
+      const children = await list({ tableId: fixture.childTableId });
       expect(children.ok).toBe(true);
       if (!children.ok) throw new Error(children.error.message);
       expect(children.data.items.map((record) => record.id).sort()).toEqual([fixture.linkedChildId, fixture.otherChildId].sort());
 
-      const reader = await createReader(fixture.childTableId, { recordAccess: ALL_RECORD_ACCESS });
+      const reader = await createReader(fixture.childTableId);
       expect((await reader.getMany([fixture.linkedChildId, fixture.otherChildId])).map((record) => record.id).sort()).toEqual(
         [fixture.linkedChildId, fixture.otherChildId].sort(),
       );
-      expect(
-        await countAccessibleByTable([
-          { tableId: fixture.parentTableId, recordAccess: ALL_RECORD_ACCESS },
-          { tableId: fixture.childTableId, recordAccess: ALL_RECORD_ACCESS },
-        ]),
-      ).toEqual({ [fixture.parentTableId]: 2, [fixture.childTableId]: 2 });
+      expect(await countByTable([fixture.parentTableId, fixture.childTableId])).toEqual({
+        [fixture.parentTableId]: 2,
+        [fixture.childTableId]: 2,
+      });
     } finally {
       await cleanupFixture(fixture);
     }
@@ -159,7 +160,6 @@ describe("record access integration", () => {
           },
           fixture.userId,
           "direct",
-          { recordAccess: ALL_RECORD_ACCESS },
         ),
       );
       expect(accepted.ok).toBe(true);
@@ -174,7 +174,6 @@ describe("record access integration", () => {
           },
           fixture.userId,
           "direct",
-          { recordAccess: ALL_RECORD_ACCESS },
         ),
       );
       expect(otherParentCreate.ok).toBe(true);
@@ -187,8 +186,6 @@ describe("record access integration", () => {
           { [fixture.relationFieldId]: [fixture.otherParentId] },
           fixture.userId,
           "direct",
-          undefined,
-          { recordAccess: ALL_RECORD_ACCESS },
         ),
       );
       expect(updated.ok).toBe(true);

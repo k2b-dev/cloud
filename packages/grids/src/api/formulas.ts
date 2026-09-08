@@ -6,7 +6,6 @@ import { z } from "zod";
 import { gridsService } from "../service";
 import { checkFormula } from "../service/formula-preview";
 import { projectPublicIds, resolvePublicId } from "../service/public-resources";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
@@ -74,7 +73,6 @@ const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).post(
       expression: body.expression,
       currentFieldId,
       dateConfig,
-      recordAccess: ALL_RECORD_ACCESS,
       viewer: currentActorViewer(c),
     });
     if (!result.ok) return respond(c, () => Promise.resolve(result));

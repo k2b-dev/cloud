@@ -26,7 +26,6 @@ import { gridsService } from "../service";
 import { authoringText, isGermanAuthoringLocale } from "../service/authoring-messages";
 import type { FederatedRevisionScope } from "../service/federated-tables";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "../service/gql-resolver-context";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "../service/record-access";
 import type { Field, Table } from "../service/types";
 import { type GqlRuntimeOperation, type GqlRuntimeTracer, traceGqlRuntime } from "./gql-observability";
 import { apiMessages, apiMessagesForLocale } from "./messages";
@@ -71,8 +70,8 @@ export const gqlDiagnosticsForLocale = (
 
 export type PermissionedGqlResolverContext = DslResolverContext & {
   tablePermissionsById: Record<string, PermissionLevel>;
-  recordAccessByTableId: Map<string, AuthorizedRecordAccess>;
-  recordAccessByViewId: Map<string, AuthorizedRecordAccess>;
+  authorizedTableIds: ReadonlySet<string>;
+  authorizedViewIds: ReadonlySet<string>;
 };
 
 const httpGqlRuntimeContext = (c: Context<AuthContext>, signal: AbortSignal): GridsGqlRuntimeContext => ({
@@ -128,7 +127,7 @@ export const buildPermissionedGqlResolverContextForAccess = async (
   const readableTables: Table[] = tables.filter((table) =>
     gridsService.permission.hasAtLeast(tablePermissionsById[table.id] ?? "none", "read"),
   );
-  const recordAccessByTableId = new Map<string, AuthorizedRecordAccess>(readableTables.map((table) => [table.id, ALL_RECORD_ACCESS]));
+  const authorizedTableIds = new Set(readableTables.map((table) => table.id));
 
   const dslTables: DslTableSource[] = readableTables.map((table) => ({
     kind: "table",
@@ -174,7 +173,7 @@ export const buildPermissionedGqlResolverContextForAccess = async (
     Field[]
   >;
   const hydratedViews = hydrateDslViewQueries({ tables: dslTables, views, fieldsByTableId });
-  const recordAccessByViewId = new Map<string, AuthorizedRecordAccess>(hydratedViews.map((view) => [view.id, ALL_RECORD_ACCESS]));
+  const authorizedViewIds = new Set(hydratedViews.map((view) => view.id));
 
   return {
     ...(currentTable ? { currentTable } : {}),
@@ -182,8 +181,8 @@ export const buildPermissionedGqlResolverContextForAccess = async (
     views: hydratedViews,
     fieldsByTableId,
     tablePermissionsById,
-    recordAccessByTableId,
-    recordAccessByViewId,
+    authorizedTableIds,
+    authorizedViewIds,
   };
 };
 
@@ -226,8 +225,8 @@ const previewResolvedGqlPlan = async (
     expectedFederatedRevisionScope?: FederatedRevisionScope;
     onFederatedRevisionScope?: (scope: FederatedRevisionScope) => void;
     signal?: AbortSignal;
-    authorizedRecordAccessByTableId?: ReadonlyMap<string, AuthorizedRecordAccess>;
-    primaryRecordAccess?: AuthorizedRecordAccess | null;
+    authorizedTableIds?: ReadonlySet<string>;
+    primaryTableAuthorized?: boolean;
   },
 ): Promise<DslQueryPreviewResponse> => {
   const result = await previewDslQuery(plan, {
@@ -245,8 +244,8 @@ const previewResolvedGqlPlan = async (
     ...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
     ...(options.maxResultBytes !== undefined ? { maxResultBytes: options.maxResultBytes } : {}),
     viewer: actorViewerFor(runtime.access),
-    authorizedRecordAccessByTableId: options.authorizedRecordAccessByTableId,
-    ...(Object.hasOwn(options, "primaryRecordAccess") ? { primaryRecordAccess: options.primaryRecordAccess } : {}),
+    authorizedTableIds: options.authorizedTableIds,
+    ...(Object.hasOwn(options, "primaryTableAuthorized") ? { primaryTableAuthorized: options.primaryTableAuthorized } : {}),
   });
   return result.ok
     ? result.data
@@ -444,11 +443,11 @@ const executeGqlSourceUnadmitted = async (
       labelRelationValues: options.labelRelationValues,
       expectedFederatedRevisionScope: options.expectedFederatedRevisionScope,
       signal: runtime.signal,
-      authorizedRecordAccessByTableId: ctx.recordAccessByTableId,
-      primaryRecordAccess:
+      authorizedTableIds: ctx.authorizedTableIds,
+      primaryTableAuthorized:
         resolved.plan.source.kind === "view"
-          ? (ctx.recordAccessByViewId.get(resolved.plan.source.id) ?? null)
-          : (ctx.recordAccessByTableId.get(resolved.plan.tableId) ?? null),
+          ? ctx.authorizedViewIds.has(resolved.plan.source.id)
+          : ctx.authorizedTableIds.has(resolved.plan.tableId),
       onFederatedRevisionScope: (scope) => {
         revisionScope = scope;
       },
@@ -605,7 +604,7 @@ const executeSavedViewSourceUnadmitted = async (
       cursorSigningKey,
       labelRelationValues: options.labelRelationValues,
       signal: runtime.signal,
-      primaryRecordAccess: ALL_RECORD_ACCESS,
+      primaryTableAuthorized: true,
     });
     await trace.end({ stage: "execute", outcome: response.ok ? "success" : "diagnostic", plan: resolved.plan, response });
     return response;

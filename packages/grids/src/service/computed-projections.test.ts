@@ -117,8 +117,8 @@ describe("buildComputedProjections", () => {
       config: { relationFieldId: relation.id, agg: "count" },
     });
 
-    expect(await buildComputedProjections([relation, count], { readableTableIds: [] })).toEqual([]);
-    expect(await buildComputedProjections([relation, count], { readableTableIds: ["target_table"] })).toHaveLength(1);
+    expect(await buildComputedProjections([relation, count], { authorizedTableIds: new Set() })).toEqual([]);
+    expect(await buildComputedProjections([relation, count], { authorizedTableIds: new Set(["target_table"]) })).toHaveLength(1);
   });
 
   test("uses a caller-provided table policy for credential-scoped reads", async () => {
@@ -144,7 +144,7 @@ describe("buildComputedProjections", () => {
     });
 
     expect(checked).toEqual(["target_table"]);
-    expect(readable).toEqual([]);
+    expect(readable).toEqual(new Set());
   });
 });
 

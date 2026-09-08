@@ -5,7 +5,6 @@ import { describeRoute } from "hono-openapi";
 import { CreateDocumentTemplateSchema, UpdateDocumentTemplateSchema } from "../contracts";
 import { gridsService } from "../service";
 import { resolvePublicIds } from "../service/public-resources";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import {
   DocumentTemplateSummaryQuerySchema,
   gateEnabledTemplateWrite,
@@ -248,7 +247,6 @@ export const createDocumentTemplateRoutes = () =>
               q,
               limit,
               excludeIds: publicExcludeIds.map((id) => excludeIds.get(id)!),
-              recordAccess: ALL_RECORD_ACCESS,
             }),
           ),
         );

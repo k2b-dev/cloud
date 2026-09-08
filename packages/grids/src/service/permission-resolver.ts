@@ -50,6 +50,16 @@ export const resolveEffectivePermission = (grants: Grant[], target: ResolveTarge
 
 export const hasAtLeast = (level: PermissionLevel, required: PermissionLevel): boolean => LEVEL_RANK[level] >= LEVEL_RANK[required];
 
+export const minPermission = (left: PermissionLevel, right: PermissionLevel): PermissionLevel =>
+  LEVEL_RANK[left] <= LEVEL_RANK[right] ? left : right;
+
+export const permissionFromCredentialScopes = (scopes: readonly string[]): PermissionLevel => {
+  if (scopes.includes("admin") || scopes.includes("grids:admin") || scopes.includes("grids:*")) return "admin";
+  if (scopes.includes("write") || scopes.includes("grids:write")) return "write";
+  if (scopes.includes("read") || scopes.includes("grids:read")) return "read";
+  return "none";
+};
+
 export const hasGrantsForResource = (grants: Grant[], resourceType: ResourceType, resourceId: string): boolean =>
   grants.some((grant) => grant.resourceType === resourceType && grant.resourceId === resourceId);
 

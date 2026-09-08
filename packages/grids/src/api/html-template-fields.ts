@@ -4,7 +4,6 @@ import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { gridsService } from "../service";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
@@ -58,7 +57,6 @@ const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).post(
       template: body.template,
       css: body.css,
       dateConfig: await getDateConfig(c),
-      recordAccess: ALL_RECORD_ACCESS,
       viewer: currentActorViewer(c),
     });
     return result.ok ? c.json(result.data) : respond(c, () => Promise.resolve(result));

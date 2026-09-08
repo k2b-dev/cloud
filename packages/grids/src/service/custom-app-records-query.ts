@@ -15,7 +15,6 @@ import { executePublishedCustomAppQuery } from "./custom-app-runtime-query";
 import { listByTable as listFields } from "./fields";
 import { listFirstImagePreviews } from "./files";
 import { resolvePublicId, resolvePublicIds } from "./public-resources";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import { createReader } from "./record-read";
 import { buildPinnedRelationLabelCache } from "./relation-labels";
 import type { ExpansionViewer } from "./relations";
@@ -172,7 +171,7 @@ export const executePublishedCustomAppRecords = async (input: {
     });
     if (!bindingsValid) return null;
     const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
-    const records = await (await createReader(primaryTableId, { fields: allFields, recordAccess: ALL_RECORD_ACCESS })).getMany(recordIds);
+    const records = await (await createReader(primaryTableId, { fields: allFields })).getMany(recordIds);
     rowNavigationParams = customAppRowNavigationParams(rowNavigation, recordIds, records);
   }
   if (!response.ok || block.display.kind !== "cards") {
@@ -187,7 +186,7 @@ export const executePublishedCustomAppRecords = async (input: {
     if (fields.length !== block.fieldIds.length) return null;
     const allFields = await listFields(primaryTableId);
     const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
-    const records = await (await createReader(primaryTableId, { fields: allFields, recordAccess: ALL_RECORD_ACCESS })).getMany(recordIds);
+    const records = await (await createReader(primaryTableId, { fields: allFields })).getMany(recordIds);
     const allowedFieldIds = new Set(fields.map((field) => field.id));
     const resultValuesByRecordId = new Map(
       response.rows.flatMap((row) =>
@@ -225,7 +224,7 @@ export const executePublishedCustomAppRecords = async (input: {
         ...input.viewer,
         isAdmin: false,
         readableTableIds: new Set(relationTableIds),
-        recordAccessByTableId: new Map(relationTableIds.map((tableId) => [tableId, ALL_RECORD_ACCESS])),
+        tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
       },
     );
     return {
@@ -255,7 +254,7 @@ export const executePublishedCustomAppRecords = async (input: {
   });
   if (fields.length !== fieldIds.length) return null;
   const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
-  const records = await (await createReader(primaryTableId, { fields: allFields, recordAccess: ALL_RECORD_ACCESS })).getMany(recordIds);
+  const records = await (await createReader(primaryTableId, { fields: allFields })).getMany(recordIds);
   const allowedFieldIds = new Set(fieldIds);
   const resultValuesByRecordId = new Map(
     response.rows.flatMap((row) =>
@@ -293,7 +292,7 @@ export const executePublishedCustomAppRecords = async (input: {
       ...input.viewer,
       isAdmin: false,
       readableTableIds: new Set(relationTableIds),
-      recordAccessByTableId: new Map(relationTableIds.map((tableId) => [tableId, ALL_RECORD_ACCESS])),
+      tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
     },
   );
   const imageFieldId = displayConfig.cards?.imageFieldId;

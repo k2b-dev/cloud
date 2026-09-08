@@ -3,25 +3,9 @@ import type { AccessSubject, AuthContext, PermissionLevel, RequestActor } from "
 import type { Context } from "hono";
 import type { Grant } from "../service";
 import { gridsService } from "../service";
+import { hasAtLeast, minPermission, permissionFromCredentialScopes } from "../service/permission-resolver";
 import { workflowCredentialBinding } from "../service/workflow-authorization";
 import type { GridsWorkflowPrincipal } from "../workflows/contracts";
-
-const PERMISSION_RANK: Record<PermissionLevel, number> = {
-  none: 0,
-  read: 1,
-  write: 2,
-  admin: 3,
-};
-
-export const permissionFromCredentialScopes = (scopes: readonly string[]): PermissionLevel => {
-  if (scopes.includes("admin") || scopes.includes("grids:admin") || scopes.includes("grids:*")) return "admin";
-  if (scopes.includes("write") || scopes.includes("grids:write")) return "write";
-  if (scopes.includes("read") || scopes.includes("grids:read")) return "read";
-  return "none";
-};
-
-export const minPermission = (left: PermissionLevel, right: PermissionLevel): PermissionLevel =>
-  PERMISSION_RANK[left] <= PERMISSION_RANK[right] ? left : right;
 
 export type GridsAccessContext = {
   actor: RequestActor | undefined;
@@ -74,7 +58,7 @@ export const gateCredentialScopeFor = async (
   options: { allowResourceBound?: boolean } = {},
 ): Promise<Result<PermissionLevel>> => {
   const level = credentialPermissionFor(access);
-  if (PERMISSION_RANK[level] < PERMISSION_RANK[required]) {
+  if (!hasAtLeast(level, required)) {
     return fail(err.forbidden("The API credential does not grant the required Grids scope."));
   }
   if (options.allowResourceBound === false && resourceBoundBaseIdFor(access) !== undefined) {
@@ -174,10 +158,7 @@ export const resolveCustomAppWithGrantsForAccess = async (
   };
 };
 
-export const gateCustomAppAtAccess = async (
-  access: GridsAccessContext,
-  customAppId: string,
-): Promise<Result<PermissionLevel>> => {
+export const gateCustomAppAtAccess = async (access: GridsAccessContext, customAppId: string): Promise<Result<PermissionLevel>> => {
   const resolved = await resolveCustomAppWithGrantsForAccess(access, customAppId);
   return gridsService.permission.hasAtLeast(resolved.level, "read") ? ok(resolved.level) : deny();
 };

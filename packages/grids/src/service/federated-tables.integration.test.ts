@@ -553,6 +553,8 @@ describe("combined table integration", () => {
   postgresTest("runs native GQL filtering, sorting, grouping, and aggregates", async () => {
     const fixture = await createFixture();
     try {
+      const textField = fixture.targetFields.find((field) => field.id === fixture.targetTextFieldId);
+      if (!textField) throw new Error("Missing combined text field");
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES
@@ -561,14 +563,14 @@ describe("combined table integration", () => {
       `;
       const rows = await previewCombined(
         fixture,
-        `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}} as label\nwhere icontains({${fixture.targetTextFieldId}}, 'mapped')\nsort label asc`,
+        `from table Combined\nselect {${textField.shortId}} as label\nwhere icontains({${textField.shortId}}, 'mapped')\nsort label asc`,
       );
       expect(rows.mode).toBe("rows");
       expect(rows.rows.map((row) => row.values.q_col_0)).toEqual(["Mapped second", "Mapped value"]);
 
       const searched = await previewCombined(
         fixture,
-        `from table {${fixture.targetTableId}}\nselect {${fixture.targetTextFieldId}}\nsearch 'mapped'\nsort {${fixture.targetTextFieldId}} asc`,
+        `from table Combined\nselect {${textField.shortId}}\nsearch 'mapped'\nsort {${textField.shortId}} asc`,
       );
       expect(searched.mode).toBe("rows");
       expect(searched.rows.map((row) => row.values.q_col_0)).toEqual(["Mapped second", "Mapped value"]);
@@ -590,10 +592,7 @@ describe("combined table integration", () => {
       `;
       expect(pushedRows.map((row) => row.id)).toEqual([fixture.recordId]);
 
-      const groups = await previewCombined(
-        fixture,
-        `from table {${fixture.targetTableId}}\ngroup by {${fixture.targetTextFieldId}}\naggregate count(*) as total`,
-      );
+      const groups = await previewCombined(fixture, `from table Combined\ngroup by {${textField.shortId}}\naggregate count(*) as total`);
       expect(groups.mode).toBe("groups");
       expect(groups.rows).toHaveLength(3);
       expect(groups.rows.every((row) => Number(row.values["*__count"]) === 1)).toBe(true);
@@ -612,7 +611,7 @@ describe("combined table integration", () => {
       fixture.targetFields = await loadTableFields(fixture.targetTableId);
       const formulaCounts = await previewCombined(
         fixture,
-        `from table {${fixture.targetTableId}}\naggregate count({${nameLength.data.id}}) as present, countEmpty({${nameLength.data.id}}) as empty`,
+        `from table Combined\naggregate count({${nameLength.data.shortId}}) as present, countEmpty({${nameLength.data.shortId}}) as empty`,
       );
       expect(formulaCounts.mode).toBe("groups");
       expect(Number(formulaCounts.rows[0]?.values.present__count)).toBe(3);

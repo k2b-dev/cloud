@@ -48,7 +48,8 @@ import {
   requireExecution,
   requireOk,
   requirePermission,
-  requireRecordAccess,
+  requireTableAccess,
+  canAccessWorkflowRunTable,
   workflowAuditMeta,
   workflowRunScope,
 } from "./service/workflow-action-scope";
@@ -185,12 +186,11 @@ const readableRecord = async (
   required: "read" | "write",
 ): Promise<void> => {
   await currentTable(ctx, scope, reference.tableId);
-  const recordAccess = await requireRecordAccess(scope, reference.tableId, required);
+  await requireTableAccess(scope, reference.tableId, required);
   if (reference.planned) return;
   const record = await getRecord(reference.tableId, reference.recordId, {
     includeRelations: true,
     dateConfig: await dateContext(ctx),
-    recordAccess,
   });
   if (!record) throw actionError("NOT_FOUND", runtimeText(ctx).recordUnavailable);
 };
@@ -532,7 +532,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
         await currentTable(ctx, scope, record.tableId);
-        const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
+        await requireTableAccess(scope, record.tableId, "write", tx);
         requireOk(await assertMutationAllowed(tx, record.tableId, "workflow", invocationLocale(ctx)));
         const status = requireOk(await getRecordFinalizationStatus(record.tableId, tx));
         if (!status.enabled) throw actionError("BAD_INPUT", runtimeText(ctx).finalizationDisabled);
@@ -561,7 +561,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               tableId: record.tableId,
               recordId: record.recordId,
               actorId: actorId(scope),
-              recordAccess,
               expectedPolicyRevision,
             }),
           );
@@ -583,7 +582,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               recordId: record.recordId,
               actorId: actorId(scope),
               origin: "workflow",
-              recordAccess,
               dateConfig: await dateContext(ctx),
               expectedPolicyRevision,
             }),
@@ -619,7 +617,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             tableId: record.tableId,
             recordId: record.recordId,
             actorId: actorId(scope),
-            recordAccess: await requireRecordAccess(scope, record.tableId, "write"),
           }),
         );
         if (!readiness.enabled) throw actionError("BAD_INPUT", runtimeText(ctx).finalizationDisabled);
@@ -697,13 +694,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           throw actionError("WORKFLOW_VALUE_INVALID", runtimeText(ctx).existingFinalizedRecordRequired({ path: "original" }));
         }
         await currentTable(ctx, scope, original.tableId);
-        const recordAccess = await requireRecordAccess(scope, original.tableId, "write", tx);
+        await requireTableAccess(scope, original.tableId, "write", tx);
         const readiness = requireOk(
           await inspectRecordFinalization({
             tableId: original.tableId,
             recordId: original.recordId,
             actorId: actorId(scope),
-            recordAccess,
             client: tx,
           }),
         );
@@ -721,7 +717,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const created = requireOk(
           await createRecordInTransaction(tx, original.tableId, values, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
-            recordAccess,
             viewer: viewerForScope(scope),
           }),
         );
@@ -750,13 +745,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const original = await recordReference(ctx, config.original, "original");
         await readableRecord(ctx, scope, original, "write");
         requireOk(await assertMutationAllowed(sql, original.tableId, "workflow", invocationLocale(ctx)));
-        const recordAccess = await requireRecordAccess(scope, original.tableId, "write");
+        await requireTableAccess(scope, original.tableId, "write");
         const readiness = requireOk(
           await inspectRecordFinalization({
             tableId: original.tableId,
             recordId: original.recordId,
             actorId: actorId(scope),
-            recordAccess,
           }),
         );
         if (!readiness.finalized) throw actionError("CONFLICT", runtimeText(ctx).finalizedRecordRequired);
@@ -795,14 +789,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
         await currentTable(ctx, scope, record.tableId);
-        const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
+        await requireTableAccess(scope, record.tableId, "write", tx);
         const finalized = requireOk(
           await finalizeRecordInTransaction(tx, {
             tableId: record.tableId,
             recordId: record.recordId,
             actorId: actorId(scope),
             origin: "workflow",
-            recordAccess,
             dateConfig: await dateContext(ctx),
           }),
         );
@@ -861,13 +854,12 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope, tx);
         const record = await recordReference(ctx, config.record, "record");
         await currentTable(ctx, scope, record.tableId);
-        const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
+        await requireTableAccess(scope, record.tableId, "write", tx);
         const values = fieldPayload(ctx, "set", config.set);
         const audit = auditAnswerPayload(ctx, config.audit);
         const updated = requireOk(
           await updateRecordInTransaction(tx, record.tableId, record.recordId, values, actorId(scope), "workflow", undefined, {
             dateConfig: await dateContext(ctx),
-            recordAccess,
             viewer: viewerForScope(scope),
             ...(audit ? { audit } : {}),
           }),
@@ -931,12 +923,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope, tx);
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
-        const recordAccess = await requireRecordAccess(scope, tableId, "write", tx);
+        await requireTableAccess(scope, tableId, "write", tx);
         const values = fieldPayload(ctx, "values", config.values);
         const created = requireOk(
           await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
             dateConfig: await dateContext(ctx),
-            recordAccess,
             viewer: viewerForScope(scope),
           }),
         );
@@ -963,7 +954,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await requireExecution(scope);
         const tableId = boundId(ctx, "table");
         await currentTable(ctx, scope, tableId);
-        await requireRecordAccess(scope, tableId, "write");
+        await requireTableAccess(scope, tableId, "write");
         const values = fieldPayload(ctx, "values", config.values);
         return {
           summary: runtimeText(ctx).createRecordWithFields({ count: Object.keys(values).length }),
@@ -1109,29 +1100,27 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           locks.push({ tableId: record.tableId, recordId: record.recordId, required: "write" });
         }
 
-        const accessCache = new Map<string, Awaited<ReturnType<typeof requireRecordAccess>>>();
+        const authorizedTables = new Set<string>();
         const accessFor = async (tableId: string, required: "read" | "write") => {
           const key = `${tableId}:${required}`;
-          const cached = accessCache.get(key);
-          if (cached) return cached;
+          if (authorizedTables.has(key)) return;
           await requireAtomicTable(tx, scope.baseId, tableId);
-          const access = await requireRecordAccess(scope, tableId, required, tx);
-          accessCache.set(key, access);
-          return access;
+          await requireTableAccess(scope, tableId, required, tx);
+          authorizedTables.add(key);
         };
         await lockAtomicRecords(tx, locks, (record) => accessFor(record.tableId, record.required));
 
         for (let checkIndex = 0; checkIndex < config.checks.length; checkIndex += 1) {
           const check = config.checks[checkIndex]!;
           const tableId = boundIdAt(ctx, ["checks", checkIndex, "table"]);
-          const access = await accessFor(tableId, "read");
+          await accessFor(tableId, "read");
           const predicates: AtomicQueryPredicate[] = check.where.map((predicate, predicateIndex) => ({
             fieldId: boundIdAt(ctx, ["checks", checkIndex, "where", predicateIndex, "field"]),
             op: predicate.op,
             ...(predicate.value === undefined ? {} : { value: predicate.value }),
             ...(predicate.caseInsensitive === undefined ? {} : { caseInsensitive: predicate.caseInsensitive }),
           }));
-          const matches = await atomicQueryMatches({ client: tx, tableId, predicates, access, timeZone: dates.timeZone ?? "UTC" });
+          const matches = await atomicQueryMatches({ client: tx, tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
           const passed = check.assert === "empty" ? !matches : matches;
           if (!passed) throw actionError("ATOMIC_CHECK_FAILED", check.message?.trim() || runtimeText(ctx).atomicCheckFailed);
         }
@@ -1142,12 +1131,11 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           const change = config.changes[changeIndex]!;
           if ("createRecord" in change) {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
-            const access = await accessFor(tableId, "write");
+            await accessFor(tableId, "write");
             const values = atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values);
             const result = requireOk(
               await createRecordInTransaction(tx, tableId, values, actorId(scope), "workflow", {
                 dateConfig: dates,
-                recordAccess: access,
                 viewer: viewerForScope(scope),
               }),
             );
@@ -1167,7 +1155,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           }
 
           const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
-          const access = await accessFor(record.tableId, "write");
+          await accessFor(record.tableId, "write");
           const values = atomicFieldPayloadAt(ctx, ["changes", changeIndex, "updateRecord", "set"], change.updateRecord.set);
           const audit = auditAnswerPayload(ctx, change.updateRecord.audit);
           const result = requireOk(
@@ -1181,7 +1169,6 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               change.updateRecord.ifVersion,
               {
                 dateConfig: dates,
-                recordAccess: access,
                 viewer: viewerForScope(scope),
                 ...(audit ? { audit } : {}),
               },
@@ -1221,14 +1208,14 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           const check = config.checks[checkIndex]!;
           const tableId = boundIdAt(ctx, ["checks", checkIndex, "table"]);
           await currentTable(ctx, scope, tableId);
-          const access = await requireRecordAccess(scope, tableId, "read");
+          await requireTableAccess(scope, tableId, "read");
           const predicates: AtomicQueryPredicate[] = check.where.map((predicate, predicateIndex) => ({
             fieldId: boundIdAt(ctx, ["checks", checkIndex, "where", predicateIndex, "field"]),
             op: predicate.op,
             ...(predicate.value === undefined ? {} : { value: predicate.value }),
             ...(predicate.caseInsensitive === undefined ? {} : { caseInsensitive: predicate.caseInsensitive }),
           }));
-          const matches = await atomicQueryMatches({ tableId, predicates, access, timeZone: dates.timeZone ?? "UTC" });
+          const matches = await atomicQueryMatches({ tableId, predicates, timeZone: dates.timeZone ?? "UTC" });
           if ((check.assert === "empty" && matches) || (check.assert === "notEmpty" && !matches)) {
             issues.push(check.message?.trim() || runtimeText(ctx).checkDoesNotPass({ index: checkIndex + 1 }));
           }
@@ -1238,7 +1225,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           if ("createRecord" in change) {
             const tableId = boundIdAt(ctx, ["changes", changeIndex, "createRecord", "table"]);
             await currentTable(ctx, scope, tableId);
-            await requireRecordAccess(scope, tableId, "write");
+            await requireTableAccess(scope, tableId, "write");
             atomicFieldPayloadAt(ctx, ["changes", changeIndex, "createRecord", "values"], change.createRecord.values);
           } else {
             const record = await recordReference(ctx, change.updateRecord.record, `changes.${changeIndex}.updateRecord.record`);
@@ -1279,7 +1266,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const table = await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, table.id, config.record, "read");
         await requirePermission(scope, "write");
-        const recordAccess = await requireRecordAccess(scope, table.id, "read");
+        await requireTableAccess(scope, table.id, "read");
         const document = requireOk(
           await createDocumentForRecord({
             template,
@@ -1287,8 +1274,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             recordId: record.recordId,
             actor: documentActorForScope(scope),
             idempotencyKey: ctx.effectKey,
-            recordAccess,
-            resolveRecordAccess: ({ tableId }) => requireRecordAccess(scope, tableId, "read").catch(() => null),
+            canReadTable: ({ tableId }) => canAccessWorkflowRunTable(scope, tableId, "read"),
             viewer: {
               userId: scope.principal.userId,
               userGroups: scope.principal.groupIds,

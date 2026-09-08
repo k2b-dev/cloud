@@ -9,7 +9,6 @@ import { buildComputedFieldSqlMap } from "../service/computed-projections";
 import { type FederatedRevisionScope, verifyRevisionScope } from "../service/federated-tables";
 import { isMultiSelectField, storageOf } from "../service/field-storage";
 import { buildPrincipalLabelCache, principalReferencesFromValue } from "../service/principal-values";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "../service/record-access";
 import { createReader } from "../service/record-read";
 import { buildRelationLabelCacheForIds, type ExpansionViewer } from "../service/relations";
 import { compileSearchClause } from "../service/search";
@@ -60,11 +59,11 @@ type DslQueryPreviewOptions = {
   expectedFederatedRevisionScope?: FederatedRevisionScope;
   onFederatedRevisionScope?: (scope: FederatedRevisionScope) => void;
   signal?: AbortSignal;
-  /** Authorized row sets for every table reachable by this plan. Supplying
-   * the map makes a missing table fail closed. */
-  authorizedRecordAccessByTableId?: ReadonlyMap<string, AuthorizedRecordAccess>;
-  /** View-level policy for the primary source. */
-  primaryRecordAccess?: AuthorizedRecordAccess | null;
+  /** Authorized tables reachable by this plan. Supplying the set makes a
+   * missing table fail closed; omission is reserved for trusted internal calls. */
+  authorizedTableIds?: ReadonlySet<string>;
+  /** Explicit primary-source authorization, including saved-view access. */
+  primaryTableAuthorized?: boolean;
 };
 
 const MAX_PREVIEW_ROWS = 500;
@@ -104,10 +103,8 @@ const queryExecutionKey = (
       fingerprint: options.cursorFingerprint,
       mode,
       revisions: revisionScopeKey(revisionScope),
-      recordAccess: options.authorizedRecordAccessByTableId
-        ? [...options.authorizedRecordAccessByTableId].sort(([left], [right]) => left.localeCompare(right))
-        : null,
-      primaryRecordAccess: options.primaryRecordAccess ?? null,
+      authorizedTableIds: options.authorizedTableIds ? [...options.authorizedTableIds].sort() : null,
+      primaryTableAuthorized: options.primaryTableAuthorized ?? null,
       runtimeSearch: options.runtimeSearch ?? null,
       timeZone: options.timeZone ?? null,
       viewer: viewer
@@ -458,9 +455,7 @@ const labelPreviewValues = async (
   return {
     rows: await labelPrincipalPreviewValues(relations.rows, columns, options),
     columns: columns.map((column) =>
-      relations.labeledColumnKeys.has(column.key)
-        ? { ...column, sqlType: column.sqlType === "uuid[]" ? "text[]" : "text" }
-        : column,
+      relations.labeledColumnKeys.has(column.key) ? { ...column, sqlType: column.sqlType === "uuid[]" ? "text[]" : "text" } : column,
     ),
   };
 };
@@ -477,7 +472,6 @@ const hydrateHtmlTemplatePreviewValues = async (
   if (templateColumns.length === 0) return rows;
   const ids = [...new Set(rows.flatMap((row) => (row.recordId ? [row.recordId] : [])))];
   if (ids.length === 0) return rows;
-  const access = options.authorizedRecordAccessByTableId?.get(plan.tableId) ?? options.primaryRecordAccess ?? undefined;
   const reader = await createReader(plan.tableId, {
     fields: options.fieldsByTableId[plan.tableId] ?? [],
     dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
@@ -485,7 +479,6 @@ const hydrateHtmlTemplatePreviewValues = async (
     htmlTemplateFieldIds: templateColumns.map((column) => column.fieldId!),
     signal: options.signal,
     queryTimeoutMs: 5_000,
-    ...(access ? { recordAccess: access } : {}),
   });
   const records = new Map((await reader.getMany(ids)).map((record) => [record.id, record]));
   return rows.map((row) => {
@@ -640,21 +633,20 @@ export const previewDslQuery = async (
                 : undefined,
             );
             const isPrimary = tableId === plan.tableId;
-            const access =
-              isPrimary && Object.hasOwn(options, "primaryRecordAccess")
-                ? options.primaryRecordAccess
-                : options.authorizedRecordAccessByTableId?.get(tableId);
+            const authorized =
+              isPrimary && options.primaryTableAuthorized !== undefined
+                ? options.primaryTableAuthorized
+                : options.authorizedTableIds?.has(tableId);
             const authorizationRequired =
-              (isPrimary && Object.hasOwn(options, "primaryRecordAccess")) || options.authorizedRecordAccessByTableId !== undefined;
-            if (!authorizationRequired || access?.kind === "all") return [tableId, physicalSource] as const;
+              (isPrimary && options.primaryTableAuthorized !== undefined) || options.authorizedTableIds !== undefined;
+            if (!authorizationRequired || authorized === true) return [tableId, physicalSource] as const;
 
             const baseRelation = physicalSource?.relation ?? sql`grids.records`;
-            const predicate = access ? recordAccessPredicate(access, "access_record") : sql`FALSE`;
             const relation = sql`(
                 SELECT access_record.*
                 FROM ${baseRelation} access_record
                 WHERE access_record.table_id = ${tableId}::uuid
-                  AND ${predicate}
+                  AND FALSE
               )`;
             const source: DslSqlRecordSource = physicalSource
               ? { ...physicalSource, relation }
@@ -714,32 +706,29 @@ export const previewDslQuery = async (
     // Lookup/rollup SQL (cross-table correlated subqueries) is built once and
     // handed to the compilers so those fields work in select / sort / filter /
     // formulas — same values as the records pipeline.
+    const authorizedComputedTableIds = new Set(plan.readableTableIds.filter((tableId) => options.authorizedTableIds?.has(tableId) ?? true));
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
-      readableTableIds: plan.readableTableIds,
-      recordAccessByTableId: options.authorizedRecordAccessByTableId,
+      authorizedTableIds: authorizedComputedTableIds,
     });
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
         recordAlias: dslJoinRecordAlias(index),
-        readableTableIds: plan.readableTableIds,
-        recordAccessByTableId: options.authorizedRecordAccessByTableId,
+        authorizedTableIds: authorizedComputedTableIds,
       });
       if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
         recordAlias: dslDerivedJoinRecordAlias(index),
-        readableTableIds: plan.readableTableIds,
-        recordAccessByTableId: options.authorizedRecordAccessByTableId,
+        authorizedTableIds: authorizedComputedTableIds,
       });
       if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
         recordAlias: dslJoinRecordAlias(index),
-        readableTableIds: plan.readableTableIds,
-        recordAccessByTableId: options.authorizedRecordAccessByTableId,
+        authorizedTableIds: authorizedComputedTableIds,
       });
       if (map.size > 0) computedFieldSqlByJoinAlias.set(join.alias, map);
     }

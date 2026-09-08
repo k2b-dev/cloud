@@ -2,46 +2,40 @@ import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 
 export type ExpansionViewer = {
   userId: string | null;
   userGroups: string[];
   serviceAccountId?: string | null;
   isAdmin?: boolean;
-  /** Complete readable-table catalog resolved for this request. */
+  /** Restricts candidate tables; each candidate still needs Base Read access. */
   readableTableIds?: ReadonlySet<string>;
   /** Request-local cache shared by relation, lookup, and computed-field reads. */
-  recordAccessByTableId?: Map<string, AuthorizedRecordAccess | null>;
+  tableReadAccess?: Map<string, boolean>;
 };
 
 type RelationAccessReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number };
 
-export const resolveRecordAccessByTableIds = async (
+export const resolveReadableTableIds = async (
   tableIds: Iterable<string>,
   viewer: ExpansionViewer,
   db: SqlClient = sql,
   options: RelationAccessReadOptions = {},
-): Promise<Map<string, AuthorizedRecordAccess>> => {
+): Promise<Set<string>> => {
   const uniqueIds = [...new Set(tableIds)];
-  if (viewer.isAdmin) return new Map(uniqueIds.map((tableId) => [tableId, ALL_RECORD_ACCESS]));
-  if (uniqueIds.length === 0) return new Map();
+  if (viewer.isAdmin) return new Set(uniqueIds);
+  if (uniqueIds.length === 0) return new Set();
 
   const candidateIds = viewer.readableTableIds ? uniqueIds.filter((tableId) => viewer.readableTableIds!.has(tableId)) : uniqueIds;
   const candidateIdSet = new Set(candidateIds);
-  const cached = viewer.recordAccessByTableId ?? new Map<string, AuthorizedRecordAccess | null>();
-  viewer.recordAccessByTableId = cached;
+  const cached = viewer.tableReadAccess ?? new Map<string, boolean>();
+  viewer.tableReadAccess = cached;
   const unresolvedIds = candidateIds.filter((tableId) => !cached.has(tableId));
   for (const tableId of uniqueIds) {
-    if (!candidateIdSet.has(tableId)) cached.set(tableId, null);
+    if (!candidateIdSet.has(tableId)) cached.set(tableId, false);
   }
   if (unresolvedIds.length === 0) {
-    return new Map(
-      candidateIds.flatMap((tableId) => {
-        const access = cached.get(tableId);
-        return access ? [[tableId, access] as const] : [];
-      }),
-    );
+    return new Set(candidateIds.filter((tableId) => cached.get(tableId)));
   }
 
   const tablesQuery = db<Array<{ id: string; base_id: string }>>`
@@ -70,26 +64,18 @@ export const resolveRecordAccessByTableIds = async (
   );
   const existingIds = new Set(tables.map((table) => table.id));
   for (const tableId of unresolvedIds) {
-    if (!existingIds.has(tableId)) cached.set(tableId, null);
+    if (!existingIds.has(tableId)) cached.set(tableId, false);
   }
   for (const table of tables) {
-    cached.set(table.id, readableBaseIds.has(table.base_id) ? ALL_RECORD_ACCESS : null);
+    cached.set(table.id, readableBaseIds.has(table.base_id));
   }
-  return new Map(
-    candidateIds.flatMap((tableId) => {
-      const access = cached.get(tableId);
-      return access ? [[tableId, access] as const] : [];
-    }),
-  );
+  return new Set(candidateIds.filter((tableId) => cached.get(tableId)));
 };
 
-export const filterReadableTableIdsByViewer = async (tableIds: Iterable<string>, viewer: ExpansionViewer): Promise<Set<string>> =>
-  new Set((await resolveRecordAccessByTableIds(tableIds, viewer)).keys());
-
 /**
- * Filters linked record ids with the exact same predicate used by direct
- * record reads. This keeps relation UUIDs themselves from becoming a side
- * channel when labels or expansions are hidden.
+ * Returns existing linked records only from tables the viewer can read.
+ * This keeps relation UUIDs themselves from becoming a side channel when
+ * labels or expansions are hidden.
  */
 export const accessibleRecordIdsByTable = async (
   idsByTableId: ReadonlyMap<string, ReadonlySet<string>>,
@@ -97,15 +83,13 @@ export const accessibleRecordIdsByTable = async (
   db: SqlClient = sql,
   options: RelationAccessReadOptions = {},
 ): Promise<Map<string, Set<string>>> => {
-  const accessByTableId = await resolveRecordAccessByTableIds(idsByTableId.keys(), viewer, db, options);
+  const readableTableIds = await resolveReadableTableIds(idsByTableId.keys(), viewer, db, options);
   options.signal?.throwIfAborted();
   const clauses = [...idsByTableId].flatMap(([tableId, ids]) => {
-    const access = accessByTableId.get(tableId);
-    if (!access || ids.size === 0) return [];
+    if (!readableTableIds.has(tableId) || ids.size === 0) return [];
     return [
       db`(r.table_id = ${tableId}::uuid
-      AND r.id = ANY(${db.array([...ids], "UUID")}::uuid[])
-      AND ${recordAccessPredicate(access, "r")})`,
+      AND r.id = ANY(${db.array([...ids], "UUID")}::uuid[]))`,
     ];
   });
   if (clauses.length === 0) return new Map();

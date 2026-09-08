@@ -1,5 +1,4 @@
 import { gridsService } from "../../../service";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "../../../service/record-access";
 import type { AuthUser } from "./workspace-state-model";
 
 const resolveLevel = async (user: AuthUser, baseId: string) => {
@@ -9,7 +8,7 @@ const resolveLevel = async (user: AuthUser, baseId: string) => {
 
 export const resolveBaseLevel = (user: AuthUser, baseId: string) => resolveLevel(user, baseId);
 
-export const recordAccessForUser = async (user: AuthUser, baseId: string): Promise<AuthorizedRecordAccess | null> => {
+export const canReadBase = async (user: AuthUser, baseId: string): Promise<boolean> => {
   const level = await resolveLevel(user, baseId);
-  return gridsService.permission.hasAtLeast(level, "read") ? ALL_RECORD_ACCESS : null;
+  return gridsService.permission.hasAtLeast(level, "read");
 };

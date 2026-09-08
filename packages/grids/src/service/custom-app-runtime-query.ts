@@ -6,7 +6,6 @@ import { previewDslQuery } from "../query-dsl/preview";
 import type { DslResultCursor } from "../query-dsl/result-cursor";
 import { collectDslPlanTableIds } from "../query-dsl/source-plan";
 import { compileCustomAppQuery } from "./custom-app-query";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import type { ExpansionViewer } from "./relations";
 
 type PublishedQueryCapability = {
@@ -65,7 +64,7 @@ export const executePublishedCustomAppQuery = async (params: {
     return diagnostic("This published data source no longer matches its table capability snapshot.");
   }
 
-  const trustedRecordAccess = new Map(params.capability.tableIds.map((tableId) => [tableId, ALL_RECORD_ACCESS] as const));
+  const authorizedTableIds = new Set(params.capability.tableIds);
   const allowedFieldIds = params.search?.allowedFieldIds ? new Set(params.search.allowedFieldIds) : null;
   const selected = compiled.data.plan.outputColumns ?? [];
   const selectedPrimaryFieldIds = [
@@ -116,11 +115,11 @@ export const executePublishedCustomAppQuery = async (params: {
       viewer: {
         ...params.viewer,
         isAdmin: false,
-        readableTableIds: new Set(params.capability.tableIds),
-        recordAccessByTableId: new Map(trustedRecordAccess),
+        readableTableIds: authorizedTableIds,
+        tableReadAccess: new Map([...authorizedTableIds].map((tableId) => [tableId, true])),
       },
-      authorizedRecordAccessByTableId: trustedRecordAccess,
-      primaryRecordAccess: ALL_RECORD_ACCESS,
+      authorizedTableIds,
+      primaryTableAuthorized: true,
     }),
   );
   return result.ok ? result.data : diagnostic(result.error.message);

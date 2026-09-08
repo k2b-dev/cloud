@@ -7,7 +7,6 @@ import { gridsService } from "../service";
 import { type FormSubmission, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { Form } from "../service/forms";
 import { fromPublicRecordValues, projectPublicId } from "../service/public-resources";
-import type { AuthorizedRecordAccess } from "../service/record-access";
 import type { ExpansionViewer } from "../service/relation-access";
 import { apiMessages } from "./messages";
 import {
@@ -131,7 +130,7 @@ export const submitFormResponse = async (
   submitted: Record<string, unknown>,
   actorId: string | null,
   deps: SubmitFormDeps = {},
-  access?: { recordAccess: AuthorizedRecordAccess; viewer: ExpansionViewer },
+  viewer?: ExpansionViewer,
 ) => {
   const submission = parseFormSubmission(submitted);
   if (!submission) return context.json({ message: apiMessages(context).invalidFormSubmission }, 400);
@@ -156,7 +155,7 @@ export const submitFormResponse = async (
   }
   const dateConfig = await (deps.dateConfig ?? getDateConfig)(context);
   const submit = deps.submit ?? gridsService.form.submit;
-  const result = await submit({ form, submission: { data: data.data, inlineCreates }, actorId, dateConfig, ...access });
+  const result = await submit({ form, submission: { data: data.data, inlineCreates }, actorId, dateConfig, viewer });
   if (!result.ok) return respond(context, () => Promise.resolve(result), 201);
   const recordId = await projectPublicId("record", result.data.recordId);
   if (!recordId) return context.json({ message: apiMessages(context).createdRecordMissingPublicId }, 500);

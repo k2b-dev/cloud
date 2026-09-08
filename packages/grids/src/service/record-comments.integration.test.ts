@@ -2,7 +2,6 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import * as comments from "./record-comments";
 
 type Fixture = {
@@ -84,7 +83,6 @@ describe("record comments integration", () => {
           recordId: fixture.ownerRecordId,
           actorUserId: fixture.ownerId,
           body,
-          recordAccess: ALL_RECORD_ACCESS,
         });
         expect(created.ok).toBe(true);
       }
@@ -93,7 +91,6 @@ describe("record comments integration", () => {
         baseId: fixture.baseId,
         tableId: fixture.tableId,
         recordId: fixture.ownerRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
         limit: 1,
       });
       expect(firstPage.ok).toBe(true);
@@ -105,7 +102,6 @@ describe("record comments integration", () => {
         baseId: fixture.baseId,
         tableId: fixture.tableId,
         recordId: fixture.ownerRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursor: firstPage.data.nextCursor,
         limit: 1,
       });
@@ -116,7 +112,6 @@ describe("record comments integration", () => {
         baseId: fixture.baseId,
         tableId: fixture.tableId,
         recordId: fixture.otherRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(hidden).toEqual({ ok: true, data: { items: [], nextCursor: null } });
 
@@ -143,7 +138,6 @@ describe("record comments integration", () => {
         recordId: fixture.ownerRecordId,
         actorUserId: fixture.ownerId,
         body: "Please review",
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(created.ok).toBe(true);
       if (!created.ok) return;
@@ -156,7 +150,6 @@ describe("record comments integration", () => {
         actorUserId: fixture.otherUserId,
         canModerate: false,
         body: "Changed",
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(foreignEdit.ok).toBe(false);
       if (!foreignEdit.ok) expect(foreignEdit.error.code).toBe("FORBIDDEN");
@@ -169,7 +162,6 @@ describe("record comments integration", () => {
         actorUserId: fixture.otherUserId,
         canModerate: true,
         body: "Admin correction",
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(moderated.ok).toBe(true);
       if (moderated.ok) expect(moderated.data.body).toBe("Admin correction");
@@ -181,7 +173,6 @@ describe("record comments integration", () => {
         commentId: created.data.id,
         actorUserId: fixture.ownerId,
         canModerate: false,
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(removed.ok).toBe(true);
 
@@ -189,7 +180,6 @@ describe("record comments integration", () => {
         baseId: fixture.baseId,
         tableId: fixture.tableId,
         recordId: fixture.ownerRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
       });
       expect(listed.ok).toBe(true);
       if (listed.ok) expect(listed.data.items[0]).toMatchObject({ body: null, deletedAt: expect.any(String) });

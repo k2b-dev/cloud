@@ -13,7 +13,6 @@ import {
 } from "../contracts";
 import { gridsService } from "../service";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import * as recordFinalizationService from "../service/record-finalization";
 import { PublicDurableHistoryStatusSchema, toPublicDurableHistoryStatus } from "./durable-history";
 import { apiMessages } from "./messages";
@@ -887,7 +886,6 @@ export const tablesRoutes = new Hono<AuthContext>()
         limit,
         excludeIds: excludeIds.map((id) => excluded.get(id)!),
         includeDeleted: includeDeleted === "true",
-        recordAccess: ALL_RECORD_ACCESS,
       });
       const publicIds = await projectPublicIds(
         "record",

@@ -2,7 +2,6 @@ import { sql } from "bun";
 import type { FilterTree } from "../contracts";
 import { compileFilter, renderClause } from "./filter-compiler";
 import { listByTable } from "./field-read";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { actionError } from "./workflow-action-scope";
 import type { SqlClient } from "./audit";
 
@@ -34,7 +33,7 @@ export const requireAtomicTable = async (client: SqlClient, baseId: string, tabl
 export const lockAtomicRecords = async (
   client: SqlClient,
   records: AtomicRecordRef[],
-  accessFor: (record: AtomicRecordRef) => Promise<AuthorizedRecordAccess>,
+  requireAccess: (record: AtomicRecordRef) => Promise<void>,
 ): Promise<void> => {
   const requiredByRecord = new Map<string, AtomicRecordRef>();
   for (const record of records) {
@@ -47,14 +46,13 @@ export const lockAtomicRecords = async (
     left.tableId === right.tableId ? left.recordId.localeCompare(right.recordId) : left.tableId.localeCompare(right.tableId),
   );
   for (const record of ordered) {
-    const access = await accessFor(record);
+    await requireAccess(record);
     const [locked] = await client<Array<{ id: string }>>`
       SELECT r.id::text AS id
       FROM grids.records r
       WHERE r.table_id = ${record.tableId}::uuid
         AND r.id = ${record.recordId}::uuid
         AND r.deleted_at IS NULL
-        AND ${recordAccessPredicate(access, "r")}
       FOR UPDATE OF r
     `;
     if (!locked) throw actionError("ATOMIC_LOCK_UNAVAILABLE", "A record required by the atomic change is no longer available");
@@ -65,7 +63,6 @@ export const atomicQueryMatches = async (params: {
   client?: SqlClient;
   tableId: string;
   predicates: AtomicQueryPredicate[];
-  access: AuthorizedRecordAccess;
   timeZone: string;
 }): Promise<boolean> => {
   const client = params.client ?? sql;
@@ -88,7 +85,6 @@ export const atomicQueryMatches = async (params: {
       FROM grids.records r
       WHERE r.table_id = ${params.tableId}::uuid
         AND r.deleted_at IS NULL
-        AND ${recordAccessPredicate(params.access, "r")}
         AND ${renderClause(compiled.clause, { recordAlias: "r" })}
       LIMIT 1
     ) AS matches

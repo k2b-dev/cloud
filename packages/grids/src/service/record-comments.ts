@@ -3,7 +3,6 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { SqlClient } from "./audit";
 import { getGridsCrudMessages } from "./crud-messages";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { captureRecordEventSnapshot, enqueueRecordEvent, notifyRecordEventOutbox } from "./record-event-outbox";
 import { insertWithShortIdForDb } from "./short-id";
 
@@ -80,7 +79,6 @@ export const list = async (params: {
   baseId: string;
   tableId: string;
   recordId: string;
-  recordAccess: AuthorizedRecordAccess;
   cursor?: string | null;
   limit?: number;
   locale?: string;
@@ -112,7 +110,6 @@ export const list = async (params: {
     WHERE comment.base_id = ${params.baseId}::uuid
       AND comment.table_id = ${params.tableId}::uuid
       AND comment.record_id = ${params.recordId}::uuid
-      AND ${recordAccessPredicate(params.recordAccess, "r")}
       AND (${cursor?.[0] ?? null}::timestamptz IS NULL OR (comment.created_at, comment.id) < (${cursor?.[0] ?? null}::timestamptz, ${cursor?.[1] ?? null}::uuid))
     ORDER BY comment.created_at DESC, comment.id DESC
     LIMIT ${limit + 1}
@@ -127,7 +124,6 @@ export const create = async (params: {
   recordId: string;
   actorUserId: string | null;
   body: string;
-  recordAccess: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<RecordComment>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -148,7 +144,6 @@ export const create = async (params: {
           AND r.table_id = ${params.tableId}::uuid
           AND table_ref.base_id = ${params.baseId}::uuid
           AND r.deleted_at IS NULL
-          AND ${recordAccessPredicate(params.recordAccess, "r")}
       ), inserted AS (
         INSERT INTO grids.record_comments (short_id, base_id, table_id, record_id, author_user_id, body)
         SELECT ${shortId}, base_id, table_id, id, ${params.actorUserId}::uuid, ${body.data}
@@ -193,13 +188,7 @@ export const create = async (params: {
   return ok(created);
 };
 
-const existingForMutation = async (params: {
-  baseId: string;
-  tableId: string;
-  recordId: string;
-  commentId: string;
-  recordAccess: AuthorizedRecordAccess;
-}) => {
+const existingForMutation = async (params: { baseId: string; tableId: string; recordId: string; commentId: string }) => {
   const [row] = await sql<Array<{ author_user_id: string | null; deleted_at: Date | null }>>`
     SELECT comment.author_user_id::text, comment.deleted_at
     FROM grids.record_comments comment
@@ -216,7 +205,6 @@ const existingForMutation = async (params: {
       AND comment.base_id = ${params.baseId}::uuid
       AND comment.table_id = ${params.tableId}::uuid
       AND comment.record_id = ${params.recordId}::uuid
-      AND ${recordAccessPredicate(params.recordAccess, "r")}
   `;
   return row ?? null;
 };
@@ -265,7 +253,6 @@ export const update = async (params: {
   actorUserId: string | null;
   canModerate: boolean;
   body: string;
-  recordAccess: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<RecordComment>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -295,7 +282,6 @@ export const remove = async (params: {
   commentId: string;
   actorUserId: string | null;
   canModerate: boolean;
-  recordAccess: AuthorizedRecordAccess;
   locale?: string;
 }): Promise<Result<void>> => {
   const messages = getGridsCrudMessages(params.locale);

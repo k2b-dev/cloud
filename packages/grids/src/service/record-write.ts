@@ -11,14 +11,13 @@ import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
 import { bindFieldNumberAllocations } from "./number-series";
 import { requireStoredTableWritable } from "./parent-checks";
 import { validatePrincipalValuesForActor } from "./principal-values";
-import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { buildRecordAuditContext, loadTableAuditPolicy } from "./record-audit";
 import { captureRecordEventSnapshot, notifyRecordEventOutbox } from "./record-event-outbox";
 import { assertRecordMutable, supersedePendingFinalizationRequest } from "./record-finalization";
 import { buildPersistedUpdateData, buildRecordDiff, mapRecordRow, splitRelationsFromData } from "./record-persistence";
 import { createReader, get } from "./record-read";
 import { recordUniqueConflict } from "./record-unique-conflicts";
-import { resolveRecordAccessByTableIds } from "./relation-access";
+import { resolveReadableTableIds } from "./relation-access";
 import { type ExpansionViewer, enrichRecordsWithFormulas, validateRelationTargets, writeRecordLinks } from "./relations";
 import { insertWithShortIdForDb } from "./short-id";
 import type { Field, GridRecord } from "./types";
@@ -69,13 +68,14 @@ const preflightRelationTargets = async (
     groups.set(targetTableId, g);
   }
 
-  const accessByTableId = viewer ? await resolveRecordAccessByTableIds(groups.keys(), viewer, client) : null;
+  const authorizedTableIds = viewer ? await resolveReadableTableIds(groups.keys(), viewer, client) : null;
   for (const [targetTableId, group] of groups) {
     const ids = [...group.ids];
     if (ids.length === 0) continue;
-    const access = accessByTableId?.get(targetTableId);
     const check =
-      accessByTableId && !access ? { ok: false as const, missing: ids } : await validateRelationTargets(targetTableId, ids, client, access);
+      authorizedTableIds && !authorizedTableIds.has(targetTableId)
+        ? { ok: false as const, missing: ids }
+        : await validateRelationTargets(targetTableId, ids, client);
     if (!check.ok) {
       const fieldNamePart = group.fieldNames.map((name) => `“${name}”`).join(", ");
       return fail(err.badInput(messages.relationTargetsUnavailable({ fields: fieldNamePart, count: check.missing.length })));
@@ -171,7 +171,6 @@ const loadStoredRecordForUpdate = async (
   tableId: string,
   recordId: string,
   fields: Field[],
-  recordAccess?: AuthorizedRecordAccess,
 ): Promise<GridRecord | null> => {
   const [row] = await client<DbRow[]>`
     SELECT r.*
@@ -179,7 +178,6 @@ const loadStoredRecordForUpdate = async (
     WHERE r.id = ${recordId}::uuid
       AND r.table_id = ${tableId}::uuid
       AND r.deleted_at IS NULL
-      AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   if (!row) return null;
 
@@ -218,7 +216,6 @@ export const createInTransaction = async (
   origin: MutationOrigin,
   opts: {
     dateConfig?: DateContext;
-    recordAccess?: AuthorizedRecordAccess;
     viewer?: ExpansionViewer;
     locale?: string;
   } = {},
@@ -368,7 +365,6 @@ export const create = async (
     includeRelations?: boolean;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
-    recordAccess?: AuthorizedRecordAccess;
     locale?: string;
   } = {},
 ): Promise<Result<GridRecord>> => {
@@ -376,7 +372,6 @@ export const create = async (
     .begin((tx) =>
       createInTransaction(tx, tableId, payload, actorId, origin, {
         dateConfig: opts.dateConfig,
-        recordAccess: opts.recordAccess,
         viewer: opts.viewer,
         locale: opts.locale,
       }),
@@ -402,7 +397,6 @@ export const createMany = async (
     includeRelations?: boolean;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
-    recordAccess?: AuthorizedRecordAccess;
     locale?: string;
   } = {},
 ): Promise<Result<GridRecord[]>> => {
@@ -414,7 +408,6 @@ export const createMany = async (
       for (const payload of payloads) {
         const result = await createInTransaction(tx, tableId, payload, actorId, origin, {
           dateConfig: opts.dateConfig,
-          recordAccess: opts.recordAccess,
           viewer: opts.viewer,
           locale: opts.locale,
         });
@@ -458,7 +451,6 @@ export const updateInTransaction = async (
   opts: {
     dateConfig?: DateContext;
     audit?: RecordMutationAudit;
-    recordAccess?: AuthorizedRecordAccess;
     viewer?: ExpansionViewer;
     locale?: string;
   } = {},
@@ -470,7 +462,7 @@ export const updateInTransaction = async (
   if (!allowed.ok) return allowed;
   await lockDurableHistoryMutationBoundary(client, tableId);
   const fields = await listFields(tableId, false, client);
-  const existing = await loadStoredRecordForUpdate(client, tableId, recordId, fields, opts.recordAccess);
+  const existing = await loadStoredRecordForUpdate(client, tableId, recordId, fields);
   if (!existing || existing.deletedAt) return fail(err.notFound(messages.record));
   if (ifMatchVersion !== undefined && ifMatchVersion !== existing.version) {
     return fail(recordVersionConflict(opts.locale));
@@ -525,7 +517,6 @@ export const updateInTransaction = async (
         AND table_id = ${tableId}::uuid
         AND deleted_at IS NULL
         AND version = ${existing.version}
-        AND ${recordAccessPredicate(opts.recordAccess, "grids.records")}
       RETURNING *, grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
     `;
   if (!row) return fail(recordVersionConflict(opts.locale));
@@ -570,7 +561,6 @@ export const update = async (
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     audit?: RecordMutationAudit;
-    recordAccess?: AuthorizedRecordAccess;
     locale?: string;
   } = {},
 ): Promise<Result<GridRecord>> => {
@@ -580,7 +570,6 @@ export const update = async (
       updateInTransaction(tx, tableId, recordId, payload, actorId, origin, ifMatchVersion, {
         dateConfig: opts.dateConfig,
         audit: opts.audit,
-        recordAccess: opts.recordAccess,
         viewer: opts.viewer,
         locale: opts.locale,
       }),
@@ -604,13 +593,12 @@ export const softDelete = async (
   actorId: string | null,
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
-  recordAccess?: AuthorizedRecordAccess,
   locale?: string,
 ): Promise<Result<void>> => {
   const messages = getGridsCrudMessages(locale);
   const writable = await requireStoredTableWritable(tableId, sql, locale);
   if (!writable.ok) return writable;
-  const existing = await get(tableId, recordId, { recordAccess });
+  const existing = await get(tableId, recordId);
   if (!existing || existing.deletedAt) return fail(err.notFound(messages.record));
   const eventPayload = {
     v: 1,
@@ -638,7 +626,6 @@ export const softDelete = async (
           AND table_id = ${tableId}::uuid
           AND deleted_at IS NULL
           AND version = ${existing.version}
-          AND ${recordAccessPredicate(recordAccess, "grids.records")}
         RETURNING grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
       `;
       if (!row) {
@@ -678,7 +665,6 @@ export const restore = async (
   actorId: string | null,
   origin: MutationOrigin,
   audit?: RecordMutationAudit,
-  recordAccess?: AuthorizedRecordAccess,
   locale?: string,
 ): Promise<Result<void>> => {
   const messages = getGridsCrudMessages(locale);
@@ -708,7 +694,6 @@ export const restore = async (
         UPDATE grids.records
         SET deleted_at = NULL, updated_by = ${actorId}::uuid, updated_at = now()
         WHERE id = ${recordId}::uuid AND table_id = ${tableId}::uuid AND deleted_at IS NOT NULL
-          AND ${recordAccessPredicate(recordAccess, "grids.records")}
         RETURNING grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
       `;
       if (!row) return fail(err.notFound(messages.record));

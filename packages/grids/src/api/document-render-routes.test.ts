@@ -704,18 +704,17 @@ describe("document render routes", () => {
       "x-grids-document-filename": "Invoice%20July.pdf",
     });
     expect(callOrder).toEqual(["create"]);
-    const { resolveRecordAccess, viewer, ...params } = createInput as {
+    const { canReadTable, viewer, ...params } = createInput as {
       template: typeof template;
       table: typeof table;
       recordId: string;
       actor: { kind: "user"; userId: string };
       idempotencyKey: string;
-      recordAccess: { kind: "all" };
       dateConfig: typeof dateConfig;
       filename: string;
       tags: string[];
       viewer: unknown;
-      resolveRecordAccess: (target: { baseId: string; tableId: string }) => Promise<{ kind: "all" } | null>;
+      canReadTable: (target: { baseId: string; tableId: string }) => Promise<boolean>;
     };
     expect(params).toEqual({
       template,
@@ -723,13 +722,12 @@ describe("document render routes", () => {
       recordId,
       actor: { kind: "user", userId },
       idempotencyKey: "invoice-july-v1",
-      recordAccess: { kind: "all" },
       dateConfig,
       filename: "Custom invoice.pdf",
       tags: ["finance", "july"],
     });
     expect(viewer).toMatchObject({ userId });
-    expect(await resolveRecordAccess({ baseId, tableId })).toEqual({ kind: "all" });
+    expect(await canReadTable({ baseId, tableId })).toBe(true);
   });
 
   test("generates a profiled template through the same record-bound endpoint", async () => {
@@ -758,8 +756,7 @@ describe("document render routes", () => {
       recordId,
       actor: { kind: "user", userId },
       idempotencyKey: "profile-record-v1",
-      recordAccess: { kind: "all" },
-      resolveRecordAccess: expect.any(Function),
+      canReadTable: expect.any(Function),
       viewer: expect.any(Object),
       dateConfig,
       filename: undefined,

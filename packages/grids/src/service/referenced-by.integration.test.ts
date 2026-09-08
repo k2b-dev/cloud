@@ -2,7 +2,6 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { ALL_RECORD_ACCESS } from "./record-access";
 import { listReferencedBy } from "./referenced-by";
 
 const cursorSigningKey = "referenced-by-integration-test-key";
@@ -120,7 +119,6 @@ describe("referenced-by integration", () => {
       const defaultPage = await listReferencedBy({
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(defaultPage.ok).toBe(true);
@@ -131,7 +129,6 @@ describe("referenced-by integration", () => {
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
         limit: 1_000,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(cappedPage.ok).toBe(true);
@@ -146,7 +143,6 @@ describe("referenced-by integration", () => {
           targetRecordId: fixture.targetRecordId,
           cursor,
           limit: 25,
-          recordAccess: ALL_RECORD_ACCESS,
           cursorSigningKey,
         });
         expect(page.ok).toBe(true);
@@ -171,7 +167,6 @@ describe("referenced-by integration", () => {
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
         relationFieldId: fixture.otherRelationFieldShortId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(filtered.ok).toBe(true);
@@ -182,7 +177,6 @@ describe("referenced-by integration", () => {
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
         relationFieldId: "none00",
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(unknownFilter).toEqual({ ok: true, data: { items: [], nextCursor: null } });
@@ -192,7 +186,6 @@ describe("referenced-by integration", () => {
       const live = await listReferencedBy({
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(live.ok).toBe(true);
@@ -204,7 +197,6 @@ describe("referenced-by integration", () => {
       const hiddenTarget = await listReferencedBy({
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(hiddenTarget.ok).toBe(false);
@@ -222,7 +214,6 @@ describe("referenced-by integration", () => {
         targetTableId: fixture.targetTableId,
         targetRecordId: fixture.targetRecordId,
         limit: 10,
-        recordAccess: ALL_RECORD_ACCESS,
         cursorSigningKey,
       });
       expect(first.ok).toBe(true);
@@ -263,7 +254,6 @@ describe("referenced-by integration", () => {
           targetRecordId: fixture.targetRecordId,
           cursor,
           limit: 10,
-          recordAccess: ALL_RECORD_ACCESS,
           cursorSigningKey,
         });
         expect(page.ok).toBe(true);

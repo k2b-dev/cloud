@@ -247,7 +247,9 @@ export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options:
     sql`r.updated_by::text AS __record_updated_by`,
     sql`r.created_at AS __record_created_at`,
     sql`r.updated_at AS __record_updated_at`,
-    ...(options.recordSource ? [sql`r.source_table_id::text AS __source_table_id`, sql`r.source_base_id::text AS __source_base_id`] : []),
+    ...(options.recordSource?.kind === "federated"
+      ? [sql`r.source_table_id::text AS __source_table_id`, sql`r.source_base_id::text AS __source_base_id`]
+      : []),
   ];
   const columns: DslSqlOutputColumn[] = [];
   const outputProjections = new Map<string, { projection: unknown; sqlType: DslSqlOutputColumn["sqlType"] }>();

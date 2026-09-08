@@ -43,7 +43,6 @@ import {
 import { executePublishedCustomAppRecords } from "../../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../../service/custom-app-runtime-query";
 import type { PublicRenderableForm } from "../../service/forms";
-import { ALL_RECORD_ACCESS } from "../../service/record-access";
 import { scannerLauncherPromptInputSources } from "../../workflows/contracts";
 import type { PublicDocument } from "../_components/documents/public-document-types";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
@@ -455,7 +454,6 @@ export default ssr<AuthContext>(async (c) => {
   for (const [parameterId, parameter] of Object.entries(page.parameters)) {
     const record = await gridsService.record.get(parameter.tableId, pageParams[parameterId]!, {
       viewer,
-      recordAccess: ALL_RECORD_ACCESS,
       dateConfig,
     });
     if (!record) return ssr.error(c, 404, { layout: "minimal" });
@@ -496,13 +494,14 @@ export default ssr<AuthContext>(async (c) => {
     if (relationTargetTables.some((target) => !target || target.baseId !== app.baseId)) return ssr.error(c, 404, { layout: "minimal" });
     const targetFieldsByTableId = await gridsService.field.listByTables(relationTargetTableIds);
     const liveRelationLabels = customAppRecordRelationSnapshot(fields, targetFieldsByTableId);
-    if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels)) return ssr.error(c, 404, { layout: "minimal" });
+    if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels))
+      return ssr.error(c, 404, { layout: "minimal" });
     const relationTableIds = [page.record.tableId, ...relationTargetTableIds];
     const relationViewer = {
       ...actorViewerFor(requestAccess),
       isAdmin: false,
       readableTableIds: new Set(relationTableIds),
-      recordAccessByTableId: new Map(relationTableIds.map((tableId) => [tableId, ALL_RECORD_ACCESS])),
+      tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
     };
     const fileFieldIds = fields.filter((field) => field.type === "file").map((field) => field.id);
     const filesByField = await gridsService.file.listForRecord({
@@ -581,7 +580,8 @@ export default ssr<AuthContext>(async (c) => {
       const capability = capabilities.documents.find(
         (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record!.tableId,
       );
-      if (!capability || capability.templateIds.join("\0") !== expectedTemplateIds.join("\0")) return ssr.error(c, 404, { layout: "minimal" });
+      if (!capability || capability.templateIds.join("\0") !== expectedTemplateIds.join("\0"))
+        return ssr.error(c, 404, { layout: "minimal" });
       for (const templateId of expectedTemplateIds) configuredTemplateIds.add(templateId);
     }
     const readableTemplateIds: string[] = [];

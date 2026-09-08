@@ -27,13 +27,11 @@ import { executePublishedCustomAppRecords } from "./custom-app-records-query";
 import { publishedCustomAppAvailability } from "./custom-app-runtime-query";
 import { get as getCustomApp } from "./custom-apps";
 import { hasAtLeast, hasGrantsForResource, loadCustomAppGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
-import { ALL_RECORD_ACCESS, type AuthorizedRecordAccess } from "./record-access";
 import {
   authorizeWorkflowBase,
-  resolveWorkflowBaseRecordAccess,
+  canAccessWorkflowBaseTable,
   revalidateWorkflowPrincipal,
   revalidateWorkflowPrincipalInTransaction,
-  workflowPermissionAllows,
   workflowTableBelongsToBase,
 } from "./workflow-authorization";
 import { getLauncher } from "./workflow-launchers";
@@ -260,7 +258,7 @@ export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, cli
   const revalidated = client
     ? await revalidateWorkflowPrincipalInTransaction(claim.principal, claim.baseId, client)
     : await revalidateWorkflowPrincipal(claim.principal, claim.baseId);
-  if (!revalidated.ok || !workflowPermissionAllows(revalidated.permissionCap, "write")) return false;
+  if (!revalidated.ok || !hasAtLeast(revalidated.permissionCap, "write")) return false;
   if (!claim.launcherId) return false;
   // Removed v3 launch surfaces fail closed for already queued runs.
   if (authorization.kind === "custom-app-bulk-action" || authorization.kind === "custom-app-sidebar-action") return false;
@@ -360,17 +358,17 @@ export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, cli
 export const canExecuteRun = (scope: GridsWorkflowActionScope, client?: SqlClient): Promise<boolean> =>
   canExecuteWorkflow({ ...scope, workflowId: scope.workflow.id }, client);
 
-export const resolveWorkflowExecutionRecordAccess = async (
+export const canAccessWorkflowExecutionTable = async (
   claim: GridsWorkflowExecutionClaim,
   tableId: string,
   required: PermissionLevel,
   client?: SqlClient,
-): Promise<AuthorizedRecordAccess | null> => {
+): Promise<boolean> => {
   if (claim.authorization.kind === "workflow") {
-    return resolveWorkflowBaseRecordAccess(claim.principal, { baseId: claim.baseId, tableId }, required, client);
+    return canAccessWorkflowBaseTable(claim.principal, { baseId: claim.baseId, tableId }, required, client);
   }
-  if (!(await workflowTableBelongsToBase(claim.baseId, tableId, client))) return null;
-  return (await canExecuteWorkflow(claim, client)) ? ALL_RECORD_ACCESS : null;
+  if (!(await workflowTableBelongsToBase(claim.baseId, tableId, client))) return false;
+  return canExecuteWorkflow(claim, client);
 };
 
 export const requireExecution = async (scope: GridsWorkflowActionScope, client?: SqlClient): Promise<void> => {
@@ -385,24 +383,22 @@ export const requirePermission = async (scope: GridsWorkflowActionScope, require
   if (!allowed) throw forbidden();
 };
 
-export const resolveWorkflowRunRecordAccess = async (
+export const canAccessWorkflowRunTable = async (
   scope: GridsWorkflowActionScope,
   tableId: string,
   required: PermissionLevel,
   client?: SqlClient,
-): Promise<AuthorizedRecordAccess | null> => {
-  return resolveWorkflowExecutionRecordAccess({ ...scope, workflowId: scope.workflow.id }, tableId, required, client);
+): Promise<boolean> => {
+  return canAccessWorkflowExecutionTable({ ...scope, workflowId: scope.workflow.id }, tableId, required, client);
 };
 
-export const requireRecordAccess = async (
+export const requireTableAccess = async (
   scope: GridsWorkflowActionScope,
   tableId: string,
   required: PermissionLevel,
   client?: SqlClient,
-): Promise<AuthorizedRecordAccess> => {
-  const access = await resolveWorkflowRunRecordAccess(scope, tableId, required, client);
-  if (!access) throw forbidden();
-  return access;
+): Promise<void> => {
+  if (!(await canAccessWorkflowRunTable(scope, tableId, required, client))) throw forbidden();
 };
 
 /** Provenance an audit entry carries, so a write can be traced back to its credential. */

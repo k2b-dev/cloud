@@ -108,6 +108,43 @@ describe("workflow kernel inputs", () => {
 });
 
 describe("workflow kernel value resolver", () => {
+  test("rejects direct record IDs from an inaccessible table before reading any record data", async () => {
+    let shortIdReads = 0;
+    let recordReads = 0;
+    const resolver = new GridsWorkflowValueResolver({
+      canReadTable: async () => false,
+      recordShortId: async () => {
+        shortIdReads += 1;
+        return recordShortId;
+      },
+      readRecord: async () => {
+        recordReads += 1;
+        return null;
+      },
+    });
+    const invocation = {
+      workflowId: recordId,
+      mode: "execute",
+      channel: "api",
+      actor: {},
+      inputs: { item: { kind: "record", tableId, recordId } },
+      idempotencyKey: "denied-record-id",
+      occurredAt: new Date(0).toISOString(),
+    } satisfies WorkflowInvocation;
+    await expect(
+      resolver.resolve({
+        reference: "inputs.item.recordId",
+        path: ["steps", 0, "if", "contains", 1],
+        plan,
+        invocation,
+        variables: { get: () => undefined, has: () => false, set: () => undefined },
+        fallback: () => undefined,
+      }),
+    ).rejects.toThrow("workflow actor cannot read the referenced table");
+    expect(shortIdReads).toBe(0);
+    expect(recordReads).toBe(0);
+  });
+
   test("loads a bound record field once and leaves structured values to the kernel", async () => {
     let reads = 0;
     const record = {

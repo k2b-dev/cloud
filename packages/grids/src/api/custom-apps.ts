@@ -25,7 +25,6 @@ import { executePublishedCustomAppRecords } from "../service/custom-app-records-
 import type { CustomApp, CustomAppDraftSave, CustomAppSummary } from "../service/custom-apps";
 import { getMaxFileSizeBytes } from "../service/file-limits";
 import { type PublicResourceType, projectPublicId, projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
-import { ALL_RECORD_ACCESS } from "../service/record-access";
 import type { RecordComment } from "../service/record-comments";
 import type { GridFile } from "../service/types";
 import { getWorkflowRunScope } from "../service/workflow-runs";
@@ -657,7 +656,6 @@ const loadRuntimeBindingContext = async (runtime: PublishedRuntime) => {
   for (const [parameterId, parameter] of Object.entries(runtime.page.parameters)) {
     const record = await gridsService.record.get(tableIds.get(parameter.tableId)!, runtime.pageParams[parameterId]!, {
       viewer: runtime.viewer,
-      recordAccess: ALL_RECORD_ACCESS,
       dateConfig: runtime.dateConfig,
     });
     if (!record) return null;
@@ -684,7 +682,6 @@ const resolveRuntimeComments = async (c: Context<AuthContext>) => {
   if (!recordId) return null;
   const record = await gridsService.record.get(capability.tableId, recordId, {
     viewer: runtime.viewer,
-    recordAccess: ALL_RECORD_ACCESS,
   });
   if (!record) return null;
   const canModerate = (await gateAt(c, { baseId: app.baseId }, "admin")).ok;
@@ -726,7 +723,6 @@ const resolveRuntimeRecordBlock = async (c: Context<AuthContext>) => {
   if (!recordId) return null;
   const record = await gridsService.record.get(tableId, recordId, {
     viewer: runtime.viewer,
-    recordAccess: ALL_RECORD_ACCESS,
   });
   if (!record) return null;
   const resolvedBlock = {
@@ -781,7 +777,6 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
     actorId: currentActorUserId(c),
     dateConfig,
     fixedValues,
-    recordAccess: ALL_RECORD_ACCESS,
     viewer,
   });
   if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -824,7 +819,6 @@ const submitPublishedSidebarForm = async (c: Context<AuthContext>, submitted: Re
     actorId: currentActorUserId(c),
     dateConfig,
     fixedValues,
-    recordAccess: ALL_RECORD_ACCESS,
     viewer,
   });
   if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -1128,7 +1122,6 @@ export const createCustomAppsApi = (
         baseId: resolved.app.baseId,
         tableId: resolved.tableId,
         recordId: resolved.recordId,
-        recordAccess: ALL_RECORD_ACCESS,
         ...query,
         cursor,
         locale: getLocale(c),
@@ -1154,7 +1147,6 @@ export const createCustomAppsApi = (
         recordId: resolved.recordId,
         actorUserId: currentActorUserId(c),
         body: c.req.valid("json").body,
-        recordAccess: ALL_RECORD_ACCESS,
         locale: getLocale(c),
       });
       if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -1175,7 +1167,6 @@ export const createCustomAppsApi = (
           actorUserId: currentActorUserId(c),
           canModerate: resolved.canModerate,
           body: c.req.valid("json").body,
-          recordAccess: ALL_RECORD_ACCESS,
           locale: getLocale(c),
         });
         if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -1195,7 +1186,6 @@ export const createCustomAppsApi = (
           commentId: internalIdParam(c, "commentId")!,
           actorUserId: currentActorUserId(c),
           canModerate: resolved.canModerate,
-          recordAccess: ALL_RECORD_ACCESS,
           locale: getLocale(c),
         });
         if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -1247,7 +1237,6 @@ export const createCustomAppsApi = (
           dateConfig: getDateConfig(c),
           viewer: resolved.viewer,
           audit: body.audit,
-          recordAccess: ALL_RECORD_ACCESS,
         },
       );
       if (!result.ok) return respond(c, () => Promise.resolve(result));
@@ -1259,7 +1248,7 @@ export const createCustomAppsApi = (
         ...resolved.viewer,
         isAdmin: false,
         readableTableIds: new Set(relationTableIds),
-        recordAccessByTableId: new Map(relationTableIds.map((tableId) => [tableId, ALL_RECORD_ACCESS])),
+        tableReadAccess: new Map(relationTableIds.map((tableId) => [tableId, true])),
       };
       const relationLabels = await buildCustomAppRecordLabelCache({
         records: [result.data],

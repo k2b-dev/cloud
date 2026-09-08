@@ -50,7 +50,7 @@ import { GRIDS_EVENT } from "../workflows/events";
 import { gridsWorkflows } from "../workflows/module";
 import { reconcileStuckControlledDestructionRuns } from "./controlled-destruction";
 import { cleanupExpiredEvidenceExports } from "./evidence-exports";
-import { canExecuteWorkflow, resolveWorkflowExecutionRecordAccess, resolveWorkflowRunRecordAccess } from "./workflow-action-scope";
+import { canExecuteWorkflow, canAccessWorkflowExecutionTable, canAccessWorkflowRunTable } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
 import { createWorkflowRecordEventRuntime } from "./workflow-record-events";
@@ -297,7 +297,7 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
       input.inputs,
       createWorkflowInputPreparationDeps(workflow.baseId, input.principal, {
         trustedRecordIds: input.trustedRecordIds,
-        resolveRecordAccess: (tableId) => resolveWorkflowExecutionRecordAccess(claim, tableId, "read"),
+        canReadTable: (tableId) => canAccessWorkflowExecutionTable(claim, tableId, "read"),
       }),
     );
   } catch (error) {
@@ -367,7 +367,7 @@ const workflowValues = (claim: WorkflowRunClaim) =>
     const locale = typeof claim.context.locale === "string" ? claim.context.locale : undefined;
     if (!scope) throw workflowConflict(workflowServiceText(locale).runUnavailable);
     return createGridsWorkflowValueResolver(scope.baseId, scope.principal, {
-      resolveRecordAccess: (tableId) => resolveWorkflowRunRecordAccess(scope, tableId, "read"),
+      canReadTable: (tableId) => canAccessWorkflowRunTable(scope, tableId, "read"),
     });
   });
 
