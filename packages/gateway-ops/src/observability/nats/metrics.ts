@@ -1,3 +1,4 @@
+import { metadataSnapshot } from "./replica-status";
 import type { NatsDiagnostics, NatsInventorySummary } from "./service";
 
 type Sample = { name: string; help: string; type: "gauge"; value: number; labels?: Record<string, string> };
@@ -17,7 +18,14 @@ export const natsMetricSamples = (cluster: NatsDiagnostics["cluster"], inventory
       "Whether a dedicated system diagnostic connection is configured.",
       cluster.status === "not_configured" ? 0 : 1,
     ),
-    sample("cloud_nats_cluster_up", "Whether the configured cluster snapshot is complete.", cluster.status === "available" ? 1 : 0),
+    sample(
+      "cloud_nats_cluster_up",
+      "Whether the configured cluster snapshot is complete.",
+      cluster.status === "available" &&
+        cluster.nodes.every((node) => !node.jetstreamEnabled || (node.meta && (!node.meta.leader || metadataSnapshot(node, cluster.nodes))))
+        ? 1
+        : 0,
+    ),
     sample("cloud_nats_inventory_up", "Whether the application account inventory is complete.", inventory.status === "available" ? 1 : 0),
   ];
   for (const node of cluster.nodes) {
@@ -30,14 +38,17 @@ export const natsMetricSamples = (cluster: NatsDiagnostics["cluster"], inventory
       ["cloud_nats_node_memory_limit_bytes", node.maxMemory, "Configured JetStream memory limit for the node."],
     ] as const)
       if (value !== null) samples.push(sample(name, help, value, labels));
-    if (node.meta)
+    const metadata = metadataSnapshot(node, cluster.nodes);
+    if (node.jetstreamEnabled && node.meta && !node.meta.leader)
+      samples.push(sample("cloud_nats_meta_replicas_unhealthy", "Metadata replicas offline, missing or not current.", 1, labels));
+    else if (metadata)
       samples.push(
         sample(
           "cloud_nats_meta_replicas_unhealthy",
           "Metadata replicas offline, missing or not current.",
-          node.meta.replicas.filter((peer) => peer.offline || peer.current !== true || (peer.lag ?? 0) > 0).length +
-            Math.max(0, (node.expectedNodes ?? 1) - 1 - node.meta.replicas.length) +
-            (node.meta.leader ? 0 : 1),
+          metadata.replicas.filter((peer) => peer.offline || peer.current !== true || (peer.lag ?? 0) > 0).length +
+            Math.max(0, (node.expectedNodes ?? 1) - 1 - metadata.replicas.length) +
+            (metadata.leader ? 0 : 1),
           labels,
         ),
       );

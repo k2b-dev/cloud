@@ -40,7 +40,16 @@ never place their contents in Compose, Git, or support reports.
 Choose either a credentials file or an NKey seed file, not both.
 
 The diagnostics identity needs permission to request
-`$SYS.REQ.SERVER.PING.JSZ` and receive inbox replies. JetStream inspection uses
+`$SYS.REQ.SERVER.PING.JSZ` and `$SYS.REQ.SERVER.PING.VARZ` and receive inbox replies.
+The node table shows process RAM from VARZ, including buffers and caches.
+JetStream memory-storage metrics measure memory-backed streams separately;
+these can be zero when streams use file storage.
+Storage columns combine usage, the configured limit, and percentage used.
+Metadata replication status comes from the elected leader: followers omit the
+replica list. Green means synchronized, orange means behind or unknown, and red
+means a reported missing leader, missing replica, or offline replica. If the
+leader snapshot is unavailable, replication is unknown and cluster snapshot
+metrics report incomplete diagnostics. JetStream inspection uses
 the application account's `$JS.API.STREAM.LIST` and
 `$JS.API.CONSUMER.LIST.*` requests. The page does not display payloads,
 subject filters, credentials, or raw broker errors.

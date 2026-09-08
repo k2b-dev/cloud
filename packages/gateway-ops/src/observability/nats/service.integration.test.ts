@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { nodeReplicaStatus } from "./replica-status";
+import { natsMetricSamples } from "./metrics";
 import { connect } from "@nats-io/transport-node";
 import { getNatsClusterDiagnostics, getNatsDiagnostics, getNatsInventorySummary, natsDiagnosticsConfig } from "./service";
 
@@ -9,8 +11,14 @@ systemIntegration(
     const config = natsDiagnosticsConfig();
     const cluster = await getNatsClusterDiagnostics(config);
     expect(cluster.status).toBe("available");
+    expect(cluster.nodes.every((node) => node.processMemory !== null && node.processMemory > 0)).toBe(true);
     expect(cluster.nodes.length).toBeGreaterThanOrEqual(3);
     expect(cluster.nodes.every((node) => node.jetstreamEnabled && node.meta?.leader)).toBe(true);
+    expect(cluster.nodes.map((node) => nodeReplicaStatus(node, cluster.nodes))).toEqual(Array(cluster.nodes.length).fill("synchronized"));
+    const metrics = natsMetricSamples(cluster, { status: "not_configured", streams: [], total: null, sampledAt: new Date().toISOString() });
+    const replicaMetrics = metrics.filter((metric) => metric.name === "cloud_nats_meta_replicas_unhealthy");
+    expect(replicaMetrics).toHaveLength(cluster.nodes.length);
+    expect(replicaMetrics.every((metric) => metric.value === 0)).toBe(true);
     const unprivileged = await getNatsClusterDiagnostics({ ...config, admin: config.application });
     expect(unprivileged.status).toBe("unavailable");
     expect(unprivileged.nodes).toEqual([]);

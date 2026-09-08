@@ -32,7 +32,11 @@ const node = (name = "node-1", size = 1) => ({
     meta_cluster: { name: "test", leader: "node-1", cluster_size: size },
   },
 });
-const fake = (pages: unknown[] = [], nodes: unknown[] = [node()]) => {
+const fake = (
+  pages: unknown[] = [],
+  nodes: unknown[] = [node()],
+  processes: unknown[] = [{ server: { id: "node-1" }, data: { mem: 123456 } }],
+) => {
   const requests: { role: string; subject: string; data: string }[] = [];
   const closed: string[] = [];
   let index = 0;
@@ -47,7 +51,10 @@ const fake = (pages: unknown[] = [], nodes: unknown[] = [node()]) => {
       requestMany: async (subject, data) => {
         requests.push({ role, subject, data });
         return (async function* () {
-          for (const value of nodes) yield { json: () => value };
+          for (const value of subject.endsWith(".VARZ") ? processes : nodes) {
+            if (value instanceof Error) throw value;
+            yield { json: () => value };
+          }
         })();
       },
       close: async () => {
@@ -80,6 +87,30 @@ describe("read-only NATS diagnostics", () => {
     expect(f.requests).toContainEqual({ role: "system", subject: "$SYS.REQ.SERVER.PING.JSZ", data: "{}" });
     expect(f.requests).toContainEqual({ role: "account", subject: "$JS.API.STREAM.LIST", data: '{"offset":0}' });
     expect(f.closed.sort()).toEqual(["account", "system"]);
+  });
+  test("process RAM is matched by server ID, independently of JetStream memory storage", async () => {
+    const f = fake(
+      [],
+      [node("node-1", 2), node("node-2", 2)],
+      [
+        { server: { id: "node-2" }, data: { mem: 222 } },
+        { server: { id: "node-1" }, data: { mem: 111 } },
+      ],
+    );
+    const result = await getNatsClusterDiagnostics(config, f.dependencies);
+    expect(result.status).toBe("available");
+    expect(result.nodes.map(({ memory, processMemory }) => ({ memory, processMemory }))).toEqual([
+      { memory: 0, processMemory: 111 },
+      { memory: 0, processMemory: 222 },
+    ]);
+  });
+  test("missing or invalid process RAM stays unknown and preserves JetStream diagnostics", async () => {
+    for (const processes of [[], [{ server: { id: "node-1" }, data: { mem: -1 } }], [new Error("denied secret")]]) {
+      const result = await getNatsClusterDiagnostics(config, fake([], [node()], processes).dependencies);
+      expect(result.status).toBe("partial");
+      expect(result.nodes[0]).toMatchObject({ processMemory: null, memory: 0, storage: 20 });
+      expect(JSON.stringify(result)).not.toContain("secret");
+    }
   });
   test("account denial is unavailable, not empty and does not leak server error text", async () => {
     const f = fake([new Error("token secret at nats://user:pass@host")]);

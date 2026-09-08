@@ -45,6 +45,7 @@ const nodeSchema = z.object({
     meta_cluster: clusterSchema.extend({ cluster_size: number.optional() }).optional(),
   }),
 });
+const processSchema = z.object({ server: z.object({ id: z.string() }), data: z.object({ mem: number }) });
 export type NatsDiagnosticStatus = "not_configured" | "available" | "partial" | "unavailable";
 export type NatsConnectionConfig = { servers: string[]; credsFile?: string; seedFile?: string; tlsCaFile?: string };
 export type NatsDiagnosticsConfig = { admin: NatsConnectionConfig; application: NatsConnectionConfig };
@@ -73,6 +74,7 @@ export type NatsNode = {
   clusterName: string | null;
   jetstreamEnabled: boolean;
   memory: number | null;
+  processMemory: number | null;
   storage: number | null;
   maxMemory: number | null;
   maxStorage: number | null;
@@ -191,32 +193,55 @@ export const getNatsClusterDiagnostics = async (
   let incomplete = false;
   try {
     connection = await dependencies.connect(config.admin, "system");
-    const replies = await connection.requestMany("$SYS.REQ.SERVER.PING.JSZ", JSON.stringify({}), {
-      strategy: "timer",
-      maxWait: REQUEST_TIMEOUT_MS,
-    });
-    for await (const reply of replies) {
-      const parsed = nodeSchema.safeParse(reply.json());
-      if (!parsed.success) {
-        incomplete = true;
-        continue;
-      }
-      const { server, data } = parsed.data;
-      nodes.set(server.id, {
-        id: server.id,
-        name: server.name,
-        version: server.ver,
-        clusterName: server.cluster ?? null,
-        jetstreamEnabled: !data.disabled,
-        memory: data.memory ?? null,
-        storage: data.storage ?? null,
-        maxMemory: data.config?.max_memory ?? null,
-        maxStorage: data.config?.max_storage ?? null,
-        streams: data.streams ?? null,
-        consumers: data.consumers ?? null,
-        meta: cluster(data.meta_cluster),
-        expectedNodes: data.meta_cluster?.cluster_size ?? null,
-      });
+    const system = connection;
+    const processMemory = new Map<string, number>();
+    const results = await Promise.allSettled([
+      (async () => {
+        const replies = await system.requestMany("$SYS.REQ.SERVER.PING.VARZ", "{}", {
+          strategy: "timer",
+          maxWait: REQUEST_TIMEOUT_MS,
+        });
+        for await (const reply of replies) {
+          const parsed = processSchema.safeParse(reply.json());
+          if (parsed.success) processMemory.set(parsed.data.server.id, parsed.data.data.mem);
+          else incomplete = true;
+        }
+      })(),
+      (async () => {
+        const replies = await system.requestMany("$SYS.REQ.SERVER.PING.JSZ", JSON.stringify({}), {
+          strategy: "timer",
+          maxWait: REQUEST_TIMEOUT_MS,
+        });
+        for await (const reply of replies) {
+          const parsed = nodeSchema.safeParse(reply.json());
+          if (!parsed.success) {
+            incomplete = true;
+            continue;
+          }
+          const { server, data } = parsed.data;
+          nodes.set(server.id, {
+            id: server.id,
+            name: server.name,
+            version: server.ver,
+            clusterName: server.cluster ?? null,
+            jetstreamEnabled: !data.disabled,
+            memory: data.memory ?? null,
+            processMemory: null,
+            storage: data.storage ?? null,
+            maxMemory: data.config?.max_memory ?? null,
+            maxStorage: data.config?.max_storage ?? null,
+            streams: data.streams ?? null,
+            consumers: data.consumers ?? null,
+            meta: cluster(data.meta_cluster),
+            expectedNodes: data.meta_cluster?.cluster_size ?? null,
+          });
+        }
+      })(),
+    ]);
+    if (results.some((result) => result.status === "rejected")) incomplete = true;
+    for (const node of nodes.values()) {
+      node.processMemory = processMemory.get(node.id) ?? null;
+      if (node.processMemory === null) incomplete = true;
     }
     const values = [...nodes.values()].sort((a, b) => a.name.localeCompare(b.name));
     for (const node of values) {
