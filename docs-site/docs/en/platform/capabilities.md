@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-09-03
+updated: 2026-09-08
 ---
 
 # App capabilities
@@ -401,6 +401,89 @@ when its bounded resource-view contract fits. Publish a separate app-specific
 search only for materially different semantics such as structured filters,
 exhaustive traversal, or a required domain scope. Its title, description, and
 input descriptions must make that distinction visible during discovery.
+
+### Design results around the next decision
+
+Choose fields by the task they support, not by the database row they come
+from. A mailbox selector may need a name, typed reference, unread count,
+and action-needed count. Connection diagnostics and creation timestamps are
+useful for administration, but need not appear in every selection result.
+Define what counts include and whether they depend on the current actor.
+
+Keep selection results compact. Return enough information to choose a resource
+and perform the next operation without reading every candidate separately.
+Load full content or specialist details only when the task needs them. Add a
+separate browse or content operation only when it provides a useful boundary;
+do not create one mechanically for every Type or replace its canonical reader.
+Never present a preview as complete content.
+
+Before changing a published result, inspect real consumers, including other
+applications, workflows, CLI clients, and Assistant skills. A field that seems
+irrelevant to an agent may still support a user-facing feature. Follow
+[additive evolution](#evolve-published-local-ids-additively): do not remove
+guaranteed fields from an existing operation to make its output smaller.
+
+### Check complete task paths
+
+Start with representative user tasks and trace the operations needed to finish
+them. Check both discovery and direct access to a known resource. For example:
+
+- An unknown mailbox needs selection before reading its conversations; a known
+  mailbox ID should not require listing all mailboxes again.
+- A reply needs the relevant conversation, a draft, and the applicable send
+  approval. Return the identifiers needed for that handoff directly.
+- Editing a note needs the intended content and a consistent revision, not a
+  read of every note in its notebook.
+
+Avoid redundant lookups, but retain resource authorization, necessary
+current-state reads, and approval gates. Keep domain rules in the owning
+service so HTTP, capability, and UI callers retain the same behavior.
+
+Assistant skills should explain these short task paths and route to specialist
+references only when needed. Do not copy the complete operation inventory or
+schemas into a second manual. Keep capability descriptions, skill instructions,
+and tested workflows consistent.
+
+### Preserve completeness within bounded results
+
+Pagination and content windows must distinguish a complete result from a
+bounded part of one:
+
+- Budget the serialized JSON envelope, including metadata, refs, and links,
+  against the [contract limits](#write-valid-contracts). Account for UTF-8 and
+  JSON escaping, not just character count or the size of `data`.
+- Follow `page.hasMore` and `page.nextCursor`, not the number of returned items.
+  A byte-limited page can be short; a filtered source page can even be empty
+  while more source data remains. Document whether pagination advances through
+  source records or emitted results. Never skip records omitted only because
+  the output budget was reached.
+- Keep cursors scoped to the query and require forward progress. Consumers
+  should detect repeated cursors or cycles, not assume a fixed page count.
+  If a traversal stops at a work budget, report it as incomplete rather than
+  claiming all results were read. A failed read is not an empty result.
+- Bound internal scans and fan-out independently of the returned item count.
+  Permission filtering or recurrence expansion can require much more work than
+  the visible page suggests.
+- Mark partial content explicitly. A whole-document replacement needs complete
+  source content from one consistent revision or hash. Do not assemble windows
+  from different revisions or overwrite from a preview. For partial updates,
+  preserve omitted fields server-side and define what explicit `null` and empty
+  collections mean. Reject revision conflicts rather than overwriting blindly.
+
+### Review the provider and its consumers together
+
+Before publishing or changing an operation, verify:
+
+- Every retained field supports selection, interpretation, the next action,
+  or an existing consumer contract.
+- A representative result can feed the next operation's actual input schema,
+  without guessing IDs, resource types, or hidden defaults.
+- Real consumer projections still accept the result and preserve user-facing
+  behavior; use the [manifest evolution check](#evolve-published-local-ids-additively)
+  for published contracts as well.
+- Focused tests cover the affected permission boundary, pagination progress,
+  result limits including refs and escaped multibyte content, and partial-read
+  or revision-conflict behavior where applicable.
 
 ### Actions change state
 

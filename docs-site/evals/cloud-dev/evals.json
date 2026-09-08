@@ -176,6 +176,20 @@
         "It identifies administrator bootstrap and production secret configuration rather than recommending development credentials.",
         "It proposes per-feature verification and makes no deployment or credential changes."
       ]
+    },
+    {
+      "id": 16,
+      "prompt": "Make our published mailbox capabilities easier for Assistant agents to use. The list result contains diagnostics and timestamps, but agents need unread counts. Spaces and CLI clients also consume these operations. Plan the change without implementing it.",
+      "expected_output": "Reads App capabilities, traces selection and known-resource task paths, checks real consumers, and proposes decision-oriented bounded results without breaking published guarantees or duplicating schemas into Assistant skills. Stays read-only.",
+      "files": [],
+      "expectations": [
+        "The response reads the current App capabilities guide through MCP or explicitly uses reduced documentation mode.",
+        "It distinguishes a compact selection result from diagnostic or full-content reads without mechanically adding operations for every Type.",
+        "It checks Spaces and CLI consumers before proposing field removal and respects additive published-contract evolution.",
+        "It traces both mailbox discovery and direct access to a known mailbox without redundant listing or weakened authorization.",
+        "It includes truthful pagination and complete serialized-result limits in verification, and keeps Assistant skill guidance task-oriented.",
+        "It does not implement or commit the planned changes."
+      ]
     }
   ]
 }

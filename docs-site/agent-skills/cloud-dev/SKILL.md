@@ -124,6 +124,11 @@ SolidJS library remains independent of Cloud and application domains.
 
 ## Build and verify one complete slice
 
+For capability design or changes, read **App capabilities** in the Docs
+collection (`/en/docs/platform/capabilities`), especially its machine-composition
+and design-review guidance. Trace real task paths and consumers before choosing
+result fields or changing contracts; keep detailed API rules in that guide.
+
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting
 services or secrets. Distinguish startup prerequisites from optional feature
