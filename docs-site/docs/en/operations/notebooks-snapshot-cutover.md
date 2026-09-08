@@ -70,7 +70,8 @@ Exit status zero and `safeToCutOver: true` mean these checks passed. Any other
 result blocks the switch. A cursor beyond the broker's last sequence also
 blocks it: investigate a possible namespace mismatch or broker reset. This
 check proves current snapshot coverage, not the completeness of earlier
-backups or historical versions.
+backups or historical versions. Review any notes marked `historyIncomplete`
+separately; a recovered cursor does not prove that missing history was restored.
 
 ## Switch and verify
 
@@ -87,21 +88,21 @@ revision guard. Transient database or transport failures retry up to twenty
 attempts. It continues to read existing document topics and Postgres snapshots.
 It does not import or erase the old job or mutex resources.
 
-Two conditions are terminal instead of retried:
+Missing history and undecodable retained updates trigger recovery instead of
+repeating the same failed replay. Recovery captures a fixed topic head and
+preserves every decodable update up to that cursor, including unresolved Yjs
+dependencies. Later updates remain available for the next snapshot. It retains
+the original saved binary as a protected version before saving recovered state;
+ordinary version pruning does not remove that original.
 
-- A missing retained history segment. The lost updates cannot be reconstructed,
-  so the worker re-anchors the stored snapshot at the topic's current head,
-  logs the loss at error level, records a failed `Notebook Yjs history gap`
-  trace, and dead-letters the job as the durable record. Opening the note in
-  the editor performs the same re-anchoring when its stored cursor has fallen
-  out of retention, so editing continues from the stored content. Requeueing
-  such a dead letter is harmless and does nothing.
-- A retained update that cannot be decoded as a Yjs update. Publishes are
-  validated before they enter the topic, so this indicates broker or client
-  tampering. The worker re-anchors the stored snapshot at the topic head in the
-  same way, records a failed `Notebook Yjs malformed history` trace, and
-  dead-letters the job once; without the re-anchoring the hourly reconcile
-  would re-queue the note every hour.
+Recovery cannot prove that missing updates or deletions were restored. The note
+therefore keeps an incomplete-history warning in the editor and Book view, and
+its API exposes `historyIncomplete`. Ordinary edits do not clear this flag.
+The worker records a failed history-gap or malformed-history trace and a dead
+letter; the same recovered boundary does not generate a new failure every hour.
+Opening an affected note performs the same recovery and requests a fresh editor
+snapshot. Inspect the protected version and available backups before relying on
+the recovered content. Recovery does not delete the retained topic.
 
 A note that never stored Yjs state but has retained edits and a purged topic
 is re-anchored from its current markdown when the editor next opens it.
@@ -113,10 +114,11 @@ broker cannot serve any more asks the editor to resync.
 
 An hourly `notebooks:yjs-snapshot-reconcile` schedule re-queues snapshots for
 notes whose topic head moved past their stored cursor without a settled job,
-for example after a crashed process or a lost enqueue. It checks up to 5000
-notes per run, most recently edited first, because only an edit can move a
-topic. It covers notes that have saved a cursor; a note that never saved one is
-covered by its next editing session.
+for example after a crashed process or a lost enqueue. It scans all unlocked
+notes in pages of 5000 stable note IDs, including notes that have never saved a
+cursor. Empty topics do not enqueue snapshot jobs. This also provisions the
+existing per-note Sync resources for notes that have never been opened: size
+JetStream for the whole notebook inventory, not only recently active notes.
 
 Verify a new edit survives saving, reconnecting, and an application restart.
 Confirm the stored snapshot cursor reaches the note topic's latest sequence,

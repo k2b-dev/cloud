@@ -199,11 +199,17 @@ Document automation is available through `documents renderers|list|list-by-templ
 ## Deployment requirements
 
 Record events are committed in PostgreSQL before background publication.
-Workflow delivery retries up to 20 times, then retains the event in Sync's
-dead-letter queue for administrative replay. Retries preserve record ordering
-and can delay other records sharing the same queue partition. Existing
-PostgreSQL failure history remains available for inspection and explicit
-replay; upgrading does not automatically replay historical failures.
+Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for
+inspection. Delayed retries return to the queue behind other work, so a broken
+workflow does not block its partition throughout the retry period. Transport
+failures have a separate Sync dead-letter queue.
+
+Platform admins can open **Grids** in the administration area and select a
+Base's failed record events to inspect the error and retry count. After fixing
+the cause, replay a stopped event explicitly. Workflow replay retains its
+failure history; replaying an outbox failure resets its publication attempts
+and removes that failure entry. Upgrading does not replay historical failures
+automatically.
 
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and

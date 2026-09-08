@@ -254,6 +254,12 @@ running a snapshot.
 
 ## Deployment requirements
 
+If retained editing history is missing or damaged, Notebooks preserves the
+available changes and the previous saved version. The editor and Book view show
+an incomplete-history warning. Contact your administrator and compare the
+preserved version or backups before relying on the recovered content. Downloads
+and copied note content retain the warning. Ordinary editing does not clear it.
+
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
