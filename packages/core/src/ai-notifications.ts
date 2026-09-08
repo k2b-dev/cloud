@@ -6,6 +6,7 @@ import { coreSettings, logger, notifications, trace } from "@valentinkolb/cloud/
 import { sql } from "bun";
 import { z } from "zod";
 
+const RECOVERY_SCHEDULER_ID = "core-ai-notifications";
 const RECOVERY_SCHEDULE_ID = "core:ai-notifications:recover";
 const RECOVERY_BATCH_SIZE = 100;
 
@@ -99,7 +100,7 @@ type AiNotificationRecoverySummary = {
 
 export const createAiNotificationService = (definitions: AiNotificationDefinitions) => {
   const recoveryScheduler = lazySync((sync) => {
-    const handle = sync.scheduler({ id: "core-ai-notifications", delivery: { maxAttempts: 4, backoffMs: [5_000, 10_000, 20_000] } });
+    const handle = sync.scheduler({ id: RECOVERY_SCHEDULER_ID, delivery: { maxAttempts: 4, backoffMs: [5_000, 10_000, 20_000] } });
 
     return handle;
   });
@@ -246,7 +247,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
             resourceLabel: "Assistant chats",
             detailHref: "/me/notifications",
           },
-          process: async () => {
+          process: async (context) => {
             await trace.withSpan(
               {
                 name: "Assistant completion notification recovery",
@@ -254,6 +255,7 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
                 appId: "core",
                 category: "schedule",
                 kind: "consumer",
+                spanKey: trace.syncSpanKey("scheduler", RECOVERY_SCHEDULER_ID, context.runId),
               },
               recover,
               { summarize: (summary) => summary },

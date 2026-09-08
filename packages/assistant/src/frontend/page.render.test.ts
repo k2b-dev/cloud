@@ -55,7 +55,7 @@ afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 beforeEach(() => {
-  spies.push(spyOn(live, "latestAiInvalidationCursor").mockResolvedValue("0-0"));
+  spies.push(spyOn(live, "latestAiInvalidationCursor").mockResolvedValue("s6t.cloud-ai-invalidations.0"));
   spies.push(
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
       ok: true,

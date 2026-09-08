@@ -1,4 +1,4 @@
-import type { JobContext, Worker } from "@k2b/sync";
+import type { DeliveryConfig, JobContext, Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { logger, trace } from "../logging";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, stopRuntimeJobs } from "../runtime-lifecycle";
@@ -9,11 +9,17 @@ type DeliveryMessage = { deliveryId: string };
 
 const log = logger("notifications:delivery");
 const ENQUEUE_DEDUPLICATION_WINDOW_MS = 60_000;
+// Postgres owns delivery retries: provider failures are persisted by the
+// dispatcher, and the recovery scan re-enqueues pending rows. A handler throw
+// therefore means the database itself was unreachable; a few spaced attempts
+// cover a blip, and a longer outage dead-letters once while recovery restores
+// the row after the outage anyway.
+const HANDLER_RETRY = { maxAttempts: 3, backoffMs: [5_000, 30_000] } satisfies Partial<DeliveryConfig>;
 const deliveryJob = lazySync((sync) => {
   const handle = sync.job<DeliveryMessage>({
     id: "cloud-notification-deliveries",
     owner: "core",
-    delivery: { ackWaitMs: 60_000, maxAttempts: 20 },
+    delivery: { ackWaitMs: 60_000, ...HANDLER_RETRY },
     dedupeWindowMs: ENQUEUE_DEDUPLICATION_WINDOW_MS * 2,
   });
 
@@ -49,6 +55,7 @@ const handleDelivery = async (context: JobContext<DeliveryMessage>): Promise<voi
       appId: "core",
       category: "job",
       kind: "consumer",
+      spanKey: trace.syncSpanKey("job", "cloud-notification-deliveries", context.jobId),
       attributes: { "cloud.notification.delivery_id": context.input.deliveryId },
     },
     () => processNotificationDelivery(context.input.deliveryId),
@@ -88,8 +95,8 @@ const lifecycle = createRuntimeLifecycle({
       {
         concurrency,
         onError: ({ context, error }) => {
-          log.error("Delivery worker failed", { deliveryId: context.input.deliveryId, error: error.message });
-          return { action: "retry", delayMs: 5_000 };
+          log.error("Delivery worker failed", { deliveryId: context.input.deliveryId, attempt: context.attempt, error: error.message });
+          return { action: "retry" };
         },
       },
       handleDelivery,

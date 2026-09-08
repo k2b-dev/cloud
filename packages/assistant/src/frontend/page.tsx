@@ -27,7 +27,7 @@ export default ssr<AuthContext>(async (c) => {
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
   const subject = { type: "user" as const, userId: user.id };
-  const initialLiveCursor = (await latestAiInvalidationCursor(user.id)) ?? "0-0";
+  const initialLiveCursor = await latestAiInvalidationCursor(user.id);
   const [status, models, prefs, sidebar, appUrl] = await Promise.all([
     assistantAiSettingsState(subject),
     listAssistantAiModels(subject),

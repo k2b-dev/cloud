@@ -43,16 +43,65 @@ suite("logging.trace", () => {
       observeSyncEvent(
         syncEvent({ type: "handler_settled", kind: "topic", resource, detail: { id, key: "archive", status: "success", attempt: 1 } }),
       );
-      await trace.end({ spanKey: trace.syncSpanKey("topic", resource, id, "archive"), summary: { archived: true } });
       await flushSyncTraceEvents();
       const result = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
-      expect(result.total).toBe(2);
-      const archive = result.spans.find((span) => span.name === "archive");
-      const index = result.spans.find((span) => span.name === "index");
-      expect(archive).toMatchObject({ status: "ok", summary: { archived: true }, eventCount: 0 });
-      expect(index).toMatchObject({ status: "error", statusMessage: "index unavailable", eventCount: 1 });
-      expect(archive?.spanKey).toBe(trace.syncSpanKey("topic", resource, id, "archive"));
+      // Successful topic runs are not traced; only the failed consumer leaves a span.
+      expect(result.total).toBe(1);
+      const index = result.spans[0];
+      expect(index).toMatchObject({ name: "index", status: "error", statusMessage: "index unavailable", eventCount: 1 });
       expect(index?.spanKey).toBe(trace.syncSpanKey("topic", resource, id, "index"));
+    } finally {
+      await flushSyncTraceEvents();
+      await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;
+    }
+  });
+
+  test("traces topic runs only when they retry or dead-letter", async () => {
+    const resource = `test-topic-policy-${crypto.randomUUID()}`;
+    const retried = crypto.randomUUID();
+    const succeeded = crypto.randomUUID();
+    try {
+      for (const id of [retried, succeeded]) {
+        await traceSyncEvent(syncEvent({ type: "handler_started", kind: "topic", resource, detail: { id, key: "telemetry", attempt: 1 } }));
+      }
+      await traceSyncEvent(
+        syncEvent({
+          type: "handler_settled",
+          kind: "topic",
+          resource,
+          detail: { id: succeeded, key: "telemetry", status: "success", attempt: 1, durationMs: 3 },
+        }),
+      );
+      await traceSyncEvent(
+        syncEvent({
+          type: "handler_settled",
+          kind: "topic",
+          resource,
+          detail: { id: retried, key: "telemetry", status: "retry", attempt: 1, durationMs: 5 },
+        }),
+      );
+      await traceSyncEvent(
+        syncEvent({ type: "handler_started", kind: "topic", resource, detail: { id: retried, key: "telemetry", attempt: 2 } }),
+      );
+      await traceSyncEvent(
+        syncEvent({
+          type: "handler_settled",
+          kind: "topic",
+          resource,
+          detail: { id: retried, key: "telemetry", status: "success", attempt: 2, durationMs: 4 },
+        }),
+      );
+      const result = await trace.list({ page: 1, perPage: 10, offset: 0 }, { filter: { source: resource } });
+      expect(result.total).toBe(1);
+      expect(result.spans[0]).toMatchObject({
+        name: "telemetry",
+        status: "error",
+        statusMessage: "Retry scheduled after 1 attempt(s)",
+        eventCount: 1,
+      });
+      expect(result.spans[0]?.spanKey).toBe(trace.syncSpanKey("topic", resource, retried, "telemetry"));
+      const events = await trace.events({ traceId: result.spans[0]!.traceId, spanId: result.spans[0]!.spanId });
+      expect(events.map((event) => event.name)).toEqual(["sync.retry"]);
     } finally {
       await flushSyncTraceEvents();
       await sql`DELETE FROM logging.trace_spans WHERE source = ${resource}`;

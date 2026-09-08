@@ -962,6 +962,11 @@ const cleanup = async (options: { days: number; source?: string }): Promise<numb
  * run span carries the run identity and outcome. A handler that wants a
  * summary attaches it itself with `trace.end({ spanKey, summary })`, using
  * `trace.syncSpanKey(kind, resource, runId)` for the same span.
+ *
+ * Topic consumer runs are traced only when they fail: a successful run
+ * writes nothing. Telemetry consumers process one event per request, and two
+ * span writes per event would multiply the write load and saturate the
+ * bounded observer buffer, dropping the process's other Sync diagnostics.
  */
 
 type SyncRunKind = "queue" | "job" | "topic" | "scheduler" | "pump";
@@ -981,6 +986,25 @@ const syncSpanKey = (kind: SyncRunKind, resource: string, runId: string, consume
     : `sync:${kind}:${resource}:${runId}`;
 
 const isSyncRunKind = (kind: string): kind is SyncRunKind => kind in SYNC_CATEGORY;
+
+const TRACED_SYNC_EVENT_TYPES = new Set([
+  "handler_started",
+  "handler_settled",
+  "dead_letter",
+  "redelivery",
+  "pump_run_started",
+  "pump_run_settled",
+]);
+
+/** Whether the adapter records this event at all (see the topic policy above). */
+const isTracedSyncEvent = (event: SyncEvent): boolean => {
+  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !TRACED_SYNC_EVENT_TYPES.has(event.type)) return false;
+  if (event.kind !== "topic") return true;
+  if (event.type === "handler_started") return false;
+  if (event.type !== "handler_settled") return true;
+  const status = event.detail?.status;
+  return status === "retry" || status === "dead_letter";
+};
 
 const detailString = (detail: Record<string, unknown>, key: string): string | undefined => {
   const value = detail[key];
@@ -1008,7 +1032,7 @@ const processAppId = (): string | undefined => process.env.APP_ID?.trim() || und
 const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<void> => {
   const resource = event.resource;
   const kind = event.kind;
-  if (!resource || !kind || !isSyncRunKind(kind)) return;
+  if (!resource || !kind || !isSyncRunKind(kind) || !isTracedSyncEvent(event)) return;
   const detail: Record<string, unknown> = event.detail ?? {};
   const appId = application ?? processAppId();
   const category = SYNC_CATEGORY[kind];
@@ -1040,6 +1064,21 @@ const traceSyncEvent = async (event: SyncEvent, application?: string): Promise<v
       const attempt = detailNumber(detail, "attempt");
       const durationMs = detailNumber(detail, "durationMs") ?? 0;
       if (status === "retry") {
+        // Topic runs have no started span: materialize the failed run first.
+        if (kind === "topic") {
+          await complete(
+            {
+              ...base,
+              spanKey,
+              status: "error",
+              statusMessage: `Retry scheduled after ${attempt ?? "?"} attempt(s)`,
+              attributes,
+              startedAt: event.at.getTime() - durationMs,
+              endedAt: event.at,
+            },
+            true,
+          );
+        }
         await record(
           {
             ...base,
@@ -1134,9 +1173,7 @@ let reportedSyncOverflow = false;
 
 /** Ordered per-run, bounded, non-blocking adapter for createSync({ observe }). */
 export const observeSyncEvent = (event: SyncEvent, application?: string): void => {
-  if (!event.resource || !event.kind || !isSyncRunKind(event.kind)) return;
-  if (!["handler_started", "handler_settled", "dead_letter", "redelivery", "pump_run_started", "pump_run_settled"].includes(event.type))
-    return;
+  if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !isTracedSyncEvent(event)) return;
   if (pendingSyncWriteCount >= SYNC_TRACE_PENDING_LIMIT) {
     if (!reportedSyncOverflow) console.error("[logging:trace] sync trace buffer full; dropping diagnostics");
     reportedSyncOverflow = true;

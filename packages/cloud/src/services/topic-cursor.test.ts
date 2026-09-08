@@ -1,38 +1,28 @@
 import { expect, mock, test } from "bun:test";
 import { latestTopicCursor } from "./topic-cursor";
 
-const topic = (cursor: string | null) => ({
+const topic = (cursor: string | null, head: () => Promise<string> = async () => "s6t.test.100") => ({
   latestCursor: async () => cursor,
-  cursorAt: (sequence: number) => `s6t.test.${sequence}`,
+  head: mock(head),
 });
 
-test("uses retained tenant cursors without inspecting every resource", async () => {
-  const resources = mock(async () => []);
-  expect(await latestTopicCursor({ topic: topic("s6t.test.42"), resourceId: "events", tenantId: "base" }, { resources })).toBe(
-    "s6t.test.42",
-  );
-  expect(resources).not.toHaveBeenCalled();
+test("uses retained tenant cursors without asking for the topic head", async () => {
+  const handle = topic("s6t.test.42");
+  expect(await latestTopicCursor({ topic: handle, resourceId: "events", tenantId: "base" })).toBe("s6t.test.42");
+  expect(handle.head).not.toHaveBeenCalled();
 });
 
 test("uses the shared topic head for an empty tenant after retention", async () => {
-  const resources = async () => [
-    {
-      namespace: "test",
-      kind: "topic",
-      id: "events",
-      owner: "app",
-      state: "ready" as const,
-      natsNames: [],
-      detail: { firstSequence: 80, lastSequence: 100 },
-    },
-  ];
-  expect(await latestTopicCursor({ topic: topic(null), resourceId: "events", tenantId: "new-base" }, { resources })).toBe("s6t.test.100");
+  const handle = topic(null);
+  expect(await latestTopicCursor({ topic: handle, resourceId: "events", tenantId: "new-base" })).toBe("s6t.test.100");
+  expect(handle.head).toHaveBeenCalledTimes(1);
 });
 
-test("returns a valid origin for an entirely empty topic and rejects unknown resource heads", async () => {
-  const resources = async () => [
-    { namespace: "test", kind: "topic", id: "events", owner: "app", state: "ready" as const, natsNames: [], detail: { lastSequence: 0 } },
-  ];
-  expect(await latestTopicCursor({ topic: topic(null), resourceId: "events" }, { resources })).toBe("s6t.test.0");
-  await expect(latestTopicCursor({ topic: topic(null), resourceId: "missing" }, { resources })).rejects.toThrow("Cannot capture");
+test("names the topic when the head cannot be captured", async () => {
+  const handle = topic(null, async () => {
+    throw new Error("no stream");
+  });
+  await expect(latestTopicCursor({ topic: handle, resourceId: "missing" })).rejects.toThrow(
+    'Cannot capture the current cursor of topic "missing"',
+  );
 });

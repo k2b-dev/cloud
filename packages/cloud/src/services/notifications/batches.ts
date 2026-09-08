@@ -389,6 +389,7 @@ const startBatchWorker = () =>
           appId: "core",
           category: "job",
           kind: "consumer",
+          spanKey: trace.syncSpanKey("job", "notifications:batches", ctx.jobId),
           attributes: { "cloud.notification.batch_id": ctx.input.batchId },
         },
         () => processBatchChunk(ctx.input.batchId),

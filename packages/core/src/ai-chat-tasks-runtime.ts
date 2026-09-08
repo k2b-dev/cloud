@@ -37,7 +37,6 @@ const taskJob = lazySync((sync) => {
   const handle = sync.job<{ occurrenceId: string }>({
     id: "core-ai-chat-task-occurrence",
     delivery: { ackWaitMs: 60_000, maxAttempts: 3, backoffMs: [5_000, 10_000] },
-    dedupeWindowMs: 24 * 60 * 60_000,
   });
 
   return handle;

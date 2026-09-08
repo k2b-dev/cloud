@@ -202,7 +202,7 @@ test("cancellation and provider disablement fail unfinished work", () =>
   await assert.rejects(pump.pull({ input, cursor: null, limit: 100, signal }), { name: "AbortError" });
 `));
 
-test.skipIf(!process.env.SYNC_NATS_TEST_SERVERS)(
+test.skipIf(!process.env.SYNC_TEST_SERVERS)(
   "native Pump resumes acceptance checkpoints and account failures do not stop later accounts",
   () =>
     fixture(`
@@ -212,7 +212,7 @@ test.skipIf(!process.env.SYNC_NATS_TEST_SERVERS)(
   const { createSync } = await import("@k2b/sync");
   const { connect } = await import("@nats-io/transport-node");
   const { jetstreamManager } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
-  const connection = await connect({ servers: process.env.SYNC_NATS_TEST_SERVERS.split(","), timeout: 2000 });
+  const connection = await connect({ servers: process.env.SYNC_TEST_SERVERS.split(","), timeout: 2000 });
   const namespace = "ipa-backfill-test-" + crypto.randomUUID();
   const attempted = [];
   let failAfterAcceptance = true;

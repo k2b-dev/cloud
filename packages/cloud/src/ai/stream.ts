@@ -36,7 +36,9 @@ export const aiTurnControlsTopic = lazySync((sync) =>
   sync.topic<AiTurnControlEvent>({
     id: "cloud-ai-turn-controls",
     owner: "cloud",
-    retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 256 * 1024 * 1024 },
+    // Abort signals are rare and tiny (5 KiB cap): 4 MiB keeps ~800 of them
+    // across the 15-minute window.
+    retention: { maxAgeMs: 15 * 60 * 1000, maxBytes: 4 * 1024 * 1024 },
     maxPayloadBytes: 5 * 1024,
   }),
 );
@@ -143,9 +145,10 @@ async function* streamSnapshotThenTail<TCursor, TSnapshot, TEvent>(input: {
  * that races the snapshot is replayed from the tail and deduplicated via
  * (attempt, seq). Events of unknown turns are dropped until their
  * `turn_started` arrives, which makes stale retention entries harmless.
- * A memoized per-conversation hub preserves this snapshot race guarantee; it
- * costs one full-topic follower per open conversation per process because Sync
- * filters replay tenants locally. live() has no subscription-ready barrier.
+ * A memoized per-conversation hub preserves this snapshot race guarantee. While
+ * a conversation has subscribers it costs one full-topic follower per process
+ * (Sync filters tenants locally); the hub retires when the last subscriber
+ * leaves. live() has no subscription-ready barrier.
  */
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;

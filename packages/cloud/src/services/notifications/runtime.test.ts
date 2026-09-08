@@ -8,7 +8,7 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     let starts = 0, stops = 0, drains = 0, recoveryCalls = 0;
     let result = { status: "delivered" };
     let failure;
-    const submitted = [], batches = [], processed = [], continuations = [];
+    const submitted = [], batches = [], processed = [], continuations = [], spanKeys = [];
     const job = {
       deadLetters: {},
       submit: async input => { submitted.push(input); return { jobId: "job" }; },
@@ -25,7 +25,11 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
       },
     }));
     mock.module(${JSON.stringify(new URL("../logging/index.ts", import.meta.url).pathname)}, () => ({
-      logger: () => ({ error() {} }), trace: { withSpan: (_options, callback) => callback() },
+      logger: () => ({ error() {} }),
+      trace: {
+        withSpan: (options, callback) => { spanKeys.push(options.spanKey); return callback(); },
+        syncSpanKey: (kind, resource, runId) => kind + ":" + resource + ":" + runId,
+      },
     }));
     mock.module(${JSON.stringify(new URL("./dispatcher.ts", import.meta.url).pathname)}, () => ({
       processNotificationDelivery: async id => { processed.push(id); if (failure) throw failure; return result; },
@@ -46,6 +50,8 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     assert.equal(submitted[0].delayMs, 2000);
     assert.match(submitted[0].key, /^delivery:delayed:\\d+$/);
     const context = {
+      jobId: "job-1",
+      attempt: 1,
       input: { deliveryId: "delivery" },
       signal: new AbortController().signal,
       resubmit: options => continuations.push(options),
@@ -53,13 +59,15 @@ test("notification jobs preserve delivery recovery, retries, and bounded worker 
     result = { status: "retry", retryAfterMs: 1234, error: "provider retry" };
     await handler(context);
     assert.deepEqual(continuations, [{ delayMs: 1234 }]);
+    assert.deepEqual(spanKeys, ["job:cloud-notification-deliveries:job-1"]);
     result = { status: "failed", activatedIds: ["fallback"] };
     await handler(context);
     assert.deepEqual(batches.at(-1)[0].input, { deliveryId: "fallback" });
     assert.equal(continuations.length, 1);
     failure = new Error("database unavailable");
     await assert.rejects(handler(context), /database unavailable/);
-    assert.deepEqual(processOptions.onError({ context, error: failure }), { action: "retry", delayMs: 5000 });
+    assert.deepEqual(processOptions.onError({ context, error: failure }), { action: "retry" });
+    assert.deepEqual(declaration.delivery, { ackWaitMs: 60000, maxAttempts: 3, backoffMs: [5000, 30000] });
     assert.deepEqual(processed, ["delivery", "delivery", "delivery"]);
     await Promise.all([stopNotificationRuntime(), stopNotificationRuntime()]);
     assert.equal(stops, 1);

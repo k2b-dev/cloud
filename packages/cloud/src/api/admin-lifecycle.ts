@@ -140,7 +140,7 @@ const app = new Hono<AuthContext>()
     },
   )
   // Manual-only lifecycle jobs. Scheduled jobs such as IPA sync and reminders
-  // are triggered centrally through Gateway Ops schedulerControl.
+  // run from their broker schedules; Admin Observability Jobs can run them now.
   .post(
     "/jobs",
     describeRoute({
@@ -179,10 +179,10 @@ const app = new Hono<AuthContext>()
     "/health",
     describeRoute({
       tags: ["Admin Lifecycle"],
-      summary: "Scheduler health metrics",
+      summary: "Lifecycle worker metrics",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(z.object({ metrics: z.record(z.string(), z.unknown()) }), "Scheduler metrics"),
+        200: jsonResponse(z.object({ metrics: z.record(z.string(), z.unknown()) }), "Process-local worker metrics"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
       },

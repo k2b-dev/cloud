@@ -63,7 +63,7 @@ const startWorkers = async (): Promise<void> => {
           appId: "ai",
           category: "job",
           kind: "consumer",
-          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+          spanKey: trace.syncSpanKey("job", "ai:chat:enrich", context.jobId),
         },
         () => enrichDirtyAiConversations({ signal: context.signal, heartbeat: () => context.heartbeat() }),
         { summarize: (summary) => summary },
@@ -80,7 +80,7 @@ const startWorkers = async (): Promise<void> => {
           appId: "ai",
           category: "job",
           kind: "consumer",
-          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+          spanKey: trace.syncSpanKey("job", "ai:chat:reindex", context.jobId),
         },
         () =>
           enrichDirtyAiConversations({
@@ -101,7 +101,7 @@ const startWorkers = async (): Promise<void> => {
           appId: "ai",
           category: "job",
           kind: "consumer",
-          attributes: { "sync.job_id": context.jobId, "sync.attempt": context.attempt },
+          spanKey: trace.syncSpanKey("job", "ai:memory:learn", context.jobId),
         },
         () => learnAiMemoriesFromPrivateChats({ signal: context.signal, heartbeat: () => context.heartbeat() }),
         { summarize: (summary) => summary },
@@ -288,6 +288,8 @@ export const aiMaintenanceJobs = {
    * (never waits behind scheduled batch runs). The stable per-conversation key
    * coalesces rapid clicks while a reindex is queued or running; it is
    * released on completion, so the next click after that starts a fresh run.
+   * A click that joins a running reindex starts no second run; changes the
+   * running pass missed stay dirty and the scheduled enrichment picks them up.
    */
   submitConversationReindex: (conversationId: string): Promise<string> =>
     reindexJob()

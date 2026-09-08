@@ -19,7 +19,7 @@ import {
 import type { WorkflowAiRequest, WorkflowAiTask } from "./types";
 
 const JOB_ID = "cloud.workflow-ai";
-const DEFAULT_MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 3;
 const DEFAULT_CANCEL_POLL_MS = 500;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
@@ -27,9 +27,19 @@ type StructuredRunner = typeof runAiStructured;
 
 export type WorkflowAiRuntimeOptions = {
   runStructured?: StructuredRunner;
-  maxAttempts?: number;
   cancelPollMs?: number;
 };
+
+/** Attempt budget shared by the job declaration and the Postgres-side settle logic. */
+export type WorkflowAiProcessOptions = Required<WorkflowAiRuntimeOptions> & { maxAttempts: number };
+
+const workflowAiJob = lazySync((sync) =>
+  sync.job<{ taskId: string }>({
+    id: JOB_ID,
+    owner: "cloud",
+    delivery: { ackWaitMs: 30_000, maxAttempts: MAX_ATTEMPTS, backoffMs: [1_000, 2_000] },
+  }),
+);
 
 class WorkflowAiAttemptError extends Error {
   constructor(
@@ -162,7 +172,7 @@ const errorCode = (error: unknown): string => {
 export const processWorkflowAiTask = async (
   taskId: string,
   ctx: { signal: AbortSignal; heartbeat(): Promise<void> },
-  options: Required<WorkflowAiRuntimeOptions>,
+  options: WorkflowAiProcessOptions,
 ): Promise<void> => {
   const task = await claimWorkflowAiTask(taskId);
   if (!task) {
@@ -229,27 +239,17 @@ export const processWorkflowAiTask = async (
   }
 };
 
-const workflowAiJob = (maxAttempts: number) =>
-  lazySync((sync) => {
-    const handle = sync.job<{ taskId: string }>({
-      id: JOB_ID,
-      owner: "cloud",
-      delivery: { ackWaitMs: 30_000, maxAttempts, backoffMs: [1_000, 2_000] },
-    });
-    return handle;
-  });
-
 let activeJob: Job<{ taskId: string }> | null = null;
 let activeWorker: Worker | null = null;
 
 export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {}): Promise<void> => {
   if (activeJob) return;
-  const options: Required<WorkflowAiRuntimeOptions> = {
+  const options: WorkflowAiProcessOptions = {
     runStructured: input.runStructured ?? runAiStructured,
-    maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
+    maxAttempts: MAX_ATTEMPTS,
     cancelPollMs: input.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
   };
-  const next = workflowAiJob(options.maxAttempts)();
+  const next = workflowAiJob();
   activeJob = next;
   try {
     activeWorker = await next.process({ concurrency: 1 }, async (context) => {
