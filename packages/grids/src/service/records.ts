@@ -2,6 +2,7 @@ import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ComputedColumnSpec, FilterTree, GroupBySpec, GroupSortSpec, RecordMetaQuery, SearchSpec, SortSpec } from "../contracts";
 import type { Expr } from "../formula/types";
+import { compileDslQueryPlanToSql } from "../query-dsl/sql-compiler-row";
 import { defaultTableAggregations } from "../table-defaults";
 import { type AggregateRequest, compileAggregates } from "./aggregate-compiler";
 import { runBoundedQuery } from "./bounded-query";
@@ -33,7 +34,7 @@ import {
   hydrateRelationsFromLinks,
 } from "./relations";
 import { compileSearchClause } from "./search";
-import { compileSort, decodeCursor } from "./sort-compiler";
+import { decodeCursor } from "./sort-compiler";
 import type { Field, RecordList } from "./types";
 
 type DbRow = Record<string, unknown>;
@@ -116,28 +117,12 @@ export const list = async (params: {
   const fields = params.fields ?? (await listFields(params.tableId));
   const fieldsWithLookupMeta = await withLookupTargetMetadata(fields);
 
-  // Filter compilation
-  const filterCompiled = compileFilter(params.filter ?? null, fields, { timeZone: params.dateConfig?.timeZone });
-  if (!filterCompiled.ok) return fail(err.badInput(messages.filterInvalid({ detail: filterCompiled.error })));
-  const filterClause = renderClause(filterCompiled.clause);
-  const formulaWhereCompiled = params.formulaWhere
-    ? compileFormulaPredicateAstToSql(params.formulaWhere, {
-        fields,
-        recordAlias: "r",
-        dateConfig: params.dateConfig,
-      })
-    : null;
-  if (formulaWhereCompiled && !formulaWhereCompiled.ok)
-    return fail(err.badInput(messages.formulaWhereInvalid({ detail: formulaWhereCompiled.error })));
   const searchCompiled = await compileSearchClause({
     search: params.search ?? null,
     fields,
     alias: "r",
     viewer: params.viewer,
   });
-  const searchClause = searchCompiled.clause;
-  const recordMetaClause = compileRecordMetaFilter(params.recordMeta ?? null);
-  const needsDeletedRows = recordMetaRequiresDeletedRows(params.recordMeta ?? null);
 
   // Sort compilation (with cursor decoding when present). Cursor length
   // is validated against the active sort spec — a stale cursor from a
@@ -148,31 +133,11 @@ export const list = async (params: {
   if (params.cursor && !decodedCursor) {
     return fail(err.badInput(messages.invalidCursor));
   }
-  const sortCompiled = compileSort(effectiveSort, fields, decodedCursor);
-  if (!sortCompiled.ok) return fail(err.badInput(messages.sortInvalid({ detail: sortCompiled.error })));
-  const { orderBy, cursorWhere, cursorSelect, encodeCursorFromRow } = sortCompiled.result;
-
-  // table_id / deleted_at must be qualified — both `r.records`,
-  // `t.tables`, and `b.bases` (joined for live-parent) carry these
-  // column names. An unqualified ref raises 42702 (chunk: 1.2 JOIN
-  // regression).
-  const conditions: any[] = [sql`r.table_id = ${params.tableId}::uuid`];
-  if (params.deletedOnly || needsDeletedRows) conditions.push(sql`r.deleted_at IS NOT NULL`);
-  else if (!params.includeDeleted) conditions.push(sql`r.deleted_at IS NULL`);
-  conditions.push(filterClause);
-  if (formulaWhereCompiled?.ok) conditions.push(formulaWhereCompiled.expression.sql);
-  conditions.push(searchClause);
-  conditions.push(recordMetaClause);
-
-  if (cursorWhere) conditions.push(cursorWhere);
-  const where = conditions.reduce((acc, cond) => sql`${acc} AND ${cond}`);
-
   // Lookup / rollup values are computed in the main query as correlated
   // subqueries over record_links. Single source of truth, single
   // round-trip.
-  const computed = await buildComputedProjections(fields, {
-    authorizedTableIds: await readableComputedTargetTableIds(fields, params.viewer),
-  });
+  const authorizedTableIds = await readableComputedTargetTableIds(fields, params.viewer);
+  const computed = await buildComputedProjections(fields, { authorizedTableIds });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: params.dateConfig });
   // View computed columns evaluate in SQL when projectable (one semantics with
   // GQL preview + formula fields); the JS evaluator below only fills the rest.
@@ -180,20 +145,48 @@ export const list = async (params: {
   const projections = [...computed, ...formulaSql, ...computedColumnSql.projections];
   const projectionFragments = projectionFragmentsFor(projections);
 
+  const compiled = compileDslQueryPlanToSql(
+    {
+      tableId: params.tableId,
+      query: {
+        filter: params.filter ?? undefined,
+        recordMeta: params.recordMeta ?? undefined,
+        sort: effectiveSort,
+        includeDeleted: params.includeDeleted,
+        deletedOnly: params.deletedOnly || recordMetaRequiresDeletedRows(params.recordMeta),
+      },
+      ...(params.formulaWhere ? { wherePredicate: { kind: "formula", expression: params.formulaWhere } } : {}),
+      readableTableIds: authorizedTableIds ? [...authorizedTableIds] : undefined,
+    },
+    {
+      fieldsByTableId: { [params.tableId]: fields },
+      timeZone: params.dateConfig?.timeZone,
+      limit: limit + 1,
+      cursorValues: decodedCursor ? [...decodedCursor.values, decodedCursor.id] : undefined,
+      searchClause: searchCompiled.clause,
+      recordProjection: sql`r.*${projectionFragments}`,
+    },
+  );
+  if (!compiled.ok) {
+    const detail = compiled.error.replace(/^(filter|sort|where): /, "");
+    return fail(
+      err.badInput(
+        compiled.error.startsWith("filter:")
+          ? messages.filterInvalid({ detail })
+          : compiled.error.startsWith("where:")
+            ? messages.formulaWhereInvalid({ detail })
+            : messages.sortInvalid({ detail }),
+      ),
+    );
+  }
+
   // Live-parent JOIN: records of a trashed table or base never list,
   // even when the caller passes a leaked tableId UUID. The filter's
   // predicate still pins r.table_id = ${tableId}, so the JOIN's table
   // row is uniquely identified — Postgres treats this as a cheap
   // semi-join.
   const rows = await runBoundedQuery<DbRow>(
-    sql`
-      SELECT r.*${projectionFragments}${cursorSelect}
-      FROM grids.records r
-      JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
-      JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
-      WHERE ${where}
-      ORDER BY ${orderBy} LIMIT ${limit + 1}
-    `,
+    compiled.query.sql,
     RECORD_QUERY_TIMEOUT_MS,
     params.signal,
     params.dedupeKey ? `${params.dedupeKey}:rows` : undefined,
@@ -212,11 +205,9 @@ export const list = async (params: {
 
   let nextCursor: string | null = null;
   if (hasMore) {
-    // Cursor encodes from the SQL `__sort_<i>` aliases (null-safe via
-    // try_*) instead of `record.data[fieldId]` (raw JSONB) — so corrupt
-    // values produce NULL in the cursor instead of crashing page 2.
-    const lastRow = rows[limit - 1] as Record<string, unknown>;
-    nextCursor = encodeCursorFromRow(lastRow);
+    // Keep the table cursor envelope, using the exact shared SQL keyset values.
+    const values = compiled.query.cursorValuesFromRow(rows[limit - 1]!);
+    nextCursor = JSON.stringify({ v: values.slice(0, -1), i: values.at(-1) });
   }
   // SQL-projectable formulas are already in record.data. Keep the JS
   // evaluator for formulas that need non-SQL values (relation/lookup/

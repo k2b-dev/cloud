@@ -770,6 +770,7 @@ export const RecordQuerySchema = z.object({
   /** Record/system metadata criteria. Kept separate from field filters
    *  because these predicates target `records.*` columns, not table data. */
   recordMeta: RecordMetaQuerySchema.optional(),
+  /** Row ordering only. Grouped queries use groupBy directions and groupSort. */
   sort: z.array(SortSpecSchema).max(MAX_QUERY_SORTS).optional(),
   groupBy: z.array(GroupBySpecSchema).max(3).optional(),
   /** Bucket ordering for grouped queries. When set, groups are ordered

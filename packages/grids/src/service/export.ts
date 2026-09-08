@@ -1,24 +1,23 @@
+import { createHash } from "node:crypto";
 import { type DateContext, dates, err, fail, ok, type Result } from "@k2b/stdlib";
 import { markdown as markdownRenderer } from "@valentinkolb/cloud/shared";
 import type { ExportFieldSpec, RecordQuery, SearchSpec } from "../contracts";
-import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
-import { simpleQueryToGqlSource } from "../query-dsl/record-query-source";
-import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
+import { recordQueryPlan } from "../query-dsl/record-query-plan";
 import { type DslResultCursor, decodeDslResultCursor } from "../query-dsl/result-cursor";
 import { type FederatedRevisionScope, verifyRevisionScope } from "./federated-tables";
 import { listByTable as listFields } from "./fields";
-import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
 import { createHtmlTemplateRenderBudget, type HtmlTemplateRenderBudget } from "./html-template-fields";
 import { serviceMessagesFor } from "./messages";
 import { hasAtLeast, loadBaseGrantsForSubject, resolveEffectivePermission } from "./permission-resolver";
 import { projectPublicIds } from "./public-resources";
+import { validateRecordQueryForFields } from "./query-validation";
 import { list as listRecords } from "./records";
 import { loadRelationTargets } from "./relation-targets";
 import type { ExpansionViewer } from "./relations";
 import { buildRelationLabelCache, relationLabelFields } from "./relations";
-import { get as getTable } from "./tables";
-import type { Field, GridRecord } from "./types";
+import { get as getTable, listByBase as listTables } from "./tables";
+import type { Field, GridRecord, Table } from "./types";
 
 type ExportFormatOptions = { markdown: "raw" | "html"; dateConfig?: DateContext };
 type RelationExportConfig = NonNullable<ExportFieldSpec["relation"]>;
@@ -78,26 +77,27 @@ const createStoredPageReader = (params: {
 };
 
 const createFederatedPageReader = async (params: {
-  baseId: string;
-  tableId: string;
+  table: Table;
+  fields: Field[];
   query: RecordQuery;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
   locale?: string;
 }): Promise<Result<ExportPageReader>> => {
-  const converted = simpleQueryToGqlSource({ tableId: params.tableId, query: params.query });
-  if (!converted.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
-  const parsed = parseGridsQueryDsl(converted.source);
-  if (!parsed.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
-  const context = await buildTrustedGqlResolverContext({
-    baseId: params.baseId,
-    currentTableId: params.tableId,
-    ast: parsed.ast,
-    purpose: "saved-view-render",
+  const valid = validateRecordQueryForFields(params.table.id, params.query, params.fields, params.locale);
+  if (!valid.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
+  if (params.query.groupBy?.length || params.query.aggregations?.length) {
+    return fail(err.badInput(serviceMessagesFor(params.locale).groupedExportUnsupported));
+  }
+  const tables = await listTables(params.table.baseId);
+  const plan = recordQueryPlan({
+    source: { kind: "table", id: params.table.id, shortId: params.table.shortId, name: params.table.name },
+    query: params.query,
+    readableTableIds: tables.map((table) => table.id),
   });
-  const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
-  if (!resolved.ok) return fail(err.badInput(serviceMessagesFor(params.locale).exportQueryInvalid));
-  const cursorFingerprint = `${EXPORT_CURSOR_FINGERPRINT}:${params.tableId}`;
+  const fieldsByTableId = { [params.table.id]: params.fields };
+  const queryHash = createHash("sha256").update(JSON.stringify(params.query)).digest("base64url");
+  const cursorFingerprint = `${EXPORT_CURSOR_FINGERPRINT}:${params.table.id}:${queryHash}`;
   let cursor: DslResultCursor | null = null;
   let finished = false;
   let expectedRevisionScope: FederatedRevisionScope | undefined;
@@ -108,8 +108,8 @@ const createFederatedPageReader = async (params: {
       if (!current.ok) return fail(err.conflict(serviceMessagesFor(params.locale).publicationChangedExport));
     }
     let pageRevisionScope: FederatedRevisionScope = [];
-    const preview = await previewDslQuery(resolved.plan, {
-      fieldsByTableId: context.fieldsByTableId,
+    const preview = await previewDslQuery(plan, {
+      fieldsByTableId,
       timeZone: params.dateConfig?.timeZone,
       pageSize: EXPORT_PAGE_SIZE,
       maxRows: EXPORT_PAGE_SIZE,
@@ -137,7 +137,7 @@ const createFederatedPageReader = async (params: {
         {
           id: row.recordId,
           shortId: recordPublicIds.get(row.recordId)!,
-          tableId: params.tableId,
+          tableId: params.table.id,
           data: Object.fromEntries(
             preview.data.columns.flatMap((column) => (column.fieldId ? [[column.fieldId, row.values[column.key]]] : [])),
           ),
@@ -153,6 +153,7 @@ const createFederatedPageReader = async (params: {
 
 const createExportPageReader = async (params: {
   tableId: string;
+  fields: Field[];
   query: RecordQuery;
   viewer?: ExpansionViewer;
   dateConfig?: DateContext;
@@ -162,7 +163,7 @@ const createExportPageReader = async (params: {
 }): Promise<Result<ExportPageReader>> => {
   const table = await getTable(params.tableId);
   if (!table) return fail(err.notFound(serviceMessagesFor(params.locale).table));
-  if (table.kind === "federated") return createFederatedPageReader({ ...params, baseId: table.baseId });
+  if (table.kind === "federated") return createFederatedPageReader({ ...params, table });
   return ok(createStoredPageReader(params));
 };
 
@@ -496,6 +497,7 @@ export const exportRecords = async (params: {
 
   const pageReader = await createExportPageReader({
     tableId: params.tableId,
+    fields,
     query,
     viewer: params.viewer,
     dateConfig: params.dateConfig,

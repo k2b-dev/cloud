@@ -50,6 +50,8 @@ A shared View is visible to Base readers. A personal View belongs to its owner. 
 
 Use grouping and aggregations for reports. A monthly revenue report, for example, groups invoices by month and sums Total. Put pre-group filters before the grouping; use `having` in GQL when the rule applies to an aggregate result.
 
+In the visual controls, set the group order on the grouping itself or sort groups by an aggregate value. The record sort remains separate and does not determine group order. Stored and federated tables follow the same rule.
+
 Views without an explicit `limit` can be paged through the complete matching result. A `limit` deliberately caps the logical result across pages. Pages are live reads, so records changed between page requests can move; use a stable sort for predictable navigation.
 
 ## Reuse or keep local {icon="route"}

@@ -100,7 +100,8 @@ export const PublicRecordQuerySchema = RecordQuerySchema.extend({
   sort: z
     .array(z.union([PublicRecordSortSpecSchema, PublicFieldSortSpecSchema]))
     .max(16)
-    .optional(),
+    .optional()
+    .describe("Record ordering. Grouped queries use groupBy direction and groupSort instead."),
   groupBy: z
     .array(
       PublicFieldReferenceSchema.extend({
@@ -121,7 +122,8 @@ export const PublicRecordQuerySchema = RecordQuerySchema.extend({
       }),
     )
     .max(3)
-    .optional(),
+    .optional()
+    .describe("Order groups by aggregate values, then by groupBy keys for ties."),
   aggregations: z
     .array(
       z.object({

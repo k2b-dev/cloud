@@ -32,13 +32,14 @@ describe("TableQueryBodySchema", () => {
     ).toBe(true);
   });
 
-  test("requires either source or query", () => {
+  test("requires source or query even when a view identifies the context", () => {
+    expect(TableQueryBodySchema.safeParse({ viewId: "11111111-1111-4111-8111-111111111111" }).success).toBe(false);
     expect(TableQueryBodySchema.safeParse({ cursor: "next" }).success).toBe(false);
   });
 });
 
 describe("buildTableQueryBody", () => {
-  test("sends canonical GQL source for records reads", () => {
+  test("sends the complete effective structured query for ordinary and saved-view records reads", () => {
     const body = buildTableQueryBody({
       tableId: "TABL01",
       viewId: "VIEW01",
@@ -48,15 +49,15 @@ describe("buildTableQueryBody", () => {
     });
 
     expect(body).toMatchObject({
-      source: "from table {TABL01}\nsort {FIELD1} asc",
       viewId: "VIEW01",
       query: { sort: [{ fieldId: "FIELD1", direction: "asc" }] },
       cursor: "next",
       filePreviewFieldIds: ["FILE01"],
     });
+    expect(body.source).toBeUndefined();
   });
 
-  test("falls back to RecordQuery when a toolbar query has no row-shaped GQL source", () => {
+  test("sends footer aggregations in the same structured query", () => {
     const body = buildTableQueryBody({
       tableId: "TABL01",
       query: { aggregations: [{ fieldId: "*", agg: "count" }] },
@@ -88,7 +89,7 @@ describe("buildTableQueryBody", () => {
       cursor: null,
     });
 
-    expect(body.source).toBe(["from table {TABL01}", "select {FIELD1}, formula(LEN(Name)) as __computed_j3rz0Y3fwW"].join("\n"));
+    expect(body.source).toBeUndefined();
     expect(body.query?.columns?.[1]).toMatchObject({ label: "name+l#nge" });
   });
 });

@@ -59,4 +59,32 @@ describe("compileDslKeyset", () => {
       error: "query sort contains a value that cannot be cursor-paginated",
     });
   });
+
+  test("rejects invalid calendar dates and timezone-aware timestamps before SQL casting", () => {
+    for (const value of ["2026-02-29", "2026-04-31", "2026-13-01", "0000-01-01"]) {
+      expect(compileDslKeyset([{ expression: sql`day`, type: "date", direction: "asc" }], [value]).ok).toBe(false);
+      expect(compileDslKeyset([{ expression: sql`instant`, type: "datetime", direction: "asc" }], [`${value}T00:00:00Z`]).ok).toBe(false);
+    }
+    for (const value of ["2026-01-01", "2026-01-01T12:00:00", "2026-01-01T25:00:00Z", "infinity"]) {
+      expect(compileDslKeyset([{ expression: sql`instant`, type: "datetime", direction: "asc" }], [value]).ok).toBe(false);
+    }
+    expect(compileDslKeyset([{ expression: sql`day`, type: "date", direction: "asc" }], ["2024-02-29"]).ok).toBe(true);
+    expect(compileDslKeyset([{ expression: sql`instant`, type: "datetime", direction: "asc" }], ["2024-02-29T12:34:56.123456Z"]).ok).toBe(
+      true,
+    );
+  });
+
+  test("bounds numeric cursors by PostgreSQL storage rather than JavaScript number precision", () => {
+    const column = { expression: sql`amount`, type: "numeric", direction: "asc" } as const;
+    for (const value of ["1e131072", "1e-16384", "0e999999999999999999", "NaN", "Infinity", Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(compileDslKeyset([column], [value]).ok).toBe(false);
+    }
+    for (const value of ["1e131071", "1e-16383", "9007199254740993.123456789", "0.0001e131073", 42]) {
+      expect(compileDslKeyset([column], [value]).ok).toBe(true);
+    }
+  });
+
+  test("rejects NUL in text cursors instead of triggering a PostgreSQL text error", () => {
+    expect(compileDslKeyset([{ expression: sql`title`, type: "text", direction: "asc" }], ["bad\0text"]).ok).toBe(false);
+  });
 });

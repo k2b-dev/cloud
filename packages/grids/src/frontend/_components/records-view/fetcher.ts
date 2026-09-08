@@ -10,7 +10,6 @@
 import { apiClient } from "../../../api/client";
 import type { PublicTableQueryResult as TableQueryResult } from "../../../api/public-dto";
 import type { RecordQuery, TableQueryBody } from "../../../contracts";
-import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { errorMessage } from "../utils/api-helpers";
 
 type FetchTableQueryArgs = {
@@ -37,16 +36,12 @@ export class TableQueryError extends Error {
   }
 }
 
-export const buildTableQueryBody = (args: FetchTableQueryArgs): TableQueryBody => {
-  const source = simpleQueryToGqlSource({ tableId: args.tableId, query: args.query });
-  return {
-    ...(source.ok ? { source: source.source } : {}),
-    query: args.query,
-    viewId: args.viewId,
-    cursor: args.cursor ?? undefined,
-    filePreviewFieldIds: args.filePreviewFieldIds,
-  };
-};
+export const buildTableQueryBody = (args: FetchTableQueryArgs): TableQueryBody => ({
+  query: args.query,
+  viewId: args.viewId,
+  cursor: args.cursor ?? undefined,
+  filePreviewFieldIds: args.filePreviewFieldIds,
+});
 
 export const fetchTableQuery = async (args: FetchTableQueryArgs, opts: { signal?: AbortSignal } = {}): Promise<TableQueryResult> => {
   const body = buildTableQueryBody(args);

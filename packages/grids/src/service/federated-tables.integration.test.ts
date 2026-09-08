@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
 import { sql } from "bun";
 import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -8,6 +8,7 @@ import type { DslTableSource } from "../query-dsl/resolver";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
 import { remove as removeBase, restore as restoreBase } from "./bases";
+import * as boundedQuery from "./bounded-query";
 import * as combinedAudit from "./combined-audit";
 import { exportRecords } from "./export";
 import {
@@ -1521,6 +1522,99 @@ describe("combined table integration", () => {
     },
     15_000,
   );
+
+  postgresTest("isolates simultaneous combined exports with different filters, sorts and column projections", async () => {
+    const fixture = await createFixture();
+    const runQuery = boundedQuery.runBoundedQuery;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const keys: string[] = [];
+    // Synchronize the actual SQL boundary so this tests coalescing, not scheduler luck.
+    const timeout = setTimeout(release, 5_000);
+    const run = spyOn(boundedQuery, "runBoundedQuery").mockImplementation(async <T>(...args: Parameters<typeof runQuery>): Promise<T[]> => {
+      if (args[3]) {
+        keys.push(args[3]);
+        if (keys.length === 4) release();
+        await barrier;
+      }
+      return runQuery<T>(...args);
+    });
+    try {
+      await sql`UPDATE grids.records SET data = data || ${{ [fixture.sourceTextFieldId]: "Alpha" }}::jsonb WHERE id = ${fixture.recordId}::uuid`;
+      for (const name of ["Bravo", "Charlie"]) {
+        await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+          VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.sourceTableId}::uuid, ${{ [fixture.sourceTextFieldId]: name }}::jsonb)`;
+      }
+      const fieldId = fixture.targetTextFieldId;
+      const queries = [
+        { sort: [{ fieldId, direction: "asc" as const }] },
+        { sort: [{ fieldId, direction: "desc" as const }] },
+        { filter: { fieldId, op: "contains", value: "Bravo" }, sort: [{ fieldId, direction: "asc" as const }] },
+        {
+          sort: [{ fieldId, direction: "asc" as const }],
+          columns: [{ kind: "computed" as const, id: "computed_copy", label: "Copy", expression: "Name" }, { fieldId }],
+        },
+      ];
+      const bodies = await Promise.all(
+        queries.map(async (query) => {
+          const exported = await exportRecords({ tableId: fixture.targetTableId, format: "json", fields: [{ fieldId }], query });
+          if (!exported.ok) throw new Error(exported.error.message);
+          return new Response(exported.data.body).json();
+        }),
+      );
+      expect(bodies.map((body) => body.records.map((record: { Name: unknown }) => record.Name))).toEqual([
+        ["Alpha", "Bravo", "Charlie"],
+        ["Charlie", "Bravo", "Alpha"],
+        ["Bravo"],
+        ["Alpha", "Bravo", "Charlie"],
+      ]);
+      expect(new Set(keys).size).toBe(4);
+    } finally {
+      release();
+      clearTimeout(timeout);
+      run.mockRestore();
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("exports bound structured queries directly and rejects stale field references", async () => {
+    const fixture = await createFixture();
+    try {
+      const value = 'Quarterly "hello"\nworld';
+      await sql`UPDATE grids.records SET data = data || ${{ [fixture.sourceTextFieldId]: value }}::jsonb
+        WHERE id = ${fixture.recordId}::uuid`;
+      const result = await exportRecords({
+        tableId: fixture.targetTableId,
+        format: "json",
+        fields: [{ fieldId: fixture.targetTextFieldId }],
+        query: {
+          filter: { fieldId: fixture.targetTextFieldId, op: "contains", value: '"hello"\nworld' },
+          search: { q: "Quarterly", fieldIds: [fixture.targetTextFieldId] },
+          sort: [{ fieldId: fixture.targetTextFieldId, direction: "desc" }],
+          recordMeta: { ids: [fixture.recordId] },
+          limit: 1,
+        },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error(result.error.message);
+      const body = await new Response(result.data.body).json();
+      expect(body.records).toHaveLength(1);
+      expect(JSON.stringify(body.records)).toContain(JSON.stringify(value).slice(1, -1));
+
+      const invalid = await exportRecords({
+        tableId: fixture.targetTableId,
+        format: "csv",
+        fields: [{ fieldId: fixture.targetTextFieldId }],
+        query: { search: { q: "anything", fieldIds: [uuid()] } },
+      });
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.error.status).toBe(400);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
 
   postgresTest(
     "streams combined exports beyond ten thousand rows",

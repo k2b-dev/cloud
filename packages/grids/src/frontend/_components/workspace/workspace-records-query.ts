@@ -8,8 +8,8 @@ import {
   type DslTableSource,
   type DslViewSource,
   isDslAggregateOnlyPlan,
+  projectDslPlanToRecordQuery,
   resolveDslQueryToQueryPlan,
-  resolveDslQueryToRecordQuery,
 } from "../../../query-dsl/resolver";
 import { collectDslFieldTableIds } from "../../../query-dsl/source-plan";
 import type { DslQueryAst } from "../../../query-dsl/types";
@@ -116,7 +116,7 @@ export const compileViewSource = (
   if (isDslAggregateOnlyPlan(queryPlan.plan)) {
     return { ok: true, kind: "queryResult", fieldIds: queryResultFieldIds(queryPlan.plan) };
   }
-  const resolved = resolveDslQueryToRecordQuery(parsed.ast, context);
+  const resolved = projectDslPlanToRecordQuery(queryPlan.plan, parsed.ast);
   if (!resolved.ok) return { ok: true, kind: "queryResult", fieldIds: queryResultFieldIds(queryPlan.plan) };
   return { ok: true, kind: "records", query: withViewPresentation(resolved.plan.query, view.ui) };
 };

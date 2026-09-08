@@ -99,28 +99,28 @@ const withoutColumns = (query: RecordQuery): RecordQuery => {
   return rest;
 };
 
-/**
- * Downgrades a resolved SQL plan only when the records-table runtime can carry
- * the same semantics without losing joins, predicates, grouping, or offsets.
- */
-export const resolveDslQueryToRecordQuery = (ast: DslQueryAst, ctx: DslResolverContext): DslRecordQueryResolveResult => {
-  const resolved = resolveDslQueryToQueryPlan(ast, ctx);
-  if (!resolved.ok) return resolved;
-
-  const blocker = recordQueryBlocker(resolved.plan, ast);
+/** Projects an already resolved plan into the visual record controls only when
+ * they can carry it without losing joins, predicates, grouping or offsets. */
+export const projectDslPlanToRecordQuery = (plan: DslResolvedSqlQueryPlan, ast: DslQueryAst): DslRecordQueryResolveResult => {
+  const blocker = recordQueryBlocker(plan, ast);
   if (blocker) return { ok: false, diagnostics: [blocker] };
 
   // Without an explicit output shape, saved views must continue following the
   // table's live columns instead of persisting the preview's expanded defaults.
   const autoColumns = ast.select.length === 0 && ast.groupBy.length === 0 && ast.aggregations.length === 0 && !ast.having;
-  const query = autoColumns ? withoutColumns(resolved.plan.query) : resolved.plan.query;
+  const query = autoColumns ? withoutColumns(plan.query) : plan.query;
 
   return {
     ok: true,
     plan: {
-      source: resolved.plan.source,
-      tableId: resolved.plan.tableId,
+      source: plan.source,
+      tableId: plan.tableId,
       query,
     },
   };
+};
+
+export const resolveDslQueryToRecordQuery = (ast: DslQueryAst, ctx: DslResolverContext): DslRecordQueryResolveResult => {
+  const resolved = resolveDslQueryToQueryPlan(ast, ctx);
+  return resolved.ok ? projectDslPlanToRecordQuery(resolved.plan, ast) : resolved;
 };

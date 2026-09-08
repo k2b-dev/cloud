@@ -9,5 +9,5 @@ export type { DslResolvedDerivedRelationJoin, DslResolvedRelationJoin } from "./
 export type { DslJoinedColumn, DslOutputColumn } from "./resolver-output";
 export { type DslResolvedSqlQueryPlan, isDslAggregateOnlyPlan } from "./resolver-plan-types";
 export { resolveDslQueryToQueryPlan } from "./resolver-query-plan";
-export { resolveDslQueryToRecordQuery } from "./resolver-record-query";
+export { projectDslPlanToRecordQuery, resolveDslQueryToRecordQuery } from "./resolver-record-query";
 export type { DslWherePredicate } from "./resolver-where";

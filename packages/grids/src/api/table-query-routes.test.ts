@@ -23,11 +23,12 @@ type RouteDeps = NonNullable<Parameters<typeof createTableQueryRoutes>[0]>;
 
 const makeDeps = (
   overrides: {
-    table?: typeof table | null;
+    table?: (Omit<typeof table, "kind"> & { kind: "stored" | "federated" }) | null;
     view?: typeof view | null;
     tableReadable?: boolean;
     onCompile?: (options: Record<string, unknown>) => void;
     onList?: (options: Record<string, unknown>) => void;
+    onExecute?: (body: Parameters<RouteDeps["executeQuery"]>[2]) => void;
     listError?: Error;
     fields?: Array<{ id: string; shortId: string; type: string; config: Record<string, unknown> }>;
   } = {},
@@ -55,10 +56,19 @@ const makeDeps = (
     overrides.onCompile?.(options as unknown as Record<string, unknown>);
     return { ok: true, query: { limit: 10 } } as Awaited<ReturnType<RouteDeps["compileGql"]>>;
   };
+  const executeQuery: RouteDeps["executeQuery"] = async (_context, _baseId, body) => {
+    overrides.onExecute?.(body);
+    return {
+      ok: true,
+      response: { ok: true, mode: "groups", columns: [], rows: [], limit: 100 },
+      revisionScope: [],
+    };
+  };
 
   return {
     service,
     compileGql,
+    executeQuery,
     validateQuery: () => ok(undefined),
     dateConfig: async () => ({}) as never,
     gate: async () =>
@@ -76,6 +86,31 @@ const requestQuery = (deps: RouteDeps, body: Record<string, unknown>) =>
   });
 
 describe("table query routes", () => {
+  test("passes bound structured queries directly to the shared executor for combined tables", async () => {
+    const fieldId = "77777777-7777-4777-8777-777777777777";
+    let executed: Parameters<RouteDeps["executeQuery"]>[2] | undefined;
+    const response = await requestQuery(
+      makeDeps({
+        table: { ...table, kind: "federated" },
+        tableReadable: true,
+        fields: [{ id: fieldId, shortId: "F1ELD1", type: "text", config: {} }],
+        onExecute: (body) => {
+          executed = body;
+        },
+      }),
+      { query: { filter: { fieldId: "F1ELD1", op: "equals", value: "Unknown record" }, limit: 12 }, cursor: "cursor-token" },
+    );
+    expect(response.status).toBe(200);
+    expect(executed).toMatchObject({
+      currentTableId: tableId,
+      query: { filter: { fieldId, op: "equals", value: "Unknown record" } },
+      pageSize: 12,
+      cursor: "cursor-token",
+      surface: "records-view",
+    });
+    expect(executed?.query.limit).toBeUndefined();
+  });
+
   test("returns 404 for an unknown table", async () => {
     const response = await requestQuery(makeDeps({ table: null }), { query: {} });
 
@@ -108,13 +143,60 @@ describe("table query routes", () => {
           listCalls += 1;
         },
       }),
-      { query: {}, viewId: viewPublicId },
+      { viewId: viewPublicId, source: view.source },
     );
 
     expect(response.status).toBe(200);
     expect(compileOptions).toMatchObject({ baseId, tableId, source: view.source });
     expect(listCalls).toBe(1);
     expect(await response.json()).toEqual({ items: [], nextCursor: null, filePreviews: {} });
+  });
+
+  test("uses a complete structured query instead of recompiling its validated saved-view context", async () => {
+    let compiled = false;
+    let listed: Record<string, unknown> | undefined;
+    const fieldId = "77777777-7777-4777-8777-777777777777";
+    const response = await requestQuery(
+      makeDeps({
+        tableReadable: true,
+        fields: [{ id: fieldId, shortId: "F1ELD1", type: "text", config: {} }],
+        onCompile: () => {
+          compiled = true;
+        },
+        onList: (options) => {
+          listed = options;
+        },
+      }),
+      { viewId: viewPublicId, query: { filter: { fieldId: "F1ELD1", op: "equals", value: "customized" }, limit: 17 } },
+    );
+    expect(response.status).toBe(200);
+    expect(compiled).toBe(false);
+    expect(listed).toMatchObject({ filter: { fieldId, op: "equals", value: "customized" }, limit: 17 });
+  });
+
+  test("explicit GQL source remains authoritative over structured presentation and a saved view", async () => {
+    let compiled: Record<string, unknown> | undefined;
+    const source = "from table {T4BL01} limit 7";
+    const response = await requestQuery(
+      makeDeps({
+        tableReadable: true,
+        onCompile: (options) => {
+          compiled = options;
+        },
+      }),
+      {
+        viewId: viewPublicId,
+        source,
+        query: { limit: 17 },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(compiled).toMatchObject({ source, presentation: { limit: 17 } });
+  });
+
+  test("still validates the view ID when a complete structured query is supplied", async () => {
+    const response = await requestQuery(makeDeps({ tableReadable: true, view: null }), { viewId: viewPublicId, query: {} });
+    expect(response.status).toBe(404);
   });
 
   test("returns a retryable response when the database query exceeds its budget", async () => {

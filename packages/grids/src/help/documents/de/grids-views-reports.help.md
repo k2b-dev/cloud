@@ -50,6 +50,8 @@ Eine geteilte Ansicht ist für Personen mit Lesezugriff auf die Basis sichtbar. 
 
 Nutze Gruppierungen und Aggregationen für Berichte. Ein monatlicher Umsatzbericht gruppiert Rechnungen beispielsweise nach Monat und summiert Gesamt. Setze Filter vor die Gruppierung. Nutze `having` in GQL, wenn die Regel für ein aggregiertes Ergebnis gilt.
 
+Lege in den visuellen Steuerelementen die Gruppenreihenfolge an der Gruppierung fest oder sortiere Gruppen nach einem Aggregatwert. Die Datensatzsortierung bleibt davon getrennt und bestimmt nicht die Gruppenreihenfolge. Für gespeicherte und föderierte Tabellen gilt dieselbe Regel.
+
 Ansichten ohne ausdrückliches `limit` lassen sich über das gesamte passende Ergebnis durchblättern. Ein `limit` begrenzt das logische Ergebnis bewusst über alle Seiten hinweg. Seiten sind Live-Abfragen, daher können Datensätze, die zwischen Seitenaufrufen geändert werden, ihre Position wechseln. Nutze eine stabile Sortierung für eine vorhersehbare Navigation.
 
 ## Wiederverwenden oder lokal halten {icon="route"}

@@ -6,13 +6,14 @@ import { canonicalizeDslQuery } from "../query-dsl/canonical";
 import { bindDslQueryContext, type DslQueryContextInput } from "../query-dsl/parameters";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { dslPreviewDiagnosticForCompilerError, previewDslQuery } from "../query-dsl/preview";
+import { recordQueryPlan } from "../query-dsl/record-query-plan";
 import {
   type DslResolvedSqlQueryPlan,
   type DslResolverContext,
   type DslTableSource,
   type DslViewSource,
+  projectDslPlanToRecordQuery,
   resolveDslQueryToQueryPlan,
-  resolveDslQueryToRecordQuery,
 } from "../query-dsl/resolver";
 import { type DslResultCursor, decodeDslResultCursor, gqlResultFingerprint } from "../query-dsl/result-cursor";
 import {
@@ -26,6 +27,7 @@ import { gridsService } from "../service";
 import { authoringText, isGermanAuthoringLocale } from "../service/authoring-messages";
 import type { FederatedRevisionScope } from "../service/federated-tables";
 import { buildTrustedGqlResolverContext, hydrateDslViewQueries } from "../service/gql-resolver-context";
+import { validateRecordQueryForFields } from "../service/query-validation";
 import type { Field, Table } from "../service/types";
 import { type GqlRuntimeOperation, type GqlRuntimeTracer, traceGqlRuntime } from "./gql-observability";
 import { apiMessages, apiMessagesForLocale } from "./messages";
@@ -325,10 +327,16 @@ type ExecuteGqlSourceOptions = {
   context?: DslQueryContextInput;
 };
 
-const executeGqlSourceUnadmitted = async (
+type StructuredQueryBody = Omit<DslQueryPreviewBody, "query" | "currentSource" | "currentTableId"> & {
+  query: RecordQuery;
+  currentTableId: string;
+  currentSource?: never;
+};
+
+const executeQueryUnadmitted = async (
   runtime: GridsGqlRuntimeContext,
   baseId: string,
-  body: DslQueryPreviewBody,
+  body: DslQueryPreviewBody | StructuredQueryBody,
   options: ExecuteGqlSourceOptions = {},
 ) => {
   const operation = options.operation ?? "preview";
@@ -354,7 +362,7 @@ const executeGqlSourceUnadmitted = async (
 
   try {
     const parseStartedAt = performance.now();
-    const parsed = parseGridsQueryDsl(body.query);
+    const parsed = typeof body.query === "string" ? parseGridsQueryDsl(body.query) : { ok: true as const, ast: emptyDslAst() };
     timings.parseMs = performance.now() - parseStartedAt;
     if (!parsed.ok) {
       const response = {
@@ -385,7 +393,30 @@ const executeGqlSourceUnadmitted = async (
     timings.contextMs = performance.now() - contextStartedAt;
     const resolveStartedAt = performance.now();
     const ast = sourceAst(bound.ast, body.currentSource, ctx);
-    const canonical = canonicalizeDslQuery(ast, ctx);
+    const structuredSource = typeof body.query === "string" ? null : ctx.tables.find((table) => table.id === body.currentTableId);
+    const validation =
+      structuredSource && typeof body.query !== "string"
+        ? validateRecordQueryForFields(
+            structuredSource.id,
+            body.query,
+            ctx.fieldsByTableId[structuredSource.id] ?? [],
+            runtime.dateConfig.locale,
+          )
+        : null;
+    const canonical =
+      typeof body.query === "string"
+        ? canonicalizeDslQuery(ast, ctx)
+        : !structuredSource || !ctx.authorizedTableIds.has(structuredSource.id)
+          ? { ok: false as const, diagnostics: [{ message: apiMessagesForLocale(runtime.dateConfig.locale).querySourceMismatch }] }
+          : validation && !validation.ok
+            ? { ok: false as const, diagnostics: [{ message: validation.error.message }] }
+            : {
+                ok: true as const,
+                // The input is already typed/bound. JSON is cursor identity, not
+                // query source: it is never parsed as GQL or used to emit SQL.
+                source: `record-query:${JSON.stringify(body.query)}`,
+                plan: recordQueryPlan({ source: structuredSource, query: body.query, readableTableIds: [...ctx.authorizedTableIds] }),
+              };
     if (!canonical.ok) {
       const response = {
         ok: false as const,
@@ -395,16 +426,7 @@ const executeGqlSourceUnadmitted = async (
       await endTrace({ stage: "resolve", outcome: "diagnostic", response });
       return { ok: true as const, response };
     }
-    const resolved = resolveDslQueryToQueryPlan(ast, ctx);
-    if (!resolved.ok) {
-      const response = {
-        ok: false as const,
-        diagnostics: gqlDiagnosticsForLocale(resolved.diagnostics, runtime.dateConfig.locale, "gql.resolution"),
-      };
-      timings.resolveMs = performance.now() - resolveStartedAt;
-      await endTrace({ stage: "resolve", outcome: "diagnostic", response });
-      return { ok: true as const, response };
-    }
+    const plan = canonical.plan;
     const cursorSigningKey = gqlCursorSigningKey();
     const sourceScope = body.currentSource
       ? `${body.currentSource.kind}:${body.currentSource.kind === "table" ? body.currentSource.tableId : body.currentSource.viewId}`
@@ -414,7 +436,7 @@ const executeGqlSourceUnadmitted = async (
     const cursorFingerprint = gqlResultFingerprint({
       baseId,
       canonicalSource: canonical.source,
-      scope: await cursorScopeForPlan(sourceScope, resolved.plan, ctx.fieldsByTableId),
+      scope: await cursorScopeForPlan(sourceScope, plan, ctx.fieldsByTableId),
     });
     const decodedCursor = decodeRuntimeCursor(
       body.cursor,
@@ -432,7 +454,7 @@ const executeGqlSourceUnadmitted = async (
 
     let revisionScope: FederatedRevisionScope = [];
     const executeStartedAt = performance.now();
-    const response = await previewResolvedGqlPlan(runtime, resolved.plan, ctx.fieldsByTableId, {
+    const response = await previewResolvedGqlPlan(runtime, plan, ctx.fieldsByTableId, {
       limit: body.limit,
       pageSize: body.pageSize,
       cursor: decodedCursor.cursor,
@@ -445,15 +467,13 @@ const executeGqlSourceUnadmitted = async (
       signal: runtime.signal,
       authorizedTableIds: ctx.authorizedTableIds,
       primaryTableAuthorized:
-        resolved.plan.source.kind === "view"
-          ? ctx.authorizedViewIds.has(resolved.plan.source.id)
-          : ctx.authorizedTableIds.has(resolved.plan.tableId),
+        plan.source.kind === "view" ? ctx.authorizedViewIds.has(plan.source.id) : ctx.authorizedTableIds.has(plan.tableId),
       onFederatedRevisionScope: (scope) => {
         revisionScope = scope;
       },
     });
     timings.executeMs = performance.now() - executeStartedAt;
-    await endTrace({ stage: "execute", outcome: response.ok ? "success" : "diagnostic", plan: resolved.plan, response });
+    await endTrace({ stage: "execute", outcome: response.ok ? "success" : "diagnostic", plan, response });
     return { ok: true as const, response, revisionScope };
   } catch (error) {
     await endTrace({ stage: "runtime", outcome: "error", error });
@@ -466,14 +486,23 @@ export const executeGqlSource = (
   baseId: string,
   body: DslQueryPreviewBody,
   options: ExecuteGqlSourceOptions = {},
-) => runWithQueryAdmission(c, (signal) => executeGqlSourceUnadmitted(httpGqlRuntimeContext(c, signal), baseId, body, options));
+) => runWithQueryAdmission(c, (signal) => executeQueryUnadmitted(httpGqlRuntimeContext(c, signal), baseId, body, options));
+
+/** Internal, already-bound structured input; public callers still resolve IDs
+ * at their transport boundary. Shares permission, admission and cursor checks. */
+export const executeRecordQuery = (
+  c: Context<AuthContext>,
+  baseId: string,
+  body: StructuredQueryBody,
+  options: ExecuteGqlSourceOptions = {},
+) => runWithQueryAdmission(c, (signal) => executeQueryUnadmitted(httpGqlRuntimeContext(c, signal), baseId, body, options));
 
 export const executeGqlSourceForContext = (
   runtime: GridsGqlRuntimeContext,
   baseId: string,
   body: DslQueryPreviewBody,
   options: ExecuteGqlSourceOptions = {},
-) => runWithQueryAdmissionSignal(runtime.signal, () => executeGqlSourceUnadmitted(runtime, baseId, body, options));
+) => runWithQueryAdmissionSignal(runtime.signal, () => executeQueryUnadmitted(runtime, baseId, body, options));
 
 /** Executes the exact stored source of an authorized saved view. View read is
  * deliberately a data-product boundary: it grants the stored result, including
@@ -679,7 +708,7 @@ export const compileGqlToRecordQuery = async (
     return { ok: false, diagnostics: [{ code: "gql.resolution", message: apiMessages(c).querySourceMismatch }] };
   }
 
-  const resolved = resolveDslQueryToRecordQuery(ast, ctx);
+  const resolved = projectDslPlanToRecordQuery(canonical.plan, ast);
   if (!resolved.ok)
     return { ok: false, diagnostics: gqlDiagnosticsForLocale(resolved.diagnostics, getDateConfig(c).locale, "gql.resolution") };
   return {

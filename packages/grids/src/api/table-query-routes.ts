@@ -7,7 +7,6 @@ import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/ht
 import { describeRoute } from "hono-openapi";
 import type { infer as ZodInfer } from "zod";
 import type { ComputedColumnSpec, DslQueryPreviewResponse, GridRecord, RecordQuery, TableQueryResponseSchema } from "../contracts";
-import { aggregateQueryToGqlSource, simpleQueryToGqlSource } from "../query-dsl/record-query-source";
 import { gridsService } from "../service";
 import { isBoundedQueryTimeoutError } from "../service/bounded-query";
 import { verifyRevisionScope } from "../service/federated-tables";
@@ -15,7 +14,7 @@ import type { GroupAggregationSpec } from "../service/group-compiler";
 import { buildPrincipalLabelCache, principalReferencesFromRecords } from "../service/principal-values";
 import { projectPublicIds } from "../service/public-resources";
 import { validateRecordQueryForFields } from "../service/query-validation";
-import { compileGqlToRecordQuery, executeGqlSource } from "./gql-runtime";
+import { compileGqlToRecordQuery, executeRecordQuery } from "./gql-runtime";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { PublicTableQueryResponseSchema, toPublicTableQueryResponse } from "./public-dto";
@@ -48,7 +47,7 @@ type QueryTarget = {
 type TableQueryRouteDeps = {
   service: typeof gridsService;
   compileGql: typeof compileGqlToRecordQuery;
-  executeGql: typeof executeGqlSource;
+  executeQuery: typeof executeRecordQuery;
   validateQuery: typeof validateRecordQueryForFields;
   dateConfig: typeof getDateConfig;
   gate: typeof gateAt;
@@ -59,7 +58,7 @@ type TableQueryRouteDeps = {
 const defaultDeps: TableQueryRouteDeps = {
   service: gridsService,
   compileGql: compileGqlToRecordQuery,
-  executeGql: executeGqlSource,
+  executeQuery: executeRecordQuery,
   validateQuery: validateRecordQueryForFields,
   dateConfig: getDateConfig,
   gate: gateAt,
@@ -146,16 +145,12 @@ const runFederatedQuery = async (
 ): Promise<RouteSuccess<TableQueryResponse> | RouteFailure> => {
   const { target, query, body, tableFields, viewer } = params;
   const pageQuery = withoutLimit(withoutFooterAggregations(query));
-  const source = simpleQueryToGqlSource({ tableId: target.table.id, query: pageQuery });
-  if (!source.ok) return fail(400, source.reason);
-
-  const executed = await deps.executeGql(
+  const executed = await deps.executeQuery(
     c,
     target.table.baseId,
     {
-      query: source.source,
+      query: pageQuery,
       currentTableId: target.table.id,
-      currentSource: { kind: "table", tableId: target.table.id },
       cursor: body.cursor,
       pageSize: Math.min(Math.max(query.limit ?? 100, 1), 1000),
       surface: "records-view",
@@ -207,24 +202,19 @@ const runFederatedQuery = async (
   };
   let aggregates: Record<string, unknown> | undefined;
   if ((query.aggregations?.length ?? 0) > 0) {
-    const aggregateSource = aggregateQueryToGqlSource({
-      tableId: target.table.id,
-      query: withoutLimit({
-        ...query,
-        columns: undefined,
-        groupBy: undefined,
-        groupSort: undefined,
-        sort: undefined,
-      }),
+    const aggregateQuery = withoutLimit({
+      ...query,
+      columns: undefined,
+      groupBy: undefined,
+      groupSort: undefined,
+      sort: undefined,
     });
-    if (!aggregateSource.ok) return fail(400, aggregateSource.reason);
-    const aggregateExecution = await deps.executeGql(
+    const aggregateExecution = await deps.executeQuery(
       c,
       target.table.baseId,
       {
-        query: aggregateSource.source,
+        query: aggregateQuery,
         currentTableId: target.table.id,
-        currentSource: { kind: "table", tableId: target.table.id },
         surface: "records-view",
       },
       {
@@ -294,12 +284,15 @@ const resolveQuery = async (
   body: TableQueryBody,
 ): Promise<RouteSuccess<ResolvedQuery> | RouteFailure> => {
   const { table, view } = target;
+  // The records UI sends its complete effective query, including view/URL
+  // overrides. A view ID identifies the validated context, not a hidden filter.
+  const source = body.source ?? (body.query === undefined ? view?.source : undefined);
   const compiled =
-    body.source !== undefined || view
+    source !== undefined
       ? await deps.compileGql(c, {
           baseId: table.baseId,
           tableId: table.id,
-          source: body.source ?? view?.source ?? `from table {${table.id}}`,
+          source,
           ...(body.query ? { presentation: body.query } : view ? { presentation: viewUiPresentation(view) } : {}),
         })
       : null;

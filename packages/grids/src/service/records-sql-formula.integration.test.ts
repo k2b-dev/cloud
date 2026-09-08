@@ -22,6 +22,8 @@ type TestShape = {
   statusId: string;
   relationId: string;
   targetNameId: string;
+  priceRef: string;
+  quantityRef: string;
 };
 
 const insertSqlFormulaFixture = async (): Promise<TestShape> => {
@@ -38,27 +40,31 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
   const statusId = uuid();
   const relationId = uuid();
   const targetNameId = uuid();
+  const priceRef = shortId("P");
+  const quantityRef = shortId("Q");
+  const subtotalRef = shortId("S");
 
-  await sql`
+  await sql.begin(async (sql) => {
+    await sql`
     INSERT INTO grids.bases (id, short_id, name)
     VALUES (${baseId}::uuid, ${shortId("B")}, 'SQL formula integration')
   `;
-  await sql`
+    await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
       (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Line items', 0),
       (${targetTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Products', 1)
   `;
-  await sql`
+    await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${priceId}::uuid, 'PRICE1', ${tableId}::uuid, 'Price', 'number', '{}'::jsonb, 0),
-      (${quantityId}::uuid, 'QTY001', ${tableId}::uuid, 'Quantity', 'number', '{}'::jsonb, 1),
-      (${subtotalId}::uuid, 'SUBTL1', ${tableId}::uuid, 'Subtotal', 'formula', ${{ expression: "{PRICE1} + {QTY001} * 0.20" }}::jsonb, 2),
-      (${grossId}::uuid, 'GROSS1', ${tableId}::uuid, 'Gross', 'formula', ${{ expression: "{SUBTL1} + 1" }}::jsonb, 3),
+      (${priceId}::uuid, ${priceRef}, ${tableId}::uuid, 'Price', 'number', '{}'::jsonb, 0),
+      (${quantityId}::uuid, ${quantityRef}, ${tableId}::uuid, 'Quantity', 'number', '{}'::jsonb, 1),
+      (${subtotalId}::uuid, ${subtotalRef}, ${tableId}::uuid, 'Subtotal', 'formula', ${{ expression: `{${priceRef}} + {${quantityRef}} * 0.20` }}::jsonb, 2),
+      (${grossId}::uuid, ${shortId("G")}, ${tableId}::uuid, 'Gross', 'formula', ${{ expression: `{${subtotalRef}} + 1` }}::jsonb, 3),
       (
         ${statusId}::uuid,
-        'STAT01',
+        ${shortId("S")},
         ${tableId}::uuid,
         'Status',
         'select',
@@ -71,35 +77,39 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
         }}::jsonb,
         4
       ),
-      (${relationId}::uuid, 'REL001', ${tableId}::uuid, 'Product', 'relation', ${{ targetTableId }}::jsonb, 5),
-      (${targetNameId}::uuid, 'NAME01', ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+      (${relationId}::uuid, ${shortId("R")}, ${tableId}::uuid, 'Product', 'relation', ${{ targetTableId }}::jsonb, 5),
+      (${targetNameId}::uuid, ${shortId("N")}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
-  await sql`
-    INSERT INTO grids.records (id, table_id, data, version)
+    await sql`
+    INSERT INTO grids.records (id, short_id, table_id, data, version)
     VALUES
       (
         ${recordId}::uuid,
+        ${shortId("R")},
         ${tableId}::uuid,
         ${{ [priceId]: "0.10", [quantityId]: "1.00", [statusId]: ["open"] }}::jsonb,
         1
       ),
       (
         ${secondRecordId}::uuid,
+        ${shortId("R")},
         ${tableId}::uuid,
         ${{ [priceId]: "1.00", [quantityId]: "1.00", [statusId]: ["done"] }}::jsonb,
         1
       ),
       (
         ${targetRecordId}::uuid,
+        ${shortId("R")},
         ${targetTableId}::uuid,
         ${{ [targetNameId]: "Product A" }}::jsonb,
         1
       )
   `;
-  await sql`
+    await sql`
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
     VALUES (${recordId}::uuid, ${relationId}::uuid, ${targetRecordId}::uuid, 0)
   `;
+  });
 
   return {
     baseId,
@@ -115,6 +125,8 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
     statusId,
     relationId,
     targetNameId,
+    priceRef,
+    quantityRef,
   };
 };
 
@@ -215,7 +227,7 @@ describe("records SQL formula projection integration", () => {
   postgresTest("list applies SQL formula where predicates inside the record query", async () => {
     const fixture = await insertSqlFormulaFixture();
     try {
-      const parsed = parseFormula("{PRICE1} <= {QTY001} * 0.20");
+      const parsed = parseFormula(`{${fixture.priceRef}} <= {${fixture.quantityRef}} * 0.20`);
       expect(parsed.ok).toBe(true);
       if (!parsed.ok) return;
 
@@ -249,7 +261,7 @@ describe("records SQL formula projection integration", () => {
   postgresTest("list applies SQL formula where before limit and sort", async () => {
     const fixture = await insertSqlFormulaFixture();
     try {
-      const parsed = parseFormula("{PRICE1} <= {QTY001} * 0.20");
+      const parsed = parseFormula(`{${fixture.priceRef}} <= {${fixture.quantityRef}} * 0.20`);
       expect(parsed.ok).toBe(true);
       if (!parsed.ok) return;
 
@@ -272,8 +284,8 @@ describe("records SQL formula projection integration", () => {
     const fixture = await insertSqlFormulaFixture();
     try {
       await sql`
-        INSERT INTO grids.records (id, table_id, data, version)
-        VALUES (${uuid()}::uuid, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
+        INSERT INTO grids.records (id, short_id, table_id, data, version)
+        VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
 
       const filtered = await list({
@@ -320,7 +332,7 @@ describe("records SQL formula projection integration", () => {
   postgresTest("aggregate applies SQL formula where predicates", async () => {
     const fixture = await insertSqlFormulaFixture();
     try {
-      const parsed = parseFormula("{PRICE1} <= {QTY001} * 0.20");
+      const parsed = parseFormula(`{${fixture.priceRef}} <= {${fixture.quantityRef}} * 0.20`);
       expect(parsed.ok).toBe(true);
       if (!parsed.ok) return;
 
@@ -373,8 +385,8 @@ describe("records SQL formula projection integration", () => {
     const fixture = await insertSqlFormulaFixture();
     try {
       await sql`
-        INSERT INTO grids.records (id, table_id, data, version)
-        VALUES (${uuid()}::uuid, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
+        INSERT INTO grids.records (id, short_id, table_id, data, version)
+        VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
 
       const first = await group({
@@ -406,10 +418,10 @@ describe("records SQL formula projection integration", () => {
     const fixture = await insertSqlFormulaFixture();
     try {
       await sql`
-        INSERT INTO grids.records (id, table_id, data, version)
+        INSERT INTO grids.records (id, short_id, table_id, data, version)
         VALUES
-          (${uuid()}::uuid, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "0.10", [fixture.quantityId]: "2.00" }}::jsonb, 1),
-          (${uuid()}::uuid, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "2.00", [fixture.quantityId]: "1.00" }}::jsonb, 1)
+          (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "0.10", [fixture.quantityId]: "2.00" }}::jsonb, 1),
+          (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "2.00", [fixture.quantityId]: "1.00" }}::jsonb, 1)
       `;
 
       const request = {
@@ -438,7 +450,7 @@ describe("records SQL formula projection integration", () => {
   postgresTest("group aggregates SQL formula arguments and applies having to the formula alias", async () => {
     const fixture = await insertSqlFormulaFixture();
     try {
-      const subtotal = parseFormula("{PRICE1} * {QTY001}");
+      const subtotal = parseFormula(`{${fixture.priceRef}} * {${fixture.quantityRef}}`);
       const having = parseFormula("subtotal > 1.00");
       expect(subtotal.ok).toBe(true);
       expect(having.ok).toBe(true);

@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { validateFilterValue } from "./filter-compiler-validation";
 import type { FormulaSqlType } from "./formula-sql-compiler";
 
 const joinSql = (parts: unknown[], separator: unknown): unknown =>
@@ -15,23 +16,36 @@ export type DslKeysetColumn = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMBER = /^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const validNumeric = (value: unknown): boolean => {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "string" || !NUMBER.test(value)) return false;
+  const [mantissa = "", exponentText = "0"] = value.replace(/^-/, "").toLowerCase().split("e");
+  const [integer = "", fraction = ""] = mantissa.split(".");
+  const exponent = Number(exponentText);
+  if (!Number.isSafeInteger(exponent)) return false;
+  const firstDigit = `${integer}${fraction}`.search(/[1-9]/);
+  const integerDigits = Math.max(0, integer.length + exponent - Math.max(0, firstDigit));
+  // PostgreSQL's unconstrained numeric storage limits, not application precision.
+  // https://www.postgresql.org/docs/current/datatype-numeric.html
+  return integerDigits <= 131_072 && Math.max(0, fraction.length - exponent) <= 16_383;
+};
 
 const validValue = (type: DslKeysetType, value: unknown): boolean => {
   if (value === null || value === undefined) return true;
   switch (type) {
     case "numeric":
-      return (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && NUMBER.test(value));
+      return validNumeric(value);
     case "boolean":
       return typeof value === "boolean";
     case "date":
-      return typeof value === "string" && DATE.test(value);
+      return validateFilterValue("date", "=", value, false) === null;
     case "datetime":
-      return typeof value === "string" && Number.isFinite(Date.parse(value));
+      return validateFilterValue("date", "=", value, true) === null;
     case "uuid":
       return typeof value === "string" && UUID.test(value);
     case "text":
-      return typeof value === "string";
+      return typeof value === "string" && !value.includes("\0");
     case "unknown":
       return false;
   }
@@ -114,7 +128,9 @@ export const compileDslKeyset = (
       const cursorValue =
         column.type === "datetime"
           ? sql`to_char(${column.expression} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
-          : column.expression;
+          : column.type === "date"
+            ? sql`to_char(${column.expression}, 'YYYY-MM-DD')`
+            : column.expression;
       return sql`${cursorValue} AS ${sql.unsafe(aliases[index]!)}`;
     }),
     sql`, `,

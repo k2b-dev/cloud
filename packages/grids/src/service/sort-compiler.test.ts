@@ -24,6 +24,7 @@ const mkField = (id: string, type: string): Field => ({
 });
 
 const fields: Field[] = [mkField("fld_a", "text"), mkField("fld_b", "number"), mkField("fld_c", "date")];
+const recordId = "00000000-0000-4000-8000-000000000001";
 
 describe("compileSort — validation", () => {
   test("rejects unknown field", () => {
@@ -50,7 +51,7 @@ describe("compileSort — validation", () => {
         { fieldId: "fld_b", direction: "desc" },
       ],
       fields,
-      { values: ["x", 5], id: "00000000-0000-0000-0000-000000000001" },
+      { values: ["x", 5], id: recordId },
     );
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.result.fieldIds).toEqual(["fld_a", "fld_b"]);
@@ -100,7 +101,7 @@ describe("compileSort — validation", () => {
   });
 
   test("succeeds with single asc sort + cursor", () => {
-    const r = compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [42], id: "00000000-0000-0000-0000-000000000001" });
+    const r = compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [42], id: recordId });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.result.fieldIds).toEqual(["fld_b"]);
@@ -116,12 +117,12 @@ describe("compileSort — validation", () => {
         { fieldId: "fld_b", direction: "desc" },
       ],
       fields,
-      { values: ["2026-05-01", 100], id: "00000000-0000-0000-0000-000000000001" },
+      { values: ["2026-05-01", 100], id: recordId },
     );
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.result.fieldIds).toEqual(["fld_c", "fld_b"]);
-      // Cursor encoding now reads SQL `__sort_<i>` aliases instead of
+      // Cursor encoding reads shared SQL keyset aliases instead of
       // exposing per-field cast metadata; encodeCursorFromRow is the
       // tested contract.
       expect(typeof r.result.encodeCursorFromRow).toBe("function");
@@ -131,7 +132,7 @@ describe("compileSort — validation", () => {
   test("handles null in cursor sort values (was P2 — would skip rows)", () => {
     // Codex chunk-1B regression: null in cursor sort value caused tuple
     // comparison to evaluate to UNKNOWN and skip rows.
-    const r = compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [null], id: "00000000-0000-0000-0000-000000000001" });
+    const r = compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [null], id: recordId });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.result.cursorWhere).not.toBeNull();
   });
@@ -141,10 +142,33 @@ describe("compileSort — validation", () => {
     // pagination at the null tier instead of advancing into non-null rows.
     const r = compileSort([{ fieldId: "fld_b", direction: "desc", nullsFirst: true }], fields, {
       values: [null],
-      id: "00000000-0000-0000-0000-000000000001",
+      id: recordId,
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.result.cursorWhere).not.toBeNull();
+  });
+
+  test("encodes shared typed projections into the existing record cursor shape", () => {
+    const compiled = compileSort([{ fieldId: "fld_b", direction: "desc" }], fields, null);
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    expect(normalizedSql(compiled.result.cursorSelect)).toContain("AS __gql_cursor_0");
+    expect(normalizedSql(compiled.result.orderBy)).toContain("r.id DESC NULLS LAST");
+    expect(decodeCursor(compiled.result.encodeCursorFromRow({ id: recordId, __gql_cursor_0: "12.500" }))).toEqual({
+      values: ["12.500"],
+      id: recordId,
+    });
+  });
+
+  test("rejects malformed typed cursors before building executable SQL", () => {
+    for (const value of ["not-a-number", {}, true, "1e131072"]) {
+      expect(compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [value], id: recordId })).toEqual({
+        ok: false,
+        error: "cursor values do not match this query ordering",
+      });
+    }
+    expect(compileSort([], fields, { values: [], id: "not-a-uuid" }).ok).toBe(false);
+    expect(compileSort([{ fieldId: "fld_b", direction: "asc" }], fields, { values: [], id: recordId }).ok).toBe(false);
   });
 });
 
@@ -161,6 +185,8 @@ describe("cursor decode", () => {
   });
 
   test("returns null for malformed token", () => {
+    expect(decodeCursor("null")).toBeNull();
+    expect(decodeCursor("42")).toBeNull();
     expect(decodeCursor("not json")).toBeNull();
     expect(decodeCursor('{"only": "object"}')).toBeNull();
     expect(decodeCursor('{"v": "not array", "i": "x"}')).toBeNull();

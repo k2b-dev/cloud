@@ -34,13 +34,16 @@ import { compileWherePredicate } from "./sql-compiler-where";
 type RecordQueryColumn = NonNullable<RecordQuery["columns"]>[number];
 type RecordQueryComputedColumn = Extract<RecordQueryColumn, { kind: "computed" }>;
 
+/** SQL execution needs bound identities, not the source's authoring label. */
+type RowPlan = Omit<DslResolvedSqlQueryPlan, "source" | "readableTableIds"> & { readableTableIds?: readonly string[] };
+
 const ok = (query: DslSqlCompiledQuery): DslSqlCompileResult => ({ ok: true, query });
 const fail = (error: string): DslSqlCompileResult => ({ ok: false, error });
 
 const isComputedColumn = (column: RecordQueryColumn): column is RecordQueryComputedColumn =>
   (column as { kind?: unknown }).kind === "computed";
 
-const sortsForPlan = (plan: DslResolvedSqlQueryPlan): DslResolvedSqlSort[] =>
+const sortsForPlan = (plan: RowPlan): DslResolvedSqlSort[] =>
   plan.sqlSort ??
   (plan.query.sort ?? []).map((sort) =>
     sort.source === "record"
@@ -66,7 +69,7 @@ const valueUsesJoinAlias = (value: unknown, aliases: ReadonlySet<string>): boole
 };
 
 const canCorrelateBoundedSingleJoins = (
-  plan: DslResolvedSqlQueryPlan,
+  plan: RowPlan,
   fieldsByTableId: Record<string, Field[]>,
   joinFanoutLimit: number | undefined,
 ): boolean => {
@@ -77,7 +80,7 @@ const canCorrelateBoundedSingleJoins = (
   return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed");
 };
 
-const outputColumnsForPlan = (plan: DslResolvedSqlQueryPlan, baseFields: Field[]): DslOutputColumn[] => {
+const outputColumnsForPlan = (plan: RowPlan, baseFields: Field[]): DslOutputColumn[] => {
   if (plan.outputColumns && plan.outputColumns.length > 0) return plan.outputColumns;
   const baseColumns: NonNullable<RecordQuery["columns"]> = plan.query.columns?.length
     ? plan.query.columns
@@ -206,7 +209,14 @@ const compileSqlSort = (
   return keyset.ok ? { ok: true, keyset } : keyset;
 };
 
-export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options: DslSqlCompileOptions): DslSqlCompileResult => {
+export const compileDslQueryPlanToSql = (
+  plan: RowPlan,
+  options: DslSqlCompileOptions & {
+    /** Editable stored records retain their full persistence shape and existing
+     * hydration. This replaces only SELECT, never predicates or ordering. */
+    recordProjection?: unknown;
+  },
+): DslSqlCompileResult => {
   if (
     (plan.query.groupBy?.length ?? 0) > 0 ||
     (plan.query.aggregations?.length ?? 0) > 0 ||
@@ -214,6 +224,12 @@ export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options:
     plan.formulaHaving
   ) {
     return fail("grouped DSL query execution is not compiled by the row-query compiler yet");
+  }
+  if (
+    options.recordProjection !== undefined &&
+    ((plan.joins?.length ?? 0) > 0 || plan.derivedViewSource || options.recordSource?.kind === "federated")
+  ) {
+    return fail("editable record projection requires a stored table without joins or derived rows");
   }
 
   const baseFields = aliveFields(options.fieldsByTableId[plan.tableId] ?? []);
@@ -236,24 +252,27 @@ export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options:
   }
   const resolveFormulaField = scopedFormulaResolverForPlan(plan, baseFields, joinAliases, options);
 
-  const selectFragments: unknown[] = [
-    sql`r.id::text AS __record_id`,
-    sql`r.table_id::text AS __table_id`,
-    sql`r.version AS __record_version`,
-    sql`r.finalized_at AS __record_finalized_at`,
-    sql`r.finalized_by::text AS __record_finalized_by`,
-    sql`r.deleted_at AS __record_deleted_at`,
-    sql`r.created_by::text AS __record_created_by`,
-    sql`r.updated_by::text AS __record_updated_by`,
-    sql`r.created_at AS __record_created_at`,
-    sql`r.updated_at AS __record_updated_at`,
-    ...(options.recordSource?.kind === "federated"
-      ? [sql`r.source_table_id::text AS __source_table_id`, sql`r.source_base_id::text AS __source_base_id`]
-      : []),
-  ];
+  const selectFragments: unknown[] =
+    options.recordProjection !== undefined
+      ? [options.recordProjection]
+      : [
+          sql`r.id::text AS __record_id`,
+          sql`r.table_id::text AS __table_id`,
+          sql`r.version AS __record_version`,
+          sql`r.finalized_at AS __record_finalized_at`,
+          sql`r.finalized_by::text AS __record_finalized_by`,
+          sql`r.deleted_at AS __record_deleted_at`,
+          sql`r.created_by::text AS __record_created_by`,
+          sql`r.updated_by::text AS __record_updated_by`,
+          sql`r.created_at AS __record_created_at`,
+          sql`r.updated_at AS __record_updated_at`,
+          ...(options.recordSource?.kind === "federated"
+            ? [sql`r.source_table_id::text AS __source_table_id`, sql`r.source_base_id::text AS __source_base_id`]
+            : []),
+        ];
   const columns: DslSqlOutputColumn[] = [];
   const outputProjections = new Map<string, { projection: unknown; sqlType: DslSqlOutputColumn["sqlType"] }>();
-  const outputColumns = outputColumnsForPlan(plan, baseFields);
+  const outputColumns = options.recordProjection !== undefined ? [] : outputColumnsForPlan(plan, baseFields);
   let index = 0;
 
   for (const column of outputColumns) {

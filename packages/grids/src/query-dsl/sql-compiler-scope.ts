@@ -12,7 +12,7 @@ import { dslRecordRelation, dslRecordTableCondition, dslRelationValuesInRecordDa
 import type { DslSqlCompileOptions } from "./sql-compiler-types";
 
 export const scopedFormulaResolverForPlan = (
-  plan: DslResolvedSqlQueryPlan,
+  plan: Pick<DslResolvedSqlQueryPlan, "sourceAlias" | "joins">,
   baseFields: Field[],
   joinAliases: Map<string, string>,
   options: DslSqlCompileOptions,
@@ -36,7 +36,7 @@ export const scopedFormulaResolverForPlan = (
 /** Soft-delete predicate on the base record alias `r`: live-only by default,
  * trash-only for `deleted only`, both for `include deleted`. Parent-table and
  * base liveness joins remain active in every mode. */
-export const recordDeletedCondition = (plan: DslResolvedSqlQueryPlan): unknown =>
+export const recordDeletedCondition = (plan: Pick<DslResolvedSqlQueryPlan, "query">): unknown =>
   plan.query.deletedOnly ? sql`r.deleted_at IS NOT NULL` : plan.query.includeDeleted ? sql`TRUE` : sql`r.deleted_at IS NULL`;
 
 const queryDeletedCondition = (query: RecordQuery): unknown =>
@@ -47,7 +47,7 @@ const queryDeletedCondition = (query: RecordQuery): unknown =>
       : sql`r.deleted_at IS NULL`;
 
 export const compileViewSourceRecordScope = (
-  plan: DslResolvedSqlQueryPlan,
+  plan: Pick<DslResolvedSqlQueryPlan, "tableId" | "viewSourceQuery">,
   fields: Field[],
   options: Pick<DslSqlCompileOptions, "timeZone" | "viewSourceSearchClause" | "recordSource">,
 ): { ok: true; condition?: unknown } | { ok: false; error: string } => {

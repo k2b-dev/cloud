@@ -160,6 +160,10 @@ Grids adopts.
 
 ## Automate Grids from the terminal
 
+For structured table queries, `sort` orders Records. Grouped results use
+`groupBy.direction` and `groupSort` instead, on both stored and federated tables.
+Aggregate labels are display text and do not need to be valid GQL aliases.
+
 Grids provides a native CLI module for every major resource area. These
 read-oriented commands list bases and records from a chosen table:
 
