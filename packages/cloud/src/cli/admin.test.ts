@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import adminCli from "./admin";
 import type { CloudCliContext, CloudCliFlags, CloudCliTableColumn } from "./index";
 
@@ -50,6 +53,84 @@ const createContext = (args: string[], flags: CloudCliFlags = {}, responses: Res
 };
 
 describe("admin CLI", () => {
+  const linuxConfig = { enabled: true, rangeStart: 200000, rangeEnd: 299999, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
+
+  test("exports Linux configuration without preview metadata", async () => {
+    const { ctx, calls, lines } = createContext(["linux", "config", "get"], {}, [
+      jsonResponse({ config: linuxConfig, items: [], nextCursor: null }),
+    ]);
+    ctx.options.output = "json";
+    await adminCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/admin/core/linux-identities");
+    expect(JSON.parse(lines[0]!)).toEqual(linuxConfig);
+  });
+
+  test("preserves Linux preview pagination in JSONL", async () => {
+    const page = { config: linuxConfig, items: [], nextCursor: "next" };
+    const { ctx, calls, lines } = createContext(["linux", "preview"], { after: "cursor" }, [jsonResponse(page)]);
+    ctx.options.output = "jsonl";
+    await adminCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/admin/core/linux-identities?after=cursor");
+    expect(lines).toEqual([JSON.stringify(page)]);
+  });
+
+  test("requires explicit Linux configuration and range confirmation before writes", async () => {
+    const cases: CloudCliFlags[] = [{ config: JSON.stringify(linuxConfig) }, { config: JSON.stringify(linuxConfig), yes: true }];
+    for (const flags of cases) {
+      const { ctx, calls } = createContext(["linux", "config", "set"], flags);
+      await expect(adminCli.run(ctx)).rejects.toThrow();
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  test("saves full Linux configuration through its dedicated endpoint", async () => {
+    const { ctx, calls } = createContext(
+      ["linux", "config", "set"],
+      { config: JSON.stringify(linuxConfig), yes: true, "range-reserved": true },
+      [jsonResponse(linuxConfig)],
+    );
+    await adminCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/admin/core/linux-identities/configuration");
+    expect(calls[0]?.init?.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ config: linuxConfig, rangeReserved: true });
+  });
+
+  test("rejects invalid Linux configuration without a request", async () => {
+    const { ctx, calls } = createContext(["linux", "config", "set"], {
+      config: JSON.stringify({ ...linuxConfig, loginShell: "relative" }),
+      yes: true,
+      "range-reserved": true,
+    });
+    await expect(adminCli.run(ctx)).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  test("reads Linux configuration from a file and rejects competing inputs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "cloud-linux-cli-"));
+    const file = join(directory, "linux.json");
+    try {
+      await writeFile(file, JSON.stringify(linuxConfig));
+      const { ctx, calls } = createContext(["linux", "config", "set"], { "config-file": file, yes: true, "range-reserved": true }, [
+        jsonResponse(linuxConfig),
+      ]);
+      await adminCli.run(ctx);
+      expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ config: linuxConfig, rangeReserved: true });
+      const conflicting = createContext(["linux", "config", "set"], { config: "{}", "config-file": file, yes: true });
+      await expect(adminCli.run(conflicting.ctx)).rejects.toThrow();
+      expect(conflicting.calls).toHaveLength(0);
+    } finally {
+      await rm(file);
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  test("can disable preparation without confirming an active range", async () => {
+    const config = { ...linuxConfig, enabled: false };
+    const { ctx, calls } = createContext(["linux", "config", "set"], { config: JSON.stringify(config), yes: true }, [jsonResponse(config)]);
+    await adminCli.run(ctx);
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ config, rangeReserved: false });
+  });
+
   const legalDocuments = [
     { kind: "terms", path: "/legal/terms", mode: "local", content: "# Terms", url: "" },
     { kind: "privacy", path: "/legal/privacy", mode: "external", content: "", url: "https://example.org/privacy" },

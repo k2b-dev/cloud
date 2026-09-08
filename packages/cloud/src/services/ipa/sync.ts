@@ -6,6 +6,7 @@ import { applyIpaAccountTransitionPolicy } from "../accounts/switching";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { logger } from "../logging";
 import { session } from "../session";
+import { mirrorIpaPosix } from "./posix";
 import * as settings from "../settings";
 import { buildEffectiveIpaGroupsByUid } from "./effective-groups";
 import { calculateIpaProfileFromEffectiveProjection, getEffectiveUserGroups } from "./profile";
@@ -22,6 +23,9 @@ const upsertUserIpaData = async (
   params: {
     userId: string;
     uidNumber: number | null;
+    primaryGidNumber: number | null;
+    homeDirectory: string | null;
+    loginShell: string | null;
     phone: string | null;
     ipaPasswordExpires: Date | null;
     lastLoginIpa: Date | null;
@@ -34,8 +38,9 @@ const upsertUserIpaData = async (
     sshPublicKeys: string[];
     sshFingerprints: string[];
   },
-) =>
-  db`
+) => {
+  await mirrorIpaPosix(db, params);
+  await db`
     INSERT INTO auth.user_ipa_data (
       user_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
       addr_city, addr_state, ipa_password_expires, last_login_ipa, synced_at, ssh_public_keys, ssh_fingerprints
@@ -71,6 +76,7 @@ const upsertUserIpaData = async (
       ssh_public_keys = EXCLUDED.ssh_public_keys,
       ssh_fingerprints = EXCLUDED.ssh_fingerprints
   `;
+};
 
 // ==========================
 // Sync Types
@@ -79,6 +85,9 @@ const upsertUserIpaData = async (
 type SyncUser = {
   uid: string;
   uidNumber: number | null;
+  primaryGidNumber: number | null;
+  homeDirectory: string | null;
+  loginShell: string | null;
   givenname: string;
   sn: string;
   displayName: string;
@@ -122,6 +131,9 @@ const transformSyncUser = (raw: Record<string, unknown>): SyncUser => {
   return {
     uid: freeipa.util.str(raw.uid),
     uidNumber: freeipa.util.num(raw.uidnumber),
+    primaryGidNumber: freeipa.util.num(raw.gidnumber),
+    homeDirectory: freeipa.util.str(raw.homedirectory) || null,
+    loginShell: freeipa.util.str(raw.loginshell) || null,
     givenname: freeipa.util.str(raw.givenname),
     sn: freeipa.util.str(raw.sn),
     displayName:
@@ -845,6 +857,6 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
       account_expires = ${user.ipaAccountExpires}
     WHERE uid = ${user.uid}
   `;
-  await upsertUserIpaData(sql, { userId: existingUserId, ...user });
+  await sql.begin((tx) => upsertUserIpaData(tx, { userId: existingUserId, ...user }));
   return { status: "synced", userId: existingUserId };
 };

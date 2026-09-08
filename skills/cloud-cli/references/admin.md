@@ -135,6 +135,32 @@ cld admin legal reset imprint --yes
 directly, from a file, or through standard input. `reset` clears the complete
 document configuration and requires confirmation.
 
+## Linux identities
+
+```bash
+cld admin linux config get --json > ./linux.json
+cld admin linux preview --json
+```
+
+Edit the exported configuration's `enabled`, `rangeStart`, `rangeEnd`,
+`homeTemplate` and `loginShell` fields. Reserve the numeric range across all
+connected systems before enabling preparation. Apply the complete file with:
+
+```bash
+cld admin linux config set --config-file ./linux.json --range-reserved --yes
+```
+
+Use exactly one of `--config`, `--config-file` or `--stdin`. Enabled
+configuration always requires `--range-reserved`; disabling with `enabled:false`
+requires only `--yes` and retains existing identities. The server checks current
+FreeIPA ranges and known identities before accepting the configuration.
+
+Preview is read-only and returns up to 50 accounts plus `nextCursor`. Continue
+with `preview --after <nextCursor> --json` until the cursor is null. Individual
+preparation and home/shell changes live under `cld accounts users linux`;
+`cld accounts groups make-posix` also supports local groups. No command here
+enables computer login, sudo or shared storage.
+
 ## Webhooks and metrics
 
 ```bash
@@ -166,5 +192,6 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Notification batches | `notification-batches list`, `notification-batches preview`, `notification-batches create`, `notification-batches get`, `notification-batches finalize`, `notification-batches recipients`, `notification-batches retry-failed`, `notification-batches retry-recipient`, `notification-batches delete-draft` |
 | Announcements | `announcements list`, `announcements create`, `announcements update`, `announcements delete` |
 | Legal documents | `legal list`, `legal get`, `legal set`, `legal reset` |
+| Linux identities | `linux preview`, `linux config get`, `linux config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |

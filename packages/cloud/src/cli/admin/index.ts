@@ -12,6 +12,7 @@ import { instanceCommands } from "./instance";
 import { jobCommands } from "./jobs";
 import { legalCommands } from "./legal";
 import { logCommands } from "./logs";
+import { linuxCommands } from "./linux";
 import { metricsCommands } from "./metrics";
 import { notificationCommands } from "./notifications";
 import { telemetryCommands } from "./telemetry";
@@ -21,7 +22,11 @@ import { workflowCommands } from "./workflows";
 export default defineCliCommands({
   name: "admin",
   summary: "Inspect and operate Cloud administration surfaces.",
-  groupSummaries: { legal: "Manage Terms, Privacy, and Imprint." },
+  groupSummaries: {
+    legal: "Manage Terms, Privacy, and Imprint.",
+    linux: "Prepare Linux identities.",
+    "linux config": "Manage Linux identity defaults and allocation range.",
+  },
   commands: [
     ...instanceCommands,
     ...gatewayCommands,
@@ -29,6 +34,7 @@ export default defineCliCommands({
     ...telemetryCommands,
     ...jobCommands,
     ...legalCommands,
+    ...linuxCommands,
     ...workflowCommands,
     ...dataCommands,
     ...notificationCommands,

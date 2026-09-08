@@ -4,6 +4,7 @@ export * from "./capabilities";
 export * from "./notification-live";
 export * from "./notification-types";
 export * from "./profile";
+export * from "./posix";
 export * from "./registry";
 export * from "./resource-clipboard";
 export * from "./shared";

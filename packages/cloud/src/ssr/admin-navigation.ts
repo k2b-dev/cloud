@@ -16,6 +16,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
     { href: "/admin/settings?tab=user", icon: "ti-users", label: t.userManagement },
     { href: "/admin/settings?tab=freeipa", icon: "ti-building-fortress", label: "FreeIPA" },
+    { href: "/admin/settings?tab=linux", icon: "ti-terminal-2", label: t.linuxAccess },
     { href: "/admin/settings?tab=mail", icon: "ti-mail", label: "Mail" },
     { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },

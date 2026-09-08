@@ -19,7 +19,8 @@ Core admin pages configure platform services and link to app-specific admin pane
 ## Settings groups {icon="settings"}
 
 :::reference
-- **General and user management:** Branding, public links, schedules, defaults, login behavior, expiry, reminders, and self-service behavior.
+- **General and Accounts & sign-in:** Branding, public links, schedules, defaults, login behavior, expiry, reminders, and self-service behavior.
+- **Linux access:** Set up local identity preparation, review home and shell defaults, reserve an ID range, and explicitly prepare selected full accounts. Advanced settings appear during setup; existing identities remain visible when preparation is disabled. This does not enable computer login or sudo.
 - **FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
 - **AI:** Configure model profiles and provider credentials, inspect background work, and use **Skills** or **Projects** to restore access when a shared resource no longer has an administrator. These recovery pages can grant permissions or permanently delete obsolete resources, including Skills initially provided by Cloud.
 - **Mail and PDF rendering:** Configure SMTP delivery, sender credentials, Gotenberg connection, credentials, and render limits.

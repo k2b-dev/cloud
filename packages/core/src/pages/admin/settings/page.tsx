@@ -18,7 +18,7 @@ import {
   aiUsage,
 } from "@valentinkolb/cloud/ai/admin";
 import { getLocale, type AuthContext } from "@valentinkolb/cloud/server";
-import { settingsService } from "@valentinkolb/cloud/services";
+import { settingsService, linuxIdentities } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
 import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
@@ -27,6 +27,8 @@ import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 import { adminMessages } from "../messages";
+import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
+import { z } from "zod";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
@@ -53,6 +55,7 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       icon: "ti ti-building-fortress",
       group: "freeipa" as const,
     },
+    { id: "linux", title: t.linuxAccess, description: t.linuxAccessDescription, icon: "ti ti-terminal-2", group: null },
     {
       id: "ai-general",
       title: t.aiGeneral,
@@ -193,6 +196,9 @@ export default ssr<AuthContext>(async (c) => {
     tab.id === "ai-general" ? "general" : tab.id === "ai-providers" ? "providers" : tab.id === "ai-jobs" ? "jobs" : undefined;
 
   let entries: SettingFieldDef[] = [];
+  const linuxCursor = z.uuid().safeParse(c.req.query("after"));
+  const linuxAfter = linuxCursor.success ? linuxCursor.data : null;
+  const linuxOverview = tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter) : null;
   let legalInitial: LegalInitial | null = null;
   let aiEnrichmentOverview: AiEnrichmentOverview | null = null;
   // Which profiles have a stored provider key. The keys themselves never leave
@@ -258,6 +264,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AdminLayout c={c} title={tab.title}>
       <div class="flex min-h-0 flex-1 flex-col" style="view-transition-name: admin-settings-content">
+        {linuxOverview ? <LinuxIdentityPanel initial={linuxOverview} after={linuxAfter} /> : null}
         {tab.group ? (
           <CoreSettingsForm
             title={tab.title}

@@ -8,6 +8,7 @@ import { logger } from "../logging";
 import { session } from "../session";
 import * as settings from "../settings";
 import { ensureFreeIpaMutationAvailable, getIpaUrl } from "./guard";
+import { mirrorIpaPosix } from "./posix";
 
 type CreateUser = {
   email: string;
@@ -49,6 +50,9 @@ const log = logger("auth:ipa");
 const upsertUserIpaData = async (params: {
   userId: string;
   uidNumber?: number | null;
+  primaryGidNumber?: number | null;
+  homeDirectory?: string | null;
+  loginShell?: string | null;
   phone?: string | null;
   employeeType?: string | null;
   mobile?: string | null;
@@ -62,7 +66,15 @@ const upsertUserIpaData = async (params: {
   sshPublicKeys?: string[];
   sshFingerprints?: string[];
 }) => {
-  await sql`
+  await sql.begin(async (tx) => {
+    await mirrorIpaPosix(tx, {
+      userId: params.userId,
+      uidNumber: params.uidNumber ?? null,
+      primaryGidNumber: params.primaryGidNumber ?? null,
+      homeDirectory: params.homeDirectory ?? null,
+      loginShell: params.loginShell ?? null,
+    });
+    await tx`
     INSERT INTO auth.user_ipa_data (
       user_id, uid_number, phone, employee_type, mobile, addr_street, addr_postal_code,
       addr_city, addr_state, ipa_password_expires, last_login_ipa, synced_at, ssh_public_keys, ssh_fingerprints
@@ -98,6 +110,7 @@ const upsertUserIpaData = async (params: {
       ssh_public_keys = EXCLUDED.ssh_public_keys,
       ssh_fingerprints = EXCLUDED.ssh_fingerprints
   `;
+  });
 };
 
 /**
@@ -318,6 +331,9 @@ export const addIpa = async (params: {
       await upsertUserIpaData({
         userId: id,
         uidNumber,
+        primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
+        homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
+        loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
         passwordExpires: now,
         syncedAt: now,
       });
@@ -342,6 +358,9 @@ export const addIpa = async (params: {
       await upsertUserIpaData({
         userId: id,
         uidNumber,
+        primaryGidNumber: ipaResult ? freeipa.util.num(ipaResult.gidnumber) : null,
+        homeDirectory: ipaResult ? freeipa.util.str(ipaResult.homedirectory) || null : null,
+        loginShell: ipaResult ? freeipa.util.str(ipaResult.loginshell) || null : null,
         passwordExpires: now,
         syncedAt: now,
       });

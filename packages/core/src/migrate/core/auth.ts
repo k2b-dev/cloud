@@ -1,4 +1,5 @@
 import { sql } from "bun";
+import { migratePosix } from "./posix";
 
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
@@ -216,6 +217,7 @@ export const migrate = async (): Promise<void> => {
     ON auth.groups(name)
   `.simple();
   console.log("  ✓ auth.groups table");
+  await migratePosix();
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.user_groups_v2 (

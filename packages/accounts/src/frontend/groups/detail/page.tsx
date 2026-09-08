@@ -2,7 +2,7 @@ import { ButtonLink } from "@k2b/ui";
 import { z } from "zod";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
+import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@valentinkolb/cloud/services";
 import { canManageGroup, getDefaultGroupScope, isAdminUser } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js/jsx-runtime";
@@ -25,6 +25,7 @@ import {
 import ManagersTab from "./ManagersTab";
 import MemberOfTab from "./MemberOfTab";
 import MembersTab from "./MembersTab";
+import PrepareLinuxGroup from "./PrepareLinuxGroup.island";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = accountsMessages.resolve([getLocale(c)]);
@@ -32,6 +33,7 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const accountsActor = toAccountsActor(user);
   const isAdmin = isAdminUser(user);
+  const linuxEnabled = isAdmin && (await linuxIdentities.configuration(user)).enabled;
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
   const defaultScope = getDefaultGroupScope(user);
 
@@ -282,6 +284,7 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <AccountsFactGrid facts={facts} columns={4} viewTransitionName="accounts-group-facts" />
+          {isAdmin && linuxEnabled && group.provider === "local" && group.gidnumber === null && <PrepareLinuxGroup id={group.id} />}
 
           {canManageMutations && !isAdmin && <p class="text-xs text-dimmed">{t.canManageHere}</p>}
           {!canMutateGroup && <p class="text-xs text-amber-700 dark:text-amber-300">{t.ipaDisabledMutations}</p>}

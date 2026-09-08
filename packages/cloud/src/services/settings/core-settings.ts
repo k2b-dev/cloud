@@ -44,6 +44,12 @@ const IPA_ACCOUNT_TRANSITION_OPTIONS = [
 ] as const;
 
 export const CORE_SETTINGS = {
+  "linux.identity_config": {
+    kind: "text",
+    label: "Local Linux identities",
+    description: "Managed through the Linux identity setup in Administration. Does not enable computer login.",
+    default: '{"enabled":false,"rangeStart":0,"rangeEnd":0,"homeTemplate":"/home/{username}","loginShell":"/bin/bash"}',
+  },
   // ── App ─────────────────────────────────────────────────────────────────
   "app.url": {
     kind: "string",

@@ -5,6 +5,7 @@ import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import {
   accountsAppService as accountsService,
+  linuxIdentities,
   coreSettings,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
@@ -23,6 +24,7 @@ import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
 import AddToGroup from "./AddToGroup.island";
 import UserActions from "./UserActions.island";
+import LinuxIdentity from "./LinuxIdentity.island";
 
 const formatAddress = (a: {
   street: string | null;
@@ -58,6 +60,7 @@ export default ssr<AuthContext>(async (c) => {
   const user = await accountsService.user.get({ id });
 
   if (!user) return ssr.error(c, 404, { action: { label: t.backToUsers, href: buildUsersUrl(listState) } });
+  const linux = await linuxIdentities.get(sessionUser, id);
 
   const isIpaUser = user.provider === "ipa";
   const isGuestProfile = user.profile === "guest";
@@ -271,6 +274,9 @@ export default ssr<AuthContext>(async (c) => {
           </div>
 
           <AccountsFactGrid facts={facts} columns={3} viewTransitionName="accounts-user-facts" />
+          {(linux.user.identity || linux.user.provider === "ipa" || (linux.config.enabled && linux.user.profile === "user")) && (
+            <LinuxIdentity initial={linux} />
+          )}
 
           {isIpaUser && (ipa?.sshFingerprints.length ?? 0) > 0 && (
             <div class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-muted)]" style="view-transition-name: accounts-user-ssh">

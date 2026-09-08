@@ -65,6 +65,64 @@ const group = (overrides: Partial<Record<"id" | "name", string>>) => ({
 });
 
 describe("accounts CLI", () => {
+  test("guards Linux mutations before resolving accounts", async () => {
+    for (const action of ["prepare", "update"]) {
+      const { ctx, calls } = createContext(
+        ["users", "linux", action, "alice"],
+        action === "update" ? { home: "/home/alice", shell: "/bin/bash" } : {},
+      );
+      await expect(accountsCli.run(ctx)).rejects.toThrow("without --yes");
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  test("inspects and prepares one identity through the shared admin API", async () => {
+    for (const action of ["get", "prepare"]) {
+      const result = { id: "u1", state: "prepared" };
+      const { ctx, calls, lines } = createContext(["users", "linux", action, "alice"], action === "prepare" ? { yes: true } : {}, [
+        jsonResponse({ users: [user({})], pagination }),
+        jsonResponse(result),
+      ]);
+      ctx.options.output = "jsonl";
+      await accountsCli.run(ctx);
+      expect(calls[1]?.path).toBe("/api/admin/core/linux-identities/users/u1");
+      expect(calls[1]?.init?.method).toBe(action === "prepare" ? "POST" : undefined);
+      expect(lines).toEqual([JSON.stringify(result)]);
+    }
+  });
+
+  test("updates home and shell without sending numeric identity fields", async () => {
+    const { ctx, calls } = createContext(["users", "linux", "update", "alice"], { yes: true, home: "/srv/home/alice", shell: "/bin/sh" }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ state: "prepared" }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ homeDirectory: "/srv/home/alice", loginShell: "/bin/sh" });
+  });
+
+  test("propagates denied identity preparation without printing success or retrying", async () => {
+    const { ctx, calls, lines } = createContext(["users", "linux", "prepare", "alice"], { yes: true }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ message: "Administrator required" }, 403),
+    ]);
+    await expect(accountsCli.run(ctx)).rejects.toThrow("Administrator required");
+    expect(calls).toHaveLength(2);
+    expect(lines).toHaveLength(0);
+  });
+
+  test("routes group POSIX preparation by provider without changing the IPA path", async () => {
+    for (const provider of ["local", "ipa"]) {
+      const { ctx, calls } = createContext(["groups", "make-posix", "team"], { yes: true }, [
+        jsonResponse({ groups: [{ ...group({}), provider }], pagination }),
+        jsonResponse({ gidNumber: 200000, message: "Prepared" }),
+      ]);
+      await accountsCli.run(ctx);
+      expect(calls[1]?.path).toBe(provider === "local" ? "/api/admin/core/linux-identities/groups/g1" : "/api/accounts/groups/g1/posix");
+      expect(calls[1]?.init?.method).toBe(provider === "local" ? "POST" : "PUT");
+    }
+  });
+
   test("lists users through the accounts API with filters", async () => {
     const { ctx, calls, tables } = createContext(
       ["users", "list"],

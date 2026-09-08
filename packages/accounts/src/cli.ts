@@ -3,6 +3,7 @@ import {
   arg,
   type CloudCliContext,
   command,
+  cliText,
   confirmFlag,
   defineCliCommands,
   flag,
@@ -545,8 +546,56 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
+    "users linux": "Inspect and prepare Linux identities",
   },
   commands: [
+    command("users linux get", {
+      summary: "Show Linux identity status and effective defaults",
+      args: { user: arg.required() },
+      async run({ ctx, args }) {
+        const user = await resolveUserRef(ctx, args.user);
+        const result = await ctx.readJson(await ctx.fetch(`/api/admin/core/linux-identities/users/${encode(user.id)}`));
+        if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+      },
+    }),
+    command("users linux prepare", {
+      summary: "Assign a stable Linux identity to one local full account",
+      args: { user: arg.required() },
+      flags: { yes: confirmFlag("Confirm preparing this Linux identity") },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes)
+          throw new Error(
+            cliText(ctx, { en: "Refusing to prepare an identity without --yes.", de: "Identität wird ohne --yes nicht vorbereitet." }),
+          );
+        const user = await resolveUserRef(ctx, args.user);
+        const result = await ctx.readJson(await ctx.fetch(`/api/admin/core/linux-identities/users/${encode(user.id)}`, { method: "POST" }));
+        if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+      },
+    }),
+    command("users linux update", {
+      summary: "Set home and shell for an existing local Linux identity",
+      args: { user: arg.required() },
+      flags: {
+        home: flag.string({ required: true, description: "Absolute home directory path" }),
+        shell: flag.string({ required: true, description: "Absolute login shell path" }),
+        yes: confirmFlag("Confirm changing home and shell metadata"),
+      },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes)
+          throw new Error(
+            cliText(ctx, { en: "Refusing to update an identity without --yes.", de: "Identität wird ohne --yes nicht geändert." }),
+          );
+        const user = await resolveUserRef(ctx, args.user);
+        const result = await ctx.readJson(
+          await ctx.fetch(`/api/admin/core/linux-identities/users/${encode(user.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ homeDirectory: flags.home, loginShell: flags.shell }),
+          }),
+        );
+        if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+      },
+    }),
     command("users list", {
       summary: "List accounts",
       flags: {
@@ -898,6 +947,13 @@ export default defineCliCommands({
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to convert a group to POSIX without --yes.");
         const group = await resolveGroupRef(ctx, args.group);
+        if (group.provider === "local") {
+          const result = await ctx.readJson(
+            await ctx.fetch(`/api/admin/core/linux-identities/groups/${encode(group.id)}`, { method: "POST" }),
+          );
+          if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+          return;
+        }
         const result = await apiJson<MessageResponse>(ctx, "PUT", `/groups/${encode(group.id)}/posix`);
         printMessage(ctx, result, "Group converted to POSIX.");
       },

@@ -68,6 +68,11 @@ Cloud uses JSON-RPC for:
 
 Cloud does not create hosts.
 
+When using [local Linux identity preparation](/en/docs/operations/linux-identities)
+alongside FreeIPA, also allow `idrange_find`. This extra read permission is
+needed for local range reservation, not existing FreeIPA sign-in. The normal
+sync mirrors Linux attributes without changing their directory values.
+
 Grant only these operations. FreeIPA privilege and role names depend on the
 directory configuration, so verify them in the target instance.
 

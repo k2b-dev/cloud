@@ -13,6 +13,7 @@ Die Administrationsseiten sind serverseitig gerenderte Listen mit URL-gestützte
 :::reference
 - **Personen:** Suche Konten nach UID, Name oder E-Mail-Adresse. Filtere nach Anbieter und Profil und öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten.
 - **Gruppen:** Öffne eine Gruppe, um Fakten, Mitglieder, verwaltende Personen und übergeordnete Gruppen zu prüfen. Im jeweiligen Verwaltungsbereich lassen sich Personen und Gruppen hinzufügen oder entfernen.
+- **Linux-Identitäten:** Administratoren können die Werte einer Person prüfen, geeignete lokale Vollaccounts vorbereiten und deren Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung unter Administration → Einstellungen → Linux-Zugang eine GID erhalten. Diese Aktionen aktivieren weder Rechneranmeldung noch sudo.
 - **Gelöschte Konten:** Prüfe Konten, die manuell, durch Ablaufbereinigung, FreeIPA-Rückstufung oder Änderungen am Synchronisierungsbereich entfernt wurden. Die Zeilendetails enthalten weiterhin Metadaten.
 - **Erinnerungsverlauf:** Suche Versuche für Kontoablauferinnerungen samt Ablaufdatum, Vorlaufzeit, Status, Versuchen, letztem Versuch und letztem Fehler.
 :::

@@ -99,6 +99,11 @@ Raw stores, runtime starters, gateway telemetry, migrations, and platform
 composition helpers from the same barrel are maintainer APIs unless a guide
 names them.
 
+`linuxIdentities` is a platform-owned administration service from this barrel.
+It checks administrator access on reads and writes. See
+[Linux identities](/en/docs/operations/linux-identities) for configuration,
+explicit provisioning, and the compatible FreeIPA mirror.
+
 ## Share types with the browser
 
 Export the Hono router type from the server. Use it with the browser client.

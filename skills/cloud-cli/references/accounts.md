@@ -23,6 +23,24 @@ cld accounts users set-admin ada.lovelace --enabled --yes
 
 The command rejects FreeIPA and guest accounts. Manage FreeIPA administrator membership through its groups instead. Read the specific command help before changing provider, profile, expiry, passwords, or deleting an account.
 
+## Linux identities
+
+These commands require an administrator. Global configuration and paginated
+preview live under `cld admin linux`; inspect those before preparing accounts.
+
+```bash
+cld accounts users linux get alice --json
+cld accounts users linux prepare alice --yes
+cld accounts users linux update alice --home /home/alice --shell /bin/bash --yes
+cld accounts groups make-posix team --yes
+```
+
+Only local full accounts can be prepared. Home and shell updates require both
+paths and do not move files or renumber IDs. Group preparation uses the group's
+provider: the reserved Cloud range for local groups, the existing FreeIPA
+operation for IPA groups. This prepares identity metadata, not computer login,
+sudo or shared storage. There is no implicit bulk backfill.
+
 ## Groups and requests
 
 ```bash
@@ -53,6 +71,7 @@ Run `cld accounts <command> --help` for flags and argument order.
 | --- | --- |
 | Users | `users list`, `users get`, `users create`, `users update`, `users set-admin`, `users set-profile`, `users set-provider`, `users demote-to-guest`, `users set-expiry`, `users reset-password`, `users login-token`, `users send-login-link`, `users delete` |
 | User avatars | `users avatar get`, `users avatar set`, `users avatar remove` |
+| Linux identities | `users linux get`, `users linux prepare`, `users linux update` |
 | Groups | `groups list`, `groups get`, `groups create`, `groups update`, `groups make-posix`, `groups delete` |
 | Group members | `groups members list`, `groups members add`, `groups members remove` |
 | Group managers | `groups managers list`, `groups managers add`, `groups managers remove` |

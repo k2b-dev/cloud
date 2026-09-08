@@ -2,6 +2,8 @@
 export { ipa } from "./ipa";
 export { accounts } from "./accounts";
 export { accountsAppService } from "./accounts";
+export { posix as linuxIdentities, PosixError } from "./accounts/posix";
+export type { PosixCandidate } from "./accounts/posix";
 export { providers } from "./providers";
 export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";
