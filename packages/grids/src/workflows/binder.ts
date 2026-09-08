@@ -629,6 +629,12 @@ const bindTriggers = (context: BindingContext): void => {
       }
       if (triggerTableId) bindId(context, [...path, "table"], triggerTableId);
     }
+    if (trigger.kind === "recordEvent" && triggerTableId) {
+      const table = configuredTable ?? [...context.catalog.tables.refs.values()].find((entry) => entry.id === triggerTableId);
+      if (table?.kind === "federated") {
+        addDiagnostic(context, "trigger.table", `Record events are not available for Combined table "${table.name}"`, [...path, "table"]);
+      }
+    }
     const eventValues = new Map(
       Object.entries(descriptor.eventValues).map(([name, type]) => [
         name,

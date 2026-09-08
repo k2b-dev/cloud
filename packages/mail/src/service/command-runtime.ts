@@ -2992,6 +2992,7 @@ const startOutboxJob = async (): Promise<void> => {
       // the schedule window the commands-due cron submits it again when due.
       const remainingMs = Number(pending.delay_ms);
       if (remainingMs <= OUTBOX_SCHEDULE_WINDOW_MS) ctx.resubmit({ delayMs: Math.max(1_000, remainingMs) });
+      else log.debug("Scheduled send handed to the commands-due cron", { outboxId: ctx.input.outboxId, remainingMs });
       return;
     }
     if (state === "unknown") {

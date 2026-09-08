@@ -3,7 +3,7 @@ import { createSync, RetentionGapError } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
 import { bindProcessSync, unbindProcessSync } from "@valentinkolb/cloud";
 import * as Y from "yjs";
-import { createYjsTopic, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
+import { createYjsTopic, MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
 const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
 (enabled ? test : test.skip)(
@@ -81,7 +81,7 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         // The gap is terminal: the stored snapshot is re-anchored once and the
         // job is dead-lettered as the durable record, on the first attempt.
         expect(adopt).toHaveBeenCalledTimes(1);
-        expect(adopt.mock.calls[0]?.[0]).toMatchObject({ noteId, gap: expect.any(RetentionGapError) });
+        expect(adopt.mock.calls[0]?.[0]).toMatchObject({ noteId, cause: expect.any(RetentionGapError) });
         const failures = await sync.job(SNAPSHOT_JOB_CONFIG).deadLetters.list();
         expect(failures).toHaveLength(1);
         expect(failures[0]?.reason).toContain("Document history is incomplete");
@@ -98,9 +98,11 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         );
         expect(pending.length).toBeGreaterThan(0);
 
-        // A retained event that is not a Yjs update can never be replayed: it
-        // dead-letters on the first attempt instead of retrying in place.
+        // A retained event that is not a Yjs update can never be replayed: the
+        // stored snapshot is re-anchored at the head (so the reconciler stops
+        // re-queueing the note) and the job dead-letters on the first attempt.
         const poisonedId = crypto.randomUUID();
+        adopt.mockClear();
         await createYjsTopic(poisonedId).publish({
           data: { kind: "sync", payload: toBase64(new Uint8Array([255, 255, 255, 255])), originNodeId: NODE_ID, originPeerId: null },
         });
@@ -123,8 +125,12 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         );
         expect(poisoned).toHaveLength(1);
         expect(poisoned[0]).toMatchObject({ attempts: 1, reason: expect.stringContaining("Retained event cannot be applied") });
-        expect(readState).toHaveBeenCalledTimes(1);
+        // The two re-submitted jobs of the first note may run in the same window; judge the poisoned note alone.
+        expect(readState.mock.calls.filter(([input]) => input.noteId === poisonedId)).toHaveLength(1);
         expect(save).not.toHaveBeenCalled();
+        expect(adopt.mock.calls.filter(([input]) => input.noteId === poisonedId)).toEqual([
+          [{ noteId: poisonedId, cause: expect.any(MalformedSyncEventError) }],
+        ]);
       } finally {
         await yjsSnapshotWorker.stop();
         readState.mockRestore();

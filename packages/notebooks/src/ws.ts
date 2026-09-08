@@ -197,7 +197,7 @@ const warn = (socket: ServerWebSocket<unknown>, code: NotebooksYjsErrorCode, mes
 };
 
 const closeCodeForError = (code: NotebooksYjsErrorCode): number => {
-  if (code === ERROR_CODE.resyncRequired) return 1012;
+  if (code === ERROR_CODE.resyncRequired || code === ERROR_CODE.streamFailed) return 1012;
   if (code === ERROR_CODE.internalError) return 1011;
   if (code === ERROR_CODE.backpressure) return 1013;
   return 1008;
@@ -711,19 +711,23 @@ const toPushUpdate = (event: TopicEvent<YjsTopicEvent> | TopicLiveEvent<YjsTopic
 });
 
 /**
- * Stream failures are never terminal for the editor. The client answers
- * `RESYNC_REQUIRED` by reconnecting with its last cursor, which is the right
- * recovery for a broker failover or a lost consumer as well as for a stale
- * cursor; `INTERNAL_ERROR` would leave the editor stuck until a reload.
+ * Stream failures are never terminal for the editor, but only a cursor the
+ * broker cannot serve any more (`RetentionGapError`, `CursorMismatchError`)
+ * needs `RESYNC_REQUIRED`, which makes the client drop its cursor and rebuild
+ * from the stored snapshot. Everything else (broker failover, lost consumer,
+ * an awareness stream error) closes with `STREAM_FAILED`: the client
+ * reconnects with backoff and its last cursor, so an outage never turns into
+ * a full-snapshot resend every few seconds.
  */
 const failLiveStream = async (ctx: WsContext, noteId: string, noteShortId: string, stream: "sync" | "awareness", error: unknown) => {
   log.error(stream === "sync" ? "Yjs live stream failed" : "Yjs awareness stream failed", {
     noteId,
     error: error instanceof Error ? error.message : String(error),
   });
+  const resync = stream === "sync" && (error instanceof RetentionGapError || error instanceof CursorMismatchError);
   await fatal(
     ctx,
-    ERROR_CODE.resyncRequired,
+    resync ? ERROR_CODE.resyncRequired : ERROR_CODE.streamFailed,
     stream === "sync" ? ctx.messages.liveSyncStreamFailed : ctx.messages.liveAwarenessStreamFailed,
     noteShortId,
   );
@@ -800,10 +804,12 @@ const startLiveStream = (
             // The stored snapshot's own cursor fell below retention. Reconnecting
             // cannot help: the client would receive the same snapshot and gap
             // again. Re-anchor the snapshot at the head (loud, terminal) and
-            // continue from there. A gap after partial delivery, or a client
-            // cursor gap, still resyncs: the client then rebuilds from the store.
+            // continue from there; a note that never stored Yjs state is
+            // re-anchored from its markdown. A gap after partial delivery, or a
+            // client cursor gap, still resyncs: the client then rebuilds from
+            // the store.
             if (!(error instanceof RetentionGapError) || !replay.storedBase || delivered > 0) throw error;
-            const adopted = await notebooksService.note.adoptSnapshotAtHead({ noteId, gap: error });
+            const adopted = await notebooksService.note.adoptSnapshotAtHead({ noteId, cause: error });
             if (!adopted) throw error;
             head = adopted.cursor;
           }

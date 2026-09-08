@@ -112,3 +112,5 @@ export const liveMailInvalidations = (params: { after?: string | null; signal?: 
 
 /** Topic-wide head: the replay baseline for every mailbox (mailbox filtering happens on the subscriber). */
 export const latestMailInvalidationCursor = (): Promise<string> => invalidationTopic().head();
+
+export const mailInvalidationCursorSequence = (cursor: string): number => invalidationTopic().cursorSequence(cursor);

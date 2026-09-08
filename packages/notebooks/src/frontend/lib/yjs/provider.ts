@@ -49,7 +49,12 @@ const WORKSPACE_TERMINAL_ERROR_CODES = new Set<string>([
 ]);
 const KNOWN_ERROR_CODES = new Set<string>(Object.values(notebooksYjs.errorCode));
 const RECONNECT_BASE_DELAY_MS = 2_000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
 const RECONNECT_JITTER_MS = 1_500;
+
+/** Doubles per failed attempt since the last successful replay, capped, plus jitter. */
+export const reconnectDelayMs = (failedAttempts: number, random: number = Math.random()): number =>
+  Math.min(RECONNECT_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempts), RECONNECT_MAX_DELAY_MS) + Math.floor(random * RECONNECT_JITTER_MS);
 const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 
 const resolveHttpBaseUrl = (raw: string): URL => {
@@ -80,6 +85,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let isDisposed = false;
   let isTerminated = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let failedConnects = 0;
   let lastCursor = opts.initialCursor ?? null;
   let lastWorkspaceCursor = opts.workspace?.initialCursor ?? null;
   let workspaceEventQueue = Promise.resolve();
@@ -102,6 +108,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     BACKPRESSURE: "Websocket backpressure",
     INTERNAL_ERROR: "Internal websocket error",
     RESYNC_REQUIRED: "Reload collaborative state",
+    STREAM_FAILED: "Live connection interrupted",
   };
 
   const sendJson = (type: string, payload?: unknown): boolean => {
@@ -322,6 +329,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     const payload = (msg.payload ?? {}) as { noteId?: unknown };
     if (payload.noteId !== activeNoteId) return true;
     replayReady = true;
+    failedConnects = 0;
     sendLocalStateIfNeeded();
     return true;
   };
@@ -418,9 +426,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
         return;
       }
 
+      // `STREAM_FAILED` and plain drops keep `lastCursor`: the next replay
+      // resumes after it instead of resending the stored snapshot. Only
+      // `RESYNC_REQUIRED` cleared the cursor above.
       if (!isDisposed && !isTerminated) {
-        const delay = RECONNECT_BASE_DELAY_MS + Math.floor(Math.random() * RECONNECT_JITTER_MS);
-        reconnectTimer = setTimeout(connect, delay);
+        reconnectTimer = setTimeout(connect, reconnectDelayMs(failedConnects));
+        failedConnects += 1;
       }
     };
 

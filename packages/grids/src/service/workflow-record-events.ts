@@ -191,7 +191,7 @@ const retainDispatchFailure = async (
   const message = describeDispatchError(error);
   const deliveryKey = typeof delivery.meta?.deliveryKey === "string" ? delivery.meta.deliveryKey : delivery.messageId;
   const context = { baseId: event.baseId, deliveryKey, recordId: event.recordId, transportAttempt: delivery.attempt };
-  let failure: { attempts: number; dead: boolean };
+  let failure: { attempts: number; dead: boolean; alreadyDead: boolean };
   try {
     failure = await ports.recordFailure({
       baseId: event.baseId,
@@ -211,6 +211,10 @@ const retainDispatchFailure = async (
       error: storeError instanceof Error ? storeError.message : String(storeError),
     });
     throw storeError;
+  }
+  if (failure.alreadyDead) {
+    log.warn("Workflow record event discarded, already dead", { ...context, attempts: failure.attempts, error: message });
+    return;
   }
   if (failure.dead) {
     log.error("Workflow record event moved to the application dead-letter store", {
@@ -249,7 +253,6 @@ export const processWorkflowRecordEventDelivery = async (
     delivery.signal.throwIfAborted();
     if (renewalFailure) throw renewalFailure;
     if (dispatchError !== undefined) await retainDispatchFailure(delivery, event, dispatchError, ports);
-    await delivery.heartbeat();
   } finally {
     clearInterval(timer);
   }

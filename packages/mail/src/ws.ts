@@ -9,6 +9,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { getCookie } from "hono/cookie";
 import {
   MAIL_LIVE_WS_TYPE,
+  type MailInvalidation,
   MailInvalidationSchema,
   MailLiveClientMessageSchema,
   MailLiveCursorSchema,
@@ -18,7 +19,7 @@ import {
 } from "./live-events";
 import type { MailRequestContext } from "./service/auth";
 import * as collaboration from "./service/collaboration";
-import { latestMailInvalidationCursor, liveMailInvalidations } from "./service/events";
+import { latestMailInvalidationCursor, liveMailInvalidations, mailInvalidationCursorSequence } from "./service/events";
 import { resolvePublicId } from "./service/public-resources";
 import { type MailWsMessages, mailWsMessages } from "./ws-messages";
 
@@ -45,7 +46,16 @@ export type MailLiveConnectionDependencies = {
   /** The whole invalidation topic after `after`; the connection keeps only its mailbox's events. */
   events: (params: { after: string; signal: AbortSignal }) => AsyncIterable<{ cursor: string; data: unknown }>;
   latestCursor: () => Promise<string>;
+  /** Sequence of a cursor on the invalidation topic; throws for foreign cursors. */
+  cursorSequence: (cursor: string) => number;
 };
+
+/**
+ * A client cursor further behind the topic head than this is not replayed:
+ * the connection starts at the head and the browser refreshes its snapshot
+ * instead, which bounds the per-reconnect cost on a busy topic.
+ */
+export const MAIL_LIVE_MAX_REPLAY_EVENTS = 5_000;
 
 type WsContext = {
   socket: MailLiveSocket;
@@ -83,6 +93,7 @@ const connectionDependencies: MailLiveConnectionDependencies = {
   access: accessDependencies,
   events: liveMailInvalidations,
   latestCursor: latestMailInvalidationCursor,
+  cursorSequence: mailInvalidationCursorSequence,
 };
 
 export const evaluateMailLiveAccess = async (
@@ -106,12 +117,29 @@ export const resolveMailLiveCursor = async (
   latestCursor: () => Promise<string> = latestMailInvalidationCursor,
 ): Promise<string> => MailLiveCursorSchema.parse(fromCursor ?? (await latestCursor()));
 
-/** Returns null for events of other mailboxes and for payloads this protocol cannot carry. */
-export const parseMailLiveReplayEvent = (mailboxId: string, event: { cursor: string; data: unknown }) => {
+/** `foreign` for another mailbox's event; `invalid` for a payload this protocol cannot carry. */
+export const parseMailLiveReplayEvent = (
+  mailboxId: string,
+  event: { cursor: string; data: unknown },
+): { kind: "event"; cursor: string; event: MailInvalidation } | { kind: "foreign" } | { kind: "invalid" } => {
   const cursor = MailLiveCursorSchema.safeParse(event.cursor);
   const payload = MailInvalidationSchema.safeParse(event.data);
-  if (!cursor.success || !payload.success || payload.data.mailboxId !== mailboxId) return null;
-  return { cursor: cursor.data, event: payload.data };
+  if (!cursor.success || !payload.success) return { kind: "invalid" };
+  if (payload.data.mailboxId !== mailboxId) return { kind: "foreign" };
+  return { kind: "event", cursor: cursor.data, event: payload.data };
+};
+
+/** Replay from `cursor` unless it trails the head by more than the replay bound; then start at the head. */
+const boundedReplayCursor = async (deps: MailLiveConnectionDependencies, cursor: string, fromClient: boolean): Promise<string> => {
+  if (!fromClient) return cursor;
+  let behind: number;
+  try {
+    behind = deps.cursorSequence(await deps.latestCursor()) - deps.cursorSequence(cursor);
+  } catch {
+    // A cursor from another stream is resolved by the stream's own resync path.
+    return cursor;
+  }
+  return behind > MAIL_LIVE_MAX_REPLAY_EVENTS ? await resolveMailLiveCursor(null, deps.latestCursor) : cursor;
 };
 
 const isClosing = (ctx: WsContext): boolean => ctx.phase === "closing";
@@ -203,14 +231,18 @@ const deliverReplayEvent = async (
   if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return false;
   // The hub carries every mailbox: skip foreign events before any access check.
   const replay = parseMailLiveReplayEvent(mailboxId, event);
-  if (!replay) return true;
+  if (replay.kind === "foreign") return true;
+  if (replay.kind === "invalid") {
+    log.warn("Mail live event skipped: payload does not match the protocol", { mailboxId, cursor: event.cursor });
+    return true;
+  }
   const access = await currentAccess(ctx, internalMailboxId);
   if (!subscriptionIsCurrent(ctx, mailboxId, internalMailboxId, abort)) return false;
   if (!access.ok) {
     revoke(ctx, mailboxId, access);
     return false;
   }
-  if (send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.event, payload: { mailboxId, ...replay } })) return true;
+  if (send(ctx.socket, { type: MAIL_LIVE_WS_TYPE.event, payload: { mailboxId, cursor: replay.cursor, event: replay.event } })) return true;
   closeWithError(ctx, "backpressure", ctx.messages.capacityExceeded, 1013);
   return false;
 };
@@ -282,7 +314,7 @@ const handleSubscribe = async (ctx: WsContext, mailboxId: string, fromCursor: st
 
   let cursor: string;
   try {
-    cursor = await resolveMailLiveCursor(fromCursor, ctx.deps.latestCursor);
+    cursor = await boundedReplayCursor(ctx.deps, await resolveMailLiveCursor(fromCursor, ctx.deps.latestCursor), fromCursor !== null);
   } catch (error) {
     log.error("Mail WebSocket cursor resolution failed", {
       mailboxId,

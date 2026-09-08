@@ -5,7 +5,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')",
+    "test:integration": "GATEWAY_OPS_DB_TEST=1 bun --cwd=../.. test packages/gateway-ops/src/health-webhooks.integration.test.ts packages/gateway-ops/src/telemetry.integration.test.ts"
   },
   "dependencies": {
     "@k2b/ui": "workspace:*",

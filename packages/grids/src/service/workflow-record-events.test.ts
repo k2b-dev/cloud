@@ -34,7 +34,7 @@ const delivery = (overrides: Partial<QueueMessage<GridsRecordEvent>> = {}): Queu
   ...overrides,
 });
 const ports = (input: Partial<WorkflowRecordEventDeliveryPorts> = {}): WorkflowRecordEventDeliveryPorts => ({
-  recordFailure: mock(async () => ({ attempts: 1, dead: false })),
+  recordFailure: mock(async () => ({ attempts: 1, dead: false, alreadyDead: false })),
   requeue: mock(async () => undefined),
   ...input,
 });
@@ -62,7 +62,7 @@ describe("workflow record-event delivery recovery", () => {
   });
 
   test("retains a dispatch failure, re-queues behind the record with backoff, and acknowledges", async () => {
-    const recordFailure = mock(async () => ({ attempts: 3, dead: false }));
+    const recordFailure = mock(async () => ({ attempts: 3, dead: false, alreadyDead: false }));
     const requeue = mock(async () => undefined);
     await processWorkflowRecordEventDelivery(
       delivery(),
@@ -87,7 +87,7 @@ describe("workflow record-event delivery recovery", () => {
   });
 
   test("keeps the original delivery key across re-queued attempts", async () => {
-    const recordFailure = mock(async () => ({ attempts: 4, dead: false }));
+    const recordFailure = mock(async () => ({ attempts: 4, dead: false, alreadyDead: false }));
     const requeue = mock(async () => undefined);
     const retried = delivery({ messageId: "retry-3", meta: { baseId: BASE_ID, deliveryKey: "transport-2" } });
     await processWorkflowRecordEventDelivery(retried, failingDispatch("still failing"), ports({ recordFailure, requeue }));
@@ -100,7 +100,7 @@ describe("workflow record-event delivery recovery", () => {
     await processWorkflowRecordEventDelivery(
       delivery(),
       failingDispatch("permanent failure"),
-      ports({ recordFailure: mock(async () => ({ attempts: 20, dead: true })), requeue }),
+      ports({ recordFailure: mock(async () => ({ attempts: 20, dead: true, alreadyDead: false })), requeue }),
     );
     expect(requeue).not.toHaveBeenCalled();
   });
@@ -126,7 +126,7 @@ describe("workflow record-event delivery recovery", () => {
   });
 
   test("does not retain a failure for successful dispatch", async () => {
-    const recordFailure = mock(async () => ({ attempts: 1, dead: false }));
+    const recordFailure = mock(async () => ({ attempts: 1, dead: false, alreadyDead: false }));
     const dispatch = mock(async () => undefined);
     await processWorkflowRecordEventDelivery(delivery(), dispatch, ports({ recordFailure }));
     expect(dispatch).toHaveBeenCalledTimes(1);
@@ -135,7 +135,7 @@ describe("workflow record-event delivery recovery", () => {
 
   test("invalid payloads fail at the worker boundary without touching the failure store", async () => {
     const dispatch = mock(async () => undefined);
-    const recordFailure = mock(async () => ({ attempts: 1, dead: false }));
+    const recordFailure = mock(async () => ({ attempts: 1, dead: false, alreadyDead: false }));
     const message = delivery();
     message.data = { ...message.data, version: -1 };
     await expect(processWorkflowRecordEventDelivery(message, dispatch, ports({ recordFailure }))).rejects.toThrow();
@@ -146,7 +146,7 @@ describe("workflow record-event delivery recovery", () => {
   test("leaves aborted work to redelivery instead of retaining a failure", async () => {
     const controller = new AbortController();
     const message = delivery({ signal: controller.signal });
-    const recordFailure = mock(async () => ({ attempts: 1, dead: false }));
+    const recordFailure = mock(async () => ({ attempts: 1, dead: false, alreadyDead: false }));
     const dispatch = mock(async () => {
       controller.abort();
       throw new Error("interrupted");
@@ -159,20 +159,20 @@ describe("workflow record-event delivery recovery", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
-  test("heartbeats before returning and propagates lease failures", async () => {
+  test("discards a late attempt for an already dead delivery without re-queueing", async () => {
+    const requeue = mock(async () => undefined);
+    await processWorkflowRecordEventDelivery(
+      delivery(),
+      failingDispatch("still failing"),
+      ports({ recordFailure: mock(async () => ({ attempts: 20, dead: true, alreadyDead: true })), requeue }),
+    );
+    expect(requeue).not.toHaveBeenCalled();
+  });
+
+  test("does not heartbeat after the outcome is settled", async () => {
+    // A failing trailing heartbeat would turn a retained attempt into a redelivery that counts it twice.
     const message = delivery({ heartbeat: mock(async () => undefined) });
-    await processWorkflowRecordEventDelivery(message, async () => undefined, ports());
-    expect(message.heartbeat).toHaveBeenCalledTimes(1);
-    await expect(
-      processWorkflowRecordEventDelivery(
-        delivery({
-          heartbeat: async () => {
-            throw new Error("disconnected");
-          },
-        }),
-        async () => undefined,
-        ports(),
-      ),
-    ).rejects.toThrow("disconnected");
+    await processWorkflowRecordEventDelivery(message, failingDispatch("boom"), ports());
+    expect(message.heartbeat).not.toHaveBeenCalled();
   });
 });

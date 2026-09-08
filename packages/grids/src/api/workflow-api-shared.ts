@@ -497,7 +497,7 @@ export const permissionedWorkflowCatalog = async (
     for (const template of await deps.listTemplatesForTable(table.id)) {
       templates.push({ id: template.id, shortId: template.shortId, name: template.name, tableId: template.tableId });
     }
-    visibleTables.push({ id: table.id, shortId: table.shortId, name: table.name });
+    visibleTables.push({ id: table.id, shortId: table.shortId, name: table.name, kind: table.kind });
     const fields = await deps.listFieldsByTable(table.id);
     fieldsByTable.set(
       table.id,

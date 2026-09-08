@@ -5,7 +5,7 @@ section: Operations
 order: 1137
 description: Move existing Notebook snapshot work to the ordered worker without losing accepted edits.
 tags: [notebooks, snapshots, migration, nats]
-updated: 2026-09-07
+updated: 2026-09-08
 ---
 
 # Change the Notebook snapshot worker
@@ -76,7 +76,10 @@ backups or historical versions.
 
 Stop all old snapshot workers after the check passes. Start the new release in
 one coordinated deployment, then reopen producers. Do not overlap old and new
-workers: ordering applies only within the new job resource.
+workers: ordering applies only within the new job resource. Messages still in
+flight on the old partition and new partition messages for the same note can
+overlap across the switch; that is safe because a snapshot save only advances
+a note whose stored sequence is older, so the loser is rejected.
 
 The new job uses the same seven-day work retention, per-note-and-cursor
 submission keys, replay coverage checks, contributor history, and restore
@@ -95,13 +98,25 @@ Two conditions are terminal instead of retried:
   such a dead letter is harmless and does nothing.
 - A retained update that cannot be decoded as a Yjs update. Publishes are
   validated before they enter the topic, so this indicates broker or client
-  tampering; the job dead-letters immediately.
+  tampering. The worker re-anchors the stored snapshot at the topic head in the
+  same way, records a failed `Notebook Yjs malformed history` trace, and
+  dead-letters the job once; without the re-anchoring the hourly reconcile
+  would re-queue the note every hour.
+
+A note that never stored Yjs state but has retained edits and a purged topic
+is re-anchored from its current markdown when the editor next opens it.
+
+A transient live-stream failure, for example a broker failover, closes editing
+connections with `STREAM_FAILED`. The editor reconnects with backoff and its
+last cursor, so an outage does not resend stored snapshots. Only a cursor the
+broker cannot serve any more asks the editor to resync.
 
 An hourly `notebooks:yjs-snapshot-reconcile` schedule re-queues snapshots for
 notes whose topic head moved past their stored cursor without a settled job,
-for example after a crashed process or a lost enqueue. It covers notes that
-have saved a cursor; a note that never saved one is covered by its next editing
-session.
+for example after a crashed process or a lost enqueue. It checks up to 5000
+notes per run, most recently edited first, because only an edit can move a
+topic. It covers notes that have saved a cursor; a note that never saved one is
+covered by its next editing session.
 
 Verify a new edit survives saving, reconnecting, and an application restart.
 Confirm the stored snapshot cursor reaches the note topic's latest sequence,

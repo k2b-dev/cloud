@@ -27,6 +27,8 @@ export const NOTEBOOKS_YJS_ERROR_CODE = {
   backpressure: "BACKPRESSURE",
   internalError: "INTERNAL_ERROR",
   resyncRequired: "RESYNC_REQUIRED",
+  /** A transient live-stream failure: reconnect with the last cursor, no resync. */
+  streamFailed: "STREAM_FAILED",
 } as const;
 
 export type NotebooksYjsErrorCode = (typeof NOTEBOOKS_YJS_ERROR_CODE)[keyof typeof NOTEBOOKS_YJS_ERROR_CODE];

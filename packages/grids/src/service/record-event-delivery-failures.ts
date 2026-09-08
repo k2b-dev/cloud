@@ -24,12 +24,13 @@ export type RecordEventDeliveryFailureInput = {
 /**
  * One row per accepted delivery. Every failed attempt increments it; the row
  * turns `dead` at the budget and keeps its first terminal payload and error.
+ * `alreadyDead` reports an attempt that arrived after that transition.
  */
 export const recordRecordEventDeliveryFailure = async (
   input: RecordEventDeliveryFailureInput,
-): Promise<{ attempts: number; dead: boolean }> => {
+): Promise<{ attempts: number; dead: boolean; alreadyDead: boolean }> => {
   const maxAttempts = Math.max(1, input.maxAttempts);
-  const [row] = await sql<Array<{ attempts: number | string; status: "retrying" | "dead" }>>`
+  const [row] = await sql<Array<{ attempts: number | string; status: "retrying" | "dead"; already_dead: boolean }>>`
     INSERT INTO grids.record_event_delivery_failures (
       base_id,
       consumer_group,
@@ -72,10 +73,10 @@ export const recordRecordEventDeliveryFailure = async (
           THEN COALESCE(grids.record_event_delivery_failures.dead_at, now())
         ELSE NULL
       END
-    RETURNING attempts, status
+    RETURNING attempts, status, (status = 'dead' AND dead_at < last_seen_at) AS already_dead
   `;
   if (!row) throw new Error("Record event delivery failure was not persisted");
-  return { attempts: Number(row.attempts), dead: row.status === "dead" };
+  return { attempts: Number(row.attempts), dead: row.status === "dead", alreadyDead: row.already_dead };
 };
 
 export const listRecordEventDeliveryFailures = async (baseId: string, limit = 100): Promise<RecordEventDeliveryFailure[]> => {

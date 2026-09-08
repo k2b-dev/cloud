@@ -20,7 +20,9 @@ const DEFAULT_IPA_SYNC_CRON = "*/5 * * * *";
 const IPA_SYNC_LEASE_MS = 120_000;
 // Scheduled scans retry in minutes: a short FreeIPA or database blip must not
 // dead-letter a slot; anything longer surfaces once as a dead letter and the
-// next slot retries anyway.
+// next slot retries anyway. Sync releases a coalesced key when it dead-letters
+// the run (job `onDeadLetter`), so the stable `scheduled` key is not pinned
+// for the dead letter's retention and the next slot can submit again.
 const SCAN_RETRY = { maxAttempts: 3, backoffMs: [60_000, 300_000] } satisfies Partial<DeliveryConfig>;
 const ipaSyncMutex = lazySync((sync) => sync.mutex({ id: "auth:ipa:sync", ttlMs: IPA_SYNC_LEASE_MS, retry: { maxAttempts: 1 } }));
 let notificationSender: AccountLifecycleNotificationSender | null = null;
@@ -279,7 +281,9 @@ const processLocalUserBackfillJob = async (ctx: JobContext<null>): Promise<void>
 
 // ── Scheduler ──────────────────────────────────────────────────────────
 
-const lifecycleScheduler = lazySync((sync) => sync.scheduler({ id: "auth-lifecycle", delivery: { maxAttempts: 1 } }));
+// A tick that fails to submit its job retries once shortly after; with a single
+// attempt the daily slot would be dropped until the next day.
+const lifecycleScheduler = lazySync((sync) => sync.scheduler({ id: "auth-lifecycle", delivery: { maxAttempts: 2, backoffMs: [5_000] } }));
 
 let started = false;
 let workers: Worker[] = [];

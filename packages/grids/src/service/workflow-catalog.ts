@@ -4,6 +4,8 @@ import { parseJsonbRow } from "./jsonb";
 import { SHORT_ID_REGEX } from "./short-id";
 
 export type WorkflowCatalogEntry = { id: string; name: string; shortId: string };
+/** Record events exist for stored tables only; Combined tables are derived and never emit them. */
+export type WorkflowTableCatalogEntry = WorkflowCatalogEntry & { kind: "stored" | "federated" };
 export type WorkflowFieldCatalogEntry = WorkflowCatalogEntry & {
   relation?: { targetTableId: string; cardinality: "single" | "multiple" };
 };
@@ -14,20 +16,21 @@ export type WorkflowCatalogIndex<T extends WorkflowCatalogEntry> = {
 };
 
 export type WorkflowCatalog = {
-  tables: WorkflowCatalogIndex<WorkflowCatalogEntry>;
+  tables: WorkflowCatalogIndex<WorkflowTableCatalogEntry>;
   fieldsByTable: Map<string, WorkflowCatalogIndex<WorkflowFieldCatalogEntry>>;
   templates: WorkflowCatalogIndex<WorkflowCatalogEntry & { tableId: string }>;
   emailTemplates: WorkflowCatalogIndex<WorkflowCatalogEntry>;
 };
 
 const WorkflowCatalogEntrySchema = z.object({ id: z.string().uuid(), name: z.string(), shortId: z.string().regex(SHORT_ID_REGEX) });
+const WorkflowTableCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({ kind: z.enum(["stored", "federated"]) });
 const WorkflowFieldCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({
   relation: z.object({ targetTableId: z.string().uuid(), cardinality: z.enum(["single", "multiple"]) }).optional(),
 });
 const WorkflowTemplateCatalogEntrySchema = WorkflowCatalogEntrySchema.extend({ tableId: z.string().uuid() });
 
 export const WorkflowCatalogSnapshotSchema = z.object({
-  tables: z.array(WorkflowCatalogEntrySchema),
+  tables: z.array(WorkflowTableCatalogEntrySchema),
   fieldsByTable: z.record(z.string().uuid(), z.array(WorkflowFieldCatalogEntrySchema)),
   templates: z.array(WorkflowTemplateCatalogEntrySchema),
   emailTemplates: z.array(WorkflowCatalogEntrySchema),
@@ -36,7 +39,7 @@ export const WorkflowCatalogSnapshotSchema = z.object({
 export type WorkflowCatalogSnapshot = z.infer<typeof WorkflowCatalogSnapshotSchema>;
 
 type WorkflowCatalogInput = {
-  tables: WorkflowCatalogEntry[];
+  tables: WorkflowTableCatalogEntry[];
   fieldsByTable?: Map<string, WorkflowFieldCatalogEntry[]>;
   templates?: Array<WorkflowCatalogEntry & { tableId: string }>;
   emailTemplates?: WorkflowCatalogEntry[];
@@ -114,13 +117,15 @@ export const getWorkflowCatalogRef = <T extends WorkflowCatalogEntry>(index: Wor
 };
 
 const loadWorkflowCatalogWithDeleted = async (baseId: string, db: SQL, includeDeleted: boolean): Promise<WorkflowCatalog> => {
-  const tableRows = await db<{ id: string; short_id: string; name: string }[]>`
-    SELECT id::text AS id, short_id, name
+  const tableRows = await db<{ id: string; short_id: string; name: string; kind: string }[]>`
+    SELECT id::text AS id, short_id, name, kind
     FROM grids.tables
     WHERE base_id = ${baseId}::uuid AND (${includeDeleted} OR deleted_at IS NULL)
   `;
-  const tables = createCatalogIndex<WorkflowCatalogEntry>();
-  for (const row of tableRows) addRefAliases(tables, { id: row.id, shortId: row.short_id, name: row.name });
+  const tables = createCatalogIndex<WorkflowTableCatalogEntry>();
+  for (const row of tableRows) {
+    addRefAliases(tables, { id: row.id, shortId: row.short_id, name: row.name, kind: row.kind === "federated" ? "federated" : "stored" });
+  }
 
   const fieldRows = await db<
     Array<{ id: string; short_id: string; table_id: string; name: string; type: string; config: Record<string, unknown> }>
@@ -178,7 +183,7 @@ export const loadWorkflowCatalog = (baseId: string, db: SQL = sql): Promise<Work
 export const loadWorkflowCatalogForMigration = (baseId: string, db: SQL): Promise<WorkflowCatalog> =>
   loadWorkflowCatalogWithDeleted(baseId, db, true);
 
-export const resolveWorkflowTableRef = (catalog: WorkflowCatalog, ref: string): WorkflowCatalogEntry | null =>
+export const resolveWorkflowTableRef = (catalog: WorkflowCatalog, ref: string): WorkflowTableCatalogEntry | null =>
   getWorkflowCatalogRef(catalog.tables, ref);
 
 export const resolveWorkflowFieldRef = (catalog: WorkflowCatalog, tableId: string, ref: string): WorkflowFieldCatalogEntry | null => {

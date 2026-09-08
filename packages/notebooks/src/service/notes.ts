@@ -1,5 +1,5 @@
 import { type DateContext, dates, fromBase64Strict } from "@k2b/stdlib";
-import type { RetentionGapError } from "@k2b/sync";
+import { RetentionGapError } from "@k2b/sync";
 import type { MutationResult, PaginationParams } from "@valentinkolb/cloud/contracts";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
@@ -21,7 +21,7 @@ import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
-import { compareStreamCursor, createYjsTopic, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
+import { compareStreamCursor, createYjsTopic, type MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
 // ==========================
 // Types
@@ -1316,16 +1316,20 @@ export const getYjsStateWithCursor = async (params: {
 };
 
 /**
- * Re-anchor the stored snapshot at the topic head after its cursor fell below
- * retention. Every update between the stored cursor and the first retained
- * event is gone. The retained remainder is skipped as well: it may depend on
- * the lost updates and must not be presented as authoritative. This is a
- * data-loss event, so it is logged at error level and recorded as a failed
- * trace span. It is terminal: afterwards the stored state covers the head and
- * replay resumes from retained history.
+ * Re-anchor the stored snapshot at the topic head after retained history can
+ * no longer be replayed onto it: its cursor fell below retention, or a
+ * retained event is not a decodable Yjs update. Every update between the
+ * stored cursor and the head is gone. The retained remainder is skipped as
+ * well: it may depend on the lost updates and must not be presented as
+ * authoritative. This is a data-loss event, so it is logged at error level and
+ * recorded as a failed trace span. It is terminal: afterwards the stored state
+ * covers the head and replay resumes from retained history.
  */
-export const adoptSnapshotAtHead = async (params: { noteId: string; gap: RetentionGapError }): Promise<{ cursor: string } | null> => {
-  const { noteId, gap } = params;
+export const adoptSnapshotAtHead = async (params: {
+  noteId: string;
+  cause: RetentionGapError | MalformedSyncEventError;
+}): Promise<{ cursor: string } | null> => {
+  const { noteId, cause } = params;
   const stored = await getYjsStateWithCursor({ noteId });
   if (!stored) return null;
   const head = await createYjsTopic(noteId).head();
@@ -1345,42 +1349,63 @@ export const adoptSnapshotAtHead = async (params: { noteId: string; gap: Retenti
   } finally {
     doc.destroy();
   }
+  const loss =
+    cause instanceof RetentionGapError
+      ? {
+          name: "Notebook Yjs history gap",
+          source: "notebooks:yjs-history-gap",
+          log: "Yjs history gap: stored snapshot re-anchored at the topic head; updates after the stored cursor are lost",
+          statusMessage: "Retained document history no longer covers the stored snapshot; updates were lost",
+          detail: { firstRetainedCursor: cause.firstAvailable },
+        }
+      : {
+          name: "Notebook Yjs malformed history",
+          source: "notebooks:yjs-malformed-history",
+          log: "Yjs malformed history: stored snapshot re-anchored at the topic head; updates after the stored cursor are lost",
+          statusMessage: "A retained document update cannot be decoded; updates were lost",
+          detail: { malformedCursor: cause.cursor },
+        };
   const detail = {
     noteId,
     storedCursor: stored.streamCursor,
-    firstRetainedCursor: gap.firstAvailable,
+    ...loss.detail,
     headCursor: head,
     outcome: result.ok ? "adopted" : `rejected: ${result.error}`,
   };
-  log.error("Yjs history gap: stored snapshot re-anchored at the topic head; updates after the stored cursor are lost", detail);
+  log.error(loss.log, detail);
   // The stored row is already re-anchored; a failing trace write must not undo that outcome.
   await trace
     .complete({
-      name: "Notebook Yjs history gap",
-      source: "notebooks:yjs-history-gap",
+      name: loss.name,
+      source: loss.source,
       appId: "notebooks",
       category: "sync",
       kind: "internal",
       startedAt,
       endedAt: new Date(),
       status: "error",
-      statusMessage: "Retained document history no longer covers the stored snapshot; updates were lost",
+      statusMessage: loss.statusMessage,
       attributes: { "cloud.notebooks.note_id": noteId },
       summary: detail,
     })
     .catch((error: unknown) => {
-      log.warn("Could not record the Yjs history gap trace", { noteId, error: error instanceof Error ? error.message : String(error) });
+      log.warn("Could not record the Yjs history loss trace", { noteId, error: error instanceof Error ? error.message : String(error) });
     });
   return result.ok ? { cursor: head } : null;
 };
 
-/** Notes whose stored snapshot may lag their topic, oldest snapshot first; locked notes cannot be saved. */
+/**
+ * Notes whose stored snapshot may lag their topic, most recently edited first;
+ * locked notes cannot be saved. Recent edits are the only place a topic can
+ * have moved, so this order reaches them within the limit without a persisted
+ * scan position.
+ */
 export const listSnapshotCursors = async (params: { limit: number }): Promise<Array<{ noteId: string; streamCursor: string }>> => {
   const rows = await sql<{ id: string; yjs_stream_cursor: string }[]>`
     SELECT id, yjs_stream_cursor
     FROM notebooks.notes
     WHERE yjs_stream_cursor IS NOT NULL AND locked_at IS NULL
-    ORDER BY yjs_snapshot_at ASC NULLS FIRST, id ASC
+    ORDER BY updated_at DESC, id DESC
     LIMIT ${params.limit}
   `;
   return rows.map((row) => ({ noteId: row.id, streamCursor: row.yjs_stream_cursor }));

@@ -274,7 +274,7 @@ if (!databaseName) {
         return { traceId: "t", spanId: "s", traceparent: "00-t-s-01" };
       });
       try {
-        expect(await notes.adoptSnapshotAtHead({ noteId: gapId, gap: gap as InstanceType<typeof RetentionGapError> })).toEqual({
+        expect(await notes.adoptSnapshotAtHead({ noteId: gapId, cause: gap as InstanceType<typeof RetentionGapError> })).toEqual({
           cursor: gapThree.cursor,
         });
       } finally {
@@ -313,6 +313,11 @@ if (!databaseName) {
         createdBy: null,
       });
       const lagTwo = await publishTo(lagTopic, "LAG-TWO");
+      // Most recently edited first: the bounded reconcile reaches recent edits
+      // before dormant notes.
+      expect((await notes.listSnapshotCursors({ limit: 1 })).map((row) => row.noteId)).toEqual([lagId]);
+      await sql`UPDATE notebooks.notes SET updated_at = now() WHERE id = ${gapId}::uuid`;
+      expect((await notes.listSnapshotCursors({ limit: 2 })).map((row) => row.noteId)).toEqual([gapId, lagId]);
       const { yjsSnapshotWorker: reconcilingWorker } = await import("./yjs-snapshot-worker");
       expect(await reconcilingWorker.reconcile()).toEqual({ checked: 5, queued: 1 });
       try {

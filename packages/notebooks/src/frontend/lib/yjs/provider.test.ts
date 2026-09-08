@@ -3,7 +3,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
-import { createYjsProvider } from "./provider";
+import { createYjsProvider, reconnectDelayMs } from "./provider";
 
 const NOTE_ID = "Note01";
 const NOTEBOOK_ID = "Book01";
@@ -40,6 +40,12 @@ class FakeWebSocket {
     this.onmessage?.({ data: JSON.stringify(value) });
   }
 }
+
+const replayRequests = (socket: FakeWebSocket) =>
+  socket.sent
+    .map((value) => JSON.parse(value) as { type: string; payload: { fromCursor?: string | null } })
+    .filter((value) => value.type === notebooksYjs.wsType.replayRequest)
+    .map((value) => value.payload.fromCursor ?? null);
 
 const workspaceSubscriptions = (socket: FakeWebSocket) =>
   socket.sent
@@ -206,6 +212,44 @@ describe("Yjs provider workspace cursor coverage", () => {
     socket.open();
     expect(workspaceSubscriptions(socket)).toHaveLength(subscriptionCount + 1);
     provider.dispose();
+  });
+
+  test("keeps the replay cursor across a transient stream failure and drops it only for a resync", () => {
+    const doc = new Y.Doc();
+    const fatalErrors: string[] = [];
+    const provider = createYjsProvider({
+      doc,
+      awareness: new Awareness(doc),
+      noteId: NOTE_ID,
+      appUrl: "http://localhost",
+      onFatal: (error) => fatalErrors.push(error.code),
+    });
+
+    provider.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.note.12", payload: "AAA=", originPeerId: null }] },
+    });
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STREAM_FAILED", message: "broker unavailable" } });
+    socket.open();
+    expect(replayRequests(socket)).toEqual([null, "s6t.note.12"]);
+
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "RESYNC_REQUIRED", message: "stale cursor" } });
+    socket.open();
+    expect(replayRequests(socket)).toEqual([null, "s6t.note.12", null]);
+    expect(fatalErrors).toEqual([]);
+    provider.dispose();
+  });
+
+  test("reconnect delay doubles per failed attempt and stays bounded", () => {
+    expect(reconnectDelayMs(0, 0)).toBe(2_000);
+    expect(reconnectDelayMs(1, 0)).toBe(4_000);
+    expect(reconnectDelayMs(3, 0)).toBe(16_000);
+    expect(reconnectDelayMs(10, 0)).toBe(30_000);
+    expect(reconnectDelayMs(0, 0.999)).toBeLessThan(3_500);
   });
 
   test("terminates after workspace access is revoked", () => {

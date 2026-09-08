@@ -7,6 +7,7 @@ import type { MailRequestContext } from "./service/auth";
 import {
   createMailLiveConnection,
   evaluateMailLiveAccess,
+  MAIL_LIVE_MAX_REPLAY_EVENTS,
   type MailLiveAccessDependencies,
   type MailLiveConnectionDependencies,
   type MailLiveSocket,
@@ -137,9 +138,10 @@ describe("Mail live cursors", () => {
       },
     } satisfies { cursor: string; data: MailInvalidation };
 
-    expect(parseMailLiveReplayEvent(MAILBOX_ID, event)).toEqual({ cursor: event.cursor, event: event.data });
-    expect(parseMailLiveReplayEvent("Box002", event)).toBeNull();
-    expect(parseMailLiveReplayEvent(MAILBOX_ID, { ...event, cursor: "" })).toBeNull();
+    expect(parseMailLiveReplayEvent(MAILBOX_ID, event)).toEqual({ kind: "event", cursor: event.cursor, event: event.data });
+    expect(parseMailLiveReplayEvent("Box002", event)).toEqual({ kind: "foreign" });
+    expect(parseMailLiveReplayEvent(MAILBOX_ID, { ...event, cursor: "" })).toEqual({ kind: "invalid" });
+    expect(parseMailLiveReplayEvent(MAILBOX_ID, { cursor: event.cursor, data: { unexpected: true } })).toEqual({ kind: "invalid" });
   });
 });
 
@@ -167,6 +169,12 @@ const recordingSocket = () => {
   return { socket, messages, closes };
 };
 
+const sequenceOf = (cursor: string): number => {
+  const sequence = Number(cursor.split(".").at(-1));
+  if (!cursor.startsWith("s6t.") || Number.isNaN(sequence)) throw new CursorMismatchError("foreign cursor");
+  return sequence;
+};
+
 const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
@@ -184,6 +192,7 @@ describe("Mail live connection", () => {
       resolveMailboxId: async (publicId) => (publicId === MAILBOX_ID ? "internal-box-1" : null),
       access: { resolveContext: async () => context, requireRead: async () => ok("read") },
       latestCursor: async () => "s6t.mailtest.200",
+      cursorSequence: sequenceOf,
       events: ({ after, signal }) => {
         eventsCalls.push(after);
         return (async function* () {
@@ -215,5 +224,42 @@ describe("Mail live connection", () => {
       },
     ]);
     expect(closes).toEqual([]);
+  });
+
+  test("starts at the head instead of replaying a cursor far behind it", async () => {
+    const context = contextFor("Alice");
+    const { socket, messages } = recordingSocket();
+    const eventsCalls: string[] = [];
+    const deps: MailLiveConnectionDependencies = {
+      resolveMailboxId: async () => "internal-box-1",
+      access: { resolveContext: async () => context, requireRead: async () => ok("read") },
+      latestCursor: async () => `s6t.mailtest.${MAIL_LIVE_MAX_REPLAY_EVENTS + 101}`,
+      cursorSequence: sequenceOf,
+      events: ({ after, signal }) => {
+        eventsCalls.push(after);
+        return (async function* () {
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        })();
+      },
+    };
+    const connection = createMailLiveConnection(socket, { sessionToken: "session", requestId: null, locale: "en" }, deps);
+
+    connection.message(
+      JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.100" } }),
+    );
+    await waitFor(() => messages.length === 1 && eventsCalls.length === 1);
+    // Exactly at the bound the cursor is still replayed.
+    connection.message(
+      JSON.stringify({ type: MAIL_LIVE_WS_TYPE.subscribe, payload: { mailboxId: MAILBOX_ID, fromCursor: "s6t.mailtest.101" } }),
+    );
+    await waitFor(() => messages.length === 2 && eventsCalls.length === 2);
+    await connection.close();
+
+    const head = `s6t.mailtest.${MAIL_LIVE_MAX_REPLAY_EVENTS + 101}`;
+    expect(eventsCalls).toEqual([head, "s6t.mailtest.101"]);
+    expect(messages).toEqual([
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: head } },
+      { type: MAIL_LIVE_WS_TYPE.ready, payload: { mailboxId: MAILBOX_ID, cursor: "s6t.mailtest.101" } },
+    ]);
   });
 });

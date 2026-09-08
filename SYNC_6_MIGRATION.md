@@ -11,7 +11,7 @@ limits; those live outside the `sync:*` prefix. Do not flush Redis or delete
 checkpoints, and scheduler definitions) can still matter for recovery.
 
 Already running Sync 6.2.0? Use the
-[coordinated 6.3.1 upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
+[coordinated 6.3.2 upgrade](docs-site/docs/en/operations/deployment-requirements.md#upgrade-from-sync-620)
 instead of repeating the Redis migration. Also follow the
 [notebook snapshot cutover](docs-site/docs/en/operations/notebooks-snapshot-cutover.md),
 [Grids runtime cutover](packages/grids/SYNC_RUNTIME_CUTOVER.md), and
@@ -79,7 +79,33 @@ cannot disappear behind an older in-flight save. A retention gap must stop
 the save and trigger recovery; it must never replace content with partial
 replayed state.
 
-Resource declarations are drift-checked. A namespace that already ran an earlier v6 build (a development cluster or a 6.2.0 deployment) may hold streams and consumers with older delivery or retention settings; readiness then fails with `ResourceDriftError` naming the resource. Delete those specific resources before starting the new build; a fresh v5 to v6 cutover is unaffected.
+Resource declarations are drift-checked. A namespace that already ran an
+earlier v6 build (a development cluster or a 6.2.0 deployment) may hold
+streams and consumers with older delivery or retention settings; readiness
+then fails with `ResourceDriftError` naming the resource. A fresh v5 to v6
+cutover is unaffected. Keep the NATS data; repair only the named resource, and
+distinguish the two cases:
+
+- Consumer drift: delete only the durable consumer (`nats consumer rm
+  <stream> <consumer>`). The stream and its retained, unacknowledged work
+  survive; the new build recreates the consumer and resumes.
+- Stream drift: deleting a stream drops everything it retains. Only do this
+  where the release notes below say the work is ephemeral or recoverable from
+  Postgres.
+
+Resources this release changes, and how their work is recovered:
+
+- `cloud-ai-turn-controls` topic (`max_bytes`): stream drift. Delete the
+  stream; it carries short-lived turn abort events only.
+- Job consumers `auth:ipa:sync`, `auth:reminder:daily`, `auth:guest:cleanup`,
+  `auth:local-user:cleanup`, `auth:lifecycle:audit:cleanup`, `app:logs:cleanup`
+  (`ack_wait`, `backoff`): consumer drift. A slot in flight during the cutover
+  re-runs at the next schedule slot.
+- `cloud-notification-deliveries` job (consumer drift): the Postgres recovery
+  scan re-enqueues deliveries that were queued at the cutover.
+- `core-ai-chat-task-occurrence` stream (`duplicate_window`): stream drift.
+  Delete the stream; the recovery cron resubmits occurrence rows still queued
+  in Postgres.
 
 ## Start the v6 fleet
 

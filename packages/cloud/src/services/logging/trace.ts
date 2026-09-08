@@ -963,10 +963,15 @@ const cleanup = async (options: { days: number; source?: string }): Promise<numb
  * summary attaches it itself with `trace.end({ spanKey, summary })`, using
  * `trace.syncSpanKey(kind, resource, runId)` for the same span.
  *
- * Topic consumer runs are traced only when they fail: a successful run
- * writes nothing. Telemetry consumers process one event per request, and two
- * span writes per event would multiply the write load and saturate the
- * bounded observer buffer, dropping the process's other Sync diagnostics.
+ * Topic consumer runs are traced only when they fail: a successful first
+ * attempt writes nothing. Telemetry consumers process one event per request,
+ * and two span writes per event would multiply the write load and saturate
+ * the bounded observer buffer, dropping the process's other Sync diagnostics.
+ * A retry materializes the run as an error span, so a later successful
+ * attempt is traced too (one extra write only for runs that retried) and
+ * closes that span as `ok` instead of leaving it `error` forever. Topic
+ * redeliveries carry no run id and are dropped as well; the retry span
+ * already records them.
  */
 
 type SyncRunKind = "queue" | "job" | "topic" | "scheduler" | "pump";
@@ -1000,10 +1005,12 @@ const TRACED_SYNC_EVENT_TYPES = new Set([
 const isTracedSyncEvent = (event: SyncEvent): boolean => {
   if (!event.resource || !event.kind || !isSyncRunKind(event.kind) || !TRACED_SYNC_EVENT_TYPES.has(event.type)) return false;
   if (event.kind !== "topic") return true;
-  if (event.type === "handler_started") return false;
+  if (event.type === "handler_started" || event.type === "redelivery") return false;
   if (event.type !== "handler_settled") return true;
   const status = event.detail?.status;
-  return status === "retry" || status === "dead_letter";
+  if (status === "retry" || status === "dead_letter") return true;
+  const attempt = event.detail?.attempt;
+  return status === "success" && typeof attempt === "number" && attempt > 1;
 };
 
 const detailString = (detail: Record<string, unknown>, key: string): string | undefined => {

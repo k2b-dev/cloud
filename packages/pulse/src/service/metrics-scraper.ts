@@ -343,19 +343,24 @@ export const runMetricsSourceScrape = async (
     return fail(err.notFound("Metrics source"));
   }
 
+  // Endpoint-side failures (unreachable, timeout, HTTP status, unparseable
+  // body) are scrape outcomes: recorded on the source and returned as `fail`.
+  let metricsResult: Result<PulseMetric[]>;
   try {
-    const metricsResult = await fetchPrometheusMetrics(source);
-    if (!metricsResult.ok) {
-      await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message });
-      return fail(metricsResult.error);
-    }
-    const metrics = metricsResult.data.map((metric) => ({ ...metric, sourceId: params.sourceId }));
-    const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } });
-    await recordIngestResult({ baseId: params.baseId, sourceId: params.sourceId, startedAt, result });
-    return result;
+    metricsResult = await fetchPrometheusMetrics(source);
   } catch (scrapeError) {
-    const message = metricsScrapeErrorMessage(scrapeError);
-    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message });
-    return fail(err.internal(message));
+    metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
+  if (!metricsResult.ok) {
+    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message });
+    return fail(metricsResult.error);
+  }
+  const metrics = metricsResult.data.map((metric) => ({ ...metric, sourceId: params.sourceId }));
+  const result = await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } });
+  // The ingest writer turns database failures into internal errors. Those are
+  // infrastructure, not a property of the endpoint: throw so the job retries
+  // instead of recording them as a scrape outcome.
+  if (!result.ok && result.error.status >= 500) throw new Error(`Metrics ingest failed: ${result.error.message}`);
+  await recordIngestResult({ baseId: params.baseId, sourceId: params.sourceId, startedAt, result });
+  return result;
 };

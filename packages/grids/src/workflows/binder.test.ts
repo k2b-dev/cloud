@@ -15,13 +15,15 @@ const ids = {
   current: "88888888-8888-4888-8888-888888888888",
   related: "99999999-9999-4999-8999-999999999999",
   corrects: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  combined: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 } as const;
 
 const catalog = (): WorkflowCatalog =>
   buildWorkflowCatalog({
     tables: [
-      { id: ids.items, shortId: "TBL001", name: "Items" },
-      { id: ids.archive, shortId: "TBL002", name: "Archive" },
+      { id: ids.items, shortId: "TBL001", name: "Items", kind: "stored" },
+      { id: ids.archive, shortId: "TBL002", name: "Archive", kind: "stored" },
+      { id: ids.combined, shortId: "TBL003", name: "Overview", kind: "federated" },
     ],
     fieldsByTable: new Map([
       [
@@ -224,6 +226,49 @@ steps:
 `);
     const result = await bindGridsWorkflow(ir, catalog());
     expect(result.ok).toBe(true);
+  });
+
+  test("rejects record-event triggers bound to a Combined table", async () => {
+    const configured = await bindGridsWorkflow(
+      await compile(`triggers:
+  recordEvent:
+    event: updated
+    table: Overview
+steps:
+  - succeed:
+      message: never
+`),
+      catalog(),
+    );
+    expect(configured.ok).toBe(false);
+    if (!configured.ok) {
+      expect(configured.diagnostics).toEqual([
+        expect.objectContaining({
+          code: "trigger.table",
+          message: 'Record events are not available for Combined table "Overview"',
+          path: ["triggers", "recordEvent", "table"],
+        }),
+      ]);
+    }
+
+    const inferred = await bindGridsWorkflow(
+      await compile(`inputs:
+  row:
+    type: grids.record
+    table: Overview
+triggers:
+  recordEvent:
+    event: updated
+    with:
+      row: "\${{ trigger.record }}"
+steps:
+  - succeed:
+      message: never
+`),
+      catalog(),
+    );
+    expect(inferred.ok).toBe(false);
+    if (!inferred.ok) expect(inferred.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["trigger.table"]);
   });
 
   test("binds human-readable resources and fields to stable path-keyed IDs", async () => {

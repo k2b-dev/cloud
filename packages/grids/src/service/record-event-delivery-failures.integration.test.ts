@@ -30,12 +30,21 @@ describe("record event delivery failures", () => {
         error: "first error",
         maxAttempts: 3,
       };
-      expect(await recordRecordEventDeliveryFailure(input)).toEqual({ attempts: 1, dead: false });
-      expect(await recordRecordEventDeliveryFailure({ ...input, error: "second error" })).toEqual({ attempts: 2, dead: false });
-      expect(await recordRecordEventDeliveryFailure({ ...input, error: "terminal error" })).toEqual({ attempts: 3, dead: true });
+      expect(await recordRecordEventDeliveryFailure(input)).toEqual({ attempts: 1, dead: false, alreadyDead: false });
+      expect(await recordRecordEventDeliveryFailure({ ...input, error: "second error" })).toEqual({
+        attempts: 2,
+        dead: false,
+        alreadyDead: false,
+      });
+      expect(await recordRecordEventDeliveryFailure({ ...input, error: "terminal error" })).toEqual({
+        attempts: 3,
+        dead: true,
+        alreadyDead: false,
+      });
       expect(await recordRecordEventDeliveryFailure({ ...input, payload: "must not replace", error: "must not replace" })).toEqual({
         attempts: 3,
         dead: true,
+        alreadyDead: true,
       });
       const failures = await listRecordEventDeliveryFailures(baseId, 0);
       expect(failures).toHaveLength(1);
@@ -58,7 +67,7 @@ describe("record event delivery failures", () => {
         error: "invalid payload",
         maxAttempts: 1,
       });
-      expect(failure).toEqual({ attempts: 1, dead: true });
+      expect(failure).toEqual({ attempts: 1, dead: true, alreadyDead: false });
       expect(await listRecordEventDeliveryFailures(baseId)).toHaveLength(1);
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;

@@ -24,7 +24,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const snapshots: unknown[] = [];
   const subscribedAfter: string[] = [];
   const adoptions: unknown[] = [];
-  const replayGap = { head: null as string | null, gapBelow: null as string | null };
+  const replayGap = { head: null as string | null, gapBelow: null as string | null, failure: null as Error | null };
   let events: WSEvents | undefined;
   const waitUntilAborted = async function* (config: { signal?: AbortSignal }) {
     if (!config.signal?.aborted)
@@ -57,8 +57,8 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
           restoreRevision: "0",
           contentMd: null,
         }),
-        adoptSnapshotAtHead: async (input: { noteId: string; gap: RetentionGapError }) => {
-          adoptions.push({ noteId: input.noteId, requested: input.gap.requested });
+        adoptSnapshotAtHead: async (input: { noteId: string; cause: RetentionGapError }) => {
+          adoptions.push({ noteId: input.noteId, requested: input.cause.requested });
           return { cursor: "s6t.fixture.20" };
         },
       },
@@ -82,6 +82,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       latestCursor: async () => replayGap.head,
       cursorAt: () => "s6t.fixture.0",
       replay: async function* (config: { after: string }) {
+        if (replayGap.failure) throw replayGap.failure;
         if (config.after === replayGap.gapBelow) throw new RetentionGapError(config.after, "s6t.fixture.15", "s6t.fixture.14");
       },
       hub: () => ({
@@ -164,9 +165,24 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(adoptions).toEqual([]);
   }, 10_000);
 
+  test("a transient stream failure closes without demanding a resync so the client keeps its cursor", async () => {
+    replayGap.head = "s6t.fixture.19";
+    replayGap.gapBelow = null;
+    replayGap.failure = new Error("broker unavailable");
+    adoptions.length = 0;
+    const socket = await openSocket();
+    socket.request("s6t.fixture.12");
+    expect(await socket.closed.promise).toBe(1012);
+    expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
+      "STREAM_FAILED",
+    ]);
+    expect(adoptions).toEqual([]);
+  }, 10_000);
+
   test("shutdown waits for accepted edits and unload snapshots even after remote close begins", async () => {
     replayGap.head = null;
     replayGap.gapBelow = null;
+    replayGap.failure = null;
     subscribedAfter.length = 0;
     await app.request("/");
     const handlers = events!;

@@ -22,6 +22,9 @@ export const SNAPSHOT_JOB_CONFIG = {
   ordering: { mode: "partitioned", partitions: SNAPSHOT_PARTITIONS },
   retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
   terminalRetentionMs: 30 * 24 * 60 * 60 * 1000,
+  // Inert for coalesced submits, but part of the provisioned stream: dropping
+  // it would drift `duplicate_window` on every existing installation.
+  dedupeWindowMs: 24 * 60 * 60 * 1000,
 } satisfies JobConfig;
 const snapshotJob = lazySync((sync) => sync.job<SnapshotSaveJob>(SNAPSHOT_JOB_CONFIG));
 const queueSnapshotSave = async (config: { noteId: string; targetCursor: string; reason: SnapshotReason }): Promise<void> => {
@@ -32,8 +35,10 @@ const queueSnapshotSave = async (config: { noteId: string; targetCursor: string;
 
 /**
  * Re-queue snapshots for notes whose topic moved past their stored cursor.
- * Bounded and oldest-snapshot first; coalesced keys make repeated runs and
- * concurrently queued work harmless. Notes that never saved a cursor have no
+ * Bounded and most recently edited first: a note's topic only moves when it
+ * is edited, so recent edits are where a lost enqueue can hide, while dormant
+ * notes past the limit already match their head. Coalesced keys make repeated
+ * runs and concurrently queued work harmless. Notes that never saved a cursor have no
  * topic to inspect without provisioning one, so they are covered by the next
  * editing session instead.
  */
@@ -70,7 +75,10 @@ const start = async (): Promise<void> => {
           return { action: "dead_letter", reason: "Document history is incomplete; the stored snapshot was re-anchored at the topic head" };
         }
         if (error instanceof MalformedSyncEventError) {
-          return { action: "dead_letter", reason: `Retained event cannot be applied: ${error.message}` };
+          return {
+            action: "dead_letter",
+            reason: `Retained event cannot be applied; the stored snapshot was re-anchored at the topic head: ${error.message}`,
+          };
         }
         return { action: "retry" };
       },
@@ -114,10 +122,13 @@ const start = async (): Promise<void> => {
               reachedTarget = event.cursor === targetCursor;
             }
           } catch (error) {
-            // The lost segment can never be replayed. Make the stored snapshot
-            // the base at the head so this note stops failing, then dead-letter
-            // the job as the durable record of the loss.
-            if (error instanceof RetentionGapError) await notes.adoptSnapshotAtHead({ noteId, gap: error });
+            // A lost or undecodable segment can never be replayed. Make the
+            // stored snapshot the base at the head so this note stops failing
+            // (and the reconciler stops re-queueing it), then dead-letter the
+            // job once as the durable record of the loss.
+            if (error instanceof RetentionGapError || error instanceof MalformedSyncEventError) {
+              await notes.adoptSnapshotAtHead({ noteId, cause: error });
+            }
             throw error;
           }
           context.signal.throwIfAborted();

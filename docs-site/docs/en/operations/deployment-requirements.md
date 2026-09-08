@@ -216,10 +216,14 @@ actions routed through Core with target-bound invocation credentials.
 
 ## Upgrade from Sync 6.2.0
 
-Deploy Cloud's locked Sync 6.3.1 version after stopping every old producer and
+Deploy Cloud's pinned Sync 6.3.2 version after stopping every old producer and
 worker. Old workers can overwrite or delete repaired coalescing claims, so
 these versions must not share a running fleet. Keep Postgres, Valkey, and NATS
-data and take backups before starting the new release.
+data and take backups before starting the new release. If readiness reports a
+`ResourceDriftError`, repair only the named resource as the migration runbook
+describes: a drifted consumer is deleted alone and its stream keeps the
+retained work; a drifted stream is deleted only where the runbook lists its
+work as ephemeral or recoverable from Postgres.
 
 First quiesce new work while old workers can finish. Complete the
 [notebook snapshot checks](/en/docs/operations/notebooks-snapshot-cutover) and

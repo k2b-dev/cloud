@@ -95,8 +95,8 @@ suite("logging.trace", () => {
       expect(result.total).toBe(1);
       expect(result.spans[0]).toMatchObject({
         name: "telemetry",
-        status: "error",
-        statusMessage: "Retry scheduled after 1 attempt(s)",
+        status: "ok",
+        statusMessage: null,
         eventCount: 1,
       });
       expect(result.spans[0]?.spanKey).toBe(trace.syncSpanKey("topic", resource, retried, "telemetry"));
