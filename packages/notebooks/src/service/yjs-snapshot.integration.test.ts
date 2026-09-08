@@ -288,14 +288,19 @@ if (!databaseName) {
             storedCursor: gapOne.cursor,
             firstRetainedCursor: gapThree.cursor,
             headCursor: gapThree.cursor,
+            recoveredUpdates: 1,
+            malformedUpdates: 0,
+            historyGaps: 1,
             outcome: "adopted",
           },
         },
       ]);
       const [reanchored] = await sql<{ content_md: string; yjs_stream_cursor: string }[]>`
         SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${gapId}::uuid`;
-      expect(reanchored).toEqual({ content_md: "GAP-ONE", yjs_stream_cursor: gapThree.cursor });
-      expect((await notes.getCurrentWithContent({ id: gapId }))?.contentMd).toBe("GAP-ONE");
+      expect(reanchored?.yjs_stream_cursor).toBe(gapThree.cursor);
+      expect(reanchored?.content_md).toContain("GAP-ONE");
+      expect(reanchored?.content_md).toContain("GAP-THREE");
+      expect((await notes.getCurrentWithContent({ id: gapId }))?.contentMd).toBe(reanchored?.content_md);
 
       // The hourly reconcile re-queues only notes whose topic moved past their
       // stored cursor, and the worker then brings them up to date.
@@ -313,13 +318,18 @@ if (!databaseName) {
         createdBy: null,
       });
       const lagTwo = await publishTo(lagTopic, "LAG-TWO");
-      // Most recently edited first: the bounded reconcile reaches recent edits
-      // before dormant notes.
-      expect((await notes.listSnapshotCursors({ limit: 1 })).map((row) => row.noteId)).toEqual([lagId]);
-      await sql`UPDATE notebooks.notes SET updated_at = now() WHERE id = ${gapId}::uuid`;
-      expect((await notes.listSnapshotCursors({ limit: 2 })).map((row) => row.noteId)).toEqual([gapId, lagId]);
+      const firstEditId = crypto.randomUUID();
+      const blankId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title)
+        VALUES (${firstEditId}::uuid, 'first1', ${notebookId}::uuid, ''), (${blankId}::uuid, 'blank1', ${notebookId}::uuid, '')`;
+      const firstEdit = await publishTo(createYjsTopic(firstEditId), "FIRST-EDIT-WITHOUT-ENQUEUE");
+      // Stable keyset ordering does not change when snapshot saves update timestamps.
+      const firstPage = await notes.listSnapshotCursors({ limit: 2 });
+      const secondPage = await notes.listSnapshotCursors({ limit: 5, after: firstPage.at(-1)!.noteId });
+      expect(new Set([...firstPage, ...secondPage].map((row) => row.noteId)).size).toBe(7);
+      expect([...firstPage, ...secondPage].map((row) => row.noteId)).toEqual([...firstPage, ...secondPage].map((row) => row.noteId).sort());
       const { yjsSnapshotWorker: reconcilingWorker } = await import("./yjs-snapshot-worker");
-      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 5, queued: 1 });
+      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 7, queued: 2 });
       try {
         await reconcilingWorker.start();
         const deadline = Date.now() + 20_000;
@@ -327,7 +337,10 @@ if (!databaseName) {
         while (Date.now() < deadline) {
           const [row] = await sql<{ content_md: string; yjs_stream_cursor: string | null }[]>`
             SELECT content_md, yjs_stream_cursor FROM notebooks.notes WHERE id = ${lagId}::uuid`;
-          if (row?.yjs_stream_cursor === lagTwo.cursor) {
+          if (
+            row?.yjs_stream_cursor === lagTwo.cursor &&
+            (await notes.getYjsStateWithCursor({ noteId: firstEditId }))?.streamCursor === firstEdit.cursor
+          ) {
             caughtUp = row;
             break;
           }
@@ -338,7 +351,166 @@ if (!databaseName) {
       } finally {
         await reconcilingWorker.stop();
       }
-      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 5, queued: 0 });
+      // First accepted edit survives without any prior saved stream cursor.
+      const firstState = await notes.getYjsStateWithCursor({ noteId: firstEditId });
+      expect(firstState?.streamCursor).toBe(firstEdit.cursor);
+      expect(firstState?.contentMd).toBe("FIRST-EDIT-WITHOUT-ENQUEUE");
+      expect((await notes.getYjsStateWithCursor({ noteId: blankId }))?.streamCursor).toBeNull();
+      expect(await reconcilingWorker.reconcile()).toEqual({ checked: 7, queued: 0 });
+
+      // Even marker-only recovery invalidates connected readers through the
+      // existing workspace event; an unchanged Markdown body is not sufficient.
+      const invalidations = spyOn(workspace, "noteUpdated").mockResolvedValue(undefined);
+      const unchanged = await notes.getYjsStateWithCursor({ noteId: gapId });
+      if (!unchanged?.yjsState) throw new Error("Gap recovery state missing");
+      await sql`UPDATE notebooks.notes SET yjs_history_incomplete = FALSE WHERE id = ${gapId}::uuid`;
+      invalidations.mockClear();
+      await notes.save({
+        noteId: gapId,
+        yjsState: unchanged.yjsState,
+        contentMd: unchanged.contentMd ?? "",
+        createdBy: null,
+        historyIncomplete: true,
+      });
+      expect(invalidations.mock.calls.some(([note]) => note.id === gapId)).toBe(true);
+
+      // Malformed bytes must not discard valid edits on either side. Recovery
+      // captures one head: an append accepted before recovery returns stays replayable.
+      const poisonId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title)
+        VALUES (${poisonId}::uuid, 'pois01', ${notebookId}::uuid, '')`;
+      const poisonTopic = createYjsTopic(poisonId);
+      const original = encode("ORIGINAL");
+      await notes.save({ noteId: poisonId, yjsState: original, contentMd: "ORIGINAL", createdBy: null });
+      await publishTo(poisonTopic, "VALID-BEFORE");
+      const poison = await poisonTopic.publish({
+        data: {
+          kind: "sync",
+          payload: Buffer.from([255, 255, 255, 255]).toString("base64"),
+          originNodeId: "test",
+          originPeerId: null,
+        },
+      });
+      const target = await publishTo(poisonTopic, "VALID-AFTER");
+      const { MalformedSyncEventError } = await import("./yjs-sync");
+      let appended: string | undefined;
+      const traceDuringRecovery = spyOn(services.trace, "complete").mockImplementation(async () => {
+        appended = (await publishTo(poisonTopic, "CONCURRENT")).cursor;
+        return { traceId: "t", spanId: "s", traceparent: "00-t-s-01" };
+      });
+      try {
+        expect(
+          await notes.adoptSnapshotAtHead({ noteId: poisonId, cause: new MalformedSyncEventError(poisonId, poison.cursor, "fixture") }),
+        ).toEqual({ cursor: target.cursor });
+      } finally {
+        traceDuringRecovery.mockRestore();
+      }
+      const recovered = await notes.getYjsStateWithCursor({ noteId: poisonId });
+      expect(recovered?.streamCursor).toBe(target.cursor);
+      expect(recovered?.historyIncomplete).toBe(true);
+      expect(recovered?.contentMd).toContain("ORIGINAL");
+      expect(recovered?.contentMd).toContain("VALID-BEFORE");
+      expect(recovered?.contentMd).toContain("VALID-AFTER");
+      expect(recovered?.contentMd).not.toContain("CONCURRENT");
+      expect((await notes.getCurrentWithContent({ id: poisonId }))?.contentMd).toContain("CONCURRENT");
+      expect(appended).not.toBe(target.cursor);
+      const originals = await sql<{ yjs_snapshot: Buffer; recovery_original: boolean }[]>`
+        SELECT yjs_snapshot, recovery_original FROM notebooks.note_versions
+        WHERE note_id = ${poisonId}::uuid AND recovery_original = TRUE`;
+      expect(originals).toHaveLength(1);
+      expect([...originals[0]!.yjs_snapshot]).toEqual([...original]);
+      // Protected originals neither expire nor consume the ordinary retention
+      // budget. A large recovery history must not evict all recent versions.
+      await sql`UPDATE notebooks.note_versions SET created_at = now() - interval '30 minutes' WHERE note_id = ${poisonId}::uuid`;
+      await sql`INSERT INTO notebooks.note_versions(note_id, yjs_snapshot, content_md, recovery_original, created_at)
+        SELECT ${poisonId}::uuid, ${Buffer.from(original)}, 'ORIGINAL', TRUE, now() - interval '30 minutes' FROM generate_series(1, 100)`;
+      await sql`INSERT INTO notebooks.note_versions(note_id, yjs_snapshot, content_md, created_at)
+        SELECT ${poisonId}::uuid, ${Buffer.from(original)}, 'ordinary', now() - interval '1 hour' FROM generate_series(1, 10)`;
+      await notes.save({
+        noteId: poisonId,
+        yjsState: encode("NEW VERSION"),
+        contentMd: "NEW VERSION",
+        createdBy: null,
+        createVersion: true,
+      });
+      const [versionCounts] = await sql<{ protected: number; ordinary: number }[]>`
+        SELECT count(*) FILTER (WHERE recovery_original)::int AS protected,
+          count(*) FILTER (WHERE NOT recovery_original)::int AS ordinary
+        FROM notebooks.note_versions WHERE note_id = ${poisonId}::uuid`;
+      expect(versionCounts).toEqual({ protected: 101, ordinary: 11 });
+
+      // A lost delete and an independent editor's later insert can produce a
+      // fully integrated yet incomplete document. The visible warning must stay.
+      const deleteId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.notes(id, short_id, notebook_id, title)
+        VALUES (${deleteId}::uuid, 'del001', ${notebookId}::uuid, '')`;
+      const deleteTopic = createYjsTopic(deleteId);
+      const writer = new Y.Doc();
+      const independent = new Y.Doc();
+      try {
+        writer.getText("codemirror").insert(0, "KEEP DELETE");
+        const base = Y.encodeStateAsUpdate(writer);
+        Y.applyUpdate(independent, base);
+        const first = await deleteTopic.publish({
+          data: { kind: "sync", payload: Buffer.from(base).toString("base64"), originNodeId: "test", originPeerId: null },
+        });
+        await notes.save({ noteId: deleteId, yjsState: base, contentMd: "KEEP DELETE", streamCursor: first.cursor, createdBy: null });
+        writer.getText("codemirror").delete(4, 7);
+        const lost = await deleteTopic.publish({
+          data: {
+            kind: "sync",
+            payload: Buffer.from(Y.encodeStateAsUpdate(writer)).toString("base64"),
+            originNodeId: "test",
+            originPeerId: null,
+          },
+        });
+        const vector = Y.encodeStateVector(independent);
+        independent.getText("codemirror").insert(0, "!");
+        const retained = await deleteTopic.publish({
+          data: {
+            kind: "sync",
+            payload: Buffer.from(Y.encodeStateAsUpdate(independent, vector)).toString("base64"),
+            originNodeId: "test",
+            originPeerId: null,
+          },
+        });
+        const owned = (await Array.fromAsync(manager.streams.list())).find(
+          (entry) =>
+            entry.config.metadata?.["sync.namespace"] === namespace &&
+            entry.config.metadata?.["sync.id"] === `${TOPIC_PREFIX}:${deleteId}` &&
+            entry.config.subjects.some((subject) => subject.endsWith(".event")),
+        );
+        if (!owned) throw new Error("Delete fixture topic missing");
+        await manager.streams.deleteMessage(owned.config.name, lost.streamSequence);
+        await notes.adoptSnapshotAtHead({ noteId: deleteId, cause: new RetentionGapError(first.cursor, retained.cursor, lost.cursor) });
+        const partial = await notes.getYjsStateWithCursor({ noteId: deleteId });
+        expect(partial?.contentMd).toBe("!KEEP DELETE");
+        expect(partial?.historyIncomplete).toBe(true);
+
+        // A restore after recovery reads its base must fence the recovery save.
+        const syncModule = await import("./yjs-sync");
+        const topicFactory = spyOn(syncModule, "createYjsTopic").mockReturnValue({
+          ...deleteTopic,
+          head: async () => {
+            const head = await deleteTopic.head();
+            await sql`UPDATE notebooks.notes SET yjs_restore_revision = yjs_restore_revision + 1,
+              yjs_snapshot = ${Buffer.from(encode("RESTORED-DURING-RECOVERY"))}, content_md = 'RESTORED-DURING-RECOVERY',
+              yjs_stream_cursor = NULL, yjs_stream_seq = NULL, yjs_snapshot_at = now() WHERE id = ${deleteId}::uuid`;
+            return head;
+          },
+        });
+        try {
+          await expect(
+            notes.adoptSnapshotAtHead({ noteId: deleteId, cause: new RetentionGapError(first.cursor, retained.cursor, lost.cursor) }),
+          ).rejects.toThrow("retry from its current state");
+        } finally {
+          topicFactory.mockRestore();
+        }
+        expect((await notes.getYjsStateWithCursor({ noteId: deleteId }))?.contentMd).toBe("RESTORED-DURING-RECOVERY");
+      } finally {
+        writer.destroy();
+        independent.destroy();
+      }
     } finally {
       await sync.drain();
       unbindProcessSync();

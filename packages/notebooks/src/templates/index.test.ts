@@ -35,6 +35,7 @@ const fakeNote = (title: string, shortId: string, parentId: string | null): Note
   title,
   position: 0,
   hasChildren: false,
+  historyIncomplete: false,
   yjsSnapshotAt: null,
   contentMd: null,
   createdBy: null,

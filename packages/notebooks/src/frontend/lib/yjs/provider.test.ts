@@ -233,13 +233,25 @@ describe("Yjs provider workspace cursor coverage", () => {
       type: notebooksYjs.wsType.syncPush,
       payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.note.12", payload: "AAA=", originPeerId: null }] },
     });
+    socket.message({
+      type: notebooksYjs.wsType.awarenessPush,
+      payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.awareness.99", payload: "AAA=" }] },
+    });
     socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STREAM_FAILED", message: "broker unavailable" } });
     socket.open();
     expect(replayRequests(socket)).toEqual([null, "s6t.note.12"]);
 
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "INTERNAL_ERROR", message: "temporary backend error" } });
+    socket.open();
+    expect(replayRequests(socket)).toEqual([null, "s6t.note.12", "s6t.note.12"]);
+
+    socket.onclose?.({ code: 1011, reason: "INTERNAL_ERROR" });
+    socket.open();
+    expect(replayRequests(socket)).toEqual([null, "s6t.note.12", "s6t.note.12", "s6t.note.12"]);
+
     socket.message({ type: notebooksYjs.wsType.error, payload: { code: "RESYNC_REQUIRED", message: "stale cursor" } });
     socket.open();
-    expect(replayRequests(socket)).toEqual([null, "s6t.note.12", null]);
+    expect(replayRequests(socket)).toEqual([null, "s6t.note.12", "s6t.note.12", "s6t.note.12", null]);
     expect(fatalErrors).toEqual([]);
     provider.dispose();
   });
@@ -329,4 +341,43 @@ describe("Yjs provider workspace cursor coverage", () => {
     expect(publish.payload.noteId).toBe(NOTE_ID);
     provider.dispose();
   });
+});
+
+test("reports incomplete recovered history only for the active document snapshot", () => {
+  const doc = new Y.Doc();
+  let warnings = 0;
+  const provider = createYjsProvider({
+    doc,
+    awareness: new Awareness(doc),
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    workspace: { notebookId: NOTEBOOK_ID, onEvent: () => undefined },
+    onHistoryIncomplete: () => {
+      warnings++;
+    },
+  });
+  provider.connect();
+  const socket = FakeWebSocket.instances[0]!;
+  socket.open();
+  for (const [type, noteId, historyIncomplete] of [
+    [notebooksYjs.wsType.syncPush, "other", true],
+    [notebooksYjs.wsType.awarenessPush, NOTE_ID, true],
+    [notebooksYjs.wsType.syncPush, NOTE_ID, false],
+    [notebooksYjs.wsType.syncPush, NOTE_ID, true],
+  ])
+    socket.message({ type, payload: { noteId, historyIncomplete, updates: [] } });
+  expect(warnings).toBe(1);
+  for (const [notebookId, id, historyIncomplete] of [
+    ["other", NOTE_ID, true],
+    [NOTEBOOK_ID, "other", true],
+    [NOTEBOOK_ID, NOTE_ID, false],
+    [NOTEBOOK_ID, NOTE_ID, true],
+  ]) {
+    socket.message({
+      type: notebooksWorkspace.wsType.event,
+      payload: { notebookId, event: { v: 1, type: "note.updated", notebookId, note: { id, historyIncomplete } } },
+    });
+  }
+  expect(warnings).toBe(2);
+  provider.dispose();
 });

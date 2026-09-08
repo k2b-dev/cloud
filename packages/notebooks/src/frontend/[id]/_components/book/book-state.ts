@@ -11,6 +11,7 @@ export type BookSnapshot = {
   activeTag?: string;
   canWrite: boolean;
   locked: boolean;
+  historyIncomplete: boolean;
   cursor: string | null;
 };
 

@@ -26,6 +26,7 @@ export const toPublicNote = (note: Note, notebookId: string, parentId: string | 
   title: note.title,
   position: note.position,
   hasChildren: note.hasChildren,
+  historyIncomplete: note.historyIncomplete,
   yjsSnapshotAt: note.yjsSnapshotAt,
   contentMd: note.contentMd,
   createdBy: note.createdBy,

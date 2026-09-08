@@ -12,6 +12,7 @@ const render = (
   locked = false,
   locale = "en",
   html: string | null = '<h1 id="welcome">Welcome</h1><p>Our handbook.</p>',
+  historyIncomplete = false,
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -24,6 +25,7 @@ const render = (
           currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
           canWrite,
           locked,
+          historyIncomplete,
           html,
           noteTitle: "Welcome",
           appUrl: "https://cloud.example.test",
@@ -36,6 +38,12 @@ const render = (
   );
 
 describe("Book surface", () => {
+  test("keeps the incomplete-history warning visible to readers", () => {
+    const recovered = render(false, false, "en", "<p>Recovered content</p>", true);
+    expect(recovered).toContain("Some note changes could not be recovered");
+    expect(recovered).toContain('id="notebook-book-history-warning" role="status"');
+    expect(render()).toMatch(/id="notebook-book-history-warning" hidden/);
+  });
   test("renders a complete article and reading navigation without the editor or inspector", () => {
     const html = render();
     expect(html).toContain("Our handbook.");

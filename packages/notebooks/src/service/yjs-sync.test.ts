@@ -56,4 +56,38 @@ describe("notebook Yjs stream helpers", () => {
       doc.destroy();
     }
   });
+  test("recovered snapshot serialization preserves unresolved insertions and deletes", () => {
+    const writer = new Y.Doc();
+    const recovered = new Y.Doc();
+    const reloaded = new Y.Doc();
+    try {
+      writer.getText("codemirror").insert(0, "MISSING");
+      const predecessor = Y.encodeStateAsUpdate(writer);
+      const vector = Y.encodeStateVector(writer);
+      writer.getText("codemirror").insert(7, " RETAINED");
+      writer.getText("codemirror").delete(0, 7);
+      const retained = Y.encodeStateAsUpdate(writer, vector);
+      applyYjsTopicEvent(
+        recovered,
+        {
+          cursor: "s6t.fixture.2",
+          data: {
+            kind: "sync",
+            payload: toBase64(retained),
+            originNodeId: "test",
+            originPeerId: null,
+          },
+        },
+        "fixture",
+      );
+      expect(recovered.getText("codemirror").toString()).toBe("");
+      Y.applyUpdate(reloaded, Y.encodeStateAsUpdate(recovered));
+      Y.applyUpdate(reloaded, predecessor);
+      expect(reloaded.getText("codemirror").toString()).toBe(" RETAINED");
+    } finally {
+      writer.destroy();
+      recovered.destroy();
+      reloaded.destroy();
+    }
+  });
 });

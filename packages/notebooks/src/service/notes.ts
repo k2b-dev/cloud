@@ -21,7 +21,15 @@ import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
-import { compareStreamCursor, createYjsTopic, type MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
+import {
+  applyYjsTopicEvent,
+  compareStreamCursor,
+  createYjsTopic,
+  MalformedSyncEventError,
+  NODE_ID,
+  replayYjsTopicToCursor,
+  toBase64,
+} from "./yjs-sync";
 
 // ==========================
 // Types
@@ -36,6 +44,7 @@ export type Note = {
   position: number;
   hasChildren: boolean;
   yjsSnapshotAt: string | null;
+  historyIncomplete: boolean;
   contentMd: string | null;
   createdBy: string | null;
   createdAt: string;
@@ -106,6 +115,7 @@ type DbNote = {
   yjs_snapshot: Buffer | null;
   yjs_stream_cursor?: string | null;
   yjs_snapshot_at: Date | null;
+  yjs_history_incomplete: boolean;
   content_md: string | null;
   created_by: string | null;
   created_at: Date;
@@ -115,6 +125,7 @@ type DbNote = {
 };
 
 type DbYjsState = {
+  yjs_history_incomplete: boolean;
   yjs_restore_revision: string;
   yjs_snapshot: Buffer | null;
   yjs_stream_cursor: string | null;
@@ -169,6 +180,7 @@ const mapToNote = (row: DbNote): Note => ({
   position: row.position,
   hasChildren: row.has_children ?? false,
   yjsSnapshotAt: row.yjs_snapshot_at?.toISOString() ?? null,
+  historyIncomplete: row.yjs_history_incomplete,
   contentMd: row.content_md ?? null,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
@@ -342,7 +354,7 @@ export const lock = async (params: { id: string }): Promise<MutationResult<Note>
     WHERE id = ${id}::uuid
       AND locked_at IS NULL
     RETURNING id, short_id, notebook_id, parent_id, title, position,
-              yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
+              yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
   `;
 
   if (!row) {
@@ -428,7 +440,7 @@ export const list = async (params: { notebookId: string }): Promise<Note[]> => {
   const rows = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.notebook_id = ${params.notebookId}::uuid
@@ -458,7 +470,7 @@ export const listPaged = async (params: {
       ? await sql<DbNote[]>`
           SELECT
             n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
             EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
           FROM notebooks.notes n
           WHERE n.notebook_id = ${params.notebookId}::uuid
@@ -476,7 +488,7 @@ export const listPaged = async (params: {
       : await sql<DbNote[]>`
           SELECT
             n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
             EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
           FROM notebooks.notes n
           WHERE n.notebook_id = ${params.notebookId}::uuid
@@ -593,7 +605,7 @@ export const get = async (params: { id: string }): Promise<Note | null> => {
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.id = ${params.id}::uuid
@@ -607,7 +619,7 @@ export const getByShortId = async (params: { shortId: string }): Promise<Note | 
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.short_id = ${params.shortId}
@@ -634,7 +646,7 @@ const getWithContentRow = async (id: string): Promise<DbNote | null> => {
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_stream_cursor, n.yjs_snapshot_at,
+      n.yjs_snapshot, n.yjs_stream_cursor, n.yjs_history_incomplete, n.yjs_snapshot_at,
       n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
@@ -740,7 +752,7 @@ export const getWithContentByShortId = async (params: { shortId: string }): Prom
   const [row] = await sql<DbNote[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_snapshot, n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.short_id = ${params.shortId}
@@ -809,7 +821,7 @@ export const create = async (params: {
         ${creatorId}::uuid
       )
       RETURNING id, short_id, notebook_id, parent_id, title, position,
-                yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
+                yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
     `;
 
     if (!row) {
@@ -881,7 +893,7 @@ export const update = async (params: { id: string; data: UpdateNote }): Promise<
     WHERE id = ${id}::uuid
       AND locked_at IS NULL
     RETURNING id, notebook_id, parent_id, title, position,
-              yjs_snapshot_at, content_md, created_by, created_at, updated_at
+              yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at
   `;
 
   if (!row) {
@@ -958,6 +970,8 @@ export const save = async (params: {
   restoreRevision?: string;
   requestedAt?: number;
   contributors?: NoteVersionContributorInput[];
+  /** Recovery preserves bytes but cannot certify missing history. Never cleared implicitly. */
+  historyIncomplete?: boolean;
 }): Promise<MutationResult<void>> => {
   const { noteId, yjsState, contentMd, createdBy, createVersion = false, streamCursor = null, requestedAt } = params;
   const contributors =
@@ -979,6 +993,7 @@ export const save = async (params: {
     ? await sql`
         UPDATE notebooks.notes
         SET yjs_snapshot = ${yjsBuffer},
+            yjs_history_incomplete = yjs_history_incomplete OR ${params.historyIncomplete ?? false},
             yjs_stream_cursor = ${streamCursor},
             yjs_stream_seq = ${parsedCursor.seq},
             yjs_snapshot_at = now(),
@@ -998,6 +1013,7 @@ export const save = async (params: {
     : await sql`
         UPDATE notebooks.notes
         SET yjs_snapshot = ${yjsBuffer},
+            yjs_history_incomplete = yjs_history_incomplete OR ${params.historyIncomplete ?? false},
             yjs_snapshot_at = now(),
             content_md = ${contentMd},
             data_properties = ${dataProperties}::jsonb,
@@ -1089,16 +1105,18 @@ export const save = async (params: {
       // - Keep max 1 per hour for days 1-7
       // - Keep max 1 per day for days 7-30
       // - Keep max 1 per week for older
-      // - Never exceed 100 total versions
+      // - Keep at most 100 ordinary versions; recovery originals are never compacted
       await sql`
         DELETE FROM notebooks.note_versions
         WHERE note_id = ${noteId}::uuid
+          AND recovery_original = FALSE
           AND id NOT IN (
             SELECT id FROM (
               -- All versions from last 24 hours
               SELECT id, created_at, 1 as priority
               FROM notebooks.note_versions
               WHERE note_id = ${noteId}::uuid
+                AND recovery_original = FALSE
                 AND created_at > now() - interval '24 hours'
 
               UNION ALL
@@ -1108,6 +1126,7 @@ export const save = async (params: {
                 id, created_at, 2 as priority
               FROM notebooks.note_versions
               WHERE note_id = ${noteId}::uuid
+                AND recovery_original = FALSE
                 AND created_at <= now() - interval '24 hours'
                 AND created_at > now() - interval '7 days'
               ORDER BY date_trunc('hour', created_at), created_at DESC)
@@ -1119,6 +1138,7 @@ export const save = async (params: {
                 id, created_at, 3 as priority
               FROM notebooks.note_versions
               WHERE note_id = ${noteId}::uuid
+                AND recovery_original = FALSE
                 AND created_at <= now() - interval '7 days'
                 AND created_at > now() - interval '30 days'
               ORDER BY date_trunc('day', created_at), created_at DESC)
@@ -1130,6 +1150,7 @@ export const save = async (params: {
                 id, created_at, 4 as priority
               FROM notebooks.note_versions
               WHERE note_id = ${noteId}::uuid
+                AND recovery_original = FALSE
                 AND created_at <= now() - interval '30 days'
               ORDER BY date_trunc('week', created_at), created_at DESC)
             ) AS kept
@@ -1160,7 +1181,8 @@ export const save = async (params: {
   const note = await get({ id: noteId });
   if (note) {
     await reindexNoteRefsSafe({ noteId, notebookId: note.notebookId, contentMd });
-    if (existing.title !== note.title || existing.contentMd !== note.contentMd) await noteUpdated(note);
+    if (existing.title !== note.title || existing.contentMd !== note.contentMd || existing.historyIncomplete !== note.historyIncomplete)
+      await noteUpdated(note);
   }
 
   return { ok: true, data: undefined };
@@ -1300,9 +1322,15 @@ export const editContent = async (params: {
  */
 export const getYjsStateWithCursor = async (params: {
   noteId: string;
-}): Promise<{ yjsState: Uint8Array | null; streamCursor: string | null; restoreRevision: string; contentMd: string | null } | null> => {
+}): Promise<{
+  yjsState: Uint8Array | null;
+  streamCursor: string | null;
+  restoreRevision: string;
+  contentMd: string | null;
+  historyIncomplete: boolean;
+} | null> => {
   const [row] = await sql<DbYjsState[]>`
-    SELECT yjs_snapshot, yjs_stream_cursor, content_md, yjs_restore_revision::text
+    SELECT yjs_snapshot, yjs_stream_cursor, content_md, yjs_restore_revision::text, yjs_history_incomplete
     FROM notebooks.notes
     WHERE id = ${params.noteId}::uuid
   `;
@@ -1312,31 +1340,73 @@ export const getYjsStateWithCursor = async (params: {
     streamCursor: row.yjs_stream_cursor,
     restoreRevision: row.yjs_restore_revision,
     contentMd: row.content_md,
+    historyIncomplete: row.yjs_history_incomplete,
   };
 };
 
 /**
- * Re-anchor the stored snapshot at the topic head after retained history can
- * no longer be replayed onto it: its cursor fell below retention, or a
- * retained event is not a decodable Yjs update. Every update between the
- * stored cursor and the head is gone. The retained remainder is skipped as
- * well: it may depend on the lost updates and must not be presented as
- * authoritative. This is a data-loss event, so it is logged at error level and
- * recorded as a failed trace span. It is terminal: afterwards the stored state
- * covers the head and replay resumes from retained history.
+ * Recover every decodable retained update without discarding unresolved Yjs
+ * dependencies. The saved binary includes pending structs and deletes, so a
+ * later full-state update can fill a missing dependency. Missing/invalid history
+ * remains an explicit error; recovery never claims that lost bytes were restored.
  */
 export const adoptSnapshotAtHead = async (params: {
   noteId: string;
   cause: RetentionGapError | MalformedSyncEventError;
+  signal?: AbortSignal;
 }): Promise<{ cursor: string } | null> => {
   const { noteId, cause } = params;
   const stored = await getYjsStateWithCursor({ noteId });
   if (!stored) return null;
-  const head = await createYjsTopic(noteId).head();
+  const topic = createYjsTopic(noteId);
+  const head = await topic.head();
   const startedAt = new Date();
   const doc = createDocFromState(stored.yjsState, stored.contentMd);
+  const originalState = Buffer.from(stored.yjsState ?? Y.encodeStateAsUpdate(doc));
   let result: MutationResult<void>;
+  let recoveredUpdates = 0;
+  let malformedUpdates = 0;
+  let historyGaps = 0;
   try {
+    let after = stored.streamCursor ?? topic.cursorAt(0);
+    while (compareStreamCursor(after, head) < 0) {
+      params.signal?.throwIfAborted();
+      try {
+        for await (const event of topic.replay({ after, until: head, signal: params.signal })) {
+          try {
+            applyYjsTopicEvent(doc, event, noteId);
+            recoveredUpdates++;
+          } catch (error) {
+            if (!(error instanceof MalformedSyncEventError)) throw error;
+            malformedUpdates++;
+          }
+          after = event.cursor;
+        }
+        if (compareStreamCursor(after, head) < 0) throw new Error("Recovery replay did not reach its captured target");
+      } catch (error) {
+        if (!(error instanceof RetentionGapError) || !error.resumeAfter || compareStreamCursor(error.resumeAfter, after) <= 0) throw error;
+        historyGaps++;
+        // Skip only unavailable sequences; include the first retained event.
+        // Strict forward progress and a fixed head bound this loop even if
+        // retention advances concurrently. Never advance past the captured head.
+        after = compareStreamCursor(error.resumeAfter, head) > 0 ? head : error.resumeAfter;
+      }
+    }
+    params.signal?.throwIfAborted();
+    // Keep the exact pre-recovery binary accessible in version history, even
+    // when ordinary versions are later compacted. Reuse an unchanged original.
+    await sql`
+      INSERT INTO notebooks.note_versions (note_id, yjs_snapshot, content_md, recovery_original)
+      SELECT id, ${originalState}, ${stored.contentMd}, TRUE
+      FROM notebooks.notes
+      WHERE id = ${noteId}::uuid
+        AND yjs_restore_revision = ${stored.restoreRevision}::bigint
+        AND NOT EXISTS (
+          SELECT 1 FROM notebooks.note_versions
+          WHERE note_id = ${noteId}::uuid AND recovery_original = TRUE
+            AND yjs_snapshot = ${originalState}
+        )
+    `;
     result = await save({
       noteId,
       yjsState: Y.encodeStateAsUpdate(doc),
@@ -1345,6 +1415,8 @@ export const adoptSnapshotAtHead = async (params: {
       streamCursor: head,
       restoreRevision: stored.restoreRevision,
       requestedAt: startedAt.getTime(),
+      createVersion: true,
+      historyIncomplete: true,
     });
   } finally {
     doc.destroy();
@@ -1354,15 +1426,15 @@ export const adoptSnapshotAtHead = async (params: {
       ? {
           name: "Notebook Yjs history gap",
           source: "notebooks:yjs-history-gap",
-          log: "Yjs history gap: stored snapshot re-anchored at the topic head; updates after the stored cursor are lost",
+          log: "Yjs history gap: retained updates recovered; unavailable history remains missing",
           statusMessage: "Retained document history no longer covers the stored snapshot; updates were lost",
           detail: { firstRetainedCursor: cause.firstAvailable },
         }
       : {
           name: "Notebook Yjs malformed history",
           source: "notebooks:yjs-malformed-history",
-          log: "Yjs malformed history: stored snapshot re-anchored at the topic head; updates after the stored cursor are lost",
-          statusMessage: "A retained document update cannot be decoded; updates were lost",
+          log: "Yjs malformed history: decodable updates recovered; malformed retained payloads skipped",
+          statusMessage: "A retained document update cannot be decoded; valid updates and pending dependencies were preserved",
           detail: { malformedCursor: cause.cursor },
         };
   const detail = {
@@ -1370,6 +1442,9 @@ export const adoptSnapshotAtHead = async (params: {
     storedCursor: stored.streamCursor,
     ...loss.detail,
     headCursor: head,
+    recoveredUpdates,
+    malformedUpdates,
+    historyGaps,
     outcome: result.ok ? "adopted" : `rejected: ${result.error}`,
   };
   log.error(loss.log, detail);
@@ -1391,21 +1466,21 @@ export const adoptSnapshotAtHead = async (params: {
     .catch((error: unknown) => {
       log.warn("Could not record the Yjs history loss trace", { noteId, error: error instanceof Error ? error.message : String(error) });
     });
+  if (!result.ok && result.status !== 404 && result.status !== 403) throw new Error(result.error);
   return result.ok ? { cursor: head } : null;
 };
 
-/**
- * Notes whose stored snapshot may lag their topic, most recently edited first;
- * locked notes cannot be saved. Recent edits are the only place a topic can
- * have moved, so this order reaches them within the limit without a persisted
- * scan position.
- */
-export const listSnapshotCursors = async (params: { limit: number }): Promise<Array<{ noteId: string; streamCursor: string }>> => {
-  const rows = await sql<{ id: string; yjs_stream_cursor: string }[]>`
+/** Scan stable IDs in bounded pages, including first edits whose snapshot enqueue failed. */
+export const listSnapshotCursors = async (params: {
+  limit: number;
+  after?: string;
+}): Promise<Array<{ noteId: string; streamCursor: string | null }>> => {
+  const rows = await sql<{ id: string; yjs_stream_cursor: string | null }[]>`
     SELECT id, yjs_stream_cursor
     FROM notebooks.notes
-    WHERE yjs_stream_cursor IS NOT NULL AND locked_at IS NULL
-    ORDER BY updated_at DESC, id DESC
+    WHERE locked_at IS NULL
+      AND (${params.after ?? null}::uuid IS NULL OR id > ${params.after ?? null}::uuid)
+    ORDER BY id ASC
     LIMIT ${params.limit}
   `;
   return rows.map((row) => ({ noteId: row.id, streamCursor: row.yjs_stream_cursor }));

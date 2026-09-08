@@ -70,6 +70,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof NotebookDetailPanel>[0
       createdAt={now}
       updatedAt={now}
       lockedAt={null}
+      historyIncomplete={false}
       isLocked={false}
       canWrite
       currentUserId="user-id"

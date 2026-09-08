@@ -66,6 +66,7 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         streamCursor: null,
         restoreRevision: "0",
         contentMd: null,
+        historyIncomplete: false,
       });
       const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: undefined });
       const adopt = spyOn(notes, "adoptSnapshotAtHead").mockResolvedValue({ cursor: second.cursor });
@@ -129,7 +130,7 @@ const enabled = process.env.NOTEBOOKS_NATS_TEST === "1";
         expect(readState.mock.calls.filter(([input]) => input.noteId === poisonedId)).toHaveLength(1);
         expect(save).not.toHaveBeenCalled();
         expect(adopt.mock.calls.filter(([input]) => input.noteId === poisonedId)).toEqual([
-          [{ noteId: poisonedId, cause: expect.any(MalformedSyncEventError) }],
+          [{ noteId: poisonedId, cause: expect.any(MalformedSyncEventError), signal: expect.any(AbortSignal) }],
         ]);
       } finally {
         await yjsSnapshotWorker.stop();

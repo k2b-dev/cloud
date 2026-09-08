@@ -44,6 +44,7 @@ export default ssr<AuthContext>(async (c) => {
           currentHref={data.currentHref}
           canWrite={data.canWrite}
           locked={!!data.selectedNote?.lockedAt}
+          historyIncomplete={data.selectedNote?.historyIncomplete ?? false}
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
         />
@@ -134,6 +135,7 @@ export default ssr<AuthContext>(async (c) => {
                   noteTitle={selectedNote.title}
                   notebookId={notebook.id}
                   noteLockedAt={selectedNote.lockedAt}
+                  historyIncomplete={selectedNote.historyIncomplete}
                   notebookName={notebook.name}
                   appUrl={appUrl}
                   workspaceCursor={ctx.workspaceCursor}
@@ -152,6 +154,7 @@ export default ssr<AuthContext>(async (c) => {
                     createdAt: selectedNote.createdAt,
                     updatedAt: selectedNote.updatedAt,
                     lockedAt: selectedNote.lockedAt,
+                    historyIncomplete: selectedNote.historyIncomplete,
                     isLocked: !!selectedNote.lockedAt,
                     tocItems,
                     taskProgress: selectedRouteState?.taskProgress ?? { done: 0, total: 0 },
@@ -183,6 +186,7 @@ export default ssr<AuthContext>(async (c) => {
               createdAt={selectedNote.createdAt}
               updatedAt={selectedNote.updatedAt}
               lockedAt={selectedNote.lockedAt}
+              historyIncomplete={selectedNote.historyIncomplete}
               isLocked={!!selectedNote.lockedAt}
               canWrite={canWrite}
               currentUserId={user.id}

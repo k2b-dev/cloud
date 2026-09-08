@@ -47,7 +47,6 @@ export const NOTEBOOKS_YJS_TERMINAL_ERROR_CODES = [
   NOTEBOOKS_YJS_ERROR_CODE.noteNotFound,
   NOTEBOOKS_YJS_ERROR_CODE.noteLocked,
   NOTEBOOKS_YJS_ERROR_CODE.backpressure,
-  NOTEBOOKS_YJS_ERROR_CODE.internalError,
 ] as const;
 
 const NOTEBOOKS_PRESENCE_COLORS = ["#e06c75", "#61afef", "#98c379", "#d19a66", "#c678dd", "#56b6c2", "#e5c07b"] as const;

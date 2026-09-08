@@ -217,6 +217,7 @@ const mapNote = (note: Note, notebookShortId: string, parentShortId: string | nu
   position: note.position,
   hasChildren: note.hasChildren,
   locked: note.lockedAt !== null,
+  historyIncomplete: note.historyIncomplete,
   createdAt: note.createdAt,
   updatedAt: note.updatedAt,
 });

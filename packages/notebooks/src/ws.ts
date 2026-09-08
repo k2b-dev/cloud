@@ -788,7 +788,7 @@ const startLiveStream = (
 
     try {
       const events = async function* () {
-        let head = await noteTopic.latestCursor();
+        const head = await noteTopic.latestCursor();
         if (head) {
           let delivered = 0;
           try {
@@ -801,17 +801,12 @@ const startLiveStream = (
               yield event;
             }
           } catch (error) {
-            // The stored snapshot's own cursor fell below retention. Reconnecting
-            // cannot help: the client would receive the same snapshot and gap
-            // again. Re-anchor the snapshot at the head (loud, terminal) and
-            // continue from there; a note that never stored Yjs state is
-            // re-anchored from its markdown. A gap after partial delivery, or a
-            // client cursor gap, still resyncs: the client then rebuilds from
-            // the store.
+            // Recover the retained remainder, then reconnect from the newly
+            // saved snapshot. The snapshot already sent to this client predates
+            // recovery, so jumping straight to live events would omit those edits.
             if (!(error instanceof RetentionGapError) || !replay.storedBase || delivered > 0) throw error;
-            const adopted = await notebooksService.note.adoptSnapshotAtHead({ noteId, cause: error });
-            if (!adopted) throw error;
-            head = adopted.cursor;
+            await notebooksService.note.adoptSnapshotAtHead({ noteId, cause: error, signal: abort.signal });
+            throw error;
           }
         }
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
@@ -1052,6 +1047,7 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
     if (snapshot?.yjsState) {
       send(ctx.socket, WS_TYPE.syncPush, {
         noteId: payload.noteId,
+        historyIncomplete: snapshot.historyIncomplete,
         updates: [
           {
             cursor: snapshot.streamCursor,

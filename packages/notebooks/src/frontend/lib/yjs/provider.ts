@@ -35,6 +35,7 @@ export type YjsProviderOptions = {
   };
   onError?: (error: YjsProviderError) => void;
   onFatal?: (error: YjsProviderError) => void;
+  onHistoryIncomplete?: () => void;
 };
 
 const WS_TYPE = notebooksYjs.wsType;
@@ -234,13 +235,6 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       };
     }
 
-    if (code === 1011) {
-      return {
-        code: notebooksYjs.errorCode.internalError,
-        message: "Internal websocket error",
-      };
-    }
-
     return null;
   };
 
@@ -305,6 +299,9 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (!opts.workspace || payload.notebookId !== activeWorkspaceId) return true;
     const event = payload.event as PublicNotebookWorkspaceEvent | undefined;
     if (!event || event.v !== 1 || event.notebookId !== activeWorkspaceId) return true;
+    if (event.type === "note.updated" && event.note.id === activeNoteId && event.note.historyIncomplete === true) {
+      opts.onHistoryIncomplete?.();
+    }
     const cursor = typeof payload.cursor === "string" ? payload.cursor : null;
     const generation = workspaceGeneration;
     workspaceEventQueue = workspaceEventQueue
@@ -356,10 +353,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
     const payload = msg.payload as {
       noteId?: unknown;
+      historyIncomplete?: unknown;
       updates?: Array<{ cursor?: unknown; payload?: unknown }>;
     };
 
     if (payload.noteId !== activeNoteId || !Array.isArray(payload.updates)) return true;
+    if (msg.type === WS_TYPE.syncPush && payload.historyIncomplete === true) opts.onHistoryIncomplete?.();
     for (const update of payload.updates) {
       if (typeof update.payload !== "string") continue;
       try {
@@ -372,7 +371,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
         // Ignore malformed updates to keep collaboration resilient.
       }
 
-      if (typeof update.cursor === "string") {
+      if (msg.type === WS_TYPE.syncPush && typeof update.cursor === "string") {
         lastCursor = update.cursor;
       }
     }

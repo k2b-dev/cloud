@@ -82,7 +82,8 @@ export const notebookWorkspaceMessages = i18n.define({
       children: "Children",
       foldersAndTags: "Notebook folders and tags",
       noHomepage: "No homepage selected",
-      noHomepageDescription: "No homepage is selected for this notebook yet. Open notebook settings and choose a homepage on the General tab.",
+      noHomepageDescription:
+        "No homepage is selected for this notebook yet. Open notebook settings and choose a homepage on the General tab.",
       homepage: "Homepage",
       setHomepage: "Set homepage in notebook settings",
       allNotebooks: "All notebooks",
@@ -185,6 +186,9 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Could not copy note content",
       copied: "Copied",
       loadActivityFailed: "Failed to load note activity",
+      historyIncompleteTitle: "Some note changes could not be recovered",
+      historyIncompleteDetail:
+        "This note may be incomplete. Available changes and the previous saved version were preserved. Contact your administrator before relying on this content.",
       lockedNote: "Locked note",
       collaborativeNote: "Collaborative note",
       readOnlyNote: "Read-only note",
@@ -246,7 +250,8 @@ export const notebookWorkspaceMessages = i18n.define({
       contents: "Contents",
       references: "References",
       attachments: "Attachments",
-      attachmentCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} attachment`, other: `${count} attachments` }),
+      attachmentCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `${count} attachment`, other: `${count} attachments` }),
       online: "Online",
       tabs: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} tab`, other: `${count} tabs` }),
       infoSection: "Info",
@@ -345,8 +350,7 @@ export const notebookWorkspaceMessages = i18n.define({
       noNotebooks: "Keine Notizbücher verfügbar",
       deleteNote: "Notiz löschen",
       deleteNoteConfirm: ({ title }) => `„${title}“ löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
-      deleteNoteTreeConfirm: ({ title }) =>
-        `„${title}“ und alle Unternotizen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
+      deleteNoteTreeConfirm: ({ title }) => `„${title}“ und alle Unternotizen löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
       lockNote: "Notiz sperren",
       lockPermanently: "Endgültig sperren",
       lockConfirm: ({ title }) =>
@@ -501,6 +505,9 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Der Inhalt der Notiz konnte nicht kopiert werden",
       copied: "Kopiert",
       loadActivityFailed: "Die Aktivitäten der Notiz konnten nicht geladen werden",
+      historyIncompleteTitle: "Einige Änderungen der Notiz konnten nicht wiederhergestellt werden",
+      historyIncompleteDetail:
+        "Diese Notiz ist möglicherweise unvollständig. Verfügbare Änderungen und die zuvor gespeicherte Version wurden erhalten. Wende dich an deine Administration, bevor du dich auf diesen Inhalt verlässt.",
       lockedNote: "Gesperrte Notiz",
       collaborativeNote: "Gemeinsam bearbeitete Notiz",
       readOnlyNote: "Schreibgeschützte Notiz",

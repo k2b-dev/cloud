@@ -32,6 +32,7 @@ type DbSearchHit = {
   title: string;
   position: number;
   yjs_snapshot_at: Date | null;
+  yjs_history_incomplete: boolean;
   content_md: string | null;
   created_by: string | null;
   created_at: Date;
@@ -104,6 +105,7 @@ const mapHit = (row: DbSearchHit): SearchHit => ({
     title: row.title,
     position: row.position,
     hasChildren: row.has_children,
+    historyIncomplete: row.yjs_history_incomplete,
     yjsSnapshotAt: row.yjs_snapshot_at?.toISOString() ?? null,
     contentMd: row.content_md,
     createdBy: row.created_by,
@@ -133,7 +135,7 @@ const searchInNotebookRows = async (params: {
     return sql<DbSearchHit[]>`
       SELECT
         n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-        n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+        n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
         EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
         nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
         LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360) AS snippet
@@ -164,7 +166,7 @@ const searchInNotebookRows = async (params: {
   return sql<DbSearchHit[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
       nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
       CASE
@@ -286,7 +288,7 @@ export const searchAcross = async (params: {
       ? sql<DbSearchHit[]>`
         SELECT
           n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-          n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+          n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
           EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
           nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
           LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360) AS snippet
@@ -316,7 +318,7 @@ export const searchAcross = async (params: {
       : sql<DbSearchHit[]>`
         SELECT
           n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-          n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+          n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
           EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
           nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
           CASE WHEN ${filters.query} = '' THEN NULL

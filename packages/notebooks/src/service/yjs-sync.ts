@@ -94,7 +94,11 @@ export const isValidYjsUpdate = (payload: string): boolean => {
 export const applyYjsTopicEvent = (doc: Y.Doc, event: { cursor: string; data: YjsTopicEvent }, noteId: string): void => {
   if (event.data.kind !== "sync") return;
   try {
-    Y.applyUpdate(doc, fromBase64(event.data.payload), `replay:${event.cursor}`);
+    const update = fromBase64(event.data.payload);
+    // Decode completely before mutating the document: malformed bytes must not
+    // partially integrate state before recovery skips the invalid event.
+    Y.decodeUpdate(update);
+    Y.applyUpdate(doc, update, `replay:${event.cursor}`);
   } catch (error) {
     throw new MalformedSyncEventError(noteId, event.cursor, error);
   }

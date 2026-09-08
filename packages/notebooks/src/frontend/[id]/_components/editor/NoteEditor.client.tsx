@@ -4,7 +4,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
-import { prompts, toast, useLocale } from "@k2b/ui";
+import { NoticeCard, prompts, toast, useLocale } from "@k2b/ui";
 import { layout } from "@valentinkolb/cloud/ssr/layout-runtime";
 import { createCodeMirror } from "solid-codemirror";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -57,6 +57,7 @@ type EditorInstanceProps = {
   noteTitle: string;
   notebookId: string;
   noteLockedAt: string | null;
+  historyIncomplete: boolean;
   notebookName: string;
   appUrl: string;
   workspaceCursor: string | null;
@@ -79,6 +80,7 @@ type SoftNavigatedDetail = {
   createdAt: string;
   updatedAt: string;
   lockedAt: string | null;
+  historyIncomplete: boolean;
   isLocked: boolean;
   tocItems: ReturnType<typeof extractTocFromMarkdown>;
   taskProgress: ReturnType<typeof extractTaskProgress>;
@@ -139,6 +141,7 @@ export default function NoteEditor(props: Props) {
         noteId: note.id,
         noteTitle: note.title,
         noteLockedAt: note.lockedAt,
+        historyIncomplete: note.historyIncomplete,
         initialSnapshot: note.yjsSnapshot,
       },
       eventDetail: detail,
@@ -277,6 +280,10 @@ function EditorInstance(props: EditorInstanceProps) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
+  const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
+  createEffect(() => {
+    if (props.historyIncomplete) setHistoryIncomplete(true);
+  });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
 
@@ -424,6 +431,7 @@ function EditorInstance(props: EditorInstanceProps) {
         noteId: props.noteId,
         appUrl: props.appUrl,
         onConnectionChange: setConnected,
+        onHistoryIncomplete: () => setHistoryIncomplete(true),
         // Forwards every presence update to the OnlineSection island via a
         // window event — the editor itself doesn't need to track participants
         // anymore now that the toolbar no longer renders them.
@@ -539,8 +547,11 @@ function EditorInstance(props: EditorInstanceProps) {
     window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
   });
 
+  const exportContent = () =>
+    historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${ytext.toString()}` : ytext.toString();
+
   const onCopy = () => {
-    void clipboard.copy(ytext.toString()).then(
+    void clipboard.copy(exportContent()).then(
       () => toast.success(t().contentCopied),
       () => toast.error(t().contentCopyFailed),
     );
@@ -548,12 +559,12 @@ function EditorInstance(props: EditorInstanceProps) {
 
   const onDownload = () => {
     const filename = `${deriveNoteTitle(ytext.toString())}.md`;
-    files.downloadFileFromContent(ytext.toString(), filename, "text/markdown");
+    files.downloadFileFromContent(exportContent(), filename, "text/markdown");
   };
 
   const onPdf = (event: Event) => {
     const detail = (event as CustomEvent<EditorPdfEventDetail>).detail;
-    if (typeof detail?.open === "function") detail.open(ytext.toString());
+    if (typeof detail?.open === "function") detail.open(exportContent());
   };
 
   const onScrollToHeading = (event: Event) => {
@@ -752,6 +763,9 @@ function EditorInstance(props: EditorInstanceProps) {
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <Show when={historyIncomplete()}>
+        <NoticeCard role="status" tone="warning" title={t().historyIncompleteTitle} detail={t().historyIncompleteDetail} />
+      </Show>
       <div
         class={`relative min-h-0 flex-1 cursor-text overflow-y-auto transition-colors ${
           !props.readOnly && dz.isDragging() ? "ring-2 ring-blue-400 dark:ring-blue-500 ring-inset" : ""

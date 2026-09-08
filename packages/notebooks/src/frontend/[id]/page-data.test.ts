@@ -51,6 +51,7 @@ const note = {
   title: "Welcome",
   position: 0,
   hasChildren: false,
+  historyIncomplete: false,
   yjsSnapshotAt: timestamp,
   contentMd: "# Welcome\n\nOur **handbook**.\n\n#team",
   yjsSnapshot: "collaboration-state-not-for-book",

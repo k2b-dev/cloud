@@ -112,6 +112,7 @@ const NoteSchema = z.object({
   title: z.string().describe("Read-only title derived from note Markdown"),
   position: z.number().int(),
   hasChildren: z.boolean(),
+  historyIncomplete: z.boolean(),
   yjsSnapshotAt: z.string().nullable(),
   contentMd: z.string().nullable(),
   createdBy: z.uuid().nullable(),
@@ -432,6 +433,7 @@ const EditableNoteRouteStateSchema = z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
     yjsSnapshot: z.string().nullable(),
+    historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -445,6 +447,7 @@ const EditableNoteRouteStateSchema = z.object({
     createdAt: z.string(),
     updatedAt: z.string(),
     lockedAt: z.string().nullable(),
+    historyIncomplete: z.boolean(),
     isLocked: z.boolean(),
     tocItems: z.array(TocItemSchema),
     taskProgress: TaskProgressSchema,
@@ -472,6 +475,7 @@ const BookSnapshotSchema = z.object({
   activeTag: z.string().optional(),
   canWrite: z.boolean(),
   locked: z.boolean(),
+  historyIncomplete: z.boolean(),
   cursor: z.string().nullable(),
 });
 // Same request envelope budget as a collaboration sync payload. Preview never

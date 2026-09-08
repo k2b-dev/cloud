@@ -28,6 +28,7 @@ const notes: Note[] = [
     title: "API Overview",
     position: 0,
     hasChildren: false,
+    historyIncomplete: false,
     yjsSnapshotAt: null,
     contentMd: "# API Overview\n\nSee [Details](note://noteB2).\n\n![Diagram](attach://attA01)\n",
     createdBy: null,
@@ -43,6 +44,7 @@ const notes: Note[] = [
     title: "Details",
     position: 1,
     hasChildren: false,
+    historyIncomplete: false,
     yjsSnapshotAt: null,
     contentMd: "# Details\n",
     createdBy: null,
@@ -139,4 +141,19 @@ describe("notebook export", () => {
   test("uses a safe date-stamped archive filename", () => {
     expect(exportFilename(notebook, new Date("2026-05-28T12:00:00.000Z"))).toBe("tech-docs-2026-05-28.zip");
   });
+});
+
+test("preserves an incomplete-history warning with exported note content", () => {
+  const files = buildNotebookExportFiles({
+    notebook,
+    notes: notes.map((note) => ({ ...note, historyIncomplete: note.shortId === "noteA1" })),
+    attachments: [],
+  });
+  const incomplete = files.find((file) => file.path.startsWith("notes/noteA1--"))!.content;
+  const complete = files.find((file) => file.path.startsWith("notes/noteB2--"))!.content;
+  expect(incomplete).toContain("historyIncomplete: true");
+  expect(incomplete).toContain("Some note changes could not be recovered");
+  expect(incomplete).toContain("# API Overview");
+  expect(complete).not.toContain("historyIncomplete");
+  expect(complete).not.toContain("could not be recovered");
 });

@@ -33,6 +33,8 @@ export type NotebookWorkspaceNote = {
   position: number;
   hasChildren: boolean;
   yjsSnapshotAt: string | null;
+  /** Older retained events predate the recovery marker. */
+  historyIncomplete?: boolean;
   contentMd: string | null;
   createdBy: string | null;
   createdAt: string;

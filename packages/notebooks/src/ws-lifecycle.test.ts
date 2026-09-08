@@ -140,16 +140,18 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     return { sent, closed, request, waitFor };
   };
 
-  test("a stored snapshot whose cursor fell below retention is re-anchored once instead of resyncing forever", async () => {
+  test("a recovered stored snapshot requires a fresh client base before live subscription", async () => {
     replayGap.head = "s6t.fixture.19";
     replayGap.gapBelow = "s6t.fixture.9";
     subscribedAfter.length = 0;
     const socket = await openSocket();
     socket.request();
-    await socket.waitFor(() => socket.sent.some((message) => message.type === "notes.yjs.replay.ready"));
+    expect(await socket.closed.promise).toBe(1012);
     expect(adoptions).toEqual([{ noteId: "test-note", requested: "s6t.fixture.9" }]);
-    expect(subscribedAfter).toEqual(["s6t.fixture.20"]);
-    expect(socket.sent.filter((message) => message.type === "notes.yjs.error")).toEqual([]);
+    expect(subscribedAfter).toEqual([]);
+    expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
+      "RESYNC_REQUIRED",
+    ]);
   }, 10_000);
 
   test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {

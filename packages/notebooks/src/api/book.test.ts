@@ -67,6 +67,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     tags: [],
     canWrite: false,
     locked: false,
+    historyIncomplete: false,
     cursor: "1-0",
   };
   const token = spyOn(oauthTokens, "verifyAccessToken");

@@ -33,30 +33,30 @@ const queueSnapshotSave = async (config: { noteId: string; targetCursor: string;
   await snapshotJob().submit({ key: `${config.noteId}:${sequence}`, coalesce: true, orderingKey: config.noteId, input: config });
 };
 
-/**
- * Re-queue snapshots for notes whose topic moved past their stored cursor.
- * Bounded and most recently edited first: a note's topic only moves when it
- * is edited, so recent edits are where a lost enqueue can hide, while dormant
- * notes past the limit already match their head. Coalesced keys make repeated
- * runs and concurrently queued work harmless. Notes that never saved a cursor have no
- * topic to inspect without provisioning one, so they are covered by the next
- * editing session instead.
- */
+/** Reconcile all unlocked notes in bounded keyset pages, with cancellation and lease heartbeats. */
 const reconcile = async (
   config: { signal?: AbortSignal; heartbeat?: () => Promise<void> } = {},
 ): Promise<{ checked: number; queued: number }> => {
-  const candidates = await notes.listSnapshotCursors({ limit: RECONCILE_NOTE_LIMIT });
+  let after: string | undefined;
+  let checked = 0;
   let queued = 0;
-  for (const [index, candidate] of candidates.entries()) {
+  while (true) {
     config.signal?.throwIfAborted();
-    if (index % 200 === 199) await config.heartbeat?.();
-    const head = await createYjsTopic(candidate.noteId).latestCursor();
-    if (!head || compareStreamCursor(head, candidate.streamCursor) <= 0) continue;
-    await queueSnapshotSave({ noteId: candidate.noteId, targetCursor: head, reason: "reconcile" });
-    queued++;
+    const candidates = await notes.listSnapshotCursors({ limit: RECONCILE_NOTE_LIMIT, after });
+    for (const candidate of candidates) {
+      config.signal?.throwIfAborted();
+      if (checked % 200 === 0) await config.heartbeat?.();
+      const head = await createYjsTopic(candidate.noteId).latestCursor();
+      checked++;
+      if (!head || (candidate.streamCursor && compareStreamCursor(head, candidate.streamCursor) <= 0)) continue;
+      await queueSnapshotSave({ noteId: candidate.noteId, targetCursor: head, reason: "reconcile" });
+      queued++;
+    }
+    if (candidates.length < RECONCILE_NOTE_LIMIT) break;
+    after = candidates.at(-1)!.noteId;
   }
-  log.info("Snapshot reconcile finished", { checked: candidates.length, queued });
-  return { checked: candidates.length, queued };
+  log.info("Snapshot reconcile finished", { checked, queued });
+  return { checked, queued };
 };
 
 let worker: Worker | null = null;
@@ -66,18 +66,21 @@ const start = async (): Promise<void> => {
     {
       concurrency: 1,
       onError: async ({ error, context }) => {
-        log.error("Snapshot failed; document was not advanced past an incomplete replay", {
+        log.error("Snapshot job failed; missing or malformed history requires attention", {
           noteId: context.input.noteId,
           error: error instanceof Error ? error.message : String(error),
           attempt: context.attempt,
         });
         if (error instanceof RetentionGapError) {
-          return { action: "dead_letter", reason: "Document history is incomplete; the stored snapshot was re-anchored at the topic head" };
+          return {
+            action: "dead_letter",
+            reason: "Document history is incomplete; retained updates and pending dependencies were recovered",
+          };
         }
         if (error instanceof MalformedSyncEventError) {
           return {
             action: "dead_letter",
-            reason: `Retained event cannot be applied; the stored snapshot was re-anchored at the topic head: ${error.message}`,
+            reason: `Retained event cannot be applied; valid updates and pending dependencies were recovered: ${error.message}`,
           };
         }
         return { action: "retry" };
@@ -122,12 +125,10 @@ const start = async (): Promise<void> => {
               reachedTarget = event.cursor === targetCursor;
             }
           } catch (error) {
-            // A lost or undecodable segment can never be replayed. Make the
-            // stored snapshot the base at the head so this note stops failing
-            // (and the reconciler stops re-queueing it), then dead-letter the
-            // job once as the durable record of the loss.
+            // Preserve all valid retained updates and unresolved dependencies;
+            // record the missing/invalid history once in the DLQ after recovery.
             if (error instanceof RetentionGapError || error instanceof MalformedSyncEventError) {
-              await notes.adoptSnapshotAtHead({ noteId, cause: error });
+              await notes.adoptSnapshotAtHead({ noteId, cause: error, signal: context.signal });
             }
             throw error;
           }

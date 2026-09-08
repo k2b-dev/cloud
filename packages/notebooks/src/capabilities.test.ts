@@ -140,6 +140,7 @@ const note = {
   title: "Knowledge index",
   position: 0,
   hasChildren: false,
+  historyIncomplete: false,
   yjsSnapshotAt: createdAt,
   contentMd: '# Knowledge index\n\n#docs\n\n@facts\n:::data\n{"ready":true}\n:::',
   createdBy: userId,
@@ -678,6 +679,7 @@ describe("notebooks capabilities", () => {
     const getCurrentWithContent = trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({
       ...note,
       yjsSnapshot: "private-snapshot",
+      historyIncomplete: true,
     });
 
     const result = await notebooksCapabilities.queries["note.read"].run(
@@ -700,6 +702,7 @@ describe("notebooks capabilities", () => {
     ]);
     expect(result.data.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }]);
     expect(result.data.data.content).toBe("# Knowledge ");
+    expect(result.data.data.historyIncomplete).toBeTrue();
     expect(result.data.data.contentComplete).toBeFalse();
     expect(result.data.data.nextContentOffset).toBe(12);
     expect(result.data.data.contentHash).toBe(noteContentHash(note.contentMd));

@@ -62,6 +62,7 @@ export const loadBookRoute = async (params: {
       title: null,
       selectedNoteId: null,
       locked: false,
+      historyIncomplete: false,
       html: renderToString(() => Placeholder({ icon: "ti ti-book", description: tree.length ? t.selectNote : t.empty })),
     };
     return { kind: "ok" as const, snapshot };
@@ -75,6 +76,7 @@ export const loadBookRoute = async (params: {
       title: loaded.note.title,
       selectedNoteId: loaded.note.shortId,
       locked: !!loaded.note.lockedAt,
+      historyIncomplete: loaded.note.historyIncomplete,
     };
     return { kind: "ok" as const, snapshot };
   }
@@ -96,6 +98,14 @@ export const loadBookRoute = async (params: {
       locale: params.locale,
     }),
   );
-  const snapshot: BookSnapshot = { ...common, html, title: `#${tag}`, selectedNoteId: null, activeTag: tag, locked: false };
+  const snapshot: BookSnapshot = {
+    ...common,
+    html,
+    title: `#${tag}`,
+    selectedNoteId: null,
+    activeTag: tag,
+    locked: false,
+    historyIncomplete: false,
+  };
   return { kind: "ok" as const, snapshot };
 };

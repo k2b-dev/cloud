@@ -65,6 +65,7 @@ export const NoteSummaryDataSchema = z
     position: z.number().int().nonnegative(),
     hasChildren: z.boolean(),
     locked: z.boolean(),
+    historyIncomplete: z.boolean().describe("Some document history was unavailable during recovery; the content may be incomplete."),
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
   })

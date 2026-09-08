@@ -8,8 +8,8 @@
  */
 
 import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { hasRole } from "@valentinkolb/cloud/contracts";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -50,11 +50,14 @@ export default ssr<AuthContext>(async (c) => {
   const notebookId = notebook?.id;
   if (!notebook || !notebookId) return ssr.error(c, 404, { action: { label: "Notebooks", href: "/app/notebooks" } });
 
-  const permission = hasRole(user, "admin") ? "admin" : await notebooksService.notebook.permission.get({
-    notebookId,
-    userId: user.id,
-  });
-  if (permission === "none") return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
+  const permission = hasRole(user, "admin")
+    ? "admin"
+    : await notebooksService.notebook.permission.get({
+        notebookId,
+        userId: user.id,
+      });
+  if (permission === "none")
+    return ssr.error(c, 403, { description: t.accessDeniedDescription, action: { label: "Notebooks", href: "/app/notebooks" } });
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -143,6 +146,7 @@ export default ssr<AuthContext>(async (c) => {
           currentHref={c.req.path + new URL(c.req.url).search}
           canWrite={permission === "write" || permission === "admin"}
           locked={false}
+          historyIncomplete={false}
           appUrl={appUrl}
           cursor={workspaceCursor}
         />

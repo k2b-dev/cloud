@@ -14,6 +14,7 @@ const initial: BookMetadata = {
   tags: [],
   canWrite: true,
   locked: false,
+  historyIncomplete: false,
   cursor: null,
 };
 const snapshot = (noteId: string, title = noteId): BookSnapshot => ({
@@ -43,6 +44,7 @@ describe("Book controller", () => {
       <a id="toc" href="#heading">TOC</a>
       <a id="write" href="/app/notebooks/book01/notes/note01?mode=write">Write</a>
       <a id="notebook-root" href="/app/notebooks/book01?mode=book">Notebook home</a>
+      <div id="notebook-book-history-warning" hidden>Incomplete history</div>
       <article id="notebook-book-content" tabindex="-1"><h1 id="heading">First</h1></article><div id="controller"></div></div></div>`;
     const requests: Array<{ href: string; signal: AbortSignal | null | undefined; resolve: (value: Response) => void }> = [];
     const originalFetch = globalThis.fetch;
@@ -93,15 +95,22 @@ describe("Book controller", () => {
       await flush();
       expect(app.requests).toHaveLength(2);
       expect(app.requests[0]!.signal?.aborted).toBe(true);
-      app.requests[1]!.resolve(Response.json(snapshot("note03", "Newest")));
+      app.requests[1]!.resolve(Response.json({ ...snapshot("note03", "Newest"), historyIncomplete: true }));
       await flush();
       expect(app.article.textContent).toBe("Newest");
+      expect(app.dom.root.querySelector<HTMLElement>("#notebook-book-history-warning")!.hidden).toBe(false);
       expect(location.pathname).toEndWith("/note03");
       expect(document.activeElement).toBe(app.article);
       app.requests[0]!.resolve(Response.json(snapshot("note02", "Obsolete")));
       await flush();
       expect(app.article.textContent).toBe("Newest");
       expect(location.pathname).toEndWith("/note03");
+      expect(app.dom.root.querySelector<HTMLElement>("#notebook-book-history-warning")!.hidden).toBe(false);
+      app.click("second");
+      await flush();
+      app.requests[2]!.resolve(Response.json(snapshot("note02", "Complete note")));
+      await flush();
+      expect(app.dom.root.querySelector<HTMLElement>("#notebook-book-history-warning")!.hidden).toBe(true);
     } finally {
       app.cleanup();
     }

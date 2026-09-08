@@ -38,6 +38,7 @@ const note: notes.NoteWithContent = {
   title: "Welcome",
   position: 0,
   hasChildren: false,
+  historyIncomplete: false,
   yjsSnapshotAt: timestamp,
   contentMd: "# Welcome\n\nOur **handbook**.",
   yjsSnapshot: "private-collaboration-state",
@@ -71,6 +72,14 @@ function fixture() {
 }
 
 describe("authorized Book refresh routes", () => {
+  test("exposes incomplete recovered history in the reading snapshot", async () => {
+    const calls = fixture();
+    calls.content.mockResolvedValue({ ...note, historyIncomplete: true });
+    const result = await loadBookRoute(params);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.snapshot.historyIncomplete).toBe(true);
+  });
   test("trusted platform admins load Book pages without a direct notebook grant", async () => {
     const calls = fixture();
     calls.permission.mockResolvedValue("none");

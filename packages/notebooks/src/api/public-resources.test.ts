@@ -3,8 +3,8 @@ import {
   ResourceShortIdSchema,
   toPublicAttachment,
   toPublicNote,
-  toPublicNoteComment,
   toPublicNotebook,
+  toPublicNoteComment,
   toPublicSnapshotLog,
 } from "./public-resources";
 
@@ -43,6 +43,7 @@ describe("notebooks public resource projection", () => {
         title: "Note",
         position: 0,
         hasChildren: false,
+        historyIncomplete: true,
         yjsSnapshotAt: null,
         contentMd: null,
         createdBy: null,
@@ -53,7 +54,7 @@ describe("notebooks public resource projection", () => {
       "abc123",
       "ghi789",
     );
-    expect(note).toMatchObject({ id: "def456", notebookId: "abc123", parentId: "ghi789" });
+    expect(note).toMatchObject({ id: "def456", notebookId: "abc123", parentId: "ghi789", historyIncomplete: true });
     expect(note).not.toHaveProperty("shortId");
 
     const attachment = toPublicAttachment(

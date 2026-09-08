@@ -20,6 +20,7 @@ const note = {
   title: "Saved heading",
   position: 0,
   hasChildren: false,
+  historyIncomplete: false,
   yjsSnapshotAt: "2026-09-03T10:00:00Z",
   contentMd: "# Saved heading\n\n:::toc\n:::\n\n## Next page",
   yjsSnapshot: "private-collaboration-state",

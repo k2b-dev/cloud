@@ -29,6 +29,7 @@ import { bookMessages } from "../book/messages";
 import type { Attachment } from "../editor/attachments-client";
 import { buildAttachmentContentUrl, confirmAndDownload, formatBytes } from "../editor/attachments-client";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import {
   ATTACHMENTS_UPDATE_EVENT,
   DETAIL_PANEL_STATE_EVENT,
@@ -70,6 +71,7 @@ type Props = {
   createdAt: string;
   updatedAt: string;
   lockedAt: string | null;
+  historyIncomplete: boolean;
   isLocked: boolean;
   canWrite: boolean;
   currentUserId: string;
@@ -85,6 +87,7 @@ type SoftNavigatedDetail = {
   createdAt: string;
   updatedAt: string;
   lockedAt: string | null;
+  historyIncomplete: boolean;
   isLocked: boolean;
   tocItems: TocItem[];
   taskProgress: TaskProgress;
@@ -141,6 +144,7 @@ export default function NotebookDetailPanel(props: Props) {
   const [noteId, setNoteId] = createSignal(props.noteId);
   const [noteTitle, setNoteTitle] = createSignal(props.noteTitle);
   const [contentMd, setContentMd] = createSignal(props.contentMd);
+  const [historyIncomplete, setHistoryIncomplete] = createSignal(props.historyIncomplete);
   const [backlinks, setBacklinks] = createSignal<Backlink[]>(props.backlinks);
   const [createdAt, setCreatedAt] = createSignal(props.createdAt);
   const [updatedAt, setUpdatedAt] = createSignal(props.updatedAt);
@@ -233,11 +237,16 @@ export default function NotebookDetailPanel(props: Props) {
     window.dispatchEvent(new CustomEvent(TOGGLE_RICH_MODE_EVENT));
   };
 
+  const exportContent = () =>
+    historyIncomplete()
+      ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${contentMd() ?? ""}`
+      : (contentMd() ?? "");
+
   const copyContent = () => {
     if (props.mode === "edit") {
       window.dispatchEvent(new CustomEvent(EDITOR_COPY_EVENT));
     } else {
-      void clipboard.copy(contentMd() ?? "").then(
+      void clipboard.copy(exportContent()).then(
         () => toast.success(t().contentCopied),
         () => toast.error(t().contentCopyFailed),
       );
@@ -248,7 +257,7 @@ export default function NotebookDetailPanel(props: Props) {
     if (props.mode === "edit") {
       window.dispatchEvent(new CustomEvent(EDITOR_DOWNLOAD_EVENT));
     } else {
-      files.downloadFileFromContent(contentMd() ?? "", downloadFilename(), "text/markdown");
+      files.downloadFileFromContent(exportContent(), downloadFilename(), "text/markdown");
     }
   };
 
@@ -265,7 +274,7 @@ export default function NotebookDetailPanel(props: Props) {
     if (props.mode === "edit") {
       window.dispatchEvent(new CustomEvent(EDITOR_PDF_EVENT, { detail: { open: openPdf } }));
     } else {
-      openPdf(contentMd() ?? "");
+      openPdf(exportContent());
     }
   };
 
@@ -317,6 +326,7 @@ export default function NotebookDetailPanel(props: Props) {
       setNoteId(detail.noteId);
       setNoteTitle(detail.noteTitle);
       setContentMd(detail.contentMd);
+      setHistoryIncomplete(detail.historyIncomplete);
       setCreatedAt(detail.createdAt);
       setUpdatedAt(detail.updatedAt);
       setLockedAt(detail.lockedAt);
@@ -333,6 +343,12 @@ export default function NotebookDetailPanel(props: Props) {
       const detail = (event as CustomEvent<{ noteId?: string; title?: string }>).detail;
       if (detail?.noteId === noteId() && detail.title) setNoteTitle(detail.title);
     };
+    const onWorkspaceEvent = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceEventDetail>).detail?.event;
+      if (detail?.type === "note.updated" && detail.note.id === noteId() && detail.note.historyIncomplete === true) {
+        setHistoryIncomplete(true);
+      }
+    };
 
     window.addEventListener(TOC_UPDATE_EVENT, onTocUpdate);
     window.addEventListener(TASKS_UPDATE_EVENT, onTasksUpdate);
@@ -343,6 +359,7 @@ export default function NotebookDetailPanel(props: Props) {
     window.addEventListener(RICH_MODE_CHANGED_EVENT, onRichChange);
     window.addEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
     window.addEventListener(NOTE_TITLE_CHANGED_EVENT, onTitleChanged);
+    window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
 
     onCleanup(() => {
       window.removeEventListener(TOC_UPDATE_EVENT, onTocUpdate);
@@ -354,6 +371,7 @@ export default function NotebookDetailPanel(props: Props) {
       window.removeEventListener(RICH_MODE_CHANGED_EVENT, onRichChange);
       window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
       window.removeEventListener(NOTE_TITLE_CHANGED_EVENT, onTitleChanged);
+      window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
     });
   });
 

@@ -77,6 +77,8 @@ export default function BookController(props: Props) {
     if (html !== null) article.innerHTML = html;
     else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
     article.setAttribute("aria-label", metadata.title ?? metadata.notebookName);
+    const historyWarning = document.getElementById("notebook-book-history-warning");
+    if (historyWarning) historyWarning.hidden = !metadata.historyIncomplete;
     const heading = document.getElementById("notebook-book-name");
     if (heading) heading.textContent = metadata.notebookName;
     document.title = metadata.title ? `${metadata.title} · ${metadata.notebookName}` : metadata.notebookName;

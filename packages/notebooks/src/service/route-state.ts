@@ -1,12 +1,12 @@
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../lib/named-blocks";
 import { hasOnlyNavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../lib/navigator-url";
 import { extractTaskProgress, extractTocFromMarkdown, type TaskProgress, type TocItem } from "../lib/note-insights";
+import { type PresentationMode, resolvePresentationMode } from "../lib/presentation-mode";
+import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
 import type { Backlink } from "./links";
 import type { NoteWithContent } from "./notes";
-import { resolvePresentationMode, type PresentationMode } from "../lib/presentation-mode";
-import { requestedPresentationMode, withPresentationMode } from "../lib/presentation-url";
 
 type PublicAttachment = Omit<Attachment, "shortId">;
 
@@ -15,6 +15,7 @@ export type SelectedNoteRouteState = {
     id: string;
     title: string;
     yjsSnapshot: string | null;
+    historyIncomplete: boolean;
     contentMd: string | null;
     lockedAt: string | null;
     parentId: string | null;
@@ -36,6 +37,7 @@ export type EditableNoteRouteData = {
     id: string;
     title: string;
     yjsSnapshot: string | null;
+    historyIncomplete: boolean;
     contentMd: string | null;
     createdAt: string;
     updatedAt: string;
@@ -49,6 +51,7 @@ export type EditableNoteRouteData = {
     createdAt: string;
     updatedAt: string;
     lockedAt: string | null;
+    historyIncomplete: boolean;
     isLocked: boolean;
     tocItems: TocItem[];
     taskProgress: TaskProgress;
@@ -75,6 +78,7 @@ const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteS
   id: note.shortId,
   title: note.title,
   yjsSnapshot: note.yjsSnapshot,
+  historyIncomplete: note.historyIncomplete,
   contentMd: note.contentMd,
   lockedAt: note.lockedAt,
   parentId: note.parentId
@@ -189,6 +193,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         id: state.note.id,
         title: state.note.title,
         yjsSnapshot: state.note.yjsSnapshot,
+        historyIncomplete: state.note.historyIncomplete,
         contentMd: state.note.contentMd,
         createdAt: state.note.createdAt,
         updatedAt: state.note.updatedAt,
@@ -202,6 +207,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         createdAt: state.note.createdAt,
         updatedAt: state.note.updatedAt,
         lockedAt: state.note.lockedAt,
+        historyIncomplete: state.note.historyIncomplete,
         isLocked: false,
         tocItems: state.tocItems,
         taskProgress: state.taskProgress,

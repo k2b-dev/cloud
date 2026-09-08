@@ -255,6 +255,7 @@ async function loadSelectedNote(params: {
         title: book.note.title,
         contentMd: null,
         yjsSnapshot: null,
+        historyIncomplete: book.note.historyIncomplete,
         lockedAt: book.note.lockedAt,
         parentId: null,
         createdAt: book.note.createdAt,
@@ -276,6 +277,7 @@ async function loadSelectedNote(params: {
     const note = {
       id: noteMeta.shortId,
       title: noteMeta.title,
+      historyIncomplete: noteMeta.historyIncomplete,
       yjsSnapshot: null,
       contentMd: noteMeta.contentMd,
       lockedAt: noteMeta.lockedAt,

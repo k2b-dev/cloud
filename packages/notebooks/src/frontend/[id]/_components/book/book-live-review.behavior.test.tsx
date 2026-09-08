@@ -13,6 +13,7 @@ const metadata: BookMetadata = {
   tags: [{ tag: "team", count: 2 }],
   canWrite: true,
   locked: false,
+  historyIncomplete: false,
   cursor: null,
 };
 
@@ -101,6 +102,7 @@ describe("independent Book live metadata regression", () => {
               parentId: null,
               position: 0,
               hasChildren: false,
+              historyIncomplete: false,
               yjsSnapshotAt: null,
               contentMd: null,
               createdBy: null,

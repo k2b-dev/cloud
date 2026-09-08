@@ -141,6 +141,7 @@ const noteFrontmatter = (note: Note, parentId: string | null): string =>
     `createdAt: ${yamlValue(note.createdAt)}`,
     `updatedAt: ${yamlValue(note.updatedAt)}`,
     `lockedAt: ${yamlValue(note.lockedAt)}`,
+    ...(note.historyIncomplete ? ["historyIncomplete: true"] : []),
     "---",
     "",
   ].join("\n");
@@ -224,7 +225,10 @@ export const buildNotebookExportFiles = (params: {
   ];
 
   for (const note of sortedNotes) {
-    const body = transformPortableLinks(note.contentMd ?? "", noteFileByShortId, attachmentFileByShortId);
+    const warning = note.historyIncomplete
+      ? "> **Some note changes could not be recovered.** This note may be incomplete. Contact your administrator before relying on this content.\n\n"
+      : "";
+    const body = warning + transformPortableLinks(note.contentMd ?? "", noteFileByShortId, attachmentFileByShortId);
     files.push({
       path: `notes/${noteFileName(note)}`,
       content: `${noteFrontmatter(note, note.parentId ? (noteShortIdById.get(note.parentId) ?? null) : null)}${

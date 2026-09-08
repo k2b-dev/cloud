@@ -1,4 +1,5 @@
-import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
+import { notebookWorkspaceMessages } from "../../messages";
 import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
 import BookController from "./BookController.island";
 import BookMermaid from "./BookMermaid.island";
@@ -12,6 +13,7 @@ export type BookSurfaceProps = BookNavigatorProps & {
   currentHref: string;
   canWrite: boolean;
   locked: boolean;
+  historyIncomplete: boolean;
   appUrl: string;
   cursor: string | null;
 };
@@ -19,6 +21,7 @@ export type BookSurfaceProps = BookNavigatorProps & {
 export default function BookSurface(props: BookSurfaceProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
+  const noteText = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <div class="notebook-book-shell">
       <AppWorkspace class="notebook-book-workspace">
@@ -53,10 +56,14 @@ export default function BookSurface(props: BookSurfaceProps) {
                     activeTag: props.activeTag,
                     canWrite: props.canWrite,
                     locked: props.locked,
+                    historyIncomplete: props.historyIncomplete,
                     cursor: props.cursor,
                   }}
                 />
                 <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
+                <div id="notebook-book-history-warning" hidden={!props.historyIncomplete} role="status">
+                  <NoticeCard tone="warning" title={noteText().historyIncompleteTitle} detail={noteText().historyIncompleteDetail} />
+                </div>
                 {props.html !== null ? (
                   <article
                     id="notebook-book-content"
