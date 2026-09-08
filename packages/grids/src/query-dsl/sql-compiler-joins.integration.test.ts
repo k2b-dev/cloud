@@ -1,12 +1,57 @@
 import { beforeAll, describe, expect } from "bun:test";
+import { sql } from "bun";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { cleanupFixture, insertDslDbFixture, postgresTest, preview } from "./sql-compiler.integration-fixtures";
+import { decodeDslResultCursor } from "./result-cursor";
+import {
+  cleanupFixture,
+  insertDslDbFixture,
+  integrationCursorSigningKey,
+  postgresTest,
+  preview,
+  previewPage,
+  uuid,
+} from "./sql-compiler.integration-fixtures";
 
 beforeAll(async () => {
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
 });
 
 describe("Query DSL Postgres smoke — joins and grouped joins", () => {
+  postgresTest("filters, sorts and pages every linked record beyond the first fifty", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      const ids = Array.from({ length: 51 }, () => uuid()).sort();
+      await sql.begin(async (tx) => {
+        for (const [index, id] of ids.entries()) {
+          await tx`INSERT INTO grids.records (id, short_id, table_id, data)
+            VALUES (${id}::uuid, ${testShortId("R")}, ${fixture.customers.id}::uuid,
+              ${{ [fixture.customerNameId]: index === 50 ? "Needle" : "Other", [fixture.customerScoreId]: index }}::jsonb)`;
+          await tx`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
+            VALUES (${fixture.orderCId}::uuid, ${fixture.customerLinkId}::uuid, ${id}::uuid, ${index})`;
+        }
+      });
+      const source = `from table Orders\njoin table Customers as customer on Customer = customer.id\nselect customer.Name as name, customer.Score as score`;
+      const filtered = await preview(fixture, `${source}\nwhere customer.Name = 'Needle'`);
+      expect(filtered.rows).toHaveLength(1);
+      expect(filtered.rows[0]?.values.q_col_0).toBe("Needle");
+      const sorted = await preview(fixture, `${source}\nsort customer.Score desc\nlimit 1`);
+      expect(Number(sorted.rows[0]?.values.q_col_1)).toBe(50);
+      const seen: unknown[] = [];
+      let cursor: ReturnType<typeof decodeDslResultCursor> = null;
+      do {
+        const page = await previewPage(fixture, `${source}\nwhere customer.Score >= 0\nsort customer.Score asc`, { pageSize: 17, cursor });
+        seen.push(...page.rows.map((row) => row.values.q_col_0));
+        cursor = decodeDslResultCursor(page.page?.nextCursor, integrationCursorSigningKey);
+      } while (cursor);
+      // The fixture's two original customer links also remain in the result.
+      expect(seen.filter((name) => name === "Other")).toHaveLength(50);
+      expect(seen.filter((name) => name === "Needle")).toHaveLength(1);
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
+
   postgresTest("executes select labels, membership, null ordering, and trash clauses", async () => {
     const fixture = await insertDslDbFixture();
     try {

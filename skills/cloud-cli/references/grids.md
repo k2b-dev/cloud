@@ -498,6 +498,10 @@ from table <source> [as alias] | from view <source> [as alias]
 groups, aggregates, and sorts. Multiple joins are allowed. Line breaks are optional; semicolons separate clauses and `--` starts a comment
 when preceded by whitespace.
 
+Not every saved query can be reused with `from view`. Sources containing relation joins, cross-field comparisons, or offsets are rejected
+instead of silently losing their scope. Execute that saved query directly, or query its table and carry over every required clause explicitly.
+Do not recover from an unavailable View by querying its entire table without the original filters.
+
 Names without punctuation may be bare. Double-quote names containing spaces or punctuation and escape an embedded double quote by doubling
 it. Text literals use single quotes. Stable fields and sources use `{public-id}`. Do not use removed `#field` aliases. An `as` alias starts with a
 letter or underscore, continues with letters, digits, or underscores, is at most 64 characters, and cannot be a GQL keyword, logical operator,

@@ -155,7 +155,7 @@ Nutze `from`, `where`, `search`, `having`, `limit`, `offset` und den Modus für 
 
 Die beiden Klauseln für gelöschte Datensätze schließen sich gegenseitig aus. Normale Abfragen geben nur aktive Datensätze zurück.
 
-`from view` beginnt mit der Abfrage der gespeicherten Ansicht und wendet anschließend die neuen Klauseln an. Das ist nützlich, wenn ein geprüftes Dataset bereits den richtigen Ausgangspunkt bildet. Eine Ansicht, die nach Datensatzmetadaten filtert, kann nicht selbst als Quelle einer anderen Ansicht dienen. Beginne bei dieser Kombination mit ihrer Tabelle.
+`from view` beginnt mit der Abfrage der gespeicherten Ansicht und wendet anschließend die neuen Klauseln an. Das ist nützlich, wenn ein geprüftes Dataset bereits den richtigen Ausgangspunkt bildet. Nicht jede GQL-Abfrage lässt sich als verschachtelte Quelle verwenden: Eine gespeicherte Abfrage mit Relation-Joins, Vergleichen zwischen Feldern oder einem Offset ist beispielsweise nicht als `from view`-Quelle verfügbar. Grids lehnt solche Referenzen ab, statt ihre Filter wegzulassen. Führe die gespeicherte Abfrage direkt aus oder beginne mit ihrer Tabelle und übernimm die benötigten Klauseln ausdrücklich. Auch eine Ansicht, die nach Datensatzmetadaten filtert, kann nicht als Quelle einer anderen Ansicht dienen.
 
 ## Namen, Aliasse und Werte {icon="point"}
 

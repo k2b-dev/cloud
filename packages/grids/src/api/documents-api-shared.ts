@@ -725,10 +725,10 @@ export const DocumentTemplateSummaryQuerySchema = z.object({
   min: z.enum(["read", "write", "admin"]).optional().default("read"),
 });
 
-export const loadTemplateAndTable = async (templateId: string) => {
+export const loadTemplateAndTable = async (templateId: string, options: { includeDeleted?: boolean } = {}) => {
   const parsed = ShortIdSchema.safeParse(templateId);
   if (!parsed.success) return null;
-  const template = await gridsService.document.getTemplateByShortId(parsed.data);
+  const template = await gridsService.document.getTemplateByShortId(parsed.data, options);
   if (!template) return null;
   const table = await gridsService.table.get(template.tableId);
   if (!table) return null;

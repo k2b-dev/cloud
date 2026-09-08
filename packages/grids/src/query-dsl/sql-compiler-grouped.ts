@@ -212,7 +212,7 @@ const compileJoinedGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, optio
   const where = conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
   const groupBySql = groupExprs.map((_, index) => sql.unsafe(String(index + 1)));
   const groupByClause = groupBySql.length > 0 ? sql`GROUP BY ${joinFragments(groupBySql, sql`, `)}` : sql``;
-  const limit = aggregateOnly ? 1 : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 1000);
+  const limit = aggregateOnly ? 1 : options.limit === null ? null : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001);
   const offset = aggregateOnly ? 0 : dslSqlOffset(options, plan.offset);
   const havingClause = having && having.ok ? sql`HAVING ${having.expression.sql}` : sql``;
   const groupedSql = sql`
@@ -281,7 +281,7 @@ export const compileDslGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, o
     filter: plan.query.filter ?? null,
     searchClause: options.searchClause,
     extraWhere: extraWhere.where,
-    limit: options.limit ?? plan.query.limit,
+    limit: options.limit === null ? null : (options.limit ?? plan.query.limit),
     lookahead: false,
     offset: options.offset ?? plan.offset,
     cursorOffset: options.cursorOffset,
@@ -300,7 +300,7 @@ export const compileDslGroupedQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, o
     query: {
       sql: compiled.query,
       columns: groupColumnsFor(plan, fields, aggregations.aggregations),
-      limit: Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 1000),
+      limit: options.limit === null ? null : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001),
       offset: dslSqlOffset(options, plan.offset),
       cursorable: compiled.cursorable,
       cursorValuesFromRow: compiled.cursorValuesFromRow,

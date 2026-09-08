@@ -85,7 +85,7 @@ export const decodeDslResultCursor = (token: string | null | undefined, signingK
       parsed.s! < 0 ||
       !Number.isInteger(parsed.n) ||
       parsed.n! < 1 ||
-      parsed.n! > 1000 ||
+      parsed.n! > 10_000 ||
       !(parsed.x === null || Array.isArray(parsed.x))
     ) {
       return null;

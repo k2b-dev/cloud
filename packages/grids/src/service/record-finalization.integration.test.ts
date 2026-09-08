@@ -80,6 +80,89 @@ const recordsInFinalizationState = async (
 };
 
 describe("record finalization Postgres integration", () => {
+  for (const change of ["policy", "disable"] as const) {
+    postgresTest(`a Four Eyes request and ${change} settle without inverted Table locks`, async () => {
+      const actorId = testUuid();
+      const groupId = testUuid();
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${actorId}::uuid, ${`lock-order-${actorId}`}, 'local', 'user', 'Requester', 'Request', 'User')`;
+      await sql`INSERT INTO auth.groups (id, cn, provider, name)
+        VALUES (${groupId}::uuid, ${`lock-order-${groupId}`}, 'local', 'Approvers')`;
+      const item = await fixture({ mode: "fourEyes", approverGroupId: groupId });
+      const releaseRecord = Promise.withResolvers<void>();
+      const recordLocked = Promise.withResolvers<number>();
+      const requestStarted = Promise.withResolvers<number>();
+      const tasks: Promise<unknown>[] = [];
+      const waitForBlock = async (blockingPid: number, blockedPid?: number): Promise<void> => {
+        const deadline = Date.now() + 5_000;
+        while (Date.now() < deadline) {
+          const rows = await sql<Array<{ pid: number }>>`
+            SELECT pid FROM pg_stat_activity
+            WHERE ${blockingPid}::int = ANY(pg_blocking_pids(pid))
+              AND (${blockedPid ?? null}::int IS NULL OR pid = ${blockedPid ?? null}::int)
+          `;
+          if (rows.length > 0) return;
+          await Bun.sleep(10);
+        }
+        throw new Error("Expected finalization transaction did not reach its lock wait");
+      };
+      try {
+        if (change === "disable") {
+          // Finalization-number fields intentionally prohibit disabling. This
+          // race needs a Table whose policy can actually be disabled.
+          const removed = await fields.softDelete(item.number.id, actorId);
+          if (!removed.ok) throw removed.error;
+        }
+        const record = await records.create(item.tableId, { [item.name.id]: "Lock ordering" }, actorId, "direct");
+        if (!record.ok) throw record.error;
+        const blocker = sql.begin(async (tx) => {
+          await tx`SELECT id FROM grids.records WHERE id = ${record.data.id}::uuid FOR UPDATE`;
+          const [backend] = await tx<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+          if (!backend) throw new Error("Missing record locker backend");
+          recordLocked.resolve(backend.pid);
+          await releaseRecord.promise;
+        });
+        tasks.push(blocker);
+        void blocker.catch(recordLocked.reject);
+        const blockerPid = await recordLocked.promise;
+        const request = sql.begin(async (tx) => {
+          await tx`SET LOCAL lock_timeout = '10s'`;
+          const [backend] = await tx<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+          if (!backend) throw new Error("Missing request backend");
+          requestStarted.resolve(backend.pid);
+          return finalization.requestFinalizationInTransaction(tx, { tableId: item.tableId, recordId: record.data.id, actorId });
+        });
+        tasks.push(request);
+        void request.catch(requestStarted.reject);
+        const requestPid = await requestStarted.promise;
+        // The request has its activation lock and is waiting for the Record.
+        await waitForBlock(blockerPid, requestPid);
+        const mutation =
+          change === "policy"
+            ? finalization.setPolicy(item.tableId, { mode: "direct" }, actorId)
+            : finalization.disable(item.tableId, actorId);
+        tasks.push(mutation);
+        void mutation.catch(() => undefined);
+        await waitForBlock(requestPid);
+        releaseRecord.resolve();
+        const outcomes = await Promise.allSettled([request, mutation]);
+        expect(outcomes.filter((outcome) => outcome.status === "rejected")).toEqual([]);
+        expect(outcomes.every((outcome) => outcome.status === "fulfilled" && outcome.value.ok)).toBe(true);
+        const [pending] = await sql<Array<{ count: number }>>`
+          SELECT count(*)::int AS count FROM grids.record_finalization_requests
+          WHERE table_id = ${item.tableId}::uuid AND status = 'pending'
+        `;
+        expect(pending?.count).toBe(0);
+      } finally {
+        releaseRecord.resolve();
+        await Promise.allSettled(tasks);
+        await cleanup(item.baseId);
+        await sql`DELETE FROM auth.users WHERE id = ${actorId}::uuid`;
+        await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      }
+    });
+  }
+
   postgresTest("keeps tables in draft mode until history-backed finalization is explicitly enabled", async () => {
     const baseId = testUuid();
     const tableId = testUuid();

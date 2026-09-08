@@ -80,12 +80,12 @@ const documentResult = async (document: Parameters<typeof projectDocuments>[0][n
     links: [{ rel: "open" as const, href: `/api/grids/documents/${document.shortId}/artifacts/pdf` }],
   };
 };
-const loadIssuance = async (input: z.infer<typeof createInput>, context: CapabilityExecutionContext) => {
-  const loaded = await loadTemplateAndTable(input.templateId);
+const loadIssuance = async (input: z.infer<typeof createInput>, context: CapabilityExecutionContext, resume = false) => {
+  const loaded = await loadTemplateAndTable(input.templateId, { includeDeleted: resume });
   if (!loaded) return missing();
   const gate = await gateBaseAtAccess(context, loaded.table.baseId, "write");
   if (!gate.ok) return gate;
-  if (!loaded.template.enabled) return fail(err.badInput(capabilityMessagesFor(context.locale).documentTemplateDisabled));
+  if (!resume && !loaded.template.enabled) return fail(err.badInput(capabilityMessagesFor(context.locale).documentTemplateDisabled));
   const recordId = await resolvePublicId("record", input.recordId);
   const record = recordId
     ? await gridsService.record.get(loaded.table.id, recordId, { viewer: actorViewerFor(context), dateConfig: await dateConfig(context) })
@@ -268,7 +268,7 @@ export const dailyCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.idempotencyKey) return fail(err.badInput(capabilityMessagesFor(context.locale).idempotencyRequired));
-        const loaded = await loadIssuance(input, context);
+        const loaded = await loadIssuance(input, context, true);
         if (!loaded.ok) return loaded;
         const result = await gridsService.document.createDocumentForRecord({
           ...loaded.data,

@@ -68,13 +68,9 @@ const valueUsesJoinAlias = (value: unknown, aliases: ReadonlySet<string>): boole
   return Object.values(node).some((item) => valueUsesJoinAlias(item, aliases));
 };
 
-const canCorrelateBoundedSingleJoins = (
-  plan: RowPlan,
-  fieldsByTableId: Record<string, Field[]>,
-  joinFanoutLimit: number | undefined,
-): boolean => {
+const canCorrelateBoundedSingleJoins = (plan: RowPlan, fieldsByTableId: Record<string, Field[]>, limit: number | undefined): boolean => {
   const joins = plan.joins ?? [];
-  if (!joinFanoutLimit || joins.length === 0 || joins.some((join) => joinCanFanOut(join, fieldsByTableId))) return false;
+  if (!limit || joins.length === 0 || joins.some((join) => joinCanFanOut(join, fieldsByTableId))) return false;
   const aliases = new Set(joins.map((join) => normalizeRefKey(join.alias)));
   if ((plan.sqlSearch?.length ?? 0) > 0 || valueUsesJoinAlias(plan.wherePredicate, aliases)) return false;
   return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed");
@@ -238,7 +234,7 @@ export const compileDslQueryPlanToSql = (
 
   const joinAliases = new Map<string, string>();
   const joinSql: unknown[] = [];
-  const correlateBoundedSingleJoins = canCorrelateBoundedSingleJoins(plan, options.fieldsByTableId, options.joinFanoutLimit);
+  const correlateBoundedSingleJoins = canCorrelateBoundedSingleJoins(plan, options.fieldsByTableId, options.limit ?? plan.query.limit);
   for (const [index, join] of (plan.joins ?? []).entries()) {
     const compiled = compileRelationJoin(join, index, joinAliases, {
       joinFanoutLimit: correlateBoundedSingleJoins ? 1 : options.joinFanoutLimit,
@@ -371,7 +367,8 @@ export const compileDslQueryPlanToSql = (
   if (options.searchClause) conditions.push(options.searchClause);
   conditions.push(sort.keyset.where);
   const where = conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
-  const limit = Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_000);
+  // Internal paging fetches one sentinel beyond the public 10,000-row page.
+  const limit = Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001);
   const offset = dslSqlOffset(options, plan.offset);
 
   return ok({

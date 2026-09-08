@@ -347,8 +347,36 @@ export const processRun = async (runId: string, heartbeat: () => Promise<void> =
  * the run `running` forever. A run that made no progress for the whole
  * transport budget has no live worker; oldest first, one bounded batch.
  */
-export const reconcileStuckControlledDestructionRuns = async (context?: Pick<ScheduleContext, "signal" | "heartbeat">): Promise<number> => {
+export const reconcileStuckControlledDestructionRuns = async (
+  context?: Pick<ScheduleContext, "signal" | "heartbeat">,
+  enqueue: (runId: string) => Promise<void> = async (runId) => {
+    await destructionJob().submit({ key: `run:${runId}`, input: { runId } });
+  },
+): Promise<number> => {
   const staleBefore = sql`now() - (${STUCK_RUN_MS} * interval '1 millisecond')`;
+  // The database commit can survive a crash before submission. Re-publish the
+  // durable intent; processRun serializes item work and ignores terminal runs.
+  const queued = await sql<Array<{ id: string }>>`
+    SELECT id::text FROM grids.controlled_destruction_runs
+    WHERE status = 'queued' AND requested_at < ${staleBefore}
+    ORDER BY requested_at, id LIMIT ${RECONCILE_BATCH_SIZE}
+  `;
+  let resubmitted = 0;
+  for (const row of queued) {
+    context?.signal.throwIfAborted();
+    try {
+      await enqueue(row.id);
+      resubmitted++;
+    } catch (error) {
+      // A transport outage must not erase the committed intent. A later
+      // reconciliation retries it without requiring another user request.
+      log.warn("Controlled destruction submission recovery failed", {
+        runId: row.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    await context?.heartbeat();
+  }
   const rows = await sql<Array<{ id: string }>>`
     SELECT run.id::text
     FROM grids.controlled_destruction_runs run
@@ -381,7 +409,7 @@ export const reconcileStuckControlledDestructionRuns = async (context?: Pick<Sch
     await context?.heartbeat();
   }
   if (reconciled > 0) log.warn("Marked abandoned controlled destruction runs as failed", { count: reconciled });
-  return reconciled;
+  return reconciled + resubmitted;
 };
 
 const destructionJob = lazySync((sync) =>

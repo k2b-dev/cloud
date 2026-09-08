@@ -8,8 +8,10 @@ import { type DocumentDbRow, hydrateDocuments, loadDocumentArtifacts } from "./d
 import { documentServiceText } from "./document-messages";
 import { buildLiveRenderData } from "./document-rendering";
 import { createRecordSnapshotDraft, type SnapshotTableReadAuthorizer } from "./document-snapshots";
+import { getStoredTemplate } from "./document-templates";
 import { get as getRecord } from "./records";
 import type { ExpansionViewer } from "./relation-access";
+import { get as getTable } from "./tables";
 import type { Table } from "./types";
 
 const WORKFLOW_RUN_DOWNLOAD_MAX_DOCUMENTS = 1_000;
@@ -32,49 +34,71 @@ export const createDocumentForRecord = async (params: {
   renderPdf?: DocumentPdfRenderer;
 }): Promise<Result<Document>> => {
   const t = documentServiceText(params.dateConfig?.locale);
-  if (!params.template.enabled) return fail(err.badInput(t.templateDisabled));
   if (params.template.tableId !== params.table.id) return fail(err.badInput(t.templateWrongTable));
+  if (!(await params.canReadTable({ baseId: params.table.baseId, tableId: params.table.id }))) {
+    return fail(err.notFound(t.recordNotFound));
+  }
+  return documentIssuanceService.issueRecordDocument(
+    {
+      ...params,
+      baseId: params.table.baseId,
+      tableId: params.table.id,
+      templateId: params.template.id,
+    },
+    () =>
+      sql
+        .begin(async (client) => {
+          await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+          const template = await getStoredTemplate(params.template.id, client);
+          const table = await getTable(params.table.id, { client });
+          if (!template || !table) return fail(err.notFound(t.tableNotFound));
+          if (!template.enabled || template.deletedAt) return fail(err.badInput(t.templateDisabled));
 
-  const record = await getRecord(params.table.id, params.recordId, {
-    dateConfig: params.dateConfig,
-    viewer: params.viewer,
-  });
-  if (!record) return fail(err.notFound(t.recordNotFound));
+          const record = await getRecord(params.table.id, params.recordId, {
+            client,
+            dateConfig: params.dateConfig,
+            viewer: params.viewer,
+          });
+          if (!record) return fail(err.notFound(t.recordNotFound));
 
-  const rendered = await buildLiveRenderData({
-    template: params.template,
-    table: params.table,
-    record,
-    dateConfig: params.dateConfig,
-    createdAt: new Date(record.updatedAt),
-  });
-  if (!rendered.ok) return rendered;
+          const rendered = await buildLiveRenderData({
+            client,
+            template,
+            table,
+            record,
+            dateConfig: params.dateConfig,
+            createdAt: new Date(record.updatedAt),
+          });
+          if (!rendered.ok) return rendered;
 
-  const snapshot = await createRecordSnapshotDraft({
-    baseId: params.table.baseId,
-    tableId: params.table.id,
-    recordId: params.recordId,
-    actorId: params.actor.kind === "user" ? params.actor.userId : null,
-    canReadTable: params.canReadTable,
-    viewer: params.viewer,
-    dateConfig: params.dateConfig,
-  });
-  if (!snapshot.ok) return snapshot;
+          const snapshot = await createRecordSnapshotDraft({
+            client,
+            baseId: params.table.baseId,
+            tableId: params.table.id,
+            recordId: params.recordId,
+            actorId: params.actor.kind === "user" ? params.actor.userId : null,
+            canReadTable: params.canReadTable,
+            viewer: params.viewer,
+            dateConfig: params.dateConfig,
+          });
+          if (!snapshot.ok) return snapshot;
 
-  const issued = await documentIssuanceService.issueDocument({
-    template: params.template,
-    snapshot: snapshot.data,
-    renderData: { ...rendered.data.data, snapshot: snapshot.data },
-    actor: params.actor,
-    idempotencyKey: params.idempotencyKey,
-    dateConfig: params.dateConfig,
-    filename: params.filename,
-    tags: params.tags,
-    workflowRunId: params.workflowRunId,
-    workflowStepKey: params.workflowStepKey,
-    renderPdf: params.renderPdf,
-  });
-  return issued.ok ? ok(issued.data.document) : issued;
+          return ok({
+            template,
+            snapshot: snapshot.data,
+            renderData: { ...rendered.data.data, snapshot: snapshot.data },
+          });
+        })
+        .catch((error: unknown) => {
+          // Concurrent first captures can race on the Record's scan-code row.
+          // Roll back the whole snapshot and expose a retryable domain conflict,
+          // never a partially refreshed capture or an unhandled database error.
+          if (error instanceof Error && (("errno" in error && error.errno === "40001") || ("code" in error && error.code === "40001"))) {
+            return fail(err.conflict(t.recordChanged));
+          }
+          throw error;
+        }),
+  );
 };
 
 export const getDocument = async (documentId: string): Promise<Document | null> => {

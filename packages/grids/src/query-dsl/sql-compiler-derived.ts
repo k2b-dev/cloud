@@ -537,7 +537,7 @@ const compileDslDerivedGroupedViewSourcePlanToSql = (
   const groupBySql = groupExprs.map((_, index) => sql.unsafe(String(index + 1)));
   const groupByClause = groupBySql.length > 0 ? sql`GROUP BY ${joinFragments(groupBySql, sql`, `)}` : sql``;
   const havingClause = having && having.ok ? sql`HAVING ${having.expression.sql}` : sql``;
-  const limit = aggregateOnly ? 1 : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 1000);
+  const limit = aggregateOnly ? 1 : Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001);
   const offset = aggregateOnly ? 0 : dslSqlOffset(options, plan.offset);
   const groupedSql = sql`
     SELECT ${joinFragments(selectParts, sql`, `)}
@@ -604,9 +604,10 @@ export const compileDslDerivedViewSourcePlanToSql = (
   };
   const sourceOptions = {
     ...options,
-    limit: undefined,
+    limit: derived.query.limit ?? null,
     offset: undefined,
     cursorValues: undefined,
+    cursorOffset: undefined,
     searchClause: options.viewSourceSearchClause,
   };
   const sourceCompiled =
@@ -732,7 +733,7 @@ export const compileDslDerivedViewSourcePlanToSql = (
   conditions.push(keyset.where);
   const pagedWhere = sql`WHERE ${conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`)}`;
   const orderBy = sql`ORDER BY ${keyset.orderBy}`;
-  const limit = Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 1000);
+  const limit = Math.min(Math.max(options.limit ?? plan.query.limit ?? 100, 1), 10_001);
   const offset = dslSqlOffset(options, plan.offset);
 
   return {

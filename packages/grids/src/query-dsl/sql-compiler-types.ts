@@ -20,7 +20,8 @@ export type DslSqlCompileOptions = {
   /** Federated row sources for joined target tables, keyed by canonical table id. */
   recordSourcesByTableId?: Map<string, DslSqlRecordSource>;
   timeZone?: string;
-  limit?: number;
+  /** Null omits an inner grouped-source limit; outer result pages remain bounded. */
+  limit?: number | null;
   offset?: number;
   cursorValues?: unknown[];
   /** Offset decoded from a server-signed cursor when a keyset token would be too large. */
@@ -89,7 +90,7 @@ export type DslSqlGroupOutputColumn =
 type DslSqlCompiledGroupQuery = {
   sql: unknown;
   columns: DslSqlGroupOutputColumn[];
-  limit: number;
+  limit: number | null;
   offset: number;
   cursorable: boolean;
   cursorValuesFromRow?: (row: Record<string, unknown>) => unknown[];

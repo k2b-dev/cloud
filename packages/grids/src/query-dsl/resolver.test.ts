@@ -2237,7 +2237,7 @@ sort missing desc`),
 
     expect(compiled.ok).toBe(true);
     if (compiled.ok) {
-      expect(compiled.query.limit).toBe(10_000);
+      expect(compiled.query.limit).toBe(10_001);
       expect(compiled.query.offset).toBe(10_000);
     }
 

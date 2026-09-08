@@ -480,6 +480,10 @@ export const requestFinalizationInTransaction = async (
 ): Promise<Result<RecordFinalizationRequest>> => {
   const messages = getGridsCrudMessages(params.locale);
   if (!params.actorId) return fail(err.forbidden(messages.finalizationRequestUserRequired));
+  // Policy changes lock the Table before its activation. Take the same order
+  // before the request insert needs the Table's foreign-key lock.
+  const writable = await requireStoredTableWritable(params.tableId, client, params.locale);
+  if (!writable.ok) return writable;
   const [activation] = await client<Array<{ mode: string; policy_revision: number }>>`
       SELECT mode, policy_revision
       FROM grids.table_finalization_activations

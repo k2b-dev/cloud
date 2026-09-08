@@ -179,16 +179,18 @@ type ReadTarget = {
 };
 
 const resolveReadTargets = async (params: {
+  client?: SqlClient;
   tableId: string;
   recordId: string;
   fieldIds: string[];
   locale?: string;
 }): Promise<Result<Map<string, ReadTarget>>> => {
+  const client = params.client ?? sql;
   const t = documentServiceText(params.locale);
-  const table = await getTable(params.tableId);
+  const table = await getTable(params.tableId, { client });
   if (!table) return fail(err.notFound(t.tableNotFound));
   if (table.kind === "stored") {
-    const [record] = await sql<Array<{ record_ok: boolean }>>`
+    const [record] = await client<Array<{ record_ok: boolean }>>`
       SELECT EXISTS (
         SELECT 1
         FROM grids.records record
@@ -200,7 +202,7 @@ const resolveReadTargets = async (params: {
       ) AS record_ok
     `;
     if (!record?.record_ok) return fail(err.notFound(t.recordNotFound));
-    const fields = await sql<Array<{ id: string }>>`
+    const fields = await client<Array<{ id: string }>>`
       SELECT id::text
       FROM grids.fields
       WHERE table_id = ${params.tableId}::uuid
@@ -223,10 +225,10 @@ const resolveReadTargets = async (params: {
     );
   }
 
-  const active = await getActive(params.tableId);
+  const active = await getActive(params.tableId, params.locale, client);
   if (!active.ok) return fail(active.error);
   const sourceTableIds = active.data.sources.map((source) => source.sourceTableId);
-  const [record] = await sql<Array<{ table_id: string }>>`
+  const [record] = await client<Array<{ table_id: string }>>`
     SELECT table_id::text
     FROM grids.records
     WHERE id = ${params.recordId}::uuid
@@ -234,7 +236,7 @@ const resolveReadTargets = async (params: {
       AND deleted_at IS NULL
   `;
   if (!record) return fail(err.notFound(t.recordNotFound));
-  const targetFields = await sql<Array<{ id: string }>>`
+  const targetFields = await client<Array<{ id: string }>>`
     SELECT id::text
     FROM grids.fields
     WHERE id = ANY(${sql.array(params.fieldIds, "UUID")}::uuid[])
@@ -268,6 +270,7 @@ const resolveReadTargets = async (params: {
 };
 
 const resolveReadTarget = async (params: {
+  client?: SqlClient;
   tableId: string;
   recordId: string;
   fieldId: string;
@@ -304,15 +307,17 @@ const matchesAccept = (filename: string, mimeType: string, accept: string[] | un
 };
 
 export const listForRecordField = async (params: {
+  client?: SqlClient;
   tableId: string;
   recordId: string;
   fieldId: string;
   locale?: string;
 }): Promise<Result<GridFile[]>> => {
+  const client = params.client ?? sql;
   const target = await resolveReadTarget(params);
   if (!target.ok) return target;
   if (!target.data.sourceFieldId) return ok([]);
-  const rows = await sql<DbRow[]>`
+  const rows = await client<DbRow[]>`
     SELECT file.id::text AS id, file.short_id, attachment.record_id::text AS record_id, attachment.field_id::text AS field_id,
            attachment.position, file.filename, file.mime_type, file.size_bytes, file.sha256,
            file.created_by::text AS created_by, file.created_at
@@ -651,17 +656,19 @@ export const replace = async (params: {
 };
 
 export const getContent = async (params: {
+  client?: SqlClient;
   tableId: string;
   recordId: string;
   fieldId: string;
   fileId: string;
   locale?: string;
 }): Promise<Result<GridFileContent>> => {
+  const client = params.client ?? sql;
   const t = documentServiceText(params.locale);
   const target = await resolveReadTarget(params);
   if (!target.ok) return target;
   if (!target.data.sourceFieldId) return fail(err.notFound(t.fileNotFound));
-  const [row] = await sql<(DbRow & { bytes: Uint8Array })[]>`
+  const [row] = await client<(DbRow & { bytes: Uint8Array })[]>`
     SELECT file.id::text AS id, file.short_id, attachment.record_id::text AS record_id,
            attachment.field_id::text AS field_id, attachment.position, file.filename, file.mime_type,
            file.size_bytes, file.sha256, file.created_by::text AS created_by, file.created_at, file.bytes

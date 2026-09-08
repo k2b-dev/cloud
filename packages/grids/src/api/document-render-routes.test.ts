@@ -688,14 +688,16 @@ describe("document render routes", () => {
     expect(response.status).toBe(200);
   });
 
-  test("rejects disabled generation with 400 before permissions or side effects", async () => {
+  test("authorizes disabled-template retries and lets the issuance owner decide replay or rejection", async () => {
     currentTemplate = disabledTemplate;
+    baseLevel = "write";
+    createResult = { ok: false, error: { status: 400, message: "Document template is disabled" } };
     const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ message: "Document template is disabled" });
-    expect(permissionChecks).toEqual([]);
-    expect(callOrder).toEqual([]);
+    expect(permissionChecks.length).toBeGreaterThan(0);
+    expect(callOrder).toEqual(["create"]);
   });
 
   test("issues an immutable Document with actor and idempotency inputs", async () => {

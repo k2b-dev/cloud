@@ -168,8 +168,8 @@ describe("Grids App definition contract", () => {
   });
 
   test("keeps the live Help YAML aligned with the public schema", async () => {
-    const markdown = await Bun.file(new URL("../help/documents/en/grids-custom-apps.help.md", import.meta.url)).text();
-    const source = markdown.match(/```yaml\n([\s\S]*?)```/)?.[1];
+    const markdown = await Bun.file(new URL("../help/documents/en/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
+    const source = markdown.match(/## Use one strict root document[\s\S]*?```yaml\n([\s\S]*?)```/)?.[1];
     expect(source).toBeDefined();
     expect(CustomAppDefinitionSchema.safeParse(Bun.YAML.parse(source!)).success).toBe(true);
   });

@@ -48,11 +48,7 @@ import {
   metricCellsFromPreview,
 } from "../service/custom-app-insights";
 import { resolvePublishedCustomAppForm } from "../service/custom-app-published-form";
-import {
-  buildCustomAppRecordLabelCache,
-  customAppRecordRelationSnapshot,
-  sameCustomAppRecordRelationSnapshot,
-} from "../service/custom-app-record-relations";
+import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
 import { executePublishedCustomAppQuery, publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
 import type { PublicRenderableForm } from "../service/forms";
@@ -294,11 +290,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
     if (!table || table.baseId !== app.baseId) return null;
     const publicTable = await toPublicTable(table);
     const relationTargetTableIds = [...new Set(capability.relationLabels.map((relation) => relation.targetTableId))];
-    const relationTargetTables = await Promise.all(relationTargetTableIds.map((tableId) => gridsService.table.get(tableId)));
-    if (relationTargetTables.some((target) => !target || target.baseId !== app.baseId)) return null;
-    const targetFieldsByTableId = await gridsService.field.listByTables(relationTargetTableIds);
-    const liveRelationLabels = customAppRecordRelationSnapshot(fields, targetFieldsByTableId);
-    if (!sameCustomAppRecordRelationSnapshot(capability.relationLabels, liveRelationLabels)) return null;
+    if (!(await customAppRecordRelationsMatchPublished({ baseId: app.baseId, fields, relations: capability.relationLabels }))) return null;
     const relationTableIds = [tableId, ...relationTargetTableIds];
     const relationViewer = {
       ...actorViewerFor(requestAccess),

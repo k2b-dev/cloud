@@ -543,7 +543,8 @@ type CompileGroupParams = {
   extraWhere?: any;
   fields: Field[];
   cursor?: { keys: unknown[] } | null;
-  limit?: number;
+  /** Null leaves a nested source unbounded; its outer query owns pagination. */
+  limit?: number | null;
   /** Callers that already request one lookahead row disable the service-level lookahead. */
   lookahead?: boolean;
   offset?: number;
@@ -606,13 +607,15 @@ const buildGroupedSql = (
   const groupByPositions = joinSql(groups.map((_, index) => sql`${sql.unsafe(String(index + 1))}`));
   const orderBy = buildOrderBy(groups, groupSort);
   const reverseOrderBy = buildOrderBy(groups, groupSort, true);
-  const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
+  // Public callers bound their page size; GQL can request 10,000 rows plus
+  // its own sentinel (lookahead=false). Preserve that internal fetch budget.
+  const limit = params.limit === null ? null : Math.min(Math.max(params.limit ?? 100, 1), 10_001);
   const offset = params.cursor
     ? 0
     : params.cursorOffset !== undefined
       ? Math.max(params.cursorOffset, 0)
       : Math.min(Math.max(params.offset ?? 0, 0), 10_000);
-  const fetchLimit = limit + (params.lookahead === false ? 0 : 1);
+  const fetchLimit = limit === null ? null : limit + (params.lookahead === false ? 0 : 1);
   const groupedQuery = sql`
     SELECT ${selectList}
     FROM ${from}

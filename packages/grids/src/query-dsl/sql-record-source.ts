@@ -178,6 +178,7 @@ const sourceFieldJson = (
 };
 
 const branchForSource = async (params: {
+  client?: SqlClient;
   targetTableId: string;
   sourceTableId: string;
   sourceFields: Field[];
@@ -186,7 +187,7 @@ const branchForSource = async (params: {
   pushdown?: PushdownInput;
 }): Promise<{ relation: unknown }> => {
   const sourceFieldsById = new Map(params.sourceFields.map((field) => [field.id, field]));
-  const computed = await buildComputedFieldSqlMap(params.sourceFields, { recordAlias: "source_record" });
+  const computed = await buildComputedFieldSqlMap(params.sourceFields, { recordAlias: "source_record", client: params.client });
   for (const projection of buildFormulaSqlProjections(params.sourceFields, { recordAlias: "source_record" })) {
     if (projection.expr) computed.set(projection.fieldId, { sql: projection.expr, type: "unknown" });
   }
@@ -274,25 +275,30 @@ export const buildDslSqlRecordSource = async (
   tableId: string,
   fieldsByTableId: Record<string, Field[]>,
   pushdown?: PushdownInput,
+  client: SqlClient = sql,
 ): Promise<DslSqlFederatedRecordSource | null> => {
-  const table = await getTable(tableId);
+  const table = await getTable(tableId, { client });
   if (!table || table.kind !== "federated") return null;
 
-  const active = await getActive(tableId);
+  const active = await getActive(tableId, undefined, client);
   if (!active.ok) throw new Error(active.error.message);
   const revision = active.data;
-  const targetFields = new Map((fieldsByTableId[tableId] ?? (await listFields(tableId))).map((field) => [field.id, field]));
+  const targetFields = new Map((fieldsByTableId[tableId] ?? (await listFields(tableId, false, client))).map((field) => [field.id, field]));
   const mappingsBySource = new Map<string, typeof revision.mappings>();
   for (const mapping of revision.mappings) {
     const items = mappingsBySource.get(mapping.sourceTableId) ?? [];
     items.push(mapping);
     mappingsBySource.set(mapping.sourceTableId, items);
   }
-  const sourceFieldsByTableId = await listByTables(revision.sources.map((source) => source.sourceTableId));
+  const sourceFieldsByTableId = await listByTables(
+    revision.sources.map((source) => source.sourceTableId),
+    client,
+  );
 
   const branches = await Promise.all(
     revision.sources.map((source) =>
       branchForSource({
+        client,
         targetTableId: tableId,
         sourceTableId: source.sourceTableId,
         sourceFields: sourceFieldsByTableId.get(source.sourceTableId) ?? [],

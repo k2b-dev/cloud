@@ -281,6 +281,50 @@ describe("controlled File destruction", () => {
     },
     15_000,
   );
+  postgresTest("recovers committed destruction intents after a submission gap without losing them on transport failure", async () => {
+    const fixture = await createFixture();
+    try {
+      const candidate = await createCandidate(fixture.baseId, fixture.firstTableId, "submission-gap", 40);
+      const created = await start(
+        fixture.baseId,
+        { fileIds: [candidate.fileShortId], confirmation: "Destruction fixture" },
+        { id: null, displayName: "Admin" },
+        async () => undefined,
+      );
+      if (!created.ok) throw created.error;
+      const [run] = await sql<Array<{ id: string }>>`
+        SELECT id::text FROM grids.controlled_destruction_runs WHERE short_id = ${created.data.id}
+      `;
+      if (!run) throw new Error("Missing destruction run");
+      const submitted: string[] = [];
+      const enqueue = async (id: string) => {
+        submitted.push(id);
+      };
+      expect(await reconcileStuckControlledDestructionRuns(undefined, enqueue)).toBe(0);
+      await sql`UPDATE grids.controlled_destruction_runs SET requested_at = now() - interval '1 hour' WHERE id = ${run.id}::uuid`;
+      expect(
+        await reconcileStuckControlledDestructionRuns(undefined, async () => {
+          throw new Error("Transport unavailable");
+        }),
+      ).toBe(0);
+      expect((await overview(fixture.baseId)).runs[0]?.status).toBe("queued");
+      expect(await reconcileStuckControlledDestructionRuns(undefined, enqueue)).toBe(1);
+      expect(await reconcileStuckControlledDestructionRuns(undefined, enqueue)).toBe(1);
+      expect(submitted).toEqual([run.id, run.id]);
+      // A dedupe window is finite, so a repeated recovery delivery must be safe.
+      await Promise.all(submitted.map((id) => processRun(id)));
+      expect((await overview(fixture.baseId)).runs[0]).toMatchObject({ status: "completed", counts: { destroyed: 1, failed: 0 } });
+      expect(await reconcileStuckControlledDestructionRuns(undefined, enqueue)).toBe(0);
+      const [audit] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.audit_log
+        WHERE base_id = ${fixture.baseId}::uuid AND action = 'controlled_destruction.file_destroyed'
+      `;
+      expect(audit?.count).toBe(1);
+    } finally {
+      await cleanup(fixture.baseId);
+    }
+  });
+
   postgresTest("recovers abandoned running runs while progressing and fresh runs stay untouched", async () => {
     const fixture = await createFixture();
     try {

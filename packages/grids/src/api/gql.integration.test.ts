@@ -216,7 +216,7 @@ const insertAutocompleteBaseFixture = async (
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source, ui, position)
-    VALUES (${secretViewId}::uuid, ${shortId("V")}, ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTableId}}`}, '{}'::jsonb, 0)
+    VALUES (${secretViewId}::uuid, ${shortId("V")}, ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTablePublicId}}`}, '{}'::jsonb, 0)
   `;
 
   const accessId = await grantBaseRead(baseId, userId);

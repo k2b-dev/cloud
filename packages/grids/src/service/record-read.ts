@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import { type LookupTargetMeta, lookupTargetMeta } from "../lookup-display";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
+import type { SqlClient } from "./audit";
 import { runBoundedQuery } from "./bounded-query";
 import {
   applyComputedProjections,
@@ -64,6 +65,7 @@ const prepareFormulaLookupPlan = async (
   dateConfig?: DateContext,
   viewer?: ExpansionViewer,
   authorizeComputedTable?: (tableId: string) => Promise<boolean>,
+  client?: SqlClient,
 ): Promise<FormulaLookupPlan> => {
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, viewer, authorizeComputedTable);
   const specs = fields
@@ -85,9 +87,10 @@ const prepareFormulaLookupPlan = async (
   const targets = new Map<string, FormulaLookupTargetPlan>();
   for (const { targetTableId } of specs) {
     if (targets.has(targetTableId)) continue;
-    const targetFields = await listFields(targetTableId);
+    const targetFields = await listFields(targetTableId, false, client);
     const authorizedNestedTableIds = await readableComputedTargetTableIds(targetFields, viewer, authorizeComputedTable);
     const targetComputed = await buildComputedProjections(targetFields, {
+      client,
       authorizedTableIds: authorizedNestedTableIds,
     });
     const targetFormulaSql = buildFormulaSqlProjections(targetFields, { dateConfig });
@@ -105,7 +108,7 @@ const prepareFormulaLookupPlan = async (
 const enrichFormulaLookupsWithPlan = async (
   records: GridRecord[],
   plan: FormulaLookupPlan,
-  options: { dateConfig?: DateContext; signal?: AbortSignal; queryTimeoutMs?: number } = {},
+  options: { dateConfig?: DateContext; signal?: AbortSignal; queryTimeoutMs?: number; client?: SqlClient } = {},
 ): Promise<void> => {
   if (records.length === 0 || plan.specs.length === 0) return;
 
@@ -124,7 +127,8 @@ const enrichFormulaLookupsWithPlan = async (
     const target = plan.targets.get(tableId);
     if (!target) continue;
     options.signal?.throwIfAborted();
-    const query = sql<DbRow[]>`
+    const client = options.client ?? sql;
+    const query = client<DbRow[]>`
       SELECT r.*${target.projectionFragments}
       FROM grids.records r
       ${liveRecordParentJoinSql("r", "rt", "rb")}
@@ -134,7 +138,7 @@ const enrichFormulaLookupsWithPlan = async (
     `;
     const rows =
       options.queryTimeoutMs !== undefined || options.signal
-        ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal)
+        ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal, undefined, options.client)
         : await query;
     options.signal?.throwIfAborted();
     const targetRecords = rows.map(mapRecordRow);
@@ -161,17 +165,19 @@ export const enrichFormulaLookups = async (
   records: GridRecord[],
   fields: Field[],
   options: {
+    client?: SqlClient;
     dateConfig?: DateContext;
     viewer?: ExpansionViewer;
     authorizeComputedTable?: (tableId: string) => Promise<boolean>;
   } = {},
 ): Promise<void> => {
   if (records.length === 0) return;
-  const plan = await prepareFormulaLookupPlan(fields, options.dateConfig, options.viewer, options.authorizeComputedTable);
+  const plan = await prepareFormulaLookupPlan(fields, options.dateConfig, options.viewer, options.authorizeComputedTable, options.client);
   await enrichFormulaLookupsWithPlan(records, plan, options);
 };
 
 type RecordReadOptions = {
+  client?: SqlClient;
   includeRelations?: boolean;
   viewer?: ExpansionViewer;
   authorizeComputedTable?: (tableId: string) => Promise<boolean>;
@@ -197,27 +203,29 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
       includeDeleted: opts.deleted === "include",
       deletedOnly: opts.deleted === "only",
     },
+    opts.client,
   );
   if (!recordSource) throw new Error("Combined table source is not available");
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
   const projectionFragments = projectionFragmentsFor(formulaSql);
   const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
-  const fieldsWithLookupMeta = await withLookupTargetMetadata(fields);
+  const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, opts.client);
 
   const getMany = async (recordIds: string[]): Promise<GridRecord[]> => {
     if (recordIds.length === 0) return [];
     opts.signal?.throwIfAborted();
     // Per read, not per reader: the reader outlives the publication it captured.
-    await assertFederatedPublication(recordSource);
+    await assertFederatedPublication(recordSource, opts.client);
     opts.signal?.throwIfAborted();
-    const query = sql<DbRow[]>`
+    const client = opts.client ?? sql;
+    const query = client<DbRow[]>`
       SELECT r.*${projectionFragments}
       FROM ${recordSource.relation} r
       WHERE r.id = ANY(${sql.array(recordIds, "UUID")}::uuid[])
     `;
     const rows =
       opts.queryTimeoutMs !== undefined || opts.signal
-        ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal)
+        ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal, undefined, opts.client)
         : await query;
     opts.signal?.throwIfAborted();
     const records = rows.map(mapRecordRow);
@@ -242,24 +250,31 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
 };
 
 export const createReader = async (tableId: string, opts: RecordReadOptions = {}): Promise<RecordReader> => {
-  const fields = opts.fields ?? (await listFields(tableId));
-  const table = await getTable(tableId);
+  const client = opts.client ?? sql;
+  const fields = opts.fields ?? (await listFields(tableId, false, client));
+  const table = await getTable(tableId, { client });
   if (table?.kind === "federated") return createFederatedReader(tableId, fields, opts);
-  const fieldsWithLookupMeta = await withLookupTargetMetadata(fields);
+  const fieldsWithLookupMeta = await withLookupTargetMetadata(fields, client);
   const authorizedTargetTableIds = await readableComputedTargetTableIds(fields, opts.viewer, opts.authorizeComputedTable);
-  const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds });
+  const computed = await buildComputedProjections(fields, { authorizedTableIds: authorizedTargetTableIds, client });
   const formulaSql = buildFormulaSqlProjections(fields, { dateConfig: opts.dateConfig });
   const projections = [...computed, ...formulaSql];
   const projectionFragments = projectionFragmentsFor(projections);
   const formulaFieldIds = new Set(formulaSql.map((projection) => projection.fieldId));
-  const formulaLookupPlan = await prepareFormulaLookupPlan(fieldsWithLookupMeta, opts.dateConfig, opts.viewer, opts.authorizeComputedTable);
+  const formulaLookupPlan = await prepareFormulaLookupPlan(
+    fieldsWithLookupMeta,
+    opts.dateConfig,
+    opts.viewer,
+    opts.authorizeComputedTable,
+    client,
+  );
 
   const getMany = async (recordIds: string[]): Promise<GridRecord[]> => {
     if (recordIds.length === 0) return [];
     opts.signal?.throwIfAborted();
     const deletedClause =
       opts.deleted === "include" ? sql`TRUE` : opts.deleted === "only" ? sql`r.deleted_at IS NOT NULL` : sql`r.deleted_at IS NULL`;
-    const query = sql<DbRow[]>`
+    const query = client<DbRow[]>`
       SELECT r.*${projectionFragments}
       FROM grids.records r
       JOIN grids.tables t ON t.id = r.table_id AND t.deleted_at IS NULL
@@ -270,11 +285,12 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     `;
     const rows =
       opts.queryTimeoutMs !== undefined || opts.signal
-        ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal)
+        ? await runBoundedQuery<DbRow>(query, opts.queryTimeoutMs ?? 5_000, opts.signal, undefined, opts.client)
         : await query;
     opts.signal?.throwIfAborted();
     const records = rows.map(mapRecordRow);
     await hydrateRelationsFromLinks(records, fields, opts.viewer, {
+      client,
       signal: opts.signal,
       queryTimeoutMs: opts.queryTimeoutMs,
     });
@@ -282,6 +298,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
     const recordsById = new Map(records.map((record) => [record.id, record]));
     applyComputedProjections(rows as Array<Record<string, unknown>>, recordsById, projections);
     await enrichFormulaLookupsWithPlan(records, formulaLookupPlan, {
+      client,
       dateConfig: opts.dateConfig,
       signal: opts.signal,
       queryTimeoutMs: opts.queryTimeoutMs,
@@ -292,6 +309,7 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
       skipFormulaFieldIds: formulaFieldIds,
     });
     await enrichRecordsWithHtmlTemplates(records, fieldsWithLookupMeta, {
+      client,
       dateConfig: opts.dateConfig,
       ...(opts.htmlTemplateFieldIds ? { fieldIds: new Set(opts.htmlTemplateFieldIds) } : {}),
       signal: opts.signal,

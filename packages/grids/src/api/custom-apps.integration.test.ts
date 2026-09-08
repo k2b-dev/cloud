@@ -5,8 +5,9 @@ import type { AuthContext } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import type { DslQueryPreviewResponse } from "../contracts";
-import { CustomAppCapabilitiesSchema, type CustomAppDefinition } from "../custom-apps/contracts";
+import { CustomAppCapabilitiesSchema, type CustomAppDefinition, type CustomAppReferencedRecordsBlock } from "../custom-apps/contracts";
 import { customAppViewSourceHash } from "../custom-apps/insight-source";
+import { referencedRecordsGqlSource } from "../custom-apps/referenced-records";
 import { buildCustomAppRuntimeContext } from "../custom-apps/runtime-context";
 import { insertTestDocumentArtifact, postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -316,6 +317,31 @@ describe("Grids App Form runtime", () => {
         await sql<Array<{ version: number }>>`SELECT version FROM grids.records
         WHERE id = ${recordId}::uuid`,
       ).toEqual([{ version: 2 }]);
+
+      const newTargetTableId = testUuid();
+      const newTargetRecordId = testUuid();
+      const newTargetRecordShortId = testShortId("R");
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${newTargetTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Unpublished target')`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${newTargetRecordId}::uuid, ${newTargetRecordShortId}, ${newTargetTableId}::uuid, '{}'::jsonb)`;
+      await sql`UPDATE grids.fields SET config = ${{ targetTableId: newTargetTableId, cardinality: "single" }}::jsonb
+        WHERE id = ${relationFieldId}::uuid`;
+      const driftedPage = await authenticatedApi.request(`/apps/runtime/${applied.data.shortId}/record-detail?cursor=${recordShortId}`);
+      expect(driftedPage.status).toBe(404);
+      const driftedEdit = await authenticatedApi.request(editUrl, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "If-Match": "2" },
+        body: JSON.stringify({ values: { [relationFieldShortId]: [newTargetRecordShortId] } }),
+      });
+      expect(driftedEdit.status).toBe(404);
+      expect(
+        await sql<Array<{ targetId: string }>>`SELECT to_record_id::text AS "targetId" FROM grids.record_links
+        WHERE from_record_id = ${recordId}::uuid AND from_field_id = ${relationFieldId}::uuid`,
+      ).toEqual([{ targetId: selectedId }]);
+      expect(await sql<Array<{ version: number }>>`SELECT version FROM grids.records WHERE id = ${recordId}::uuid`).toEqual([
+        { version: 2 },
+      ]);
     } finally {
       await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
@@ -1141,6 +1167,34 @@ describe("Grids App Form runtime", () => {
           ],
         });
         const authenticatedUser = userFor(authUser.id);
+        const referenceFieldId = testUuid();
+        const referenceFieldPublicId = testShortId("F");
+        await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${referenceFieldId}::uuid, ${referenceFieldPublicId}, ${tableId}::uuid, 'Related request', 'relation',
+            ${{ targetTableId: tableId, cardinality: "multiple" }}::jsonb, 10)`;
+        await sql`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
+          VALUES (${recordId}::uuid, ${referenceFieldId}::uuid, ${recordId}::uuid)`;
+        const referencedBlock: CustomAppReferencedRecordsBlock = {
+          id: "references",
+          type: "referenced_records",
+          sourceTableId: tablePublicId,
+          relationFieldId: referenceFieldPublicId,
+          fieldIds: [fieldPublicId],
+          searchable: true,
+          pageSize: 25,
+          display: { kind: "table" },
+          rowActions: [
+            {
+              id: "approve-reference",
+              label: "Approve referenced request",
+              showLabel: true,
+              kind: "workflow",
+              launcherId: launcherPublicId,
+              inputs: { request: { source: "ROW", path: "id" } },
+            },
+          ],
+        };
+        actionDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.push(referencedBlock);
         const actionContext = buildCustomAppRuntimeContext({
           access: { actor: { kind: "user", user: authenticatedUser }, accessSubject: { type: "user", userId: authUser.id } },
           app: { shortId: appPublicId, name: definition.name },
@@ -1161,6 +1215,10 @@ describe("Grids App Form runtime", () => {
         if (!compiledRowSource.ok) throw new Error(compiledRowSource.error);
         const compiledViewSource = await compileCustomAppQuery({ baseId, source: viewSource, context: actionContext.query });
         if (!compiledViewSource.ok) throw new Error(compiledViewSource.error);
+        const referenceSource = referencedRecordsGqlSource(actionDefinition.pages[1]!, referencedBlock);
+        if (!referenceSource) throw new Error("Missing reference query");
+        const compiledReferenceSource = await compileCustomAppQuery({ baseId, source: referenceSource, context: actionContext.query });
+        if (!compiledReferenceSource.ok) throw new Error(compiledReferenceSource.error);
         const actionCapability = {
           target: "action" as const,
           pageId: "request",
@@ -1184,6 +1242,13 @@ describe("Grids App Form runtime", () => {
                 ...((stored.published_capabilities.recordQueries as unknown[]) ?? []),
                 {
                   pageId: "request",
+                  blockId: "references",
+                  primaryTableId: tableId,
+                  planHash: compiledReferenceSource.data.planHash,
+                  tableIds: [tableId],
+                },
+                {
+                  pageId: "request",
                   blockId: "requests",
                   primaryTableId: tableId,
                   planHash: compiledRowSource.data.planHash,
@@ -1201,6 +1266,7 @@ describe("Grids App Form runtime", () => {
                 },
               ],
               workflowLaunchers: [
+                { pageId: "request", blockId: "references", actionId: "approve-reference", launcherId, workflowId, revision: 1 },
                 { pageId: "request", blockId: "actions", actionId: "approve", launcherId, workflowId, revision: 1 },
                 { pageId: "request", blockId: "requests", actionId: "approve-row", launcherId, workflowId, revision: 1 },
               ],
@@ -1447,6 +1513,22 @@ describe("Grids App Form runtime", () => {
         expect(ownStatus.status).toBe(200);
         expect(await ownStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
         expect((await secondServiceAccountApi.request(statusPath)).status).toBe(404);
+
+        const referencedActionResponse = await firstServiceAccountApi.request(
+          `/apps/runtime/${applied.data.shortId}/request/references/row-actions/approve-reference?request_id=${body.recordId}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ operationId: testUuid(), rowId: body.recordId }),
+          },
+        );
+        expect(referencedActionResponse.status).toBe(202);
+        const referencedAction = (await referencedActionResponse.json()) as { statusUrl: string };
+        const referencedStatusPath = referencedAction.statusUrl.replace(/^\/api\/grids/, "");
+        const referencedStatus = await firstServiceAccountApi.request(referencedStatusPath);
+        expect(referencedStatus.status).toBe(200);
+        expect(await referencedStatus.json()).toEqual({ status: "succeeded", message: "Approved" });
+        expect((await secondServiceAccountApi.request(referencedStatusPath)).status).toBe(404);
 
         actionInvocation = null;
         const rowActionUrl = `/apps/runtime/${applied.data.shortId}/request/requests/row-actions/approve-row?request_id=${body.recordId}`;

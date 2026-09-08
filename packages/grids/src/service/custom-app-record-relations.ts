@@ -1,8 +1,10 @@
 import type { CustomAppCapabilities } from "../custom-apps/contracts";
+import { listByTables } from "./fields";
 import { buildPrincipalLabelCache, principalReferencesFromRecords } from "./principal-values";
 import type { ExpansionViewer } from "./relation-access";
 import { buildPinnedRelationLabelCache } from "./relation-labels";
 import { relationLabelFields } from "./relation-targets";
+import { get as getTable } from "./tables";
 import type { Field, GridRecord } from "./types";
 
 type CustomAppRecordRelation = CustomAppCapabilities["records"][number]["relationLabels"][number];
@@ -46,6 +48,18 @@ export const sameCustomAppRecordRelationSnapshot = (
 export const customAppRelationLabelFieldIdsByTableId = (
   relations: readonly CustomAppRecordRelation[],
 ): ReadonlyMap<string, readonly string[]> => new Map(relations.map((relation) => [relation.targetTableId, relation.labelFieldIds]));
+
+export const customAppRecordRelationsMatchPublished = async (params: {
+  baseId: string;
+  fields: readonly Field[];
+  relations: readonly CustomAppRecordRelation[];
+}): Promise<boolean> => {
+  const targetTableIds = [...new Set(params.relations.map((relation) => relation.targetTableId))];
+  const tables = await Promise.all(targetTableIds.map((id) => getTable(id)));
+  if (tables.some((table) => !table || table.baseId !== params.baseId)) return false;
+  const targetFields = await listByTables(targetTableIds);
+  return sameCustomAppRecordRelationSnapshot(params.relations, customAppRecordRelationSnapshot(params.fields, targetFields));
+};
 
 export const buildCustomAppRecordLabelCache = async (params: {
   records: GridRecord[];

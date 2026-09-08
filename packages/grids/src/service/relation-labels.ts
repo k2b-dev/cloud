@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
+import type { SqlClient } from "./audit";
 import { buildFormulaSqlProjections } from "./computed-projections";
 import { listByTable as listFields } from "./fields";
 import { parseJsonbRow } from "./jsonb";
@@ -33,9 +34,10 @@ const resolveLabelsByTargetTable = async (
   idsByTargetTable: Map<string, Set<string>>,
   authorizedTableIds?: ReadonlySet<string>,
   labelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>,
+  client?: SqlClient,
 ): Promise<Record<string, string>> => {
   const labels: Record<string, string> = {};
-  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds, labelFieldIdsByTableId);
+  const targetsByTable = await loadRelationTargetsBatch(idsByTargetTable, authorizedTableIds, labelFieldIdsByTableId, client);
   for (const targets of targetsByTable.values()) {
     for (const record of targets.records) {
       const parts = targets.fields.map((field) => formatLabelPart(record.data[field.id])).filter((part) => part.length > 0);
@@ -48,9 +50,10 @@ const resolveLabelsByTargetTable = async (
 const visibleTargets = async (
   idsByTargetTable: Map<string, Set<string>>,
   viewer?: ExpansionViewer,
+  client?: SqlClient,
 ): Promise<{ ids: Map<string, Set<string>>; authorizedTableIds?: ReadonlySet<string> }> => {
   if (!viewer) return { ids: idsByTargetTable };
-  const authorizedTableIds = await resolveReadableTableIds(idsByTargetTable.keys(), viewer);
+  const authorizedTableIds = await resolveReadableTableIds(idsByTargetTable.keys(), viewer, client);
   return { ids: new Map([...idsByTargetTable].filter(([tableId]) => authorizedTableIds.has(tableId))), authorizedTableIds };
 };
 
@@ -103,9 +106,10 @@ export const buildLabelCacheForGroupedKeys = async (
 export const buildRelationLabelCacheForIds = async (
   idsByTargetTable: Map<string, Set<string>>,
   viewer?: ExpansionViewer,
+  client?: SqlClient,
 ): Promise<Record<string, string>> => {
-  const visible = await visibleTargets(idsByTargetTable, viewer);
-  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds);
+  const visible = await visibleTargets(idsByTargetTable, viewer, client);
+  return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, undefined, client);
 };
 
 export const lookupRecords = async (params: {

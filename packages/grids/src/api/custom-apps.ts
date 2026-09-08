@@ -20,7 +20,7 @@ import { isRecordWritableFieldType } from "../field-types";
 import { toWorkflowRunEventSummary } from "../lib/workflow-run-events";
 import { gridsService } from "../service";
 import { resolvePublishedCustomAppForm } from "../service/custom-app-published-form";
-import { buildCustomAppRecordLabelCache } from "../service/custom-app-record-relations";
+import { buildCustomAppRecordLabelCache, customAppRecordRelationsMatchPublished } from "../service/custom-app-record-relations";
 import { executePublishedCustomAppRecords } from "../service/custom-app-records-query";
 import type { CustomApp, CustomAppDraftSave, CustomAppSummary } from "../service/custom-apps";
 import { getMaxFileSizeBytes } from "../service/file-limits";
@@ -441,18 +441,30 @@ const resolveRuntimeRecordBlock = async (c: Context<AuthContext>) => {
     return null;
   }
 
+  const selected = new Set(capability.fieldIds);
+  const fields = (await gridsService.field.listByTable(tableId)).filter((field) => selected.has(field.id));
+  if (
+    fields.length !== selected.size ||
+    !(await customAppRecordRelationsMatchPublished({ baseId: app.baseId, fields, relations: capability.relationLabels }))
+  )
+    return null;
+  const relationTableIds = [tableId, ...capability.relationLabels.map((relation) => relation.targetTableId)];
+  const viewer = {
+    ...runtime.viewer,
+    isAdmin: false,
+    readableTableIds: new Set(relationTableIds),
+    tableReadAccess: new Map(relationTableIds.map((id) => [id, true])),
+  };
   const recordId = pageParams[page.record.id.path];
   if (!recordId) return null;
-  const record = await gridsService.record.get(tableId, recordId, {
-    viewer: runtime.viewer,
-  });
+  const record = await gridsService.record.get(tableId, recordId, { viewer });
   if (!record) return null;
   const resolvedBlock = {
     ...block,
     fieldIds: block.fieldIds.map((fieldId) => fieldIds.get(fieldId)!),
     editableFieldIds: block.editableFieldIds.map((fieldId) => fieldIds.get(fieldId)!),
   };
-  return { app, page, block: resolvedBlock, capability, record, tableId, viewer: runtime.viewer } as const;
+  return { app, page, block: resolvedBlock, capability, record, tableId, viewer } as const;
 };
 
 const resolveRuntimeRecordEdit = async (c: Context<AuthContext>) => {
@@ -1280,7 +1292,7 @@ export const createCustomAppsApi = (
         const action =
           block?.type === "actions"
             ? block.actions.find((candidate) => candidate.id === c.req.param("actionId") && candidate.kind === "workflow")
-            : block?.type === "records"
+            : block?.type === "records" || block?.type === "referenced_records"
               ? block.rowActions?.find((candidate) => candidate.id === c.req.param("actionId"))
               : null;
         const workflowAction = action && "launcherId" in action ? action : null;

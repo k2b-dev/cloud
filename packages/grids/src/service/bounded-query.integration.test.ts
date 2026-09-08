@@ -7,6 +7,47 @@ const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 afterAll(stopBoundedQueryPool);
 
 describe("bounded query", () => {
+  postgresTest("keeps transaction-local data and settings without sharing other snapshots", async () => {
+    const results = await Promise.all(
+      [1, 2].map((value) =>
+        sql.begin(async (tx) => {
+          await tx`CREATE TEMP TABLE bounded_snapshot (value int) ON COMMIT DROP`;
+          await tx`INSERT INTO bounded_snapshot VALUES (${value})`;
+          await tx`SET LOCAL statement_timeout = '9s'`;
+          const rows = await runBoundedQuery<{ value: number }>(
+            sql`SELECT value FROM bounded_snapshot`,
+            1_000,
+            undefined,
+            "same-snapshot-key",
+            tx,
+          );
+          const [settings] = await tx<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
+          expect(settings?.timeout).toBe("9s");
+          return rows;
+        }),
+      ),
+    );
+    expect(results).toEqual([[{ value: 1 }], [{ value: 2 }]]);
+  });
+
+  postgresTest("preserves transaction timeout and abort errors for the caller to roll back", async () => {
+    await expect(
+      sql.begin(async (tx) => {
+        await runBoundedQuery(sql`SELECT pg_sleep(1)`, 20, undefined, undefined, tx);
+      }),
+    ).rejects.toThrow("statement timeout");
+    const controller = new AbortController();
+    await expect(
+      sql.begin(async (tx) => {
+        const pending = runBoundedQuery(sql`SELECT pg_sleep(5)`, 10_000, controller.signal, undefined, tx);
+        await Bun.sleep(30);
+        controller.abort();
+        await pending;
+      }),
+    ).rejects.toThrow("query aborted");
+    expect(await runBoundedQuery<{ answer: number }>(sql`SELECT 42::int AS answer`, 1_000)).toEqual([{ answer: 42 }]);
+  });
+
   postgresTest("cancels an admitted statement when its request is aborted", async () => {
     const controller = new AbortController();
     const pending = runBoundedQuery(sql`SELECT pg_sleep(5)`, 10_000, controller.signal);

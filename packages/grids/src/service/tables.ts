@@ -126,17 +126,18 @@ export const listTrashedByBase = async (baseId: string): Promise<Table[]> => {
  * trashed *table* rows (used by the trash listing's restore path); the
  * parent base must still be alive — restore is top-down only.
  */
-export const get = async (id: string, opts: { includeDeleted?: boolean } = {}): Promise<Table | null> => {
+export const get = async (id: string, opts: { includeDeleted?: boolean; client?: SqlClient } = {}): Promise<Table | null> => {
+  const client = opts.client ?? sql;
   // SELECT t.* — see listByBase. Bare COLS would be ambiguous after
   // the JOIN to grids.bases (both carry `id`).
   const [row] = opts.includeDeleted
-    ? await sql<DbRow[]>`
+    ? await client<DbRow[]>`
         SELECT t.*
         FROM grids.tables t
         JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
         WHERE t.id = ${id}::uuid
       `
-    : await sql<DbRow[]>`
+    : await client<DbRow[]>`
         SELECT t.*
         FROM grids.tables t
         JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL

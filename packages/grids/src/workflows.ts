@@ -26,7 +26,14 @@ import type { RecordMutationAudit, Table } from "./contracts";
 import { logAudit, type SqlClient } from "./service/audit";
 import type { DocumentIssuanceActor } from "./service/document-issuance";
 import { summarizeDocument } from "./service/document-mappers";
-import { createDocumentForRecord, createDocumentLink, getDocument, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
+import {
+  createDocumentForRecord,
+  createDocumentLink,
+  getDocument,
+  getStoredTemplate,
+  getTemplate,
+  publicDocumentLinkBaseUrl,
+} from "./service/documents";
 import { get as getEmailTemplate } from "./service/email-templates";
 import { listByTable as listFields } from "./service/field-read";
 import { assertMutationAllowed } from "./service/mutation-policy";
@@ -357,9 +364,9 @@ const transaction = (ctx: WorkflowActionContext): SqlClient => {
   return ctx.tx;
 };
 
-const documentTemplate = async (ctx: WorkflowActionContext) => {
-  const template = await getTemplate(boundId(ctx, "template"));
-  if (!template || !template.enabled) throw actionError("NOT_FOUND", runtimeText(ctx).documentTemplateUnavailable);
+const documentTemplate = async (ctx: WorkflowActionContext, resume = false) => {
+  const template = await (resume ? getStoredTemplate : getTemplate)(boundId(ctx, "template"));
+  if (!template || (!resume && !template.enabled)) throw actionError("NOT_FOUND", runtimeText(ctx).documentTemplateUnavailable);
   return template;
 };
 
@@ -1071,7 +1078,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       attempt(async () => {
         await ctx.heartbeat();
         const scope = await workflowRunScope(ctx);
-        const template = await documentTemplate(ctx);
+        const template = await documentTemplate(ctx, true);
         const table = await currentTable(ctx, scope, template.tableId);
         const record = await documentRecord(ctx, scope, table.id, config.record, "read");
         await requirePermission(scope, "write");

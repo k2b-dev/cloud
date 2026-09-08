@@ -1,6 +1,7 @@
 import { toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { assertFederatedPublication, buildDslSqlRecordSource } from "../query-dsl/sql-record-source";
+import type { SqlClient } from "./audit";
 import { mapFieldRow } from "./field-read";
 import { parseJsonbRow } from "./jsonb";
 import { liveRecordParentJoinSql } from "./parent-checks";
@@ -80,11 +81,12 @@ export const loadRelationTargetsBatch = async (
   idsByTargetTable: ReadonlyMap<string, Set<string>>,
   authorizedTableIds?: ReadonlySet<string>,
   labelFieldIdsByTableId?: ReadonlyMap<string, readonly string[]>,
+  client: SqlClient = sql,
 ): Promise<Map<string, RelationTargets>> => {
   const targetTableIds = [...idsByTargetTable.keys()];
   if (targetTableIds.length === 0) return new Map();
 
-  const fieldRows = await sql<Array<Record<string, unknown> & { table_kind: string }>>`
+  const fieldRows = await client<Array<Record<string, unknown> & { table_kind: string }>>`
     SELECT f.*, t.kind AS table_kind
     FROM grids.fields f
     JOIN grids.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
@@ -124,7 +126,7 @@ export const loadRelationTargetsBatch = async (
   }
 
   if (storedTableIds.length > 0 && storedRecordIds.size > 0) {
-    const storedRows = await sql<Array<{ id: string; table_id: string; data: unknown }>>`
+    const storedRows = await client<Array<{ id: string; table_id: string; data: unknown }>>`
       SELECT r.id, r.table_id, r.data
       FROM grids.records r
       ${liveRecordParentJoinSql("r", "rt", "rb")}
@@ -144,11 +146,11 @@ export const loadRelationTargetsBatch = async (
 
   for (const targetTableId of federatedTableIds) {
     const allFields = fieldsByTable.get(targetTableId) ?? [];
-    const recordSource = await buildDslSqlRecordSource(targetTableId, { [targetTableId]: allFields });
+    const recordSource = await buildDslSqlRecordSource(targetTableId, { [targetTableId]: allFields }, undefined, client);
     if (!recordSource) continue;
-    await assertFederatedPublication(recordSource);
+    await assertFederatedPublication(recordSource, client);
     const ids = idsByTargetTable.get(targetTableId)!;
-    const rows = await sql<Array<{ id: string; data: unknown }>>`
+    const rows = await client<Array<{ id: string; data: unknown }>>`
       SELECT r.id, r.data
       FROM ${recordSource.relation} r
       WHERE r.id = ANY(${toPgUuidArray([...ids])}::uuid[])

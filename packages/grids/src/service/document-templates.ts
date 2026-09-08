@@ -45,8 +45,8 @@ export const getTemplate = async (templateId: string): Promise<DocumentTemplate 
   return row ? mapDocumentTemplate(row) : null;
 };
 
-export const getStoredTemplate = async (templateId: string): Promise<DocumentTemplate | null> => {
-  const [row] = await sql<DocumentDbRow[]>`
+export const getStoredTemplate = async (templateId: string, client: typeof sql = sql): Promise<DocumentTemplate | null> => {
+  const [row] = await client<DocumentDbRow[]>`
     SELECT dt.*
     FROM grids.document_templates dt
     JOIN grids.tables t ON t.id = dt.table_id AND t.deleted_at IS NULL
@@ -69,13 +69,16 @@ export const getTemplateByShortIdForTable = async (tableId: string, shortId: str
   return row ? mapDocumentTemplate(row) : null;
 };
 
-export const getTemplateByShortId = async (shortId: string): Promise<DocumentTemplate | null> => {
+export const getTemplateByShortId = async (
+  shortId: string,
+  options: { includeDeleted?: boolean } = {},
+): Promise<DocumentTemplate | null> => {
   const [row] = await sql<DocumentDbRow[]>`
     SELECT dt.*
     FROM grids.document_templates dt
     JOIN grids.tables t ON t.id = dt.table_id AND t.deleted_at IS NULL
     JOIN grids.bases b ON b.id = t.base_id AND b.deleted_at IS NULL
-    WHERE dt.short_id = ${shortId} AND dt.deleted_at IS NULL
+    WHERE dt.short_id = ${shortId} AND (${options.includeDeleted ?? false} OR dt.deleted_at IS NULL)
   `;
   return row ? mapDocumentTemplate(row) : null;
 };

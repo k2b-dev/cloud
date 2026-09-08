@@ -61,6 +61,7 @@ import {
   getWorkflowRun,
   getWorkflowRunScope,
   getWorkflowStepRun,
+  replayWorkflowRun,
   startWorkflowRun,
 } from "./workflow-runs";
 import { latestWorkflowRuntimeEventCursor, liveWorkflowRuntimeEvents } from "./workflow-runtime-events";
@@ -275,11 +276,6 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
   };
   if (!(await canExecuteWorkflow(claim))) return fail(err.forbidden(t.actorCannotRun));
   if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 200) return fail(err.badInput(t.invalidIdempotencyKey));
-  if (input.expectedRevision !== undefined && input.expectedRevision !== workflow.revision) {
-    return fail(workflowConflict(t.workflowChangedCaller));
-  }
-  if (input.mode === "execute" && !workflow.enabled) return fail(err.badInput(t.workflowDisabled));
-
   const context = { ...(input.context ?? {}), ...(locale ? { locale } : {}) };
   const requestFingerprint = await workflowInvocationFingerprint({
     workflowId: workflow.id,
@@ -289,6 +285,22 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
     inputs: input.inputs,
     context,
   });
+  // A retry belongs to its accepted version, even if publication changed the
+  // current input schema. Authorization is still checked above on every call.
+  const replay = await replayWorkflowRun({
+    workflow,
+    mode: input.mode,
+    channel: input.channel,
+    eventType: EVENT_TYPE_BY_CHANNEL[input.channel],
+    idempotencyKey: input.idempotencyKey,
+    requestFingerprint,
+    context,
+  });
+  if (replay) return replay;
+  if (input.expectedRevision !== undefined && input.expectedRevision !== workflow.revision) {
+    return fail(workflowConflict(t.workflowChangedCaller));
+  }
+  if (input.mode === "execute" && !workflow.enabled) return fail(err.badInput(t.workflowDisabled));
 
   let preparedInputs: Record<string, WorkflowJsonValue>;
   try {

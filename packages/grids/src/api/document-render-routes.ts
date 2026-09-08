@@ -253,9 +253,8 @@ export const createDocumentRenderRoutes = () =>
       }),
       v("json", PublicDocumentGenerateBodySchema),
       async (c) => {
-        const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
+        const loaded = await loadTemplateAndTable(c.req.param("templateId")!, { includeDeleted: true });
         if (!loaded) return c.json({ message: apiMessages(c).documentTemplateNotFound }, 404);
-        if (!loaded.template.enabled) return c.json({ message: apiMessages(c).documentTemplateDisabled }, 400);
         const gate = await gateTemplate(c, loaded, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 

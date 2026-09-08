@@ -58,7 +58,7 @@ export const writeRecordLinks = async (
   await sql.begin((tx) => replaceRecordLinks(tx, fromRecordId, fromFieldId, toRecordIds));
 };
 
-type RelationReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number };
+type RelationReadOptions = { signal?: AbortSignal; queryTimeoutMs?: number; client?: SqlClient };
 
 export const readRecordLinksBatch = async (
   recordIds: string[],
@@ -66,8 +66,9 @@ export const readRecordLinksBatch = async (
   options: RelationReadOptions = {},
 ): Promise<Map<string, Map<string, string[]>>> => {
   const links = new Map<string, Map<string, string[]>>();
+  const client = options.client ?? sql;
   if (recordIds.length === 0 || fieldIds.length === 0) return links;
-  const query = sql<DbRow[]>`
+  const query = client<DbRow[]>`
     SELECT from_record_id, from_field_id, to_record_id, position
     FROM grids.record_links
     WHERE from_record_id = ANY(${toPgUuidArray(recordIds)}::uuid[])
@@ -76,7 +77,7 @@ export const readRecordLinksBatch = async (
   `;
   const rows =
     options.queryTimeoutMs !== undefined || options.signal
-      ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal)
+      ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal, undefined, options.client)
       : await query;
   for (const row of rows) {
     const recordId = row.from_record_id as string;
@@ -119,7 +120,7 @@ export const hydrateRelationsFromLinks = async (
       for (const record of records) for (const id of links.get(record.id)?.get(field.id) ?? []) ids.add(id);
       idsByTableId.set(targetTableId, ids);
     }
-    accessibleByTableId = await accessibleRecordIdsByTable(idsByTableId, viewer, sql, options);
+    accessibleByTableId = await accessibleRecordIdsByTable(idsByTableId, viewer, options.client ?? sql, options);
   }
   for (const record of records) {
     const recordLinks = links.get(record.id);

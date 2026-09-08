@@ -1,4 +1,5 @@
 import { SQL, sql } from "bun";
+import type { SqlClient } from "./audit";
 
 const positiveInteger = (name: string, fallback: number): number => {
   const raw = process.env[name];
@@ -51,16 +52,23 @@ const isStatementTimeout = (error: unknown): boolean => {
   return candidate.code === "57014" || candidate.errno === "57014";
 };
 
-const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T[]> => {
+const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signal?: AbortSignal, client?: SqlClient): Promise<T[]> => {
   validateTimeout(timeoutMs);
   if (signal?.aborted) throw new BoundedQueryAbortedError();
 
-  const connection = await getQueryPool().reserve();
+  const reserved = client ? undefined : await getQueryPool().reserve();
+  const connection = client ?? reserved!;
+  let previousTimeout: string | undefined;
+  let succeeded = false;
   try {
+    if (client) {
+      const [settings] = await client<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
+      previousTimeout = settings?.timeout;
+    }
     const [backend] = await connection<Array<{ pid: number }>>`
       SELECT
         pg_backend_pid()::int AS pid,
-        set_config('statement_timeout', ${`${timeoutMs}ms`}, FALSE) AS statement_timeout
+        set_config('statement_timeout', ${`${timeoutMs}ms`}, ${Boolean(client)}) AS statement_timeout
     `;
     if (!backend) throw new Error("reserved query connection has no PostgreSQL backend");
     let abort: (() => void) | undefined;
@@ -83,6 +91,7 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
       if (signal?.aborted) abort();
       const rows = await pending;
       queryActive = false;
+      succeeded = true;
       return [...rows];
     } catch (error) {
       queryActive = false;
@@ -97,7 +106,12 @@ const runBoundedQueryDirect = async <T>(query: unknown, timeoutMs: number, signa
   } finally {
     // The pool is private to bounded reads, and every reservation overwrites
     // statement_timeout before executing user-controlled SQL.
-    connection.release();
+    // A failed statement aborts the caller's transaction; preserve its original
+    // error and let the owner roll back instead of attempting another statement.
+    if (client && succeeded && previousTimeout !== undefined) {
+      await client`SELECT set_config('statement_timeout', ${previousTimeout}, TRUE)`;
+    }
+    reserved?.release();
   }
 };
 
@@ -170,9 +184,17 @@ const sharedQueryFlight = <T>(key: string, query: unknown, timeoutMs: number): S
  * A dedupe key shares only an overlapping execution; completed results are
  * never cached. Each caller keeps independent cancellation semantics.
  */
-export const runBoundedQuery = async <T>(query: unknown, timeoutMs: number, signal?: AbortSignal, dedupeKey?: string): Promise<T[]> => {
+export const runBoundedQuery = async <T>(
+  query: unknown,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  dedupeKey?: string,
+  client?: SqlClient,
+): Promise<T[]> => {
   validateTimeout(timeoutMs);
   if (signal?.aborted) throw new BoundedQueryAbortedError();
+  // Transaction snapshots must never share an execution with another caller.
+  if (client && client !== sql) return runBoundedQueryDirect<T>(query, timeoutMs, signal, client);
   if (!dedupeKey) return runBoundedQueryDirect<T>(query, timeoutMs, signal);
   return waitForSharedQuery<T>(sharedQueryFlight<T>(`${timeoutMs}:${dedupeKey}`, query, timeoutMs), signal);
 };

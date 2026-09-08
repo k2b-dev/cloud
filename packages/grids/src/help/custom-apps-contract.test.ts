@@ -75,18 +75,20 @@ describe("Grids Apps documentation contract", () => {
     const overview = await Bun.file(new URL("./documents/en/grids-custom-apps.help.md", import.meta.url)).text();
     const builder = await Bun.file(new URL("./documents/en/grids-build-custom-app.help.md", import.meta.url)).text();
     const pages = await Bun.file(new URL("./documents/en/grids-custom-app-pages-blocks.help.md", import.meta.url)).text();
+    const yaml = await Bun.file(new URL("./documents/en/grids-custom-app-yaml-cli.help.md", import.meta.url)).text();
 
-    expect(overview).toContain("opened in a larger editor without creating a second draft");
-    expect(overview).toContain("there is no second Page Record setting");
-    expect(overview).toContain("Page IDs are editable");
-    expect(overview).toContain("@auth.name");
-    expect(overview).toContain("no second Columns selection");
-    expect(overview).toContain("only active Grids App launchers");
-    expect(overview).toContain("apps restore");
-    expect(overview).toContain("--published");
+    expect(overview).toContain("/app/grids/help/grids-build-custom-app");
+    expect(builder).toContain("opened in a larger editor without creating a second draft");
+    expect(builder).toContain("there is no separate Page Record setting");
+    expect(builder).toContain("You may edit them in Page settings");
+    expect(pages).toContain("@auth.name");
+    expect(pages).toContain("Inline GQL displays its selected ordinary-record columns");
+    expect(pages).toContain("existing enabled Grids App workflow launcher");
+    expect(yaml).toContain("apps restore");
+    expect(yaml).toContain("--published");
     expect(builder).toContain("**App settings → Lifecycle**");
-    expect(overview).toContain("**General**, **Access**, and **Lifecycle**");
-    expect(overview).toContain("Choose an existing entry under **Actions**");
+    expect(builder).toContain("**General**, **Access**, and **Lifecycle**");
+    expect(builder).toContain("Choose an existing entry under **Actions**");
     expect(builder).toContain("does not delete Base tables or records");
     expect(pages).toContain("there are no Liquid conditions or loops");
     expect(pages).toContain("the raw GQL console deliberately does not offer Grids App `@…` context");
@@ -99,8 +101,8 @@ describe("Grids Apps documentation contract", () => {
     const cli = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 
     expect(overview).not.toContain("**Bulk actions**");
-    expect(overview).toContain("`apps export` contains that same `id`");
-    expect(overview).toContain("Record blocks may edit only explicitly displayed and allowlisted fields or attachments");
+    expect(yaml).toContain("canonical public resource IDs");
+    expect(pages).toContain("Fields outside the block's editable subset remain read-only");
     expect(pages).toContain("without Base or record Write access");
     expect(yaml).toContain("{ source: ROW, path: relation, fieldId:");
     expect(cli).toContain("Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks");

@@ -252,9 +252,9 @@ const localizedDiagnostics = (diagnostics: FederatedDiagnostic[], locale?: strin
   }));
 };
 
-export const getActive = async (tableId: string, locale?: string): Promise<Result<LoadedFederatedRevision>> => {
+export const getActive = async (tableId: string, locale?: string, client: SqlClient = sql): Promise<Result<LoadedFederatedRevision>> => {
   const t = serviceMessagesFor(locale);
-  const current = await getCurrent(tableId);
+  const current = await getRevisionByStatus(tableId, ["active", "degraded"], client);
   if (!current) return fail(err.badInput(t.combinedNoPublication));
   if (current.status === "degraded" || current.diagnostics.length > 0) {
     return fail(err.conflict(localizedDiagnostics(current.diagnostics, locale)[0]?.message ?? t.combinedDegraded));
@@ -290,12 +290,16 @@ export const captureRevisionScope = async (tableIds: string[]): Promise<Federate
 /** Verifies a previously captured query scope in one round-trip. This is used
  * after relation/file expansion and between export pages, where one SQL
  * statement alone cannot protect the complete response. */
-export const verifyRevisionScope = async (scope: FederatedRevisionScope, locale?: string): Promise<Result<void>> => {
+export const verifyRevisionScope = async (
+  scope: FederatedRevisionScope,
+  locale?: string,
+  client: SqlClient = sql,
+): Promise<Result<void>> => {
   const t = serviceMessagesFor(locale);
   if (scope.length === 0) return ok();
   const expected = new Map(scope.map((entry) => [entry.tableId, `${entry.revisionId}:${entry.revisionToken}`]));
   if (expected.size !== scope.length) return fail(err.internal(t.revisionScopeDuplicate));
-  const rows = await sql<Array<{ table_id: string; revision_id: string; revision_token: string }>>`
+  const rows = await client<Array<{ table_id: string; revision_id: string; revision_token: string }>>`
     SELECT table_id::text, id::text AS revision_id,
            extract(epoch FROM updated_at)::numeric::text AS revision_token
     FROM grids.federated_table_revisions

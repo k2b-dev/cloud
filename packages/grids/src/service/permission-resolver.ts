@@ -125,7 +125,7 @@ const loadExactGrants = async (
         `;
   const rows =
     options.queryTimeoutMs !== undefined || options.signal
-      ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal)
+      ? await runBoundedQuery<DbRow>(query, options.queryTimeoutMs ?? 5_000, options.signal, undefined, db)
       : await query;
 
   return rows.map((row) => ({

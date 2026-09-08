@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { LOOKUP_TARGET_META_KEY, type LookupTargetMeta } from "../lookup-display";
+import type { SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import type { Field } from "./types";
 
@@ -31,7 +32,7 @@ const mapTargetField = (row: DbFieldRow): TargetField => ({
   deletedAt: row.deleted_at ? row.deleted_at.toISOString() : null,
 });
 
-export const withLookupTargetMetadata = async (fields: Field[]): Promise<Field[]> => {
+export const withLookupTargetMetadata = async (fields: Field[], client: SqlClient = sql): Promise<Field[]> => {
   const targetIds = fields
     .filter((field) => field.type === "lookup" && !field.deletedAt)
     .map((field) => (field.config as { targetFieldId?: unknown }).targetFieldId)
@@ -40,7 +41,7 @@ export const withLookupTargetMetadata = async (fields: Field[]): Promise<Field[]
   const uniqueTargetIds = [...new Set(targetIds)];
   const lookupTargets = new Map<string, TargetField>();
   if (uniqueTargetIds.length > 0) {
-    const rows = await sql<DbFieldRow[]>`
+    const rows = await client<DbFieldRow[]>`
       SELECT id::text AS id, name, type, config, icon, deleted_at
       FROM grids.fields
       WHERE id = ANY(${sql.array(uniqueTargetIds, "UUID")})

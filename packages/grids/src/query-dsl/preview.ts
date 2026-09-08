@@ -4,6 +4,7 @@ import { sql } from "bun";
 import type { DslQueryPreviewColumn, DslQueryPreviewDiagnostic, DslQueryPreviewResponse } from "../contracts";
 import { decimalStringToCanonical } from "../formula/numeric";
 import { normalizeRefKey } from "../ref-syntax";
+import type { SqlClient } from "../service/audit";
 import { runBoundedQuery } from "../service/bounded-query";
 import { buildComputedFieldSqlMap } from "../service/computed-projections";
 import { type FederatedRevisionScope, verifyRevisionScope } from "../service/federated-tables";
@@ -32,6 +33,7 @@ type DslQueryPreviewSuccess = Extract<DslQueryPreviewResponse, { ok: true }>;
 type DslQueryPreviewRow = DslQueryPreviewSuccess["rows"][number];
 
 type DslQueryPreviewOptions = {
+  client?: SqlClient;
   fieldsByTableId: Record<string, Field[]>;
   timeZone?: string;
   limit?: number;
@@ -67,12 +69,6 @@ type DslQueryPreviewOptions = {
 };
 
 const MAX_PREVIEW_ROWS = 500;
-// Relation joins fan out per row; cap how many linked rows a single source row
-// expands to in the preview so a query over a record with thousands of links
-// can't blow up the preview cardinality. Aggregates/groups are NOT sampled —
-// they compute over the full matching set so preview numbers equal the real
-// numbers; the bounded query cancellation below caps runtime instead.
-const MAX_PREVIEW_JOIN_FANOUT = 50;
 // Hard wall-clock cap for a single preview statement. A user can author an
 // arbitrarily expensive query; cancellation keeps one slow query from holding
 // a connection. 100k-row aggregates run well under it.
@@ -406,7 +402,7 @@ const labelRelationPreviewValues = async (
   }
 
   if (idsByTargetTable.size === 0) return { rows, labeledColumnKeys: relationColumnKeys };
-  const labels = await buildRelationLabelCacheForIds(idsByTargetTable, options.viewer);
+  const labels = await buildRelationLabelCacheForIds(idsByTargetTable, options.viewer, options.client);
 
   return {
     rows: rows.map((row) => {
@@ -473,6 +469,7 @@ const hydrateHtmlTemplatePreviewValues = async (
   const ids = [...new Set(rows.flatMap((row) => (row.recordId ? [row.recordId] : [])))];
   if (ids.length === 0) return rows;
   const reader = await createReader(plan.tableId, {
+    client: options.client,
     fields: options.fieldsByTableId[plan.tableId] ?? [],
     dateConfig: options.timeZone ? { timeZone: options.timeZone } : undefined,
     viewer: options.viewer,
@@ -507,6 +504,7 @@ const compileDslSearchClause = async (
     clauses.push(
       (
         await compileSearchClause({
+          client: options.client,
           search: plan.query.search,
           fields: options.fieldsByTableId[plan.tableId] ?? [],
           viewer: options.viewer,
@@ -523,6 +521,7 @@ const compileDslSearchClause = async (
     clauses.push(
       (
         await compileSearchClause({
+          client: options.client,
           search: { q: search.q, fieldIds: search.fieldIds },
           fields: options.fieldsByTableId[search.tableId] ?? [],
           alias: dslJoinRecordAlias(joinIndex),
@@ -549,6 +548,7 @@ const compileDslSearchClause = async (
       clauses.push(
         (
           await compileSearchClause({
+            client: options.client,
             search: { q: search.q, fieldIds: search.fieldIds },
             fields: options.fieldsByTableId[search.tableId] ?? [],
             alias,
@@ -578,6 +578,7 @@ const compileRuntimeSearchClause = async (
     clauses.push(
       (
         await compileSearchClause({
+          client: options.client,
           search: { q: search.q, fieldIds: search.primaryFieldIds },
           fields: options.fieldsByTableId[plan.tableId] ?? [],
           viewer: options.viewer,
@@ -593,6 +594,7 @@ const compileRuntimeSearchClause = async (
     clauses.push(
       (
         await compileSearchClause({
+          client: options.client,
           search: { q: search.q, fieldIds: joined.fieldIds },
           fields: options.fieldsByTableId[joined.tableId] ?? [],
           alias: dslJoinRecordAlias(joinIndex),
@@ -631,6 +633,7 @@ export const previewDslQuery = async (
                     ...(plan.query.deletedOnly ? { deletedOnly: true } : {}),
                   }
                 : undefined,
+              options.client,
             );
             const isPrimary = tableId === plan.tableId;
             const authorized =
@@ -674,7 +677,7 @@ export const previewDslQuery = async (
       if (options.maxResultBytes !== undefined && jsonBytes(response) > options.maxResultBytes) {
         return fail(err.badInput(GQL_RESULT_TOO_LARGE_MESSAGE));
       }
-      const current = await verifyRevisionScope(revisionScope);
+      const current = await verifyRevisionScope(revisionScope, undefined, options.client);
       return current.ok ? ok(response) : fail(current.error);
     };
     const recordSource = recordSourcesByTableId.get(plan.tableId);
@@ -695,6 +698,7 @@ export const previewDslQuery = async (
     const viewSourceSearchClause = viewSourceSearch
       ? (
           await compileSearchClause({
+            client: options.client,
             search: viewSourceSearch,
             fields: options.fieldsByTableId[plan.tableId] ?? [],
             viewer: options.viewer,
@@ -708,11 +712,13 @@ export const previewDslQuery = async (
     // formulas — same values as the records pipeline.
     const authorizedComputedTableIds = new Set(plan.readableTableIds.filter((tableId) => options.authorizedTableIds?.has(tableId) ?? true));
     const computedFieldSql = await buildComputedFieldSqlMap(options.fieldsByTableId[plan.tableId] ?? [], {
+      client: options.client,
       authorizedTableIds: authorizedComputedTableIds,
     });
     const computedFieldSqlByJoinAlias = new Map<string, Awaited<ReturnType<typeof buildComputedFieldSqlMap>>>();
     for (const [index, join] of (plan.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        client: options.client,
         recordAlias: dslJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,
       });
@@ -720,6 +726,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.joins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        client: options.client,
         recordAlias: dslDerivedJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,
       });
@@ -727,6 +734,7 @@ export const previewDslQuery = async (
     }
     for (const [index, join] of (plan.derivedViewSource?.relationJoins ?? []).entries()) {
       const map = await buildComputedFieldSqlMap(options.fieldsByTableId[join.tableId] ?? [], {
+        client: options.client,
         recordAlias: dslJoinRecordAlias(index),
         authorizedTableIds: authorizedComputedTableIds,
       });
@@ -739,10 +747,6 @@ export const previewDslQuery = async (
       viewSourceSearchClause,
       recordSourcesByTableId,
       ...(recordSource ? { recordSource } : {}),
-    };
-    const rowPreviewBounds = {
-      ...compileInputs,
-      joinFanoutLimit: MAX_PREVIEW_JOIN_FANOUT,
     };
 
     if (plan.derivedViewSource) {
@@ -761,6 +765,7 @@ export const previewDslQuery = async (
         5_000,
         options.signal,
         queryExecutionKey("derived", options, revisionScope, bounds),
+        options.client,
       );
       const { visible } = pageForRows(rows, bounds, options, compiled.query.cursorValuesFromRow);
       const columns = groupColumns(compiled.query.columns, plan.tableId);
@@ -804,6 +809,7 @@ export const previewDslQuery = async (
         5_000,
         options.signal,
         queryExecutionKey("grouped", options, revisionScope, bounds),
+        options.client,
       );
       const { visible } = pageForRows(rows, bounds, options, compiled.query.cursorValuesFromRow);
       const columns = groupColumns(compiled.query.columns, (plan.joins?.length ?? 0) === 0 ? plan.tableId : undefined);
@@ -841,6 +847,7 @@ export const previewDslQuery = async (
         5_000,
         options.signal,
         queryExecutionKey("aggregate", options, revisionScope, bounds),
+        options.client,
       );
       const columns = aggregateColumns(compiled.query.columns);
       return finish({
@@ -865,7 +872,7 @@ export const previewDslQuery = async (
 
     const compiled = compileDslQueryPlanToSql(plan, {
       ...options,
-      ...rowPreviewBounds,
+      ...compileInputs,
       limit: bounds.fetchLimit,
       offset: bounds.offset,
       cursorOffset: bounds.cursorOffset,
@@ -878,6 +885,7 @@ export const previewDslQuery = async (
       5_000,
       options.signal,
       queryExecutionKey("rows", options, revisionScope, bounds),
+      options.client,
     );
     const { visible } = pageForRows(rows, bounds, options, compiled.query.cursorValuesFromRow);
     const columns = rowColumns(compiled.query.columns);

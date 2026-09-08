@@ -127,8 +127,8 @@ export const listTrashedByBase = async (baseId: string): Promise<Field[]> => {
  * trash flows need them; the caller decides whether to act on a
  * trashed field row by inspecting `field.deletedAt`.
  */
-export const get = async (id: string): Promise<Field | null> => {
-  const [row] = await sql<DbRow[]>`
+export const get = async (id: string, client: SqlClient = sql): Promise<Field | null> => {
+  const [row] = await client<DbRow[]>`
     SELECT f.*
     FROM grids.fields f
     JOIN grids.tables t ON t.id = f.table_id AND t.deleted_at IS NULL

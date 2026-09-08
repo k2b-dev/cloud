@@ -1,6 +1,7 @@
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import type { RecordSnapshot, RecordSnapshotSummary } from "../contracts";
+import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";
 import { type DocumentDbRow, mapRecordSnapshot, mapRecordSnapshotSummary } from "./document-mappers";
 import { documentServiceText } from "./document-messages";
@@ -90,6 +91,7 @@ const buildRecordSnapshotGraph = async (
   tableId: string,
   recordId: string,
   options: {
+    client?: SqlClient;
     baseId: string;
     canReadTable: SnapshotTableReadAuthorizer;
     viewer?: ExpansionViewer;
@@ -110,7 +112,7 @@ const buildRecordSnapshotGraph = async (
   const loadTable = async (tableId: string): Promise<Table | null> => {
     const cached = tables.get(tableId);
     if (cached) return cached;
-    const table = await getTable(tableId);
+    const table = await getTable(tableId, { client: options.client });
     if (table) tables.set(tableId, table);
     return table;
   };
@@ -132,6 +134,7 @@ const buildRecordSnapshotGraph = async (
     if (cached) return cached;
     if (!(await canReadSnapshotTable(table))) return null;
     const reader = await createReader(tableId, {
+      client: options.client,
       dateConfig: options.dateConfig,
       viewer: options.viewer,
     });
@@ -208,6 +211,7 @@ const buildRecordSnapshotGraph = async (
 };
 
 type CreateRecordSnapshotParams = {
+  client?: SqlClient;
   baseId: string;
   tableId: string;
   recordId: string;
@@ -221,6 +225,7 @@ export type RecordSnapshotDraft = Omit<RecordSnapshot, "shortId">;
 
 export const createRecordSnapshotDraft = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshotDraft>> => {
   const graph = await buildRecordSnapshotGraph(params.tableId, params.recordId, {
+    client: params.client,
     baseId: params.baseId,
     canReadTable: params.canReadTable,
     viewer: params.viewer,
@@ -275,9 +280,12 @@ export const persistRecordSnapshot = async (
 };
 
 export const createRecordSnapshot = async (params: CreateRecordSnapshotParams): Promise<Result<RecordSnapshot>> => {
-  const draft = await createRecordSnapshotDraft(params);
-  if (!draft.ok) return draft;
-  return sql.begin((tx) => persistRecordSnapshot(draft.data, tx, params.dateConfig?.locale));
+  return sql.begin(async (client) => {
+    await client`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
+    const draft = await createRecordSnapshotDraft({ ...params, client });
+    if (!draft.ok) return draft;
+    return persistRecordSnapshot(draft.data, client, params.dateConfig?.locale);
+  });
 };
 
 export const getSnapshot = async (snapshotId: string): Promise<RecordSnapshot | null> => {

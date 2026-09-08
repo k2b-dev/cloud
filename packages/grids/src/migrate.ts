@@ -1534,6 +1534,7 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
       document_short_id TEXT NOT NULL UNIQUE,
       operation_key_hash TEXT NOT NULL CHECK (operation_key_hash ~ '^[a-f0-9]{64}$'),
       request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+      request_identity_hash TEXT CHECK (request_identity_hash ~ '^[a-f0-9]{64}$'),
       frozen_request JSONB,
       document_id UUID UNIQUE,
       completed_at TIMESTAMPTZ,
@@ -1559,6 +1560,8 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
         REFERENCES grids.documents(id, base_id, short_id) ON DELETE RESTRICT
     )
   `.simple();
+  await sql`ALTER TABLE grids.document_issuances ADD COLUMN IF NOT EXISTS request_identity_hash TEXT
+    CHECK (request_identity_hash ~ '^[a-f0-9]{64}$')`.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_document_issuances_pending
     ON grids.document_issuances(created_at, id) WHERE document_id IS NULL

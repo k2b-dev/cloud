@@ -136,13 +136,14 @@ export const listVisible = async (params: {
  * callers that need to render the trash listing or perform restore must
  * pass `includeDeleted: true`.
  */
-export const get = async (id: string, opts: { includeDeleted?: boolean } = {}): Promise<Base | null> => {
+export const get = async (id: string, opts: { includeDeleted?: boolean; client?: typeof sql } = {}): Promise<Base | null> => {
+  const client = opts.client ?? sql;
   const [row] = opts.includeDeleted
-    ? await sql<DbRow[]>`
+    ? await client<DbRow[]>`
         SELECT ${COLS}
         FROM grids.bases WHERE id = ${id}::uuid
       `
-    : await sql<DbRow[]>`
+    : await client<DbRow[]>`
         SELECT ${COLS}
         FROM grids.bases WHERE id = ${id}::uuid AND deleted_at IS NULL
       `;

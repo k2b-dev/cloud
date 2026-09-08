@@ -38,7 +38,9 @@ import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortIdForDb } from "./short-id";
+import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import { workflowConflict } from "./workflow-errors";
+import { getWorkflow } from "./workflow-read";
 import { workflowServiceText } from "./workflow-service-messages";
 
 /** The kernel partitions by app and scope; for Grids a scope is a base. */
@@ -668,18 +670,41 @@ type StartWorkflowRunInput = {
   launcherKind?: GridsWorkflowLauncherKind | null;
 };
 
-/**
- * Turns a request to run a workflow into a run.
- *
- * An execution is an event: the kernel records what happened, matches it
- * against the workflow's activations, and materialises the run. That is the
- * same path a schedule tick and a record change take, so there is one
- * durability story rather than three.
- *
- * A dry run is not. Nothing happened — somebody is asking what would — so it is
- * created directly against the version being asked about, and never reaches an
- * activation.
- */
+/** Resolve accepted requests before applying a newer version's input schema. */
+export const replayWorkflowRun = async (
+  input: Pick<StartWorkflowRunInput, "workflow" | "mode" | "channel" | "eventType" | "idempotencyKey" | "requestFingerprint" | "context">,
+  db: SqlClient = sql,
+): Promise<Result<WorkflowInvocationReceipt> | null> => {
+  const [existing] = await db<Array<{ id: string; revision: number; state: GridsWorkflowRun["status"]; request_fingerprint: string }>>`
+    SELECT r.id::text, v.revision, r.state, p.request_fingerprint
+    FROM workflows.run r
+    JOIN workflows.version v ON v.id = r.workflow_version_id
+    JOIN grids.workflow_run_profile p ON p.run_id = r.id
+    LEFT JOIN workflows.event e ON e.id = r.event_id
+    WHERE p.base_id = ${input.workflow.baseId}::uuid
+      AND r.workflow_id = ${input.workflow.id}::uuid
+      AND r.mode = ${input.mode}
+      AND (${input.mode} = 'dryRun' AND r.idempotency_key = ${input.idempotencyKey}
+        OR ${input.mode} = 'execute' AND e.type = ${input.eventType}
+          AND e.dedupe_key = ${`${input.workflow.id}:${input.idempotencyKey}`})
+  `;
+  if (!existing) return null;
+  const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
+  if (existing.request_fingerprint !== input.requestFingerprint) {
+    return fail(workflowConflict(workflowServiceText(locale).idempotencyConflict));
+  }
+  return ok({
+    runId: existing.id,
+    workflowId: input.workflow.id,
+    revision: toWorkflowRevision(existing.revision),
+    mode: input.mode,
+    channel: input.channel,
+    created: false,
+    status: existing.state,
+  });
+};
+
+/** Atomically admit the prepared revision or replay its previously accepted run. */
 export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Result<WorkflowInvocationReceipt>> => {
   const locale = typeof input.context.locale === "string" ? input.context.locale : undefined;
   const t = workflowServiceText(locale);
@@ -688,6 +713,13 @@ export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Re
   const occurredAt = new Date(input.occurredAt);
 
   const started = await sql.begin(async (tx) => {
+    await lockWorkflowCatalogMutation(scopeId, tx);
+    const replay = await replayWorkflowRun(input, tx);
+    if (replay) return replay.ok ? ok({ runId: replay.data.runId, created: false }) : replay;
+    const current = await getWorkflow(input.workflow.id, false, tx);
+    if (!current) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
+    if (current.revision !== input.workflow.revision) return fail(workflowConflict(t.workflowChangedCaller));
+    if (input.mode === "execute" && !current.enabled) return fail(err.badInput(t.workflowDisabled));
     const created =
       input.mode === "execute"
         ? await startFromEvent(input, scopeId, snapshot, occurredAt, tx)
@@ -720,7 +752,7 @@ export const startWorkflowRun = async (input: StartWorkflowRunInput): Promise<Re
   return ok({
     runId: started.data.runId,
     workflowId: input.workflow.id,
-    revision: toWorkflowRevision(input.workflow.revision),
+    revision: toWorkflowRevision(run?.workflowRevision ?? input.workflow.revision),
     mode: input.mode,
     channel: input.channel,
     created: started.data.created,
@@ -772,8 +804,7 @@ const startDryRun = async (
   const [version] = await tx<Array<{ id: string }>>`
     SELECT id::text AS id FROM workflows.version
     WHERE workflow_id = ${input.workflow.id}::uuid
-    ORDER BY revision DESC
-    LIMIT 1
+      AND revision = ${input.workflow.revision}
   `;
   if (!version) return fail({ ...err.notFound("workflow version"), message: workflowServiceText(locale).workflowVersionNotFound });
   const existing = await tx<Array<{ id: string }>>`

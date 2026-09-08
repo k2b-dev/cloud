@@ -44,6 +44,8 @@ The builder edits the same canonical draft used by YAML and CLI. Every structura
 
 The canvas is the current draft page: saved View and parameter-free GQL results for its draft pages are resolved on the server, Records use the shared Data Table, Metrics and Charts render aggregate results, and Forms use the complete shared Form UI with submission disabled while authoring. Referenced records shows a contextual placeholder because its result depends on the current record in the published route. Rendered HTML follows the same contextual-preview rule. Hover or focus a block to reveal its compact move handle. Drag to a horizontal edge to stack it before or after another block, or to a vertical edge to place it beside one block, a neighboring pair, or the complete stack. Pointer, touch, and keyboard use the same named targets and announcements. Rows, columns, empty layout containers, and balanced widths are created or removed automatically; only blocks are selected and edited. **Add block** groups ordinary content, page-record blocks, and advanced insights/actions. Data blocks prefer an accessible saved View when one exists and otherwise start with a bounded GQL source from an available table. Unavailable prerequisites stay visible in the menu instead of creating an unusable block.
 
+**App settings** contains **General**, **Access**, and **Lifecycle**. Name and icon edits use the same autosaved draft. Choose an existing entry under **Actions** to edit a sidebar Form action, or use **New action** to add one; its label, Form, fixed values, availability, and success navigation belong to the inspector. Inline GQL and Markdown can be opened in a larger editor without creating a second draft or a separate Save step.
+
 Set:
 
 - **Name:** Certificate requests

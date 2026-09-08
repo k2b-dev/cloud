@@ -101,6 +101,7 @@ type IssuanceRow = {
   id: string;
   base_id: string;
   request_hash: string;
+  request_identity_hash: string | null;
   document_short_id: string;
   frozen_request: unknown;
   document_id: string | null;
@@ -162,6 +163,27 @@ export type IssueDocumentInput = {
   filename?: string | null;
   renderPdf?: (document: Pick<Document, "templateSnapshot" | "renderData" | "filename">) => Promise<Result<RenderHtmlToPdfResult>>;
 };
+
+export type RecordDocumentRequest = Pick<
+  IssueDocumentInput,
+  "actor" | "idempotencyKey" | "tags" | "workflowRunId" | "workflowStepKey" | "dateConfig" | "filename" | "renderPdf"
+> & { baseId: string; tableId: string; recordId: string; templateId: string };
+
+const recordRequestIdentityHash = (input: RecordDocumentRequest): string =>
+  canonicalJson(
+    {
+      baseId: input.baseId,
+      tableId: input.tableId,
+      recordId: input.recordId,
+      templateId: input.templateId,
+      actor: input.actor,
+      tags: normalizeDocumentTags(input.tags),
+      workflowRunId: input.workflowRunId ?? null,
+      workflowStepKey: input.workflowStepKey ?? null,
+      filename: input.filename?.trim() || null,
+    },
+    input.dateConfig?.locale,
+  ).sha256;
 
 const actorUserId = (actor: DocumentIssuanceActor): string | null =>
   actor.kind === "user" ? actor.userId : actor.kind === "service_account" ? actor.delegatedUserId : null;
@@ -443,6 +465,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
 
   const issueDocument = async (
     input: IssueDocumentInput,
+    requestIdentityHash?: string,
   ): Promise<Result<{ document: Document; artifacts: DocumentArtifact[]; replayed: boolean }>> => {
     const t = documentServiceText(input.dateConfig?.locale);
     const idempotency = validateIdempotencyKey(input.idempotencyKey, input.dateConfig?.locale);
@@ -467,12 +490,17 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const receipt = await db.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:document-issuance:${input.snapshot.baseId}:${operationKeyHash}`}, 0))`;
         const [existing] = await tx<IssuanceRow[]>`
-          SELECT id::text, base_id::text, request_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances
           WHERE base_id = ${input.snapshot.baseId}::uuid AND operation_key_hash = ${operationKeyHash}
         `;
         if (existing) {
-          if (existing.request_hash !== requestHash.data) throw err.conflict(t.idempotencyConflict);
+          if (
+            existing.request_identity_hash
+              ? existing.request_identity_hash !== requestIdentityHash
+              : existing.request_hash !== requestHash.data
+          )
+            throw err.conflict(t.idempotencyConflict);
           return existing;
         }
         return insertWithShortIdForDb(tx, "document_issuances_document_short_id_key", async (attempt, documentShortId) => {
@@ -669,9 +697,9 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             profileInput,
           };
           const [created] = await attempt<IssuanceRow[]>`
-          INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request)
-          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
-          RETURNING id::text, base_id::text, request_hash, document_short_id, frozen_request, document_id::text, created_at
+          INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, request_identity_hash, document_short_id, frozen_request)
+          VALUES (${input.snapshot.baseId}::uuid, ${operationKeyHash}, ${requestHash.data}, ${requestIdentityHash ?? null}, ${documentShortId}, ${canonicalJson({ ...frozen }, input.dateConfig?.locale).value}::jsonb)
+          RETURNING id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
         `;
           if (!created) throw err.internal(t.receiptCreateFailed);
           return created;
@@ -730,7 +758,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const templateRevision = canonicalDocumentJson(templateData, input.dateConfig?.locale).sha256;
       const finalized = await db.begin(async (tx) => {
         const [locked] = await tx<IssuanceRow[]>`
-          SELECT id::text, base_id::text, request_hash, document_short_id, frozen_request, document_id::text, created_at
+          SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
           FROM grids.document_issuances WHERE id = ${receipt.id}::uuid FOR UPDATE
         `;
         if (!locked) throw err.internal(t.receiptMissing);
@@ -822,7 +850,50 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
   const getDocumentArtifact = (documentId: string, key: string, locale?: string): Promise<Result<DocumentArtifactContent>> =>
     readDocumentArtifact(documentId, key, db, locale);
 
-  return { profiles: summaries, preview, issueDocument, getDocumentArtifact };
+  const issueRecordDocument = async (
+    request: RecordDocumentRequest,
+    capture: () => Promise<Result<Pick<IssueDocumentInput, "template" | "snapshot" | "renderData">>>,
+  ): Promise<Result<Document>> => {
+    const t = documentServiceText(request.dateConfig?.locale);
+    const validKey = validateIdempotencyKey(request.idempotencyKey, request.dateConfig?.locale);
+    if (!validKey.ok) return validKey;
+    if (!DocumentIssuanceActorSchema.safeParse(request.actor).success) return fail(err.badInput(t.actorInvalid));
+    let identityHash: string;
+    try {
+      identityHash = recordRequestIdentityHash(request);
+    } catch (error) {
+      return fail(serviceError(error) ?? err.badInput(t.requestInvalidJson));
+    }
+    const [receipt] = await db<IssuanceRow[]>`
+      SELECT id::text, base_id::text, request_hash, request_identity_hash, document_short_id, frozen_request, document_id::text, created_at
+      FROM grids.document_issuances
+      WHERE base_id = ${request.baseId}::uuid AND operation_key_hash = ${sha256Hex(request.idempotencyKey)}
+    `;
+    if (receipt?.request_identity_hash) {
+      if (receipt.request_identity_hash !== identityHash) return fail(err.conflict(t.idempotencyConflict));
+      if (receipt.document_id) {
+        const document = await getDocument(receipt.document_id);
+        return document ? ok(document) : fail(err.internal(t.receiptReadFailed));
+      }
+      const frozen = parseFrozenRequest(receipt.frozen_request);
+      const resumed = await issueDocument(
+        {
+          ...request,
+          template: frozen.template,
+          snapshot: frozen.snapshot,
+          renderData: frozen.renderData,
+        },
+        identityHash,
+      );
+      return resumed.ok ? ok(resumed.data.document) : resumed;
+    }
+    const captured = await capture();
+    if (!captured.ok) return captured;
+    const issued = await issueDocument({ ...request, ...captured.data }, identityHash);
+    return issued.ok ? ok(issued.data.document) : issued;
+  };
+
+  return { profiles: summaries, preview, issueDocument, issueRecordDocument, getDocumentArtifact };
 };
 
 export const documentIssuanceService = createDocumentIssuanceService();

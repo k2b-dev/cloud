@@ -8,6 +8,7 @@ import {
   type HtmlTemplateConfig,
   htmlTemplateConfigSchema,
 } from "../field-types/html-template";
+import type { SqlClient } from "./audit";
 import { datePatternContext, renderLiquidText, utf8ByteLength } from "./document-liquid";
 import { documentServiceText, isGermanDocumentLocale } from "./document-messages";
 import { projectPublicIds } from "./public-resources";
@@ -103,6 +104,7 @@ export const enrichRecordsWithHtmlTemplates = async (
   records: GridRecord[],
   fields: Field[],
   options: {
+    client?: SqlClient;
     dateConfig?: DateContext;
     now?: Date;
     fieldIds?: ReadonlySet<string>;
@@ -149,14 +151,14 @@ export const enrichRecordsWithHtmlTemplates = async (
   let business: Awaited<ReturnType<typeof buildTemplateBusinessData>>;
   let publicRecordIds: ReadonlyMap<string, string>;
   try {
-    const loadedTable = await getTable(records[0]!.tableId);
+    const loadedTable = await getTable(records[0]!.tableId, { client: options.client });
     if (!loadedTable || loadedTable.kind !== "stored") throw new Error("HTML template fields require a stored table");
     table = loadedTable;
 
     const relationFields = fields.filter((field) => !field.deletedAt && field.type === "relation");
     const relatedIds = records.flatMap((record) => relationFields.flatMap((field) => relationIds(record.data[field.id])));
-    [app, publicRecordIds] = await Promise.all([buildTemplateAppData(), projectPublicIds("record", relatedIds)]);
-    business = await buildTemplateBusinessData(table.baseId, app);
+    [app, publicRecordIds] = await Promise.all([buildTemplateAppData(), projectPublicIds("record", relatedIds, options.client)]);
+    business = await buildTemplateBusinessData(table.baseId, app, options.client);
   } catch (error) {
     setAll(renderFields, HTML_TEMPLATE_ERROR);
     log.warn("HTML template field context preparation failed", {

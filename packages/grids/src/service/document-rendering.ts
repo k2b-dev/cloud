@@ -11,6 +11,7 @@ import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { collectDslPlanExtraFieldTableIds } from "../query-dsl/source-plan";
+import type { SqlClient } from "./audit";
 import {
   datePatternContext,
   documentLiquidFilters,
@@ -65,11 +66,17 @@ type DocumentTemplateImage = {
   url: string;
 };
 
-const buildRecordScanMeta = async (params: { baseId: string; tableId: string; recordId: string }): Promise<DocumentTemplateRecordMeta> => {
+const buildRecordScanMeta = async (params: {
+  baseId: string;
+  tableId: string;
+  recordId: string;
+  client?: SqlClient;
+}): Promise<DocumentTemplateRecordMeta> => {
   const scan = await ensureRecordScanCode({
     baseId: params.baseId,
     tableId: params.tableId,
     recordId: params.recordId,
+    client: params.client,
   });
   return {
     scan: {
@@ -128,17 +135,22 @@ const fieldsWithPlanExtras = async (
   fieldsByTableId: Record<string, Field[]>,
   tableId: string,
   plan: Parameters<typeof collectDslPlanExtraFieldTableIds>[0],
+  client?: SqlClient,
 ): Promise<Record<string, Field[]>> => {
   const missing = collectDslPlanExtraFieldTableIds(plan).filter((extraTableId) => fieldsByTableId[extraTableId] === undefined);
   if (fieldsByTableId[tableId] === undefined) missing.push(tableId);
   if (missing.length === 0) return fieldsByTableId;
   const groups = await Promise.all(
-    [...new Set(missing)].map(async (missingTableId) => ({ tableId: missingTableId, fields: await listFields(missingTableId) })),
+    [...new Set(missing)].map(async (missingTableId) => ({
+      tableId: missingTableId,
+      fields: await listFields(missingTableId, false, client),
+    })),
   );
   return { ...fieldsByTableId, ...Object.fromEntries(groups.map((group) => [group.tableId, group.fields])) };
 };
 
 const executeDocumentGqlSource = async (params: {
+  client?: SqlClient;
   baseId: string;
   tableId: string;
   source: string;
@@ -153,12 +165,14 @@ const executeDocumentGqlSource = async (params: {
     currentTableId: params.tableId,
     ast: parsed.ast,
     purpose: "document-template-render",
+    client: params.client,
   });
   const resolved = resolveDslQueryToQueryPlan(parsed.ast, ctx);
   if (!resolved.ok) return fail(err.badInput(t.sourceInvalid));
 
-  const fieldsByTableId = await fieldsWithPlanExtras(ctx.fieldsByTableId, params.tableId, resolved.plan);
+  const fieldsByTableId = await fieldsWithPlanExtras(ctx.fieldsByTableId, params.tableId, resolved.plan, params.client);
   const preview = await previewDslQuery(resolved.plan, {
+    client: params.client,
     fieldsByTableId,
     timeZone: params.dateConfig?.timeZone,
     maxRows: DOCUMENT_QUERY_MAX_ROWS,
@@ -286,17 +300,22 @@ export const buildRenderData = (params: {
   snapshot: params.snapshot ?? null,
 });
 
-const buildTemplateImages = async (tableId: string, recordId: string, fields: Field[]): Promise<DocumentTemplateImage[]> => {
+const buildTemplateImages = async (
+  tableId: string,
+  recordId: string,
+  fields: Field[],
+  client?: SqlClient,
+): Promise<DocumentTemplateImage[]> => {
   const fileFields = fields.filter((field) => field.type === "file" && !field.deletedAt);
   const images: DocumentTemplateImage[] = [];
   for (const field of fileFields) {
     if (images.length >= DOCUMENT_IMAGE_MAX_COUNT) break;
-    const listed = await listForRecordField({ tableId, recordId, fieldId: field.id });
+    const listed = await listForRecordField({ tableId, recordId, fieldId: field.id, client });
     if (!listed.ok) continue;
     for (const file of listed.data) {
       if (images.length >= DOCUMENT_IMAGE_MAX_COUNT) break;
       if (!file.mimeType.startsWith("image/") || file.sizeBytes > DOCUMENT_IMAGE_MAX_BYTES) continue;
-      const content = await getFileContent({ tableId, recordId, fieldId: field.id, fileId: file.id });
+      const content = await getFileContent({ tableId, recordId, fieldId: field.id, fileId: file.id, client });
       if (!content.ok) continue;
       images.push({
         fieldId: field.id,
@@ -313,6 +332,7 @@ const buildTemplateImages = async (tableId: string, recordId: string, fields: Fi
 };
 
 export const buildLiveRenderData = async (params: {
+  client?: SqlClient;
   template: Pick<DocumentTemplate, "source"> & Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">>;
   table: Table;
   record: GridRecord;
@@ -321,19 +341,20 @@ export const buildLiveRenderData = async (params: {
   createdAt?: Date;
 }): Promise<Result<{ source: string; columns: unknown[]; rows: Array<Record<string, unknown>>; data: Record<string, unknown> }>> => {
   const appData = params.app ?? (await buildTemplateAppData());
-  const businessData = await buildTemplateBusinessData(params.table.baseId, appData);
+  const businessData = await buildTemplateBusinessData(params.table.baseId, appData, params.client);
   const recordMeta = await buildRecordScanMeta({
     baseId: params.table.baseId,
     tableId: params.table.id,
     recordId: params.record.id,
+    client: params.client,
   });
-  const fields = await listFields(params.table.id);
+  const fields = await listFields(params.table.id, false, params.client);
   const relatedRecordIds = fields.flatMap((field) => {
     if (field.type !== "relation") return [];
     const value = params.record.data[field.id];
     return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : typeof value === "string" ? [value] : [];
   });
-  const publicRelatedRecordIds = await projectPublicIds("record", relatedRecordIds);
+  const publicRelatedRecordIds = await projectPublicIds("record", relatedRecordIds, params.client);
   const templateRecord = {
     ...params.record,
     data: documentRecordDataWithPublicIds(params.record.data, fields, publicRelatedRecordIds),
@@ -355,13 +376,14 @@ export const buildLiveRenderData = async (params: {
   if (!source.ok) return source;
 
   const executed = await executeDocumentGqlSource({
+    client: params.client,
     baseId: params.table.baseId,
     tableId: params.table.id,
     source: source.data,
     dateConfig: params.dateConfig,
   });
   if (!executed.ok) return executed;
-  const images = await buildTemplateImages(params.table.id, params.record.id, fields);
+  const images = await buildTemplateImages(params.table.id, params.record.id, fields, params.client);
 
   const data = buildRenderData({
     record: { ...templateRecord, id: templateRecord.shortId },

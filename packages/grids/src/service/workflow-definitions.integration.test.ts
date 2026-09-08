@@ -9,6 +9,8 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { migrate } from "../migrate";
+import { GRIDS_EVENT } from "../workflows/events";
+import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import {
   createWorkflow,
   getWorkflow,
@@ -22,6 +24,7 @@ import {
   restoreWorkflowRevision,
   updateWorkflow,
 } from "./workflow-definitions";
+import { startWorkflowRun } from "./workflow-runs";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 
@@ -138,6 +141,164 @@ describe("workflow definitions on the kernel", () => {
     if (stale.ok) return;
     expect(stale.error.status).toBe(409);
   });
+
+  postgresTest("concurrent publications with the same revision accept only one editor", async () => {
+    const baseId = await base();
+    const created = await createWorkflow(baseId, { name: "Contested", source: PLAIN, enabled: true }, null);
+    if (!created.ok) throw new Error(created.error.message);
+    const results = await Promise.all([
+      updateWorkflow(created.data.id, { source: SCHEDULED }, null, created.data.revision),
+      updateWorkflow(created.data.id, { source: `${PLAIN}\n# second editor` }, null, created.data.revision),
+    ]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok).map((result) => !result.ok && result.error.status)).toEqual([409]);
+    expect((await getWorkflow(created.data.id))?.revision).toBe(2);
+  });
+
+  for (const edit of ["publish", "activate"] as const) {
+    postgresTest(`can ${edit} with only one available pool connection`, async () => {
+      const baseId = await base();
+      const created = await createWorkflow(baseId, { name: "Pool pressure", source: PLAIN, enabled: false }, null);
+      if (!created.ok) throw new Error(created.error.message);
+      // Leave exactly one connection for the entire update. Catalog reads must
+      // reuse its transaction, not wait for another connection from this pool.
+      const poolSize = sql.options.max;
+      if (poolSize === undefined || poolSize < 1) throw new Error("Missing SQL pool size");
+      const reserved: Awaited<ReturnType<typeof sql.reserve>>[] = [];
+      let pending: ReturnType<typeof updateWorkflow> | undefined;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        for (let index = 1; index < poolSize; index++) reserved.push(await sql.reserve());
+        pending = updateWorkflow(
+          created.data.id,
+          edit === "publish" ? { source: SCHEDULED } : { enabled: true },
+          null,
+          created.data.revision,
+        );
+        const updated = await Promise.race([
+          pending,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error("Workflow update exhausted the connection pool")), 2_000);
+          }),
+        ]);
+        expect(updated.ok).toBe(true);
+        if (!updated.ok) throw new Error(updated.error.message);
+        expect(updated.data.revision).toBe(edit === "publish" ? 2 : 1);
+        expect(updated.data.enabled).toBe(edit === "activate");
+      } finally {
+        clearTimeout(timeout);
+        for (const connection of reserved) connection.release();
+        // Also drain the failed implementation after releasing the pool, so a
+        // regression cannot strand transactions or affect subsequent tests.
+        await pending?.catch(() => undefined);
+      }
+    });
+  }
+
+  for (const edit of ["source", "name"] as const) {
+    postgresTest(`a queued ${edit} edit preserves a concurrent disable that did not change revision`, async () => {
+      const baseId = await base();
+      const created = await createWorkflow(baseId, { name: "Disable race", source: SCHEDULED, enabled: true }, null);
+      if (!created.ok) throw new Error(created.error.message);
+      const locked = Promise.withResolvers<number>();
+      const release = Promise.withResolvers<void>();
+      const tasks: Promise<unknown>[] = [];
+      const blocker = sql.begin(async (tx) => {
+        await lockWorkflowCatalogMutation(baseId, tx);
+        const [backend] = await tx<Array<{ pid: number }>>`SELECT pg_backend_pid() AS pid`;
+        if (!backend) throw new Error("Missing catalog locker backend");
+        locked.resolve(backend.pid);
+        await release.promise;
+      });
+      tasks.push(blocker);
+      void blocker.catch(locked.reject);
+      try {
+        const blockerPid = await locked.promise;
+        const waitForWaiters = async (count: number) => {
+          const deadline = Date.now() + 5_000;
+          while (Date.now() < deadline) {
+            const [row] = await sql<Array<{ count: number }>>`
+              SELECT count(*)::int AS count FROM pg_locks waiter
+              JOIN pg_locks holder USING (locktype, database, classid, objid, objsubid)
+              WHERE waiter.locktype = 'advisory' AND NOT waiter.granted
+                AND holder.pid = ${blockerPid} AND holder.granted
+            `;
+            if (row && row.count >= count) return;
+            await Bun.sleep(10);
+          }
+          throw new Error("Workflow edit did not reach the catalog lock");
+        };
+        const disable = updateWorkflow(created.data.id, { enabled: false }, null, created.data.revision);
+        tasks.push(disable);
+        void disable.catch(() => undefined);
+        await waitForWaiters(1);
+        const edited = updateWorkflow(
+          created.data.id,
+          edit === "source" ? { source: PLAIN } : { name: "Renamed after disable" },
+          null,
+          created.data.revision,
+        );
+        tasks.push(edited);
+        void edited.catch(() => undefined);
+        // Both callers read enabled=true, but disable owns the first lock wait.
+        await waitForWaiters(2);
+        release.resolve();
+        const outcomes = await Promise.allSettled([disable, edited]);
+        expect(outcomes.every((outcome) => outcome.status === "fulfilled" && outcome.value.ok)).toBe(true);
+        const current = await getWorkflow(created.data.id);
+        expect(current?.enabled).toBe(false);
+        expect(current?.revision).toBe(edit === "source" ? 2 : 1);
+        expect((await activations(created.data.id)).every((activation) => !activation.enabled)).toBe(true);
+      } finally {
+        release.resolve();
+        await Promise.allSettled(tasks);
+      }
+    });
+  }
+
+  for (const mode of ["execute", "dryRun"] as const) {
+    postgresTest(`${mode} fences publication after admission and replays the original run revision`, async () => {
+      const baseId = await base();
+      const created = await createWorkflow(baseId, { name: "Run fence", source: PLAIN, enabled: true }, null);
+      if (!created.ok) throw new Error(created.error.message);
+      const input = {
+        workflow: created.data,
+        mode,
+        channel: "api" as const,
+        eventType: GRIDS_EVENT.invoked,
+        inputs: {},
+        context: {},
+        principal: { userId: null, groupIds: [], serviceAccountId: null },
+        authorization: { kind: "workflow" as const },
+        idempotencyKey: Bun.randomUUIDv7(),
+        requestFingerprint: "original-input",
+        occurredAt: new Date().toISOString(),
+      };
+      const accepted = await startWorkflowRun(input);
+      if (!accepted.ok) throw new Error(accepted.error.message);
+      expect(accepted.data.revision).toBe("1");
+
+      const published = await updateWorkflow(created.data.id, { source: SCHEDULED }, null, created.data.revision);
+      if (!published.ok) throw new Error(published.error.message);
+      // These are the already-prepared inputs from an invocation that read v1
+      // before another editor published v2. The transaction must not use v2.
+      const stale = await startWorkflowRun({ ...input, idempotencyKey: Bun.randomUUIDv7() });
+      expect(stale.ok).toBe(false);
+      if (stale.ok) throw new Error("stale admission was accepted");
+      expect(stale.error.status).toBe(409);
+
+      const replay = await startWorkflowRun({ ...input, workflow: published.data });
+      expect(replay.ok && replay.data).toEqual({ ...accepted.data, created: false });
+      const changed = await startWorkflowRun({ ...input, workflow: published.data, requestFingerprint: "changed-input" });
+      expect(changed.ok).toBe(false);
+      if (changed.ok) throw new Error("changed idempotent request was accepted");
+      expect(changed.error.status).toBe(409);
+      const [runs] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM workflows.run WHERE workflow_id = ${created.data.id}::uuid
+      `;
+      expect(runs?.count).toBe(1);
+    });
+  }
 
   postgresTest("disabling stops the activations matching", async () => {
     const baseId = await base();

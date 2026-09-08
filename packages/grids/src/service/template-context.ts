@@ -92,8 +92,9 @@ const documentDefaultValue = (defaults: DocumentDefaults, key: keyof DocumentDef
 export const buildTemplateBusinessData = async (
   baseId: string,
   appData: DocumentTemplateAppData = defaultTemplateAppData(),
+  client?: import("./audit").SqlClient,
 ): Promise<DocumentTemplateBusinessData> => {
-  const defaults = (await getBase(baseId))?.documentDefaults ?? {};
+  const defaults = (await getBase(baseId, { client }))?.documentDefaults ?? {};
   const legalName = documentDefaultValue(defaults, "legalName") || appData.name;
   const address = documentDefaultValue(defaults, "address");
   const senderLine = documentDefaultValue(defaults, "senderLine") || [legalName, address.replace(/\n/g, " | ")].filter(Boolean).join(" | ");

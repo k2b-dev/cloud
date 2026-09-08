@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { ComputedColumnSpec } from "../contracts";
 import { decimalStringToCanonical } from "../formula/numeric";
+import type { SqlClient } from "./audit";
 import { get as getField } from "./field-read";
 import { storageOf } from "./field-storage";
 import { compileFormulaSourceToSql, type FormulaSqlExpression, type FormulaSqlType } from "./formula-sql-compiler";
@@ -137,13 +138,13 @@ export const readableComputedTargetTableIds = async (
 
 type TargetFieldResolver = (id: string) => Promise<Field | null>;
 
-const createTargetFieldResolver = (fieldsById: Map<string, Field>): TargetFieldResolver => {
+const createTargetFieldResolver = (fieldsById: Map<string, Field>, client?: SqlClient): TargetFieldResolver => {
   const cache = new Map<string, Field | null>();
   return async (id) => {
     const local = fieldsById.get(id);
     if (local) return local;
     if (cache.has(id)) return cache.get(id) ?? null;
-    const field = await getField(id);
+    const field = await getField(id, client);
     cache.set(id, field);
     return field;
   };
@@ -277,6 +278,7 @@ const buildRollupProjection = async (options: {
 export const buildComputedProjections = async (
   fields: Field[],
   options: {
+    client?: SqlClient;
     recordAlias?: string;
     authorizedTableIds?: ReadonlySet<string>;
   } = {},
@@ -284,7 +286,7 @@ export const buildComputedProjections = async (
   const fieldsById = new Map(fields.map((f) => [f.id, f]));
   const out: ComputedProjection[] = [];
   const recordAlias = assertSqlIdentifier(options.recordAlias ?? "r");
-  const resolveTargetField = createTargetFieldResolver(fieldsById);
+  const resolveTargetField = createTargetFieldResolver(fieldsById, options.client);
 
   for (const field of fields) {
     if (field.deletedAt) continue;
@@ -315,6 +317,7 @@ export const buildComputedProjections = async (
 export const buildComputedFieldSqlMap = async (
   fields: Field[],
   options: {
+    client?: SqlClient;
     recordAlias?: string;
     authorizedTableIds?: ReadonlySet<string>;
   } = {},

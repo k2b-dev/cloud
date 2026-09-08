@@ -1,9 +1,13 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { migrate } from "../migrate";
+import { parseGridsQueryDsl } from "./parser";
+import { previewDslQuery } from "./preview";
+import { resolveDslQueryToQueryPlan } from "./resolver";
 import { decodeDslResultCursor } from "./result-cursor";
 import {
   cleanupFixture,
+  ctx,
   insertDslDbFixture,
   integrationCursorSigningKey,
   postgresTest,
@@ -16,6 +20,45 @@ beforeAll(async () => {
 });
 
 describe("Query DSL Postgres smoke — rows and text search", () => {
+  postgresTest("retains the continuation sentinel for a ten-thousand-row execution page", async () => {
+    const fixture = await insertDslDbFixture();
+    try {
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        SELECT gen_random_uuid(), candidate.short_id, ${fixture.orders.id}::uuid,
+          ${{ [fixture.amountId]: 123456 }}::jsonb
+        FROM (
+          SELECT 'L' || lpad(n::text, 5, '0') AS short_id FROM generate_series(1, 20000) n
+        ) candidate
+        WHERE NOT EXISTS (SELECT 1 FROM grids.records existing WHERE existing.short_id = candidate.short_id)
+        LIMIT 10001`;
+      const parsed = parseGridsQueryDsl("from table Orders\nselect Amount\nwhere Amount = 123456");
+      if (!parsed.ok) throw new Error(JSON.stringify(parsed.diagnostics));
+      const context = ctx(fixture);
+      const resolved = resolveDslQueryToQueryPlan(parsed.ast, context);
+      if (!resolved.ok) throw new Error(JSON.stringify(resolved.diagnostics));
+      const options = {
+        fieldsByTableId: fixture.fieldsByTableId,
+        limit: 10000,
+        maxRows: 10000,
+        cursorFingerprint: "maximum-page",
+        cursorSigningKey: integrationCursorSigningKey,
+      };
+      const first = await previewDslQuery(resolved.plan, options);
+      if (!first.ok) throw new Error(first.error.message);
+      expect(first.data.rows).toHaveLength(10000);
+      expect(first.data.truncated).toBe(true);
+      const cursor = decodeDslResultCursor(first.data.page?.nextCursor, integrationCursorSigningKey);
+      expect(cursor).not.toBeNull();
+      const second = await previewDslQuery(resolved.plan, { ...options, cursor });
+      if (!second.ok) throw new Error(second.error.message);
+      expect(second.data.rows).toHaveLength(1);
+      expect(second.data.page?.nextCursor).toBeNull();
+      expect(first.data.rows.some((row) => row.recordId === second.data.rows[0]?.recordId)).toBe(false);
+    } finally {
+      await cleanupFixture(fixture.baseId);
+    }
+  });
+
   postgresTest("paginates row queries with stable keyset cursors", async () => {
     const fixture = await insertDslDbFixture();
     try {

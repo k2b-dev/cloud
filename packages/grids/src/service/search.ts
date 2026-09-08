@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { SearchSpec } from "../contracts";
+import type { SqlClient } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { resolveReadableTableIds } from "./relation-access";
 import { type ExpansionViewer, relationLabelFields } from "./relations";
@@ -46,12 +47,13 @@ export const compileDirectFieldSearchClause = (field: Field, alias: string, q: s
   return null;
 };
 
-const canReadTargetTable = async (targetTableId: string, viewer?: ExpansionViewer): Promise<boolean> =>
-  viewer ? (await resolveReadableTableIds([targetTableId], viewer)).has(targetTableId) : true;
+const canReadTargetTable = async (targetTableId: string, viewer?: ExpansionViewer, client?: SqlClient): Promise<boolean> =>
+  viewer ? (await resolveReadableTableIds([targetTableId], viewer, client)).has(targetTableId) : true;
 
 const relationSearchFields = (targetFields: Field[]): Field[] => relationLabelFields(targetFields);
 
 const relationClause = async (params: {
+  client?: SqlClient;
   field: Field;
   alias: string;
   q: string;
@@ -67,14 +69,14 @@ const relationClause = async (params: {
 
   let canRead = params.targetReadCache.get(cfg.targetTableId);
   if (canRead === undefined) {
-    canRead = await canReadTargetTable(cfg.targetTableId, params.viewer);
+    canRead = await canReadTargetTable(cfg.targetTableId, params.viewer, params.client);
     params.targetReadCache.set(cfg.targetTableId, canRead);
   }
   if (!canRead) return null;
 
   let targetFields = params.targetFieldsCache.get(cfg.targetTableId);
   if (!targetFields) {
-    targetFields = await listFields(cfg.targetTableId);
+    targetFields = await listFields(cfg.targetTableId, false, params.client);
     params.targetFieldsCache.set(cfg.targetTableId, targetFields);
   }
 
@@ -120,6 +122,7 @@ const relationClause = async (params: {
 };
 
 export const compileSearchClause = async (params: {
+  client?: SqlClient;
   search?: SearchSpec | null;
   fields: Field[];
   alias?: string;
@@ -150,6 +153,7 @@ export const compileSearchClause = async (params: {
     }
     if (field.type === "relation") {
       const rel = await relationClause({
+        client: params.client,
         field,
         alias,
         q,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { compileHelp, HELP_REGISTRY_MAX_BYTES } from "../../../cloud/src/_internal/help";
 import { AGGREGATE_KINDS } from "../aggregate-catalog";
 import { DOCUMENT_TEMPLATE_STARTERS } from "../document-template-starters";
 import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";
@@ -11,6 +12,13 @@ import {
 } from "../query-dsl/intelligence-grammar";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { gridsHelp } from ".";
+
+test("registers the complete bilingual Help corpus within the platform budget", () => {
+  const compiled = compileHelp({ appId: "grids", appName: "Grids", appIcon: "ti ti-table", basePath: "/app/grids", definition: gridsHelp });
+  expect(Buffer.byteLength(JSON.stringify(compiled.registryEntry))).toBeLessThanOrEqual(HELP_REGISTRY_MAX_BYTES);
+  expect(compiled.registryEntry.documents).toHaveLength(gridsHelp.documents.length);
+  expect(compiled.registryEntry.documentsByLocale?.de).toHaveLength(gridsHelp.documentsByLocale?.de?.length ?? 0);
+});
 
 const cliSkillReference = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
 
@@ -178,7 +186,15 @@ describe("grids help", () => {
       expect(forms, `missing form capability ${capability}`).toContain(capability);
     }
 
-    const customApps = gridsHelp.getMarkdown("grids-custom-apps")!;
+    const overview = gridsHelp.getMarkdown("grids-custom-apps")!;
+    const links = [...overview.matchAll(/\/app\/grids\/help\/(grids-[a-z-]+)/g)];
+    expect(links).toHaveLength(4);
+    const guides = links.map(([, id]) => {
+      const guide = gridsHelp.getMarkdown(id!);
+      expect(guide, id).toBeDefined();
+      return guide;
+    });
+    const customApps = [overview, ...guides].join("\n");
     for (const capability of [
       "Markdown",
       "Records",
@@ -197,7 +213,7 @@ describe("grids help", () => {
     ]) {
       expect(customApps, `missing Grids App capability ${capability}`).toContain(capability);
     }
-    expect(customApps).toContain("public grant includes anonymous visitors");
+    expect(overview).toContain("Public grants include anonymous visitors");
 
     const documents = gridsHelp.getMarkdown("grids-documents-pdfs")!;
     for (const capability of ["recursive snapshot", "public link", "1, 7, 30, or 90 days", "barcode_data_url"]) {

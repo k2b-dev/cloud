@@ -55,10 +55,10 @@ export const hydrateDslViewQueries = (params: {
   views: DslViewSource[];
   fieldsByTableId: Record<string, Field[]>;
 }): DslViewSource[] =>
-  params.views.map((view) => {
-    if (!view.source) return view;
+  params.views.flatMap((view) => {
+    if (!view.source) return [view];
     const parsed = parseGridsQueryDsl(view.source);
-    if (!parsed.ok) return view;
+    if (!parsed.ok) return [];
     const currentTable = params.tables.find((table) => table.id === view.tableId);
     const resolved = resolveDslQueryToRecordQuery(parsed.ast, {
       ...(currentTable ? { currentTable } : {}),
@@ -66,7 +66,10 @@ export const hydrateDslViewQueries = (params: {
       views: [],
       fieldsByTableId: params.fieldsByTableId,
     });
-    return resolved.ok ? { ...view, query: resolved.plan.query } : view;
+    // A View reference must preserve its complete saved scope. Some valid
+    // standalone GQL plans cannot be represented by nested RecordQuery sources;
+    // keep those unavailable instead of silently falling back to the whole table.
+    return resolved.ok ? [{ ...view, query: resolved.plan.query }] : [];
   });
 
 export const buildTrustedGqlResolverContext = async (

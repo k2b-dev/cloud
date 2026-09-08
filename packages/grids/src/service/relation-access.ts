@@ -46,7 +46,7 @@ export const resolveReadableTableIds = async (
   `;
   const tables =
     options.queryTimeoutMs !== undefined || options.signal
-      ? await runBoundedQuery<{ id: string; base_id: string }>(tablesQuery, options.queryTimeoutMs ?? 5_000, options.signal)
+      ? await runBoundedQuery<{ id: string; base_id: string }>(tablesQuery, options.queryTimeoutMs ?? 5_000, options.signal, undefined, db)
       : await tablesQuery;
   options.signal?.throwIfAborted();
   const subject = viewer.userId
@@ -103,7 +103,13 @@ export const accessibleRecordIdsByTable = async (
   `;
   const rows =
     options.queryTimeoutMs !== undefined || options.signal
-      ? await runBoundedQuery<{ id: string; table_id: string }>(recordsQuery, options.queryTimeoutMs ?? 5_000, options.signal)
+      ? await runBoundedQuery<{ id: string; table_id: string }>(
+          recordsQuery,
+          options.queryTimeoutMs ?? 5_000,
+          options.signal,
+          undefined,
+          db,
+        )
       : await recordsQuery;
   const result = new Map<string, Set<string>>();
   for (const row of rows) {

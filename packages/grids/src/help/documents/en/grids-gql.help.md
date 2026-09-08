@@ -155,7 +155,7 @@ Use each of `from`, `where`, `search`, `having`, `limit`, `offset`, and the dele
 
 The two deleted-record clauses are mutually exclusive. Normal queries return live records only.
 
-`from view` starts with the saved view's query and then applies the new clauses. It is useful when a reviewed data set is already the correct starting point. A view that filters by record metadata cannot itself be used as another view's source; start from its table when you need that combination.
+`from view` starts with the saved view's query and then applies the new clauses. It is useful when a reviewed data set is already the correct starting point. Not every GQL query can be reused as a nested source: for example, a saved query with relation joins, cross-field comparisons, or an offset is unavailable as a `from view` source. Grids rejects these references rather than dropping their filters. Run the saved query directly, or start from its table and explicitly carry over the required clauses. A view that filters by record metadata also cannot be used as another view's source.
 
 ## Names, aliases, and values {icon="point"}
 

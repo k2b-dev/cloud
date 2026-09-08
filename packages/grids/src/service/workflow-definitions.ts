@@ -29,7 +29,7 @@ import {
   renameWorkflow as renameKernelWorkflow,
   setWorkflowEnabled,
 } from "@valentinkolb/cloud/workflows/store";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import { compileAndBindGridsWorkflowSource } from "../workflows/binder";
 import type {
   CreateGridsWorkflowInput,
@@ -76,8 +76,12 @@ const revisionConflict = (locale?: string) => ({
  * Latest rather than active: this is what the editor last saved, which is what
  * every caller means by "the workflow". A disabled workflow still has its plan.
  */
-const compileAndBind = async (baseId: string, source: string): Promise<Result<{ plan: WorkflowBoundPlan; source: string }>> => {
-  const bound = await compileAndBindGridsWorkflowSource(source, await loadWorkflowCatalog(baseId));
+const compileAndBind = async (
+  baseId: string,
+  source: string,
+  db: SQL = sql,
+): Promise<Result<{ plan: WorkflowBoundPlan; source: string }>> => {
+  const bound = await compileAndBindGridsWorkflowSource(source, await loadWorkflowCatalog(baseId, db));
   return bound.ok
     ? ok({ plan: bound.plan, source: bound.source ?? source })
     : fail(err.badInput(bound.diagnostics.map((diagnostic) => diagnostic.message).join("; ")));
@@ -222,22 +226,23 @@ export const updateWorkflow = async (
   if (!existing) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
   if (existing.revision !== expectedRevision) return fail(revisionConflict(locale));
 
-  const source = input.source ?? existing.source;
-  const enabled = input.enabled ?? existing.enabled;
-  const activating = !existing.enabled && input.enabled === true;
-  // Re-binding on activation too: the catalogue may have moved underneath a
-  // workflow that was switched off when a table or template changed.
-  const compiled =
-    input.source === undefined && !activating ? ok({ plan: existing.plan, source }) : await compileAndBind(existing.baseId, source);
-  if (!compiled.ok) return compiled;
-
   const publishes = input.source !== undefined;
-  const recordEventsEnabled = enabled && hasRecordEventTrigger(compiled.data.plan);
-  const recordEventActivationChanged =
-    !existing.enabled || JSON.stringify(recordEventTriggers(existing.plan)) !== JSON.stringify(recordEventTriggers(compiled.data.plan));
-
   const updated = await sql.begin(async (tx): Promise<Result<null>> => {
     await lockWorkflowCatalogMutation(existing.baseId, tx);
+    const current = await getWorkflow(id, false, tx);
+    if (!current) return fail({ ...err.notFound("workflow"), message: workflowServiceText(locale).workflowNotFound });
+    if (current.revision !== expectedRevision) return fail(revisionConflict(locale));
+    // Metadata changes do not publish a revision. Defaults must therefore come
+    // from the locked current state, especially after a concurrent disable.
+    const source = input.source ?? current.source;
+    const enabled = input.enabled ?? current.enabled;
+    const activating = !current.enabled && input.enabled === true;
+    const compiled =
+      input.source === undefined && !activating ? ok({ plan: current.plan, source }) : await compileAndBind(current.baseId, source, tx);
+    if (!compiled.ok) return compiled;
+    const recordEventsEnabled = enabled && hasRecordEventTrigger(compiled.data.plan);
+    const recordEventActivationChanged =
+      !current.enabled || JSON.stringify(recordEventTriggers(current.plan)) !== JSON.stringify(recordEventTriggers(compiled.data.plan));
     if (publishes || activating) {
       const available = await assertWorkflowEmailTemplatesAvailable(existing.baseId, compiled.data.plan, tx, locale);
       if (!available.ok) return fail(available.error);
@@ -246,7 +251,7 @@ export const updateWorkflow = async (
     const [row] = await tx<DbRow[]>`
       UPDATE grids.workflow_profile
       SET enabled = ${enabled},
-          position = ${input.position ?? existing.position},
+          position = ${input.position ?? current.position},
           record_event_active_since = CASE
             WHEN ${recordEventsEnabled} = FALSE THEN NULL
             WHEN record_event_active_since IS NULL OR ${recordEventActivationChanged} THEN now()
@@ -262,8 +267,8 @@ export const updateWorkflow = async (
       await renameKernelWorkflow(
         id,
         {
-          name: input.name?.trim() ?? existing.name,
-          description: input.description === undefined ? existing.description : input.description,
+          name: input.name?.trim() ?? current.name,
+          description: input.description === undefined ? current.description : input.description,
         },
         { db: tx },
       );
@@ -292,8 +297,8 @@ export const updateWorkflow = async (
         action: audit.action ?? "workflow.updated",
         diff: {
           workflow: {
-            old: { id: existing.id, name: existing.name, enabled: existing.enabled, revision: existing.revision },
-            new: { id, name: input.name?.trim() ?? existing.name, enabled },
+            old: { id: current.id, name: current.name, enabled: current.enabled, revision: current.revision },
+            new: { id, name: input.name?.trim() ?? current.name, enabled },
           },
           ...(audit.restoredRevision === undefined ? {} : { restoredRevision: { old: null, new: audit.restoredRevision } }),
         },
