@@ -2,6 +2,7 @@
 @import "@k2b/ui/icons/tabler.css";
 
 html {
+  font-family: var(--k2b-font-sans);
   color-scheme: light dark;
 }
 
@@ -10,6 +11,8 @@ html {
 }
 
 body {
+  font-family: var(--k2b-font-sans);
+  -webkit-font-smoothing: antialiased;
   margin: 0;
 }
 
@@ -150,4 +153,121 @@ body {
     max-width: 36rem;
     margin-inline: auto;
   }
+}
+
+.auth-flow {
+  display: grid;
+  gap: 1rem;
+}
+.auth-flow p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--k2b-text-secondary);
+}
+.auth-issuer {
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+.auth-comparison {
+  font-size: 2.5rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2em;
+  text-align: center;
+  padding: 1rem 0;
+}
+.auth-clouds {
+  width: 100%;
+  max-width: 33rem;
+  margin-inline: auto;
+  align-self: start;
+  display: grid;
+  gap: 1.5rem;
+}
+.auth-cloud {
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+.auth-cloud header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.auth-cloud h2 {
+  font-size: 1rem;
+  margin: 0 0 0.375rem;
+  overflow-wrap: anywhere;
+}
+.auth-cloud p {
+  margin: 0;
+}
+.auth-cloud .auth-request {
+  width: 100%;
+  justify-content: space-between;
+  min-height: 3rem;
+}
+.auth-request strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+}
+.auth-quiet,
+.auth-recovery {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.auth-flow .k2b-button,
+.auth-cloud .k2b-button {
+  min-height: 44px;
+}
+.auth-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+.auth-pairing-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+.auth-pairing-intro > i {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  font-size: 1.25rem;
+}
+.auth-flow p {
+  font-size: 0.875rem;
+}
+.auth-pairing-alternative {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  padding-top: 0.5rem;
+  color: var(--k2b-text-muted);
+}
+.auth-pairing-alternative p {
+  color: inherit;
+  font-size: 0.8125rem;
+}
+.auth-pairing-alternative > i {
+  font-size: 1.25rem;
+  flex: none;
+}
+.auth-flow .auth-flow-note {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.auth-flow > strong {
+  font-size: 0.875rem;
+  font-weight: 600;
 }

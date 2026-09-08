@@ -649,6 +649,7 @@
       "dependencies": {
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
+        "@valentinkolb/cloud": "workspace:*",
         "solid-js": "catalog:",
       },
       "devDependencies": {

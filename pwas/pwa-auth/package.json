@@ -13,7 +13,8 @@
   "dependencies": {
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "@valentinkolb/cloud": "workspace:*"
   },
   "devDependencies": {
     "@babel/core": "7.29.7",
