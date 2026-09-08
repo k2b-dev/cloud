@@ -79,6 +79,8 @@ cannot disappear behind an older in-flight save. A retention gap must stop
 the save and trigger recovery; it must never replace content with partial
 replayed state.
 
+Resource declarations are drift-checked. A namespace that already ran an earlier v6 build (a development cluster or a 6.2.0 deployment) may hold streams and consumers with older delivery or retention settings; readiness then fails with `ResourceDriftError` naming the resource. Delete those specific resources before starting the new build; a fresh v5 to v6 cutover is unaffected.
+
 ## Start the v6 fleet
 
 1. Stop every v5 Cloud process and verify the final drain evidence. Do not use

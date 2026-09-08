@@ -126,3 +126,5 @@ process console and do not replace application error handling.
 Do not use traces as business records. Store domain facts in the application
 database. Use [audit events](/en/docs/platform/audit-events) for durable
 security evidence.
+
+Topic consumer runs are traced only when they retry or dead-letter: successful runs write no span, so high-volume consumers such as gateway telemetry do not multiply span writes.
