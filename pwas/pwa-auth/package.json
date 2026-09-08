@@ -1,0 +1,26 @@
+{
+  "name": "@valentinkolb/pwa-auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dev": "bun run scripts/dev.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@k2b/stdlib": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "solid-js": "catalog:"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "catalog:",
+    "babel-preset-solid": "1.9.12",
+    "typescript": "catalog:"
+  }
+}

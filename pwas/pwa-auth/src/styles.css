@@ -1,0 +1,153 @@
+@import "@k2b/ui/styles.css";
+@import "@k2b/ui/icons/tabler.css";
+
+html {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.auth-app {
+  height: 100svh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--k2b-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.auth-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: calc(env(safe-area-inset-top) + 1.25rem) max(1.5rem, env(safe-area-inset-right)) 1.25rem max(1.5rem, env(safe-area-inset-left));
+}
+
+.auth-header h1 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.auth-preview {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+.auth-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.auth-menu-button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.5rem;
+}
+.auth-settings {
+  display: grid;
+  gap: 1.5rem;
+}
+.auth-settings h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.auth-install-dialog {
+  display: grid;
+  gap: 1.25rem;
+  padding-block: 0.5rem;
+}
+.auth-install-dialog p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.auth-install-heading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.auth-install-heading img {
+  flex: none;
+  border-radius: var(--k2b-radius-surface);
+}
+.auth-install-heading h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+}
+.auth-install-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+}
+.auth-install-steps li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.auth-install-steps h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.auth-step-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  font-size: 1.25rem;
+}
+.auth-install-dialog .k2b-button {
+  min-height: 44px;
+}
+.auth-install-dialog code {
+  overflow-wrap: anywhere;
+}
+
+.auth-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  display: grid;
+  padding: 2rem max(1.5rem, env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+}
+
+.auth-welcome {
+  width: 100%;
+  max-width: 23rem;
+  margin: auto;
+  padding-block: 1rem 5rem;
+  text-align: center;
+}
+
+.auth-mark {
+  display: block;
+  margin: 0 auto 1.5rem;
+}
+
+@media (min-width: 40rem) {
+  .auth-header {
+    width: 100%;
+    max-width: 36rem;
+    margin-inline: auto;
+  }
+}

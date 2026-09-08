@@ -5,7 +5,7 @@ import ts from "typescript";
 type Violation = { file: string; line: number; message: string };
 
 const workspaceRoot = join(import.meta.dir, "..");
-const sourceRoots = [join(workspaceRoot, "packages"), join(workspaceRoot, "docs-site", "src")];
+const sourceRoots = [join(workspaceRoot, "packages"), join(workspaceRoot, "pwas"), join(workspaceRoot, "docs-site", "src")];
 
 const sourceFiles = (directory: string): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
