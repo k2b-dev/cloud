@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, timed } from "@k2b/stdlib/solid";
-import { IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import { DetailPanel, IconButton, Placeholder, TextInput, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord, PublicTableQueryResult } from "../../../api/public-dto";
 import type { AggregationSpec, FilterTree, GroupBySpec, RecordQuery } from "../../../contracts";
@@ -170,25 +170,23 @@ export default function GroupDetailPanel(props: Props) {
   });
 
   return (
-    <div class="flex h-full min-h-0 flex-col">
-      <header class="detail-header">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-semibold text-secondary">{t().groupDetails}</span>
+    <DetailPanel>
+      <DetailPanel.Header
+        icon="ti ti-folders"
+        title={groupTitle()}
+        subtitle={t().groupDetails}
+        actions={
           <Tooltip.Anchor content={t().closeDetails}>
             <IconButton variant="ghost" size="sm" type="button" label={t().closeGroupPanel} onClick={() => props.onClose()}>
               <i class="ti ti-x" />
             </IconButton>
           </Tooltip.Anchor>
-        </div>
+        }
+      />
 
-        <div class="mt-4 flex flex-col items-center text-center">
-          <span class="app-accent-text flex h-12 w-12 items-center justify-center rounded-[var(--ui-radius-surface)] bg-[var(--ui-selected)]">
-            <i class="ti ti-folders text-xl" />
-          </span>
-          <h2 class="mt-2 line-clamp-2 max-w-full break-words text-lg font-semibold leading-tight text-primary" title={groupTitle()}>
-            {groupTitle()}
-          </h2>
-          <div class="mt-2 flex flex-wrap justify-center gap-1.5">
+      <DetailPanel.Body scrollPreserveKey={`grids-group-detail-${props.tableId}-${bucketKey()}`}>
+        <DetailPanel.Summary title={t().summary}>
+          <div class="mb-4 flex flex-wrap gap-1.5">
             <For each={props.groupBy}>
               {(spec, index) => (
                 <span class="inline-flex min-w-0 items-center gap-1 rounded-md bg-[var(--ui-surface-subtle)] px-2 py-1 text-xs text-secondary">
@@ -199,12 +197,6 @@ export default function GroupDetailPanel(props: Props) {
               )}
             </For>
           </div>
-        </div>
-      </header>
-
-      <div class="detail-stack" data-scroll-preserve={`grids-group-detail-${props.tableId}-${bucketKey()}`}>
-        <section class="detail-section">
-          <h3 class="detail-section-label">{t().summary}</h3>
           <div class="grid grid-cols-2 gap-x-4 gap-y-3">
             <For each={aggSpecsWithCount()}>
               {(agg) => (
@@ -226,61 +218,59 @@ export default function GroupDetailPanel(props: Props) {
               )}
             </For>
           </div>
-        </section>
+        </DetailPanel.Summary>
 
-        <section class="detail-section flex min-h-[18rem] flex-col gap-3">
-          <h3 class="detail-section-label mb-0">{t().records}</h3>
-          <TextInput
-            aria-label={t().searchGroupRecords}
-            icon="ti ti-search"
-            placeholder={t().searchGroupPlaceholder}
-            value={q}
-            onValueChange={(next) => {
-              setQ(next);
-              searchDebounce.debouncedFn(next);
-            }}
-            clearable
-            onClear={() => {
-              setQ("");
-              loadFirst("");
-            }}
-          />
+        <DetailPanel.Section title={t().records} icon="ti ti-list">
+          <div class="flex min-h-[18rem] flex-col gap-3">
+            <TextInput
+              aria-label={t().searchGroupRecords}
+              icon="ti ti-search"
+              placeholder={t().searchGroupPlaceholder}
+              value={q}
+              onValueChange={(next) => {
+                setQ(next);
+                searchDebounce.debouncedFn(next);
+              }}
+              clearable
+              onClear={() => {
+                setQ("");
+                loadFirst("");
+              }}
+            />
 
-          <div class="flex min-h-0 flex-1 flex-col gap-1">
-            <Show
-              when={items().length > 0}
-              fallback={
-                <Placeholder
-                  state={fetchMut.error() ? "error" : fetchMut.loading() ? "loading" : "empty"}
-                  align="left"
-                  class="py-3"
-                  title={fetchMut.error() ? t().loadRecordsFailed : fetchMut.loading() ? t().loadingRecords : t().noRecordsGroup}
-                  description={fetchMut.error()?.message}
-                />
-              }
-            >
-              <For each={items()}>
-                {(record) => (
-                  <button
-                    type="button"
-                    class="group flex min-h-8 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-[var(--ui-hover)]"
-                    onClick={() => props.onOpenRecord(record)}
-                  >
-                    <i class="ti ti-row-insert-bottom shrink-0 text-dimmed" />
-                    <span class="min-w-0 flex-1 truncate text-primary">{renderRecordLine(record)}</span>
-                    <i class="ti ti-chevron-right shrink-0 text-dimmed transition-colors group-hover:text-primary" />
-                  </button>
-                )}
-              </For>
-            </Show>
-            <div ref={sentinel} class="h-1" />
-            <Show when={fetchMut.loading() && items().length > 0}>
-              <div class="py-2 text-center text-xs text-dimmed">{t().loadingMore}</div>
-            </Show>
+            <div class="flex min-h-0 flex-1 flex-col gap-1">
+              <Show
+                when={items().length > 0}
+                fallback={
+                  <Placeholder
+                    state={fetchMut.error() ? "error" : fetchMut.loading() ? "loading" : "empty"}
+                    align="left"
+                    class="py-3"
+                    title={fetchMut.error() ? t().loadRecordsFailed : fetchMut.loading() ? t().loadingRecords : t().noRecordsGroup}
+                    description={fetchMut.error()?.message}
+                  />
+                }
+              >
+                <For each={items()}>
+                  {(record) => (
+                    <DetailPanel.Action
+                      title={renderRecordLine(record)}
+                      leading={<i class="ti ti-row-insert-bottom" aria-hidden="true" />}
+                      trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                      onClick={() => props.onOpenRecord(record)}
+                    />
+                  )}
+                </For>
+              </Show>
+              <div ref={sentinel} class="h-1" />
+              <Show when={fetchMut.loading() && items().length > 0}>
+                <div class="py-2 text-center text-xs text-dimmed">{t().loadingMore}</div>
+              </Show>
+            </div>
           </div>
-        </section>
-      </div>
-    </div>
+        </DetailPanel.Section>
+      </DetailPanel.Body>
+    </DetailPanel>
   );
 
   function renderRecordValue(record: GridRecord, field: Field): string {

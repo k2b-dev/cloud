@@ -1,6 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
+  DetailPanel,
   dialogCore,
   IconButton,
   Placeholder,
@@ -463,78 +464,73 @@ export function WorkflowRunDetailPanel(props: {
   };
 
   return (
-    <div class="flex h-full min-h-0 flex-col">
-      <header class="detail-header">
-        <div class="flex items-start gap-3">
-          <span class="app-accent-text inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--ui-surface-subtle)]">
-            <i class="ti ti-activity" />
+    <DetailPanel>
+      <DetailPanel.Header
+        icon="ti ti-activity"
+        title={t().workflowRun}
+        subtitle={run() ? formatDate(run()!.createdAt, locale()) : t().loading}
+        meta={
+          <span aria-live="polite" aria-atomic="true">
+            <Show when={run()}>
+              {(current) => (
+                <StatusBadge tone={workflowRunStatusTone(current().status)} label={workflowRunStatusLabel(current().status, locale())} />
+              )}
+            </Show>
           </span>
-          <div class="min-w-0 flex-1">
-            <div class="flex min-w-0 items-center gap-2">
-              <h2 class="truncate text-sm font-semibold text-primary">{t().workflowRun}</h2>
-              <span aria-live="polite" aria-atomic="true">
-                <Show when={run()}>
-                  {(current) => (
-                    <StatusBadge
-                      tone={workflowRunStatusTone(current().status)}
-                      label={workflowRunStatusLabel(current().status, locale())}
-                    />
-                  )}
-                </Show>
-              </span>
-            </div>
-            <p class="mt-0.5 text-xs text-dimmed">{run() ? formatDate(run()!.createdAt, locale()) : t().loading}</p>
-          </div>
-          <Tooltip.Anchor content={t().refreshRunDetails}>
-            <IconButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => refresh()}
-              disabled={loadMut.loading()}
-              label={t().refreshRunDetails}
-            >
-              <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
-            </IconButton>
-          </Tooltip.Anchor>
-          <Show when={run() && canWrite()}>
-            <Tooltip.Anchor content={t().rerunWithInputs}>
+        }
+        actions={
+          <>
+            <Tooltip.Anchor content={t().refreshRunDetails}>
               <IconButton
                 variant="ghost"
                 size="sm"
                 type="button"
-                onClick={() => void runAgain()}
-                disabled={rerunMut.loading()}
-                label={t().runAgain}
+                onClick={() => refresh()}
+                disabled={loadMut.loading()}
+                label={t().refreshRunDetails}
               >
-                <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} />
+                <i class={loadMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} />
               </IconButton>
             </Tooltip.Anchor>
-          </Show>
-          <Show when={run() && !isTerminalWorkflowRunStatus(run()!.status) && canWrite()}>
-            <Tooltip.Anchor content={t().cancelWorkflowRun}>
-              <IconButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                class="text-red-600 dark:text-red-400"
-                onClick={() => void cancelRun()}
-                disabled={cancelMut.loading()}
-                label={t().cancelWorkflowRun}
-              >
-                <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} />
+            <Show when={run() && canWrite()}>
+              <Tooltip.Anchor content={t().rerunWithInputs}>
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => void runAgain()}
+                  disabled={rerunMut.loading()}
+                  label={t().runAgain}
+                >
+                  <i class={rerunMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-repeat"} />
+                </IconButton>
+              </Tooltip.Anchor>
+            </Show>
+            <Show when={run() && !isTerminalWorkflowRunStatus(run()!.status) && canWrite()}>
+              <Tooltip.Anchor content={t().cancelWorkflowRun}>
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  class="text-red-600 dark:text-red-400"
+                  onClick={() => void cancelRun()}
+                  disabled={cancelMut.loading()}
+                  label={t().cancelWorkflowRun}
+                >
+                  <i class={cancelMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-player-stop"} />
+                </IconButton>
+              </Tooltip.Anchor>
+            </Show>
+            <Tooltip.Anchor content={t().closeRunDetails}>
+              <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
+                <i class="ti ti-x" />
               </IconButton>
             </Tooltip.Anchor>
-          </Show>
-          <Tooltip.Anchor content={t().closeRunDetails}>
-            <IconButton variant="ghost" size="sm" type="button" onClick={props.onClose} label={t().closeRunDetails}>
-              <i class="ti ti-x" />
-            </IconButton>
-          </Tooltip.Anchor>
-        </div>
-      </header>
+          </>
+        }
+      />
 
-      <div class="detail-stack" data-scroll-preserve={`grids-workflow-run-detail-${props.runId}`}>
+      <DetailPanel.Body scrollPreserveKey={`grids-workflow-run-detail-${props.runId}`}>
         <Show when={!run()}>
           <Show when={loadMut.error()} fallback={<Placeholder state="loading" surface="paper" title={t().loadingRun} />}>
             {(error) => (
@@ -596,7 +592,7 @@ export function WorkflowRunDetailPanel(props: {
             </>
           )}
         </Show>
-      </div>
-    </div>
+      </DetailPanel.Body>
+    </DetailPanel>
   );
 }

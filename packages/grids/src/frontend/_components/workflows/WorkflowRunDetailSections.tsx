@@ -1,4 +1,4 @@
-import { Button, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
@@ -37,8 +37,7 @@ export function WorkflowRunExecutionSection(props: {
     props.provenance?.serviceAccountLabel ??
     (props.run.actorUserId ? t().user : props.run.serviceAccountId ? t().serviceAccount : t().system);
   return (
-    <section class="detail-section">
-      <h3 class="detail-section-label">{t().execution}</h3>
+    <DetailPanel.Summary title={t().execution}>
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-xs">
         <dt class="text-dimmed">{t().channel}</dt>
         <dd class="text-primary">{workflowChannelLabel(props.run.channel, locale())}</dd>
@@ -87,7 +86,7 @@ export function WorkflowRunExecutionSection(props: {
           </NoticeCard>
         )}
       </Show>
-    </section>
+    </DetailPanel.Summary>
   );
 }
 
@@ -95,8 +94,7 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <section class="detail-section">
-      <h3 class="detail-section-label">{t().input}</h3>
+    <DetailPanel.Section title={t().input} icon="ti ti-forms">
       <dl class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-2 text-xs">
         <For each={props.inputs} fallback={<span class="text-dimmed">{t().noInputs}</span>}>
           {(input) => (
@@ -109,7 +107,7 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
           )}
         </For>
       </dl>
-    </section>
+    </DetailPanel.Section>
   );
 }
 
@@ -117,8 +115,7 @@ export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[];
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <section class="detail-section">
-      <h3 class="detail-section-label">{t().steps}</h3>
+    <DetailPanel.Section title={t().steps} icon="ti ti-list-check">
       <div class="flex flex-col gap-2">
         <For
           each={props.steps}
@@ -164,7 +161,7 @@ export function WorkflowRunStepsSection(props: { steps: PublicWorkflowStepRun[];
           <p class="text-xs text-dimmed">{t().stepsTruncated}</p>
         </Show>
       </div>
-    </section>
+    </DetailPanel.Section>
   );
 }
 
@@ -181,16 +178,18 @@ export function WorkflowRunDocumentsSection(props: {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <section class="detail-section">
-      <div class="flex items-center justify-between gap-2">
-        <h3 class="detail-section-label mb-0">{t().generatedDocuments}</h3>
+    <DetailPanel.Section
+      title={t().generatedDocuments}
+      icon="ti ti-files"
+      actions={
         <Show when={props.documents.total > 0}>
           <Button variant="ghost" size="sm" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
             <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {t().all}
           </Button>
         </Show>
-      </div>
-      <div class="mt-3 flex flex-col gap-2">
+      }
+    >
+      <div class="flex flex-col gap-2">
         <For
           each={props.documents.items}
           fallback={<Placeholder align="left" class="py-3" description={<>{t().noGeneratedDocuments}</>} />}
@@ -234,6 +233,6 @@ export function WorkflowRunDocumentsSection(props: {
         </Show>
         <Show when={props.loadMoreError}>{(error) => <p class="text-xs text-red-600 dark:text-red-400">{error()}</p>}</Show>
       </div>
-    </section>
+    </DetailPanel.Section>
   );
 }
