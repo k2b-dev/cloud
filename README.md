@@ -31,37 +31,13 @@ Cloud bundles a set of apps that cover the common operational needs of an organi
 
 ## Build your own app
 
-The whole platform is structured around custom apps. The starter repo **[github.com/ValentinKolb/cloud-template](https://github.com/ValentinKolb/cloud-template)** has everything to run the platform plus your own app side-by-side: a single `docker compose up` pulls the prebuilt platform images from ghcr and builds your custom app locally. Your app depends on `@k2b/cloud` from npm — no monorepo, no workspace, no platform code in your repo.
+Build an independent application with `@k2b/cloud` from npm. Your application
+owns its repository and image and connects to the shared Cloud deployment.
 
-```bash
-git clone https://github.com/ValentinKolb/cloud-template my-cloud
-cd my-cloud
-cp .env.example .env
-docker compose up -d
-```
-
-The template ships with a working reference app (`expeditions`) you can edit, fork, or replace — it exercises every platform primitive (tenancy, permissions, admin pages, dashboard widget, transactional email, structured logging) in one small app. Its README is the full app-authoring walkthrough.
-
-```ts
-// src/config.ts in cloud-template
-import { defineApp } from "@k2b/cloud";
-
-export const app = defineApp({
-  id: "my-app",
-  name: "My App",
-  icon: "ti ti-rocket",
-  basePath: "/app/my-app",
-  baseUrl: "http://app-my-app:3000",
-  nav: { href: "/app/my-app", section: "more" },
-  routes: ["/api/my-app", "/app/my-app", "/admin/my-app", "/public/my-app"],
-});
-
-export const { ssr, plugin } = app;
-```
-
-Cloud applications use Bun and the published TypeScript package so
-registration, identity, services, and UI stay on the supported public
-contract.
+Follow [Create the first application](docs-site/docs/en/build/getting-started.md)
+for the package setup, application declaration, and first verified endpoint.
+Then use [Standalone development](docs-site/docs/en/operations/standalone-development.md)
+to connect it to the gateway and shared services.
 
 ## How it works
 

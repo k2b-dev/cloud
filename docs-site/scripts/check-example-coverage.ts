@@ -1,13 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-const importPattern = /(?:from\s+|import\s*\()\s*["'](@(?:valentinkolb|k2b)\/[^"']+)["']/g;
+const importPattern = /(?:from\s+|import\s*\()\s*["'](@k2b\/[^"']+)["']/g;
 
 export const packageSpecifiers = (source: string): Set<string> => new Set([...source.matchAll(importPattern)].map((match) => match[1]));
-
-// Compile fixtures use the workspace package until its npm scope is migrated.
-export const documentedFixtureSource = (source: string): string =>
-  source.replaceAll(/@k2b\/cloud(?=[/"'])/g, "@k2b/cloud");
 
 export type RecipeFixture = {
   page: string;
@@ -141,7 +137,7 @@ if (import.meta.main) {
   const fixtureSources = new Map<string, string>();
   const covered = new Set<string>();
   for (const path of examples) {
-    const source = documentedFixtureSource(await Bun.file(path).text());
+    const source = await Bun.file(path).text();
     fixtureSources.set(relative(examplesRoot, path).replaceAll(sep, "/"), source);
     for (const specifier of packageSpecifiers(source)) {
       covered.add(specifier);

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { documentedFixtureSource, missingExampleImports, packageSpecifiers, type RecipeFixture, recipeFixtureErrors } from "./check-example-coverage";
+import { missingExampleImports, packageSpecifiers, type RecipeFixture, recipeFixtureErrors } from "./check-example-coverage";
 
 test("extracts static and dynamic package imports", () => {
   expect(
@@ -61,14 +61,4 @@ test("requires canonical recipe pages and compile fixtures", () => {
       new Map(),
     ),
   ).toEqual(["server/http.md: compile fixture does not exist: server-api.ts", "identity/authorization.md: recipe page does not exist"]);
-});
-
-// Scope migration must preserve subpaths without rewriting unrelated workspace names.
-test("compares current compile fixtures with the migrated documentation scope", () => {
-  expect(documentedFixtureSource('import { defineApp } from "@k2b/cloud";')).toBe(
-    'import { defineApp } from "@k2b/cloud";',
-  );
-  expect(documentedFixtureSource('import("@k2b/cloud/server")')).toBe('import("@k2b/cloud/server")');
-  expect(documentedFixtureSource('import("@k2b/cloud-app-grids")')).toBe('import("@k2b/cloud-app-grids")');
-  expect(documentedFixtureSource('import("@k2b/cloud/server")')).toBe('import("@k2b/cloud/server")');
 });

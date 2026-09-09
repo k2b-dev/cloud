@@ -78,9 +78,9 @@ A standard app declares four prefixes (`/api/<id>`, `/app/<id>`, `/admin/<id>`, 
 
 ## Documentation
 
-Full walkthroughs, the per-app anatomy, deployment templates, and a reference app:
+Application setup, public contracts, and deployment guidance:
 
-- **[github.com/ValentinKolb/cloud-template](https://github.com/ValentinKolb/cloud-template)** — starter repo with a working reference app + the complete app-authoring guide
+- **[Create the first application](https://github.com/k2b-dev/cloud/blob/main/docs-site/docs/en/build/getting-started.md)** — standalone project setup and a verified API endpoint
 - **[github.com/k2b-dev/cloud](https://github.com/k2b-dev/cloud)** — the platform monorepo (gateway, core, all platform apps)
 
 ## License

@@ -256,10 +256,9 @@ not replace recovery tests for each application's domain work.
 The repository is now `k2b-dev/cloud`. Update an existing checkout with
 `git remote set-url origin https://github.com/k2b-dev/cloud.git`.
 
-New application releases use `@k2b/cloud`; replace the former
-`@valentinkolb/cloud` dependency and its import prefixes together. The old
-npm package remains available for existing applications. `@k2b/ui` keeps its
-package name and independent release cycle.
+Application releases use `@k2b/cloud`. When migrating an existing application,
+update its package dependency and all Cloud import prefixes together.
+`@k2b/ui` has its own package and independent release cycle.
 
 Cloud-owned production images use `ghcr.io/k2b-dev/cloud-*`. Deploy one
 complete immutable release tag with `CLOUD_IMAGE_TAG`; retain the previous

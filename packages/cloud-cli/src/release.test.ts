@@ -61,7 +61,7 @@ describe("Cloud CLI releases", () => {
     expect(COSIGN_CERTIFICATE_IDENTITY_REGEXP).toContain("refs/tags/cli-v");
     const identity = new RegExp(COSIGN_CERTIFICATE_IDENTITY_REGEXP);
     expect(identity.test("https://github.com/k2b-dev/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(true);
-    expect(identity.test("https://github.com/ValentinKolb/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
+    expect(identity.test("https://github.com/other-owner/cloud/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
     expect(identity.test("https://github.com/k2b-dev/other/.github/workflows/cli.yml@refs/tags/cli-v0.1.0")).toBe(false);
   });
 
