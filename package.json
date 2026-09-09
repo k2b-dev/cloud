@@ -39,7 +39,7 @@
     "catalog": {
       "@firecrawl/anydoc": "0.1.9",
       "@k2b/ssr": "0.12.0",
-      "@k2b/stdlib": "0.21.1",
+      "@k2b/stdlib": "0.22.0",
       "@k2b/sync": "6.4.0",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
