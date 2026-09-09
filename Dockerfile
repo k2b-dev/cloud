@@ -23,6 +23,7 @@ COPY packages/contacts/package.json      packages/contacts/
 COPY packages/core/package.json          packages/core/
 COPY packages/dashboard/package.json     packages/dashboard/
 COPY packages/faq/package.json           packages/faq/
+COPY packages/kit/package.json           packages/kit/
 COPY packages/files/package.json         packages/files/
 COPY packages/grids/package.json         packages/grids/
 COPY packages/gateway/package.json       packages/gateway/

@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
 
           # Single source of truth for which apps produce a docker image.
-          ALL='["gateway","core","accounts","api-docs","assistant","capabilities","contacts","dashboard","faq","files","gateway-ops","grids","ipa-hosts","mail","notebooks","oauth","proxy-auth","quotes","spaces","tools","venue","weather"]'
+          ALL='["gateway","core","accounts","api-docs","assistant","capabilities","contacts","dashboard","faq","files","gateway-ops","grids","ipa-hosts","kit","mail","notebooks","oauth","proxy-auth","quotes","spaces","tools","venue","weather"]'
 
           if [[ "$REF" == refs/tags/cloud-*-v* ]]; then
             # Tag form: cloud-<image>-v<version>. Strip prefix + version to

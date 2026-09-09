@@ -11,11 +11,7 @@ Use `MarkdownEditor` when the same surface also edits Markdown. Use the editor's
 ## Import
 
 ```tsx
-import {
-  MarkdownEditor,
-  MarkdownView,
-  renderSafeMarkdown,
-} from "@k2b/ui";
+import { MarkdownEditor, MarkdownView, renderSafeMarkdown } from "@k2b/ui";
 ```
 
 ## Render Markdown
@@ -23,7 +19,7 @@ import {
 Pass untrusted Markdown directly:
 
 ```tsx
-<MarkdownView markdown={markdownSource} />;
+<MarkdownView markdown={markdownSource} />
 ```
 
 Raw HTML and unsafe URL protocols are escaped. If an application already has
@@ -33,16 +29,24 @@ sanitized, trusted HTML, cross the boundary explicitly with
 Use `renderSafeMarkdown(markdownSource)` only when a non-component boundary
 needs the same escaped HTML output. `MarkdownView` remains the normal UI API.
 
+### Control resource loading and navigation
+
+For isolated or offline content, set `allowImages={false}` to render image alt
+text without requesting the image resource. Images remain enabled by default.
+An optional `linkProtocols` allowlist contains protocol names including the
+colon, such as `["https:", "http:", "mailto:"]`; relative links are checked
+against HTTPS. `linkTarget="_blank"` adds `rel="noopener noreferrer"`.
+These options also work with `renderSafeMarkdown(source, options)`. They apply
+to Markdown rendering only; `trustedHtml` already crosses an explicit trust
+boundary and bypasses the renderer.
+
 ### Highlight known inline tokens
 
 Pass exact `inlineTokens` when an authoring preview needs to distinguish known
 variables or placeholders from ordinary prose:
 
 ```tsx
-<MarkdownView
-  markdown="Hello @auth.name"
-  inlineTokens={["@auth.name"]}
-/>
+<MarkdownView markdown="Hello @auth.name" inlineTokens={["@auth.name"]} />
 ```
 
 The safe renderer decorates matching standalone text tokens while parsing the
@@ -90,5 +94,5 @@ const [source, setSource] = createSignal("# Release notes");
   <section aria-label="Release notes preview">
     <MarkdownView markdown={source()} />
   </section>
-</div>
+</div>;
 ```

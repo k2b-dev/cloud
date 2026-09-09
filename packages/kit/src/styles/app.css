@@ -1,0 +1,305 @@
+/* Scoped scan: only this app's own .ts/.tsx. Cloud-lib classes (UI components,
+   layout primitives, etc.) come in via global.css. Apps must NEVER scan each
+   other's source. */
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../**/*.{ts,tsx}";
+@custom-variant dark (&:where(.dark, .dark *));
+
+.kit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--k2b-border);
+}
+.kit-flow {
+  display: flex;
+  min-width: 0;
+}
+.kit-flow-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.kit-flow-column {
+  flex-direction: column;
+}
+.kit-gap-sm {
+  gap: 0.5rem;
+}
+.kit-gap-md {
+  gap: 1rem;
+}
+.kit-gap-lg {
+  gap: 1.5rem;
+}
+.kit-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.kit-preview {
+  min-width: 0;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.kit-use-content {
+  max-width: 75rem;
+  margin: auto;
+}
+.kit-console {
+  flex-shrink: 0;
+  min-height: 8rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+.kit-console-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.kit-console-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; margin-left: auto; }
+.kit-console-header h2 { flex-shrink: 0; }
+.kit-console-level, .kit-console-time, .kit-console-line[data-level="system"] { color: var(--k2b-text-muted); }
+.kit-console-line[data-level="error"], .kit-console-line[data-level="error"] .kit-console-level { color: var(--k2b-danger-text); }
+.kit-console-line[data-level="warn"], .kit-console-line[data-level="warn"] .kit-console-level { color: var(--k2b-warning-text); }
+.kit-console pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  max-height: 15rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+.kit-error {
+  padding: 1rem;
+  color: var(--k2b-danger-text);
+  overflow-wrap: anywhere;
+}
+.k2b-ui .kit-overview-workspace {
+  border-color: transparent;
+  border-radius: 0;
+  background: var(--k2b-surface);
+  box-shadow: none;
+}
+.k2b-ui .kit-overview-main {
+  gap: clamp(2rem, 4vw, 3.5rem);
+  padding: clamp(1rem, 3vw, 2.5rem);
+  overflow-y: auto;
+  background: var(--k2b-surface);
+}
+.kit-overview-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+.kit-overview-heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+.kit-overview-heading h2 {
+  color: var(--k2b-text);
+  font-size: 1rem;
+  font-weight: 650;
+}
+.kit-overview-heading p {
+  margin-top: 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.kit-overview-apps {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.kit-overview-apps > :is(a, button) {
+  min-width: 0;
+  max-width: min(100%, 20rem);
+}
+
+/* Workbench: the script owns its content, the application owns the shell. */
+.kit-main {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  overflow-y: auto;
+}
+.kit-main > .kit-toolbar {
+  padding: 1.5rem 2rem;
+  border: 0;
+}
+.kit-use-content {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.kit-use .kit-preview {
+  flex: 1;
+  padding: 0 2rem 1.5rem;
+}
+.kit-run-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 2rem;
+}
+.kit-runtime-root {
+  container-type: inline-size;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.kit-node {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kit-node-workbench {
+  flex: 1;
+  display: flex;
+}
+.kit-runtime-workbench {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 2rem;
+}
+.kit-runtime-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-width: 0;
+  padding: 1.25rem;
+  background: var(--k2b-surface-muted);
+  border-radius: 0.875rem;
+  align-self: start;
+}
+.kit-runtime-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2rem;
+}
+.kit-runtime-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1.5rem;
+  flex: 1;
+}
+.kit-runtime-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+}
+.kit-status {
+  font-size: 0.875rem;
+  color: var(--k2b-text-muted);
+}
+.kit-status[data-state="error"] {
+  color: var(--k2b-danger-text);
+}
+.kit-file-picker {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+.kit-file-picker > i {
+  font-size: 1.75rem;
+  color: var(--k2b-action);
+}
+.kit-file-info {
+  min-width: 0;
+}
+.kit-file-info strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.kit-file-info p {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  margin-top: 0.375rem;
+}
+.kit-node-table {
+  overflow-x: auto;
+}
+.kit-edit .kit-preview {
+  background: color-mix(in srgb, var(--k2b-surface-muted) 50%, var(--k2b-surface));
+  border-radius: var(--k2b-radius-surface);
+}
+@container (max-width: 700px) {
+  .kit-runtime-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 1.5rem;
+  }
+  .kit-runtime-controls {
+    padding: 1rem;
+  }
+}
+@media (max-width: 700px) {
+  .kit-main > .kit-toolbar {
+    padding: 1rem;
+  }
+  .kit-use .kit-preview {
+    padding: 0 1rem 1rem;
+  }
+}
+
+
+
+.kit-launch { flex: 1; min-height: 18rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; color: var(--k2b-text-muted); }
+.k2b-ui .kit-preview .kit-launch .kit-launch-button { width: 5rem; height: 5rem; padding: 0; border-radius: 50%; font-size: 3rem; background: transparent; color: var(--k2b-success-500); transition: color 150ms ease; }
+.kit-launch-button .k2b-button__label { display: flex; align-items: center; justify-content: center; }
+
+.k2b-ui .kit-preview .kit-launch .kit-launch-button:not(:disabled):hover { background: transparent; color: var(--k2b-success-600); }
+
+.k2b-ui .k2b-settings.kit-settings-modal { height: 86vh; min-height: 0; overflow: hidden; }
+
+.kit-editor-panes { flex: 1; min-height: 30rem; width: 100%; }
+.kit-code { display: flex; flex-direction: column; height: 100%; min-height: 0; width: 100%; }
+
+.kit-code .hl-keyword { color: var(--k2b-code-keyword); }
+.kit-code .hl-string { color: var(--k2b-code-string); }
+.kit-code .hl-comment { color: var(--k2b-code-comment); }
+.kit-code .hl-number { color: var(--k2b-code-number); }
+.kit-code .hl-operator { color: var(--k2b-code-punctuation); }
+
+.kit-editor-area { display: flex; flex: 1; min-height: 0; min-width: 0; padding: .5rem; }
+.kit-edit .kit-preview { min-height: 100%; }
+
+
+.kit-editor-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.kit-editor-mobile-tabs { display: none; }
+.kit-validation { padding: .5rem; color: var(--k2b-danger-text); font-size: .875rem; white-space: pre-wrap; }
+.kit-preview-stale { color: var(--k2b-text-muted); font-size: .875rem; }
+@media (max-width: 700px) {
+  .kit-editor-mobile-tabs { display: flex; flex-shrink: 0; }
+  .kit-editor-mobile-tabs [aria-pressed="true"] { background: var(--k2b-surface-muted); }
+  .kit-editor-workspace > .kit-editor-panes > .k2b-panes__split > .k2b-panes__split-child { flex: 1 1 0 !important; }
+  .kit-editor-workspace > .kit-editor-panes > .k2b-panes__split > .k2b-panes__separator { display: none; }
+  .kit-editor-workspace[data-mobile="code"] > .kit-editor-panes > .k2b-panes__split > .k2b-panes__split-child:last-child,
+  .kit-editor-workspace[data-mobile="preview"] > .kit-editor-panes > .k2b-panes__split > .k2b-panes__split-child:first-child { display: none; }
+}

@@ -28,7 +28,8 @@
     "@valentinkolb/cloud-app-spaces": "workspace:*",
     "@valentinkolb/cloud-app-tools": "workspace:*",
     "@valentinkolb/cloud-app-venue": "workspace:*",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "@valentinkolb/cloud-app-kit": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

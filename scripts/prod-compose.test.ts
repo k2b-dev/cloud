@@ -28,7 +28,8 @@ describe("production Compose release set", () => {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.startsWith("image: ghcr.io/valentinkolb/cloud-"));
-    expect(images).toHaveLength(22);
+    expect(images).toHaveLength(23);
+    expect(images.some((line) => line.includes("/cloud-app-kit:"))).toBeTrue();
     expect(images.every((line) => line.endsWith(":${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}"))).toBeTrue();
     expect(images.some((line) => /:(?:latest|main)$/.test(line))).toBeFalse();
   });

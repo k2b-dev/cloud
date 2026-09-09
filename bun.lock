@@ -183,6 +183,7 @@
         "@valentinkolb/cloud-app-faq": "workspace:*",
         "@valentinkolb/cloud-app-grids": "workspace:*",
         "@valentinkolb/cloud-app-ipa-hosts": "workspace:*",
+        "@valentinkolb/cloud-app-kit": "workspace:*",
         "@valentinkolb/cloud-app-mail": "workspace:*",
         "@valentinkolb/cloud-app-notebooks": "workspace:*",
         "@valentinkolb/cloud-app-oauth": "workspace:*",
@@ -370,6 +371,28 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/kit": {
+      "name": "@valentinkolb/cloud-app-kit",
+      "version": "0.0.0",
+      "dependencies": {
+        "@k2b/ssr": "catalog:",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "@valentinkolb/cloud": "workspace:*",
+        "acorn": "8.18.0",
+        "hono": "catalog:",
+        "hono-openapi": "catalog:",
+        "papaparse": "5.7.0",
+        "solid-js": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "@types/papaparse": "5.5.2",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1267,6 +1290,8 @@
 
     "@types/offscreencanvas": ["@types/offscreencanvas@2019.7.3", "", {}, "sha512-ieXiYmgSRXUDeOntE1InxjWyvEelZGP63M+cGuquuRLuIKKT1osnkXjxev9B7d1nXSug5vpunx+gNlbVxMlC9A=="],
 
+    "@types/papaparse": ["@types/papaparse@5.5.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA=="],
+
     "@types/sanitize-html": ["@types/sanitize-html@2.16.1", "", { "dependencies": { "htmlparser2": "^10.1" } }, "sha512-n9wjs8bCOTyN/ynwD8s/nTcTreIHB1vf31vhLMGqUPNHaweKC4/fAl4Dj+hUlCTKYgm4P3k83fmiFfzkZ6sgMA=="],
 
     "@types/sax": ["@types/sax@1.2.7", "", { "dependencies": { "@types/node": "*" } }, "sha512-rO73L89PJxeYM3s3pPPjiPgVVcymqU490g0YO5n5By0k2Erzj6tay/4lr1CHAAU4JyOWd1rpQ8bCf6cZfHU96A=="],
@@ -1318,6 +1343,8 @@
     "@valentinkolb/cloud-app-grids": ["@valentinkolb/cloud-app-grids@workspace:packages/grids"],
 
     "@valentinkolb/cloud-app-ipa-hosts": ["@valentinkolb/cloud-app-ipa-hosts@workspace:packages/ipa-hosts"],
+
+    "@valentinkolb/cloud-app-kit": ["@valentinkolb/cloud-app-kit@workspace:packages/kit"],
 
     "@valentinkolb/cloud-app-mail": ["@valentinkolb/cloud-app-mail@workspace:packages/mail"],
 
@@ -2152,6 +2179,8 @@
     "package-manager-detector": ["package-manager-detector@1.8.0", "", {}, "sha512-yQA4H19AmPEoMUeavPMDIe1higySl/gH/yaQrkT/s07Qp+7pp2hYz30N3z2l5BkjVkF9Ow6o0wjJamm2y7Sn0A=="],
 
     "pako": ["pako@1.0.11", "", {}, "sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw=="],
+
+    "papaparse": ["papaparse@5.7.0", "", {}, "sha512-qBGxg/7Q3Kl9Wfhrz2Z74UnvnHTXLNG6jmKJFeBvP2+y4lV7So+7SR62+Zd47JvdrCkX+nDcnr0ObPzek/+6RA=="],
 
     "param-case": ["param-case@3.0.4", "", { "dependencies": { "dot-case": "^3.0.4", "tslib": "^2.0.3" } }, "sha512-RXlj7zCYokReqWpOPH9oYivUzLYZ5vAPIfEmCTNViosC78F8F0H9y7T7gG2M39ymgutxF5gcFEsyZQSph9Bp3A=="],
 

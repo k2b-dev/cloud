@@ -1,6 +1,6 @@
 import { marked, Renderer, type Tokens } from "marked";
 
-type CommonProps = {
+type CommonProps = MarkdownRenderOptions & {
   /** Optional additional CSS classes */
   class?: string;
   /**
@@ -27,7 +27,14 @@ export type MarkdownViewProps = CommonProps &
       }
   );
 
-export type MarkdownRenderOptions = { inlineTokens?: readonly string[] };
+export type MarkdownRenderOptions = {
+  inlineTokens?: readonly string[];
+  /** Whether to render images. False renders alt text without resource requests. Defaults to true. */
+  allowImages?: boolean;
+  /** Optional protocol allowlist, including trailing colons. Relative URLs resolve as HTTPS. */
+  linkProtocols?: readonly string[];
+  linkTarget?: "_blank";
+};
 
 const escapeHtml = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
@@ -59,12 +66,20 @@ const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
     const body = this.parser.parseInline(tokens);
     const url = safeUrl(href);
     if (!url) return body;
+    if (options.linkProtocols) {
+      try {
+        if (!options.linkProtocols.includes(new URL(url, "https://markdown.invalid/").protocol)) return body;
+      } catch {
+        return body;
+      }
+    }
     const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<a href="${escapeHtml(url)}"${titleAttribute}>${body}</a>`;
+    const target = options.linkTarget === "_blank" ? ' target="_blank" rel="noopener noreferrer"' : "";
+    return `<a href="${escapeHtml(url)}"${titleAttribute}${target}>${body}</a>`;
   };
   renderer.image = ({ href, title, text }: Tokens.Image) => {
     const url = safeUrl(href);
-    if (!url) return escapeHtml(text);
+    if (!url || options.allowImages === false) return escapeHtml(text);
     const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
     return `<img src="${escapeHtml(url)}" alt="${escapeHtml(text)}"${titleAttribute}>`;
   };
@@ -102,7 +117,10 @@ const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
 };
 
 export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOptions = {}): string =>
-  marked.parse(markdown, { async: false, renderer: createSafeRenderer(options) }) as string;
+  marked.parse(markdown, {
+    async: false,
+    renderer: createSafeRenderer(options),
+  }) as string;
 
 /**
  * Markdown View Component (SSR)
@@ -125,7 +143,14 @@ export const renderSafeMarkdown = (markdown: string, options: MarkdownRenderOpti
  */
 export default function MarkdownView(props: MarkdownViewProps) {
   const html = () =>
-    props.markdown !== undefined ? renderSafeMarkdown(props.markdown, { inlineTokens: props.inlineTokens }) : props.trustedHtml;
+    props.markdown !== undefined
+      ? renderSafeMarkdown(props.markdown, {
+          inlineTokens: props.inlineTokens,
+          allowImages: props.allowImages,
+          linkProtocols: props.linkProtocols,
+          linkTarget: props.linkTarget,
+        })
+      : props.trustedHtml;
   return (
     <div
       class={`k2b-content-markdown ${props.class ?? ""}`}

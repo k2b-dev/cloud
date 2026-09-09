@@ -34,7 +34,8 @@
       "packages/ui",
       "packages/venue",
       "packages/weather",
-      "fixtures/ui-ssr"
+      "fixtures/ui-ssr",
+      "packages/kit"
     ],
     "catalog": {
       "@firecrawl/anydoc": "0.1.9",

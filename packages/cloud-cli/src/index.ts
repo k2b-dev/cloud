@@ -22,6 +22,7 @@ import accountsCliModule from "@valentinkolb/cloud-app-accounts/cli";
 import apiDocsCliModule from "@valentinkolb/cloud-app-api-docs/cli";
 import assistantCliModule from "@valentinkolb/cloud-app-assistant/cli";
 import contactsCliModule from "@valentinkolb/cloud-app-contacts/cli";
+import kitCliModule from "@valentinkolb/cloud-app-kit/cli";
 import faqCliModule from "@valentinkolb/cloud-app-faq/cli";
 import gridsCliModule from "@valentinkolb/cloud-app-grids/cli";
 import ipaHostsCliModule from "@valentinkolb/cloud-app-ipa-hosts/cli";
@@ -117,6 +118,7 @@ const modules: CloudCliModule[] = [
   assistantCliModule,
   contactsCliModule,
   faqCliModule,
+  kitCliModule,
   gridsCliModule,
   ipaHostsCliModule,
   mailCliModule,
@@ -142,6 +144,7 @@ const germanModuleSummaries = new Map<string, string>([
   ["assistant", "Mit Assistant arbeiten."],
   ["contacts", "Kontakte verwalten."],
   ["faq", "FAQ-Einträge verwalten."],
+  ["kit", "Lokale Browser-Werkzeuge erstellen und teilen."],
   ["grids", "Grids-Daten und -Konfiguration verwalten."],
   ["ipa-hosts", "FreeIPA-Hosts verwalten."],
   ["mail", "Mail verwalten."],
