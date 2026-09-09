@@ -5,6 +5,7 @@ import { useAccountsMessages } from "./messages";
 export type AccountsNavActiveKey =
   | "dashboard"
   | "users"
+  | "duplicate-emails"
   | "groups"
   | "requests"
   | "audit"
@@ -56,6 +57,12 @@ export default function AccountsNavSidebar(props: Props) {
       badge: props.pendingRequests > 0 ? String(props.pendingRequests) : undefined,
     },
     { href: "/app/accounts/users", icon: "ti ti-users", label: messages().users, active: props.active === "users" },
+    {
+      href: "/app/accounts/duplicate-emails",
+      icon: "ti ti-copy",
+      label: messages().duplicateEmails,
+      active: props.active === "duplicate-emails",
+    },
     {
       href: "/app/accounts/service-accounts",
       icon: "ti ti-user-key",

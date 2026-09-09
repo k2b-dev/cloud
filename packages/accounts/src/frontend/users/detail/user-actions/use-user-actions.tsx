@@ -8,6 +8,7 @@ import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
 import { showAccountActionNotice } from "../../../action-notice";
 import { useAccountsMessages } from "../../../messages";
+import { createDeleteUserAction } from "../../delete-user";
 import { openCredentialDialog } from "./credential-dialog";
 
 type UserActionsProps = {
@@ -149,24 +150,7 @@ export function createUserActions(props: UserActionsProps) {
     onError: (err) => prompts.error(err.message),
   });
 
-  const destroyMutation = mutations.create<{ message: string }, void>({
-    mutation: async () => {
-      const res = await apiClient.users[":id"].$delete({
-        param: { id: props.user.id },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message ?? messages().deleteUserFailed);
-      }
-      await notice("user.delete");
-      return data;
-    },
-    onSuccess: () => {
-      toast.success(messages().userDeleted);
-      navigateTo(props.listHref);
-    },
-    onError: (err) => prompts.error(err.message),
-  });
+  const deleteUser = createDeleteUserAction({ user: props.user, onDeleted: () => navigateTo(props.listHref) });
 
   const setExpiryMutation = mutations.create<{ message: string }, string | null>({
     mutation: async (expiryDate) => {
@@ -569,22 +553,6 @@ export function createUserActions(props: UserActionsProps) {
     }
   };
 
-  const handleDestroy = async () => {
-    const isIpaUser = props.user.provider === "ipa";
-
-    const confirmed = await prompts.confirm(messages().deleteUserExplanation({ freeIpa: isIpaUser }), {
-      title: messages().deleteUserQuestion({ uid: props.user.uid }),
-      icon: "ti ti-trash",
-      confirmText: messages().delete,
-      cancelText: messages().cancel,
-      variant: "danger",
-    });
-
-    if (confirmed) {
-      destroyMutation.mutate();
-    }
-  };
-
   const isIpaUser = props.user.provider === "ipa";
   const isLocalUser = props.user.provider === "local";
   const canMutateUser = !isIpaUser || props.freeIpaEnabled;
@@ -606,7 +574,7 @@ export function createUserActions(props: UserActionsProps) {
     handleCreateIpa,
     handleCreateLoginToken,
     handleChangeAvatar,
-    handleDestroy,
+    handleDestroy: deleteUser.run,
     handleEdit,
     handleMakeLocal,
     handleNotify,

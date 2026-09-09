@@ -14,6 +14,21 @@ Optionale Hinweise nach erfolgreichen Benutzer-, Gruppen- und Mitgliedschaftsän
 konfigurierst du unter **Registrierung & Anfragen**. Eine leere Vorlage zeigt nichts an.
 Die Hinweise richten sich an die ausführende Person; sie werden nicht an Nutzer versendet.
 
+## Doppelte E-Mail-Adressen bereinigen
+
+Öffne **Administration → Doppelte E-Mail-Adressen**, um Konten mit derselben Adresse zu
+vergleichen. Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende werden
+ignoriert. Der letzte Cloud-Web-Login wird je Konto angezeigt. Bei FreeIPA kommen
+der letzte Kerberos-Login und der Synchronisierungszeitpunkt dazu. Kerberos-Aktivität
+kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC angegeben.
+**Nicht erfasst** bedeutet nicht, dass das Konto nie benutzt wurde.
+
+Öffne ein Konto und prüfe seine Zugriffe, bevor du es löschst. Bei einem
+FreeIPA-Konto wird auch der Benutzer in FreeIPA gelöscht. Daten und Berechtigungen
+werden nicht auf das verbleibende Konto übertragen. Bestätige jede Löschung
+einzeln. Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst
+du nicht löschen.
+
 ## Personen und Gruppen verwalten {icon="user-cog"}
 
 :::reference

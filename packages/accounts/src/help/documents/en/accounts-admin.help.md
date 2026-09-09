@@ -14,6 +14,19 @@ Optional action-dependent follow-up notices are configured under **Registration 
 They appear after successful user, group and membership changes; an empty template adds nothing.
 Notices are instructions for the person making the change, not messages sent to users.
 
+## Review duplicate email addresses
+
+Open **Administration → Duplicate email addresses** to compare accounts sharing an address.
+Matching ignores letter case and surrounding spaces. The last Cloud web login is
+shown separately for each account; FreeIPA accounts also show the last Kerberos
+login and sync time. Kerberos activity can include use outside Cloud. Times are
+in UTC. **Not recorded** does not mean the account has never been used.
+
+Open an account to inspect its access before deleting it. Deleting a FreeIPA
+account also deletes the user in FreeIPA. Data and permissions are not transferred
+to the remaining account. Confirm each deletion separately. Resolved addresses
+disappear from the list; you cannot delete your own account.
+
 ## User and group management {icon="user-cog"}
 
 :::reference

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false 2>&1 | grep -v node_modules | (! grep -q 'error TS')",
+    "test:ssr": "bun test --isolate --preload ./test/solid-ssr-preload.ts ./src/frontend/duplicate-emails/page.test.tsx",
     "test:dom": "bun test --isolate --conditions=browser --preload ../ui/test/solid-dom-preload.ts ./test"
   },
   "dependencies": {

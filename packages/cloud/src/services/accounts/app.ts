@@ -33,6 +33,7 @@ import { isUniqueViolation } from "../postgres";
 import { providers } from "../providers";
 import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
+import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
 import * as groups from "./groups";
 import type { AccountsNotificationSender } from "./notification-sender";
@@ -295,6 +296,7 @@ const buildAccountRequestWhereClause = (config: {
 
 export const accountsAppService = {
   user: {
+    listDuplicateEmails,
     list: async (config: {
       pagination?: PageParams;
       filter?: { search?: string };

@@ -1,8 +1,9 @@
-import { ssr } from "../config";
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
+import { ssr } from "../config";
 import auditPage from "./audit/page";
 import deletedAccountsPage from "./deleted-accounts/page";
+import duplicateEmailsPage from "./duplicate-emails/page";
 import groupDetailPage from "./groups/detail/page";
 import groupsPage from "./groups/page";
 import notificationDetailPage from "./notifications/detail.page";
@@ -17,6 +18,7 @@ import usersPage from "./users/page";
 
 export default new Hono<AuthContext>()
   .get("/", auth.requireRole("user", ssr.access), ...landingPage)
+  .get("/duplicate-emails", auth.requireRole("admin", ssr.access), ...duplicateEmailsPage)
   .get("/users", auth.requireRole("admin", ssr.access), ...usersPage)
   .get("/users/new", auth.requireRole("admin", ssr.access), ...usersNewPage)
   .get("/users/:id", auth.requireRole("admin", ssr.access), ...userDetailPage)

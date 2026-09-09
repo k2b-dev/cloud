@@ -15,6 +15,19 @@ and service-account credentials. Users can understand their own access and
 management scope. Administrators and group managers use the same app to review
 and change the records they are allowed to manage.
 
+## Review duplicate email addresses
+
+Open **Administration → Duplicate email addresses** to compare accounts sharing an address.
+Matching ignores letter case and surrounding spaces. The last Cloud web login is
+shown separately for each account; FreeIPA accounts also show the last Kerberos
+login and sync time. Kerberos activity can include use outside Cloud. Times are
+in UTC. **Not recorded** does not mean the account has never been used.
+
+Open an account to inspect its access before deleting it. Deleting a FreeIPA
+account also deletes the user in FreeIPA. Data and permissions are not transferred
+to the remaining account. Confirm each deletion separately. Resolved addresses
+disappear from the list; you cannot delete your own account.
+
 ## Use Accounts
 
 Account types are **Guest**, **Login** (with a configurable label) and **FreeIPA**.

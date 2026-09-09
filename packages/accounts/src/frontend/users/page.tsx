@@ -1,9 +1,8 @@
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { ButtonLink, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import { accountCategoryLabel } from "@valentinkolb/cloud/contracts";
-import { readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
+import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
-import { accountsAppService as accountsService, coreSettings } from "@valentinkolb/cloud/services";
+import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import AccountAvatar from "@/frontend/AccountAvatar";
@@ -76,6 +75,9 @@ export default ssr<AuthContext>(async (c) => {
 
           <div class="flex flex-wrap items-center gap-2">
             <UsersFilters state={listState} />
+            <ButtonLink href="/app/accounts/duplicate-emails" variant="subtle" size="sm">
+              {t.duplicateEmails}
+            </ButtonLink>
             <div class="ml-auto">
               <CreateUserForm buttonClass="shrink-0" freeIpaEnabled={freeIpaEnabled} categoryPolicy={categoryPolicy} />
             </div>

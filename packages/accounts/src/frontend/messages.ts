@@ -6,6 +6,17 @@ export const accountsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      duplicateLastSync: "Last FreeIPA sync",
+      duplicateEmails: "Duplicate email addresses",
+      duplicateEmailsDescription: "Compare accounts sharing an email address before deleting an unused account.",
+      duplicateEmailsCount: ({ count }: { count: number }) => `${count} email addresses used by multiple accounts`,
+      duplicateEmailsEmpty: "No duplicate email addresses remain.",
+      duplicateLoginExplanation:
+        "Cloud web login is recorded for each account, including FreeIPA accounts. Kerberos login comes from the last FreeIPA sync and may include use outside Cloud. All times are shown in UTC.",
+      loginNotRecorded: "Not recorded",
+      deleteUserNoTransfer: "Data and permissions are not transferred to another account with the same email address.",
+      duplicateDeleteLabel: ({ uid }: { uid: string }) => `Delete account ${uid}`,
+      cannotDeleteSelf: "You cannot delete your own account.",
       pairAppDevice: "Pair sign-in app",
       start: "Start",
       accounts: "Accounts",
@@ -762,6 +773,17 @@ export const accountsMessages = i18n.define({
       reasonManualDelete: "Manual deletion",
     },
     de: {
+      duplicateLastSync: "Letzte FreeIPA-Synchronisierung",
+      duplicateEmails: "Doppelte E-Mail-Adressen",
+      duplicateEmailsDescription: "Vergleiche Konten mit derselben E-Mail-Adresse, bevor du ein ungenutztes Konto löschst.",
+      duplicateEmailsCount: ({ count }) => `${count} E-Mail-Adressen mit mehreren Konten`,
+      duplicateEmailsEmpty: "Es sind keine doppelten E-Mail-Adressen mehr vorhanden.",
+      duplicateLoginExplanation:
+        "Der Cloud-Web-Login wird für jedes Konto erfasst, auch für FreeIPA-Konten. Der Kerberos-Login stammt aus der letzten FreeIPA-Synchronisierung und kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC angegeben.",
+      loginNotRecorded: "Nicht erfasst",
+      deleteUserNoTransfer: "Daten und Berechtigungen werden nicht auf ein anderes Konto mit derselben E-Mail-Adresse übertragen.",
+      duplicateDeleteLabel: ({ uid }) => `Konto ${uid} löschen`,
+      cannotDeleteSelf: "Du kannst dein eigenes Konto nicht löschen.",
       pairAppDevice: "Anmelde-App koppeln",
       start: "Start",
       accounts: "Konten",
