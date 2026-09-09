@@ -19,11 +19,8 @@ materials.
   `@img/sharp-libvips-*`, are LGPL-3.0-or-later and are included transitively
   through file processing dependencies.
 
-## Work-in-Progress Packages
-
-- The `wip/invoices` package is not part of the released Cloud app set. It
-  depends on `@stackforge-eu/factur-x`, which is EUPL-1.2. Re-check this notice
-  before moving invoices into the release scope.
+- Grids uses `@stackforge-eu/factur-x`, which is EUPL-1.2, for its German
+  E-Invoice renderer.
 
 ## Dependency Licenses
 
