@@ -85,6 +85,7 @@ jobs:
       - name: Verify NATS account diagnostics
         env:
           NATS_DIAGNOSTICS_TEST: "1"
+          NATS_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
           NATS_ADMIN_SERVERS: ${{ env.SYNC_TEST_SERVERS }}
           NATS_ADMIN_NKEY_SEED_FILE: .local/nats/admin.seed
         run: bun test packages/gateway-ops/src/observability/nats/service.integration.test.ts
