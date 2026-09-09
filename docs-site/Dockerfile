@@ -65,7 +65,6 @@ COPY --from=build /workspace/docs-site/dist/agent-skills ./agent-skills
 COPY --from=build /workspace/docs-site/dist/assets ./assets
 COPY --from=build /workspace/docs-site/docs ./docs
 COPY --from=build /workspace/docs-site/apps-content ./apps-content
-COPY --from=build /workspace/docs-site/ui-content ./ui-content
 
 EXPOSE 3000
 CMD ["bun", "server.js"]
