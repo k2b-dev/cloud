@@ -34,7 +34,7 @@ async function _run(page) {
     await p.getByRole("button", { name: "Close", exact: true }).click();
     await p.waitForFunction(() => !history.state?.cloudLoginDialog);
     await p.getByRole("button", { name: "Menu", exact: true }).click();
-    await p.getByRole("menuitem", { name: "Appearance", exact: true }).click();
+    await p.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await p.getByRole("dialog").getByText("Dark", { exact: true }).click();
     await p.getByRole("button", { name: "Done", exact: true }).click();
     await p.waitForFunction(() => !history.state?.cloudLoginDialog);

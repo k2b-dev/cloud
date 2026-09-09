@@ -110,7 +110,9 @@ export function App(props: { preferences: Preferences }) {
           {
             label: t().manageAccounts,
             action: () => {
-              void openManageAccounts(auth, props.preferences);
+              void openManageAccounts(auth, props.preferences).then((add) => {
+                if (add) void showPairing();
+              });
             },
           },
           {
@@ -133,21 +135,9 @@ export function App(props: { preferences: Preferences }) {
         ]
       : []),
     {
-      label: t().addCloud,
+      label: t().settings,
       action: () => {
-        void showPairing();
-      },
-    },
-    {
-      label: t().language,
-      action: () => {
-        void openSettings(props.preferences, "language");
-      },
-    },
-    {
-      label: t().appearance,
-      action: () => {
-        void openSettings(props.preferences, "theme");
+        void openSettings(props.preferences);
       },
     },
     ...(!installation.installed()

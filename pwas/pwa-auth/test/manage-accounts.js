@@ -37,6 +37,8 @@ async function _run(page) {
 
     const issuer = "https://account-test.example";
     const deviceId = "22222222-2222-4222-8222-222222222222";
+    let pending = [];
+    const decisions = [];
     let revokes = 0;
     let logoFails = false;
     await p.route(issuer + "/**", async (route) => {
@@ -74,7 +76,12 @@ async function _run(page) {
       else if (route.request().postDataJSON()?.proof?.command?.operation === "revoke") {
         revokes++;
         body = { state: "revoked" };
-      } else body = { requests: [], pollAfterSeconds: 5 };
+      } else if (route.request().postDataJSON()?.proof?.command?.operation === "decide") {
+        const decision = route.request().postDataJSON().proof.command.decision;
+        decisions.push(decision);
+        pending = pending.filter((r) => r.requestId !== route.request().postDataJSON().proof.command.requestId);
+        body = { state: decision === "approve" ? "approved" : "denied" };
+      } else body = { requests: pending, pollAfterSeconds: 5 };
       await route.fulfill({ json: body });
     });
     await button("Add Cloud").click();
@@ -101,11 +108,52 @@ async function _run(page) {
     if (gap > 50 || gap < 0) throw new Error("Recovery note is not at the bottom: " + gap);
     await p.screenshot({ path: "output/playwright/pwa-paper-padding.png" });
     if (await button("Disconnect Cloud: Test Cloud").count()) throw new Error("Direct unlink remains");
+    for (const [index, action] of ["Deny", "Approve sign-in"].entries()) {
+      pending = [
+        {
+          requestId: `33333333-3333-4333-8333-33333333333${index}`,
+          challenge: "A".repeat(43),
+          comparison: "654321",
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 240000).toISOString(),
+        },
+      ];
+      if (index === 1) pending.push({ ...pending[0], requestId: "44444444-4444-4444-8444-444444444444", comparison: "777777" });
+      const dialog = p.getByRole("dialog");
+      await dialog.getByRole("heading", { name: "Test Cloud", exact: true }).waitFor();
+      const bottom = await dialog.evaluate((el) => innerHeight - el.getBoundingClientRect().bottom);
+      if (Math.abs(bottom) > 2) throw new Error("Sheet not at bottom: " + bottom);
+      if (index === 0) {
+        await button("Close").click();
+        await ready();
+        await p.waitForTimeout(5500);
+        if (await dialog.count()) throw new Error("Dismissed request reopened after polling");
+        await button("Sign in").click();
+        await dialog.waitFor();
+      } else await dialog.getByText("1 / 2", { exact: true }).waitFor();
+      if (await dialog.getByRole("checkbox").count()) throw new Error("Redundant decision checkbox");
+      if ((await dialog.innerText()).includes(issuer)) throw new Error("Redundant issuer");
+      const deny = await button("Deny").boundingBox(),
+        approve = await button("Approve sign-in").boundingBox();
+      if (deny.x >= approve.x) throw new Error("Wrong decision button order");
+      await button(action).click();
+      if (index === 1) {
+        await p.locator(".auth-comparison").filter({ hasText: "777777" }).waitFor();
+        await button("Deny").click();
+      }
+      await ready();
+    }
+    if (decisions.join() !== "deny,approve,deny") throw new Error("Wrong sign-in decisions");
     const manage = async () => {
       await button("Menu").click();
       await p.getByRole("menuitem", { name: "Manage accounts", exact: true }).click();
     };
     step = "manage";
+    await manage();
+    await button("Add Cloud").click();
+    await p.getByLabel("Pairing link", { exact: true }).waitFor();
+    await button("Close").click();
+    await ready();
     await manage();
     await button("Edit label: Test Cloud").click();
     await p.getByLabel("Account label", { exact: true }).fill("Renamed Cloud");

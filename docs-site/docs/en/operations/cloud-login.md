@@ -110,15 +110,19 @@ previously confirmed device you can no longer use.
 
 ## Manage connected accounts
 
-Open **Manage accounts** from the menu. Use the pencil to change a local account
+Open **Manage accounts** from the menu. Choose **Add Cloud** to connect another
+account. Language and appearance are grouped under **Settings**. Use the pencil to change a local account
 label, or the delete button to open the disconnect confirmation. Nothing is
 removed until you confirm. By default, disconnecting revokes the device in Cloud;
 the explicit local-only option removes it from this app without revocation.
 
 ## Approve and recover
 
-Cloud Login checks for pending sign-ins while visible and online. Open a request,
-compare its code with the waiting browser, and explicitly approve or deny it.
+Cloud Login checks for pending sign-ins while visible and online. New requests
+open a bottom sheet once the app is unlocked and no other dialog is open.
+Requests from all connected Clouds are shown in order. Dismissing the sheet
+does not deny a request; open it again from its Cloud card. Compare its code
+with the waiting browser, and explicitly approve or deny it.
 A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
 silently resend the decision.

@@ -84,6 +84,7 @@ export const authMessages = i18n.define({
       pairingRetrying: "Could not confirm pairing. We are checking its status again; keep the Cloud window open.",
       pairingExpired:
         "Pairing expired or was cancelled. Start again in Cloud. If Cloud already confirmed the device, revoke it there before pairing again.",
+      signIn: "Sign in",
       loginRequest: "Sign-in request",
       loginComparison: "Only approve a sign-in you started. Compare this code with the waiting browser.",
       requestedAndMatched: "I started this sign-in and the codes match.",
@@ -91,6 +92,7 @@ export const authMessages = i18n.define({
       approve: "Approve sign-in",
       deny: "Deny",
       close: "Close",
+      settings: "Settings",
       manageAccounts: "Manage accounts",
       editCloudLabel: "Edit label",
       saveLabel: "Save",
@@ -239,6 +241,7 @@ export const authMessages = i18n.define({
       pairingRetrying: "Kopplung noch nicht bestätigt. Wir prüfen den Status erneut; lass das Cloud-Fenster geöffnet.",
       pairingExpired:
         "Die Kopplung ist abgelaufen oder wurde abgebrochen. Starte sie in der Cloud neu. Falls die Cloud das Gerät bereits bestätigt hat, widerrufe es dort vorher.",
+      signIn: "Anmelden",
       loginRequest: "Anmeldeanfrage",
       loginComparison: "Bestätige nur eine selbst gestartete Anmeldung. Vergleiche diesen Code mit dem wartenden Browser.",
       requestedAndMatched: "Ich habe diese Anmeldung gestartet und die Codes stimmen überein.",
@@ -246,6 +249,7 @@ export const authMessages = i18n.define({
       approve: "Anmeldung erlauben",
       deny: "Ablehnen",
       close: "Schließen",
+      settings: "Einstellungen",
       manageAccounts: "Konten verwalten",
       editCloudLabel: "Bezeichnung ändern",
       saveLabel: "Speichern",

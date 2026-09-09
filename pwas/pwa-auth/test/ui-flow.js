@@ -93,7 +93,7 @@ async function _run(page) {
       if (Math.abs(triggerBox.x + triggerBox.width - menuBox.x - menuBox.width) > 1) throw new Error("Menu is not end aligned");
       await p.keyboard.press("Escape");
       await trigger.click();
-      await p.getByRole("menuitem", { name: locale === "de" ? "Erscheinungsbild" : "Appearance", exact: true }).click();
+      await p.getByRole("menuitem", { name: locale === "de" ? "Einstellungen" : "Settings", exact: true }).click();
       const colors = [];
       for (const [choice, label] of [
         ["dark", locale === "de" ? "Dunkel" : "Dark"],

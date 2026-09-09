@@ -1,20 +1,19 @@
 import { Button, Checkbox, IconButton, LocaleProvider, PanelDialog, Paper, TextInput, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Authenticator, Login } from "./authenticator";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
 
-function Decision(props: { auth: Authenticator; binding: Binding; request: Login; close: () => void }) {
+function Decision(props: { auth: Authenticator; binding: Binding; request: Login; position: number; total: number; close: () => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
-  const [matched, setMatched] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal(false);
   const expired = () => props.auth.now() >= Date.parse(props.request.expiresAt);
   const decide = async (decision: "approve" | "deny") => {
-    if (busy() || error() || expired() || (decision === "approve" && !matched())) return;
+    if (busy() || error() || expired()) return;
     setBusy(true);
     try {
       await props.auth.decide(props.binding, props.request, decision);
@@ -25,16 +24,36 @@ function Decision(props: { auth: Authenticator; binding: Binding; request: Login
       setBusy(false);
     }
   };
+  createEffect(() => {
+    const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
+    if (!busy() && !error() && (!pending || expired())) props.close();
+  });
+  let dragStart: number | undefined;
   return (
     <PanelDialog>
-      <PanelDialog.Header title={t().loginRequest} />
+      <button
+        class="auth-sheet-handle"
+        aria-label={t().close}
+        onClick={props.close}
+        onPointerDown={(event) => {
+          dragStart = event.clientY;
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerUp={(event) => {
+          if (dragStart !== undefined && event.clientY - dragStart > 60) props.close();
+          dragStart = undefined;
+        }}
+        onPointerCancel={() => {
+          dragStart = undefined;
+        }}
+      >
+        <span />
+      </button>
+      <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
       <PanelDialog.Body>
         <div class="auth-flow">
-          <strong>{props.binding.label}</strong>
-          <span class="auth-issuer">{props.binding.issuer}</span>
           <p>{t().loginComparison}</p>
           <output class="auth-comparison">{props.request.comparison}</output>
-          <Checkbox label={t().requestedAndMatched} value={matched} onValueChange={setMatched} />
           <Show when={expired()}>
             <p role="status">{t().requestExpired}</p>
           </Show>
@@ -44,26 +63,14 @@ function Decision(props: { auth: Authenticator; binding: Binding; request: Login
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button
-          disabled={!matched() || busy() || error() || expired() || !props.auth.online()}
-          onClick={() => {
-            void decide("approve");
-          }}
-        >
-          {t().approve}
-        </Button>
-        <Button
-          variant="secondary"
-          disabled={busy() || error() || expired() || !props.auth.online()}
-          onClick={() => {
-            void decide("deny");
-          }}
-        >
-          {t().deny}
-        </Button>
-        <Button variant="ghost" onClick={props.close}>
-          {t().close}
-        </Button>
+        <div class="auth-dialog-actions">
+          <Button variant="secondary" disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("deny")}>
+            {t().deny}
+          </Button>
+          <Button disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("approve")}>
+            {t().approve}
+          </Button>
+        </div>
       </PanelDialog.Footer>
     </PanelDialog>
   );
@@ -120,15 +127,61 @@ function Disconnect(props: { auth: Authenticator; binding: Binding; close: () =>
 export function Clouds(props: { auth: Authenticator; preferences: Preferences }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
-  const open = (binding: Binding, request: Login) =>
-    openDialog(
-      (close) => (
-        <LocaleProvider locale={props.preferences.locale()}>
-          <Decision auth={props.auth} binding={binding} request={request} close={() => close()} />
-        </LocaleProvider>
-      ),
-      { panelClassName: "k2b-dialog k2b-dialog--small", contentClassName: "k2b-dialog__viewport" },
-    );
+  const [sheetOpen, setSheetOpen] = createSignal(false);
+  const seen = new Set<string>();
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  const pending = () =>
+    props.auth
+      .bindings()
+      .flatMap((binding) =>
+        (props.auth.states()[binding.id]?.requests ?? [])
+          .filter((request) => Date.parse(request.expiresAt) > props.auth.now())
+          .map((request) => ({ binding, request, key: `${binding.id}:${request.requestId}` })),
+      )
+      .sort((a, b) => a.request.createdAt.localeCompare(b.request.createdAt) || a.key.localeCompare(b.key));
+  const open = async (binding: Binding, request: Login) => {
+    if (disposed || sheetOpen() || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+    const queue = pending();
+    const key = `${binding.id}:${request.requestId}`;
+    seen.add(key);
+    setSheetOpen(true);
+    try {
+      await openDialog(
+        (close) => {
+          if (disposed || document.visibilityState !== "visible") {
+            queueMicrotask(() => close());
+            return null;
+          }
+          return (
+            <LocaleProvider locale={props.preferences.locale()}>
+              <Decision
+                auth={props.auth}
+                binding={binding}
+                request={request}
+                position={queue.findIndex((item) => item.key === key) + 1}
+                total={queue.length}
+                close={() => close()}
+              />
+            </LocaleProvider>
+          );
+        },
+        { panelClassName: "k2b-dialog auth-request-sheet", contentClassName: "k2b-dialog__viewport" },
+      );
+    } finally {
+      if (!disposed) setSheetOpen(false);
+    }
+  };
+  createEffect(() => {
+    const queue = pending();
+    const keys = new Set(queue.map((item) => item.key));
+    for (const key of seen) if (!keys.has(key)) seen.delete(key);
+    if (sheetOpen() || !props.auth.online()) return;
+    const next = queue.find((item) => !seen.has(item.key));
+    if (next) void open(next.binding, next.request);
+  });
   return (
     <div class="auth-clouds">
       <For each={props.auth.bindings()}>
@@ -174,16 +227,14 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences })
               </Show>
               <For each={requests()}>
                 {(request) => (
-                  <Button
-                    variant="secondary"
-                    class="auth-request"
-                    onClick={() => {
+                  <RequestRow
+                    auth={props.auth}
+                    binding={binding}
+                    request={request}
+                    open={() => {
                       void open(binding, request);
                     }}
-                  >
-                    <span>{t().loginRequest}</span>
-                    <strong>{request.comparison}</strong>
-                  </Button>
+                  />
                 )}
               </For>
             </Paper>
@@ -246,16 +297,16 @@ function EditLabel(props: { auth: Authenticator; binding: Binding; close: () => 
   );
 }
 export function openManageAccounts(auth: Authenticator, preferences: Preferences) {
-  return openDialog(
+  return openDialog<boolean>(
     (close) => (
       <LocaleProvider locale={preferences.locale()}>
-        <ManageAccounts auth={auth} preferences={preferences} close={() => close()} />
+        <ManageAccounts auth={auth} preferences={preferences} close={close} />
       </LocaleProvider>
     ),
     { panelClassName: "k2b-dialog k2b-dialog--small", contentClassName: "k2b-dialog__viewport" },
   );
 }
-function ManageAccounts(props: { auth: Authenticator; preferences: Preferences; close: () => void }) {
+function ManageAccounts(props: { auth: Authenticator; preferences: Preferences; close: (add?: boolean) => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const edit = (binding: Binding, remove: boolean) =>
@@ -293,10 +344,28 @@ function ManageAccounts(props: { auth: Authenticator; preferences: Preferences; 
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button variant="ghost" onClick={props.close}>
-          {t().close}
-        </Button>
+        <div class="auth-dialog-actions">
+          <Button variant="ghost" onClick={() => props.close()}>
+            {t().close}
+          </Button>
+          <Button onClick={() => props.close(true)}>{t().addCloud}</Button>
+        </div>
       </PanelDialog.Footer>
     </PanelDialog>
+  );
+}
+
+function RequestRow(props: { auth: Authenticator; binding: Binding; request: Login; open: () => void }) {
+  const locale = useLocale();
+  const t = createMemo(() => authMessages.resolve([locale()]).t);
+  return (
+    <div class="auth-request auth-request-row">
+      <span>{t().loginRequest}</span>
+      <div class="auth-request-actions">
+        <Button variant="secondary" onClick={props.open}>
+          {t().signIn}
+        </Button>
+      </div>
+    </div>
   );
 }

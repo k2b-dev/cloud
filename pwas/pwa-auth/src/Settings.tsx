@@ -1,18 +1,19 @@
 import { Button, LocaleProvider, PanelDialog, SegmentedControl, useLocale } from "@k2b/ui";
-import { createMemo, Show } from "solid-js";
+import { createMemo } from "solid-js";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 
-export function Settings(props: { preferences: Preferences; section: "language" | "theme"; close: () => void }) {
+export function Settings(props: { preferences: Preferences; close: () => void }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   return (
     <PanelDialog>
-      <PanelDialog.Header title={props.section === "language" ? t().language : t().appearance} />
+      <PanelDialog.Header title={t().settings} />
       <PanelDialog.Body>
         <div class="auth-settings">
-          <Show when={props.section === "language"}>
+          <section>
+            <h3>{t().language}</h3>
             <SegmentedControl
               ariaLabel={t().language}
               value={props.preferences.language}
@@ -23,8 +24,9 @@ export function Settings(props: { preferences: Preferences; section: "language" 
                 { value: "en", label: "English" },
               ]}
             />
-          </Show>
-          <Show when={props.section === "theme"}>
+          </section>
+          <section>
+            <h3>{t().appearance}</h3>
             <SegmentedControl
               ariaLabel={t().appearance}
               value={props.preferences.theme}
@@ -35,7 +37,7 @@ export function Settings(props: { preferences: Preferences; section: "language" 
                 { value: "dark", label: t().dark },
               ]}
             />
-          </Show>
+          </section>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
@@ -45,11 +47,11 @@ export function Settings(props: { preferences: Preferences; section: "language" 
   );
 }
 
-export function openSettings(preferences: Preferences, section: "language" | "theme") {
+export function openSettings(preferences: Preferences) {
   return openDialog(
     (close) => (
       <LocaleProvider locale={preferences.locale()}>
-        <Settings preferences={preferences} section={section} close={() => close()} />
+        <Settings preferences={preferences} close={() => close()} />
       </LocaleProvider>
     ),
     { panelClassName: "k2b-dialog k2b-dialog--small", contentClassName: "k2b-dialog__viewport" },

@@ -198,15 +198,6 @@ body {
 .auth-cloud p {
   margin: 0;
 }
-.auth-cloud .auth-request {
-  width: 100%;
-  justify-content: space-between;
-  min-height: 3rem;
-}
-.auth-request strong {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.1em;
-}
 .auth-quiet,
 .auth-recovery {
   color: var(--k2b-text-muted);
@@ -372,4 +363,61 @@ body.k2b-ui textarea {
 .auth-clouds > .auth-recovery {
   margin: auto 0 0;
   padding-top: 1.5rem;
+}
+
+.auth-request {
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--k2b-success-text) 24%, var(--k2b-border));
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-success-surface);
+}
+.auth-request-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.auth-request-row > span {
+  color: var(--k2b-success-text);
+  font-size: 0.875rem;
+}
+.auth-request-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+}
+.auth-request > [role="alert"] {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-dialog.auth-request-sheet {
+  top: auto;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 33rem);
+  max-height: 90dvh;
+  border-bottom: 0;
+  border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+}
+.auth-request-sheet .k2b-panel-dialog__footer {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.auth-sheet-handle {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: var(--k2b-surface-elevated);
+  cursor: grab;
+  touch-action: none;
+}
+.auth-sheet-handle span {
+  width: 2.5rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--k2b-border-strong);
 }

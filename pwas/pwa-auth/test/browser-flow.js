@@ -160,24 +160,20 @@ async function _run(page, protection = "pin") {
       loginB = await post(b, "start");
     const cloudA = p.locator(".auth-cloud").filter({ has: p.getByRole("heading", { name: "Personal Cloud", exact: true }) });
     const cloudB = p.locator(".auth-cloud").filter({ has: p.getByRole("heading", { name: "Work Cloud", exact: true }) });
-    await cloudA.getByRole("button", { name: new RegExp(loginA.comparison) }).waitFor({ timeout: 20000 });
-    await cloudB.getByRole("button", { name: new RegExp(loginB.comparison) }).waitFor({ timeout: 20000 });
+    await cloudA.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
+    await cloudB.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
     if ((await post(a, "status", loginA)).state !== "pending") throw new Error("Auto approval");
-    await cloudA.getByRole("button", { name: new RegExp(loginA.comparison) }).click();
-    if (await p.getByRole("button", { name: "Approve sign-in", exact: true }).isEnabled())
-      throw new Error("Missing explicit comparison gate");
-    await p.getByRole("checkbox", { name: "I started this sign-in and the codes match." }).check();
+    await p.locator(".auth-comparison").filter({ hasText: loginA.comparison }).waitFor();
     await p.getByRole("button", { name: "Approve sign-in", exact: true }).click();
-    await p.getByRole("dialog").waitFor({ state: "hidden" });
     if ((await post(a, "status", loginA)).state !== "approved" || (await post(b, "status", loginB)).state !== "pending")
       throw new Error("Cross-Cloud decision leak");
-    await cloudB.getByRole("button", { name: new RegExp(loginB.comparison) }).click();
+    await p.locator(".auth-comparison").filter({ hasText: loginB.comparison }).waitFor();
     await p.getByRole("button", { name: "Deny", exact: true }).click();
     await p.getByRole("dialog").waitFor({ state: "hidden" });
     if ((await post(b, "status", loginB)).state !== "denied") throw new Error("Denial failed");
     step = "lost-response";
     const lost = await post(a, "start");
-    await cloudA.getByRole("button", { name: new RegExp(lost.comparison) }).waitFor({ timeout: 20000 });
+    await cloudA.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
     let decisions = 0;
     await context.route("**/api/auth/app-approval/v1/device", async (route) => {
       const body = route.request().postDataJSON();
@@ -187,8 +183,7 @@ async function _run(page, protection = "pin") {
         await route.abort();
       } else await route.continue();
     });
-    await cloudA.getByRole("button", { name: new RegExp(lost.comparison) }).click();
-    await p.getByRole("checkbox", { name: "I started this sign-in and the codes match." }).check();
+    await p.locator(".auth-comparison").filter({ hasText: lost.comparison }).waitFor();
     await p.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await p.getByRole("alert").waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
@@ -196,12 +191,7 @@ async function _run(page, protection = "pin") {
     const other = protection === "passkey" ? p : await context.newPage();
     await other.goto("http://localhost:4178/");
     await unlock(other);
-    await other
-      .locator(".auth-cloud")
-      .filter({ has: other.getByRole("heading", { name: "Personal Cloud", exact: true }) })
-      .getByRole("button", { name: new RegExp(lost.comparison) })
-      .click({ timeout: 20000 });
-    await other.getByRole("checkbox", { name: "I started this sign-in and the codes match." }).check();
+    await other.locator(".auth-comparison").filter({ hasText: lost.comparison }).waitFor();
     await other.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await other.getByRole("alert").waitFor();
     if (decisions !== 1 || (await post(a, "status", lost)).state !== "pending") throw new Error("Decision retried across tabs");
@@ -209,10 +199,11 @@ async function _run(page, protection = "pin") {
     await context.unroute("**/api/auth/app-approval/v1/device");
     step = "independent-failure";
     await post(a, "enabled", { enabled: false });
-    const working = await post(b, "start");
-    await cloudB.getByRole("button", { name: new RegExp(working.comparison) }).waitFor({ timeout: 20000 });
+    await post(b, "start");
+    await cloudB.getByRole("button", { name: "Sign in", exact: true }).waitFor({ timeout: 20000 });
     await cloudA.getByRole("status").waitFor({ timeout: 20000 });
     await post(a, "enabled", { enabled: true });
+    if (await p.getByRole("dialog").count()) await p.getByRole("button", { name: "Close", exact: true }).click();
     step = "foreground-only";
     await p.evaluate(() => {
       Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
