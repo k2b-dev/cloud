@@ -38,7 +38,7 @@ jobs:
         run: |
           container=$(docker run -d -p 127.0.0.1:4188:3000 cloud-website:test)
           trap 'docker logs "$container"; docker rm -f "$container"' EXIT
-          curl --retry 30 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:4188/health
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:4188/health
           for path in en en/docs en/ui robots.txt sitemap.xml llms.txt .well-known/agent-skills/index.json; do
             curl --fail --silent --output /dev/null "http://127.0.0.1:4188/$path"
           done
